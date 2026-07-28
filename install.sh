@@ -2,381 +2,377 @@
 # ============================================================
 # FAIPCO Portal — نصب خودکار روی Ubuntu Server (22.04 / 24.04)
 #
-# اجرای یک‌دستوری:
+# اجرا (نصب مستقیم از GitHub):
 #   curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 #
+# یا به‌صورت محلی (وقتی ریپازیتوری از قبل Clone شده):
+#   sudo bash install.sh
+#
 # آرگومان‌های اختیاری:
-#   --domain example.com        دامنه (برای Nginx + SSL خودکار)
-#   --no-ssl                    رد کردن مرحله SSL
-#   --admin-username admin       نام کاربری Admin (پیش‌فرض: admin)
-#   --admin-password '...'      رمز عبور Admin (اگر ندهید، تصادفی)
+#   --domain example.com       دامنه (برای Nginx + SSL خودکار)
+#   --no-ssl                   رد کردن مرحله SSL حتی اگر دامنه داده شده
+#   --admin-username admin     نام کاربری Admin اولیه (پیش‌فرض: admin)
+#   --admin-password '...'     رمز عبور Admin (اگر ندهید، تصادفی تولید می‌شود)
+#   --install-dir /var/www/html  مسیر نصب (پیش‌فرض: /var/www/html)
+#   --repo <git-url>           آدرس ریپازیتوری
+#   --branch main              Branch مورد نظر
+#
+# لاگ کامل این نصب همیشه در /var/log/faipco-install.log ذخیره می‌شود —
+# در صورت بروز هر مشکلی، همان فایل را برای Troubleshooting بررسی کنید.
 # ============================================================
 set -euo pipefail
 
-# ─── رنگ و لاگ ────────────────────────────────────────────
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[هشدار]${NC} $1"; }
-err()  { echo -e "${RED}[خطا]${NC} $1" >&2; exit 1; }
-step() { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
-
-# ─── مقادیر پیش‌فرض ────────────────────────────────────────
-REPO_URL="https://github.com/milad-mma/faipco-portal.git"
-REPO_BRANCH="main"
-INSTALL_DIR="/var/www/html"          # ← کل ریپو مستقیم اینجا clone می‌شود
-DOMAIN=""
-ADMIN_USERNAME="admin"
-ADMIN_PASSWORD=""
+# ---------- مقادیر پیش‌فرض ----------
+REPO_URL="${FAIPCO_REPO_URL:-https://github.com/milad-mma/faipco-portal.git}"
+REPO_BRANCH="${FAIPCO_BRANCH:-main}"
+INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
+DOMAIN="${FAIPCO_DOMAIN:-}"
+ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
+ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-}"
 SKIP_SSL="false"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
-DB_PASSWORD=""
 BACKEND_PORT=8000
+LOG_FILE="/var/log/faipco-install.log"
 
-# ─── پارس آرگومان ─────────────────────────────────────────
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
+warn() { echo -e "${YELLOW}[هشدار]${NC} $1"; }
+err()  { echo -e "${RED}[خطا]${NC} $1" >&2; }
+
+# ---------- پارس آرگومان‌ها ----------
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --domain)         DOMAIN="$2";         shift 2 ;;
-        --no-ssl)         SKIP_SSL="true";     shift   ;;
-        --admin-username) ADMIN_USERNAME="$2"; shift 2 ;;
-        --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
-        *) err "آرگومان ناشناخته: $1" ;;
-    esac
+  case "$1" in
+    --domain) DOMAIN="$2"; shift 2 ;;
+    --no-ssl) SKIP_SSL="true"; shift ;;
+    --admin-username) ADMIN_USERNAME="$2"; shift 2 ;;
+    --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
+    --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    --repo) REPO_URL="$2"; shift 2 ;;
+    --branch) REPO_BRANCH="$2"; shift 2 ;;
+    *) err "آرگومان ناشناخته: $1"; exit 1 ;;
+  esac
 done
 
-LOG_FILE="/var/log/faipco-install.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
-log "شروع نصب FAIPCO Portal... (لاگ کامل در $LOG_FILE ذخیره می‌شود)"
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    err "این اسکریپت باید با دسترسی root یا sudo اجرا شود. مثال: sudo bash install.sh"
+    exit 1
+  fi
+}
 
-# ─── بررسی root ───────────────────────────────────────────
-[[ $EUID -ne 0 ]] && err "با sudo اجرا کنید: sudo bash install.sh"
+# ---------- ثبت کامل خروجی در فایل لاگ (برای Troubleshooting) ----------
+setup_logging() {
+  touch "$LOG_FILE"
+  # هم روی صفحه نمایش داده می‌شود و هم در فایل لاگ ذخیره می‌شود
+  exec > >(tee -a "$LOG_FILE") 2>&1
+}
 
-# ─── تولید رمز DB ─────────────────────────────────────────
-DB_PASSWORD="$(openssl rand -hex 16)"
+# اگر هر دستوری با خطا مواجه شود، دقیقاً بگو کدام خط بوده — به‌جای توقف بی‌صدا
+on_error() {
+  local exit_code=$?
+  local line_no=$1
+  err "نصب در خط ${line_no} با خطا متوقف شد (کد خروج: ${exit_code})."
+  err "برای مشاهده جزئیات کامل: cat ${LOG_FILE}"
+  exit "$exit_code"
+}
+trap 'on_error $LINENO' ERR
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۱ — نصب پیش‌نیازها"
-# ═══════════════════════════════════════════════════════════
-log "به‌روزرسانی لیست پکیج‌ها و نصب پیش‌نیازها..."
-apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+# ---------- ایجاد Swap در صورت کمبود RAM (علت رایج توقف بی‌دلیل حین Build) ----------
+ensure_swap() {
+  local total_mem_mb
+  total_mem_mb="$(free -m | awk '/^Mem:/{print $2}')"
+  local existing_swap_mb
+  existing_swap_mb="$(free -m | awk '/^Swap:/{print $2}')"
+
+  if [[ "$total_mem_mb" -lt 2000 && "$existing_swap_mb" -lt 1 ]]; then
+    warn "RAM سرور کم است (${total_mem_mb}MB) و Swap فعال نیست — احتمال قطع شدن بی‌دلیل حین Build وجود دارد."
+    log "ساخت فایل Swap موقت ۲ گیگابایتی..."
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+    if ! grep -q "^/swapfile" /etc/fstab; then
+      echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    fi
+    log "Swap با موفقیت فعال شد."
+  fi
+}
+
+install_prerequisites() {
+  log "به‌روزرسانی لیست پکیج‌ها و نصب پیش‌نیازها..."
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     curl git build-essential software-properties-common \
     python3 python3-venv python3-pip python3-dev \
-    libpq-dev \
+    libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
     nginx ufw openssl ca-certificates
+}
 
-# ─── Node.js ──────────────────────────────────────────────
-if command -v node &>/dev/null && [[ "$(node -v | grep -oE '[0-9]+' | head -1)" -ge 18 ]]; then
-    log "Node.js از قبل نصب است: $(node -v)"
-else
-    log "نصب Node.js 20.x..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
-fi
+install_nodejs() {
+  if command -v node >/dev/null 2>&1; then
+    local major_version
+    major_version="$(node -v | grep -oE '^v[0-9]+' | tr -d v)"
+    if [[ "$major_version" -ge 18 ]]; then
+      log "Node.js از قبل نصب است: $(node -v)"
+      return
+    fi
+  fi
+  log "نصب Node.js 20.x..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+}
 
-# ─── PostgreSQL ────────────────────────────────────────────
-if ! command -v psql &>/dev/null; then
+install_postgresql() {
+  if ! command -v psql >/dev/null 2>&1; then
     log "نصب PostgreSQL..."
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql postgresql-contrib
-else
+  else
     log "PostgreSQL از قبل نصب است."
-fi
-systemctl enable --now postgresql
-sleep 2
+  fi
+  systemctl enable --now postgresql
 
-log "تنظیم کاربر و دیتابیس Portal در PostgreSQL..."
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+  DB_PASSWORD="$(openssl rand -hex 16)"
+
+  log "تنظیم کاربر و دیتابیس Portal در PostgreSQL..."
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
     sudo -u postgres psql -c "ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" >/dev/null
-else
+  else
     sudo -u postgres psql -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
-fi
-if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+  fi
+
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" >/dev/null
-fi
+  fi
+}
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۲ — دریافت سورس‌کد"
-# ═══════════════════════════════════════════════════════════
+fetch_source() {
+  if [[ -f "./backend/app/main.py" ]]; then
+    log "اجرا از داخل ریپازیتوری تشخیص داده شد؛ از سورس محلی ($(pwd)) استفاده می‌شود."
+    INSTALL_DIR="$(pwd)"
+    return
+  fi
 
-# اگر از داخل ریپو اجرا می‌شود (clone قبلاً انجام شده)
-if [[ -f "${INSTALL_DIR}/backend/app/main.py" ]]; then
-    log "سورس از قبل در ${INSTALL_DIR} وجود دارد. به‌روزرسانی..."
-    git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH" --quiet
-    git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}" --quiet
-else
-    log "دریافت سورس از ${REPO_URL} در ${INSTALL_DIR}..."
-    # اگر .git وجود ندارد از ابتدا clone کن
-    if [[ -d "${INSTALL_DIR}/.git" ]]; then
-        git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH" --quiet
-        git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}" --quiet
-    else
-        # حذف محتوای قدیمی (نه خود /var/www/html) و clone مستقیم
-        rm -rf "${INSTALL_DIR}/backend" "${INSTALL_DIR}/frontend" \
-               "${INSTALL_DIR}/scripts" "${INSTALL_DIR}/database" \
-               "${INSTALL_DIR}/docs" "${INSTALL_DIR}/install.sh" \
-               "${INSTALL_DIR}/README.md" 2>/dev/null || true
+  log "دریافت سورس از ${REPO_URL} (branch: ${REPO_BRANCH}) در ${INSTALL_DIR}..."
+  mkdir -p "$INSTALL_DIR"
 
-        # clone به یک temp و انتقال فایل‌ها
-        TMP_DIR="$(mktemp -d)"
-        git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$TMP_DIR" --quiet
-        cp -a "$TMP_DIR/." "$INSTALL_DIR/"
-        rm -rf "$TMP_DIR"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
+    git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
+  else
+    if [[ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
+      warn "پوشه ${INSTALL_DIR} از قبل محتوا دارد (مثلاً صفحه پیش‌فرض Nginx) — پاک‌سازی می‌شود..."
+      find "$INSTALL_DIR" -mindepth 1 -delete
     fi
-fi
+    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+  fi
+}
 
-log "سورس‌کد آماده است در: ${INSTALL_DIR}"
+setup_backend() {
+  log "ساخت Virtual Environment و نصب وابستگی‌های Backend..."
+  cd "$INSTALL_DIR/backend"
+  python3 -m venv .venv
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  pip install --upgrade pip
+  pip install -r requirements.txt
+  deactivate
+}
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۳ — راه‌اندازی Backend"
-# ═══════════════════════════════════════════════════════════
-cd "${INSTALL_DIR}/backend"
-log "ساخت Virtual Environment و نصب وابستگی‌های Backend..."
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip -q
-.venv/bin/pip install -r requirements.txt -q
-log "وابستگی‌های Backend نصب شدند"
-
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۴ — تولید فایل .env"
-# ═══════════════════════════════════════════════════════════
-log "تولید فایل .env با کلیدهای امنیتی یکتا..."
-SECRET_KEY="$(openssl rand -hex 32)"
-FERNET_KEY="$("${INSTALL_DIR}/backend/.venv/bin/python" -c \
+generate_env() {
+  log "تولید فایل .env با کلیدهای امنیتی یکتا..."
+  local secret_key fernet_key
+  secret_key="$(openssl rand -hex 32)"
+  fernet_key="$("$INSTALL_DIR/backend/.venv/bin/python" -c \
     "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
-CORS_ORIGIN="http://localhost"
-[[ -n "$DOMAIN" ]] && CORS_ORIGIN="https://${DOMAIN}"
 
-cat > "${INSTALL_DIR}/backend/.env" << EOF
+  local cors_origin="http://localhost"
+  if [[ -n "$DOMAIN" ]]; then
+    cors_origin="https://${DOMAIN}"
+  fi
+
+  cat > "$INSTALL_DIR/backend/.env" <<EOF
 APP_NAME=FAIPCO Portal
 APP_ENV=production
 DEBUG=false
-
 DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}
-
-SECRET_KEY=${SECRET_KEY}
+SECRET_KEY=${secret_key}
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 REFRESH_TOKEN_EXPIRE_DAYS=7
-
-DB_CREDENTIALS_ENCRYPTION_KEY=${FERNET_KEY}
-
-CORS_ORIGINS=["${CORS_ORIGIN}","http://localhost:3000"]
-
+DB_CREDENTIALS_ENCRYPTION_KEY=${fernet_key}
+CORS_ORIGINS=["${cors_origin}"]
 SYNC_ENABLED=true
 SYNC_INTERVAL_MINUTES=30
 EOF
-chmod 600 "${INSTALL_DIR}/backend/.env"
-log "فایل .env ساخته شد"
+  chmod 600 "$INSTALL_DIR/backend/.env"
+}
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۵ — Migration های دیتابیس"
-# ═══════════════════════════════════════════════════════════
-cd "${INSTALL_DIR}/backend"
-log "اجرای Alembic migrations..."
-.venv/bin/alembic upgrade head
-log "جداول دیتابیس ساخته شدند ✔"
+run_migrations() {
+  log "اجرای Migration های دیتابیس (Alembic)..."
+  cd "$INSTALL_DIR/backend"
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  alembic upgrade head
+  deactivate
+}
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۶ — Seed و ساخت Admin"
-# ═══════════════════════════════════════════════════════════
-cd "${INSTALL_DIR}"
-log "Seed اولیه Permission های سیستمی..."
+build_frontend() {
+  log "نصب وابستگی‌های Frontend..."
+  cd "$INSTALL_DIR/frontend"
+  echo "VITE_API_BASE_URL=/api/v1" > .env
 
-# seed_permissions را با PYTHONPATH درست اجرا می‌کنیم
-PYTHONPATH="${INSTALL_DIR}/backend" \
-    "${INSTALL_DIR}/backend/.venv/bin/python" \
-    -m scripts.seed_permissions
+  # نکته مهم: از --silent استفاده نمی‌کنیم چون خروجی خطا را هم مخفی می‌کند
+  # و در صورت شکست npm، اسکریپت بی‌صدا متوقف می‌شود بدون هیچ پیامی.
+  npm install --no-fund --no-audit
 
-[[ -z "$ADMIN_PASSWORD" ]] && ADMIN_PASSWORD="$(openssl rand -base64 12 | tr -d '=+/' | head -c 12)"
+  log "Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
+  npm run build
+}
 
-log "ساخت کاربر Admin اولیه: ${ADMIN_USERNAME}"
-PYTHONPATH="${INSTALL_DIR}/backend" \
-    "${INSTALL_DIR}/backend/.venv/bin/python" \
-    -m scripts.create_admin \
-    --username "$ADMIN_USERNAME" \
-    --password "$ADMIN_PASSWORD"
-
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۷ — Build Frontend"
-# ═══════════════════════════════════════════════════════════
-cd "${INSTALL_DIR}/frontend"
-log "نصب وابستگی‌های Frontend..."
-echo "VITE_API_BASE_URL=/api/v1" > .env.production
-npm install --silent --no-audit 2>/dev/null
-log "Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
-npm run build --silent 2>/dev/null
-log "Frontend build شد ✔"
-
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۸ — سرویس systemd"
-# ═══════════════════════════════════════════════════════════
-log "ساخت Service systemd برای Backend..."
-cat > /etc/systemd/system/faipco-backend.service << EOF
+configure_systemd() {
+  log "ساخت Service systemd برای Backend..."
+  cat > /etc/systemd/system/faipco-backend.service <<EOF
 [Unit]
 Description=FAIPCO Portal Backend (FastAPI)
-Documentation=https://github.com/milad-mma/faipco-portal
 After=network.target postgresql.service
-Requires=postgresql.service
 
 [Service]
 Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=${INSTALL_DIR}/backend
-EnvironmentFile=${INSTALL_DIR}/backend/.env
-Environment="PATH=${INSTALL_DIR}/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-ExecStart=${INSTALL_DIR}/backend/.venv/bin/uvicorn app.main:app \\
-    --host 127.0.0.1 \\
-    --port ${BACKEND_PORT} \\
-    --workers 2 \\
-    --log-level info
+Environment="PATH=${INSTALL_DIR}/backend/.venv/bin"
+ExecStart=${INSTALL_DIR}/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 2
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=faipco-backend
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# دسترسی‌ها
-chown -R www-data:www-data "${INSTALL_DIR}"
-chmod 600 "${INSTALL_DIR}/backend/.env"
-chmod -R 755 "${INSTALL_DIR}/frontend/dist"
+  chown -R www-data:www-data "$INSTALL_DIR"
 
-systemctl daemon-reload
-systemctl enable faipco-backend --now
-sleep 4
+  systemctl daemon-reload
+  systemctl enable faipco-backend >/dev/null
+  systemctl restart faipco-backend
+}
 
-if systemctl is-active --quiet faipco-backend; then
-    log "سرویس Backend فعال و در حال اجراست ✔"
-else
-    warn "سرویس Backend بلافاصله شروع نشد. لاگ آخر:"
-    journalctl -u faipco-backend --no-pager -n 30
-fi
+configure_nginx() {
+  log "پیکربندی Nginx..."
+  local server_name="${DOMAIN:-_}"
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۹ — پیکربندی Nginx"
-# ═══════════════════════════════════════════════════════════
-log "پیکربندی Nginx..."
-SERVER_NAME="${DOMAIN:-_}"
-
-cat > /etc/nginx/sites-available/faipco-portal << EOF
+  cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
     listen 80;
-    listen [::]:80;
-    server_name ${SERVER_NAME};
+    server_name ${server_name};
 
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
 
-    client_max_body_size 20M;
-    access_log /var/log/nginx/faipco-access.log;
-    error_log  /var/log/nginx/faipco-error.log;
-
-    # Backend API
     location /api/ {
-        proxy_pass         http://127.0.0.1:${BACKEND_PORT}/api/;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_set_header   Connection        "";
-        proxy_connect_timeout 60s;
-        proxy_read_timeout    120s;
+        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # React SPA
     location / {
         try_files \$uri \$uri/ /index.html;
-    }
-
-    # Static assets with long cache
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        access_log off;
-    }
-
-    # Block hidden files
-    location ~ /\. {
-        deny all;
-        access_log off;
-        log_not_found off;
     }
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/faipco-portal /etc/nginx/sites-enabled/faipco-portal
-rm -f /etc/nginx/sites-enabled/default
+  ln -sf /etc/nginx/sites-available/faipco-portal /etc/nginx/sites-enabled/faipco-portal
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t
+  systemctl reload nginx
+}
 
-if nginx -t 2>/dev/null; then
-    systemctl enable nginx --now
-    systemctl reload nginx
-    log "Nginx پیکربندی شد ✔"
-else
-    err "کانفیگ Nginx دارای خطاست: nginx -t"
-fi
+setup_ssl() {
+  if [[ "$SKIP_SSL" == "true" || -z "$DOMAIN" ]]; then
+    warn "مرحله SSL رد شد (دامنه‌ای داده نشده یا --no-ssl فعال است). پرتال فقط روی HTTP در دسترس است."
+    return
+  fi
+  log "نصب SSL رایگان (Let's Encrypt) برای دامنه ${DOMAIN}..."
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
+  if ! certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@${DOMAIN}" --redirect; then
+    warn "صدور خودکار SSL ناموفق بود (احتمالاً DNS دامنه هنوز به این سرور اشاره نمی‌کند)."
+    warn "بعداً می‌توانید دستی اجرا کنید: certbot --nginx -d ${DOMAIN}"
+  fi
+}
 
-# ═══════════════════════════════════════════════════════════
-step "مرحله ۱۰ — SSL (اختیاری)"
-# ═══════════════════════════════════════════════════════════
-if [[ "$SKIP_SSL" == "true" || -z "$DOMAIN" ]]; then
-    warn "مرحله SSL رد شد. پرتال فقط روی HTTP در دسترس است."
-    warn "برای فعال‌سازی SSL بعداً اجرا کنید: certbot --nginx -d ${DOMAIN:-yourdomain.com}"
-else
-    log "نصب SSL رایگان برای ${DOMAIN}..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
-    if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
-               -m "admin@${DOMAIN}" --redirect 2>/dev/null; then
-        log "SSL برای ${DOMAIN} فعال شد ✔"
+seed_and_create_admin() {
+  log "Seed اولیه Permission ها و نقش‌های سیستمی..."
+  cd "$INSTALL_DIR"
+  # shellcheck disable=SC1091
+  source backend/.venv/bin/activate
+  python -m scripts.seed_permissions
+
+  if [[ -z "$ADMIN_PASSWORD" ]]; then
+    ADMIN_PASSWORD="$(openssl rand -base64 12)"
+  fi
+  log "ساخت کاربر Admin اولیه..."
+  python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
+  deactivate
+}
+
+configure_firewall() {
+  log "تنظیم فایروال (UFW)..."
+  ufw allow OpenSSH >/dev/null 2>&1 || true
+  ufw allow 'Nginx Full' >/dev/null 2>&1 || true
+  ufw --force enable >/dev/null 2>&1 || true
+}
+
+print_summary() {
+  local url="http://$(hostname -I | awk '{print $1}')"
+  if [[ -n "$DOMAIN" ]]; then
+    if [[ "$SKIP_SSL" == "true" ]]; then
+      url="http://${DOMAIN}"
     else
-        warn "صدور SSL ناموفق بود (DNS ممکن است هنوز به این سرور اشاره نکند)."
-        warn "بعداً دستی اجرا کنید: certbot --nginx -d ${DOMAIN}"
+      url="https://${DOMAIN}"
     fi
-fi
+  fi
 
-# ─── فایروال ──────────────────────────────────────────────
-ufw allow OpenSSH      >/dev/null 2>&1 || true
-ufw allow 'Nginx Full' >/dev/null 2>&1 || true
-ufw --force enable     >/dev/null 2>&1 || true
+  echo ""
+  echo -e "${GREEN}=============================================="
+  echo -e " نصب FAIPCO Portal با موفقیت به پایان رسید ✅"
+  echo -e "==============================================${NC}"
+  echo -e " آدرس پرتال:        ${url}"
+  echo -e " نام کاربری Admin:   ${ADMIN_USERNAME}"
+  echo -e " رمز عبور Admin:     ${ADMIN_PASSWORD}"
+  echo -e " مسیر نصب:           ${INSTALL_DIR}"
+  echo -e " فایل تنظیمات:        ${INSTALL_DIR}/backend/.env"
+  echo -e " لاگ کامل نصب:        ${LOG_FILE}"
+  echo ""
+  echo -e "${YELLOW}⚠ این رمز عبور را همین الان در جای امنی ذخیره کنید — دیگر نمایش داده نمی‌شود.${NC}"
+  echo ""
+  echo " دستورات مفید:"
+  echo "   systemctl status faipco-backend    # وضعیت سرویس Backend"
+  echo "   journalctl -u faipco-backend -f    # مشاهده لاگ زنده Backend"
+  echo "   systemctl restart faipco-backend   # ری‌استارت Backend بعد از تغییر .env"
+  echo ""
+}
 
-# ═══════════════════════════════════════════════════════════
-# خلاصه نصب
-# ═══════════════════════════════════════════════════════════
-SERVER_IP="$(hostname -I | awk '{print $1}')"
-if [[ -n "$DOMAIN" && "$SKIP_SSL" != "true" ]]; then
-    PORTAL_URL="https://${DOMAIN}"
-else
-    PORTAL_URL="http://${SERVER_IP}"
-fi
+main() {
+  require_root
+  setup_logging
+  log "شروع نصب FAIPCO Portal... (لاگ کامل در ${LOG_FILE} ذخیره می‌شود)"
+  ensure_swap
+  install_prerequisites
+  install_nodejs
+  install_postgresql
+  fetch_source
+  setup_backend
+  generate_env
+  run_migrations
+  build_frontend
+  configure_systemd
+  configure_nginx
+  setup_ssl
+  seed_and_create_admin
+  configure_firewall
+  print_summary
+}
 
-BACKEND_OK=false; NGINX_OK=false
-systemctl is-active --quiet faipco-backend && BACKEND_OK=true
-systemctl is-active --quiet nginx && NGINX_OK=true
-
-echo ""
-echo -e "${GREEN}╔═══════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   نصب FAIPCO Portal با موفقیت به پایان رسید ✅   ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "  🌐  آدرس پرتال:       ${CYAN}${PORTAL_URL}${NC}"
-echo -e "  📁  مسیر نصب:         ${INSTALL_DIR}"
-echo -e "  📄  فایل تنظیمات:     ${INSTALL_DIR}/backend/.env"
-echo ""
-echo -e "  👤  نام کاربری Admin: ${YELLOW}${ADMIN_USERNAME}${NC}"
-echo -e "  🔑  رمز عبور Admin:   ${YELLOW}${ADMIN_PASSWORD}${NC}"
-echo ""
-echo -e "  سرویس Backend:  $($BACKEND_OK && echo "${GREEN}فعال ✔${NC}" || echo "${RED}مشکل ✘${NC}")"
-echo -e "  سرویس Nginx:   $($NGINX_OK   && echo "${GREEN}فعال ✔${NC}" || echo "${RED}مشکل ✘${NC}")"
-echo ""
-echo -e "${YELLOW}⚠  رمز عبور Admin را همین الان ذخیره کنید!${NC}"
-echo ""
-echo "  دستورات مفید:"
-echo "  ──────────────────────────────────────────────"
-echo "  systemctl status faipco-backend     # وضعیت Backend"
-echo "  journalctl -u faipco-backend -f     # لاگ زنده"
-echo "  systemctl restart faipco-backend    # ری‌استارت"
-echo "  ${PORTAL_URL}/api/docs              # مستندات API"
-echo ""
+main "$@"

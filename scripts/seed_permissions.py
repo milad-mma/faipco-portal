@@ -1,65 +1,73 @@
-#!/usr/bin/env python3
 """
-Seed اولیه Permission های سیستمی.
-این اسکریپت بعد از 'alembic upgrade head' اجرا می‌شود.
-اجرا: python -m scripts.seed_permissions
+Seed اولیه Permission ها و نقش‌های سیستمی پایه.
+این اسکریپت Idempotent است (اجرای چندباره مشکلی ایجاد نمی‌کند).
+
+اجرا:
+    cd backend
+    python -m scripts.seed_permissions
 """
 import asyncio
 import sys
-import os
+from pathlib import Path
 
-# مسیر backend را به sys.path اضافه می‌کند
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'backend', '.env'))
+from app.db.session import AsyncSessionLocal
+from app.models.user import Permission, Role, RolePermission
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://faipco_user:password@localhost:5432/faipco_portal"
-)
-
-PERMISSIONS = [
-    ("employees.view",       "مشاهده لیست پرسنل"),
-    ("employees.update",     "ویرایش اطلاعات پرسنل"),
-    ("sites.view",           "مشاهده سایت‌ها"),
-    ("sites.create",         "ایجاد و ویرایش سایت"),
-    ("sites.sync",           "همگام‌سازی پرسنل سایت"),
-    ("notices.view",         "مشاهده اطلاعیه‌ها"),
-    ("notices.create",       "ایجاد و انتشار اطلاعیه"),
-    ("departments.view",     "مشاهده واحدهای سازمانی"),
-    ("departments.create",   "ایجاد و ویرایش واحد"),
-    ("reports.view",         "مشاهده گزارشات"),
+# فهرست کامل Permission های پایه سیستم — با اضافه شدن ماژول جدید، اینجا هم باید اضافه شود
+DEFAULT_PERMISSIONS = [
+    ("employees.view", "مشاهده لیست پرسنل"),
+    ("employees.create", "افزودن دستی پرسنل"),
+    ("employees.update", "ویرایش اطلاعات پرسنل"),
+    ("sites.view", "مشاهده سایت‌ها"),
+    ("sites.manage", "مدیریت سایت‌ها و اتصال دیتابیس"),
+    ("sync.view", "مشاهده وضعیت Sync"),
+    ("sync.run", "اجرای دستی Sync"),
+    ("notices.view", "مشاهده اطلاعیه‌ها"),
+    ("notices.create", "ایجاد اطلاعیه"),
+    ("roles.manage", "مدیریت نقش‌ها و مجوزها"),
+    ("users.manage", "مدیریت کاربران Portal"),
 ]
 
 
-async def seed():
-    engine = create_async_engine(DATABASE_URL, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async def seed() -> None:
+    async with AsyncSessionLocal() as db:
+        # 1. Permission ها
+        code_to_permission: dict[str, Permission] = {}
+        for code, description in DEFAULT_PERMISSIONS:
+            result = await db.execute(select(Permission).where(Permission.code == code))
+            perm = result.scalar_one_or_none()
+            if perm is None:
+                perm = Permission(code=code, description=description)
+                db.add(perm)
+                await db.flush()
+            code_to_permission[code] = perm
 
-    async with SessionLocal() as db:
-        # import اینجا تا مسیر sys.path درست باشد
-        from app.models import Permission
-
-        created = 0
-        for name, description in PERMISSIONS:
-            result = await db.execute(
-                select(Permission).where(Permission.name == name)
+        # 2. نقش سیستمی superadmin با همه Permission ها
+        result = await db.execute(select(Role).where(Role.name == "superadmin"))
+        superadmin_role = result.scalar_one_or_none()
+        if superadmin_role is None:
+            superadmin_role = Role(
+                name="superadmin", description="دسترسی کامل به تمام بخش‌های سیستم", is_system=True
             )
-            if not result.scalar_one_or_none():
-                db.add(Permission(name=name, description=description))
-                print(f"  ✔ Created permission: {name}")
-                created += 1
-            else:
-                print(f"  - Already exists: {name}")
+            db.add(superadmin_role)
+            await db.flush()
+
+        for perm in code_to_permission.values():
+            result = await db.execute(
+                select(RolePermission).where(
+                    RolePermission.role_id == superadmin_role.id,
+                    RolePermission.permission_id == perm.id,
+                )
+            )
+            if result.scalar_one_or_none() is None:
+                db.add(RolePermission(role_id=superadmin_role.id, permission_id=perm.id))
 
         await db.commit()
-        print(f"\nSeed complete: {created} new permissions created.")
-
-    await engine.dispose()
+        print(f"Seed کامل شد: {len(code_to_permission)} Permission، نقش superadmin آماده است.")
 
 
 if __name__ == "__main__":
