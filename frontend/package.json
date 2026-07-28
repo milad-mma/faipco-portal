@@ -19,7 +19,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
     "stylis": "^4.3.4",
-    "stylis-plugin-rtl": "^2.3.0"
+    "@mui/stylis-plugin-rtl": "^7.3.8"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",
