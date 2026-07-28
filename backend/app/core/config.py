@@ -4,7 +4,16 @@
 و هرگز نباید در کد Hardcode شوند.
 """
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# مسیر backend/.env به‌صورت مطلق محاسبه می‌شود (نه نسبی) تا فرقی نکند
+# برنامه از کجا اجرا می‌شود — چه از داخل backend/ (uvicorn) و چه از ریشه
+# پروژه (مثلاً هنگام اجرای «python -m scripts.seed_permissions»).
+# این فایل در backend/app/core/config.py است؛ سه سطح بالاتر یعنی backend/.
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+_ENV_FILE_PATH = _BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -35,7 +44,7 @@ class Settings(BaseSettings):
     SYNC_INTERVAL_MINUTES: int = 30
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE_PATH,
         env_file_encoding="utf-8",
         case_sensitive=True,
     )
