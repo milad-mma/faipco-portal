@@ -13,16 +13,19 @@
 #   --no-ssl                   رد کردن مرحله SSL حتی اگر دامنه داده شده
 #   --admin-username admin     نام کاربری Admin اولیه (پیش‌فرض: admin)
 #   --admin-password '...'     رمز عبور Admin (اگر ندهید، تصادفی تولید می‌شود)
-#   --install-dir /opt/xyz     مسیر نصب (پیش‌فرض: /opt/faipco-portal)
-#   --repo <git-url>           آدرس ریپازیتوری (پیش‌فرض: همین ریپازیتوری)
+#   --install-dir /var/www/html  مسیر نصب (پیش‌فرض: /var/www/html)
+#   --repo <git-url>           آدرس ریپازیتوری
 #   --branch main              Branch مورد نظر
+#
+# لاگ کامل این نصب همیشه در /var/log/faipco-install.log ذخیره می‌شود —
+# در صورت بروز هر مشکلی، همان فایل را برای Troubleshooting بررسی کنید.
 # ============================================================
 set -euo pipefail
 
 # ---------- مقادیر پیش‌فرض ----------
 REPO_URL="${FAIPCO_REPO_URL:-https://github.com/milad-mma/faipco-portal.git}"
 REPO_BRANCH="${FAIPCO_BRANCH:-main}"
-INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/opt/faipco-portal}"
+INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
 ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-}"
@@ -30,6 +33,7 @@ SKIP_SSL="false"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
 BACKEND_PORT=8000
+LOG_FILE="/var/log/faipco-install.log"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
@@ -57,6 +61,44 @@ require_root() {
   fi
 }
 
+# ---------- ثبت کامل خروجی در فایل لاگ (برای Troubleshooting) ----------
+setup_logging() {
+  touch "$LOG_FILE"
+  # هم روی صفحه نمایش داده می‌شود و هم در فایل لاگ ذخیره می‌شود
+  exec > >(tee -a "$LOG_FILE") 2>&1
+}
+
+# اگر هر دستوری با خطا مواجه شود، دقیقاً بگو کدام خط بوده — به‌جای توقف بی‌صدا
+on_error() {
+  local exit_code=$?
+  local line_no=$1
+  err "نصب در خط ${line_no} با خطا متوقف شد (کد خروج: ${exit_code})."
+  err "برای مشاهده جزئیات کامل: cat ${LOG_FILE}"
+  exit "$exit_code"
+}
+trap 'on_error $LINENO' ERR
+
+# ---------- ایجاد Swap در صورت کمبود RAM (علت رایج توقف بی‌دلیل حین Build) ----------
+ensure_swap() {
+  local total_mem_mb
+  total_mem_mb="$(free -m | awk '/^Mem:/{print $2}')"
+  local existing_swap_mb
+  existing_swap_mb="$(free -m | awk '/^Swap:/{print $2}')"
+
+  if [[ "$total_mem_mb" -lt 2000 && "$existing_swap_mb" -lt 1 ]]; then
+    warn "RAM سرور کم است (${total_mem_mb}MB) و Swap فعال نیست — احتمال قطع شدن بی‌دلیل حین Build وجود دارد."
+    log "ساخت فایل Swap موقت ۲ گیگابایتی..."
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+    if ! grep -q "^/swapfile" /etc/fstab; then
+      echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    fi
+    log "Swap با موفقیت فعال شد."
+  fi
+}
+
 install_prerequisites() {
   log "به‌روزرسانی لیست پکیج‌ها و نصب پیش‌نیازها..."
   apt-get update -qq
@@ -77,7 +119,7 @@ install_nodejs() {
     fi
   fi
   log "نصب Node.js 20.x..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
 }
 
@@ -108,15 +150,21 @@ fetch_source() {
   if [[ -f "./backend/app/main.py" ]]; then
     log "اجرا از داخل ریپازیتوری تشخیص داده شد؛ از سورس محلی ($(pwd)) استفاده می‌شود."
     INSTALL_DIR="$(pwd)"
+    return
+  fi
+
+  log "دریافت سورس از ${REPO_URL} (branch: ${REPO_BRANCH}) در ${INSTALL_DIR}..."
+  mkdir -p "$INSTALL_DIR"
+
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
+    git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
   else
-    log "دریافت سورس از ${REPO_URL} (branch: ${REPO_BRANCH}) در ${INSTALL_DIR}..."
-    mkdir -p "$(dirname "$INSTALL_DIR")"
-    if [[ -d "$INSTALL_DIR/.git" ]]; then
-      git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
-      git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
-    else
-      git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    if [[ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
+      warn "پوشه ${INSTALL_DIR} از قبل محتوا دارد (مثلاً صفحه پیش‌فرض Nginx) — پاک‌سازی می‌شود..."
+      find "$INSTALL_DIR" -mindepth 1 -delete
     fi
+    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
 }
 
@@ -126,8 +174,8 @@ setup_backend() {
   python3 -m venv .venv
   # shellcheck disable=SC1091
   source .venv/bin/activate
-  pip install --upgrade pip -q
-  pip install -r requirements.txt -q
+  pip install --upgrade pip
+  pip install -r requirements.txt
   deactivate
 }
 
@@ -169,11 +217,16 @@ run_migrations() {
 }
 
 build_frontend() {
-  log "نصب وابستگی‌ها و Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
+  log "نصب وابستگی‌های Frontend..."
   cd "$INSTALL_DIR/frontend"
   echo "VITE_API_BASE_URL=/api/v1" > .env
-  npm install --silent
-  npm run build --silent
+
+  # نکته مهم: از --silent استفاده نمی‌کنیم چون خروجی خطا را هم مخفی می‌کند
+  # و در صورت شکست npm، اسکریپت بی‌صدا متوقف می‌شود بدون هیچ پیامی.
+  npm install --no-fund --no-audit
+
+  log "Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
+  npm run build
 }
 
 configure_systemd() {
@@ -290,6 +343,7 @@ print_summary() {
   echo -e " رمز عبور Admin:     ${ADMIN_PASSWORD}"
   echo -e " مسیر نصب:           ${INSTALL_DIR}"
   echo -e " فایل تنظیمات:        ${INSTALL_DIR}/backend/.env"
+  echo -e " لاگ کامل نصب:        ${LOG_FILE}"
   echo ""
   echo -e "${YELLOW}⚠ این رمز عبور را همین الان در جای امنی ذخیره کنید — دیگر نمایش داده نمی‌شود.${NC}"
   echo ""
@@ -302,7 +356,9 @@ print_summary() {
 
 main() {
   require_root
-  log "شروع نصب FAIPCO Portal..."
+  setup_logging
+  log "شروع نصب FAIPCO Portal... (لاگ کامل در ${LOG_FILE} ذخیره می‌شود)"
+  ensure_swap
   install_prerequisites
   install_nodejs
   install_postgresql
