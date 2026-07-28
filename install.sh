@@ -3,7 +3,7 @@
 # FAIPCO Portal — نصب خودکار روی Ubuntu Server (22.04 / 24.04)
 #
 # اجرا (نصب مستقیم از GitHub):
-#   curl -fsSL https://raw.githubusercontent.com/USER/faipco-portal/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 #
 # یا به‌صورت محلی (وقتی ریپازیتوری از قبل Clone شده):
 #   sudo bash install.sh
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ---------- مقادیر پیش‌فرض ----------
-REPO_URL="${FAIPCO_REPO_URL:-https://github.com/USER/faipco-portal.git}"
+REPO_URL="${FAIPCO_REPO_URL:-https://github.com/milad-mma/faipco-portal.git}"
 REPO_BRANCH="${FAIPCO_BRANCH:-main}"
 INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/opt/faipco-portal}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
