@@ -225,13 +225,13 @@ frontend/src/
 روی یک Ubuntu Server تازه (22.04 یا 24.04)، با دسترسی root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USER/faipco-portal/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 ```
 
 یا با دامنه و SSL خودکار:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USER/faipco-portal/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh -o install.sh
 sudo bash install.sh --domain portal.mycompany.com --admin-username admin
 ```
 
