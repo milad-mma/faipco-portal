@@ -9,13 +9,13 @@
 #   sudo bash install.sh
 #
 # آرگومان‌های اختیاری:
-#   --domain example.com       دامنه (برای Nginx + SSL خودکار)
-#   --no-ssl                   رد کردن مرحله SSL حتی اگر دامنه داده شده
-#   --admin-username admin     نام کاربری Admin اولیه (پیش‌فرض: admin)
-#   --admin-password '...'     رمز عبور Admin (اگر ندهید، تصادفی تولید می‌شود)
-#   --install-dir /var/www/html  مسیر نصب (پیش‌فرض: /var/www/html)
-#   --repo <git-url>           آدرس ریپازیتوری
-#   --branch main              Branch مورد نظر
+#   --domain example.com          دامنه (برای Nginx + SSL خودکار)
+#   --no-ssl                      رد کردن مرحله SSL حتی اگر دامنه داده شده
+#   --admin-username admin        نام کاربری Admin اولیه (پیش‌فرض: admin)
+#   --admin-password '...'        رمز عبور Admin (پیش‌فرض: admin — برای Production عوضش کنید)
+#   --install-dir /var/www/html   مسیر نصب (پیش‌فرض: /var/www/html)
+#   --repo <git-url>              آدرس ریپازیتوری
+#   --branch main                 Branch مورد نظر
 #
 # لاگ کامل این نصب همیشه در /var/log/faipco-install.log ذخیره می‌شود —
 # در صورت بروز هر مشکلی، همان فایل را برای Troubleshooting بررسی کنید.
@@ -28,17 +28,18 @@ REPO_BRANCH="${FAIPCO_BRANCH:-main}"
 INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
 ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
-ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-}"
+ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-admin}"
 SKIP_SSL="false"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
 BACKEND_PORT=8000
 LOG_FILE="/var/log/faipco-install.log"
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[هشدار]${NC} $1"; }
-err()  { echo -e "${RED}[خطا]${NC} $1" >&2; }
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+log()   { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[هشدار]${NC} $1"; }
+err()   { echo -e "${RED}[خطا]${NC} $1" >&2; }
+stage() { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 
 # ---------- پارس آرگومان‌ها ----------
 while [[ $# -gt 0 ]]; do
@@ -64,7 +65,6 @@ require_root() {
 # ---------- ثبت کامل خروجی در فایل لاگ (برای Troubleshooting) ----------
 setup_logging() {
   touch "$LOG_FILE"
-  # هم روی صفحه نمایش داده می‌شود و هم در فایل لاگ ذخیره می‌شود
   exec > >(tee -a "$LOG_FILE") 2>&1
 }
 
@@ -78,23 +78,19 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
-# ---------- ایجاد Swap در صورت کمبود RAM (علت رایج توقف بی‌دلیل حین Build) ----------
+# ---------- ایجاد Swap در صورت کمبود RAM ----------
 ensure_swap() {
-  local total_mem_mb
+  local total_mem_mb existing_swap_mb
   total_mem_mb="$(free -m | awk '/^Mem:/{print $2}')"
-  local existing_swap_mb
   existing_swap_mb="$(free -m | awk '/^Swap:/{print $2}')"
 
   if [[ "$total_mem_mb" -lt 2000 && "$existing_swap_mb" -lt 1 ]]; then
-    warn "RAM سرور کم است (${total_mem_mb}MB) و Swap فعال نیست — احتمال قطع شدن بی‌دلیل حین Build وجود دارد."
-    log "ساخت فایل Swap موقت ۲ گیگابایتی..."
+    warn "RAM سرور کم است (${total_mem_mb}MB) و Swap فعال نیست — فایل Swap موقت ساخته می‌شود."
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile >/dev/null
     swapon /swapfile
-    if ! grep -q "^/swapfile" /etc/fstab; then
-      echo "/swapfile none swap sw 0 0" >> /etc/fstab
-    fi
+    grep -q "^/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
     log "Swap با موفقیت فعال شد."
   fi
 }
@@ -146,6 +142,27 @@ install_postgresql() {
   fi
 }
 
+# ---------- پاک‌سازی خودکار دیتابیس نیمه‌کاره از یک اجرای قبلی ناموفق ----------
+# اگر جدول‌هایی در دیتابیس هست ولی جدول alembic_version نیست، یعنی یک اجرای
+# قبلی وسط Migration متوقف شده (مثلاً به‌خاطر مشکل بعدی مثل Build فرانت‌اند).
+# در این حالت، تلاش دوباره برای اجرای همان Migration خطای «از قبل وجود دارد»
+# می‌دهد (برای Enum/Type ها). پس اسکیمای ناقص را کامل پاک می‌کنیم تا Migration
+# از صفر و تمیز اجرا شود. این کار هیچ داده‌ای را که واقعاً استفاده شده از بین
+# نمی‌برد، چون فقط زمانی اجرا می‌شود که Migration قبلی اصلاً کامل نشده باشد.
+reset_stale_schema_if_needed() {
+  local has_alembic_version has_other_tables
+  has_alembic_version="$(sudo -u postgres psql -d "$DB_NAME" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'" 2>/dev/null || true)"
+  has_other_tables="$(sudo -u postgres psql -d "$DB_NAME" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' LIMIT 1" 2>/dev/null || true)"
+
+  if [[ -z "$has_alembic_version" && -n "$has_other_tables" ]]; then
+    warn "دیتابیس شامل جدول‌های ناقص از یک اجرای قبلی ناموفق است — پاک‌سازی و آماده‌سازی مجدد..."
+    sudo -u postgres psql -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${DB_USER}; GRANT ALL ON SCHEMA public TO public;" >/dev/null
+    log "اسکیمای دیتابیس پاک‌سازی شد و آماده Migration تازه است."
+  fi
+}
+
 fetch_source() {
   if [[ -f "./backend/app/main.py" ]]; then
     log "اجرا از داخل ریپازیتوری تشخیص داده شد؛ از سورس محلی ($(pwd)) استفاده می‌شود."
@@ -157,6 +174,7 @@ fetch_source() {
   mkdir -p "$INSTALL_DIR"
 
   if [[ -d "$INSTALL_DIR/.git" ]]; then
+    log "سورس از قبل در ${INSTALL_DIR} وجود دارد. به‌روزرسانی..."
     git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
     git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
   else
@@ -166,6 +184,7 @@ fetch_source() {
     fi
     git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
+  log "سورس‌کد آماده است در: ${INSTALL_DIR}"
 }
 
 setup_backend() {
@@ -177,6 +196,7 @@ setup_backend() {
   pip install --upgrade pip
   pip install -r requirements.txt
   deactivate
+  log "وابستگی‌های Backend نصب شدند"
 }
 
 generate_env() {
@@ -205,10 +225,12 @@ SYNC_ENABLED=true
 SYNC_INTERVAL_MINUTES=30
 EOF
   chmod 600 "$INSTALL_DIR/backend/.env"
+  log "فایل .env ساخته شد"
 }
 
 run_migrations() {
-  log "اجرای Migration های دیتابیس (Alembic)..."
+  log "اجرای Alembic migrations..."
+  reset_stale_schema_if_needed
   cd "$INSTALL_DIR/backend"
   # shellcheck disable=SC1091
   source .venv/bin/activate
@@ -221,8 +243,7 @@ build_frontend() {
   cd "$INSTALL_DIR/frontend"
   echo "VITE_API_BASE_URL=/api/v1" > .env
 
-  # نکته مهم: از --silent استفاده نمی‌کنیم چون خروجی خطا را هم مخفی می‌کند
-  # و در صورت شکست npm، اسکریپت بی‌صدا متوقف می‌شود بدون هیچ پیامی.
+  # نکته: از --silent استفاده نمی‌کنیم چون خروجی خطا را هم مخفی می‌کند
   npm install --no-fund --no-audit
 
   log "Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
@@ -309,12 +330,13 @@ seed_and_create_admin() {
   source backend/.venv/bin/activate
   python -m scripts.seed_permissions
 
-  if [[ -z "$ADMIN_PASSWORD" ]]; then
-    ADMIN_PASSWORD="$(openssl rand -base64 12)"
-  fi
   log "ساخت کاربر Admin اولیه..."
   python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
   deactivate
+
+  if [[ "$ADMIN_PASSWORD" == "admin" ]]; then
+    warn "رمز عبور Admin روی مقدار پیش‌فرض 'admin' است — حتماً بعد از اولین ورود آن را عوض کنید."
+  fi
 }
 
 configure_firewall() {
@@ -345,7 +367,7 @@ print_summary() {
   echo -e " فایل تنظیمات:        ${INSTALL_DIR}/backend/.env"
   echo -e " لاگ کامل نصب:        ${LOG_FILE}"
   echo ""
-  echo -e "${YELLOW}⚠ این رمز عبور را همین الان در جای امنی ذخیره کنید — دیگر نمایش داده نمی‌شود.${NC}"
+  echo -e "${YELLOW}⚠ اگر از رمز پیش‌فرض استفاده کردید، همین الان بعد از ورود عوضش کنید.${NC}"
   echo ""
   echo " دستورات مفید:"
   echo "   systemctl status faipco-backend    # وضعیت سرویس Backend"
@@ -358,20 +380,37 @@ main() {
   require_root
   setup_logging
   log "شروع نصب FAIPCO Portal... (لاگ کامل در ${LOG_FILE} ذخیره می‌شود)"
+
+  stage "مرحله ۱ — نصب پیش‌نیازها"
   ensure_swap
   install_prerequisites
   install_nodejs
   install_postgresql
+
+  stage "مرحله ۲ — دریافت سورس‌کد"
   fetch_source
+
+  stage "مرحله ۳ — راه‌اندازی Backend"
   setup_backend
+
+  stage "مرحله ۴ — تولید فایل .env"
   generate_env
+
+  stage "مرحله ۵ — Migration های دیتابیس"
   run_migrations
+
+  stage "مرحله ۶ — Build کردن Frontend"
   build_frontend
+
+  stage "مرحله ۷ — پیکربندی سرویس‌ها"
   configure_systemd
   configure_nginx
   setup_ssl
+
+  stage "مرحله ۸ — کاربر Admin و امنیت"
   seed_and_create_admin
   configure_firewall
+
   print_summary
 }
 
