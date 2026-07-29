@@ -142,25 +142,19 @@ install_postgresql() {
   fi
 }
 
-# ---------- پاک‌سازی خودکار دیتابیس نیمه‌کاره از یک اجرای قبلی ناموفق ----------
-# اگر جدول‌هایی در دیتابیس هست ولی جدول alembic_version نیست، یعنی یک اجرای
-# قبلی وسط Migration متوقف شده (مثلاً به‌خاطر مشکل بعدی مثل Build فرانت‌اند).
-# در این حالت، تلاش دوباره برای اجرای همان Migration خطای «از قبل وجود دارد»
-# می‌دهد (برای Enum/Type ها). پس اسکیمای ناقص را کامل پاک می‌کنیم تا Migration
-# از صفر و تمیز اجرا شود. این کار هیچ داده‌ای را که واقعاً استفاده شده از بین
-# نمی‌برد، چون فقط زمانی اجرا می‌شود که Migration قبلی اصلاً کامل نشده باشد.
-reset_stale_schema_if_needed() {
-  local has_alembic_version has_other_tables
-  has_alembic_version="$(sudo -u postgres psql -d "$DB_NAME" -tAc \
-    "SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'" 2>/dev/null || true)"
-  has_other_tables="$(sudo -u postgres psql -d "$DB_NAME" -tAc \
-    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' LIMIT 1" 2>/dev/null || true)"
-
-  if [[ -z "$has_alembic_version" && -n "$has_other_tables" ]]; then
-    warn "دیتابیس شامل جدول‌های ناقص از یک اجرای قبلی ناموفق است — پاک‌سازی و آماده‌سازی مجدد..."
-    sudo -u postgres psql -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${DB_USER}; GRANT ALL ON SCHEMA public TO public;" >/dev/null
-    log "اسکیمای دیتابیس پاک‌سازی شد و آماده Migration تازه است."
-  fi
+# ---------- پاک‌سازی قطعی Schema قبل از هر Migration ----------
+# به‌جای حدس زدن که آیا اجرای قبلی نیمه‌کاره مانده یا نه (که ممکن است تشخیص
+# ندهد — مثلاً وقتی فقط یک Type بدون هیچ جدولی باقی مانده باشد)، همیشه و
+# بدون قید و شرط کل Schema را پاک و از نو می‌سازیم. این تضمین می‌کند Migration
+# همیشه از یک نقطه کاملاً تمیز اجرا شود و خطای «از قبل وجود دارد» دیگر رخ ندهد.
+#
+# نکته: چون Portal هنوز داده واقعی مشتری در این مرحله ندارد (نصب/بازنصب اولیه)،
+# این رفتار امن است. برای Upgrade واقعی روی سروری با داده واقعی، به‌جای اجرای
+# install.sh از ابتدا، فقط `alembic upgrade head` را جداگانه اجرا کنید.
+reset_schema() {
+  log "پاک‌سازی کامل Schema دیتابیس برای اطمینان از Migration تمیز..."
+  sudo -u postgres psql -d "$DB_NAME" -c \
+    "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${DB_USER}; GRANT ALL ON SCHEMA public TO public;" >/dev/null
 }
 
 fetch_source() {
@@ -229,8 +223,8 @@ EOF
 }
 
 run_migrations() {
+  reset_schema
   log "اجرای Alembic migrations..."
-  reset_stale_schema_if_needed
   cd "$INSTALL_DIR/backend"
   # shellcheck disable=SC1091
   source .venv/bin/activate
