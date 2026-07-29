@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # ============================================================
-# FAIPCO Portal — نصب خودکار روی Ubuntu Server (22.04 / 24.04)
+# FAIPCO Portal — Automated installer for Ubuntu Server (22.04 / 24.04)
 #
-# اجرا (نصب مستقیم از GitHub):
+# Run (install directly from GitHub):
 #   curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 #
-# یا به‌صورت محلی (وقتی ریپازیتوری از قبل Clone شده):
+# Or locally (when the repository is already cloned):
 #   sudo bash install.sh
 #
-# آرگومان‌های اختیاری:
-#   --domain example.com          دامنه (برای Nginx + SSL خودکار)
-#   --no-ssl                      رد کردن مرحله SSL حتی اگر دامنه داده شده
-#   --admin-username admin        نام کاربری Admin اولیه (پیش‌فرض: admin)
-#   --admin-password '...'        رمز عبور Admin (پیش‌فرض: admin — برای Production عوضش کنید)
-#   --install-dir /var/www/html   مسیر نصب (پیش‌فرض: /var/www/html)
-#   --repo <git-url>              آدرس ریپازیتوری
-#   --branch main                 Branch مورد نظر
+# Optional arguments:
+#   --domain example.com          Domain name (for Nginx + automatic SSL)
+#   --no-ssl                      Skip the SSL step even if a domain is given
+#   --admin-username admin        Initial admin username (default: admin)
+#   --admin-password '...'        Admin password (default: admin — change it for production)
+#   --install-dir /var/www/html   Install path (default: /var/www/html)
+#   --repo <git-url>              Repository URL
+#   --branch main                 Branch to use
 #
-# لاگ کامل این نصب همیشه در /var/log/faipco-install.log ذخیره می‌شود —
-# در صورت بروز هر مشکلی، همان فایل را برای Troubleshooting بررسی کنید.
+# The full install log is always saved to /var/log/faipco-install.log —
+# check that file for troubleshooting if anything goes wrong.
 # ============================================================
 set -euo pipefail
 
-# ---------- مقادیر پیش‌فرض ----------
+# ---------- Defaults ----------
 REPO_URL="${FAIPCO_REPO_URL:-https://github.com/milad-mma/faipco-portal.git}"
 REPO_BRANCH="${FAIPCO_BRANCH:-main}"
 INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
@@ -37,11 +37,11 @@ LOG_FILE="/var/log/faipco-install.log"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[هشدار]${NC} $1"; }
-err()   { echo -e "${RED}[خطا]${NC} $1" >&2; }
-stage() { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+err()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+stage() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 
-# ---------- پارس آرگومان‌ها ----------
+# ---------- Parse arguments ----------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain) DOMAIN="$2"; shift 2 ;;
@@ -51,52 +51,52 @@ while [[ $# -gt 0 ]]; do
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
     --repo) REPO_URL="$2"; shift 2 ;;
     --branch) REPO_BRANCH="$2"; shift 2 ;;
-    *) err "آرگومان ناشناخته: $1"; exit 1 ;;
+    *) err "Unknown argument: $1"; exit 1 ;;
   esac
 done
 
 require_root() {
   if [[ $EUID -ne 0 ]]; then
-    err "این اسکریپت باید با دسترسی root یا sudo اجرا شود. مثال: sudo bash install.sh"
+    err "This script must be run as root or with sudo. Example: sudo bash install.sh"
     exit 1
   fi
 }
 
-# ---------- ثبت کامل خروجی در فایل لاگ (برای Troubleshooting) ----------
+# ---------- Log everything to a file (for troubleshooting) ----------
 setup_logging() {
   touch "$LOG_FILE"
   exec > >(tee -a "$LOG_FILE") 2>&1
 }
 
-# اگر هر دستوری با خطا مواجه شود، دقیقاً بگو کدام خط بوده — به‌جای توقف بی‌صدا
+# If any command fails, report exactly which line — instead of failing silently
 on_error() {
   local exit_code=$?
   local line_no=$1
-  err "نصب در خط ${line_no} با خطا متوقف شد (کد خروج: ${exit_code})."
-  err "برای مشاهده جزئیات کامل: cat ${LOG_FILE}"
+  err "Install failed at line ${line_no} (exit code: ${exit_code})."
+  err "For full details: cat ${LOG_FILE}"
   exit "$exit_code"
 }
 trap 'on_error $LINENO' ERR
 
-# ---------- ایجاد Swap در صورت کمبود RAM ----------
+# ---------- Create swap if RAM is low ----------
 ensure_swap() {
   local total_mem_mb existing_swap_mb
   total_mem_mb="$(free -m | awk '/^Mem:/{print $2}')"
   existing_swap_mb="$(free -m | awk '/^Swap:/{print $2}')"
 
   if [[ "$total_mem_mb" -lt 2000 && "$existing_swap_mb" -lt 1 ]]; then
-    warn "RAM سرور کم است (${total_mem_mb}MB) و Swap فعال نیست — فایل Swap موقت ساخته می‌شود."
+    warn "Server RAM is low (${total_mem_mb}MB) and no swap is active — creating a temporary swap file."
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile >/dev/null
     swapon /swapfile
     grep -q "^/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
-    log "Swap با موفقیت فعال شد."
+    log "Swap enabled successfully."
   fi
 }
 
 install_prerequisites() {
-  log "به‌روزرسانی لیست پکیج‌ها و نصب پیش‌نیازها..."
+  log "Updating package lists and installing prerequisites..."
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     curl git build-essential software-properties-common \
@@ -110,27 +110,27 @@ install_nodejs() {
     local major_version
     major_version="$(node -v | grep -oE '^v[0-9]+' | tr -d v)"
     if [[ "$major_version" -ge 18 ]]; then
-      log "Node.js از قبل نصب است: $(node -v)"
+      log "Node.js is already installed: $(node -v)"
       return
     fi
   fi
-  log "نصب Node.js 20.x..."
+  log "Installing Node.js 20.x..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
 }
 
 install_postgresql() {
   if ! command -v psql >/dev/null 2>&1; then
-    log "نصب PostgreSQL..."
+    log "Installing PostgreSQL..."
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql postgresql-contrib
   else
-    log "PostgreSQL از قبل نصب است."
+    log "PostgreSQL is already installed."
   fi
   systemctl enable --now postgresql
 
   DB_PASSWORD="$(openssl rand -hex 16)"
 
-  log "تنظیم کاربر و دیتابیس Portal در PostgreSQL..."
+  log "Setting up the Portal user and database in PostgreSQL..."
   if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
     sudo -u postgres psql -c "ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" >/dev/null
   else
@@ -142,47 +142,48 @@ install_postgresql() {
   fi
 }
 
-# ---------- پاک‌سازی قطعی Schema قبل از هر Migration ----------
-# به‌جای حدس زدن که آیا اجرای قبلی نیمه‌کاره مانده یا نه (که ممکن است تشخیص
-# ندهد — مثلاً وقتی فقط یک Type بدون هیچ جدولی باقی مانده باشد)، همیشه و
-# بدون قید و شرط کل Schema را پاک و از نو می‌سازیم. این تضمین می‌کند Migration
-# همیشه از یک نقطه کاملاً تمیز اجرا شود و خطای «از قبل وجود دارد» دیگر رخ ندهد.
+# ---------- Unconditionally reset the schema before every migration ----------
+# Instead of guessing whether a previous run left things half-done (which can
+# miss cases — e.g. only an orphaned type with no tables), we always drop and
+# recreate the whole schema. This guarantees migrations run from a clean state
+# every time and the "already exists" error can never happen again.
 #
-# نکته: چون Portal هنوز داده واقعی مشتری در این مرحله ندارد (نصب/بازنصب اولیه)،
-# این رفتار امن است. برای Upgrade واقعی روی سروری با داده واقعی، به‌جای اجرای
-# install.sh از ابتدا، فقط `alembic upgrade head` را جداگانه اجرا کنید.
+# Note: since the Portal has no real customer data at this stage (initial
+# install/reinstall), this is safe. For a real upgrade on a server with real
+# data, don't rerun install.sh from scratch — just run `alembic upgrade head`
+# on its own instead.
 reset_schema() {
-  log "پاک‌سازی کامل Schema دیتابیس برای اطمینان از Migration تمیز..."
+  log "Resetting the database schema to guarantee a clean migration..."
   sudo -u postgres psql -d "$DB_NAME" -c \
     "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${DB_USER}; GRANT ALL ON SCHEMA public TO public;" >/dev/null
 }
 
 fetch_source() {
   if [[ -f "./backend/app/main.py" ]]; then
-    log "اجرا از داخل ریپازیتوری تشخیص داده شد؛ از سورس محلی ($(pwd)) استفاده می‌شود."
+    log "Running from inside the repository; using local source at $(pwd)."
     INSTALL_DIR="$(pwd)"
     return
   fi
 
-  log "دریافت سورس از ${REPO_URL} (branch: ${REPO_BRANCH}) در ${INSTALL_DIR}..."
+  log "Fetching source from ${REPO_URL} (branch: ${REPO_BRANCH}) into ${INSTALL_DIR}..."
   mkdir -p "$INSTALL_DIR"
 
   if [[ -d "$INSTALL_DIR/.git" ]]; then
-    log "سورس از قبل در ${INSTALL_DIR} وجود دارد. به‌روزرسانی..."
+    log "Source already exists at ${INSTALL_DIR}. Updating..."
     git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
     git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
   else
     if [[ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
-      warn "پوشه ${INSTALL_DIR} از قبل محتوا دارد (مثلاً صفحه پیش‌فرض Nginx) — پاک‌سازی می‌شود..."
+      warn "Directory ${INSTALL_DIR} already has content (e.g. Nginx's default page) — clearing it..."
       find "$INSTALL_DIR" -mindepth 1 -delete
     fi
     git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
-  log "سورس‌کد آماده است در: ${INSTALL_DIR}"
+  log "Source code ready at: ${INSTALL_DIR}"
 }
 
 setup_backend() {
-  log "ساخت Virtual Environment و نصب وابستگی‌های Backend..."
+  log "Creating virtual environment and installing backend dependencies..."
   cd "$INSTALL_DIR/backend"
   python3 -m venv .venv
   # shellcheck disable=SC1091
@@ -190,11 +191,11 @@ setup_backend() {
   pip install --upgrade pip
   pip install -r requirements.txt
   deactivate
-  log "وابستگی‌های Backend نصب شدند"
+  log "Backend dependencies installed"
 }
 
 generate_env() {
-  log "تولید فایل .env با کلیدهای امنیتی یکتا..."
+  log "Generating .env file with unique security keys..."
   local secret_key fernet_key
   secret_key="$(openssl rand -hex 32)"
   fernet_key="$("$INSTALL_DIR/backend/.venv/bin/python" -c \
@@ -219,12 +220,12 @@ SYNC_ENABLED=true
 SYNC_INTERVAL_MINUTES=30
 EOF
   chmod 600 "$INSTALL_DIR/backend/.env"
-  log "فایل .env ساخته شد"
+  log ".env file created"
 }
 
 run_migrations() {
   reset_schema
-  log "اجرای Alembic migrations..."
+  log "Running Alembic migrations..."
   cd "$INSTALL_DIR/backend"
   # shellcheck disable=SC1091
   source .venv/bin/activate
@@ -233,19 +234,19 @@ run_migrations() {
 }
 
 build_frontend() {
-  log "نصب وابستگی‌های Frontend..."
+  log "Installing frontend dependencies..."
   cd "$INSTALL_DIR/frontend"
   echo "VITE_API_BASE_URL=/api/v1" > .env
 
-  # نکته: از --silent استفاده نمی‌کنیم چون خروجی خطا را هم مخفی می‌کند
+  # Note: we don't use --silent because it also hides error output
   npm install --no-fund --no-audit
 
-  log "Build کردن Frontend (ممکن است چند دقیقه طول بکشد)..."
+  log "Building frontend (this may take a few minutes)..."
   npm run build
 }
 
 configure_systemd() {
-  log "ساخت Service systemd برای Backend..."
+  log "Creating systemd service for the backend..."
   cat > /etc/systemd/system/faipco-backend.service <<EOF
 [Unit]
 Description=FAIPCO Portal Backend (FastAPI)
@@ -273,7 +274,7 @@ EOF
 }
 
 configure_nginx() {
-  log "پیکربندی Nginx..."
+  log "Configuring Nginx..."
   local server_name="${DOMAIN:-_}"
 
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
@@ -306,35 +307,35 @@ EOF
 
 setup_ssl() {
   if [[ "$SKIP_SSL" == "true" || -z "$DOMAIN" ]]; then
-    warn "مرحله SSL رد شد (دامنه‌ای داده نشده یا --no-ssl فعال است). پرتال فقط روی HTTP در دسترس است."
+    warn "Skipping SSL (no domain given, or --no-ssl was passed). The portal is only reachable over HTTP."
     return
   fi
-  log "نصب SSL رایگان (Let's Encrypt) برای دامنه ${DOMAIN}..."
+  log "Installing free SSL (Let's Encrypt) for domain ${DOMAIN}..."
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
   if ! certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@${DOMAIN}" --redirect; then
-    warn "صدور خودکار SSL ناموفق بود (احتمالاً DNS دامنه هنوز به این سرور اشاره نمی‌کند)."
-    warn "بعداً می‌توانید دستی اجرا کنید: certbot --nginx -d ${DOMAIN}"
+    warn "Automatic SSL issuance failed (the domain's DNS may not point to this server yet)."
+    warn "You can run it manually later: certbot --nginx -d ${DOMAIN}"
   fi
 }
 
 seed_and_create_admin() {
-  log "Seed اولیه Permission ها و نقش‌های سیستمی..."
+  log "Seeding initial permissions and system roles..."
   cd "$INSTALL_DIR"
   # shellcheck disable=SC1091
   source backend/.venv/bin/activate
   python -m scripts.seed_permissions
 
-  log "ساخت کاربر Admin اولیه..."
+  log "Creating the initial admin user..."
   python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
   deactivate
 
   if [[ "$ADMIN_PASSWORD" == "admin" ]]; then
-    warn "رمز عبور Admin روی مقدار پیش‌فرض 'admin' است — حتماً بعد از اولین ورود آن را عوض کنید."
+    warn "The admin password is set to the default 'admin' — change it right after your first login."
   fi
 }
 
 configure_firewall() {
-  log "تنظیم فایروال (UFW)..."
+  log "Configuring firewall (UFW)..."
   ufw allow OpenSSH >/dev/null 2>&1 || true
   ufw allow 'Nginx Full' >/dev/null 2>&1 || true
   ufw --force enable >/dev/null 2>&1 || true
@@ -352,56 +353,56 @@ print_summary() {
 
   echo ""
   echo -e "${GREEN}=============================================="
-  echo -e " نصب FAIPCO Portal با موفقیت به پایان رسید ✅"
+  echo -e " FAIPCO Portal installed successfully  ✅"
   echo -e "==============================================${NC}"
-  echo -e " آدرس پرتال:        ${url}"
-  echo -e " نام کاربری Admin:   ${ADMIN_USERNAME}"
-  echo -e " رمز عبور Admin:     ${ADMIN_PASSWORD}"
-  echo -e " مسیر نصب:           ${INSTALL_DIR}"
-  echo -e " فایل تنظیمات:        ${INSTALL_DIR}/backend/.env"
-  echo -e " لاگ کامل نصب:        ${LOG_FILE}"
+  echo -e " Portal URL:      ${url}"
+  echo -e " Admin username:  ${ADMIN_USERNAME}"
+  echo -e " Admin password:  ${ADMIN_PASSWORD}"
+  echo -e " Install path:    ${INSTALL_DIR}"
+  echo -e " Config file:     ${INSTALL_DIR}/backend/.env"
+  echo -e " Full install log: ${LOG_FILE}"
   echo ""
-  echo -e "${YELLOW}⚠ اگر از رمز پیش‌فرض استفاده کردید، همین الان بعد از ورود عوضش کنید.${NC}"
+  echo -e "${YELLOW}⚠ If you used the default password, change it right after logging in.${NC}"
   echo ""
-  echo " دستورات مفید:"
-  echo "   systemctl status faipco-backend    # وضعیت سرویس Backend"
-  echo "   journalctl -u faipco-backend -f    # مشاهده لاگ زنده Backend"
-  echo "   systemctl restart faipco-backend   # ری‌استارت Backend بعد از تغییر .env"
+  echo " Useful commands:"
+  echo "   systemctl status faipco-backend    # Backend service status"
+  echo "   journalctl -u faipco-backend -f    # Live backend logs"
+  echo "   systemctl restart faipco-backend   # Restart backend after editing .env"
   echo ""
 }
 
 main() {
   require_root
   setup_logging
-  log "شروع نصب FAIPCO Portal... (لاگ کامل در ${LOG_FILE} ذخیره می‌شود)"
+  log "Starting FAIPCO Portal installation... (full log saved to ${LOG_FILE})"
 
-  stage "مرحله ۱ — نصب پیش‌نیازها"
+  stage "Step 1 - Installing prerequisites"
   ensure_swap
   install_prerequisites
   install_nodejs
   install_postgresql
 
-  stage "مرحله ۲ — دریافت سورس‌کد"
+  stage "Step 2 - Fetching source code"
   fetch_source
 
-  stage "مرحله ۳ — راه‌اندازی Backend"
+  stage "Step 3 - Setting up backend"
   setup_backend
 
-  stage "مرحله ۴ — تولید فایل .env"
+  stage "Step 4 - Generating .env file"
   generate_env
 
-  stage "مرحله ۵ — Migration های دیتابیس"
+  stage "Step 5 - Database migrations"
   run_migrations
 
-  stage "مرحله ۶ — Build کردن Frontend"
+  stage "Step 6 - Building frontend"
   build_frontend
 
-  stage "مرحله ۷ — پیکربندی سرویس‌ها"
+  stage "Step 7 - Configuring services"
   configure_systemd
   configure_nginx
   setup_ssl
 
-  stage "مرحله ۸ — کاربر Admin و امنیت"
+  stage "Step 8 - Admin user and security"
   seed_and_create_admin
   configure_firewall
 
