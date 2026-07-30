@@ -9,6 +9,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     verify_password,
 )
 from app.models.user import User
@@ -52,3 +53,9 @@ class AuthService:
             raise AuthError("کاربر یافت نشد یا غیرفعال است")
 
         return create_access_token(subject=str(user.id))
+
+    async def change_password(self, user: User, current_password: str, new_password: str) -> None:
+        if not verify_password(current_password, user.password_hash):
+            raise AuthError("رمز عبور فعلی اشتباه است")
+        user.password_hash = hash_password(new_password)
+        await self.db.commit()

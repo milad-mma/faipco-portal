@@ -1,7 +1,13 @@
 """
 منطق تجاری سیستم اطلاعیه‌ها.
 
-نکته مهم درباره «قابل‌مشاهده بودن»:
+نکته فنی مهم: رابطه Notice.targets همیشه با selectinload به‌صورت Eager
+واکشی می‌شود. اگر این کار انجام نشود، دسترسی به notice.targets (که در
+NoticeOut هنگام تبدیل به JSON لازم است) باعث Lazy Load می‌شود که زیر
+AsyncSession مجاز نیست و خطای MissingGreenlet می‌دهد — این دقیقاً همان
+باگی بود که باعث می‌شد ثبت/انتشار/مشاهده اطلاعیه‌ها به‌کلی کار نکند.
+
+نکته درباره «قابل‌مشاهده بودن»:
 یک اطلاعیه برای کاربر X قابل‌مشاهده است اگر حداقل یکی از Target هایش یکی از این‌ها باشد:
   - all
   - site == سایت پرسنل متصل به حساب کاربر
@@ -14,6 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType
@@ -41,22 +48,28 @@ class NoticeService:
             )
         self.db.add(notice)
         await self.db.commit()
-        await self.db.refresh(notice, attribute_names=["targets"])
+        # چون expire_on_commit=False است، لیست targets که پیش از commit
+        # پر شده همچنان در حافظه معتبر است — نیازی به refresh نیست
+        # (refresh کردن یک رابطه در AsyncSession می‌تواند خطای MissingGreenlet بدهد).
         return notice
 
     async def publish_notice(self, notice_id: int) -> Notice | None:
-        notice = await self.db.get(Notice, notice_id)
+        result = await self.db.execute(
+            select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
+        )
+        notice = result.scalar_one_or_none()
         if notice is None:
             return None
         notice.status = NoticeStatus.published
         if notice.publish_at is None:
             notice.publish_at = datetime.now(timezone.utc)
         await self.db.commit()
-        await self.db.refresh(notice, attribute_names=["targets"])
         return notice
 
     async def list_all(self) -> list[Notice]:
-        result = await self.db.execute(select(Notice).order_by(Notice.created_at.desc()))
+        result = await self.db.execute(
+            select(Notice).options(selectinload(Notice.targets)).order_by(Notice.created_at.desc())
+        )
         return list(result.scalars().unique().all())
 
     async def list_for_user(self, user: User) -> list[Notice]:
@@ -100,6 +113,7 @@ class NoticeService:
 
         stmt = (
             select(Notice)
+            .options(selectinload(Notice.targets))
             .join(NoticeTarget, NoticeTarget.notice_id == Notice.id)
             .where(
                 Notice.status == NoticeStatus.published,

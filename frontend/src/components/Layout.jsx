@@ -23,7 +23,9 @@ import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import { useAuth } from "../context/AuthContext";
+import ChangePasswordDialog from "./ChangePasswordDialog";
 
 const DRAWER_WIDTH = 260;
 
@@ -40,6 +42,7 @@ export default function Layout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState(null);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   const drawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -56,6 +59,7 @@ export default function Layout() {
             color: "secondary.main",
             fontWeight: 800,
             fontSize: 16,
+            flexShrink: 0,
           }}
         >
           F
@@ -73,6 +77,7 @@ export default function Layout() {
               key={item.path}
               component={RouterLink}
               to={item.path}
+              onClick={() => setMobileOpen(false)}
               selected={isActive}
               sx={{
                 borderRadius: 2,
@@ -102,7 +107,7 @@ export default function Layout() {
   );
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <AppBar
         position="fixed"
         elevation={0}
@@ -112,6 +117,7 @@ export default function Layout() {
           borderBottom: "1px solid",
           borderColor: "divider",
           backgroundColor: "background.paper",
+          zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
@@ -126,7 +132,7 @@ export default function Layout() {
           <Box />
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", sm: "block" } }}>
               {user?.username}
             </Typography>
             <Avatar
@@ -136,6 +142,17 @@ export default function Layout() {
               {user?.username?.slice(0, 2)?.toUpperCase()}
             </Avatar>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setPasswordDialogOpen(true);
+                }}
+              >
+                <ListItemIcon>
+                  <LockResetOutlinedIcon fontSize="small" />
+                </ListItemIcon>
+                تغییر رمز عبور
+              </MenuItem>
               <MenuItem onClick={logout}>
                 <ListItemIcon>
                   <LogoutOutlinedIcon fontSize="small" />
@@ -147,10 +164,15 @@ export default function Layout() {
         </Toolbar>
       </AppBar>
 
-      {/* Drawer دسکتاپ */}
+      {/*
+        نکته مهم RTL: چون stylis-plugin-rtl تمام استایل‌های فیزیکی left/right را
+        خودکار Mirror می‌کند، اگر اینجا anchor="right" بگذاریم، در نهایت روی
+        صفحه سمت چپ می‌نشیند! برای اینکه واقعاً سمت راست بنشیند، باید anchor="left"
+        بدهیم تا بعد از Mirror شدن توسط پلاگین RTL، در سمت راست قرار بگیرد.
+      */}
       <Drawer
         variant="permanent"
-        anchor="right"
+        anchor="left"
         sx={{
           display: { xs: "none", md: "block" },
           width: DRAWER_WIDTH,
@@ -158,9 +180,9 @@ export default function Layout() {
           "& .MuiDrawer-paper": {
             width: DRAWER_WIDTH,
             boxSizing: "border-box",
-            borderLeft: "1px solid",
-            borderColor: "divider",
-            borderRight: "none",
+            borderInlineEnd: "1px solid",
+            borderInlineEndColor: "divider",
+            borderInlineStart: "none",
           },
         }}
         open
@@ -168,10 +190,9 @@ export default function Layout() {
         {drawerContent}
       </Drawer>
 
-      {/* Drawer موبایل */}
       <Drawer
         variant="temporary"
-        anchor="right"
+        anchor="left"
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
         ModalProps={{ keepMounted: true }}
@@ -187,13 +208,17 @@ export default function Layout() {
         component="main"
         sx={{
           flexGrow: 1,
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          minWidth: 0,
+          width: { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
           p: { xs: 2, md: 4 },
           mt: 8,
+          overflowX: "hidden",
         }}
       >
         <Outlet />
       </Box>
+
+      <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
     </Box>
   );
 }

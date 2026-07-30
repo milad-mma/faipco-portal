@@ -1,6 +1,6 @@
 """
-منطق تجاری مدیریت Site ها: ساخت Site، تعریف/ویرایش اتصال دیتابیس (با رمزنگاری پسورد)،
-و تعریف/ویرایش Mapping ستون‌های پرسنلی.
+منطق تجاری مدیریت Site ها: ساخت Site، تعریف/ویرایش/حذف اتصال دیتابیس
+(با رمزنگاری خودکار پسورد)، و تعریف/ویرایش/حذف Mapping ستون‌های پرسنلی.
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,12 +26,18 @@ class SiteService:
         await self.db.refresh(site)
         return site
 
-    async def upsert_connection(self, site_id: int, payload: SiteConnectionIn) -> SiteConnection:
+    # ---------- Site Connection ----------
+
+    async def get_connection(self, site_id: int) -> SiteConnection | None:
         result = await self.db.execute(select(SiteConnection).where(SiteConnection.site_id == site_id))
-        conn = result.scalar_one_or_none()
-        encrypted_password = encrypt_secret(payload.password)
+        return result.scalar_one_or_none()
+
+    async def upsert_connection(self, site_id: int, payload: SiteConnectionIn) -> SiteConnection:
+        conn = await self.get_connection(site_id)
 
         if conn is None:
+            if not payload.password:
+                raise ValueError("رمز عبور برای ساخت اتصال جدید الزامی است")
             conn = SiteConnection(
                 site_id=site_id,
                 db_type=payload.db_type,
@@ -39,7 +45,7 @@ class SiteService:
                 port=payload.port,
                 database_name=payload.database_name,
                 username=payload.username,
-                password_encrypted=encrypted_password,
+                password_encrypted=encrypt_secret(payload.password),
             )
             self.db.add(conn)
         else:
@@ -48,15 +54,30 @@ class SiteService:
             conn.port = payload.port
             conn.database_name = payload.database_name
             conn.username = payload.username
-            conn.password_encrypted = encrypted_password
+            # اگر پسورد جدید داده نشده، پسورد قبلی حفظ می‌شود (رمزنگاری‌شده دست نمی‌خورد)
+            if payload.password:
+                conn.password_encrypted = encrypt_secret(payload.password)
 
         await self.db.commit()
         await self.db.refresh(conn)
         return conn
 
-    async def upsert_mapping(self, site_id: int, payload: EmployeeMappingIn) -> EmployeeMapping:
+    async def delete_connection(self, site_id: int) -> bool:
+        conn = await self.get_connection(site_id)
+        if conn is None:
+            return False
+        await self.db.delete(conn)
+        await self.db.commit()
+        return True
+
+    # ---------- Employee Mapping ----------
+
+    async def get_mapping(self, site_id: int) -> EmployeeMapping | None:
         result = await self.db.execute(select(EmployeeMapping).where(EmployeeMapping.site_id == site_id))
-        mapping = result.scalar_one_or_none()
+        return result.scalar_one_or_none()
+
+    async def upsert_mapping(self, site_id: int, payload: EmployeeMappingIn) -> EmployeeMapping:
+        mapping = await self.get_mapping(site_id)
 
         if mapping is None:
             mapping = EmployeeMapping(site_id=site_id, **payload.model_dump())
@@ -68,3 +89,11 @@ class SiteService:
         await self.db.commit()
         await self.db.refresh(mapping)
         return mapping
+
+    async def delete_mapping(self, site_id: int) -> bool:
+        mapping = await self.get_mapping(site_id)
+        if mapping is None:
+            return False
+        await self.db.delete(mapping)
+        await self.db.commit()
+        return True

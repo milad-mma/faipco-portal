@@ -26,7 +26,10 @@ class SiteConnectionIn(BaseModel):
     port: int
     database_name: str
     username: str
-    password: str = Field(description="پیش از ذخیره در دیتابیس رمزنگاری می‌شود")
+    password: str | None = Field(
+        default=None,
+        description="در حالت ویرایش، خالی بگذارید تا پسورد قبلی حفظ شود",
+    )
 
 
 class SiteConnectionOut(BaseModel):

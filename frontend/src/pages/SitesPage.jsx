@@ -19,7 +19,17 @@ import {
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import SettingsEthernetOutlinedIcon from "@mui/icons-material/SettingsEthernetOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
-import { createSite, fetchSites, upsertSiteConnection, upsertSiteMapping } from "../api/sites";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import {
+  createSite,
+  deleteSiteConnection,
+  deleteSiteMapping,
+  fetchSiteConnection,
+  fetchSiteMapping,
+  fetchSites,
+  upsertSiteConnection,
+  upsertSiteMapping,
+} from "../api/sites";
 
 const DB_TYPES = [
   { value: "postgresql", label: "PostgreSQL" },
@@ -49,6 +59,8 @@ export default function SitesPage() {
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
   const [connectionDialogSite, setConnectionDialogSite] = useState(null);
   const [mappingDialogSite, setMappingDialogSite] = useState(null);
+  const [hasExistingConnection, setHasExistingConnection] = useState(false);
+  const [hasExistingMapping, setHasExistingMapping] = useState(false);
 
   const [newSite, setNewSite] = useState({ name: "", code: "", description: "" });
   const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
@@ -75,16 +87,60 @@ export default function SitesPage() {
     }
   }
 
+  async function openConnectionDialog(site) {
+    setError("");
+    setConnectionDialogSite(site);
+    setConnectionForm(EMPTY_CONNECTION);
+    setHasExistingConnection(false);
+    const existing = await fetchSiteConnection(site.id).catch(() => null);
+    if (existing) {
+      setConnectionForm({
+        db_type: existing.db_type,
+        host: existing.host,
+        port: existing.port,
+        database_name: existing.database_name,
+        username: existing.username,
+        password: "", // پسورد هرگز از سرور برنمی‌گردد؛ خالی یعنی بدون تغییر
+      });
+      setHasExistingConnection(true);
+    }
+  }
+
+  async function openMappingDialog(site) {
+    setError("");
+    setMappingDialogSite(site);
+    setMappingForm(EMPTY_MAPPING);
+    setHasExistingMapping(false);
+    const existing = await fetchSiteMapping(site.id).catch(() => null);
+    if (existing) {
+      setMappingForm({
+        table_name: existing.table_name,
+        personnel_code_column: existing.personnel_code_column,
+        national_code_column: existing.national_code_column || "",
+        first_name_column: existing.first_name_column,
+        last_name_column: existing.last_name_column,
+        mobile_column: existing.mobile_column || "",
+      });
+      setHasExistingMapping(true);
+    }
+  }
+
   async function handleSaveConnection() {
     setError("");
     try {
       await upsertSiteConnection(connectionDialogSite.id, connectionForm);
       setConnectionDialogSite(null);
-      setConnectionForm(EMPTY_CONNECTION);
       loadSites();
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره اتصال ناموفق بود");
     }
+  }
+
+  async function handleDeleteConnection() {
+    if (!window.confirm("اتصال دیتابیس این سایت حذف شود؟")) return;
+    await deleteSiteConnection(connectionDialogSite.id);
+    setConnectionDialogSite(null);
+    loadSites();
   }
 
   async function handleSaveMapping() {
@@ -92,15 +148,20 @@ export default function SitesPage() {
     try {
       await upsertSiteMapping(mappingDialogSite.id, mappingForm);
       setMappingDialogSite(null);
-      setMappingForm(EMPTY_MAPPING);
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره Mapping ناموفق بود");
     }
   }
 
+  async function handleDeleteMapping() {
+    if (!window.confirm("Mapping ستون‌های این سایت حذف شود؟")) return;
+    await deleteSiteMapping(mappingDialogSite.id);
+    setMappingDialogSite(null);
+  }
+
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3, flexWrap: "wrap", gap: 2 }}>
         <Box>
           <Typography variant="h5" fontWeight={700}>
             سایت‌ها
@@ -143,15 +204,12 @@ export default function SitesPage() {
 
               <Divider sx={{ my: 2 }} />
 
-              <Stack direction="row" spacing={1}>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button
                   size="small"
                   variant="outlined"
                   startIcon={<SettingsEthernetOutlinedIcon />}
-                  onClick={() => {
-                    setConnectionDialogSite(site);
-                    setConnectionForm(EMPTY_CONNECTION);
-                  }}
+                  onClick={() => openConnectionDialog(site)}
                 >
                   اتصال دیتابیس
                 </Button>
@@ -159,10 +217,7 @@ export default function SitesPage() {
                   size="small"
                   variant="outlined"
                   startIcon={<ViewColumnOutlinedIcon />}
-                  onClick={() => {
-                    setMappingDialogSite(site);
-                    setMappingForm(EMPTY_MAPPING);
-                  }}
+                  onClick={() => openMappingDialog(site)}
                 >
                   Mapping ستون‌ها
                 </Button>
@@ -206,7 +261,7 @@ export default function SitesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: تعریف اتصال دیتابیس */}
+      {/* Dialog: تعریف/ویرایش اتصال دیتابیس */}
       <Dialog open={Boolean(connectionDialogSite)} onClose={() => setConnectionDialogSite(null)} fullWidth maxWidth="xs">
         <DialogTitle>اتصال دیتابیس — {connectionDialogSite?.name}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
@@ -249,18 +304,31 @@ export default function SitesPage() {
             type="password"
             value={connectionForm.password}
             onChange={(e) => setConnectionForm({ ...connectionForm, password: e.target.value })}
-            helperText="در دیتابیس Portal به‌صورت رمزنگاری‌شده ذخیره می‌شود"
+            helperText={
+              hasExistingConnection
+                ? "برای حفظ رمز فعلی، این فیلد را خالی بگذارید"
+                : "در دیتابیس Portal به‌صورت رمزنگاری‌شده ذخیره می‌شود"
+            }
           />
         </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={() => setConnectionDialogSite(null)}>انصراف</Button>
-          <Button variant="contained" onClick={handleSaveConnection}>
-            ذخیره
-          </Button>
+        <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
+          {hasExistingConnection ? (
+            <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={handleDeleteConnection}>
+              حذف اتصال
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Stack direction="row" spacing={1}>
+            <Button onClick={() => setConnectionDialogSite(null)}>انصراف</Button>
+            <Button variant="contained" onClick={handleSaveConnection}>
+              ذخیره
+            </Button>
+          </Stack>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: تعریف Mapping ستون‌ها */}
+      {/* Dialog: تعریف/ویرایش Mapping ستون‌ها */}
       <Dialog open={Boolean(mappingDialogSite)} onClose={() => setMappingDialogSite(null)} fullWidth maxWidth="xs">
         <DialogTitle>Mapping ستون‌ها — {mappingDialogSite?.name}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
@@ -296,11 +364,20 @@ export default function SitesPage() {
             onChange={(e) => setMappingForm({ ...mappingForm, mobile_column: e.target.value })}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={() => setMappingDialogSite(null)}>انصراف</Button>
-          <Button variant="contained" onClick={handleSaveMapping}>
-            ذخیره
-          </Button>
+        <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
+          {hasExistingMapping ? (
+            <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={handleDeleteMapping}>
+              حذف Mapping
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Stack direction="row" spacing={1}>
+            <Button onClick={() => setMappingDialogSite(null)}>انصراف</Button>
+            <Button variant="contained" onClick={handleSaveMapping}>
+              ذخیره
+            </Button>
+          </Stack>
         </DialogActions>
       </Dialog>
     </Box>
