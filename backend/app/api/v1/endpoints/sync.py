@@ -16,7 +16,7 @@ router = APIRouter()
 async def test_connection(
     site_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sync.view")),
+    _user=Depends(require_permission("sync.view", site_scoped=True)),
 ):
     service = SyncService(db)
     try:
@@ -30,7 +30,7 @@ async def test_connection(
 async def run_sync(
     site_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sync.run")),
+    _user=Depends(require_permission("sync.run", site_scoped=True)),
 ):
     service = SyncService(db)
     try:
@@ -44,7 +44,7 @@ async def run_sync(
 async def list_sync_logs(
     site_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sync.view")),
+    _user=Depends(require_permission("sync.view", site_scoped=True)),
 ):
     result = await db.execute(
         select(SyncLog).where(SyncLog.site_id == site_id).order_by(SyncLog.started_at.desc()).limit(50)

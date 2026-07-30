@@ -19,7 +19,7 @@ router = APIRouter()
 async def list_employees(
     site_id: int | None = Query(default=None, description="فیلتر بر اساس Site"),
     db: AsyncSession = Depends(get_db),
-    _current_user=Depends(require_permission("employees.view")),
+    _current_user=Depends(require_permission("employees.view", site_scoped=True)),
 ):
     stmt = select(Employee).where(Employee.is_active.is_(True)).limit(200)
     if site_id is not None:

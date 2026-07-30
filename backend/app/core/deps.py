@@ -7,8 +7,13 @@ Dependency های مرکزی FastAPI:
     @router.get("/employees")
     async def list_employees(user: User = Depends(require_permission("employees.view"))):
         ...
+
+    # وقتی خودِ Route هم site_id دارد (چه Path و چه Query)، site_scoped=True بدهید:
+    @router.get("/{site_id}/logs")
+    async def list_logs(site_id: int, user: User = Depends(require_permission("sync.view", site_scoped=True))):
+        ...
 """
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,22 +53,35 @@ async def get_current_user(
     return user
 
 
-def require_permission(permission_code: str):
+def require_permission(permission_code: str, site_scoped: bool = False):
     """
     Dependency factory برای بررسی یک Permission مشخص.
 
-    site_id به‌صورت Query Param اختیاری خوانده می‌شود تا نقش‌های Site-scoped
-    (مثل "HR فقط سایت ۲") هم بررسی شوند. برای Endpoint هایی که به یک Site خاص
-    مربوط‌اند (مثلاً /employees?site_id=2)، همین پارامتر به‌طور طبیعی استفاده می‌شود.
+    نکته مهم طراحی: این تابع دیگر پارامتر جدیدی به نام site_id به FastAPI
+    اضافه نمی‌کند (قبلاً این کار با Query(default=None) انجام می‌شد که با
+    Route هایی مثل /sites/{site_id}/connection تداخل نام پیدا می‌کرد — چون
+    site_id در آن‌ها Path Parameter است، نه Query — و FastAPI موقع ساخت
+    Dependency Graph روی این تناقض خطا می‌داد و کل برنامه Start نمی‌شد).
+
+    به‌جایش، اگر site_scoped=True باشد، مقدار site_id مستقیماً از خودِ
+    Request خوانده می‌شود (اول از Path Params، بعد از Query Params) —
+    یعنی هیچ پارامتر رقیبی تعریف نمی‌شود و Route می‌تواند site_id را به هر
+    شکلی (Path یا Query) که خودش نیاز دارد اعلام کند.
     """
 
     async def checker(
-        site_id: int | None = Query(default=None),
+        request: Request,
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
         if current_user.is_superuser:
             return current_user
+
+        site_id: int | None = None
+        if site_scoped:
+            raw_site_id = request.path_params.get("site_id") or request.query_params.get("site_id")
+            if raw_site_id is not None:
+                site_id = int(raw_site_id)
 
         codes = await UserRepository(db).get_permission_codes(current_user.id, site_id=site_id)
         if permission_code not in codes:

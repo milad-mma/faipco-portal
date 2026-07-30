@@ -39,7 +39,7 @@ async def upsert_connection(
     site_id: int,
     payload: SiteConnectionIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sites.manage")),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
     return await SiteService(db).upsert_connection(site_id, payload)
 
@@ -49,6 +49,6 @@ async def upsert_mapping(
     site_id: int,
     payload: EmployeeMappingIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sites.manage")),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
     return await SiteService(db).upsert_mapping(site_id, payload)
