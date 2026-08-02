@@ -18,10 +18,9 @@ import {
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
-import { fetchEmployees, fetchEmployeeRoles, fetchSupervisedDepartments } from "../api/employees";
+import { fetchEmployees } from "../api/employees";
 import { fetchSites } from "../api/sites";
-import { fetchDepartments } from "../api/departments";
-import { fetchRoles } from "../api/users";
+import { fetchAccessOverview } from "../api/users";
 import { monoFontSx } from "../theme";
 import AssignAccessDialog from "../components/AssignAccessDialog";
 
@@ -32,18 +31,20 @@ const ROLE_DISPLAY_NAMES = {
 
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [roles, setRoles] = useState([]);
+  const [overview, setOverview] = useState([]);
+
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
-  const [accessLabels, setAccessLabels] = useState({}); // employeeId -> [برچسب‌های نقش]
   const [accessEmployee, setAccessEmployee] = useState(null);
 
   useEffect(() => {
     fetchSites().then(setSites);
-    fetchDepartments().then(setDepartments);
-    fetchRoles().then(setRoles);
+    loadOverview();
   }, []);
+
+  function loadOverview() {
+    fetchAccessOverview().then(setOverview);
+  }
 
   useEffect(() => {
     if (!search) {
@@ -51,34 +52,17 @@ export default function AccessManagementPage() {
       return;
     }
     const timer = setTimeout(() => {
-      fetchEmployees({ search }).then(async (data) => {
-        setResults(data);
-        await loadAccessLabels(data);
-      });
+      fetchEmployees({ search }).then(setResults);
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
 
-  async function loadAccessLabels(employees) {
-    const entries = await Promise.all(
-      employees.map(async (emp) => {
-        const [empRoles, supervisedIds] = await Promise.all([
-          fetchEmployeeRoles(emp.id),
-          fetchSupervisedDepartments(emp.id),
-        ]);
-        const labels = empRoles.map(
-          (ur) => ROLE_DISPLAY_NAMES[roles.find((r) => r.id === ur.role_id)?.name] || "نقش نامشخص"
-        );
-        if (supervisedIds.length > 0) {
-          labels.push(`سرپرست ${supervisedIds.length} واحد`);
-        }
-        return [emp.id, labels];
-      })
-    );
-    setAccessLabels(Object.fromEntries(entries));
-  }
-
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
+
+  function closeAccessDialog() {
+    setAccessEmployee(null);
+    loadOverview(); // بعد از تغییر احتمالی، جدول نمای کلی را تازه کن
+  }
 
   return (
     <Box>
@@ -93,7 +77,7 @@ export default function AccessManagementPage() {
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <TextField
           fullWidth
-          placeholder="جستجو بر اساس نام، کد پرسنلی یا کد ملی..."
+          placeholder="جستجو بر اساس نام، کد پرسنلی یا کد ملی برای دادن دسترسی جدید..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           InputProps={{
@@ -113,7 +97,6 @@ export default function AccessManagementPage() {
                   <TableCell>کد پرسنلی</TableCell>
                   <TableCell>نام و نام خانوادگی</TableCell>
                   <TableCell>سایت</TableCell>
-                  <TableCell>دسترسی فعلی</TableCell>
                   <TableCell align="center">اقدام</TableCell>
                 </TableRow>
               </TableHead>
@@ -125,19 +108,6 @@ export default function AccessManagementPage() {
                       {emp.first_name} {emp.last_name}
                     </TableCell>
                     <TableCell>{siteLabel(emp.site_id)}</TableCell>
-                    <TableCell>
-                      {(accessLabels[emp.id] || []).length === 0 ? (
-                        <Typography variant="caption" color="text.secondary">
-                          بدون دسترسی خاص
-                        </Typography>
-                      ) : (
-                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                          {accessLabels[emp.id].map((label, i) => (
-                            <Chip key={i} size="small" label={label} color="primary" variant="outlined" />
-                          ))}
-                        </Stack>
-                      )}
-                    </TableCell>
                     <TableCell align="center">
                       <Button
                         size="small"
@@ -160,57 +130,85 @@ export default function AccessManagementPage() {
         )}
       </Card>
 
-      <Grid container spacing={2.5}>
-        <Grid item xs={12}>
-          <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
-              نمای کلی سرپرستی واحدها
-            </Typography>
-            <Stack spacing={1.5}>
-              {departments.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  هنوز هیچ واحد سازمانی‌ای ثبت نشده — واحدها معمولاً خودکار از Sync ساخته می‌شوند.
-                </Typography>
-              )}
-              {departments.map((dept) => (
-                <Box
-                  key={dept.id}
-                  sx={{
-                    p: 1.5,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 2,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 1,
-                  }}
-                >
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {dept.name}
+      {/* جدول جداگانه: همه کسانی که هر نوع دسترسی/نقشی دارند */}
+      <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+        <Box sx={{ p: 3, pb: 0 }}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            نمای کلی دسترسی‌ها
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            همه پرسنلی که هر نوع نقش سازمانی یا سرپرستی واحد دارند
+          </Typography>
+        </Box>
+        <TableContainer sx={{ mt: 2 }}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>کد پرسنلی</TableCell>
+                <TableCell>نام و نام خانوادگی</TableCell>
+                <TableCell>سایت</TableCell>
+                <TableCell>نقش‌ها</TableCell>
+                <TableCell>سرپرست کدام واحدها</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {overview.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
+                      هنوز هیچ‌کس نقش سازمانی یا سرپرستی واحدی ندارد.
                     </Typography>
-                    <Chip size="small" label={siteLabel(dept.site_id)} sx={{ mt: 0.5 }} />
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    سرپرست: {dept.supervisor_name || "— بدون سرپرست —"}
-                  </Typography>
-                </Box>
+                  </TableCell>
+                </TableRow>
+              )}
+              {overview.map((entry) => (
+                <TableRow key={entry.employee_id} hover>
+                  <TableCell sx={monoFontSx}>{entry.personnel_code}</TableCell>
+                  <TableCell>
+                    {entry.first_name} {entry.last_name}
+                  </TableCell>
+                  <TableCell>{entry.site_name}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      {entry.roles.length === 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                      {entry.roles.map((r, i) => (
+                        <Chip
+                          key={i}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={
+                            (ROLE_DISPLAY_NAMES[r.role_name] || r.role_name) +
+                            (r.site_name ? ` — ${r.site_name}` : " (سراسری)")
+                          }
+                        />
+                      ))}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      {entry.supervised_departments.length === 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                      {entry.supervised_departments.map((d) => (
+                        <Chip key={d.id} size="small" label={`${d.name} (${d.site_name})`} />
+                      ))}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
               ))}
-            </Stack>
-          </Card>
-        </Grid>
-      </Grid>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
 
-      <AssignAccessDialog
-        employee={accessEmployee}
-        sites={sites}
-        onClose={() => {
-          setAccessEmployee(null);
-          if (results.length > 0) loadAccessLabels(results);
-        }}
-      />
+      <AssignAccessDialog employee={accessEmployee} sites={sites} onClose={closeAccessDialog} />
     </Box>
   );
 }

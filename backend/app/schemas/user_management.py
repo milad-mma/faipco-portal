@@ -36,3 +36,24 @@ class AssignRoleIn(BaseModel):
     # اگر site_id داده شود، این نقش فقط برای همان Site معتبر است (مثلاً «مدیر سایت ۲»)؛
     # اگر خالی باشد، نقش سراسری است (مثلاً «مدیرعامل» یا «مدیر منابع انسانی»)
     site_id: int | None = None
+
+
+class AccessOverviewRole(BaseModel):
+    role_name: str
+    site_name: str | None  # None یعنی نقش سراسری است
+
+
+class AccessOverviewDepartment(BaseModel):
+    id: int
+    name: str
+    site_name: str
+
+
+class AccessOverviewEntry(BaseModel):
+    employee_id: int
+    first_name: str
+    last_name: str
+    personnel_code: str
+    site_name: str
+    roles: list[AccessOverviewRole]
+    supervised_departments: list[AccessOverviewDepartment]

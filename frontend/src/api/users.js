@@ -26,3 +26,8 @@ export async function assignRole(userId, roleId, siteId) {
 export async function removeRoleAssignment(userRoleId) {
   await apiClient.delete(`/users/roles/${userRoleId}`);
 }
+
+export async function fetchAccessOverview() {
+  const { data } = await apiClient.get("/users/access-overview");
+  return data;
+}

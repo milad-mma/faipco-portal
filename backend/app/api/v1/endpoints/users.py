@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_permission
 from app.db.session import get_db
-from app.schemas.user_management import AssignRoleIn, RoleOut, UserManagementOut, UserRoleOut
+from app.schemas.user_management import (
+    AccessOverviewEntry,
+    AssignRoleIn,
+    RoleOut,
+    UserManagementOut,
+    UserRoleOut,
+)
 from app.services.user_management_service import UserManagementService
 
 router = APIRouter()
@@ -22,6 +28,15 @@ async def list_users(
     _user=Depends(require_permission("users.manage")),
 ):
     return await UserManagementService(db).list_users()
+
+
+@router.get("/access-overview", response_model=list[AccessOverviewEntry])
+async def access_overview(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("users.manage")),
+):
+    """جدول کامل همه کسانی که نقش سازمانی یا سرپرستی واحد دارند — برای پنل مدیریت دسترسی."""
+    return await UserManagementService(db).get_access_overview()
 
 
 @router.get("/roles", response_model=list[RoleOut])
