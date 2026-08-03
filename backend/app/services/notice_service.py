@@ -26,15 +26,21 @@ superuser همیشه به همه چیز دسترسی دارد.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.employee import Department, Employee
 from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType
-from app.models.user import User, UserRole
+from app.models.notice_read import NoticeRead
+from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
-from app.schemas.notice import NoticeCreate
+from app.schemas.notice import (
+    NoticeCreate,
+    NoticeDetailOut,
+    NoticeReaderOut,
+    NoticeTargetDescription,
+)
 from app.services.push_service import PushService
 
 
@@ -306,3 +312,127 @@ class NoticeService:
             "department_ids": sorted(allowed_department_ids),
             "supervisor_employees": supervisor_employees,
         }
+
+    # ---------- ثبت مشاهده ----------
+
+    async def mark_as_read(self, notice_id: int, user_id: int) -> None:
+        """اولین بار که کاربر یک اطلاعیه را باز می‌کند، ثبت می‌شود (اجرای دوباره بی‌اثر است)."""
+        result = await self.db.execute(
+            select(NoticeRead).where(NoticeRead.notice_id == notice_id, NoticeRead.user_id == user_id)
+        )
+        if result.scalar_one_or_none() is not None:
+            return  # قبلاً ثبت شده — زمان اولین مشاهده حفظ می‌شود
+        self.db.add(NoticeRead(notice_id=notice_id, user_id=user_id))
+        await self.db.commit()
+
+    # ---------- گزارش‌ها ----------
+
+    async def _resolve_sender_names(self, sender_ids: set[int]) -> dict[int, str]:
+        if not sender_ids:
+            return {}
+        result = await self.db.execute(
+            select(User.id, User.username, Employee.first_name, Employee.last_name)
+            .outerjoin(Employee, Employee.id == User.employee_id)
+            .where(User.id.in_(sender_ids))
+        )
+        names: dict[int, str] = {}
+        for user_id, username, first_name, last_name in result.all():
+            names[user_id] = f"{first_name} {last_name}" if first_name else username
+        return names
+
+    async def _describe_target(self, target: NoticeTarget) -> NoticeTargetDescription:
+        from app.models.site import Site  # پرهیز از Circular Import
+
+        if target.target_type == NoticeTargetType.all:
+            label = "کل سازمان"
+        elif target.target_type == NoticeTargetType.site:
+            site = await self.db.get(Site, target.target_id)
+            label = site.name if site else f"سایت #{target.target_id}"
+        elif target.target_type == NoticeTargetType.department:
+            dept = await self.db.get(Department, target.target_id)
+            label = dept.name if dept else f"واحد #{target.target_id}"
+        elif target.target_type == NoticeTargetType.employee:
+            emp = await self.db.get(Employee, target.target_id)
+            label = f"{emp.first_name} {emp.last_name} ({emp.personnel_code})" if emp else f"پرسنل #{target.target_id}"
+        elif target.target_type == NoticeTargetType.role:
+            role = await self.db.get(Role, target.target_id)
+            label = role.name if role else f"نقش #{target.target_id}"
+        else:
+            label = "نامشخص"
+
+        return NoticeTargetDescription(target_type=target.target_type, target_id=target.target_id, label=label)
+
+    async def get_detailed_notices(self, sender_id: int | None = None) -> list[NoticeDetailOut]:
+        """
+        گزارش کامل اطلاعیه‌ها با نام فرستنده، توصیف مقصدها و آمار بازدید.
+        اگر sender_id داده شود فقط اطلاعیه‌های همان فرستنده («ارسالی من»)،
+        وگرنه همه اطلاعیه‌های سیستم (گزارش کامل Admin).
+        """
+        stmt = select(Notice).options(selectinload(Notice.targets)).order_by(Notice.created_at.desc())
+        if sender_id is not None:
+            stmt = stmt.where(Notice.sender_id == sender_id)
+        result = await self.db.execute(stmt)
+        notices = list(result.scalars().unique().all())
+        if not notices:
+            return []
+
+        sender_names = await self._resolve_sender_names({n.sender_id for n in notices})
+
+        # شمارش بازدیدها برای همه این اطلاعیه‌ها در یک Query
+        notice_ids = [n.id for n in notices]
+        read_result = await self.db.execute(
+            select(NoticeRead.notice_id, func.count(NoticeRead.id))
+            .where(NoticeRead.notice_id.in_(notice_ids))
+            .group_by(NoticeRead.notice_id)
+        )
+        read_counts = dict(read_result.all())
+
+        detailed: list[NoticeDetailOut] = []
+        for notice in notices:
+            target_descriptions = [await self._describe_target(t) for t in notice.targets]
+            audience_count = len(await self._resolve_audience_user_ids(notice))
+            detailed.append(
+                NoticeDetailOut(
+                    id=notice.id,
+                    title=notice.title,
+                    body=notice.body,
+                    priority=notice.priority,
+                    status=notice.status,
+                    sender_id=notice.sender_id,
+                    sender_name=sender_names.get(notice.sender_id, "—"),
+                    created_at=notice.created_at,
+                    publish_at=notice.publish_at,
+                    targets=target_descriptions,
+                    audience_count=audience_count,
+                    read_count=read_counts.get(notice.id, 0),
+                )
+            )
+        return detailed
+
+    async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
+        """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down."""
+        result = await self.db.execute(
+            select(
+                NoticeRead.user_id,
+                Employee.id,
+                Employee.first_name,
+                Employee.last_name,
+                Employee.personnel_code,
+                NoticeRead.read_at,
+            )
+            .join(User, User.id == NoticeRead.user_id)
+            .outerjoin(Employee, Employee.id == User.employee_id)
+            .where(NoticeRead.notice_id == notice_id)
+            .order_by(NoticeRead.read_at.asc())
+        )
+        return [
+            NoticeReaderOut(
+                user_id=row[0],
+                employee_id=row[1],
+                first_name=row[2],
+                last_name=row[3],
+                personnel_code=row[4],
+                read_at=row[5],
+            )
+            for row in result.all()
+        ]

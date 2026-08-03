@@ -7,6 +7,7 @@ import {
   Card,
   Checkbox,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -14,26 +15,32 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
-import { createNotice, fetchAvailableTargets, fetchMyNotices, publishNotice } from "../api/notices";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
+import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
+import {
+  createNotice,
+  fetchAvailableTargets,
+  fetchMyNotices,
+  fetchSentByMe,
+  markNoticeRead,
+  publishNotice,
+} from "../api/notices";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
+import NoticeReportTable from "../components/NoticeReportTable";
 
 const PRIORITY_LABELS = {
   low: { label: "کم", color: "default" },
   normal: { label: "عادی", color: "info" },
   high: { label: "بالا", color: "warning" },
   urgent: { label: "فوری", color: "error" },
-};
-
-const STATUS_LABELS = {
-  draft: { label: "پیش‌نویس", color: "default" },
-  published: { label: "منتشرشده", color: "success" },
-  expired: { label: "منقضی‌شده", color: "default" },
 };
 
 const EMPTY_FORM = {
@@ -43,12 +50,74 @@ const EMPTY_FORM = {
   targetAll: false,
   siteIds: [],
   departmentIds: [],
-  employees: [], // آرایه‌ای از خودِ شیء Employee (برای نمایش نام در Chip ها)
-  supervisors: [], // انتخاب‌شده از میان‌بر «ارسال به سرپرستان»
+  employees: [],
+  supervisors: [],
 };
 
+function ReceivedNoticeCard({ notice, onOpened }) {
+  const [expanded, setExpanded] = useState(false);
+
+  function handleToggle() {
+    if (!expanded) {
+      markNoticeRead(notice.id).catch(() => {});
+      onOpened?.(notice.id);
+    }
+    setExpanded((v) => !v);
+  }
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+      <Box
+        onClick={handleToggle}
+        sx={{
+          p: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          gap: 2,
+          "&:hover": { backgroundColor: "action.hover" },
+        }}
+      >
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          {expanded ? (
+            <DraftsOutlinedIcon color="disabled" />
+          ) : (
+            <MailOutlineIcon color="primary" />
+          )}
+          <Box>
+            <Typography variant="body1" fontWeight={expanded ? 500 : 700}>
+              {expanded ? notice.title : "پیام جدید"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {new Date(notice.created_at).toLocaleString("fa-IR")}
+            </Typography>
+          </Box>
+        </Stack>
+        <Chip
+          size="small"
+          label={PRIORITY_LABELS[notice.priority]?.label}
+          color={PRIORITY_LABELS[notice.priority]?.color}
+        />
+      </Box>
+      <Collapse in={expanded}>
+        <Box sx={{ px: 2, pb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+            {notice.title}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {notice.body}
+          </Typography>
+        </Box>
+      </Collapse>
+    </Card>
+  );
+}
+
 export default function NoticesPage() {
+  const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState([]);
+  const [sentNotices, setSentNotices] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
@@ -65,6 +134,10 @@ export default function NoticesPage() {
     fetchMyNotices().then(setNotices);
   }
 
+  function loadSentNotices() {
+    fetchSentByMe().then(setSentNotices);
+  }
+
   useEffect(() => {
     loadNotices();
     fetchAvailableTargets().then(setAvailableTargets);
@@ -72,7 +145,10 @@ export default function NoticesPage() {
     fetchDepartments().then(setDepartments);
   }, []);
 
-  // جستجوی پرسنل با کمی تأخیر، برای انتخاب گیرنده‌های خاص اطلاعیه
+  useEffect(() => {
+    if (tab === "sent") loadSentNotices();
+  }, [tab]);
+
   useEffect(() => {
     if (!employeeSearch) {
       setEmployeeOptions([]);
@@ -112,7 +188,6 @@ export default function NoticesPage() {
     form.siteIds.forEach((id) => targets.push({ target_type: "site", target_id: id }));
     form.departmentIds.forEach((id) => targets.push({ target_type: "department", target_id: id }));
 
-    // ترکیب پرسنل انتخاب‌شده از جست‌وجوی آزاد + میان‌بر سرپرستان، بدون تکرار
     const employeeIds = new Set();
     [...form.employees, ...form.supervisors].forEach((emp) => {
       if (!employeeIds.has(emp.id)) {
@@ -137,6 +212,7 @@ export default function NoticesPage() {
       setDialogOpen(false);
       setForm(EMPTY_FORM);
       loadNotices();
+      if (tab === "sent") loadSentNotices();
     } catch (err) {
       setError(err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه ناموفق بود");
     }
@@ -144,13 +220,10 @@ export default function NoticesPage() {
 
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3, flexWrap: "wrap", gap: 2 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Box>
           <Typography variant="h5" fontWeight={700}>
             اطلاعیه‌ها
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            اطلاعیه‌های منتشرشده مربوط به شما
           </Typography>
         </Box>
         {canCreateAnything && (
@@ -160,33 +233,33 @@ export default function NoticesPage() {
         )}
       </Box>
 
-      <Stack spacing={2}>
-        {notices.length === 0 && (
-          <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
-            <Typography variant="body2" color="text.secondary">
-              در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
-            </Typography>
-          </Card>
-        )}
-        {notices.map((notice) => (
-          <Card key={notice.id} variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2} flexWrap="wrap">
-              <Box>
-                <Typography variant="subtitle1" fontWeight={700}>
-                  {notice.title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  {notice.body}
-                </Typography>
-              </Box>
-              <Stack direction="row" spacing={1}>
-                <Chip size="small" label={PRIORITY_LABELS[notice.priority]?.label} color={PRIORITY_LABELS[notice.priority]?.color} />
-                <Chip size="small" label={STATUS_LABELS[notice.status]?.label} color={STATUS_LABELS[notice.status]?.color} variant="outlined" />
-              </Stack>
-            </Stack>
-          </Card>
-        ))}
-      </Stack>
+      {canCreateAnything && (
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
+          <Tab value="received" label="دریافتی" />
+          <Tab value="sent" label="ارسالی من" />
+        </Tabs>
+      )}
+
+      {tab === "received" && (
+        <Stack spacing={1.5}>
+          {notices.length === 0 && (
+            <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
+              <Typography variant="body2" color="text.secondary">
+                در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
+              </Typography>
+            </Card>
+          )}
+          {notices.map((notice) => (
+            <ReceivedNoticeCard key={notice.id} notice={notice} />
+          ))}
+        </Stack>
+      )}
+
+      {tab === "sent" && (
+        <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
+          <NoticeReportTable notices={sentNotices} showSender={false} />
+        </Card>
+      )}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>اطلاعیه جدید</DialogTitle>
@@ -297,7 +370,7 @@ export default function NoticesPage() {
               multiple
               options={employeeOptions}
               loading={employeeSearchLoading}
-              filterOptions={(x) => x} // فیلتر توسط خودِ Backend انجام می‌شود
+              filterOptions={(x) => x}
               getOptionLabel={(e) => `${e.first_name} ${e.last_name} (${e.personnel_code})`}
               isOptionEqualToValue={(a, b) => a.id === b.id}
               value={form.employees}

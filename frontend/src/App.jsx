@@ -8,6 +8,7 @@ import EmployeesPage from "./pages/EmployeesPage";
 import SitesPage from "./pages/SitesPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
+import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
@@ -32,6 +33,7 @@ export default function App() {
 
         {/* برای همه کاربران لاگین‌شده: */}
         <Route path="/notices" element={<NoticesPage />} />
+        <Route path="/notice-reports" element={<AdminRoute><NoticeReportsPage /></AdminRoute>} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

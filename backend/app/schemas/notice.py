@@ -55,3 +55,36 @@ class NoticeOut(BaseModel):
     targets: list[NoticeTargetOut]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NoticeTargetDescription(BaseModel):
+    """توصیف قابل‌فهم یک Target — مثلاً «کارخانه ۱» به‌جای site_id=۱."""
+    target_type: NoticeTargetType
+    target_id: int | None
+    label: str
+
+
+class NoticeDetailOut(BaseModel):
+    """برای گزارش‌های «ارسالی من» و «گزارش کامل Admin» — شامل فرستنده، مقصدها و آمار بازدید."""
+    id: int
+    title: str
+    body: str
+    priority: NoticePriority
+    status: NoticeStatus
+    sender_id: int
+    sender_name: str
+    created_at: datetime
+    publish_at: datetime | None
+    targets: list[NoticeTargetDescription]
+    audience_count: int
+    read_count: int
+
+
+class NoticeReaderOut(BaseModel):
+    """یک نفر که یک اطلاعیه مشخص را دیده — برای درون‌رفت (Drill-down) به جزئیات."""
+    user_id: int
+    employee_id: int | None
+    first_name: str | None
+    last_name: str | None
+    personnel_code: str | None
+    read_at: datetime

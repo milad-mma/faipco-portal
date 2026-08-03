@@ -23,6 +23,7 @@ import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, adminOnly: true },
   { label: "مدیریت Sync", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
+  { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
   { label: "مدیریت دسترسی", path: "/access", icon: <AdminPanelSettingsOutlinedIcon />, adminOnly: true },
 ];
 

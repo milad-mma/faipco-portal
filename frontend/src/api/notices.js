@@ -24,3 +24,22 @@ export async function fetchAvailableTargets() {
   const { data } = await apiClient.get("/notices/available-targets");
   return data;
 }
+
+export async function markNoticeRead(noticeId) {
+  await apiClient.post(`/notices/${noticeId}/read`);
+}
+
+export async function fetchSentByMe() {
+  const { data } = await apiClient.get("/notices/sent-by-me");
+  return data;
+}
+
+export async function fetchAdminReport() {
+  const { data } = await apiClient.get("/notices/admin-report");
+  return data;
+}
+
+export async function fetchNoticeReaders(noticeId) {
+  const { data } = await apiClient.get(`/notices/${noticeId}/readers`);
+  return data;
+}
