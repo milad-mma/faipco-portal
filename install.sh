@@ -8,11 +8,20 @@
 # Or locally (when the repository is already cloned):
 #   sudo bash install.sh
 #
+# This script auto-detects whether it's a FRESH install or an UPDATE of an
+# existing installation (by checking if backend/.env already exists at the
+# install path). In UPDATE mode: the existing .env (secrets, DB password,
+# VAPID keys, etc.) and the database are NEVER touched or wiped — only the
+# source code is refreshed, dependencies reinstalled, new migrations applied
+# additively (alembic upgrade head), the frontend rebuilt, and services
+# restarted. This is safe to run every time you push to GitHub and want to
+# deploy the latest version to your server.
+#
 # Optional arguments:
-#   --domain example.com          Domain name (for Nginx + automatic SSL)
-#   --no-ssl                      Skip the SSL step even if a domain is given
-#   --admin-username admin        Initial admin username (default: admin)
-#   --admin-password '...'        Admin password (default: admin — change it for production)
+#   --domain example.com          Public domain (only used for CORS — SSL is handled by an
+#                                  external reverse proxy, this installer no longer manages it)
+#   --admin-username admin        Initial admin username (default: admin) — only used on fresh installs
+#   --admin-password '...'        Admin password (default: admin) — only used on fresh installs
 #   --install-dir /var/www/html   Install path (default: /var/www/html)
 #   --repo <git-url>              Repository URL
 #   --branch main                 Branch to use
@@ -29,11 +38,11 @@ INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
 ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-admin}"
-SKIP_SSL="false"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
 BACKEND_PORT=8000
 LOG_FILE="/var/log/faipco-install.log"
+IS_UPDATE="false"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
@@ -45,7 +54,6 @@ stage() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain) DOMAIN="$2"; shift 2 ;;
-    --no-ssl) SKIP_SSL="true"; shift ;;
     --admin-username) ADMIN_USERNAME="$2"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
@@ -128,34 +136,26 @@ install_postgresql() {
   fi
   systemctl enable --now postgresql
 
-  DB_PASSWORD="$(openssl rand -hex 16)"
+  local role_exists db_exists
+  role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'")"
+  db_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'")"
+
+  if [[ "$role_exists" == "1" && "$db_exists" == "1" ]]; then
+    log "Database role and database already exist — keeping the existing password untouched."
+    DB_PASSWORD=""
+    return
+  fi
 
   log "Setting up the Portal user and database in PostgreSQL..."
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+  DB_PASSWORD="$(openssl rand -hex 16)"
+  if [[ "$role_exists" == "1" ]]; then
     sudo -u postgres psql -c "ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" >/dev/null
   else
     sudo -u postgres psql -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
   fi
-
-  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+  if [[ "$db_exists" != "1" ]]; then
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" >/dev/null
   fi
-}
-
-# ---------- Unconditionally reset the schema before every migration ----------
-# Instead of guessing whether a previous run left things half-done (which can
-# miss cases — e.g. only an orphaned type with no tables), we always drop and
-# recreate the whole schema. This guarantees migrations run from a clean state
-# every time and the "already exists" error can never happen again.
-#
-# Note: since the Portal has no real customer data at this stage (initial
-# install/reinstall), this is safe. For a real upgrade on a server with real
-# data, don't rerun install.sh from scratch — just run `alembic upgrade head`
-# on its own instead.
-reset_schema() {
-  log "Resetting the database schema to guarantee a clean migration..."
-  sudo -u postgres psql -d "$DB_NAME" -c \
-    "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${DB_USER}; GRANT ALL ON SCHEMA public TO public;" >/dev/null
 }
 
 fetch_source() {
@@ -185,7 +185,9 @@ fetch_source() {
 setup_backend() {
   log "Creating virtual environment and installing backend dependencies..."
   cd "$INSTALL_DIR/backend"
-  python3 -m venv .venv
+  if [[ ! -d .venv ]]; then
+    python3 -m venv .venv
+  fi
   # shellcheck disable=SC1091
   source .venv/bin/activate
   pip install --upgrade pip
@@ -195,23 +197,41 @@ setup_backend() {
 }
 
 generate_env() {
-  log "Generating .env file with unique security keys..."
+  if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
+    log "Existing .env found — keeping current settings (secrets, DB password, VAPID keys unchanged)."
+    if grep -q "^VAPID_PUBLIC_KEY=" "$INSTALL_DIR/backend/.env"; then
+      VAPID_PUBLIC_KEY="$(grep '^VAPID_PUBLIC_KEY=' "$INSTALL_DIR/backend/.env" | cut -d= -f2-)"
+    else
+      # نصب قدیمی‌تر که هنوز VAPID نداشت — فقط همین کلیدهای جدید را اضافه می‌کنیم
+      log "Adding missing VAPID keys for Web Push to the existing .env..."
+      local vapid_keys
+      vapid_keys="$(cd "$INSTALL_DIR" && "$INSTALL_DIR/backend/.venv/bin/python" -m scripts.generate_vapid_keys)"
+      VAPID_PUBLIC_KEY="$(echo "$vapid_keys" | sed -n '1p')"
+      VAPID_PRIVATE_KEY="$(echo "$vapid_keys" | sed -n '2p')"
+      {
+        echo "VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}"
+        echo "VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}"
+        echo "VAPID_CLAIMS_EMAIL=admin@${DOMAIN:-example.com}"
+      } >> "$INSTALL_DIR/backend/.env"
+    fi
+    return
+  fi
+
+  log "Generating .env file with unique security keys (fresh install)..."
   local secret_key fernet_key
   secret_key="$(openssl rand -hex 32)"
   fernet_key="$("$INSTALL_DIR/backend/.venv/bin/python" -c \
     "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
 
-  # کلیدهای VAPID برای Web Push — یک‌بار تولید و برای همیشه ثابت می‌مانند.
-  # در متغیرهای Global (بدون local) ذخیره می‌شوند تا build_frontend هم به آن‌ها دسترسی داشته باشد.
   local vapid_keys
   vapid_keys="$(cd "$INSTALL_DIR" && "$INSTALL_DIR/backend/.venv/bin/python" -m scripts.generate_vapid_keys)"
   VAPID_PUBLIC_KEY="$(echo "$vapid_keys" | sed -n '1p')"
   VAPID_PRIVATE_KEY="$(echo "$vapid_keys" | sed -n '2p')"
 
-  local cors_origin="http://localhost"
-  if [[ -n "$DOMAIN" ]]; then
-    cors_origin="https://${DOMAIN}"
-  fi
+  # چون فرانت‌اند همیشه با مسیرهای نسبی (/api/v1/...) به بک‌اند وصل می‌شود و
+  # هر دو از همین Nginx سرو می‌شوند، همیشه Same-Origin است؛ CORS محدودکننده
+  # واقعی ایجاد نمی‌کند. برای جلوگیری از قطعی غیرمنتظره، همه Origin مجازند.
+  local cors_origin="*"
 
   cat > "$INSTALL_DIR/backend/.env" <<EOF
 APP_NAME=FAIPCO Portal
@@ -234,8 +254,7 @@ EOF
 }
 
 run_migrations() {
-  reset_schema
-  log "Running Alembic migrations..."
+  log "Running Alembic migrations (additive — never drops existing data)..."
   cd "$INSTALL_DIR/backend"
   # shellcheck disable=SC1091
   source .venv/bin/activate
@@ -288,12 +307,14 @@ EOF
 
 configure_nginx() {
   log "Configuring Nginx..."
-  local server_name="${DOMAIN:-_}"
-
+  # این Nginx محلی همیشه روی HTTP ساده (پورت ۸۰) کار می‌کند. SSL توسط یک
+  # Reverse Proxy خارجی که از قبل راه‌اندازی شده مدیریت می‌شود (نه این اسکریپت).
+  # server_name روی "_" و listen روی default_server تنظیم می‌شود تا هم از
+  # طریق دامنه (پشت Reverse Proxy) و هم مستقیماً از طریق IP محلی در دسترس باشد.
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
-    listen 80;
-    server_name ${server_name};
+    listen 80 default_server;
+    server_name _;
 
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
@@ -318,33 +339,20 @@ EOF
   systemctl reload nginx
 }
 
-setup_ssl() {
-  if [[ "$SKIP_SSL" == "true" || -z "$DOMAIN" ]]; then
-    warn "Skipping SSL (no domain given, or --no-ssl was passed). The portal is only reachable over HTTP."
-    return
-  fi
-  log "Installing free SSL (Let's Encrypt) for domain ${DOMAIN}..."
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
-  if ! certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@${DOMAIN}" --redirect; then
-    warn "Automatic SSL issuance failed (the domain's DNS may not point to this server yet)."
-    warn "You can run it manually later: certbot --nginx -d ${DOMAIN}"
-  fi
-}
-
 seed_and_create_admin() {
-  log "Seeding initial permissions and system roles..."
+  log "Seeding permissions and system roles (safe to repeat — only adds what's missing)..."
   cd "$INSTALL_DIR"
   # shellcheck disable=SC1091
   source backend/.venv/bin/activate
   python -m scripts.seed_permissions
 
-  log "Creating the initial admin user..."
-  python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
-  deactivate
-
-  if [[ "$ADMIN_PASSWORD" == "admin" ]]; then
-    warn "The admin password is set to the default 'admin' — change it right after your first login."
+  if [[ "$IS_UPDATE" == "true" ]]; then
+    log "Existing installation — skipping admin creation (your current admin account and password are untouched)."
+  else
+    log "Creating the initial admin user..."
+    python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
   fi
+  deactivate
 }
 
 configure_firewall() {
@@ -355,28 +363,35 @@ configure_firewall() {
 }
 
 print_summary() {
-  local url="http://$(hostname -I | awk '{print $1}')"
+  local ip_url="http://$(hostname -I | awk '{print $1}')"
+  local domain_note=""
   if [[ -n "$DOMAIN" ]]; then
-    if [[ "$SKIP_SSL" == "true" ]]; then
-      url="http://${DOMAIN}"
-    else
-      url="https://${DOMAIN}"
-    fi
+    domain_note=" Public URL (via your reverse proxy): https://${DOMAIN}\n"
   fi
 
   echo ""
   echo -e "${GREEN}=============================================="
-  echo -e " FAIPCO Portal installed successfully  ✅"
+  if [[ "$IS_UPDATE" == "true" ]]; then
+    echo -e " FAIPCO Portal updated successfully  ✅"
+  else
+    echo -e " FAIPCO Portal installed successfully  ✅"
+  fi
   echo -e "==============================================${NC}"
-  echo -e " Portal URL:      ${url}"
-  echo -e " Admin username:  ${ADMIN_USERNAME}"
-  echo -e " Admin password:  ${ADMIN_PASSWORD}"
+  echo -e "$domain_note Local/IP URL:    ${ip_url}"
+  if [[ "$IS_UPDATE" == "true" ]]; then
+    echo -e " Admin account:   unchanged — use your existing username/password"
+  else
+    echo -e " Admin username:  ${ADMIN_USERNAME}"
+    echo -e " Admin password:  ${ADMIN_PASSWORD}"
+  fi
   echo -e " Install path:    ${INSTALL_DIR}"
   echo -e " Config file:     ${INSTALL_DIR}/backend/.env"
   echo -e " Full install log: ${LOG_FILE}"
   echo ""
-  echo -e "${YELLOW}⚠ If you used the default password, change it right after logging in.${NC}"
-  echo ""
+  if [[ "$IS_UPDATE" != "true" && "$ADMIN_PASSWORD" == "admin" ]]; then
+    echo -e "${YELLOW}⚠ You're using the default password 'admin' — change it right after logging in.${NC}"
+    echo ""
+  fi
   echo " Useful commands:"
   echo "   systemctl status faipco-backend    # Backend service status"
   echo "   journalctl -u faipco-backend -f    # Live backend logs"
@@ -387,7 +402,7 @@ print_summary() {
 main() {
   require_root
   setup_logging
-  log "Starting FAIPCO Portal installation... (full log saved to ${LOG_FILE})"
+  log "Starting FAIPCO Portal installer... (full log saved to ${LOG_FILE})"
 
   stage "Step 1 - Installing prerequisites"
   ensure_swap
@@ -397,6 +412,12 @@ main() {
 
   stage "Step 2 - Fetching source code"
   fetch_source
+
+  if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
+    IS_UPDATE="true"
+    log "Existing installation detected at ${INSTALL_DIR} — running in UPDATE mode."
+    log "Your .env, database, and current settings will NOT be touched."
+  fi
 
   stage "Step 3 - Setting up backend"
   setup_backend
@@ -413,7 +434,6 @@ main() {
   stage "Step 7 - Configuring services"
   configure_systemd
   configure_nginx
-  setup_ssl
 
   stage "Step 8 - Admin user and security"
   seed_and_create_admin
