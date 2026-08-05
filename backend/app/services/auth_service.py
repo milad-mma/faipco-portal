@@ -25,10 +25,16 @@ class AuthService:
         self.db = db
         self.repo = UserRepository(db)
 
-    async def authenticate(self, username: str, password: str) -> User:
+    async def authenticate(self, username: str, password: str) -> User | None:
+        """
+        فقط تلاش برای ورود به‌عنوان کاربر مدیریتی (یوزرنیم/پسورد).
+        برخلاف قبل، دیگر در صورت نبود تطبیق خطا نمی‌دهد (None برمی‌گرداند) —
+        چون login() یکپارچه در ادامه باید بتواند به‌جایش کد پرسنلی/کد ملی
+        پرسنل را هم امتحان کند.
+        """
         user = await self.repo.get_by_username(username)
         if user is None or not verify_password(password, user.password_hash):
-            raise AuthError("نام کاربری یا رمز عبور اشتباه است")
+            return None
         if not user.is_active:
             raise AuthError("حساب کاربری غیرفعال است")
 
@@ -36,28 +42,32 @@ class AuthService:
         await self.db.commit()
         return user
 
-    async def login(self, username: str, password: str) -> tuple[str, str]:
-        user = await self.authenticate(username, password)
+    async def login(self, identifier: str, credential: str) -> tuple[str, str]:
+        """
+        فرم ورود یکپارچه: همان دو فیلد، چه برای مدیریت و چه برای پرسنل.
+        ابتدا به‌عنوان (یوزرنیم + رمز عبور) کاربر مدیریتی امتحان می‌شود؛
+        اگر تطبیق نداشت، به‌عنوان (کد پرسنلی + کد ملی) پرسنل امتحان می‌شود.
+        """
+        user = await self.authenticate(identifier, credential)
+
+        if user is None:
+            employee = await self.repo.find_employee_for_login(identifier, credential)
+            if employee is None:
+                raise AuthError("اطلاعات ورود اشتباه است")
+            user = await self.repo.get_or_create_employee_user(employee)
+
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, refresh_token
 
-    async def employee_login(self, personnel_code: str, national_code: str) -> tuple[str, str]:
+    async def refresh(self, refresh_token: str) -> tuple[str, str]:
         """
-        ورود پرسنل با کد پرسنلی به‌جای یوزرنیم و کد ملی به‌جای رمز عبور.
-        اولین بار که یک پرسنل با موفقیت وارد شود، یک حساب User به‌صورت
-        خودکار برایش ساخته می‌شود (بدون نیاز به دخالت Admin).
+        تمدید Session — به‌صورت Sliding Window: هر بار که این متد صدا زده شود
+        (یعنی کاربر در حال استفاده از برنامه است)، هم Access Token و هم یک
+        Refresh Token تازه (با تاریخ انقضای جدید) صادر می‌شود. یعنی تا وقتی
+        کاربر حداقل هر REFRESH_TOKEN_EXPIRE_DAYS یک‌بار برنامه را باز کند،
+        هرگز به‌صورت خودکار Logout نمی‌شود — فقط با زدن دکمه «خروج» خارج می‌شود.
         """
-        employee = await self.repo.find_employee_for_login(personnel_code, national_code)
-        if employee is None:
-            raise AuthError("کد پرسنلی یا کد ملی اشتباه است")
-
-        user = await self.repo.get_or_create_employee_user(employee)
-        access_token = create_access_token(subject=str(user.id))
-        refresh_token = create_refresh_token(subject=str(user.id))
-        return access_token, refresh_token
-
-    async def refresh(self, refresh_token: str) -> str:
         payload = decode_token(refresh_token)
         if payload is None or payload.get("type") != "refresh":
             raise AuthError("رفرش توکن نامعتبر یا منقضی‌شده است")
@@ -67,7 +77,9 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthError("کاربر یافت نشد یا غیرفعال است")
 
-        return create_access_token(subject=str(user.id))
+        access_token = create_access_token(subject=str(user.id))
+        new_refresh_token = create_refresh_token(subject=str(user.id))
+        return access_token, new_refresh_token
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
         if not verify_password(current_password, user.password_hash):

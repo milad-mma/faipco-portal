@@ -7,13 +7,6 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1)
 
 
-class EmployeeLoginRequest(BaseModel):
-    """ورود پرسنل با کد پرسنلی (به‌جای یوزرنیم) و کد ملی (به‌جای رمز عبور)."""
-
-    personnel_code: str
-    national_code: str
-
-
 class RefreshRequest(BaseModel):
     refresh_token: str
 

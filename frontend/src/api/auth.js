@@ -5,14 +5,6 @@ export async function loginRequest(username, password) {
   return data; // { access_token, refresh_token, token_type }
 }
 
-export async function employeeLoginRequest(personnelCode, nationalCode) {
-  const { data } = await apiClient.post("/auth/employee-login", {
-    personnel_code: personnelCode,
-    national_code: nationalCode,
-  });
-  return data;
-}
-
 export async function fetchCurrentUser() {
   const { data } = await apiClient.get("/auth/me");
   return data;

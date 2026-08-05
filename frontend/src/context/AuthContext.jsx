@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { employeeLoginRequest, fetchCurrentUser, loginRequest } from "../api/auth";
+import { fetchCurrentUser, loginRequest } from "../api/auth";
 
 const AuthContext = createContext(null);
 
@@ -22,22 +22,15 @@ export function AuthProvider({ children }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  async function applyTokensAndLoadUser(tokens) {
+  async function login(username, password) {
+    // فرم ورود یکپارچه است: همین یک تابع هم برای مدیریت (یوزرنیم/پسورد)
+    // و هم برای پرسنل (کد پرسنلی/کد ملی) کار می‌کند — تشخیص در Backend انجام می‌شود.
+    const tokens = await loginRequest(username, password);
     localStorage.setItem("access_token", tokens.access_token);
     localStorage.setItem("refresh_token", tokens.refresh_token);
     const currentUser = await fetchCurrentUser();
     setUser(currentUser);
     return currentUser;
-  }
-
-  async function login(username, password) {
-    const tokens = await loginRequest(username, password);
-    return applyTokensAndLoadUser(tokens);
-  }
-
-  async function employeeLogin(personnelCode, nationalCode) {
-    const tokens = await employeeLoginRequest(personnelCode, nationalCode);
-    return applyTokensAndLoadUser(tokens);
   }
 
   function logout() {
@@ -47,7 +40,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, employeeLogin, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

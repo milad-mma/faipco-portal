@@ -1,46 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Alert,
-  Box,
-  Button,
-  Paper,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Button, Paper, TextField, Typography } from "@mui/material";
+import GetAppOutlinedIcon from "@mui/icons-material/GetAppOutlined";
 import { useAuth } from "../context/AuthContext";
+import { enablePushNotifications, isPushSupported } from "../utils/push";
+import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 
 export default function LoginPage() {
-  const { login, employeeLogin } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState("staff"); // "staff" | "employee"
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [personnelCode, setPersonnelCode] = useState("");
-  const [nationalCode, setNationalCode] = useState("");
-
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [canInstall, setCanInstall] = useState(getIsInstallable());
+
+  useEffect(() => {
+    function handleInstallableChange() {
+      setCanInstall(getIsInstallable());
+    }
+    window.addEventListener("pwa-installable-changed", handleInstallableChange);
+    return () => window.removeEventListener("pwa-installable-changed", handleInstallableChange);
+  }, []);
+
+  const showIosHint = isIos() && !isRunningStandalone();
+
+  async function handleInstallClick() {
+    await promptPwaInstall();
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setIsSubmitting(true);
     try {
-      if (mode === "staff") {
-        await login(username, password);
-      } else {
-        await employeeLogin(personnelCode, nationalCode);
+      // فرم ورود یکپارچه است: همین دو فیلد هم برای مدیریت (نام کاربری/رمز عبور)
+      // و هم برای پرسنل (کد پرسنلی/کد ملی) کار می‌کند — Backend خودش تشخیص می‌دهد.
+      await login(username, password);
+
+      // چون این یک سیستم اطلاع‌رسانی است، همین لحظه ورود موفق از کاربر
+      // اجازه ارسال اعلان می‌خواهیم — رد شدن یا عدم پشتیبانی مرورگر، به
+      // روند ورود لطمه‌ای نمی‌زند (کاملاً بی‌صدا نادیده گرفته می‌شود).
+      if (isPushSupported()) {
+        enablePushNotifications().catch(() => {});
       }
+
       navigate("/", { replace: true });
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          "ورود ناموفق بود. اطلاعات وارد‌شده را بررسی کنید."
-      );
+      setError(err.response?.data?.detail || "ورود ناموفق بود. اطلاعات وارد‌شده را بررسی کنید.");
     } finally {
       setIsSubmitting(false);
     }
@@ -58,7 +66,7 @@ export default function LoginPage() {
       }}
     >
       <Paper elevation={0} sx={{ width: "100%", maxWidth: 400, p: 4, borderRadius: 3 }}>
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 2 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>
           <Box
             sx={{
               width: 56,
@@ -84,18 +92,22 @@ export default function LoginPage() {
           </Typography>
         </Box>
 
-        <Tabs
-          value={mode}
-          onChange={(_, value) => {
-            setMode(value);
-            setError("");
-          }}
-          variant="fullWidth"
-          sx={{ mb: 2.5 }}
-        >
-          <Tab value="staff" label="ورود مدیریت" />
-          <Tab value="employee" label="ورود پرسنل" />
-        </Tabs>
+        {canInstall && (
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<GetAppOutlinedIcon />}
+            onClick={handleInstallClick}
+            sx={{ mb: 2 }}
+          >
+            نصب اپلیکیشن روی این دستگاه
+          </Button>
+        )}
+        {showIosHint && (
+          <Alert severity="info" sx={{ mb: 2, fontSize: 13 }}>
+            برای نصب روی آیفون: دکمه Share را بزنید و «Add to Home Screen» را انتخاب کنید.
+          </Alert>
+        )}
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -104,45 +116,22 @@ export default function LoginPage() {
         )}
 
         <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {mode === "staff" ? (
-            <>
-              <TextField
-                label="نام کاربری"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoFocus
-                fullWidth
-              />
-              <TextField
-                label="رمز عبور"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                fullWidth
-              />
-            </>
-          ) : (
-            <>
-              <TextField
-                label="کد پرسنلی"
-                value={personnelCode}
-                onChange={(e) => setPersonnelCode(e.target.value)}
-                required
-                autoFocus
-                fullWidth
-              />
-              <TextField
-                label="کد ملی"
-                type="password"
-                value={nationalCode}
-                onChange={(e) => setNationalCode(e.target.value)}
-                required
-                fullWidth
-              />
-            </>
-          )}
+          <TextField
+            label="نام کاربری"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            autoFocus
+            fullWidth
+          />
+          <TextField
+            label="رمز عبور"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            fullWidth
+          />
 
           <Button type="submit" variant="contained" size="large" disabled={isSubmitting} sx={{ mt: 1 }}>
             {isSubmitting ? "در حال ورود..." : "ورود"}
