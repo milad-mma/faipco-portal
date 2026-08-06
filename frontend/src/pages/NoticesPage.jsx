@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Autocomplete,
+  Backdrop,
   Box,
   Button,
   Card,
   Checkbox,
   Chip,
+  CircularProgress,
   Collapse,
   Dialog,
   DialogActions,
@@ -56,9 +58,10 @@ const EMPTY_FORM = {
 
 function ReceivedNoticeCard({ notice, onOpened }) {
   const [expanded, setExpanded] = useState(false);
+  const isUnread = !notice.is_read;
 
   function handleToggle() {
-    if (!expanded) {
+    if (!expanded && isUnread) {
       markNoticeRead(notice.id).catch(() => {});
       onOpened?.(notice.id);
     }
@@ -66,7 +69,16 @@ function ReceivedNoticeCard({ notice, onOpened }) {
   }
 
   return (
-    <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+    <Card
+      variant="outlined"
+      sx={{
+        borderRadius: 3,
+        overflow: "hidden",
+        borderInlineStart: isUnread ? "4px solid" : "4px solid transparent",
+        borderInlineStartColor: isUnread ? "secondary.main" : "transparent",
+        backgroundColor: isUnread ? "rgba(224, 164, 88, 0.06)" : "transparent",
+      }}
+    >
       <Box
         onClick={handleToggle}
         sx={{
@@ -79,15 +91,16 @@ function ReceivedNoticeCard({ notice, onOpened }) {
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          {expanded ? (
-            <DraftsOutlinedIcon color="disabled" />
-          ) : (
-            <MailOutlineIcon color="primary" />
-          )}
-          <Box>
-            <Typography variant="body1" fontWeight={expanded ? 500 : 700}>
-              {expanded ? notice.title : "پیام جدید"}
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+          {isUnread ? <MailOutlineIcon color="secondary" /> : <DraftsOutlinedIcon color="disabled" />}
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="body1"
+              fontWeight={isUnread ? 700 : 400}
+              color={isUnread ? "text.primary" : "text.secondary"}
+              noWrap
+            >
+              {notice.title}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {new Date(notice.created_at).toLocaleString("fa-IR")}
@@ -102,9 +115,6 @@ function ReceivedNoticeCard({ notice, onOpened }) {
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-            {notice.title}
-          </Typography>
           <Typography variant="body2" color="text.secondary">
             {notice.body}
           </Typography>
@@ -121,6 +131,7 @@ export default function NoticesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [availableTargets, setAvailableTargets] = useState(null);
   const [sites, setSites] = useState([]);
@@ -144,6 +155,20 @@ export default function NoticesPage() {
     fetchSites().then(setSites);
     fetchDepartments().then(setDepartments);
   }, []);
+
+  // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
+  // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من).
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    function handleMessage(event) {
+      if (event.data?.type === "faipco-notice-push") {
+        loadNotices();
+        if (tab === "sent") loadSentNotices();
+      }
+    }
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleMessage);
+  }, [tab]);
 
   useEffect(() => {
     if (tab === "sent") loadSentNotices();
@@ -181,8 +206,14 @@ export default function NoticesPage() {
     setDialogOpen(true);
   }
 
+  function handleMarkedRead(noticeId) {
+    setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));
+  }
+
   async function handleCreate() {
+    if (isSubmitting) return; // جلوگیری از ارسال تکراری با کلیک چندباره
     setError("");
+
     const targets = [];
     if (form.targetAll) targets.push({ target_type: "all" });
     form.siteIds.forEach((id) => targets.push({ target_type: "site", target_id: id }));
@@ -201,6 +232,7 @@ export default function NoticesPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const created = await createNotice({
         title: form.title,
@@ -215,6 +247,8 @@ export default function NoticesPage() {
       if (tab === "sent") loadSentNotices();
     } catch (err) {
       setError(err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه ناموفق بود");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -250,7 +284,7 @@ export default function NoticesPage() {
             </Card>
           )}
           {notices.map((notice) => (
-            <ReceivedNoticeCard key={notice.id} notice={notice} />
+            <ReceivedNoticeCard key={notice.id} notice={notice} onOpened={handleMarkedRead} />
           ))}
         </Stack>
       )}
@@ -261,9 +295,32 @@ export default function NoticesPage() {
         </Card>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={dialogOpen}
+        onClose={() => !isSubmitting && setDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>اطلاعیه جدید</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1, position: "relative" }}>
+          {/* حین ارسال، کل فرم غیرقابل‌دستکاری می‌شود تا کلیک چندباره ممکن نباشد */}
+          <Backdrop
+            open={isSubmitting}
+            sx={{
+              position: "absolute",
+              zIndex: 10,
+              backgroundColor: "rgba(255,255,255,0.7)",
+              borderRadius: 2,
+            }}
+          >
+            <Stack alignItems="center" spacing={1}>
+              <CircularProgress size={32} />
+              <Typography variant="caption" color="text.secondary">
+                در حال ثبت و انتشار...
+              </Typography>
+            </Stack>
+          </Backdrop>
+
           {error && <Alert severity="error">{error}</Alert>}
 
           <TextField
@@ -271,6 +328,7 @@ export default function NoticesPage() {
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
             fullWidth
+            disabled={isSubmitting}
           />
           <TextField
             label="متن اطلاعیه"
@@ -279,12 +337,14 @@ export default function NoticesPage() {
             multiline
             rows={3}
             fullWidth
+            disabled={isSubmitting}
           />
           <TextField
             select
             label="اولویت"
             value={form.priority}
             onChange={(e) => setForm({ ...form, priority: e.target.value })}
+            disabled={isSubmitting}
           >
             {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
               <MenuItem key={value} value={value}>
@@ -303,6 +363,7 @@ export default function NoticesPage() {
                 <Checkbox
                   checked={form.targetAll}
                   onChange={(e) => setForm({ ...form, targetAll: e.target.checked })}
+                  disabled={isSubmitting}
                 />
               }
               label="ارسال به کل سازمان (Broadcast)"
@@ -312,6 +373,7 @@ export default function NoticesPage() {
           {allowedSites.length > 0 && (
             <Autocomplete
               multiple
+              disabled={isSubmitting}
               options={allowedSites}
               getOptionLabel={(s) => s.name}
               value={allowedSites.filter((s) => form.siteIds.includes(s.id))}
@@ -328,6 +390,7 @@ export default function NoticesPage() {
           {allowedDepartments.length > 0 && (
             <Autocomplete
               multiple
+              disabled={isSubmitting}
               options={allowedDepartments}
               getOptionLabel={(d) => d.name}
               value={allowedDepartments.filter((d) => form.departmentIds.includes(d.id))}
@@ -344,6 +407,7 @@ export default function NoticesPage() {
           {availableTargets?.supervisor_employees?.length > 0 && (
             <Autocomplete
               multiple
+              disabled={isSubmitting}
               options={availableTargets.supervisor_employees}
               getOptionLabel={(e) => `${e.first_name} ${e.last_name} (${e.personnel_code})`}
               isOptionEqualToValue={(a, b) => a.id === b.id}
@@ -368,6 +432,7 @@ export default function NoticesPage() {
           {availableTargets?.can_target_employee && (
             <Autocomplete
               multiple
+              disabled={isSubmitting}
               options={employeeOptions}
               loading={employeeSearchLoading}
               filterOptions={(x) => x}
@@ -394,9 +459,16 @@ export default function NoticesPage() {
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={() => setDialogOpen(false)}>انصراف</Button>
-          <Button variant="contained" onClick={handleCreate}>
-            ثبت و انتشار
+          <Button onClick={() => setDialogOpen(false)} disabled={isSubmitting}>
+            انصراف
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCreate}
+            disabled={isSubmitting}
+            startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {isSubmitting ? "در حال ارسال..." : "ثبت و انتشار"}
           </Button>
         </DialogActions>
       </Dialog>

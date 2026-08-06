@@ -53,6 +53,7 @@ class NoticeOut(BaseModel):
     expire_at: datetime | None
     created_at: datetime
     targets: list[NoticeTargetOut]
+    is_read: bool = False  # فقط در /notices/me معنا دارد؛ جای دیگر همیشه False است
 
     model_config = ConfigDict(from_attributes=True)
 

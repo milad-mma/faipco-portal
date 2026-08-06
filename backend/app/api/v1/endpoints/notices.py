@@ -11,7 +11,7 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
@@ -19,7 +19,7 @@ from app.db.session import get_db
 from app.models.notice import Notice
 from app.models.user import User
 from app.schemas.notice import NoticeCreate, NoticeDetailOut, NoticeOut, NoticeReaderOut
-from app.services.notice_service import NoticePermissionError, NoticeService
+from app.services.notice_service import NoticePermissionError, NoticeService, send_publish_notifications
 
 router = APIRouter()
 
@@ -39,12 +39,15 @@ async def create_notice(
 @router.post("/{notice_id}/publish", response_model=NoticeOut)
 async def publish_notice(
     notice_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     notice = await NoticeService(db).publish_notice(notice_id)
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
+    # ارسال Push به Background منتقل می‌شود تا پاسخ فوراً برگردد (بدون مکث شبکه)
+    background_tasks.add_task(send_publish_notifications, notice.id)
     return notice
 
 

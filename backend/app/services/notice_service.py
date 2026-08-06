@@ -30,6 +30,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.db.session import AsyncSessionLocal
 from app.models.employee import Department, Employee
 from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType
 from app.models.notice_read import NoticeRead
@@ -38,14 +39,38 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.notice import (
     NoticeCreate,
     NoticeDetailOut,
+    NoticeOut,
     NoticeReaderOut,
     NoticeTargetDescription,
+    NoticeTargetOut,
 )
 from app.services.push_service import PushService
 
 
 class NoticePermissionError(Exception):
     """کاربر اجازه هدف قرار دادن یکی از Target های درخواستی را ندارد."""
+
+
+async def send_publish_notifications(notice_id: int) -> None:
+    """
+    ارسال Push به مخاطبان یک اطلاعیه — طراحی‌شده برای اجرا در Background
+    (بعد از پاسخ HTTP، نه در همان درخواست). چون این تابع مستقل از هر
+    Request اجرا می‌شود، Session دیتابیس مخصوص خودش را می‌سازد (Session
+    درخواست اصلی تا این لحظه بسته شده است).
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
+            )
+            notice = result.scalar_one_or_none()
+            if notice is None:
+                return
+            service = NoticeService(db)
+            audience = await service._resolve_audience_user_ids(notice)
+            await PushService(db).notify_users(audience, title=notice.title, body=notice.body, url="/notices")
+        except Exception:  # noqa: BLE001 - ارسال Push هرگز نباید کل عملیات را متوقف کند
+            pass
 
 
 class NoticeService:
@@ -123,6 +148,12 @@ class NoticeService:
         return notice
 
     async def publish_notice(self, notice_id: int) -> Notice | None:
+        """
+        فقط انتشار را ثبت می‌کند و بلافاصله برمی‌گردد — سریع و بدون مکث.
+        ارسال Push به کاربران هدف در پس‌زمینه و جداگانه انجام می‌شود
+        (به send_publish_notifications در endpoint مراجعه کنید) تا کندی
+        شبکه هنگام ارسال چندین Push، پاسخ HTTP را معطل نگه ندارد.
+        """
         result = await self.db.execute(
             select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
         )
@@ -133,17 +164,6 @@ class NoticeService:
         if notice.publish_at is None:
             notice.publish_at = datetime.now(timezone.utc)
         await self.db.commit()
-
-        # ارسال Push به کاربران هدف — Best effort: اگر VAPID پیکربندی نشده یا
-        # خطایی رخ دهد، هرگز باعث شکست انتشار اطلاعیه نمی‌شود.
-        try:
-            audience = await self._resolve_audience_user_ids(notice)
-            await PushService(self.db).notify_users(
-                audience, title=notice.title, body=notice.body, url="/notices"
-            )
-        except Exception:  # noqa: BLE001
-            pass
-
         return notice
 
     async def _resolve_audience_user_ids(self, notice: Notice) -> set[int]:
@@ -239,7 +259,38 @@ class NoticeService:
             .order_by(Notice.created_at.desc())
         )
         result = await self.db.execute(stmt)
-        return list(result.scalars().unique().all())
+        notices = list(result.scalars().unique().all())
+        if not notices:
+            return []
+
+        # اطلاعیه‌هایی که کاربر جاری قبلاً باز/مشاهده کرده — برای رنگ‌بندی متفاوت
+        # پیام‌های خوانده‌شده در UI
+        notice_ids = [n.id for n in notices]
+        read_result = await self.db.execute(
+            select(NoticeRead.notice_id).where(
+                NoticeRead.notice_id.in_(notice_ids), NoticeRead.user_id == user.id
+            )
+        )
+        read_ids = {row[0] for row in read_result.all()}
+
+        return [
+            NoticeOut(
+                id=n.id,
+                sender_id=n.sender_id,
+                title=n.title,
+                body=n.body,
+                priority=n.priority,
+                status=n.status,
+                publish_at=n.publish_at,
+                expire_at=n.expire_at,
+                created_at=n.created_at,
+                targets=[
+                    NoticeTargetOut(target_type=t.target_type, target_id=t.target_id) for t in n.targets
+                ],
+                is_read=n.id in read_ids,
+            )
+            for n in notices
+        ]
 
     # ---------- کمکی برای UI: کدام Target ها برای کاربر جاری مجازند؟ ----------
 

@@ -41,14 +41,21 @@ self.addEventListener("push", (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      dir: "rtl",
-      lang: "fa",
-      data: { url: payload.url || "/notices" },
-    })
+    (async () => {
+      await self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        dir: "rtl",
+        lang: "fa",
+        data: { url: payload.url || "/notices" },
+      });
+
+      // به هر تب بازِ اپلیکیشن پیام می‌دهیم تا لیست اطلاعیه‌ها را خودش
+      // (بدون Reload صفحه) دوباره از سرور بخواند — تجربه Real-time.
+      const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      clientsList.forEach((client) => client.postMessage({ type: "faipco-notice-push", ...payload }));
+    })()
   );
 });
 
