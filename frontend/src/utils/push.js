@@ -1,16 +1,5 @@
 import { fetchVapidPublicKey, subscribePush, unsubscribePush } from "../api/push";
 
-/** ثبت Service Worker — یک‌بار در ابتدای بارگذاری اپلیکیشن فراخوانی می‌شود. */
-export function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch((err) => {
-        console.error("ثبت Service Worker ناموفق بود:", err);
-      });
-    });
-  }
-}
-
 /** تبدیل کلید عمومی VAPID (Base64URL) به Uint8Array مورد نیاز pushManager.subscribe */
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);

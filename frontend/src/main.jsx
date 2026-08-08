@@ -6,7 +6,7 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import { rtlCache } from "./rtlCache";
 import { theme } from "./theme";
 import { AuthProvider } from "./context/AuthContext";
-import { registerServiceWorker } from "./utils/push";
+import { registerServiceWorker } from "./utils/serviceWorker";
 import "./utils/pwaInstall"; // ثبت زودهنگام listener رویداد beforeinstallprompt
 import App from "./App";
 

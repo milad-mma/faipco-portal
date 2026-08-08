@@ -311,6 +311,16 @@ configure_nginx() {
   # Reverse Proxy خارجی که از قبل راه‌اندازی شده مدیریت می‌شود (نه این اسکریپت).
   # server_name روی "_" و listen روی default_server تنظیم می‌شود تا هم از
   # طریق دامنه (پشت Reverse Proxy) و هم مستقیماً از طریق IP محلی در دسترس باشد.
+  #
+  # قوانین Cache-Control اینجا حیاتی‌اند برای این‌که بعد از هر Update، کاربرانی
+  # که پنل را باز نگه داشته‌اند، نسخه جدید را (بدون خروج از حساب) ببینند:
+  #   - sw.js / manifest.json / index.html: هرگز Cache نشوند (no-cache یعنی
+  #     همیشه با سرور Revalidate شوند) — چون همین‌ها هستند که باید فوراً
+  #     نسخه جدید را معرفی کنند.
+  #   - فایل‌های داخل assets/ (خروجی Vite با نام Hash‌دار مثل index-a1b2c3.js):
+  #     برای همیشه Cache می‌شوند، چون هر Build جدید نام‌فایل جدیدی تولید
+  #     می‌کند — نیازی به Revalidate نیست و کاربر همیشه خودکار فایل جدید
+  #     را می‌گیرد (چون index.html تازه، به نام جدید اشاره می‌کند).
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
     listen 80 default_server;
@@ -327,7 +337,23 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    location = /sw.js {
+        add_header Cache-Control "no-cache, must-revalidate";
+        try_files \$uri =404;
+    }
+
+    location = /manifest.json {
+        add_header Cache-Control "no-cache, must-revalidate";
+        try_files \$uri =404;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files \$uri =404;
+    }
+
     location / {
+        add_header Cache-Control "no-cache, must-revalidate";
         try_files \$uri \$uri/ /index.html;
     }
 }

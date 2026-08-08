@@ -17,7 +17,17 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      // هر Cache قدیمی که با نسخه فعلی (CACHE_NAME) مطابقت ندارد پاک می‌شود —
+      // این‌طوری با هر Deploy جدید، باقی‌مانده نسخه‌های قبلی جمع نمی‌شود.
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+      );
+      await self.clients.claim();
+    })()
+  );
 });
 
 // درخواست‌های ناوبری (بارگذاری صفحه) را در صورت آفلاین بودن، از Cache برمی‌گرداند
