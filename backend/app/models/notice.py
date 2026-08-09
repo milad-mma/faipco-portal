@@ -12,7 +12,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -58,6 +58,12 @@ class Notice(Base, TimestampMixin):
 
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # حذف اطلاعیه همیشه Soft-Delete است: رکورد فیزیکی هرگز پاک نمی‌شود (تا آمار
+    # بازدید و گزارش‌ها دست‌نخورده بمانند)، فقط از لیست دریافتی مخاطبان کنار
+    # گذاشته می‌شود و در گزارش فرستنده/Admin با برچسب «حذف شده» نمایش داده می‌شود.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     targets: Mapped[list["NoticeTarget"]] = relationship(
         back_populates="notice", cascade="all, delete-orphan"

@@ -48,7 +48,7 @@ from app.services.push_service import PushService
 
 
 class NoticePermissionError(Exception):
-    """کاربر اجازه هدف قرار دادن یکی از Target های درخواستی را ندارد."""
+    """کاربر اجازه هدف قرار دادن یکی از Target های درخواستی را ندارد (یا اجازه حذف این اطلاعیه را ندارد)."""
 
 
 async def send_publish_notifications(notice_id: int) -> None:
@@ -252,6 +252,7 @@ class NoticeService:
             .join(NoticeTarget, NoticeTarget.notice_id == Notice.id)
             .where(
                 Notice.status == NoticeStatus.published,
+                Notice.is_deleted.is_(False),
                 or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
                 or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
                 or_(*target_conditions),
@@ -364,6 +365,27 @@ class NoticeService:
             "supervisor_employees": supervisor_employees,
         }
 
+    # ---------- حذف اطلاعیه ----------
+
+    async def delete_notice(self, notice_id: int, current_user: User) -> Notice:
+        """
+        حذف Soft-Delete: فقط خودِ فرستنده یا superuser اجازه دارد. رکورد فیزیکی
+        پاک نمی‌شود (تا آمار بازدید و گزارش دست‌نخورده بماند) — فقط is_deleted
+        ثبت می‌شود که بلافاصله آن را از لیست دریافتی مخاطبان (list_for_user)
+        کنار می‌گذارد، ولی در گزارش فرستنده/Admin با برچسب «حذف شده» باقی می‌ماند.
+        """
+        notice = await self.db.get(Notice, notice_id)
+        if notice is None:
+            raise ValueError("اطلاعیه یافت نشد")
+        if notice.sender_id != current_user.id and not current_user.is_superuser:
+            raise NoticePermissionError("شما اجازه حذف این اطلاعیه را ندارید")
+        if notice.is_deleted:
+            return notice  # قبلاً حذف شده — اجرای دوباره بی‌اثر است
+        notice.is_deleted = True
+        notice.deleted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        return notice
+
     # ---------- ثبت مشاهده ----------
 
     async def mark_as_read(self, notice_id: int, user_id: int) -> None:
@@ -456,6 +478,8 @@ class NoticeService:
                     targets=target_descriptions,
                     audience_count=audience_count,
                     read_count=read_counts.get(notice.id, 0),
+                    is_deleted=notice.is_deleted,
+                    deleted_at=notice.deleted_at,
                 )
             )
         return detailed

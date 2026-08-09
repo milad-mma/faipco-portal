@@ -10,6 +10,7 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/admin-report          (GET)   گزارش کامل همه اطلاعیه‌ها با فرستنده و آمار بازدید — Admin
 /notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
+/notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +114,25 @@ async def notice_readers(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده این گزارش را ندارید")
 
     return await NoticeService(db).get_notice_readers(notice_id)
+
+
+@router.delete("/{notice_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notice(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    حذف اطلاعیه (Soft-Delete): فقط فرستنده خودش یا Admin. بلافاصله از پنل همه
+    مخاطبانی که آن را دریافت کرده بودند کنار می‌رود، ولی رکورد در گزارش «ارسالی
+    من» و گزارش کامل Admin با برچسب «حذف شده» باقی می‌ماند (حذف فیزیکی نمی‌شود).
+    """
+    try:
+        await NoticeService(db).delete_notice(notice_id, current_user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except NoticePermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
 
 @router.get("/available-targets")

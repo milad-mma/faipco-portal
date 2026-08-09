@@ -43,3 +43,7 @@ export async function fetchNoticeReaders(noticeId) {
   const { data } = await apiClient.get(`/notices/${noticeId}/readers`);
   return data;
 }
+
+export async function deleteNotice(noticeId) {
+  await apiClient.delete(`/notices/${noticeId}`);
+}

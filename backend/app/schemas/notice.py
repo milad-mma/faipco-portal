@@ -79,6 +79,8 @@ class NoticeDetailOut(BaseModel):
     targets: list[NoticeTargetDescription]
     audience_count: int
     read_count: int
+    is_deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 class NoticeReaderOut(BaseModel):

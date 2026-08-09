@@ -291,7 +291,12 @@ export default function NoticesPage() {
 
       {tab === "sent" && (
         <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
-          <NoticeReportTable notices={sentNotices} showSender={false} />
+          <NoticeReportTable
+            notices={sentNotices}
+            showSender={false}
+            allowDelete
+            onChanged={loadSentNotices}
+          />
         </Card>
       )}
 
