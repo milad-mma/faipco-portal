@@ -32,12 +32,12 @@ const PRIORITY_LABELS = {
 };
 
 /**
- * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» (با قابلیت حذف) و هم برای
- * «گزارش کامل Admin» (فقط مشاهده) استفاده می‌شود.
- * allowDelete=true فقط در تب «ارسالی من» پاس داده می‌شود؛ حذف همیشه Soft-Delete
- * است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی خودِ این ردیف در گزارش با برچسب
- * «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود) — پس بعد از حذف موفق، فقط
- * وضعیت ردیف به‌روزرسانی می‌شود، نه حذف آن از جدول.
+ * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» و هم برای «گزارش کامل Admin»
+ * استفاده می‌شود؛ در هر دو با allowDelete=true قابلیت حذف فعال است (Backend
+ * اجازه می‌دهد: خودِ فرستنده هر اطلاعیه، یا Admin برای اطلاعیه هرکسی). حذف
+ * همیشه Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی خودِ این ردیف
+ * در گزارش با برچسب «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود) — پس بعد
+ * از حذف موفق، فقط وضعیت ردیف به‌روزرسانی می‌شود، نه حذف آن از جدول.
  */
 export default function NoticeReportTable({ notices, showSender = false, allowDelete = false, onChanged }) {
   const [readersNoticeId, setReadersNoticeId] = useState(null);
@@ -52,6 +52,8 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
     try {
       await deleteNotice(notice.id);
       onChanged?.();
+    } catch (err) {
+      alert(err.response?.data?.detail || "حذف اطلاعیه ناموفق بود");
     } finally {
       setDeletingId(null);
     }

@@ -20,7 +20,7 @@ export default function NoticeReportsPage() {
       </Typography>
 
       <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
-        <NoticeReportTable notices={notices} showSender />
+        <NoticeReportTable notices={notices} showSender allowDelete onChanged={() => fetchAdminReport().then(setNotices)} />
       </Card>
     </Box>
   );
