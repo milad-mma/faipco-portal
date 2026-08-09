@@ -36,6 +36,7 @@ DEFAULT_PERMISSIONS = [
     ("sites.manage", "مدیریت سایت‌ها و اتصال دیتابیس"),
     ("sync.view", "مشاهده وضعیت Sync"),
     ("sync.run", "اجرای دستی Sync"),
+    ("sync.manage", "تغییر تنظیمات Sync (فاصله زمانی اجرای خودکار)"),
     ("notices.view", "مشاهده لیست کامل اطلاعیه‌ها (پنل Admin)"),
     ("notices.create", "ایجاد اطلاعیه (مجوز پایه — مقصد دقیق در سطح Target بررسی می‌شود)"),
     ("notices.target.all", "ارسال اطلاعیه به کل سازمان (Broadcast) — فقط superadmin"),

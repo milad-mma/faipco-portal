@@ -1,0 +1,47 @@
+"""
+سرویس تنظیمات سراسری قابل‌تغییر از پنل (بدون نیاز به ویرایش .env یا Restart سرور).
+"""
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.models.system_setting import SystemSetting
+
+SYNC_INTERVAL_KEY = "sync_interval_minutes"
+
+
+class SystemSettingsService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def _get_raw(self, key: str) -> str | None:
+        result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        row = result.scalar_one_or_none()
+        return row.value if row else None
+
+    async def _set_raw(self, key: str, value: str) -> None:
+        result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        row = result.scalar_one_or_none()
+        if row is None:
+            self.db.add(SystemSetting(key=key, value=value))
+        else:
+            row.value = value
+        await self.db.commit()
+
+    # ---------- فاصله زمانی Sync خودکار ----------
+
+    async def get_sync_interval_minutes(self) -> int:
+        """
+        اگر هنوز از پنل تغییر داده نشده، مقدار پیش‌فرض همان SYNC_INTERVAL_MINUTES
+        در .env است (سازگار با نصب‌های قبلی که این جدول را نداشتند).
+        """
+        raw = await self._get_raw(SYNC_INTERVAL_KEY)
+        if raw is None:
+            return get_settings().SYNC_INTERVAL_MINUTES
+        return int(raw)
+
+    async def set_sync_interval_minutes(self, minutes: int) -> int:
+        if minutes < 1:
+            raise ValueError("فاصله زمانی Sync باید حداقل ۱ دقیقه باشد")
+        await self._set_raw(SYNC_INTERVAL_KEY, str(minutes))
+        return minutes

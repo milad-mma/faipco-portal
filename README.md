@@ -1,19 +1,53 @@
 # FAIPCO Portal
 
-پرتال سازمانی برای مدیریت پرسنل، اطلاعیه‌ها، دسترسی‌ها و اتصال به دیتابیس‌های چندگانه سایت‌های سازمانی.
+پرتال سازمانی برای مدیریت پرسنل، اطلاعیه‌ها، دسترسی‌ها و اتصال به دیتابیس‌های
+چندگانه‌ی سایت‌های مختلف یک سازمان (چند کارخانه/شعبه، هرکدام با ساختار دیتابیس
+پرسنلی متفاوت).
 
-## وضعیت پروژه
+## فهرست
 
-در حال توسعه مرحله‌ای طبق نقشه راه زیر:
+- [ویژگی‌ها](#ویژگی‌ها)
+- [پشته فناوری](#پشته-فناوری)
+- [ساختار پروژه](#ساختار-پروژه)
+- [اجرای محلی (Development)](#اجرای-محلی-development)
+- [راه‌اندازی Sync Engine](#راه‌اندازی-sync-engine)
+- [سیستم اطلاعیه](#سیستم-اطلاعیه)
+- [مدیریت پرسنل از پنل Admin](#مدیریت-پرسنل-از-پنل-admin)
+- [دسترسی‌ها (RBAC)](#دسترسی‌ها-rbac)
+- [نصب روی سرور Production](#نصب-روی-سرور-production)
+- [محدودیت‌ها و تصمیم‌های آگاهانه طراحی](#محدودیت‌ها-و-تصمیم‌های-آگاهانه-طراحی)
+- [کارهای باز / شناخته‌شده](#کارهای-باز--شناخته‌شده)
+- [معماری](#معماری)
 
-- [x] **مرحله ۱ — Backend Core**: اسکلت FastAPI، تنظیمات، اتصال دیتابیس، هسته امنیتی
-- [x] **مرحله ۲ — Database Models**: مدل‌های Users/Roles/Permissions/Sites/Employees/Notices + Alembic Migrations
-- [x] **مرحله ۳ — Authentication (JWT + RBAC)**: Login/Refresh/Me + Dependency بررسی مجوز
-- [x] **مرحله ۴ — Employee Sync Engine**: Adapter های PostgreSQL/MySQL/SQL Server، Sync Service، Scheduler خودکار
-- [x] **مرحله ۵ — Notification System**: CRUD اطلاعیه + تعیین خودکار مخاطب (Site/Department/Role/Employee/All)
-- [x] **مرحله ۶ — Frontend Dashboard (React)**: پنل کامل RTL با MUI — Login، Dashboard، Employees، Sites، Sync، Notices
-- [x] **مرحله ۷ — Installer**: `install.sh` نصب یک‌دستوری روی Ubuntu + `docker-compose.yml` اختیاری
-- [ ] مرحله ۸ — Documentation کامل
+## ویژگی‌ها
+
+- **Sync خودکار پرسنل** از دیتابیس‌های ناهمگون هر سایت (SQL Server / MySQL /
+  PostgreSQL) — بدون نیاز به تغییر کد برای سایت جدید، فقط با تعریف Mapping
+  ستون‌ها از پنل. فاصله زمانی اجرای خودکار از داخل پنل قابل تغییر است.
+- **لاگین یکپارچه**: هم ورود مدیریتی (یوزرنیم/رمز عبور) و هم ورود پرسنل (کد
+  پرسنلی + کد ملی) از یک فرم واحد.
+- **اطلاعیه‌ها** با تعیین دقیق مخاطب: کل سازمان / یک سایت / یک یا چند واحد
+  سازمانی / یک نقش / پرسنل خاص — همراه با آمار بازدید، Web Push، و حذف
+  (Soft-Delete، با نگه‌داشتن رکورد در گزارش).
+- **RBAC چندلایه**: نقش‌های سراسری، نقش‌های محدود به یک سایت (Site-scoped)، و
+  سرپرستی واحد سازمانی (بدون نیاز به تعریف نقش جداگانه).
+- **مدیریت پرسنل از پنل**: فعال/غیرفعال کردن دستی، تعیین رمز عبور ورود.
+- **PWA** با Push Notification (Web Push / VAPID) و به‌روزرسانی خودکار
+  Service Worker بدون نیاز به خروج کاربر از حساب.
+- **نصب یک‌دستوری** روی Ubuntu Server با `install.sh` (نصب یا آپدیت، به‌صورت
+  خودکار تشخیص داده می‌شود).
+
+## پشته فناوری
+
+| لایه | تکنولوژی |
+|---|---|
+| Backend | FastAPI (Async) + SQLAlchemy 2 (Async) + Alembic |
+| دیتابیس اصلی Portal | PostgreSQL |
+| Auth | JWT (Access + Refresh با Sliding Window) |
+| Scheduler | APScheduler (Sync خودکار پرسنل) |
+| Frontend | React + MUI (RTL کامل با `stylis-plugin-rtl`) + Vite |
+| Push | Web Push (VAPID) |
+| Web Server تولید | Nginx (Reverse Proxy + Serve فایل‌های Frontend) |
 
 ## ساختار پروژه
 
@@ -21,26 +55,33 @@
 faipco-portal/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/          # روترهای API (endpoints هر ماژول)
-│   │   ├── core/            # تنظیمات، امنیت، JWT
-│   │   ├── db/              # اتصال دیتابیس اصلی Portal
-│   │   ├── models/          # مدل‌های SQLAlchemy (مرحله ۲)
-│   │   ├── schemas/         # مدل‌های Pydantic برای ورودی/خروجی API
-│   │   ├── services/        # منطق تجاری (Business Logic)
-│   │   ├── repositories/    # لایه دسترسی به داده
-│   │   ├── sync_engine/     # موتور همگام‌سازی با دیتابیس سایت‌ها (مرحله ۴)
-│   │   └── main.py          # نقطه ورود برنامه
+│   │   ├── api/v1/endpoints/   # auth, employees, sites, sync, notices, departments, users, push
+│   │   ├── core/                # config, security (JWT/bcrypt), deps (RBAC), scheduler
+│   │   ├── db/                  # اتصال دیتابیس اصلی Portal
+│   │   ├── models/               # مدل‌های SQLAlchemy
+│   │   ├── schemas/              # مدل‌های Pydantic ورودی/خروجی API
+│   │   ├── services/             # منطق تجاری
+│   │   ├── repositories/         # لایه دسترسی به داده (User/Employee)
+│   │   ├── sync_engine/          # Adapter های PostgreSQL/MySQL/MSSQL + Sync Service
+│   │   └── main.py
 │   ├── requirements.txt
 │   └── .env.example
-├── frontend/                 # React Dashboard (RTL, MUI) — تکمیل‌شده در مرحله ۶
-├── database/migrations/      # Alembic Migrations
-├── scripts/                  # اسکریپت‌های کمکی (seed, create_admin, verify_models)
-├── docs/                     # مستندات معماری و API
-├── docker-compose.yml         # اجرای اختیاری با Docker
-└── install.sh                 # اسکریپت نصب یک‌دستوری — تکمیل‌شده در مرحله ۷
+├── frontend/                     # React Dashboard (RTL, MUI, PWA)
+│   └── src/
+│       ├── api/                  # یک فایل به‌ازای هر ماژول Backend
+│       ├── components/           # Layout، Dialog های مشترک، ProtectedRoute/AdminRoute
+│       ├── context/               # AuthContext
+│       ├── pages/                 # Login، Dashboard، Employees، Sites، Sync، Notices، Access
+│       └── utils/                 # Service Worker، Push، نصب PWA
+├── database/migrations/          # Alembic Migrations (ترتیبی، نه Autogenerate)
+├── scripts/                       # seed_permissions, create_admin, generate_vapid_keys, verify_models
+├── docs/architecture.md          # دلایل انتخاب تکنولوژی و طراحی داخلی
+└── install.sh                     # نصب/آپدیت یک‌دستوری روی Ubuntu Server
 ```
 
-## اجرای محلی (Development) — مرحله ۱
+## اجرای محلی (Development)
+
+### Backend
 
 ```bash
 cd backend
@@ -49,64 +90,63 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# مقادیر SECRET_KEY و DB_CREDENTIALS_ENCRYPTION_KEY را طبق راهنمای داخل .env.example تولید و جایگزین کنید
-# مقدار DATABASE_URL را با اطلاعات PostgreSQL خودتان تنظیم کنید
+# SECRET_KEY: openssl rand -hex 32
+# DB_CREDENTIALS_ENCRYPTION_KEY: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# DATABASE_URL را با اطلاعات PostgreSQL خودتان تنظیم کنید
 
 uvicorn app.main:app --reload
 ```
 
-سپس:
 - مستندات API: http://localhost:8000/api/docs
 - بررسی سلامت سرویس: http://localhost:8000/api/health
 
-## اجرای Migration ها و Seed اولیه — مرحله ۲
+### اجرای Migration ها
+
+Migration ها **ترتیبی و دستی** نوشته شده‌اند (نه با `alembic revision --autogenerate`)
+تا کاملاً قابل پیش‌بینی و قابل بازبینی باشند:
 
 ```bash
-# بررسی صحت مدل‌ها (بدون نیاز به دیتابیس)
+# بررسی صحت مدل‌ها بدون نیاز به دیتابیس واقعی
 bash scripts/verify_models.sh
 
-# ساخت اولین Migration بر اساس مدل‌ها
 cd backend
-alembic revision --autogenerate -m "initial tables"
 alembic upgrade head
 
-# Seed اولیه Permission ها و نقش superadmin
 cd ..
-python -m scripts.seed_permissions
+python -m scripts.seed_permissions   # Permission ها و نقش‌های سیستمی
+python -m scripts.create_admin --username admin --password 'StrongPass123!'
 ```
 
-### جداول ایجادشده در این مرحله
-`users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `sites`,
-`site_connections`, `departments`, `employees`, `employee_mappings`,
-`notices`, `notice_targets`, `sync_logs`
-
-## ساخت کاربر Admin و تست ورود — مرحله ۳
+### Frontend
 
 ```bash
-# بعد از اجرای migration ها:
-python -m scripts.create_admin --username admin --password 'StrongPass123!'
+cd frontend
+npm install
+cp .env.example .env   # در صورت نیاز VITE_API_BASE_URL را ویرایش کنید
+npm run dev
+```
 
-# تست Login:
+سپس `http://localhost:3000` را باز کرده و با کاربر Admin وارد شوید.
+
+### تست سریع API
+
+```bash
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "StrongPass123!"}'
 
-# با access_token دریافت‌شده:
-curl http://localhost:8000/api/v1/auth/me \
-  -H "Authorization: Bearer <access_token>"
-
-curl http://localhost:8000/api/v1/employees \
-  -H "Authorization: Bearer <access_token>"
+curl http://localhost:8000/api/v1/auth/me -H "Authorization: Bearer <access_token>"
+curl http://localhost:8000/api/v1/employees -H "Authorization: Bearer <access_token>"
 ```
 
 ### نحوه کار RBAC
+
 هر Endpoint حساس با `Depends(require_permission("employees.view"))` محافظت می‌شود.
-اگر کاربر `is_superuser=True` باشد، همیشه دسترسی دارد. در غیر این‌صورت، Permission های مؤثر
-کاربر (نقش‌های سراسری + نقش‌های مخصوص همان Site) از دیتابیس خوانده و بررسی می‌شود.
+اگر کاربر `is_superuser=True` باشد همیشه دسترسی دارد؛ در غیر این‌صورت، Permission
+های مؤثر کاربر (نقش‌های سراسری + نقش‌های مخصوص همان Site) از دیتابیس خوانده و
+بررسی می‌شود. جزئیات کامل در [بخش دسترسی‌ها](#دسترسی‌ها-rbac).
 
-## راه‌اندازی Sync Engine — مرحله ۴
-
-مثال کامل برای اضافه کردن یک Site جدید و اجرای اولین Sync:
+## راه‌اندازی Sync Engine
 
 ```bash
 TOKEN="<access_token از /auth/login>"
@@ -133,155 +173,180 @@ curl -X PUT http://localhost:8000/api/v1/sites/1/mapping \
     "last_name_column": "Family", "mobile_column": "Phone"
   }'
 
-# ۴. تست اتصال
-curl -X POST http://localhost:8000/api/v1/sync/1/test-connection \
-  -H "Authorization: Bearer $TOKEN"
+# ۴. تست اتصال، سپس اجرای دستی Sync
+curl -X POST http://localhost:8000/api/v1/sync/1/test-connection -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:8000/api/v1/sync/1/run -H "Authorization: Bearer $TOKEN"
 
-# ۵. اجرای دستی Sync
-curl -X POST http://localhost:8000/api/v1/sync/1/run \
-  -H "Authorization: Bearer $TOKEN"
-
-# ۶. مشاهده تاریخچه Sync
-curl http://localhost:8000/api/v1/sync/1/logs \
-  -H "Authorization: Bearer $TOKEN"
+# ۵. مشاهده تاریخچه Sync
+curl http://localhost:8000/api/v1/sync/1/logs -H "Authorization: Bearer $TOKEN"
 ```
 
-بعد از اجرای موفق، رکوردهای `employees` مربوط به Site 1 پر می‌شوند و از این پس هر
-`SYNC_INTERVAL_MINUTES` دقیقه (پیش‌فرض ۳۰) به‌صورت خودکار توسط Scheduler به‌روزرسانی می‌شوند
-(قابل غیرفعال‌سازی با `SYNC_ENABLED=false` در `.env`).
+برای سایتی که ستون‌هایش فرق دارد (مثلاً `employees`, `personnel_code`,
+`national_code`, ...)، کافی است در مرحله ۳ مقادیر متفاوتی برای Mapping بفرستید —
+**هیچ خط کدی تغییر نمی‌کند**.
 
-### نکته درباره کارخانه ۲ (مثال از Prompt اولیه)
-برای Site ای که ستون‌هایش فرق دارد (`employees`, `personnel_code`, `national_code`, ...)،
-کافی است در مرحله ۳ بالا مقادیر متفاوتی برای Mapping بفرستید — **هیچ خط کدی تغییر نمی‌کند**.
+### فاصله زمانی اجرای خودکار Sync
 
-## سیستم اطلاعیه — مرحله ۵
+پیش‌فرض هر ۳۰ دقیقه (`SYNC_INTERVAL_MINUTES` در `.env`)، ولی از داخل پنل هم
+قابل تغییر است — بدون نیاز به Restart سرور:
 
 ```bash
-TOKEN="<access_token>"
+curl -X GET http://localhost:8000/api/v1/sync/settings -H "Authorization: Bearer $TOKEN"
+curl -X PUT http://localhost:8000/api/v1/sync/settings \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"interval_minutes": 15}'
+```
 
-# ایجاد اطلاعیه (وضعیت اولیه: draft) — همزمان به همه پرسنل Site شماره ۱ و به نقش "superadmin"
+مقدار جدید هم در دیتابیس (`system_settings`) ذخیره می‌شود (پس بعد از Restart هم
+باقی می‌ماند) و هم بلافاصله روی Job در حال اجرا اعمال می‌شود. اگر `SYNC_ENABLED=false`
+باشد، Sync خودکار اصلاً اجرا نمی‌شود (اجرای دستی از پنل همچنان کار می‌کند).
+
+## سیستم اطلاعیه
+
+```bash
 curl -X POST http://localhost:8000/api/v1/notices \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
-    "title": "اطلاعیه تعطیلی",
-    "body": "روز پنج‌شنبه تعطیل است.",
-    "priority": "high",
-    "targets": [
-      {"target_type": "site", "target_id": 1},
-      {"target_type": "role", "target_id": 1}
-    ]
+    "title": "اطلاعیه تعطیلی", "body": "روز پنج‌شنبه تعطیل است.", "priority": "high",
+    "targets": [{"target_type": "site", "target_id": 1}, {"target_type": "role", "target_id": 1}]
   }'
 
-# انتشار اطلاعیه (draft -> published)
 curl -X POST http://localhost:8000/api/v1/notices/1/publish -H "Authorization: Bearer $TOKEN"
-
-# مشاهده همه اطلاعیه‌ها (نیازمند notices.view — نمای Admin)
-curl http://localhost:8000/api/v1/notices -H "Authorization: Bearer $TOKEN"
-
-# مشاهده اطلاعیه‌های مربوط به خودِ کاربر لاگین‌شده (هر کاربری، بدون نیاز به Permission خاص)
-curl http://localhost:8000/api/v1/notices/me -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8000/api/v1/notices -H "Authorization: Bearer $TOKEN"       # نمای Admin (نیازمند notices.view)
+curl http://localhost:8000/api/v1/notices/me -H "Authorization: Bearer $TOKEN"    # اطلاعیه‌های خودِ کاربر لاگین‌شده
 ```
 
-`/notices/me` هوشمند است: بر اساس `employee_id` متصل به حساب کاربر (Site و Department او)
-و نقش‌های تخصیص‌یافته‌اش، فقط اطلاعیه‌های واقعاً مرتبط را برمی‌گرداند — دقیقاً طبق طراحی
-`notice_targets` که در Prompt اولیه خواسته بودید (all / site / department / role / employee).
+`/notices/me` هوشمند است: بر اساس Site/Department/نقش‌های کاربر، فقط اطلاعیه‌های
+واقعاً مرتبط را برمی‌گرداند — دقیقاً طبق طراحی `notice_targets`
+(all / site / department / role / employee).
 
-## اجرای Frontend — مرحله ۶
+### حذف اطلاعیه
+
+حذف همیشه **Soft-Delete** است:
 
 ```bash
-cd frontend
-npm install
-cp .env.example .env
-# در صورت نیاز VITE_API_BASE_URL را ویرایش کنید
-
-npm run dev
+curl -X DELETE http://localhost:8000/api/v1/notices/1 -H "Authorization: Bearer $TOKEN"
 ```
 
-سپس `http://localhost:3000` را باز کنید و با کاربر Admین ساخته‌شده در مرحله ۳ وارد شوید.
+- بلافاصله از پنل همه‌ی کسانی که اطلاعیه را دریافت کرده بودند کنار می‌رود.
+- رکورد فیزیکی هرگز پاک نمی‌شود — در گزارش «ارسالی من» و گزارش کامل Admin با
+  برچسب «حذف شده» باقی می‌ماند (تا آمار بازدید از دست نرود).
+- فقط خودِ فرستنده یا Admin اجازه حذف دارند.
 
-### ساختار Frontend
-```
-frontend/src/
-├── api/          # توابع ارتباط با Backend (axios) — یک فایل به‌ازای هر ماژول
-├── components/   # Layout، ProtectedRoute، SyncStatusChip
-├── context/       # AuthContext (مدیریت Token و کاربر جاری)
-├── pages/        # Login، Dashboard، Employees، Sites، Sync، Notices
-├── theme.js      # Design Tokens (رنگ، تایپوگرافی)
-└── rtlCache.js   # پیکربندی MUI برای چیدمان راست‌به‌چپ
-```
+## مدیریت پرسنل از پنل Admin
 
-### نکات فنی مهم
-- **Refresh خودکار Token**: در `api/client.js`، اگر یک درخواست با خطای 401 مواجه شود،
-  به‌صورت خودکار با `refresh_token` یک Access Token جدید گرفته و درخواست را تکرار می‌کند.
-- **RTL واقعی**: با `stylis-plugin-rtl` تمام استایل‌های MUI (نه فقط متن) به‌درستی
-  برای چیدمان راست‌به‌چپ تولید می‌شوند.
-- صفحه «سایت‌ها» دقیقاً با API مرحله ۴ هماهنگ است: ساخت Site → تعریف اتصال دیتابیس
-  (پسورد در همان لحظه رمزنگاری و ارسال می‌شود) → تعریف Mapping ستون‌ها.
+از صفحه «پرسنل» (`/employees`)، علاوه بر مشاهده و جستجو:
 
-## نصب روی سرور Linux — مرحله ۷
+- **فعال/غیرفعال کردن دستی**: با یک Switch، مستقل از Sync Engine.
+  ⚠️ توجه: اگر Mapping آن Site ستون وضعیت فعال‌بودن منبع را می‌خواند، اجرای
+  بعدی Sync دوباره مقدار را از روی منبع بازنویسی می‌کند — یعنی این تغییر دستی
+  فقط تا اجرای بعدی Sync برای همان پرسنل پایدار است.
+- **تعیین رمز عبور ورود**: یک روش ورود *جایگزین* اضافه می‌کند (کد پرسنلی + این
+  رمز)، ورود قبلی (کد پرسنلی + کد ملی) همچنان کار می‌کند و از بین نمی‌رود.
 
-### روش ۱ — نصب مستقیم (بدون Docker، پیشنهادی برای Production)
+## دسترسی‌ها (RBAC)
 
-روی یک Ubuntu Server تازه (22.04 یا 24.04)، با دسترسی root:
+- **superadmin**: دسترسی کامل به همه‌چیز. فقط کاربر `admin` که هنگام نصب
+  ساخته می‌شود این نقش را دارد؛ از UI مدیریت دسترسی قابل انتصاب نیست.
+- **site_manager**: نقش Site-scoped — هنگام انتصاب حتماً `site_id` داده
+  می‌شود. می‌تواند کل سایت / واحدهای همان سایت / پرسنل همان سایت را برای
+  اطلاعیه هدف بگیرد.
+- **middle_manager**: نقش سراسری (بدون `site_id`) — می‌تواند هر واحد یا هر
+  پرسنلی در کل سازمان را هدف بگیرد (نه Broadcast کامل).
+- **سرپرست واحد**: نقش RBAC جداگانه‌ای نیست — کافی است از
+  `PUT /departments/{id}/supervisor` مستقیماً سرپرست تعیین شود. یک نفر می‌تواند
+  هم‌زمان سرپرست چند واحد باشد و/یا نقش `middle_manager` هم داشته باشد.
+
+Permission های کامل (`employees.*`, `sites.*`, `sync.*`, `notices.*`,
+`roles.manage`, `users.manage`) در `scripts/seed_permissions.py` تعریف شده‌اند
+و با اجرای همان اسکریپت (Idempotent، اجرای چندباره بی‌خطر است) در دیتابیس Seed
+می‌شوند.
+
+## نصب روی سرور Production
+
+روی یک Ubuntu Server (22.04 یا 24.04)، با دسترسی root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 ```
 
-یا با دامنه و SSL خودکار:
+یا با آرگومان‌های دلخواه:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh -o install.sh
 sudo bash install.sh --domain portal.mycompany.com --admin-username admin
 ```
 
-اسکریپت به‌صورت کاملاً خودکار انجام می‌دهد:
-1. نصب پیش‌نیازها (Python، Node.js، PostgreSQL، Nginx)
-2. ساخت دیتابیس و کاربر PostgreSQL با پسورد تصادفی امن
-3. Clone سورس، نصب وابستگی‌های Backend در Virtual Environment
-4. تولید `.env` با کلیدهای امنیتی یکتا (`SECRET_KEY`, `DB_CREDENTIALS_ENCRYPTION_KEY`)
-5. اجرای Migration های دیتابیس
-6. Build کردن Frontend
-7. ساخت Service systemd (`faipco-backend`) برای اجرای همیشگی Backend
-8. پیکربندی Nginx (Reverse Proxy + Serve فایل‌های Frontend)
-9. صدور SSL رایگان با Let's Encrypt (در صورت دادن `--domain`)
-10. Seed اولیه Permission ها و ساخت کاربر Admin
-11. تنظیم فایروال (UFW)
+اسکریپت به‌صورت خودکار **نصب یا آپدیت** را تشخیص می‌دهد (بر اساس اینکه
+`backend/.env` از قبل وجود دارد یا نه):
 
-در پایان، آدرس پرتال و اطلاعات ورود Admin روی صفحه نمایش داده می‌شود.
+- **نصب تازه**: پیش‌نیازها (Python، Node.js، PostgreSQL، Nginx) → ساخت
+  دیتابیس با پسورد تصادفی امن → Clone سورس → نصب وابستگی‌ها → تولید `.env` با
+  کلیدهای امنیتی یکتا + کلیدهای VAPID → Migration ها → Build فرانت‌اند → سرویس
+  systemd (`faipco-backend`) → پیکربندی Nginx → Seed اولیه + ساخت کاربر Admin
+  → تنظیم فایروال (UFW).
+- **آپدیت** (وقتی نصب قبلی پیدا شود): `.env`، پسورد دیتابیس، کلیدهای VAPID و
+  خودِ دیتابیس **هرگز دست‌خورده نمی‌شوند** — فقط سورس رفرش، وابستگی‌ها دوباره
+  نصب، Migration های جدید به‌صورت افزایشی اجرا (`alembic upgrade head`،
+  هیچ‌وقت داده‌ای پاک نمی‌کند)، فرانت‌اند دوباره Build، و سرویس‌ها Restart
+  می‌شوند. یعنی هر بار که روی GitHub Push می‌کنید، همین یک دستور برای Deploy
+  کافی است.
 
 **آرگومان‌های قابل استفاده:**
 
 | آرگومان | توضیح | پیش‌فرض |
 |---|---|---|
-| `--domain` | دامنه پرتال (برای SSL خودکار) | ندارد (فقط IP سرور) |
-| `--no-ssl` | رد کردن SSL حتی با وجود دامنه | — |
-| `--admin-username` | نام کاربری Admin اولیه | `admin` |
-| `--admin-password` | رمز عبور Admin (وگرنه تصادفی) | تصادفی |
-| `--install-dir` | مسیر نصب روی سرور | `/opt/faipco-portal` |
+| `--domain` | دامنه پرتال (فقط برای CORS استفاده می‌شود) | ندارد (فقط IP سرور) |
+| `--admin-username` | نام کاربری Admin اولیه (فقط نصب تازه) | `admin` |
+| `--admin-password` | رمز عبور Admin اولیه (فقط نصب تازه) | `admin` |
+| `--install-dir` | مسیر نصب روی سرور | `/var/www/html` |
+| `--repo` | آدرس Git Repository | `github.com/milad-mma/faipco-portal` |
+| `--branch` | Branch مورد استفاده | `main` |
 
-### روش ۲ — Docker (اختیاری)
+⚠️ اگر `--admin-password` ندهید، پسورد پیش‌فرض `admin` است — حتماً بلافاصله
+بعد از اولین ورود عوض کنید.
 
-```bash
-cp .env.example .env                          # POSTGRES_PASSWORD را عوض کنید
-cp backend/.env.example backend/.env
-# SECRET_KEY و DB_CREDENTIALS_ENCRYPTION_KEY را طبق راهنمای داخل فایل تولید و جایگزین کنید
-# DATABASE_URL داخل backend/.env توسط docker-compose بازنویسی می‌شود، نیازی به تغییرش نیست
+**نکته مهم درباره SSL**: این اسکریپت دیگر خودش SSL/Let's Encrypt را مدیریت
+نمی‌کند — Nginx محلی همیشه روی HTTP ساده (پورت ۸۰) اجرا می‌شود و SSL باید توسط
+یک Reverse Proxy خارجی (که از قبل روی سرور یا جلوی آن راه‌اندازی شده) تأمین
+شود. آرگومان `--domain` فقط برای تنظیم صحیح CORS استفاده می‌شود.
 
-docker compose up -d --build
-docker compose exec backend alembic upgrade head
-docker compose exec backend python -m scripts.seed_permissions
-docker compose exec backend python -m scripts.create_admin --username admin --password 'ChangeMe123!'
-```
+نصب با Docker از پروژه حذف شده است؛ تنها روش پشتیبانی‌شده همین `install.sh` است.
 
-سپس پرتال روی `http://<IP-سرور>` در دسترس است.
+## محدودیت‌ها و تصمیم‌های آگاهانه طراحی
 
-> **نکته:** Docker کاملاً اختیاری است. روش ۱ (`install.sh`) برای اکثر مشتریان (بدون نیاز به دانش Docker) ساده‌تر و توصیه‌شده است.
+این موارد **باگ نیستند** — تصمیم‌های طراحی آگاهانه‌اند که باید در نظر داشته باشید:
+
+- **ورود پرسنل با کد ملی**: کد ملی به‌عنوان «رمز عبور» پیش‌فرض پرسنل استفاده
+  می‌شود و به‌صورت Plaintext (نه Hash شده) با دیتابیس مقایسه می‌شود. این یک
+  تصمیم UX رایج در پرتال‌های سازمانی داخلی است، ولی از نظر امنیتی ضعیف‌تر از
+  رمز واقعی است (چون کد ملی معمولاً کاملاً محرمانه نیست). اگر پرتال به داده‌های
+  حساس‌تری (حقوق، مرخصی) متصل شود، توصیه می‌شود از قابلیت «تعیین رمز عبور» در
+  پنل Admin برای پرسنلی که نیاز به امنیت بیشتر دارند استفاده شود.
+- **Employee به‌طور کامل تحت مالکیت Sync Engine است**: رکوردهای جدول
+  `employees` عمداً مستقیماً توسط کاربر Insert/Update نمی‌شوند (مگر از طریق
+  Endpoint های اختصاصی مثل فعال/غیرفعال دستی). فعال/غیرفعال دستی هر لحظه
+  ممکن است با اجرای بعدی Sync بازنویسی شود — این یک Trade-off آگاهانه است، نه
+  باگ.
+- **Query های Sync Adapter، نام جدول/ستون را مستقیم Interpolate می‌کنند** (نه
+  Parameterized) چون این مقادیر از `employee_mappings` (که فقط از پنل مدیریتی
+  قابل تغییر است) می‌آیند، نه از ورودی کاربر نهایی. اگر در آینده اجازه تعریف
+  Mapping به نقش‌های غیر-superadmin داده شود، این نکته باید بازبینی شود.
+- **حذف اطلاعیه فقط Soft-Delete است**: رکورد هرگز فیزیکی پاک نمی‌شود (برای
+  حفظ آمار بازدید در گزارش‌ها).
+
+## کارهای باز / شناخته‌شده
+
+موارد زیر هنوز پیاده‌سازی نشده‌اند:
+
+1. لیست واحدهای سازمانی در دیالوگ «مدیریت دسترسی» گاهی خالی نمایش داده می‌شود.
+2. تغییر سرپرستی واحد همین الان هم بلافاصله ذخیره می‌شود (بدون دکمه جدا)، ولی
+   بازخورد بصری موفقیت (مثلاً یک پیام کوتاه) هنوز اضافه نشده.
+3. ستون «واحد سازمانی» و امکان Sort بر اساس آن در صفحه «پرسنل» هنوز اضافه نشده.
+4. در AppBar، به‌جای نام پرسنل، کد پرسنلی (`username`) نمایش داده می‌شود.
+5. جعبه «سرپرستی‌های من» وقتی کاربر سرپرست هیچ واحدی نیست، حالت خالی مناسبی ندارد.
 
 ## معماری
 
-جزئیات کامل معماری، دلایل انتخاب تکنولوژی‌ها، و طرح Sync Engine در [`docs/architecture.md`](docs/architecture.md) آمده است.
-
-## لایسنس
-
-طبق فایل [`LICENSE`](LICENSE) — در مراحل بعدی تکمیل می‌شود.
+جزئیات کامل معماری، دلایل انتخاب تکنولوژی‌ها، الگوی لایه‌بندی Backend، و طرح
+داخلی Sync Engine در [`docs/architecture.md`](docs/architecture.md) آمده است.

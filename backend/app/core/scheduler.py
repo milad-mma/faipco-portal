@@ -1,21 +1,28 @@
 """
 اجرای خودکار و دوره‌ای Sync برای همه Site های فعال، با APScheduler.
-فاصله زمانی از SYNC_INTERVAL_MINUTES در تنظیمات خوانده می‌شود.
+فاصله زمانی ابتدا از دیتابیس (system_settings) خوانده می‌شود — اگر هنوز از
+پنل تغییر داده نشده باشد، از SYNC_INTERVAL_MINUTES در .env استفاده می‌شود
+(سازگار با نصب‌های قبلی). با reschedule_sync_interval() می‌توان فاصله زمانی
+Job در حال اجرا را بدون Restart سرور تغییر داد — از Endpoint مدیریت Sync
+صدا زده می‌شود.
 اگر SYNC_ENABLED=false باشد، هیچ Job ای زمان‌بندی نمی‌شود.
 """
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.jobstores.base import JobLookupError
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models.site import Site
+from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncService
 
 logger = logging.getLogger("faipco.scheduler")
 settings = get_settings()
 
+JOB_ID = "auto_sync_all_sites"
 scheduler = AsyncIOScheduler()
 
 
@@ -33,20 +40,39 @@ async def _run_sync_for_all_active_sites() -> None:
                 logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
 
 
-def start_scheduler() -> None:
+async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
         return
 
+    async with AsyncSessionLocal() as db:
+        interval_minutes = await SystemSettingsService(db).get_sync_interval_minutes()
+
     scheduler.add_job(
         _run_sync_for_all_active_sites,
         trigger="interval",
-        minutes=settings.SYNC_INTERVAL_MINUTES,
-        id="auto_sync_all_sites",
+        minutes=interval_minutes,
+        id=JOB_ID,
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("Scheduler سینک خودکار هر %s دقیقه اجرا خواهد شد", settings.SYNC_INTERVAL_MINUTES)
+    logger.info("Scheduler سینک خودکار هر %s دقیقه اجرا خواهد شد", interval_minutes)
+
+
+def reschedule_sync_interval(minutes: int) -> None:
+    """
+    فاصله زمانی Job سینک خودکار در حال اجرا را بدون Restart سرور تغییر می‌دهد.
+    اگر SYNC_ENABLED=false بوده و اصلاً Job ای زمان‌بندی نشده، بی‌اثر است —
+    مقدار جدید همچنان در دیتابیس ذخیره شده و در Restart بعدی (اگر Sync فعال شود) اعمال می‌شود.
+    """
+    try:
+        scheduler.reschedule_job(JOB_ID, trigger="interval", minutes=minutes)
+        logger.info("فاصله زمانی Sync خودکار به %s دقیقه تغییر کرد", minutes)
+    except JobLookupError:
+        logger.info(
+            "Job سینک خودکار در حال حاضر زمان‌بندی نشده (SYNC_ENABLED=false) — "
+            "مقدار جدید فقط در دیتابیس ذخیره شد و در اجرای بعدی اعمال می‌شود."
+        )
 
 
 def stop_scheduler() -> None:

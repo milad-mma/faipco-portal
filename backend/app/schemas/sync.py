@@ -1,7 +1,7 @@
 """Schema های Pydantic برای Sync Management."""
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.sync_log import SyncRunStatus
 
@@ -23,3 +23,11 @@ class SyncLogOut(BaseModel):
     error_message: str | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SyncSettingsOut(BaseModel):
+    interval_minutes: int
+
+
+class SyncSettingsUpdate(BaseModel):
+    interval_minutes: int = Field(ge=1, le=1440, description="فاصله زمانی اجرای خودکار Sync، بر حسب دقیقه (۱ تا ۱۴۴۰)")

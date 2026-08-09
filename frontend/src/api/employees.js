@@ -1,9 +1,10 @@
 import { apiClient } from "./client";
 
-export async function fetchEmployees({ siteId, search } = {}) {
+export async function fetchEmployees({ siteId, search, includeInactive } = {}) {
   const params = {};
   if (siteId) params.site_id = siteId;
   if (search) params.search = search;
+  if (includeInactive) params.include_inactive = true;
   const { data } = await apiClient.get("/employees", { params });
   return data;
 }
@@ -31,4 +32,13 @@ export async function assignRoleToEmployee(employeeId, roleId, siteId) {
 export async function fetchSupervisedDepartments(employeeId) {
   const { data } = await apiClient.get(`/employees/${employeeId}/supervised-departments`);
   return data; // آرایه‌ای از شناسه واحدهایی که این پرسنل سرپرست آن‌هاست
+}
+
+export async function setEmployeeActive(employeeId, isActive) {
+  const { data } = await apiClient.patch(`/employees/${employeeId}`, { is_active: isActive });
+  return data;
+}
+
+export async function setEmployeePassword(employeeId, newPassword) {
+  await apiClient.put(`/employees/${employeeId}/password`, { new_password: newPassword });
 }

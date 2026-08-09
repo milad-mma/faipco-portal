@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Box,
+  Button,
   Card,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   InputAdornment,
   MenuItem,
+  Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -12,12 +21,99 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
-import { fetchEmployees } from "../api/employees";
+import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
+import { fetchEmployees, setEmployeeActive, setEmployeePassword } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
+
+function SetPasswordDialog({ employee, onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setPassword("");
+    setConfirmPassword("");
+    setError("");
+    setSuccess(false);
+  }, [employee]);
+
+  if (!employee) return null;
+
+  async function handleSave() {
+    setError("");
+    if (password.length < 6) {
+      setError("رمز عبور باید حداقل ۶ کاراکتر باشد.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("تکرار رمز عبور با رمز عبور یکسان نیست.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await setEmployeePassword(employee.id, password);
+      setSuccess(true);
+    } catch (err) {
+      setError(err.response?.data?.detail || "تعیین رمز عبور ناموفق بود.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>
+        تعیین رمز عبور — {employee.first_name} {employee.last_name}
+        <Typography variant="caption" color="text.secondary" display="block">
+          کد پرسنلی: {employee.personnel_code}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        {error && <Alert severity="error">{error}</Alert>}
+        {success && (
+          <Alert severity="success">
+            رمز عبور با موفقیت تنظیم شد. این پرسنل از این پس می‌تواند هم با «کد پرسنلی + این رمز» و هم مثل
+            قبل با «کد پرسنلی + کد ملی» وارد شود.
+          </Alert>
+        )}
+        {!success && (
+          <>
+            <TextField
+              label="رمز عبور جدید"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isSaving}
+              autoFocus
+            />
+            <TextField
+              label="تکرار رمز عبور"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={isSaving}
+            />
+          </>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ p: 2.5 }}>
+        <Button onClick={onClose}>{success ? "بستن" : "انصراف"}</Button>
+        {!success && (
+          <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? "در حال ذخیره..." : "ذخیره رمز عبور"}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -25,22 +121,47 @@ export default function EmployeesPage() {
   const [selectedSite, setSelectedSite] = useState("");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [togglingId, setTogglingId] = useState(null);
+  const [passwordEmployee, setPasswordEmployee] = useState(null);
 
   useEffect(() => {
     fetchSites().then(setSites);
   }, []);
 
-  useEffect(() => {
+  function loadEmployees() {
     setIsLoading(true);
-    const timer = setTimeout(() => {
-      fetchEmployees({ siteId: selectedSite || undefined, search: search || undefined })
-        .then(setEmployees)
-        .finally(() => setIsLoading(false));
-    }, 300);
+    return fetchEmployees({ siteId: selectedSite || undefined, search: search || undefined, includeInactive: true })
+      .then(setEmployees)
+      .finally(() => setIsLoading(false));
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(loadEmployees, 300);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSite, search]);
 
   const siteNameById = Object.fromEntries(sites.map((s) => [s.id, s.name]));
+
+  async function handleToggleActive(employee) {
+    const nextActive = !employee.is_active;
+    if (
+      !window.confirm(
+        nextActive
+          ? `${employee.first_name} ${employee.last_name} دوباره فعال شود؟`
+          : `${employee.first_name} ${employee.last_name} غیرفعال شود؟ این پرسنل دیگر نمی‌تواند وارد پنل شود.`
+      )
+    ) {
+      return;
+    }
+    setTogglingId(employee.id);
+    try {
+      const updated = await setEmployeeActive(employee.id, nextActive);
+      setEmployees((prev) => prev.map((e) => (e.id === employee.id ? updated : e)));
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   return (
     <Box>
@@ -96,13 +217,14 @@ export default function EmployeesPage() {
                 <TableCell>کد ملی</TableCell>
                 <TableCell>موبایل</TableCell>
                 <TableCell>سایت</TableCell>
-                <TableCell>وضعیت</TableCell>
+                <TableCell align="center">وضعیت</TableCell>
+                <TableCell align="center">رمز عبور</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {!isLoading && employees.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       {search
                         ? "با این عبارت جستجو، پرسنلی یافت نشد."
@@ -112,7 +234,7 @@ export default function EmployeesPage() {
                 </TableRow>
               )}
               {employees.map((emp) => (
-                <TableRow key={emp.id} hover>
+                <TableRow key={emp.id} hover sx={!emp.is_active ? { opacity: 0.6 } : undefined}>
                   <TableCell sx={monoFontSx}>{emp.personnel_code}</TableCell>
                   <TableCell>
                     {emp.first_name} {emp.last_name}
@@ -120,13 +242,32 @@ export default function EmployeesPage() {
                   <TableCell sx={monoFontSx}>{emp.national_code || "—"}</TableCell>
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
                   <TableCell>{siteNameById[emp.site_id] || emp.site_id}</TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={emp.is_active ? "فعال" : "غیرفعال"}
-                      color={emp.is_active ? "success" : "default"}
-                      variant="outlined"
-                    />
+                  <TableCell align="center">
+                    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+                      <Chip
+                        size="small"
+                        label={emp.is_active ? "فعال" : "غیرفعال"}
+                        color={emp.is_active ? "success" : "default"}
+                        variant="outlined"
+                      />
+                      <Tooltip title={emp.is_active ? "غیرفعال کردن" : "فعال کردن"}>
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={emp.is_active}
+                            disabled={togglingId === emp.id}
+                            onChange={() => handleToggleActive(emp)}
+                          />
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Tooltip title="تعیین رمز عبور ورود">
+                      <IconButton size="small" onClick={() => setPasswordEmployee(emp)}>
+                        <LockResetOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -134,6 +275,8 @@ export default function EmployeesPage() {
           </Table>
         </TableContainer>
       </Card>
+
+      <SetPasswordDialog employee={passwordEmployee} onClose={() => setPasswordEmployee(null)} />
     </Box>
   );
 }

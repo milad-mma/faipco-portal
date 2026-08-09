@@ -17,8 +17,9 @@ import {
 } from "@mui/material";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { fetchSites } from "../api/sites";
-import { fetchSyncLogs, runSiteSync, testSiteConnection } from "../api/sync";
+import { fetchSyncLogs, fetchSyncSettings, runSiteSync, testSiteConnection, updateSyncSettings } from "../api/sync";
 import SyncStatusChip from "../components/SyncStatusChip";
 import { monoFontSx } from "../theme";
 
@@ -30,10 +31,19 @@ export default function SyncPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
+  const [intervalMinutes, setIntervalMinutes] = useState("");
+  const [savedIntervalMinutes, setSavedIntervalMinutes] = useState(null);
+  const [isSavingInterval, setIsSavingInterval] = useState(false);
+  const [intervalMessage, setIntervalMessage] = useState(null);
+
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
       if (data.length > 0) setSelectedSiteId(data[0].id);
+    });
+    fetchSyncSettings().then((data) => {
+      setIntervalMinutes(String(data.interval_minutes));
+      setSavedIntervalMinutes(data.interval_minutes);
     });
   }, []);
 
@@ -69,6 +79,30 @@ export default function SyncPage() {
     }
   }
 
+  async function handleSaveInterval() {
+    setIntervalMessage(null);
+    const value = Number(intervalMinutes);
+    if (!Number.isInteger(value) || value < 1 || value > 1440) {
+      setIntervalMessage({ severity: "error", text: "فاصله زمانی باید عددی صحیح بین ۱ تا ۱۴۴۰ دقیقه باشد." });
+      return;
+    }
+    setIsSavingInterval(true);
+    try {
+      const result = await updateSyncSettings(value);
+      setSavedIntervalMinutes(result.interval_minutes);
+      setIntervalMessage({ severity: "success", text: "فاصله زمانی Sync خودکار ذخیره شد و بلافاصله اعمال شد." });
+    } catch (err) {
+      setIntervalMessage({
+        severity: "error",
+        text: err.response?.data?.detail || "ذخیره فاصله زمانی ناموفق بود.",
+      });
+    } finally {
+      setIsSavingInterval(false);
+    }
+  }
+
+  const intervalChanged = savedIntervalMinutes !== null && Number(intervalMinutes) !== savedIntervalMinutes;
+
   return (
     <Box>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
@@ -77,6 +111,45 @@ export default function SyncPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         تست اتصال، اجرای دستی همگام‌سازی و مشاهده تاریخچه هر سایت
       </Typography>
+
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+          <SettingsOutlinedIcon fontSize="small" color="action" />
+          <Typography variant="subtitle1" fontWeight={700}>
+            فاصله زمانی Sync خودکار
+          </Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          هر چند دقیقه یک‌بار، پرسنل همه سایت‌های فعال به‌صورت خودکار همگام‌سازی شوند.
+          تغییر این مقدار فوراً اعمال می‌شود — نیازی به Restart سرور نیست.
+        </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
+          <TextField
+            type="number"
+            label="فاصله زمانی (دقیقه)"
+            value={intervalMinutes}
+            onChange={(e) => {
+              setIntervalMessage(null);
+              setIntervalMinutes(e.target.value);
+            }}
+            inputProps={{ min: 1, max: 1440, step: 1 }}
+            sx={{ maxWidth: 220 }}
+            disabled={savedIntervalMinutes === null}
+          />
+          <Button
+            variant="contained"
+            onClick={handleSaveInterval}
+            disabled={isSavingInterval || savedIntervalMinutes === null || !intervalChanged}
+          >
+            {isSavingInterval ? "در حال ذخیره..." : "ذخیره"}
+          </Button>
+        </Stack>
+        {intervalMessage && (
+          <Alert severity={intervalMessage.severity} sx={{ mt: 2 }}>
+            {intervalMessage.text}
+          </Alert>
+        )}
+      </Card>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>

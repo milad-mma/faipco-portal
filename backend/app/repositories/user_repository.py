@@ -100,3 +100,18 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
         return user
+
+    # ---------- تنظیم دستی رمز عبور توسط Admin ----------
+
+    async def set_employee_password(self, employee: Employee, new_password: str) -> User:
+        """
+        Admin مستقیماً یک رمز عبور مشخص برای پرسنل تعیین می‌کند. چون در login()
+        ابتدا (یوزرنیم/پسورد) کاربر مدیریتی امتحان می‌شود و username این حساب
+        همان personnel_code است، از این پس پرسنل می‌تواند هم با «کد پرسنلی +
+        همین رمز جدید» و هم مثل قبل با «کد پرسنلی + کد ملی» وارد شود — این رمز
+        صرفاً یک روش ورود جایگزین اضافه می‌کند، روش قبلی را از کار نمی‌اندازد.
+        """
+        user = await self.get_or_create_employee_user(employee)
+        user.password_hash = hash_password(new_password)
+        await self.db.commit()
+        return user

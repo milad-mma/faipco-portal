@@ -1,5 +1,6 @@
 """
-Endpoint های پرسنل: لیست/جستجو، و انتصاب مستقیم نقش به یک پرسنل مشخص.
+Endpoint های پرسنل: لیست/جستجو، انتصاب مستقیم نقش به یک پرسنل مشخص، فعال/غیرفعال‌کردن
+دستی، و تعیین دستی رمز عبور ورود.
 
 نکته طراحی مهم: به‌جای اینکه Admin مجبور باشد یک «کاربر» انتزاعی بسازد و به آن
 نقش «مدیر سایت» بدهد، اینجا مستقیماً از بین پرسنل واقعی (که از Sync آمده‌اند)
@@ -16,7 +17,7 @@ from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.employee import EmployeeOut
+from app.schemas.employee import EmployeeActiveUpdate, EmployeeOut, EmployeePasswordSet
 from app.schemas.user_management import AssignRoleIn, UserRoleOut
 from app.services.user_management_service import UserManagementService
 
@@ -29,13 +30,22 @@ async def list_employees(
     search: str | None = Query(
         default=None, description="جستجو در نام، نام خانوادگی، کد پرسنلی یا کد ملی"
     ),
+    include_inactive: bool = Query(
+        default=False,
+        description="پرسنل غیرفعال را هم نشان بده — فقط برای صفحه مدیریت پرسنل (Admin) استفاده می‌شود",
+    ),
     db: AsyncSession = Depends(get_db),
     # هر کاربر لاگین‌شده (نه فقط Admin) باید بتواند برای انتخاب گیرنده اطلاعیه
     # در بین پرسنل جستجو کند. اعتبارسنجی واقعی این‌که «آیا اجازه ارسال به این
     # شخص را دارد یا نه» موقع ثبت اطلاعیه در notice_service.py انجام می‌شود.
+    # پیش‌فرض include_inactive=False همان رفتار قبلی را برای این جستجو حفظ
+    # می‌کند (پرسنل غیرفعال هدف اطلاعیه قرار نمی‌گیرند)؛ فقط صفحه «پرسنل» در
+    # پنل Admin با include_inactive=True درخواست می‌دهد تا بتواند دوباره فعال کند.
     _current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Employee).where(Employee.is_active.is_(True)).limit(200)
+    stmt = select(Employee).limit(200)
+    if not include_inactive:
+        stmt = stmt.where(Employee.is_active.is_(True))
     if site_id is not None:
         stmt = stmt.where(Employee.site_id == site_id)
     if search:
@@ -127,3 +137,45 @@ async def list_supervised_departments(
 
     result = await db.execute(select(Department.id).where(Department.supervisor_user_id == user.id))
     return [row[0] for row in result.all()]
+
+
+# ---------- فعال/غیرفعال‌کردن دستی + تعیین رمز عبور (پنل Admin) ----------
+
+@router.patch("/{employee_id}", response_model=EmployeeOut)
+async def update_employee_active_state(
+    employee_id: int,
+    payload: EmployeeActiveUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("employees.update")),
+):
+    """
+    فعال/غیرفعال‌کردن دستی یک پرسنل توسط Admin — مستقل از Sync Engine.
+    نکته مهم: اگر Mapping این Site ستون is_active منبع را می‌خواند، اجرای بعدی
+    Sync (خودکار یا دستی) دوباره این مقدار را بر اساس منبع بازنویسی می‌کند —
+    یعنی این تغییر دستی فقط تا اجرای بعدی Sync برای همین پرسنل پایدار است.
+    """
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    employee.is_active = payload.is_active
+    await db.commit()
+    await db.refresh(employee)
+    return employee
+
+
+@router.put("/{employee_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def set_employee_password(
+    employee_id: int,
+    payload: EmployeePasswordSet,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("users.manage")),
+):
+    """
+    تعیین دستی رمز عبور ورود یک پرسنل توسط Admin. این رمز یک روش ورود
+    جایگزین اضافه می‌کند (کد پرسنلی + این رمز)؛ ورود با کد پرسنلی + کد ملی
+    همچنان مثل قبل کار می‌کند.
+    """
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await UserRepository(db).set_employee_password(employee, payload.new_password)
