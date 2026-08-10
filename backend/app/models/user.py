@@ -37,6 +37,13 @@ class User(Base, TimestampMixin):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # اگر True باشد یعنی این کاربر (یا Admin به‌جایش) یک رمز عبور واقعی تعیین
+    # کرده — از این پس ورود پرسنل با «کد پرسنلی + کد ملی» دیگر کار نمی‌کند و
+    # فقط «کد پرسنلی + همین رمز عبور» معتبر است. تا وقتی False است، password_hash
+    # یک مقدار تصادفی غیرقابل‌حدس است (نه چیزی که کسی واقعاً بداند) و ورود
+    # همچنان از مسیر کد ملی انجام می‌شود.
+    has_custom_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 

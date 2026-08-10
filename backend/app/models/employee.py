@@ -58,6 +58,12 @@ class Employee(Base, TimestampMixin):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # کاملاً مجزا از is_active: فقط و فقط از پنل «پرسنل» توسط Admin تغییر می‌کند.
+    # Sync Engine هرگز این ستون را نمی‌خواند/نمی‌نویسد — پس با هیچ Sync جدیدی
+    # از بین نمی‌رود. وضعیت واقعی «مجاز به ورود/دریافت اطلاعیه» ترکیب هر دو
+    # است: is_active (وضعیت در منبع) AND is_enabled (تصمیم دستی Admin).
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     # آخرین باری که این رکورد توسط Sync Engine از منبع دیده و به‌روزرسانی شده
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

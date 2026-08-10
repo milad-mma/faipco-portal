@@ -34,11 +34,15 @@ export async function fetchSupervisedDepartments(employeeId) {
   return data; // آرایه‌ای از شناسه واحدهایی که این پرسنل سرپرست آن‌هاست
 }
 
-export async function setEmployeeActive(employeeId, isActive) {
-  const { data } = await apiClient.patch(`/employees/${employeeId}`, { is_active: isActive });
+export async function setEmployeeEnabled(employeeId, isEnabled) {
+  const { data } = await apiClient.patch(`/employees/${employeeId}`, { is_enabled: isEnabled });
   return data;
 }
 
 export async function setEmployeePassword(employeeId, newPassword) {
   await apiClient.put(`/employees/${employeeId}/password`, { new_password: newPassword });
+}
+
+export async function resetEmployeePassword(employeeId) {
+  await apiClient.delete(`/employees/${employeeId}/password`);
 }

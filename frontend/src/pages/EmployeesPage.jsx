@@ -26,22 +26,22 @@ import {
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
-import { fetchEmployees, setEmployeeActive, setEmployeePassword } from "../api/employees";
+import { fetchEmployees, resetEmployeePassword, setEmployeeEnabled, setEmployeePassword } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
 
-function SetPasswordDialog({ employee, onClose }) {
+function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setPassword("");
     setConfirmPassword("");
     setError("");
-    setSuccess(false);
+    setSuccess("");
   }, [employee]);
 
   if (!employee) return null;
@@ -59,9 +59,25 @@ function SetPasswordDialog({ employee, onClose }) {
     setIsSaving(true);
     try {
       await setEmployeePassword(employee.id, password);
-      setSuccess(true);
+      setSuccess("رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — کد ملی دیگر کار نمی‌کند.");
+      onChanged?.();
     } catch (err) {
       setError(err.response?.data?.detail || "تعیین رمز عبور ناموفق بود.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!window.confirm("رمز عبور اختصاصی این پرسنل حذف شود و ورود دوباره با کد ملی فعال شود؟")) return;
+    setIsSaving(true);
+    setError("");
+    try {
+      await resetEmployeePassword(employee.id);
+      setSuccess("بازگردانده شد — این پرسنل از این پس دوباره با کد پرسنلی + کد ملی وارد می‌شود.");
+      onChanged?.();
+    } catch (err) {
+      setError(err.response?.data?.detail || "بازگرداندن ناموفق بود.");
     } finally {
       setIsSaving(false);
     }
@@ -70,19 +86,15 @@ function SetPasswordDialog({ employee, onClose }) {
   return (
     <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>
-        تعیین رمز عبور — {employee.first_name} {employee.last_name}
+        رمز عبور ورود — {employee.first_name} {employee.last_name}
         <Typography variant="caption" color="text.secondary" display="block">
-          کد پرسنلی: {employee.personnel_code}
+          کد پرسنلی: {employee.personnel_code} — روش فعلی ورود:{" "}
+          {employee.has_custom_password ? "رمز عبور اختصاصی" : "کد ملی (پیش‌فرض)"}
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
-        {success && (
-          <Alert severity="success">
-            رمز عبور با موفقیت تنظیم شد. این پرسنل از این پس می‌تواند هم با «کد پرسنلی + این رمز» و هم مثل
-            قبل با «کد پرسنلی + کد ملی» وارد شود.
-          </Alert>
-        )}
+        {success && <Alert severity="success">{success}</Alert>}
         {!success && (
           <>
             <TextField
@@ -103,13 +115,22 @@ function SetPasswordDialog({ employee, onClose }) {
           </>
         )}
       </DialogContent>
-      <DialogActions sx={{ p: 2.5 }}>
-        <Button onClick={onClose}>{success ? "بستن" : "انصراف"}</Button>
-        {!success && (
-          <Button variant="contained" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "در حال ذخیره..." : "ذخیره رمز عبور"}
-          </Button>
-        )}
+      <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
+        <Box>
+          {!success && employee.has_custom_password && (
+            <Button color="warning" onClick={handleReset} disabled={isSaving}>
+              بازگشت به ورود با کد ملی
+            </Button>
+          )}
+        </Box>
+        <Box>
+          <Button onClick={onClose}>{success ? "بستن" : "انصراف"}</Button>
+          {!success && (
+            <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "در حال ذخیره..." : "ذخیره رمز عبور"}
+            </Button>
+          )}
+        </Box>
       </DialogActions>
     </Dialog>
   );
@@ -143,20 +164,20 @@ export default function EmployeesPage() {
 
   const siteNameById = Object.fromEntries(sites.map((s) => [s.id, s.name]));
 
-  async function handleToggleActive(employee) {
-    const nextActive = !employee.is_active;
+  async function handleToggleEnabled(employee) {
+    const nextEnabled = !employee.is_enabled;
     if (
       !window.confirm(
-        nextActive
-          ? `${employee.first_name} ${employee.last_name} دوباره فعال شود؟`
-          : `${employee.first_name} ${employee.last_name} غیرفعال شود؟ این پرسنل دیگر نمی‌تواند وارد پنل شود.`
+        nextEnabled
+          ? `${employee.first_name} ${employee.last_name} در پرتال دوباره فعال شود؟`
+          : `${employee.first_name} ${employee.last_name} در پرتال غیرفعال شود؟ این پرسنل دیگر نمی‌تواند وارد پنل شود — این تنظیم مستقل از Sync است و با سینک بعدی تغییر نمی‌کند.`
       )
     ) {
       return;
     }
     setTogglingId(employee.id);
     try {
-      const updated = await setEmployeeActive(employee.id, nextActive);
+      const updated = await setEmployeeEnabled(employee.id, nextEnabled);
       setEmployees((prev) => prev.map((e) => (e.id === employee.id ? updated : e)));
     } finally {
       setTogglingId(null);
@@ -217,14 +238,23 @@ export default function EmployeesPage() {
                 <TableCell>کد ملی</TableCell>
                 <TableCell>موبایل</TableCell>
                 <TableCell>سایت</TableCell>
-                <TableCell align="center">وضعیت</TableCell>
+                <TableCell align="center">
+                  <Tooltip title="وضعیت خودکار — از روی Mapping دیتابیس مبدأ (مثل IsCut)، فقط با Sync تغییر می‌کند">
+                    <span>وضعیت Sync</span>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="center">
+                  <Tooltip title="تصمیم دستی Admin — کاملاً مستقل از Sync و با آن بازنویسی نمی‌شود">
+                    <span>فعال در پرتال</span>
+                  </Tooltip>
+                </TableCell>
                 <TableCell align="center">رمز عبور</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {!isLoading && employees.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       {search
                         ? "با این عبارت جستجو، پرسنلی یافت نشد."
@@ -234,7 +264,7 @@ export default function EmployeesPage() {
                 </TableRow>
               )}
               {employees.map((emp) => (
-                <TableRow key={emp.id} hover sx={!emp.is_active ? { opacity: 0.6 } : undefined}>
+                <TableRow key={emp.id} hover sx={!emp.is_enabled ? { opacity: 0.6 } : undefined}>
                   <TableCell sx={monoFontSx}>{emp.personnel_code}</TableCell>
                   <TableCell>
                     {emp.first_name} {emp.last_name}
@@ -243,29 +273,40 @@ export default function EmployeesPage() {
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
                   <TableCell>{siteNameById[emp.site_id] || emp.site_id}</TableCell>
                   <TableCell align="center">
+                    <Chip
+                      size="small"
+                      label={emp.is_active ? "فعال" : "غیرفعال"}
+                      color={emp.is_active ? "success" : "default"}
+                      variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell align="center">
                     <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
                       <Chip
                         size="small"
-                        label={emp.is_active ? "فعال" : "غیرفعال"}
-                        color={emp.is_active ? "success" : "default"}
+                        label={emp.is_enabled ? "فعال" : "غیرفعال"}
+                        color={emp.is_enabled ? "success" : "error"}
                         variant="outlined"
                       />
-                      <Tooltip title={emp.is_active ? "غیرفعال کردن" : "فعال کردن"}>
+                      <Tooltip title={emp.is_enabled ? "غیرفعال کردن در پرتال" : "فعال کردن در پرتال"}>
                         <span>
                           <Switch
                             size="small"
-                            checked={emp.is_active}
+                            checked={emp.is_enabled}
                             disabled={togglingId === emp.id}
-                            onChange={() => handleToggleActive(emp)}
+                            onChange={() => handleToggleEnabled(emp)}
                           />
                         </span>
                       </Tooltip>
                     </Stack>
                   </TableCell>
                   <TableCell align="center">
-                    <Tooltip title="تعیین رمز عبور ورود">
+                    <Tooltip title={emp.has_custom_password ? "دارای رمز عبور اختصاصی" : "تعیین رمز عبور"}>
                       <IconButton size="small" onClick={() => setPasswordEmployee(emp)}>
-                        <LockResetOutlinedIcon fontSize="small" />
+                        <LockResetOutlinedIcon
+                          fontSize="small"
+                          color={emp.has_custom_password ? "primary" : "inherit"}
+                        />
                       </IconButton>
                     </Tooltip>
                   </TableCell>
@@ -276,7 +317,11 @@ export default function EmployeesPage() {
         </TableContainer>
       </Card>
 
-      <SetPasswordDialog employee={passwordEmployee} onClose={() => setPasswordEmployee(null)} />
+      <SetPasswordDialog
+        employee={passwordEmployee}
+        onClose={() => setPasswordEmployee(null)}
+        onChanged={loadEmployees}
+      />
     </Box>
   );
 }

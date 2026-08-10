@@ -52,14 +52,23 @@ class UserRepository:
 
     async def find_employee_for_login(self, personnel_code: str, national_code: str) -> Employee | None:
         """
-        پرسنل فعالی که هم کد پرسنلی و هم کد ملی‌اش دقیقاً مطابقت داشته باشد را برمی‌گرداند.
+        پرسنل فعالی (هم is_active از منبع، هم is_enabled دستی Admin) که هم کد
+        پرسنلی و هم کد ملی‌اش دقیقاً مطابقت داشته باشد را برمی‌گرداند.
         اگر (به‌ندرت) بین سایت‌های مختلف کد پرسنلی تکراری باشد، اولین مورد فعال برگردانده می‌شود.
+
+        نکته مهم: اگر این پرسنل قبلاً رمز عبور اختصاصی تعیین کرده باشد
+        (User.has_custom_password=True)، ورود با کد ملی دیگر برایش کار
+        نمی‌کند — باید حتماً از رمز عبور جدیدش استفاده کند.
         """
         result = await self.db.execute(
-            select(Employee).where(
+            select(Employee)
+            .outerjoin(User, User.employee_id == Employee.id)
+            .where(
                 Employee.personnel_code == personnel_code.strip(),
                 Employee.national_code == national_code.strip(),
                 Employee.is_active.is_(True),
+                Employee.is_enabled.is_(True),
+                or_(User.id.is_(None), User.has_custom_password.is_(False)),
             )
         )
         return result.scalars().first()
@@ -69,10 +78,10 @@ class UserRepository:
         هر پرسنل یک حساب User مرتبط (از طریق employee_id) دارد که اولین بار
         هنگام ورود موفق یا اختصاص نقش، به‌صورت خودکار ساخته می‌شود. Username
         همان کد پرسنلی خودش است (چیز جدیدی ساخته نمی‌شود) — مگر در موارد
-        نادر تداخل بین چند Site که با پسوند site_id یکتا می‌شود. رمز عبور
-        این حساب هرگز مستقیماً استفاده نمی‌شود (ورود همیشه از مسیر کد
-        پرسنلی/کد ملی انجام می‌شود)، فقط برای رعایت الزام NOT NULL ستون
-        password_hash یک مقدار تصادفی و غیرقابل‌حدس ذخیره می‌شود.
+        نادر تداخل بین چند Site که با پسوند site_id یکتا می‌شود. تا وقتی
+        has_custom_password=False است، password_hash یک مقدار تصادفی
+        غیرقابل‌حدس است (نه چیزی که کسی واقعاً بداند) و ورود از مسیر کد
+        پرسنلی/کد ملی انجام می‌شود.
         """
         result = await self.db.execute(select(User).where(User.employee_id == employee.id))
         user = result.scalar_one_or_none()
@@ -101,17 +110,49 @@ class UserRepository:
         await self.db.refresh(user)
         return user
 
-    # ---------- تنظیم دستی رمز عبور توسط Admin ----------
+    # ---------- فعال/غیرفعال‌کردن دستی توسط Admin (مستقل از Sync Engine) ----------
+
+    async def set_employee_enabled(self, employee: Employee, enabled: bool) -> Employee:
+        """
+        این مقدار کاملاً مستقل از is_active (که Sync Engine کنترل می‌کند) است
+        و با هیچ Sync جدیدی بازنویسی نمی‌شود. اگر این پرسنل از قبل حساب کاربری
+        داشته باشد (User)، همان لحظه User.is_active هم هماهنگ می‌شود تا
+        غیرفعال‌سازی فوراً روی هر دو روش ورود (کد ملی و رمز اختصاصی) و حتی
+        Session های باز فعلی اثر بگذارد — بدون این‌که رکورد User را اگر
+        هنوز وجود ندارد، الکی بسازیم.
+        """
+        employee.is_enabled = enabled
+        result = await self.db.execute(select(User).where(User.employee_id == employee.id))
+        user = result.scalar_one_or_none()
+        if user is not None:
+            user.is_active = enabled
+        await self.db.commit()
+        await self.db.refresh(employee)
+        return employee
+
+    # ---------- تنظیم/بازنشانی دستی رمز عبور توسط Admin ----------
 
     async def set_employee_password(self, employee: Employee, new_password: str) -> User:
         """
         Admin مستقیماً یک رمز عبور مشخص برای پرسنل تعیین می‌کند. چون در login()
         ابتدا (یوزرنیم/پسورد) کاربر مدیریتی امتحان می‌شود و username این حساب
-        همان personnel_code است، از این پس پرسنل می‌تواند هم با «کد پرسنلی +
-        همین رمز جدید» و هم مثل قبل با «کد پرسنلی + کد ملی» وارد شود — این رمز
-        صرفاً یک روش ورود جایگزین اضافه می‌کند، روش قبلی را از کار نمی‌اندازد.
+        همان personnel_code است، از این پس پرسنل با «کد پرسنلی + این رمز جدید»
+        وارد می‌شود؛ has_custom_password=True می‌شود و از همین لحظه ورود با
+        کد ملی دیگر برای این پرسنل کار نمی‌کند (طبق find_employee_for_login).
         """
         user = await self.get_or_create_employee_user(employee)
         user.password_hash = hash_password(new_password)
+        user.has_custom_password = True
+        await self.db.commit()
+        return user
+
+    async def reset_employee_to_default_login(self, employee: Employee) -> User:
+        """
+        بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی)؛ رمز عبور
+        اختصاصی قبلی از کار می‌افتد (با یک رمز تصادفی غیرقابل‌حدس جایگزین می‌شود).
+        """
+        user = await self.get_or_create_employee_user(employee)
+        user.password_hash = hash_password(secrets.token_urlsafe(32))
+        user.has_custom_password = False
         await self.db.commit()
         return user

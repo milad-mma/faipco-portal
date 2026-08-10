@@ -8,5 +8,6 @@ class UserOut(BaseModel):
     email: str | None
     is_active: bool
     is_superuser: bool
+    has_custom_password: bool
 
     model_config = ConfigDict(from_attributes=True)

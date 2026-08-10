@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.employee import EmployeeActiveUpdate, EmployeeOut, EmployeePasswordSet
+from app.schemas.employee import EmployeeEnabledUpdate, EmployeeOut, EmployeePasswordSet
 from app.schemas.user_management import AssignRoleIn, UserRoleOut
 from app.services.user_management_service import UserManagementService
 
@@ -32,20 +32,21 @@ async def list_employees(
     ),
     include_inactive: bool = Query(
         default=False,
-        description="پرسنل غیرفعال را هم نشان بده — فقط برای صفحه مدیریت پرسنل (Admin) استفاده می‌شود",
+        description="پرسنل غیرفعال/غیرفعال‌شده دستی را هم نشان بده — فقط برای صفحه مدیریت پرسنل (Admin) استفاده می‌شود",
     ),
     db: AsyncSession = Depends(get_db),
     # هر کاربر لاگین‌شده (نه فقط Admin) باید بتواند برای انتخاب گیرنده اطلاعیه
     # در بین پرسنل جستجو کند. اعتبارسنجی واقعی این‌که «آیا اجازه ارسال به این
     # شخص را دارد یا نه» موقع ثبت اطلاعیه در notice_service.py انجام می‌شود.
     # پیش‌فرض include_inactive=False همان رفتار قبلی را برای این جستجو حفظ
-    # می‌کند (پرسنل غیرفعال هدف اطلاعیه قرار نمی‌گیرند)؛ فقط صفحه «پرسنل» در
-    # پنل Admin با include_inactive=True درخواست می‌دهد تا بتواند دوباره فعال کند.
+    # می‌کند (پرسنل غیرفعال از منبع یا غیرفعال‌شده دستی، هدف اطلاعیه قرار
+    # نمی‌گیرند)؛ فقط صفحه «پرسنل» در پنل Admin با include_inactive=True
+    # درخواست می‌دهد تا بتواند پرسنل غیرفعال را هم ببیند و دوباره فعال کند.
     _current_user: User = Depends(get_current_user),
 ):
     stmt = select(Employee).limit(200)
     if not include_inactive:
-        stmt = stmt.where(Employee.is_active.is_(True))
+        stmt = stmt.where(Employee.is_active.is_(True), Employee.is_enabled.is_(True))
     if site_id is not None:
         stmt = stmt.where(Employee.site_id == site_id)
     if search:
@@ -59,7 +60,34 @@ async def list_employees(
             )
         )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    employees = result.scalars().all()
+
+    # has_custom_password روی User است نه Employee — با یک کوئری جدا (فقط برای
+    # همین صفحه از پرسنل) به هرکدام وصل می‌شود.
+    custom_password_by_employee: dict[int, bool] = {}
+    employee_ids = [e.id for e in employees]
+    if employee_ids:
+        user_result = await db.execute(
+            select(User.employee_id, User.has_custom_password).where(User.employee_id.in_(employee_ids))
+        )
+        custom_password_by_employee = dict(user_result.all())
+
+    return [
+        EmployeeOut(
+            id=e.id,
+            personnel_code=e.personnel_code,
+            national_code=e.national_code,
+            first_name=e.first_name,
+            last_name=e.last_name,
+            mobile=e.mobile,
+            site_id=e.site_id,
+            department_id=e.department_id,
+            is_active=e.is_active,
+            is_enabled=e.is_enabled,
+            has_custom_password=custom_password_by_employee.get(e.id, False),
+        )
+        for e in employees
+    ]
 
 
 @router.get("/count")
@@ -73,7 +101,9 @@ async def count_employees(
     دارد، این Endpoint تعداد واقعی را مستقیماً با COUNT از دیتابیس می‌خواند
     (برای کارت آمار در داشبورد استفاده می‌شود).
     """
-    stmt = select(func.count()).select_from(Employee).where(Employee.is_active.is_(True))
+    stmt = select(func.count()).select_from(Employee).where(
+        Employee.is_active.is_(True), Employee.is_enabled.is_(True)
+    )
     if site_id is not None:
         stmt = stmt.where(Employee.site_id == site_id)
     result = await db.execute(stmt)
@@ -142,25 +172,37 @@ async def list_supervised_departments(
 # ---------- فعال/غیرفعال‌کردن دستی + تعیین رمز عبور (پنل Admin) ----------
 
 @router.patch("/{employee_id}", response_model=EmployeeOut)
-async def update_employee_active_state(
+async def update_employee_enabled_state(
     employee_id: int,
-    payload: EmployeeActiveUpdate,
+    payload: EmployeeEnabledUpdate,
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("employees.update")),
 ):
     """
-    فعال/غیرفعال‌کردن دستی یک پرسنل توسط Admin — مستقل از Sync Engine.
-    نکته مهم: اگر Mapping این Site ستون is_active منبع را می‌خواند، اجرای بعدی
-    Sync (خودکار یا دستی) دوباره این مقدار را بر اساس منبع بازنویسی می‌کند —
-    یعنی این تغییر دستی فقط تا اجرای بعدی Sync برای همین پرسنل پایدار است.
+    فعال/غیرفعال‌کردن دستی یک پرسنل توسط Admin — کاملاً مستقل از is_active
+    (که فقط Sync Engine کنترل می‌کند). این مقدار در ستون جداگانه‌ای
+    (is_enabled) ذخیره می‌شود که هیچ اجرای Sync آن را بازنویسی نمی‌کند.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
-    employee.is_active = payload.is_active
-    await db.commit()
-    await db.refresh(employee)
-    return employee
+    employee = await UserRepository(db).set_employee_enabled(employee, payload.is_enabled)
+
+    result = await db.execute(select(User.has_custom_password).where(User.employee_id == employee.id))
+    has_custom_password = result.scalar_one_or_none() or False
+    return EmployeeOut(
+        id=employee.id,
+        personnel_code=employee.personnel_code,
+        national_code=employee.national_code,
+        first_name=employee.first_name,
+        last_name=employee.last_name,
+        mobile=employee.mobile,
+        site_id=employee.site_id,
+        department_id=employee.department_id,
+        is_active=employee.is_active,
+        is_enabled=employee.is_enabled,
+        has_custom_password=has_custom_password,
+    )
 
 
 @router.put("/{employee_id}/password", status_code=status.HTTP_204_NO_CONTENT)
@@ -171,11 +213,23 @@ async def set_employee_password(
     _user=Depends(require_permission("users.manage")),
 ):
     """
-    تعیین دستی رمز عبور ورود یک پرسنل توسط Admin. این رمز یک روش ورود
-    جایگزین اضافه می‌کند (کد پرسنلی + این رمز)؛ ورود با کد پرسنلی + کد ملی
-    همچنان مثل قبل کار می‌کند.
+    تعیین دستی رمز عبور ورود یک پرسنل توسط Admin. بعد از این، ورود با کد ملی
+    برای این پرسنل دیگر کار نمی‌کند — فقط با «کد پرسنلی + این رمز جدید».
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
     await UserRepository(db).set_employee_password(employee, payload.new_password)
+
+
+@router.delete("/{employee_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_employee_password(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("users.manage")),
+):
+    """بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی) — رمز عبور اختصاصی قبلی از کار می‌افتد."""
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await UserRepository(db).reset_employee_to_default_login(employee)

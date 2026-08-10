@@ -262,6 +262,8 @@ class SyncService:
                         site_id=site_id,
                         department_id=department_id,
                         is_active=is_active,
+                        # is_enabled عمداً اینجا تنظیم نمی‌شود — مقدار پیش‌فرض
+                        # ستون (True) اعمال می‌شود؛ این فیلد فقط دستی از پنل تغییر می‌کند.
                         last_synced_at=now,
                     )
                 )
@@ -276,6 +278,9 @@ class SyncService:
                 if has_department_mapping:
                     existing.department_id = department_id
                 existing.is_active = is_active
+                # نکته مهم: is_enabled عمداً اینجا دست‌کاری نمی‌شود. آن یک
+                # تصمیم دستی Admin است (از پنل «پرسنل») و باید مستقل از نتیجه
+                # هر اجرای Sync باقی بماند.
                 existing.last_synced_at = now
                 updated += 1
 

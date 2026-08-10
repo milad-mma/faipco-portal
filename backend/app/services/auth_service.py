@@ -12,6 +12,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.employee import Employee
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 
@@ -82,7 +83,32 @@ class AuthService:
         return access_token, new_refresh_token
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
-        if not verify_password(current_password, user.password_hash):
-            raise AuthError("رمز عبور فعلی اشتباه است")
+        """
+        تغییر رمز عبور توسط خودِ کاربر.
+
+        اگر کاربر هنوز رمز اختصاصی تعیین نکرده باشد (has_custom_password=False
+        — یعنی همان پرسنلی که با کد ملی وارد می‌شود)، «رمز عبور فعلی» که از او
+        خواسته می‌شود در واقع همان کد ملی خودش است (چون آن چیزی است که واقعاً
+        می‌داند؛ password_hash فعلی یک مقدار تصادفی است که خودش نمی‌داند).
+        بعد از این تغییر has_custom_password=True می‌شود و از این پس ورود با
+        کد ملی دیگر کار نمی‌کند — طبق UserRepository.find_employee_for_login.
+
+        کاربران مدیریتی (بدون employee_id، مثل Admin) همیشه از همان روش قبلی
+        (بررسی رمز عبور فعلی) استفاده می‌کنند — آن‌ها اصلاً پرسنل نیستند که
+        بخواهند به روش «کد ملی» وارد شوند.
+        """
+        if user.employee_id is None or user.has_custom_password:
+            if not verify_password(current_password, user.password_hash):
+                raise AuthError("رمز عبور فعلی اشتباه است")
+        else:
+            employee = await self.db.get(Employee, user.employee_id)
+            if (
+                employee is None
+                or not employee.national_code
+                or current_password.strip() != employee.national_code.strip()
+            ):
+                raise AuthError("کد ملی وارد شده اشتباه است")
+
         user.password_hash = hash_password(new_password)
+        user.has_custom_password = True
         await self.db.commit()

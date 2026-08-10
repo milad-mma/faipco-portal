@@ -179,7 +179,11 @@ class NoticeService:
                 result = await self.db.execute(
                     select(User.id)
                     .join(Employee, Employee.id == User.employee_id)
-                    .where(Employee.site_id == target.target_id, Employee.is_active.is_(True))
+                    .where(
+                        Employee.site_id == target.target_id,
+                        Employee.is_active.is_(True),
+                        Employee.is_enabled.is_(True),
+                    )
                 )
                 user_ids.update(row[0] for row in result.all())
 
@@ -187,7 +191,11 @@ class NoticeService:
                 result = await self.db.execute(
                     select(User.id)
                     .join(Employee, Employee.id == User.employee_id)
-                    .where(Employee.department_id == target.target_id, Employee.is_active.is_(True))
+                    .where(
+                        Employee.department_id == target.target_id,
+                        Employee.is_active.is_(True),
+                        Employee.is_enabled.is_(True),
+                    )
                 )
                 user_ids.update(row[0] for row in result.all())
 
