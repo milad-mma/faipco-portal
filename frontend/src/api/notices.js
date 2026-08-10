@@ -47,3 +47,22 @@ export async function fetchNoticeReaders(noticeId) {
 export async function deleteNotice(noticeId) {
   await apiClient.delete(`/notices/${noticeId}`);
 }
+
+export async function createPayrollNotice({ title, body, priority, file }) {
+  const formData = new FormData();
+  formData.append("title", title);
+  formData.append("body", body || "");
+  formData.append("priority", priority);
+  formData.append("file", file);
+  const { data } = await apiClient.post("/notices/payroll", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function fetchMyPayrollReceiptBlob(noticeId) {
+  const { data } = await apiClient.get(`/notices/${noticeId}/payroll/mine`, {
+    responseType: "blob",
+  });
+  return data; // Blob از نوع application/pdf — فقط فیش خودِ کاربر جاری
+}

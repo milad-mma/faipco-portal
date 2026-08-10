@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     VAPID_PRIVATE_KEY: str = ""
     VAPID_CLAIMS_EMAIL: str = "admin@example.com"
 
+    # --- تولید PDF فیش حقوقی (Payroll Notice) ---
+    # یک فونت TTF فارسی/عربی (مثلاً Vazirmatn) باید در این مسیر قرار بگیرد تا
+    # متن فارسی در PDF درست (با اتصال حروف و راست‌به‌چپ) نمایش داده شود. اگر
+    # فایل موجود نباشد، به فونت پیش‌فرض بدون پشتیبانی فارسی سقوط می‌کند (فقط
+    # اعداد/حروف لاتین درست دیده می‌شوند) و یک هشدار در Log ثبت می‌شود.
+    PERSIAN_FONT_PATH: str = str(_BACKEND_DIR / "app" / "assets" / "fonts" / "Vazirmatn-Regular.ttf")
+
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE_PATH,
         env_file_encoding="utf-8",

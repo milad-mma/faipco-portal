@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.models.notice import NoticePriority, NoticeStatus, NoticeTargetType
+from app.models.notice import NoticePriority, NoticeStatus, NoticeTargetType, NoticeType
 
 
 class NoticeTargetIn(BaseModel):
@@ -49,11 +49,13 @@ class NoticeOut(BaseModel):
     body: str
     priority: NoticePriority
     status: NoticeStatus
+    notice_type: NoticeType = NoticeType.normal
     publish_at: datetime | None
     expire_at: datetime | None
     created_at: datetime
     targets: list[NoticeTargetOut]
     is_read: bool = False  # فقط در /notices/me معنا دارد؛ جای دیگر همیشه False است
+    has_my_payroll_receipt: bool = False  # فقط در /notices/me: آیا فیش حقوقی خودِ من برای این اطلاعیه موجود است
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -72,6 +74,7 @@ class NoticeDetailOut(BaseModel):
     body: str
     priority: NoticePriority
     status: NoticeStatus
+    notice_type: NoticeType = NoticeType.normal
     sender_id: int
     sender_name: str
     created_at: datetime
@@ -91,3 +94,11 @@ class NoticeReaderOut(BaseModel):
     last_name: str | None
     personnel_code: str | None
     read_at: datetime
+
+
+class PayrollNoticeResultOut(BaseModel):
+    """پاسخ آپلود فیش حقوقی — برای اطلاع فوری acc_manager از نتیجه تطبیق کدها."""
+    notice_id: int
+    matched_employee_count: int
+    missing_codes: list[str]
+    invalid_row_count: int

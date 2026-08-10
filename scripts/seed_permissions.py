@@ -9,6 +9,9 @@ Seed اولیه Permission ها و نقش‌های سیستمی — شامل س�
                       کل سایت / واحدهای همان سایت / پرسنل همان سایت را هدف بگیرد
 - middle_manager   : نقش سراسری (بدون site_id) — می‌تواند هر واحد یا هر پرسنلی در
                       کل سازمان را هدف بگیرد (نه Broadcast کامل به همه)
+- acc_manager      : مدیر حسابداری — فقط اطلاعیه فیش حقوقی (Payroll) می‌سازد؛ با
+                      آپلود XML، مخاطبان به‌صورت خودکار از روی کدهای موجود در همان
+                      XML تعیین می‌شوند (نه با انتخاب دستی Site/Department/Employee)
 
 «مدیر واحد» (سرپرست) اصلاً نقش RBAC جداگانه‌ای ندارد — کافی است از طریق
 PUT /departments/{id}/supervisor مستقیماً سرپرست آن واحد تعیین شود.
@@ -44,6 +47,7 @@ DEFAULT_PERMISSIONS = [
     ("notices.target.department", "ارسال اطلاعیه به یک یا چند واحد سازمانی"),
     ("notices.target.role", "ارسال اطلاعیه به یک نقش خاص"),
     ("notices.target.employee", "ارسال اطلاعیه به یک یا چند پرسنل خاص"),
+    ("notices.payroll", "آپلود و ارسال اطلاعیه فیش حقوقی (Payroll Notice)"),
     ("roles.manage", "مدیریت نقش‌ها و مجوزها"),
     ("users.manage", "مدیریت کاربران Portal و انتصاب نقش"),
 ]
@@ -64,6 +68,16 @@ ADDITIONAL_ROLES = {
             "notices.target.site",
             "notices.target.department",
             "notices.target.employee",
+        ],
+    },
+    "acc_manager": {
+        "description": (
+            "مدیر حسابداری — فقط می‌تواند اطلاعیه فیش حقوقی (Payroll) با آپلود XML بسازد؛ "
+            "مخاطبان به‌صورت خودکار از روی کدهای موجود در همان XML تعیین می‌شوند، نه با انتخاب دستی Target"
+        ),
+        "permissions": [
+            "notices.payroll",
+            "notices.view",  # برای دیدن گزارش «ارسالی من»
         ],
     },
 }

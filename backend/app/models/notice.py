@@ -40,6 +40,16 @@ class NoticeTargetType(str, enum.Enum):
     employee = "employee"
 
 
+class NoticeType(str, enum.Enum):
+    """
+    normal  → اطلاعیه متنی معمولی (رفتار همیشگی).
+    payroll → اطلاعیه فیش حقوقی: هر مخاطب فقط PDF فیش خودش را می‌بیند
+              (payroll_receipts)، نه متن یکسان برای همه.
+    """
+    normal = "normal"
+    payroll = "payroll"
+
+
 class Notice(Base, TimestampMixin):
     __tablename__ = "notices"
 
@@ -54,6 +64,9 @@ class Notice(Base, TimestampMixin):
     )
     status: Mapped[NoticeStatus] = mapped_column(
         Enum(NoticeStatus, name="notice_status_enum"), default=NoticeStatus.draft, nullable=False
+    )
+    notice_type: Mapped[NoticeType] = mapped_column(
+        Enum(NoticeType, name="notice_type_enum"), default=NoticeType.normal, nullable=False
     )
 
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

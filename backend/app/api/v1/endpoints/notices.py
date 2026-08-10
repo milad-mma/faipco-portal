@@ -11,16 +11,31 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
 /notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
+/notices/payroll               (POST)  آپلود XML فیش حقوقی و ارسال خودکار — فقط notices.payroll
+/notices/{id}/payroll/mine     (GET)   دانلود PDF فیش حقوقی خودِ کاربر جاری برای این اطلاعیه (و فقط خودش)
 """
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import json
 
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
-from app.models.notice import Notice
+from app.models.employee import Employee
+from app.models.notice import Notice, NoticePriority
 from app.models.user import User
-from app.schemas.notice import NoticeCreate, NoticeDetailOut, NoticeOut, NoticeReaderOut
+from app.schemas.notice import (
+    NoticeCreate,
+    NoticeDetailOut,
+    NoticeOut,
+    NoticeReaderOut,
+    PayrollNoticeResultOut,
+)
 from app.services.notice_service import NoticePermissionError, NoticeService, send_publish_notifications
+from app.services.payroll_pdf import render_payroll_receipt_pdf
+from app.services.payroll_service import PayrollNoticeService
+from app.services.payroll_common import PayrollParseError
 
 router = APIRouter()
 
@@ -141,3 +156,91 @@ async def available_targets(
     current_user: User = Depends(get_current_user),
 ):
     return await NoticeService(db).get_available_targets(current_user)
+
+
+# ---------- اطلاعیه فیش حقوقی (Payroll Notice) ----------
+
+
+@router.post("/payroll", response_model=PayrollNoticeResultOut)
+async def create_payroll_notice(
+    background_tasks: BackgroundTasks,
+    title: str = Form(...),
+    body: str = Form(""),
+    priority: NoticePriority = Form(NoticePriority.normal),
+    file: UploadFile = File(
+        ...,
+        description="فایل فیش حقوقی — XML (ساختار SalaryReceiptItem) یا XLSX (خروجی Excel همان گزارش)، با هر نامی",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("notices.payroll")),
+):
+    """
+    فایل آپلود می‌شود (XML یا XLSX — بر اساس پسوند تشخیص داده می‌شود)، کد هر
+    رکورد با Employee.personnel_code تطبیق داده می‌شود، و اطلاعیه بلافاصله
+    فقط برای پرسنل منطبق منتشر می‌شود. کدهای پیدا نشده در پاسخ گزارش می‌شوند
+    (ارسال نمی‌شوند).
+    """
+    file_bytes = await file.read()
+    try:
+        result = await PayrollNoticeService(db).create_payroll_notice(
+            sender=current_user,
+            title=title,
+            body=body,
+            priority=priority,
+            file_bytes=file_bytes,
+            filename=file.filename or "",
+        )
+    except PayrollParseError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    background_tasks.add_task(send_publish_notifications, result.notice.id)
+
+    return PayrollNoticeResultOut(
+        notice_id=result.notice.id,
+        matched_employee_count=result.matched_employee_count,
+        missing_codes=result.missing_codes,
+        invalid_row_count=result.invalid_row_count,
+    )
+
+
+@router.get("/{notice_id}/payroll/mine")
+async def download_my_payroll_receipt(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    PDF فیش حقوقی خودِ کاربر جاری برای این اطلاعیه — و *فقط* خودش. هیچ
+    پارامتری برای انتخاب employee_id دیگری در این Endpoint وجود ندارد؛ همیشه
+    از روی current_user.employee_id خوانده می‌شود، پس دسترسی به فیش دیگران
+    از این مسیر ساختاراً غیرممکن است.
+    """
+    notice = await db.get(Notice, notice_id)
+    if notice is None or notice.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
+
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فیشی برای شما یافت نشد")
+
+    receipt = await PayrollNoticeService(db).get_my_receipt(notice_id, current_user.employee_id)
+    if receipt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فیشی برای شما یافت نشد")
+
+    employee = await db.get(Employee, current_user.employee_id)
+    from app.models.site import Site  # پرهیز از Circular Import
+
+    site = await db.get(Site, employee.site_id) if employee else None
+
+    fields = json.loads(receipt.fields_json)
+    pdf_bytes = render_payroll_receipt_pdf(
+        notice_title=notice.title,
+        employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
+        personnel_code=receipt.source_personnel_code,
+        site_name=site.name if site else None,
+        fields=fields,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="payroll-{notice_id}.pdf"'},
+    )

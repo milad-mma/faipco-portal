@@ -32,8 +32,9 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import AsyncSessionLocal
 from app.models.employee import Department, Employee
-from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType
+from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.notice_read import NoticeRead
+from app.models.payroll_receipt import PayrollReceipt
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.notice import (
@@ -282,6 +283,22 @@ class NoticeService:
         )
         read_ids = {row[0] for row in read_result.all()}
 
+        # برای اطلاعیه‌های نوع payroll، آیا فیش خودِ همین کاربر واقعاً موجود
+        # است؟ (ممکن است این کاربر Target شده باشد ولی به هر دلیلی رکورد
+        # PayrollReceipt نداشته باشد — نباید فرض کنیم هر Target از نوع
+        # payroll لزوماً فیش هم دارد)
+        payroll_receipt_notice_ids: set[int] = set()
+        if user.employee_id is not None:
+            payroll_notice_ids = [n.id for n in notices if n.notice_type == NoticeType.payroll]
+            if payroll_notice_ids:
+                receipt_result = await self.db.execute(
+                    select(PayrollReceipt.notice_id).where(
+                        PayrollReceipt.notice_id.in_(payroll_notice_ids),
+                        PayrollReceipt.employee_id == user.employee_id,
+                    )
+                )
+                payroll_receipt_notice_ids = {row[0] for row in receipt_result.all()}
+
         return [
             NoticeOut(
                 id=n.id,
@@ -290,6 +307,7 @@ class NoticeService:
                 body=n.body,
                 priority=n.priority,
                 status=n.status,
+                notice_type=n.notice_type,
                 publish_at=n.publish_at,
                 expire_at=n.expire_at,
                 created_at=n.created_at,
@@ -297,6 +315,7 @@ class NoticeService:
                     NoticeTargetOut(target_type=t.target_type, target_id=t.target_id) for t in n.targets
                 ],
                 is_read=n.id in read_ids,
+                has_my_payroll_receipt=n.id in payroll_receipt_notice_ids,
             )
             for n in notices
         ]
@@ -310,6 +329,7 @@ class NoticeService:
         """
         can_all = await self._has_permission(user, "notices.target.all")
         can_role = await self._has_permission(user, "notices.target.role")
+        can_upload_payroll = await self._has_permission(user, "notices.payroll")
 
         from app.models.site import Site  # import محلی برای پرهیز از Circular Import
 
@@ -368,6 +388,7 @@ class NoticeService:
             "can_target_all": can_all,
             "can_target_role": can_role,
             "can_target_employee": can_employee,
+            "can_upload_payroll": can_upload_payroll,
             "site_ids": sorted(allowed_site_ids),
             "department_ids": sorted(allowed_department_ids),
             "supervisor_employees": supervisor_employees,
@@ -479,6 +500,7 @@ class NoticeService:
                     body=notice.body,
                     priority=notice.priority,
                     status=notice.status,
+                    notice_type=notice.notice_type,
                     sender_id=notice.sender_id,
                     sender_name=sender_names.get(notice.sender_id, "—"),
                     created_at=notice.created_at,

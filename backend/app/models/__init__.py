@@ -12,8 +12,10 @@ from app.models.notice import (  # noqa: F401
     NoticePriority,
     NoticeStatus,
     NoticeTargetType,
+    NoticeType,
 )
 from app.models.sync_log import SyncLog, SyncRunStatus  # noqa: F401
 from app.models.push_subscription import PushSubscription  # noqa: F401
 from app.models.notice_read import NoticeRead  # noqa: F401
 from app.models.system_setting import SystemSetting  # noqa: F401
+from app.models.payroll_receipt import PayrollReceipt  # noqa: F401
