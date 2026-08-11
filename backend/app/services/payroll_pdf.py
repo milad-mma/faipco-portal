@@ -44,9 +44,12 @@ _font_available = False
 _bold_font_available = False
 
 # اگر فایل تنظیم‌شده در PERSIAN_FONT_PATH موجود نبود، این مسیرهای رایج در
-# توزیع‌های اوبونتو/دبیان هم امتحان می‌شوند — DejaVu Sans معمولاً همراه
-# سیستم‌عامل از قبل نصب است و حروف فارسی/عربی را دارد.
+# توزیع‌های اوبونتو/دبیان هم امتحان می‌شوند — نسخه Condensed را اول امتحان
+# می‌کنیم چون فشرده‌تر است و به ساختار فشرده گزارش اصلی (فونت Tahoma) نزدیک‌تر
+# می‌ماند؛ هر دو از قبل روی اکثر توزیع‌های لینوکس نصب هستند و حروف فارسی/عربی را دارند.
 _FALLBACK_FONT_PATHS = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansCondensed.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 )
@@ -220,24 +223,25 @@ def render_payroll_receipt_pdf(
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=14 * mm,
-        leftMargin=14 * mm,
-        topMargin=14 * mm,
-        bottomMargin=14 * mm,
+        rightMargin=8 * mm,
+        leftMargin=8 * mm,
+        topMargin=8 * mm,
+        bottomMargin=8 * mm,
     )
 
-    title_style = ParagraphStyle("PayrollTitle", fontName=font_bold, fontSize=15, alignment=TA_CENTER, spaceAfter=6)
+    # اندازه‌ها و رنگ‌ها دقیقاً از روی CSS خودِ گزارش اصلی (خروجی MHTML همان
+    # سیستم) خوانده شده‌اند: عنوان ۱۲pt Bold، برچسب نوار مشخصات ۹pt Bold/مقدار
+    # ۹pt عادی با پس‌زمینه #d3d3d3، ردیف‌های جدول اصلی ۸pt با Padding فقط ۲pt.
+    title_style = ParagraphStyle("PayrollTitle", fontName=font_bold, fontSize=12, alignment=TA_CENTER, spaceAfter=4)
     subtitle_style = ParagraphStyle(
-        "PayrollSubtitle", fontName=font_name, fontSize=12, alignment=TA_CENTER, spaceAfter=10
+        "PayrollSubtitle", fontName=font_bold, fontSize=10, alignment=TA_CENTER, spaceAfter=6
     )
-    # برچسب Bold و مقدار غیر-Bold در یک Paragraph با تگ <b> — چون فونت Bold
-    # به‌درستی Register و Map شده (_ensure_font_registered)، <b> واقعاً وزن عوض می‌کند.
-    info_cell_style = ParagraphStyle("InfoCell", fontName=font_name, fontSize=9.5, alignment=TA_RIGHT, leading=14)
-    col_header_style = ParagraphStyle("ColHeader", fontName=font_bold, fontSize=10, alignment=TA_CENTER)
-    row_label_style = ParagraphStyle("RowLabel", fontName=font_name, fontSize=7.6, alignment=TA_RIGHT, leading=10)
-    row_value_style = ParagraphStyle("RowValue", fontName=font_name, fontSize=7.6, alignment=TA_RIGHT, leading=10)
-    footer_label_style = ParagraphStyle("FooterLabel", fontName=font_bold, fontSize=8.5, alignment=TA_RIGHT)
-    footer_value_style = ParagraphStyle("FooterValue", fontName=font_name, fontSize=8.5, alignment=TA_RIGHT)
+    info_cell_style = ParagraphStyle("InfoCell", fontName=font_name, fontSize=9, alignment=TA_RIGHT, leading=11)
+    col_header_style = ParagraphStyle("ColHeader", fontName=font_bold, fontSize=9, alignment=TA_CENTER)
+    row_label_style = ParagraphStyle("RowLabel", fontName=font_name, fontSize=8, alignment=TA_RIGHT, leading=9.2)
+    row_value_style = ParagraphStyle("RowValue", fontName=font_name, fontSize=8, alignment=TA_RIGHT, leading=9.2)
+    footer_label_style = ParagraphStyle("FooterLabel", fontName=font_bold, fontSize=8, alignment=TA_RIGHT)
+    footer_value_style = ParagraphStyle("FooterValue", fontName=font_name, fontSize=8, alignment=TA_RIGHT)
 
     story = []
 
@@ -249,11 +253,11 @@ def render_payroll_receipt_pdf(
 
     # ---------- نوار مشخصات: پس‌زمینه طوسی کم‌رنگ، از راست: کد پرسنلی، نام، مرکز هزینه ----------
     if header_rows:
-        info_col_width_pts = (doc.width / len(header_rows)) - 20  # منهای Padding داخلی سلول
+        info_col_width_pts = (doc.width / len(header_rows)) - 12  # منهای Padding داخلی سلول
         info_cells = []
         for row in header_rows:
             label_shaped = _shape(row["label"].rstrip(":"))
-            value_wrapped = _wrap_and_shape(row["value"], font_name, 9.5, info_col_width_pts)
+            value_wrapped = _wrap_and_shape(row["value"], font_name, 9, info_col_width_pts)
             info_cells.append(Paragraph(f"<b>{label_shaped}:</b> {value_wrapped}", info_cell_style))
         # ترتیب طبیعی سند (مرکز هزینه، نام، کد پرسنلی) از چپ به راست همان
         # چیزی است که در نمایش راست‌به‌چپ، کد پرسنلی را در سمت راست می‌گذارد
@@ -262,30 +266,41 @@ def render_payroll_receipt_pdf(
         info_table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f3f5")),
-                    ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#94a3b8")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#d3d3d3")),
+                    ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                 ]
             )
         )
         story.append(info_table)
-        story.append(Spacer(1, 4 * mm))
+        story.append(Spacer(1, 1.5 * mm))
 
     # ---------- جدول اصلی ۴ ستونی ----------
-    # نکته حیاتی: این جدول را به‌جای «۴ سلول که هرکدام یک جدول تودرتوی کامل
-    # داخلش است» با ۸ ستون تخت (مقدار+برچسب برای هرکدام از ۴ ستون اصلی) و
-    # چند ردیف واقعی می‌سازیم. چرا؟ چون یک جدول تودرتو در یک سلول، اگر
-    # محتوایش (مثلاً ستون «سایر» با ۳۰+ ردیف) از یک صفحه بلندتر شود، ReportLab
-    # نمی‌تواند آن را بین صفحات بشکند و کل تولید PDF با خطا متوقف می‌شود؛ ولی
-    # یک جدول تخت با ردیف‌های واقعی، طبق رفتار پیش‌فرض ReportLab، کاملاً
-    # می‌تواند بین صفحات بشکند.
-    col_width = doc.width / len(column_titles)
-    value_col_width = col_width * 0.45
-    label_col_width = col_width * 0.55
-    label_col_width_pts = label_col_width - 8
+    # نکته حیاتی ۱ (پایداری بین صفحات): این جدول را به‌جای «۴ سلول که هرکدام
+    # یک جدول تودرتوی کامل داخلش است» با ۸ ستون تخت (مقدار+برچسب برای هرکدام
+    # از ۴ ستون اصلی) و چند ردیف واقعی می‌سازیم؛ یک جدول تودرتوی خیلی بلند در
+    # یک سلول اگر از یک صفحه بلندتر شود، ReportLab نمی‌تواند آن را بین صفحات
+    # بشکند و کل تولید PDF متوقف می‌شود، ولی جدول تخت با ردیف واقعی می‌تواند.
+    #
+    # نکته حیاتی ۲ (عرض هر ستون): در گزارش اصلی، عرض هر ۴ ستون یکسان نیست —
+    # ستون «سایر» چون برچسب‌های بلندتری دارد (مثلاً «دستمزد و مزایای مشمول
+    # بیمه تامین اجتماعی»)، عرض بیشتری می‌گیرد. این نسبت‌ها از CSS واقعی
+    # همان گزارش استخراج شده‌اند.
+    column_weights = {"وام": 0.19, "کسور": 0.21, "مزایا": 0.24, "سایر": 0.36}
+    default_weight = 1 / len(column_titles)
+    total_weight = sum(column_weights.get(t, default_weight) for t in column_titles)
+
+    col_width_map = {
+        t: doc.width * (column_weights.get(t, default_weight) / total_weight) for t in column_titles
+    }
+    value_width_map = {t: w * 0.4 for t, w in col_width_map.items()}
+    label_width_map = {t: w * 0.6 for t, w in col_width_map.items()}
+    label_col_width_pts_map = {t: label_width_map[t] - 6 for t in column_titles}
 
     max_rows = max((len(section_rows.get(title, [])) for title in column_titles), default=0)
 
@@ -305,7 +320,9 @@ def render_payroll_receipt_pdf(
                 r = rows[row_idx]
                 row_cells.append(Paragraph(_shape(r["value"]), row_value_style))
                 row_cells.append(
-                    Paragraph(_wrap_and_shape(r["label"], font_name, 7.6, label_col_width_pts), row_label_style)
+                    Paragraph(
+                        _wrap_and_shape(r["label"], font_name, 8, label_col_width_pts_map[title]), row_label_style
+                    )
                 )
             else:
                 row_cells.append("")
@@ -313,12 +330,12 @@ def render_payroll_receipt_pdf(
         table_data.append(row_cells)
 
     col_widths = []
-    for _ in column_titles:
-        col_widths.extend([value_col_width, label_col_width])
+    for title in column_titles:
+        col_widths.extend([value_width_map[title], label_width_map[title]])
 
     # خط ضخیم‌تر بین هر دو ستون اصلی مجاور (نه بین زوج مقدار/برچسب خودشان)
     group_dividers = [
-        ("LINEAFTER", (i * 2 + 1, 0), (i * 2 + 1, -1), 0.7, colors.HexColor("#94a3b8"))
+        ("LINEAFTER", (i * 2 + 1, 0), (i * 2 + 1, -1), 0.7, colors.black)
         for i in range(len(column_titles) - 1)
     ]
 
@@ -326,17 +343,16 @@ def render_payroll_receipt_pdf(
     main_table.setStyle(
         TableStyle(
             [
-                ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#94a3b8")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+                ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
                 *group_dividers,
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2f7")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d3d3d3")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("TOPPADDING", (0, 0), (-1, 0), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-                ("TOPPADDING", (0, 1), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 2),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, 0), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+                ("TOPPADDING", (0, 1), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 1.5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
             ]
         )
     )
@@ -344,7 +360,7 @@ def render_payroll_receipt_pdf(
 
     # ---------- نوار جمع‌بندی پایین: هر مقدار دقیقاً زیر همان ستون اصلی‌اش ----------
     if footer_rows:
-        story.append(Spacer(1, 2 * mm))
+        story.append(Spacer(1, 1 * mm))
 
         # هر ستون اصلی می‌تواند حداکثر ۲ ردیف جمع‌بندی داشته باشد (مثلاً زیر
         # «مزایا»: هم «جمع مزایا» (ردیف اول) هم «خالص پرداختی» (ردیف دوم)؛
@@ -363,9 +379,13 @@ def render_payroll_receipt_pdf(
             max_footer_row = max(max_footer_row, row_idx)
 
         if max_footer_row >= 0:
-            footer_value_col_width = col_width * 0.55
-            footer_label_col_width = col_width * 0.45
-            footer_label_width_pts = footer_label_col_width - 8
+            # برخلاف جدول اصلی، در نوار جمع‌بندی برچسب‌ها همیشه کوتاهند
+            # («جمع کسور»، «خالص پرداختی») ولی مقدارها می‌توانند اعداد بزرگ
+            # باشند — پس نسبت عرض برعکس می‌شود (به مقدار فضای بیشتر داده می‌شود).
+            footer_value_width_map = {t: w * 0.58 for t, w in col_width_map.items()}
+            footer_label_width_map = {t: w * 0.42 for t, w in col_width_map.items()}
+            footer_label_width_pts_map = {t: footer_label_width_map[t] - 6 for t in column_titles}
+
             footer_table_data = []
             for row_idx in range(max_footer_row + 1):
                 table_row = []
@@ -377,29 +397,31 @@ def render_payroll_receipt_pdf(
                                 [
                                     Paragraph(_shape(r["value"]), footer_value_style),
                                     Paragraph(
-                                        _wrap_and_shape(r["label"], font_name, 8.5, footer_label_width_pts),
+                                        _wrap_and_shape(
+                                            r["label"], font_name, 8, footer_label_width_pts_map[title]
+                                        ),
                                         footer_label_style,
                                     ),
                                 ]
                             ],
-                            colWidths=[footer_value_col_width, footer_label_col_width],
+                            colWidths=[footer_value_width_map[title], footer_label_width_map[title]],
                         )
                         table_row.append(cell)
                     else:
                         table_row.append("")
                 footer_table_data.append(table_row)
 
-            footer_table = Table(footer_table_data, colWidths=[col_width] * len(column_titles))
+            footer_table = Table(footer_table_data, colWidths=[col_width_map[t] for t in column_titles])
             footer_table.setStyle(
                 TableStyle(
                     [
-                        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#94a3b8")),
-                        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                        ("BOX", (0, 0), (-1, -1), 0.6, colors.black),
+                        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("TOPPADDING", (0, 0), (-1, -1), 5),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                     ]
                 )
             )
