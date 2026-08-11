@@ -642,10 +642,10 @@ export default function NoticesPage() {
                     startIcon={<UploadFileOutlinedIcon />}
                     disabled={isSubmitting}
                   >
-                    {payrollForm.file ? payrollForm.file.name : "انتخاب فایل XML فیش حقوقی"}
+                    {payrollForm.file ? payrollForm.file.name : "انتخاب فایل XML یا XLSX فیش حقوقی"}
                     <input
                       type="file"
-                      accept=".xml,text/xml,application/xml"
+                      accept=".xml,text/xml,application/xml,.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                       hidden
                       onChange={(e) => setPayrollForm({ ...payrollForm, file: e.target.files?.[0] || null })}
                     />
