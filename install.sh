@@ -326,6 +326,10 @@ server {
     listen 80 default_server;
     server_name _;
 
+    # پیش‌فرض Nginx فقط ۱ مگابایت است — برای آپلود فیش حقوقی (XLSX سازمان‌های
+    # بزرگ می‌تواند چند مگابایت باشد) باید بیشتر باشد.
+    client_max_body_size 25m;
+
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
 
