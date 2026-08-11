@@ -6,7 +6,7 @@
  * نه یک اپ کاملاً Offline-first.
  */
 
-const CACHE_NAME = "faipco-shell-v1";
+const CACHE_NAME = "faipco-shell-v2";
 const SHELL_FILES = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

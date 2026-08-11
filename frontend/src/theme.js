@@ -3,10 +3,9 @@ import { createTheme } from "@mui/material/styles";
 /**
  * Design Tokens — FAIPCO Portal
  * ------------------------------------------------------------
- * رنگ‌ها مستقیماً از لوگوی رسمی شرکت استخراج شده‌اند (نه انتخابی جدا):
- * Primary:   #103498  (آبی سلطنتی لوگو — قاب بیضی و خطوط)
- * Primary+:  #536DB5
- * Accent:    #FEE80B  (زرد لوگو — برای اکشن‌ها، برجسته‌سازی، نشان فعال بودن)
+ * Primary:   #16324F  (سرمه‌ای صنعتی — اقتدار و ثبات سازمانی)
+ * Primary+:  #1F4B75
+ * Accent:    #E0A458  (طلایی‌کهربایی — برای اکشن‌ها و برجسته‌سازی)
  * Surface:   #FFFFFF
  * Background:#F5F7FA
  * Text:      #1A1F29
@@ -23,16 +22,16 @@ export const theme = createTheme({
   palette: {
     mode: "light",
     primary: {
-      main: "#103498",
-      light: "#536DB5",
-      dark: "#0C256D",
+      main: "#16324F",
+      light: "#1F4B75",
+      dark: "#0E2138",
       contrastText: "#FFFFFF",
     },
     secondary: {
-      main: "#FEE80B",
-      light: "#FEF060",
-      dark: "#CBBA09",
-      contrastText: "#0C256D",
+      main: "#E0A458",
+      light: "#EBBD82",
+      dark: "#C68B3F",
+      contrastText: "#16324F",
     },
     background: {
       default: "#F5F7FA",

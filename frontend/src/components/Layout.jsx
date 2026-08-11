@@ -140,7 +140,7 @@ export default function Layout() {
                     borderInlineEnd: isActive ? "3px solid" : "3px solid transparent",
                     borderInlineEndColor: isActive ? "secondary.main" : "transparent",
                     "&.Mui-selected": {
-                      backgroundColor: "rgba(16, 52, 152, 0.08)",
+                      backgroundColor: "rgba(22, 50, 79, 0.08)",
                     },
                   }}
                 >
@@ -189,7 +189,7 @@ export default function Layout() {
                             borderInlineEnd: isChildActive ? "3px solid" : "3px solid transparent",
                             borderInlineEndColor: isChildActive ? "secondary.main" : "transparent",
                             "&.Mui-selected": {
-                              backgroundColor: "rgba(16, 52, 152, 0.08)",
+                              backgroundColor: "rgba(22, 50, 79, 0.08)",
                             },
                           }}
                         >

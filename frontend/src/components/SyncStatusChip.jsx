@@ -11,7 +11,7 @@ const STATUS_CONFIG = {
   success: { label: "موفق", color: "success", dot: "#2E7D5B" },
   failed: { label: "ناموفق", color: "error", dot: "#C0392B" },
   partial: { label: "ناقص", color: "warning", dot: "#C97A2B" },
-  running: { label: "در حال اجرا", color: "warning", dot: "#C97A2B" },
+  running: { label: "در حال اجرا", color: "warning", dot: "#E0A458" },
   never: { label: "هرگز اجرا نشده", color: "default", dot: "#9AA5B1" },
 };
 

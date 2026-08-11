@@ -90,10 +90,10 @@ export default function DashboardPage() {
 
       <Grid container spacing={2.5} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<GroupOutlinedIcon />} label="پرسنل فعال" value={employeeCount} color="#103498" />
+          <StatCard icon={<GroupOutlinedIcon />} label="پرسنل فعال" value={employeeCount} color="#16324F" />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<ApartmentOutlinedIcon />} label="سایت‌های فعال" value={activeSiteCount} color="#536DB5" />
+          <StatCard icon={<ApartmentOutlinedIcon />} label="سایت‌های فعال" value={activeSiteCount} color="#1F4B75" />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
           <StatCard

@@ -72,7 +72,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         overflow: "hidden",
         borderInlineStart: isUnread ? "4px solid" : "4px solid transparent",
         borderInlineStartColor: isUnread ? "secondary.main" : "transparent",
-        backgroundColor: isUnread ? "rgba(16, 52, 152, 0.05)" : "transparent",
+        backgroundColor: isUnread ? "rgba(224, 164, 88, 0.06)" : "transparent",
       }}
     >
       <Box
@@ -88,7 +88,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          {isUnread ? <MailOutlineIcon color="primary" /> : <DraftsOutlinedIcon color="disabled" />}
+          {isUnread ? <MailOutlineIcon color="secondary" /> : <DraftsOutlinedIcon color="disabled" />}
           <Box sx={{ minWidth: 0 }}>
             <Typography
               variant="body1"
@@ -104,7 +104,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center">
-          {isPayroll && <Chip size="small" label="فیش حقوقی" color="primary" variant="outlined" />}
+          {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
           <Chip
             size="small"
             label={PRIORITY_LABELS[notice.priority]?.label}
