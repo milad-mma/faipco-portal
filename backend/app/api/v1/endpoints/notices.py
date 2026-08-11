@@ -164,6 +164,16 @@ async def delete_notice(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
 
+@router.get("/stats-summary")
+async def notices_stats_summary(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("notices.view")),
+):
+    """تعداد اطلاعیه‌های منتشرشده کل سیستم در ۷ روز اخیر — برای کارت آمار داشبورد Admin."""
+    count = await NoticeService(db).count_published_this_week()
+    return {"published_this_week": count}
+
+
 @router.get("/available-targets")
 async def available_targets(
     db: AsyncSession = Depends(get_db),

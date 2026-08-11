@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decrypt_secret
 from app.models.employee import Department, Employee, EmployeeMapping
-from app.models.site import SiteConnection, SyncStatus
+from app.models.site import Site, SiteConnection, SyncStatus
 from app.models.sync_log import SyncLog, SyncRunStatus
 from app.sync_engine.adapter_factory import get_adapter
 
@@ -87,6 +87,41 @@ class SyncService:
         return log
 
     # ---------- کمکی ----------
+
+    async def get_status_summary(self) -> dict:
+        """
+        خلاصه وضعیت Sync امروز برای همه Site های فعال — چند سایت امروز حداقل
+        یک اجرای موفق داشته‌اند، چند سایت ناموفق بوده‌اند، و چند سایت اصلاً
+        امروز اجرا نشده‌اند. برای کارت آمار داشبورد Admin استفاده می‌شود.
+        """
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        sites_result = await self.db.execute(select(Site.id).where(Site.is_active.is_(True)))
+        site_ids = [row[0] for row in sites_result.all()]
+
+        logs_result = await self.db.execute(
+            select(SyncLog.site_id, SyncLog.status, SyncLog.started_at)
+            .where(SyncLog.site_id.in_(site_ids), SyncLog.started_at >= today_start)
+            .order_by(SyncLog.site_id, SyncLog.started_at.desc())
+        )
+        # فقط آخرین اجرای امروز هر Site مهم است — چون ردیف‌ها بر اساس
+        # site_id و بعد started_at نزولی مرتب شده‌اند، اولین باری که یک
+        # site_id دیده می‌شود دقیقاً همان آخرین اجرای امروزش است.
+        latest_status_by_site: dict[int, SyncRunStatus] = {}
+        for site_id, run_status, _started_at in logs_result.all():
+            if site_id not in latest_status_by_site:
+                latest_status_by_site[site_id] = run_status
+
+        success_today = sum(1 for s in latest_status_by_site.values() if s == SyncRunStatus.success)
+        failed_today = sum(1 for s in latest_status_by_site.values() if s == SyncRunStatus.failed)
+        not_run_today = len(site_ids) - len(latest_status_by_site)
+
+        return {
+            "total_sites": len(site_ids),
+            "success_today": success_today,
+            "failed_today": failed_today,
+            "not_run_today": not_run_today,
+        }
 
     async def _get_site_connection(self, site_id: int) -> SiteConnection:
         """

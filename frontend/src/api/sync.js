@@ -24,3 +24,8 @@ export async function updateSyncSettings(intervalMinutes) {
   const { data } = await apiClient.put("/sync/settings", { interval_minutes: intervalMinutes });
   return data;
 }
+
+export async function fetchSyncStatusSummary() {
+  const { data } = await apiClient.get("/sync/status-summary");
+  return data; // { total_sites, success_today, failed_today, not_run_today }
+}

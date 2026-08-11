@@ -4,11 +4,13 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -19,6 +21,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TableSortLabel,
   TextField,
@@ -29,13 +32,11 @@ import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import { fetchEmployees, resetEmployeePassword, setEmployeeEnabled, setEmployeePassword } from "../api/employees";
 import { fetchSites } from "../api/sites";
-import { fetchDepartments } from "../api/departments";
 import { monoFontSx } from "../theme";
-import { sortRows } from "../utils/tableSort";
 
-// تعریف ستون‌های قابل Sort جدول پرسنل — key همان فیلدی است که در ردیف‌های
-// محاسبه‌شده (rows) برای Sort استفاده می‌شود؛ چند ستون (نام، سایت، واحد) از
-// روی lookup map ساخته می‌شوند، نه مستقیماً از EmployeeOut.
+// ستون‌های جدول پرسنل — key همان چیزی است که به سرور به‌عنوان sort_by فرستاده
+// می‌شود (مطابق با نگاشت _SORT_COLUMNS در بک‌اند). Sort کاملاً سمت سرور انجام
+// می‌شود، نه روی داده‌های همین صفحه — چون این جدول حالا صفحه‌بندی سمت سرور دارد.
 const EMPLOYEE_COLUMNS = [
   { key: "personnel_code", label: "کد پرسنلی" },
   { key: "full_name", label: "نام و نام خانوادگی" },
@@ -43,9 +44,10 @@ const EMPLOYEE_COLUMNS = [
   { key: "mobile", label: "موبایل" },
   { key: "site_name", label: "سایت" },
   { key: "department_name", label: "واحد سازمانی" },
-  { key: "is_active", label: "وضعیت Sync", align: "center" },
   { key: "is_enabled", label: "فعال در پرتال", align: "center" },
 ];
+
+const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
 
 function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [password, setPassword] = useState("");
@@ -155,55 +157,63 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
+  const [total, setTotal] = useState(0);
   const [sites, setSites] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [selectedSite, setSelectedSite] = useState("");
   const [search, setSearch] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingId, setTogglingId] = useState(null);
   const [passwordEmployee, setPasswordEmployee] = useState(null);
-  const [order, setOrder] = useState("asc");
-  const [orderBy, setOrderBy] = useState(null);
+  const [sortBy, setSortBy] = useState("personnel_code");
+  const [sortDir, setSortDir] = useState("asc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE_OPTIONS[0]);
 
   useEffect(() => {
     fetchSites().then(setSites);
-    fetchDepartments().then(setDepartments);
   }, []);
 
   function handleSort(columnKey) {
-    if (orderBy === columnKey) {
-      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    if (sortBy === columnKey) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setOrderBy(columnKey);
-      setOrder("asc");
+      setSortBy(columnKey);
+      setSortDir("asc");
     }
+    setPage(0);
   }
 
   function loadEmployees() {
     setIsLoading(true);
-    return fetchEmployees({ siteId: selectedSite || undefined, search: search || undefined, includeInactive: true })
-      .then(setEmployees)
+    return fetchEmployees({
+      siteId: selectedSite || undefined,
+      search: search || undefined,
+      includeInactive: showInactive,
+      includePortalDisabled: true, // پنل Admin همیشه پرسنل با پرتال غیرفعال را هم باید ببیند تا بتواند دوباره فعالشان کند
+      page: page + 1,
+      pageSize: rowsPerPage,
+      sortBy,
+      sortDir,
+    })
+      .then((data) => {
+        setEmployees(data.items);
+        setTotal(data.total);
+      })
       .finally(() => setIsLoading(false));
   }
+
+  // با تغییر فیلترها/Sort به صفحه اول برگرد (صفحه فعلی ممکن است دیگر معتبر نباشد)
+  useEffect(() => {
+    setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSite, search, showInactive]);
 
   useEffect(() => {
     const timer = setTimeout(loadEmployees, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSite, search]);
-
-  const siteNameById = Object.fromEntries(sites.map((s) => [s.id, s.name]));
-  const departmentNameById = Object.fromEntries(departments.map((d) => [d.id, d.name]));
-
-  // ردیف‌های نمایشی همراه با فیلدهای محاسبه‌شده (نام کامل، نام سایت، نام واحد)
-  // که برای هم نمایش و هم Sort روی همه‌ی سرستون‌ها استفاده می‌شوند.
-  const rows = employees.map((emp) => ({
-    ...emp,
-    full_name: `${emp.first_name} ${emp.last_name}`,
-    site_name: siteNameById[emp.site_id] || null,
-    department_name: emp.department_id ? departmentNameById[emp.department_id] || null : null,
-  }));
-  const sortedRows = sortRows(rows, order, orderBy);
+  }, [selectedSite, search, showInactive, sortBy, sortDir, page, rowsPerPage]);
 
   async function handleToggleEnabled(employee) {
     const nextEnabled = !employee.is_enabled;
@@ -219,7 +229,12 @@ export default function EmployeesPage() {
     setTogglingId(employee.id);
     try {
       const updated = await setEmployeeEnabled(employee.id, nextEnabled);
-      setEmployees((prev) => prev.map((e) => (e.id === employee.id ? updated : e)));
+      // فقط is_enabled را از پاسخ Merge می‌کنیم؛ site_name/department_name را
+      // PATCH پر نمی‌کند (فقط GET لیست این دو را با Join برمی‌گرداند)، پس اگر
+      // کل updated را جایگزین کنیم این دو فیلد با null بازنویسی می‌شوند.
+      setEmployees((prev) =>
+        prev.map((e) => (e.id === employee.id ? { ...e, is_enabled: updated.is_enabled } : e))
+      );
     } finally {
       setTogglingId(null);
     }
@@ -232,12 +247,12 @@ export default function EmployeesPage() {
           پرسنل
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها. برای دادن دسترسی به کسی، از
-          صفحه «مدیریت دسترسی» استفاده کنید.
+          فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها (از طریق Mapping تعریف‌شده در صفحه «سایت‌ها»).
+          برای دادن دسترسی به کسی، از صفحه «مدیریت دسترسی» استفاده کنید.
         </Typography>
       </Box>
 
-      <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         <TextField
           size="small"
           placeholder="جستجو بر اساس نام، کد پرسنلی یا کد ملی..."
@@ -267,6 +282,14 @@ export default function EmployeesPage() {
             </MenuItem>
           ))}
         </TextField>
+        <FormControlLabel
+          control={<Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />}
+          label={
+            <Tooltip title="پرسنلی که در دیتابیس مبدأ (طبق Mapping) دیگر فعال اعلام نشده‌اند — پیش‌فرض از لیست کنار گذاشته می‌شوند">
+              <span>نمایش پرسنل غیرفعال (Sync)</span>
+            </Tooltip>
+          }
+        />
       </Box>
 
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
@@ -277,15 +300,11 @@ export default function EmployeesPage() {
                 {EMPLOYEE_COLUMNS.map((col) => (
                   <TableCell key={col.key} align={col.align}>
                     <TableSortLabel
-                      active={orderBy === col.key}
-                      direction={orderBy === col.key ? order : "asc"}
+                      active={sortBy === col.key}
+                      direction={sortBy === col.key ? sortDir : "asc"}
                       onClick={() => handleSort(col.key)}
                     >
-                      {col.key === "is_active" ? (
-                        <Tooltip title="وضعیت خودکار — از روی Mapping دیتابیس مبدأ (مثل IsCut)، فقط با Sync تغییر می‌کند">
-                          <span>{col.label}</span>
-                        </Tooltip>
-                      ) : col.key === "is_enabled" ? (
+                      {col.key === "is_enabled" ? (
                         <Tooltip title="تصمیم دستی Admin — کاملاً مستقل از Sync و با آن بازنویسی نمی‌شود">
                           <span>{col.label}</span>
                         </Tooltip>
@@ -299,7 +318,7 @@ export default function EmployeesPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {!isLoading && sortedRows.length === 0 && (
+              {!isLoading && employees.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={EMPLOYEE_COLUMNS.length + 1}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
@@ -310,24 +329,23 @@ export default function EmployeesPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {sortedRows.map((emp) => (
-                <TableRow key={emp.id} hover sx={!emp.is_enabled ? { opacity: 0.6 } : undefined}>
+              {employees.map((emp) => (
+                <TableRow
+                  key={emp.id}
+                  hover
+                  sx={!emp.is_enabled || !emp.is_active ? { opacity: 0.6 } : undefined}
+                >
                   <TableCell sx={monoFontSx}>{emp.personnel_code}</TableCell>
                   <TableCell>
                     {emp.first_name} {emp.last_name}
+                    {!emp.is_active && (
+                      <Chip size="small" variant="outlined" label="غیرفعال" sx={{ mr: 1 }} />
+                    )}
                   </TableCell>
                   <TableCell sx={monoFontSx}>{emp.national_code || "—"}</TableCell>
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
                   <TableCell>{emp.site_name || emp.site_id}</TableCell>
                   <TableCell>{emp.department_name || "—"}</TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      size="small"
-                      label={emp.is_active ? "فعال" : "غیرفعال"}
-                      color={emp.is_active ? "success" : "default"}
-                      variant="outlined"
-                    />
-                  </TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
                       <Chip
@@ -363,6 +381,21 @@ export default function EmployeesPage() {
             </TableBody>
           </Table>
         </TableContainer>
+
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(Number(e.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+          labelRowsPerPage="سطر در هر صفحه"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+        />
       </Card>
 
       <SetPasswordDialog

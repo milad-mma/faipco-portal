@@ -48,7 +48,7 @@ export default function AccessManagementPage() {
       return;
     }
     const timer = setTimeout(() => {
-      fetchEmployees({ search }).then(setResults);
+      fetchEmployees({ search }).then((data) => setResults(data.items));
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);

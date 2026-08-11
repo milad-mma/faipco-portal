@@ -57,7 +57,7 @@ function SupervisorCell({ department, siteName, onSaved }) {
     setIsSearching(true);
     const timer = setTimeout(() => {
       fetchEmployees({ siteId: department.site_id, search: inputValue })
-        .then(setOptions)
+        .then((data) => setOptions(data.items))
         .finally(() => setIsSearching(false));
     }, 300);
     return () => clearTimeout(timer);

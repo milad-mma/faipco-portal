@@ -600,6 +600,22 @@ class NoticeService:
             counts[notice.id] = len(union_ids)
         return counts
 
+    async def count_published_this_week(self) -> int:
+        """
+        تعداد اطلاعیه‌های منتشرشده کل سیستم در ۷ روز اخیر (نه فقط اطلاعیه‌های
+        کاربر جاری) — برای کارت آمار داشبورد Admin.
+        """
+        from datetime import timedelta
+
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        stmt = select(func.count()).select_from(Notice).where(
+            Notice.status == NoticeStatus.published,
+            Notice.is_deleted.is_(False),
+            Notice.publish_at >= week_ago,
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one()
+
     async def get_detailed_notices(
         self, sender_id: int | None = None, limit: int = 10, offset: int = 0
     ) -> tuple[list[NoticeDetailOut], int]:

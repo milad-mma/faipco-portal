@@ -7,7 +7,7 @@ from app.core.deps import require_permission
 from app.core.scheduler import reschedule_sync_interval
 from app.db.session import get_db
 from app.models.sync_log import SyncLog
-from app.schemas.sync import SyncLogOut, SyncSettingsOut, SyncSettingsUpdate, TestConnectionResult
+from app.schemas.sync import SyncLogOut, SyncSettingsOut, SyncSettingsUpdate, SyncStatusSummaryOut, TestConnectionResult
 from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncError, SyncService
 
@@ -41,6 +41,16 @@ async def update_sync_settings(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     reschedule_sync_interval(interval)
     return SyncSettingsOut(interval_minutes=interval)
+
+
+@router.get("/status-summary", response_model=SyncStatusSummaryOut)
+async def get_sync_status_summary(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sync.view")),
+):
+    """خلاصه وضعیت Sync امروز همه سایت‌ها — برای کارت آمار داشبورد Admin."""
+    summary = await SyncService(db).get_status_summary()
+    return SyncStatusSummaryOut(**summary)
 
 
 @router.post("/{site_id}/test-connection", response_model=TestConnectionResult)

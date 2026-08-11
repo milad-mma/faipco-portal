@@ -31,3 +31,12 @@ class SyncSettingsOut(BaseModel):
 
 class SyncSettingsUpdate(BaseModel):
     interval_minutes: int = Field(ge=1, le=1440, description="فاصله زمانی اجرای خودکار Sync، بر حسب دقیقه (۱ تا ۱۴۴۰)")
+
+
+class SyncStatusSummaryOut(BaseModel):
+    """خلاصه وضعیت Sync امروز، برای کارت آمار داشبورد Admin."""
+
+    total_sites: int
+    success_today: int
+    failed_today: int
+    not_run_today: int

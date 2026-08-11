@@ -113,7 +113,7 @@ export default function NewNoticePage() {
         search: employeeSearch,
         departmentIds: employeeScopeDepartmentIds || undefined,
       })
-        .then(setEmployeeOptions)
+        .then((data) => setEmployeeOptions(data.items))
         .finally(() => setEmployeeSearchLoading(false));
     }, 300);
     return () => clearTimeout(timer);

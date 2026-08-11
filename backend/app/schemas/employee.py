@@ -14,8 +14,21 @@ class EmployeeOut(BaseModel):
     is_active: bool  # وضعیت در منبع (فقط توسط Sync Engine تعیین می‌شود؛ غیرقابل‌ویرایش دستی)
     is_enabled: bool  # تصمیم دستی Admin — کاملاً مستقل از Sync، با آن بازنویسی نمی‌شود
     has_custom_password: bool = False  # آیا رمز عبور اختصاصی دارد (یعنی دیگر با کد ملی وارد نمی‌شود)
+    # این دو فیلد اختیاری‌اند: فقط GET /employees (که Join با Site/Department دارد)
+    # آن‌ها را پر می‌کند؛ Endpoint های دیگر (مثل PATCH) خالی می‌گذارند و فرانت‌اند
+    # در آن حالت‌ها از roی lookup محلی خودش (نام سایت/واحد از فهرست جداگانه) استفاده می‌کند.
+    site_name: str | None = None
+    department_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EmployeePageOut(BaseModel):
+    """یک صفحه از لیست پرسنل — برای Pagination سمت سرور (به‌جای واکشی صدها/هزاران
+    ردیف در یک درخواست)."""
+
+    items: list[EmployeeOut]
+    total: int
 
 
 class EmployeeEnabledUpdate(BaseModel):

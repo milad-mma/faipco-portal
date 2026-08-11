@@ -15,16 +15,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.employee import Department, Employee
+from app.models.site import Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.employee import EmployeeEnabledUpdate, EmployeeOut, EmployeePasswordSet
+from app.schemas.employee import EmployeeEnabledUpdate, EmployeeOut, EmployeePageOut, EmployeePasswordSet
 from app.schemas.user_management import AssignRoleIn, UserRoleOut
 from app.services.user_management_service import UserManagementService
 
 router = APIRouter()
 
+# فیلدهای قابل Sort در GET /employees — کلید همان چیزی است که فرانت‌اند در
+# sort_by می‌فرستد؛ مقدار، ستون(های) SQLAlchemy واقعی برای ORDER BY است (برای
+# نام کامل، هم first_name و هم last_name به‌ترتیب استفاده می‌شوند).
+_SORT_COLUMNS: dict[str, list] = {
+    "personnel_code": [Employee.personnel_code],
+    "full_name": [Employee.first_name, Employee.last_name],
+    "national_code": [Employee.national_code],
+    "mobile": [Employee.mobile],
+    "site_name": [Site.name],
+    "department_name": [Department.name],
+    "is_enabled": [Employee.is_enabled],
+    "is_active": [Employee.is_active],
+}
 
-@router.get("", response_model=list[EmployeeOut])
+
+@router.get("", response_model=EmployeePageOut)
 async def list_employees(
     site_id: int | None = Query(default=None, description="فیلتر بر اساس Site"),
     department_id: list[int] | None = Query(
@@ -37,49 +52,77 @@ async def list_employees(
     ),
     include_inactive: bool = Query(
         default=False,
-        description="پرسنل غیرفعال/غیرفعال‌شده دستی را هم نشان بده — فقط برای صفحه مدیریت پرسنل (Admin) استفاده می‌شود",
+        description="پرسنلی که در منبع Sync دیگر فعال نیستند (is_active=False) را هم نشان بده — "
+        "فقط صفحه مدیریت پرسنل با یک فیلتر جدا این را روشن می‌کند",
     ),
+    include_portal_disabled: bool = Query(
+        default=False,
+        description="پرسنلی که دسترسی پرتالشان دستی غیرفعال شده (is_enabled=False) را هم نشان بده",
+    ),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+    sort_by: str = Query(default="personnel_code"),
+    sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     # هر کاربر لاگین‌شده (نه فقط Admin) باید بتواند برای انتخاب گیرنده اطلاعیه
     # در بین پرسنل جستجو کند. اعتبارسنجی واقعی این‌که «آیا اجازه ارسال به این
     # شخص را دارد یا نه» موقع ثبت اطلاعیه در notice_service.py انجام می‌شود.
-    # پیش‌فرض include_inactive=False همان رفتار قبلی را برای این جستجو حفظ
-    # می‌کند (پرسنل غیرفعال از منبع یا غیرفعال‌شده دستی، هدف اطلاعیه قرار
-    # نمی‌گیرند)؛ فقط صفحه «پرسنل» در پنل Admin با include_inactive=True
-    # درخواست می‌دهد تا بتواند پرسنل غیرفعال را هم ببیند و دوباره فعال کند.
+    # پیش‌فرض include_inactive=False و include_portal_disabled=False همان
+    # رفتار قبلی را برای این جستجو حفظ می‌کند (فقط پرسنل فعال و در پرتال
+    # فعال، هدف اطلاعیه قرار می‌گیرند)؛ فقط صفحه «پرسنل» در پنل Admin این دو
+    # پرچم را جدا از هم کنترل می‌کند تا هم بتواند پرسنل غیرفعال در پرتال را
+    # مدیریت کند و هم در صورت نیاز پرسنل غیرفعال از منبع را ببیند.
     _current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Employee).limit(200)
-    if not include_inactive:
-        stmt = stmt.where(Employee.is_active.is_(True), Employee.is_enabled.is_(True))
-    if site_id is not None:
-        stmt = stmt.where(Employee.site_id == site_id)
-    if department_id:
-        stmt = stmt.where(Employee.department_id.in_(department_id))
-    if search:
-        pattern = f"%{search.strip()}%"
-        stmt = stmt.where(
-            or_(
-                Employee.first_name.ilike(pattern),
-                Employee.last_name.ilike(pattern),
-                Employee.personnel_code.ilike(pattern),
-                Employee.national_code.ilike(pattern),
+    def apply_filters(stmt):
+        if not include_inactive:
+            stmt = stmt.where(Employee.is_active.is_(True))
+        if not include_portal_disabled:
+            stmt = stmt.where(Employee.is_enabled.is_(True))
+        if site_id is not None:
+            stmt = stmt.where(Employee.site_id == site_id)
+        if department_id:
+            stmt = stmt.where(Employee.department_id.in_(department_id))
+        if search:
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Employee.first_name.ilike(pattern),
+                    Employee.last_name.ilike(pattern),
+                    Employee.personnel_code.ilike(pattern),
+                    Employee.national_code.ilike(pattern),
+                )
             )
-        )
-    result = await db.execute(stmt)
-    employees = result.scalars().all()
+        return stmt
+
+    count_stmt = apply_filters(
+        select(func.count(Employee.id)).select_from(Employee)
+    )
+    total = (await db.execute(count_stmt)).scalar_one()
+
+    sort_columns = _SORT_COLUMNS.get(sort_by, _SORT_COLUMNS["personnel_code"])
+    order_exprs = [col.desc() if sort_dir == "desc" else col.asc() for col in sort_columns]
+
+    data_stmt = apply_filters(
+        select(Employee, Site.name, Department.name)
+        .join(Site, Site.id == Employee.site_id)
+        .outerjoin(Department, Department.id == Employee.department_id)
+    ).order_by(*order_exprs, Employee.id).limit(page_size).offset((page - 1) * page_size)
+
+    result = await db.execute(data_stmt)
+    rows = result.all()
 
     # has_custom_password روی User است نه Employee — با یک کوئری جدا (فقط برای
     # همین صفحه از پرسنل) به هرکدام وصل می‌شود.
     custom_password_by_employee: dict[int, bool] = {}
-    employee_ids = [e.id for e in employees]
+    employee_ids = [row[0].id for row in rows]
     if employee_ids:
         user_result = await db.execute(
             select(User.employee_id, User.has_custom_password).where(User.employee_id.in_(employee_ids))
         )
         custom_password_by_employee = dict(user_result.all())
 
-    return [
+    items = [
         EmployeeOut(
             id=e.id,
             personnel_code=e.personnel_code,
@@ -92,9 +135,29 @@ async def list_employees(
             is_active=e.is_active,
             is_enabled=e.is_enabled,
             has_custom_password=custom_password_by_employee.get(e.id, False),
+            site_name=site_name,
+            department_name=department_name,
         )
-        for e in employees
+        for e, site_name, department_name in rows
     ]
+    return EmployeePageOut(items=items, total=total)
+
+
+@router.get("/portal-disabled-count")
+async def count_portal_disabled_employees(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    """
+    تعداد پرسنلِ فعال (از منبع Sync) که دسترسی پرتالشان دستی غیرفعال شده —
+    برای کارت آمار داشبورد Admin (نشان می‌دهد چند نفر با وجود فعال بودن، به
+    پرتال دسترسی ندارند).
+    """
+    stmt = select(func.count()).select_from(Employee).where(
+        Employee.is_active.is_(True), Employee.is_enabled.is_(False)
+    )
+    result = await db.execute(stmt)
+    return {"count": result.scalar_one()}
 
 
 @router.get("/count")
