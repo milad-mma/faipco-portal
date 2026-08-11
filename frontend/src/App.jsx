@@ -5,9 +5,11 @@ import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
+import DepartmentsPage from "./pages/DepartmentsPage";
 import SitesPage from "./pages/SitesPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
+import NewNoticePage from "./pages/NewNoticePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -27,12 +29,14 @@ export default function App() {
         {/* فقط Admin: */}
         <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
         <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
+        <Route path="/departments" element={<AdminRoute><DepartmentsPage /></AdminRoute>} />
         <Route path="/sites" element={<AdminRoute><SitesPage /></AdminRoute>} />
         <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
         <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
 
         {/* برای همه کاربران لاگین‌شده: */}
         <Route path="/notices" element={<NoticesPage />} />
+        <Route path="/notices/new" element={<NewNoticePage />} />
         <Route path="/notice-reports" element={<AdminRoute><NoticeReportsPage /></AdminRoute>} />
       </Route>
 

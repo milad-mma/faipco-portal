@@ -20,6 +20,13 @@ class SiteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SiteActiveUpdate(BaseModel):
+    """فعال/غیرفعال‌کردن یک Site — برای علامت‌گذاری سریع یک کارخانه/شعبه به‌عنوان
+    غیرفعال (مثلاً هنگام تعطیلی موقت) بدون نیاز به حذف کامل آن."""
+
+    is_active: bool
+
+
 class SiteConnectionIn(BaseModel):
     db_type: DbType
     host: str

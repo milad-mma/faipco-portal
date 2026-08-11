@@ -38,8 +38,11 @@ async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_
 
 
 @router.get("/me", response_model=UserOut)
-async def read_current_user(current_user: User = Depends(get_current_user)):
-    return current_user
+async def read_current_user(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await AuthService(db).get_me(current_user)
 
 
 @router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)

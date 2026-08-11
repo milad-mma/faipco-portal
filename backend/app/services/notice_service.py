@@ -351,47 +351,43 @@ class NoticeService:
             ):
                 allowed_department_ids.add(dept.id)
 
-        # can_target_employee: سراسری، یا Site-scoped برای حداقل یک سایت، یا سرپرست حداقل یک واحد
-        can_employee = user.is_superuser or await self._has_permission(user, "notices.target.employee")
-        if not can_employee:
+        # ---------- دامنه هدف‌گیری «پرسنل خاص» ----------
+        # اگر کاربر مجوز سراسری/Site-scoped notices.target.employee داشته باشد،
+        # می‌تواند در بین همه پرسنل (سایت‌های مجاز) جستجو کند. اگر این مجوز را
+        # نداشته باشد ولی سرپرست حداقل یک واحد باشد، هنوز اجازه هدف‌گیری پرسنل
+        # را دارد ولی *فقط* محدود به پرسنل همان واحد(های) خودش — نه کل سازمان
+        # (طبق سیاست: سرپرست واحد فقط به واحد خودش دسترسی دارد).
+        has_broad_employee_permission = user.is_superuser or await self._has_permission(
+            user, "notices.target.employee"
+        )
+        if not has_broad_employee_permission:
             for site in all_sites:
                 if await self._has_permission(user, "notices.target.employee", site_id=site.id):
-                    can_employee = True
+                    has_broad_employee_permission = True
                     break
-        if not can_employee:
-            result = await self.db.execute(
-                select(Department.id).where(Department.supervisor_user_id == user.id).limit(1)
-            )
-            can_employee = result.first() is not None
 
-        # میان‌بر «ارسال به سرپرست واحد(ها)»: سرپرست‌های واقعی همان واحدهایی
-        # که این کاربر اجازه هدف‌گیری‌شان را دارد (Employee این افراد را برمی‌گرداند
-        # تا بشود مستقیماً به‌عنوان Target از نوع employee استفاده کرد).
-        supervisor_employees: list[dict] = []
-        supervisor_user_ids = {
-            dept.supervisor_user_id
-            for dept in all_departments
-            if dept.id in allowed_department_ids and dept.supervisor_user_id is not None
-        }
-        if supervisor_user_ids:
-            result = await self.db.execute(
-                select(Employee.id, Employee.first_name, Employee.last_name, Employee.personnel_code)
-                .join(User, User.employee_id == Employee.id)
-                .where(User.id.in_(supervisor_user_ids))
-            )
-            supervisor_employees = [
-                {"id": r[0], "first_name": r[1], "last_name": r[2], "personnel_code": r[3]}
-                for r in result.all()
-            ]
+        supervised_department_ids = sorted(
+            {dept.id for dept in all_departments if dept.supervisor_user_id == user.id}
+        )
+
+        if has_broad_employee_permission:
+            can_employee = True
+            employee_target_department_ids: list[int] | None = None  # None یعنی بدون محدودیت
+        elif supervised_department_ids:
+            can_employee = True
+            employee_target_department_ids = supervised_department_ids
+        else:
+            can_employee = False
+            employee_target_department_ids = None
 
         return {
             "can_target_all": can_all,
             "can_target_role": can_role,
             "can_target_employee": can_employee,
+            "employee_target_department_ids": employee_target_department_ids,
             "can_upload_payroll": can_upload_payroll,
             "site_ids": sorted(allowed_site_ids),
             "department_ids": sorted(allowed_department_ids),
-            "supervisor_employees": supervisor_employees,
         }
 
     # ---------- حذف اطلاعیه ----------

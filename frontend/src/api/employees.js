@@ -1,10 +1,16 @@
 import { apiClient } from "./client";
 
-export async function fetchEmployees({ siteId, search, includeInactive } = {}) {
-  const params = {};
-  if (siteId) params.site_id = siteId;
-  if (search) params.search = search;
-  if (includeInactive) params.include_inactive = true;
+export async function fetchEmployees({ siteId, departmentIds, search, includeInactive } = {}) {
+  // از URLSearchParams مستقیم استفاده می‌شود (به‌جای Object ساده) تا department_id
+  // وقتی چند مقدار دارد، حتماً به‌صورت چندین پارامتر تکراری (department_id=1&department_id=2)
+  // سریالایز شود — دقیقاً همان چیزی که FastAPI با list[int] = Query(...) انتظار دارد.
+  const params = new URLSearchParams();
+  if (siteId) params.append("site_id", siteId);
+  if (departmentIds && departmentIds.length > 0) {
+    departmentIds.forEach((id) => params.append("department_id", id));
+  }
+  if (search) params.append("search", search);
+  if (includeInactive) params.append("include_inactive", "true");
   const { data } = await apiClient.get("/employees", { params });
   return data;
 }

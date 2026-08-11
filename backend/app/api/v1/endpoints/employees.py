@@ -27,6 +27,11 @@ router = APIRouter()
 @router.get("", response_model=list[EmployeeOut])
 async def list_employees(
     site_id: int | None = Query(default=None, description="فیلتر بر اساس Site"),
+    department_id: list[int] | None = Query(
+        default=None,
+        description="فیلتر بر اساس یک یا چند واحد سازمانی — برای محدودسازی جستجوی سرپرست واحد "
+        "به فقط پرسنل همان واحد(های) خودش استفاده می‌شود (نه کل سازمان)",
+    ),
     search: str | None = Query(
         default=None, description="جستجو در نام، نام خانوادگی، کد پرسنلی یا کد ملی"
     ),
@@ -49,6 +54,8 @@ async def list_employees(
         stmt = stmt.where(Employee.is_active.is_(True), Employee.is_enabled.is_(True))
     if site_id is not None:
         stmt = stmt.where(Employee.site_id == site_id)
+    if department_id:
+        stmt = stmt.where(Employee.department_id.in_(department_id))
     if search:
         pattern = f"%{search.strip()}%"
         stmt = stmt.where(

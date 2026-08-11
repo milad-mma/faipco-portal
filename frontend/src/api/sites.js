@@ -10,6 +10,15 @@ export async function createSite(payload) {
   return data;
 }
 
+export async function setSiteActive(siteId, isActive) {
+  const { data } = await apiClient.patch(`/sites/${siteId}`, { is_active: isActive });
+  return data;
+}
+
+export async function deleteSite(siteId) {
+  await apiClient.delete(`/sites/${siteId}`);
+}
+
 export async function fetchSiteConnection(siteId) {
   const { data } = await apiClient.get(`/sites/${siteId}/connection`);
   return data; // null اگر تعریف نشده باشد

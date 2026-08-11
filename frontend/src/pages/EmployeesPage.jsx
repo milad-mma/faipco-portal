@@ -20,6 +20,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   TextField,
   Tooltip,
   Typography,
@@ -28,7 +29,23 @@ import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import { fetchEmployees, resetEmployeePassword, setEmployeeEnabled, setEmployeePassword } from "../api/employees";
 import { fetchSites } from "../api/sites";
+import { fetchDepartments } from "../api/departments";
 import { monoFontSx } from "../theme";
+import { sortRows } from "../utils/tableSort";
+
+// تعریف ستون‌های قابل Sort جدول پرسنل — key همان فیلدی است که در ردیف‌های
+// محاسبه‌شده (rows) برای Sort استفاده می‌شود؛ چند ستون (نام، سایت، واحد) از
+// روی lookup map ساخته می‌شوند، نه مستقیماً از EmployeeOut.
+const EMPLOYEE_COLUMNS = [
+  { key: "personnel_code", label: "کد پرسنلی" },
+  { key: "full_name", label: "نام و نام خانوادگی" },
+  { key: "national_code", label: "کد ملی" },
+  { key: "mobile", label: "موبایل" },
+  { key: "site_name", label: "سایت" },
+  { key: "department_name", label: "واحد سازمانی" },
+  { key: "is_active", label: "وضعیت Sync", align: "center" },
+  { key: "is_enabled", label: "فعال در پرتال", align: "center" },
+];
 
 function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [password, setPassword] = useState("");
@@ -139,15 +156,28 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
   const [sites, setSites] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [selectedSite, setSelectedSite] = useState("");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [togglingId, setTogglingId] = useState(null);
   const [passwordEmployee, setPasswordEmployee] = useState(null);
+  const [order, setOrder] = useState("asc");
+  const [orderBy, setOrderBy] = useState(null);
 
   useEffect(() => {
     fetchSites().then(setSites);
+    fetchDepartments().then(setDepartments);
   }, []);
+
+  function handleSort(columnKey) {
+    if (orderBy === columnKey) {
+      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setOrderBy(columnKey);
+      setOrder("asc");
+    }
+  }
 
   function loadEmployees() {
     setIsLoading(true);
@@ -163,6 +193,17 @@ export default function EmployeesPage() {
   }, [selectedSite, search]);
 
   const siteNameById = Object.fromEntries(sites.map((s) => [s.id, s.name]));
+  const departmentNameById = Object.fromEntries(departments.map((d) => [d.id, d.name]));
+
+  // ردیف‌های نمایشی همراه با فیلدهای محاسبه‌شده (نام کامل، نام سایت، نام واحد)
+  // که برای هم نمایش و هم Sort روی همه‌ی سرستون‌ها استفاده می‌شوند.
+  const rows = employees.map((emp) => ({
+    ...emp,
+    full_name: `${emp.first_name} ${emp.last_name}`,
+    site_name: siteNameById[emp.site_id] || null,
+    department_name: emp.department_id ? departmentNameById[emp.department_id] || null : null,
+  }));
+  const sortedRows = sortRows(rows, order, orderBy);
 
   async function handleToggleEnabled(employee) {
     const nextEnabled = !employee.is_enabled;
@@ -233,28 +274,34 @@ export default function EmployeesPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>کد پرسنلی</TableCell>
-                <TableCell>نام و نام خانوادگی</TableCell>
-                <TableCell>کد ملی</TableCell>
-                <TableCell>موبایل</TableCell>
-                <TableCell>سایت</TableCell>
-                <TableCell align="center">
-                  <Tooltip title="وضعیت خودکار — از روی Mapping دیتابیس مبدأ (مثل IsCut)، فقط با Sync تغییر می‌کند">
-                    <span>وضعیت Sync</span>
-                  </Tooltip>
-                </TableCell>
-                <TableCell align="center">
-                  <Tooltip title="تصمیم دستی Admin — کاملاً مستقل از Sync و با آن بازنویسی نمی‌شود">
-                    <span>فعال در پرتال</span>
-                  </Tooltip>
-                </TableCell>
+                {EMPLOYEE_COLUMNS.map((col) => (
+                  <TableCell key={col.key} align={col.align}>
+                    <TableSortLabel
+                      active={orderBy === col.key}
+                      direction={orderBy === col.key ? order : "asc"}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      {col.key === "is_active" ? (
+                        <Tooltip title="وضعیت خودکار — از روی Mapping دیتابیس مبدأ (مثل IsCut)، فقط با Sync تغییر می‌کند">
+                          <span>{col.label}</span>
+                        </Tooltip>
+                      ) : col.key === "is_enabled" ? (
+                        <Tooltip title="تصمیم دستی Admin — کاملاً مستقل از Sync و با آن بازنویسی نمی‌شود">
+                          <span>{col.label}</span>
+                        </Tooltip>
+                      ) : (
+                        col.label
+                      )}
+                    </TableSortLabel>
+                  </TableCell>
+                ))}
                 <TableCell align="center">رمز عبور</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {!isLoading && employees.length === 0 && (
+              {!isLoading && sortedRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={EMPLOYEE_COLUMNS.length + 1}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       {search
                         ? "با این عبارت جستجو، پرسنلی یافت نشد."
@@ -263,7 +310,7 @@ export default function EmployeesPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {employees.map((emp) => (
+              {sortedRows.map((emp) => (
                 <TableRow key={emp.id} hover sx={!emp.is_enabled ? { opacity: 0.6 } : undefined}>
                   <TableCell sx={monoFontSx}>{emp.personnel_code}</TableCell>
                   <TableCell>
@@ -271,7 +318,8 @@ export default function EmployeesPage() {
                   </TableCell>
                   <TableCell sx={monoFontSx}>{emp.national_code || "—"}</TableCell>
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
-                  <TableCell>{siteNameById[emp.site_id] || emp.site_id}</TableCell>
+                  <TableCell>{emp.site_name || emp.site_id}</TableCell>
+                  <TableCell>{emp.department_name || "—"}</TableCell>
                   <TableCell align="center">
                     <Chip
                       size="small"

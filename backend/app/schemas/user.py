@@ -10,4 +10,16 @@ class UserOut(BaseModel):
     is_superuser: bool
     has_custom_password: bool
 
+    # اطلاعات پرسنلی/سازمانی — فقط اگر این حساب به یک رکورد Employee سینک‌شده
+    # وصل باشد (User.employee_id). کاربران مدیریتی محض (مثل admin) همه این
+    # فیلدها را None دریافت می‌کنند؛ فرانت‌اند باید با این حالت کنار بیاید.
+    employee_id: int | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    personnel_code: str | None = None
+    site_id: int | None = None
+    site_name: str | None = None
+    department_id: int | None = None
+    department_name: str | None = None
+
     model_config = ConfigDict(from_attributes=True)

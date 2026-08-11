@@ -20,6 +20,7 @@ import {
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
+import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
@@ -37,6 +38,7 @@ const DRAWER_WIDTH = 260;
 const NAV_ITEMS = [
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
   { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: true },
+  { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, adminOnly: true },
   { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, adminOnly: true },
   { label: "مدیریت Sync", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
@@ -53,6 +55,12 @@ export default function Layout() {
   const [snackbar, setSnackbar] = useState("");
 
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || user?.is_superuser);
+
+  // برای پرسنل، نام و نام خانوادگی واقعی نمایش داده می‌شود؛ برای کاربران
+  // مدیریتی محض (بدون رکورد پرسنلی متصل، مثل admin) به Username بازمی‌گردیم.
+  const displayName =
+    user?.first_name || user?.last_name ? `${user?.first_name || ""} ${user?.last_name || ""}`.trim() : user?.username;
+  const avatarInitials = (user?.first_name?.[0] || "") + (user?.last_name?.[0] || "") || user?.username?.slice(0, 2);
 
   async function handleEnableNotifications() {
     setMenuAnchor(null);
@@ -153,13 +161,13 @@ export default function Layout() {
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
             <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", sm: "block" } }}>
-              {user?.username}
+              {displayName}
             </Typography>
             <Avatar
               onClick={(e) => setMenuAnchor(e.currentTarget)}
               sx={{ cursor: "pointer", bgcolor: "primary.main", width: 36, height: 36, fontSize: 14 }}
             >
-              {user?.username?.slice(0, 2)?.toUpperCase()}
+              {avatarInitials?.toUpperCase()}
             </Avatar>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
               {isPushSupported() && (

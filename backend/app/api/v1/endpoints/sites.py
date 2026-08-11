@@ -8,6 +8,7 @@ from app.models.user import User
 from app.schemas.site import (
     EmployeeMappingIn,
     EmployeeMappingOut,
+    SiteActiveUpdate,
     SiteConnectionIn,
     SiteConnectionOut,
     SiteCreate,
@@ -36,6 +37,36 @@ async def create_site(
     _user=Depends(require_permission("sites.manage")),
 ):
     return await SiteService(db).create_site(payload)
+
+
+@router.patch("/{site_id}", response_model=SiteOut)
+async def update_site_active(
+    site_id: int,
+    payload: SiteActiveUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """فعال/غیرفعال‌کردن یک Site (بدون حذف داده‌ها)."""
+    site = await SiteService(db).set_active(site_id, payload.is_active)
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
+    return site
+
+
+@router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_site(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """
+    حذف کامل و برگشت‌ناپذیر یک Site — همراه با تمام واحدهای سازمانی، پرسنل،
+    اتصال دیتابیس و Mapping آن (به‌خاطر CASCADE در سطح دیتابیس). فرانت‌اند باید
+    پیش از فراخوانی این Endpoint، تأییدیه صریح (مثل تایپ‌کردن «DELETE») از Admin بگیرد.
+    """
+    deleted = await SiteService(db).delete_site(site_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
 
 
 # ---------- Site Connection ----------

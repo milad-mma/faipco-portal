@@ -3,6 +3,7 @@
 """
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -12,9 +13,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.employee import Employee
+from app.models.employee import Department, Employee
+from app.models.site import Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.schemas.user import UserOut
 
 
 class AuthError(Exception):
@@ -112,3 +115,35 @@ class AuthService:
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True
         await self.db.commit()
+
+    async def get_me(self, user: User) -> UserOut:
+        """
+        اطلاعات کاربر جاری را همراه با اطلاعات پرسنلی/سازمانی (در صورت وجود)
+        برمی‌گرداند — برای نمایش نام و نام خانوادگی در AppBar و باکس اطلاعات
+        شخصی/سازمانی بالای صفحه اطلاعیه‌ها. کاربران مدیریتی محض (بدون
+        employee_id، مثل admin) فقط فیلدهای پایه را دارند.
+        """
+        base = UserOut.model_validate(user)
+        if user.employee_id is None:
+            return base
+
+        result = await self.db.execute(
+            select(Employee, Site.name, Department.name)
+            .join(Site, Site.id == Employee.site_id)
+            .outerjoin(Department, Department.id == Employee.department_id)
+            .where(Employee.id == user.employee_id)
+        )
+        row = result.first()
+        if row is None:
+            return base
+
+        employee, site_name, department_name = row
+        base.employee_id = employee.id
+        base.first_name = employee.first_name
+        base.last_name = employee.last_name
+        base.personnel_code = employee.personnel_code
+        base.site_id = employee.site_id
+        base.site_name = site_name
+        base.department_id = employee.department_id
+        base.department_name = department_name
+        return base

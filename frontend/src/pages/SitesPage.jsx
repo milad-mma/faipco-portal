@@ -14,7 +14,9 @@ import {
   FormControlLabel,
   Grid,
   MenuItem,
+  Snackbar,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -24,11 +26,13 @@ import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import {
   createSite,
+  deleteSite,
   deleteSiteConnection,
   deleteSiteMapping,
   fetchSiteConnection,
   fetchSiteMapping,
   fetchSites,
+  setSiteActive,
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
@@ -74,6 +78,11 @@ export default function SitesPage() {
   const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
   const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [error, setError] = useState("");
+  const [snackbar, setSnackbar] = useState("");
+  const [togglingId, setTogglingId] = useState(null);
+  const [deleteDialogSite, setDeleteDialogSite] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   function loadSites() {
     fetchSites().then(setSites);
@@ -82,6 +91,49 @@ export default function SitesPage() {
   useEffect(() => {
     loadSites();
   }, []);
+
+  async function handleToggleActive(site) {
+    const nextActive = !site.is_active;
+    if (
+      !window.confirm(
+        nextActive
+          ? `سایت «${site.name}» دوباره فعال شود؟`
+          : `سایت «${site.name}» غیرفعال شود؟ Sync این سایت متوقف نمی‌شود، ولی توصیه می‌شود همزمان Sync آن را هم غیرفعال کنید.`
+      )
+    ) {
+      return;
+    }
+    setTogglingId(site.id);
+    try {
+      const updated = await setSiteActive(site.id, nextActive);
+      setSites((prev) => prev.map((s) => (s.id === site.id ? updated : s)));
+      setSnackbar(nextActive ? `سایت «${site.name}» فعال شد.` : `سایت «${site.name}» غیرفعال شد.`);
+    } catch (err) {
+      setSnackbar(err.response?.data?.detail || "تغییر وضعیت سایت ناموفق بود.");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  function openDeleteDialog(site) {
+    setDeleteDialogSite(site);
+    setDeleteConfirmText("");
+  }
+
+  async function handleDeleteSite() {
+    if (deleteConfirmText.trim() !== "DELETE" || !deleteDialogSite) return;
+    setIsDeleting(true);
+    try {
+      await deleteSite(deleteDialogSite.id);
+      setSnackbar(`سایت «${deleteDialogSite.name}» و همه واحدها/پرسنل آن برای همیشه حذف شد.`);
+      setDeleteDialogSite(null);
+      loadSites();
+    } catch (err) {
+      setSnackbar(err.response?.data?.detail || "حذف سایت ناموفق بود.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   async function handleCreateSite() {
     setError("");
@@ -202,12 +254,20 @@ export default function SitesPage() {
                     کد: {site.code}
                   </Typography>
                 </Box>
-                <Chip
-                  size="small"
-                  label={site.is_active ? "فعال" : "غیرفعال"}
-                  color={site.is_active ? "success" : "default"}
-                  variant="outlined"
-                />
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <Chip
+                    size="small"
+                    label={site.is_active ? "فعال" : "غیرفعال"}
+                    color={site.is_active ? "success" : "default"}
+                    variant="outlined"
+                  />
+                  <Switch
+                    size="small"
+                    checked={site.is_active}
+                    disabled={togglingId === site.id}
+                    onChange={() => handleToggleActive(site)}
+                  />
+                </Stack>
               </Stack>
 
               {site.description && (
@@ -234,6 +294,15 @@ export default function SitesPage() {
                   onClick={() => openMappingDialog(site)}
                 >
                   Mapping ستون‌ها
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutlineIcon />}
+                  onClick={() => openDeleteDialog(site)}
+                >
+                  حذف سایت
                 </Button>
               </Stack>
             </Card>
@@ -447,6 +516,51 @@ export default function SitesPage() {
           </Stack>
         </DialogActions>
       </Dialog>
+      {/* Dialog: حذف قطعی سایت — با تأییدیه قوی (تایپ‌کردن DELETE) چون این عملیات
+          کل واحدهای سازمانی، پرسنل، اتصال دیتابیس و Mapping این سایت را هم حذف می‌کند */}
+      <Dialog open={Boolean(deleteDialogSite)} onClose={() => !isDeleting && setDeleteDialogSite(null)} fullWidth maxWidth="xs">
+        <DialogTitle color="error.main">حذف قطعی سایت «{deleteDialogSite?.name}»</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+          <Alert severity="error">
+            این عملیات برگشت‌ناپذیر است. با حذف این سایت، همه واحدهای سازمانی، همه پرسنل
+            سینک‌شده، اتصال دیتابیس و Mapping ستون‌های آن نیز برای همیشه حذف می‌شوند.
+          </Alert>
+          <Typography variant="body2">
+            برای تأیید، عبارت <strong>DELETE</strong> را دقیقاً در کادر زیر تایپ کنید:
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder="DELETE"
+            disabled={isDeleting}
+            sx={{ direction: "ltr" }}
+            inputProps={{ style: { textAlign: "center", fontFamily: "monospace", letterSpacing: 2 } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setDeleteDialogSite(null)} disabled={isDeleting}>
+            انصراف
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteSite}
+            disabled={deleteConfirmText.trim() !== "DELETE" || isDeleting}
+          >
+            {isDeleting ? "در حال حذف..." : "حذف قطعی سایت"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={Boolean(snackbar)}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar("")}
+        message={snackbar}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      />
     </Box>
   );
 }

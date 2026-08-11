@@ -26,6 +26,30 @@ class SiteService:
         await self.db.refresh(site)
         return site
 
+    async def set_active(self, site_id: int, is_active: bool) -> Site | None:
+        site = await self.db.get(Site, site_id)
+        if site is None:
+            return None
+        site.is_active = is_active
+        await self.db.commit()
+        await self.db.refresh(site)
+        return site
+
+    async def delete_site(self, site_id: int) -> bool:
+        """
+        حذف کامل و برگشت‌ناپذیر یک Site. به‌خاطر ondelete=CASCADE تعریف‌شده روی
+        Department.site_id، Employee.site_id، EmployeeMapping.site_id و
+        SiteConnection.site_id (در سطح دیتابیس)، همه واحدهای سازمانی و پرسنل
+        همین Site هم به‌صورت خودکار حذف می‌شوند — به همین دلیل این عملیات باید
+        فقط با تأییدیه صریح و قوی از سمت Admin در UI صدا زده شود.
+        """
+        site = await self.db.get(Site, site_id)
+        if site is None:
+            return False
+        await self.db.delete(site)
+        await self.db.commit()
+        return True
+
     # ---------- Site Connection ----------
 
     async def get_connection(self, site_id: int) -> SiteConnection | None:
