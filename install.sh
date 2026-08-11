@@ -342,11 +342,18 @@ server {
     }
 
     location = /sw.js {
+        default_type application/javascript;
         add_header Cache-Control "no-cache, must-revalidate";
         try_files \$uri =404;
     }
 
     location = /manifest.json {
+        # نکته مهم برای نصب PWA در اندروید: mime.types پیش‌فرض Nginx شامل
+        # پسوند json نیست، پس بدون این خط، manifest.json با Content-Type
+        # اشتباه (معمولاً text/plain یا application/octet-stream) فرستاده
+        # می‌شود. کروم در این حالت گاهی هنگام "Install" به‌جای ساخت WebAPK
+        # واقعی، فقط یک میان‌بر معمولی (با نشان خودِ کروم روی آیکون) می‌سازد.
+        default_type application/manifest+json;
         add_header Cache-Control "no-cache, must-revalidate";
         try_files \$uri =404;
     }
