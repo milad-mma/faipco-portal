@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
 import {
   AppBar,
-  Avatar,
   Box,
   Collapse,
   Divider,
@@ -30,6 +29,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
+import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useAuth } from "../context/AuthContext";
@@ -91,12 +91,6 @@ export default function Layout() {
   function toggleMenu(path) {
     setOpenMenus((prev) => ({ ...prev, [path]: !prev[path] }));
   }
-
-  // برای پرسنل، نام و نام خانوادگی واقعی نمایش داده می‌شود؛ برای کاربران
-  // مدیریتی محض (بدون رکورد پرسنلی متصل، مثل admin) به Username بازمی‌گردیم.
-  const displayName =
-    user?.first_name || user?.last_name ? `${user?.first_name || ""} ${user?.last_name || ""}`.trim() : user?.username;
-  const avatarInitials = (user?.first_name?.[0] || "") + (user?.last_name?.[0] || "") || user?.username?.slice(0, 2);
 
   async function handleEnableNotifications() {
     setMenuAnchor(null);
@@ -253,23 +247,20 @@ export default function Layout() {
           <IconButton
             edge="start"
             sx={{ display: { md: "none" } }}
-            onClick={() => setMobileOpen(true)}
+            onClick={() => setMobileOpen((prev) => !prev)}
           >
             <MenuIcon />
           </IconButton>
 
           <Box />
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", sm: "block" } }}>
-              {displayName}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              خوش آمدید
             </Typography>
-            <Avatar
-              onClick={(e) => setMenuAnchor(e.currentTarget)}
-              sx={{ cursor: "pointer", bgcolor: "primary.main", width: 36, height: 36, fontSize: 14 }}
-            >
-              {avatarInitials?.toUpperCase()}
-            </Avatar>
+            <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: "primary.main" }}>
+              <AccountCircleOutlinedIcon sx={{ fontSize: 36 }} />
+            </IconButton>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
               {isPushSupported() && (
                 <MenuItem onClick={handleEnableNotifications}>
