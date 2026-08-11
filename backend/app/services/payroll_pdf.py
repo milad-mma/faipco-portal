@@ -180,24 +180,30 @@ def _build_label_value_html(
     آخرین چیزِ رسم‌شده به حاشیه راست بچسبد (چون alignment=TA_RIGHT است).
     یعنی هر چیزی که در رشته آخر بیاید، در صفحه راست‌ترین (یعنی جایی که
     خواننده فارسی‌زبان اول می‌بیند) قرار می‌گیرد. برای همین برچسب باید در
-    انتهای رشته‌ی خط اول بیاید، نه ابتدای آن — وگرنه (همانطور که یک‌بار
-    اشتباه پیاده‌سازی شد) برچسب در سمت چپ و مقدار در سمت راست می‌افتد که
-    برعکسِ خواسته است.
+    انتهای رشته‌ی خط اول بیاید، نه ابتدای آن.
+
+    نکته دوم (مهم‌تر): «:» باید همراه خودِ برچسب یک‌جا Shape شود
+    (_shape(f"{label}:"))، نه این‌که جدا بعد از Shape شدن برچسب اضافه شود
+    (_shape(label) + ":"). چون Shape/Bidi روی کل رشته‌ای که به آن داده
+    می‌شود موقعیت درست علائم را حساب می‌کند؛ اگر «:» را جدا و بیرون از
+    Shape اضافه کنیم، درست همان بلایی که یک‌بار سرش آمد تکرار می‌شود: به‌جای
+    اینکه بلافاصله بعد از خودِ کلمه برچسب بچسبد، به انتهای کل خط (بعد از
+    مقدار) پرتاب می‌شود.
 
     اگر مقدار طولانی باشد و به چند خط بشکند، فقط خط اولش کنار برچسب می‌آید
     (با عرض کمی کمتر، چون جای برچسب را هم اشغال کرده)؛ خط‌های بعدی فقط
     ادامه مقدارند، بدون برچسب.
     """
     label_clean = label.rstrip(": ：")
-    label_shaped = _shape(label_clean)
+    label_with_colon_shaped = _shape(f"{label_clean}:")
     label_prefix_width = pdfmetrics.stringWidth(f"{label_clean}: ", font_bold_name, font_size)
     reduced_width = max(max_width_pts - label_prefix_width, max_width_pts * 0.3)
 
     value_lines = _wrap_lines(value, font_name, font_size, reduced_width)
     if not value_lines:
-        return f"<b>{label_shaped}:</b>"
+        return f"<b>{label_with_colon_shaped}</b>"
 
-    lines_html = [f"{_shape(value_lines[0])} <b>{label_shaped}:</b>"]
+    lines_html = [f"{_shape(value_lines[0])} <b>{label_with_colon_shaped}</b>"]
     lines_html.extend(_shape(line) for line in value_lines[1:])
     return "<br/>".join(lines_html)
 
