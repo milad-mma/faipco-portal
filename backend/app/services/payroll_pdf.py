@@ -173,13 +173,20 @@ def _build_label_value_html(
     label: str, value: str, font_name: str, font_bold_name: str, font_size: float, max_width_pts: float
 ) -> str:
     """
-    برای نوار مشخصات: «<b>برچسب:</b> مقدار». نکته مهم: اگر مقدار طولانی باشد
-    و به چند خط بشکند، فقط خط اولش کنار برچسب می‌آید (با عرض کمی کمتر، چون
-    جای برچسب را هم اشغال کرده)؛ برچسب هرگز داخل خط‌های بعدی گم یا به انتهای
-    متن منتقل نمی‌شود — چون یک‌بار امتحان شد که همه‌چیز (برچسب+مقدار) با هم
-    در یک رشته Wrap شود و باعث می‌شد ReportLab خودش دوباره خط بشکند و ترتیب
-    را به‌هم بریزد (همان مشکلی که در _wrap_and_shape حلش کردیم، اینجا چون
-    برچسب هم به رشته اضافه می‌شد دوباره سر بلند کرده بود).
+    برای نوار مشخصات: «برچسب: مقدار» با ترتیب خواندن راست‌به‌چپ درست.
+
+    نکته حیاتی درباره جهت: ReportLab هر خط را دقیقاً به ترتیب حروف داخل
+    رشته، از چپ به راست، رسم می‌کند و فقط کل خط را طوری جابه‌جا می‌کند که
+    آخرین چیزِ رسم‌شده به حاشیه راست بچسبد (چون alignment=TA_RIGHT است).
+    یعنی هر چیزی که در رشته آخر بیاید، در صفحه راست‌ترین (یعنی جایی که
+    خواننده فارسی‌زبان اول می‌بیند) قرار می‌گیرد. برای همین برچسب باید در
+    انتهای رشته‌ی خط اول بیاید، نه ابتدای آن — وگرنه (همانطور که یک‌بار
+    اشتباه پیاده‌سازی شد) برچسب در سمت چپ و مقدار در سمت راست می‌افتد که
+    برعکسِ خواسته است.
+
+    اگر مقدار طولانی باشد و به چند خط بشکند، فقط خط اولش کنار برچسب می‌آید
+    (با عرض کمی کمتر، چون جای برچسب را هم اشغال کرده)؛ خط‌های بعدی فقط
+    ادامه مقدارند، بدون برچسب.
     """
     label_clean = label.rstrip(": ：")
     label_shaped = _shape(label_clean)
@@ -190,7 +197,7 @@ def _build_label_value_html(
     if not value_lines:
         return f"<b>{label_shaped}:</b>"
 
-    lines_html = [f"<b>{label_shaped}:</b> {_shape(value_lines[0])}"]
+    lines_html = [f"{_shape(value_lines[0])} <b>{label_shaped}:</b>"]
     lines_html.extend(_shape(line) for line in value_lines[1:])
     return "<br/>".join(lines_html)
 
@@ -451,12 +458,11 @@ def render_payroll_receipt_pdf(
                             colWidths=[footer_value_width_map[title], footer_label_width_map[title]],
                             style=TableStyle(
                                 [
-                                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#d3d3d3")),
                                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                     ("TOPPADDING", (0, 0), (-1, -1), 0),
                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                                 ]
                             ),
                         )
@@ -465,17 +471,22 @@ def render_payroll_receipt_pdf(
                         table_row.append("")
                 footer_table_data.append(table_row)
 
+            # نکته مهم: پس‌زمینه طوسی روی خودِ جدول بیرونی اعمال می‌شود (نه
+            # فقط سلول‌های پرمحتوا) تا کل نوار جمع‌بندی — شامل ستون‌های خالی
+            # مثل «سایر» وقتی جمع‌بندی ندارد — یکدست طوسی باشد، درست مثل نوار
+            # مشخصات بالای صفحه.
             footer_table = Table(footer_table_data, colWidths=[col_width_map[t] for t in column_titles])
             footer_table.setStyle(
                 TableStyle(
                     [
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#d3d3d3")),
                         ("BOX", (0, 0), (-1, -1), 0.6, colors.black),
                         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                         ("TOPPADDING", (0, 0), (-1, -1), 2),
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                     ]
                 )
             )
