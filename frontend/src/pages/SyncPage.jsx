@@ -4,8 +4,10 @@ import {
   Box,
   Button,
   Card,
+  FormControlLabel,
   MenuItem,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -18,7 +20,8 @@ import {
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import { fetchSites } from "../api/sites";
+import PowerSettingsNewOutlinedIcon from "@mui/icons-material/PowerSettingsNewOutlined";
+import { fetchSiteConnection, fetchSites, setSiteConnectionActive } from "../api/sites";
 import { fetchSyncLogs, fetchSyncSettings, runSiteSync, testSiteConnection, updateSyncSettings } from "../api/sync";
 import SyncStatusChip from "../components/SyncStatusChip";
 import { monoFontSx } from "../theme";
@@ -36,6 +39,9 @@ export default function SyncPage() {
   const [isSavingInterval, setIsSavingInterval] = useState(false);
   const [intervalMessage, setIntervalMessage] = useState(null);
 
+  const [connectionStatus, setConnectionStatus] = useState(null); // SiteConnectionOut | null
+  const [isTogglingSync, setIsTogglingSync] = useState(false);
+
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
@@ -51,11 +57,26 @@ export default function SyncPage() {
     if (!selectedSiteId) return;
     setTestResult(null);
     loadLogs();
+    fetchSiteConnection(selectedSiteId)
+      .then(setConnectionStatus)
+      .catch(() => setConnectionStatus(null));
   }, [selectedSiteId]);
 
   function loadLogs() {
     if (!selectedSiteId) return;
     fetchSyncLogs(selectedSiteId).then(setLogs);
+  }
+
+  async function handleToggleSyncEnabled() {
+    if (!connectionStatus) return;
+    const nextActive = !connectionStatus.is_active;
+    setIsTogglingSync(true);
+    try {
+      const updated = await setSiteConnectionActive(selectedSiteId, nextActive);
+      setConnectionStatus(updated);
+    } finally {
+      setIsTogglingSync(false);
+    }
   }
 
   async function handleTestConnection() {
@@ -106,7 +127,7 @@ export default function SyncPage() {
   return (
     <Box>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
-        مدیریت Sync
+        همگام‌سازی دیتابیس
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         تست اتصال، اجرای دستی همگام‌سازی و مشاهده تاریخچه هر سایت
@@ -180,11 +201,48 @@ export default function SyncPage() {
             variant="contained"
             startIcon={<SyncOutlinedIcon />}
             onClick={handleRunSync}
-            disabled={!selectedSiteId || isRunning}
+            disabled={!selectedSiteId || isRunning || connectionStatus?.is_active === false}
           >
             {isRunning ? "در حال اجرا..." : "اجرای دستی Sync"}
           </Button>
         </Stack>
+
+        {connectionStatus && (
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            sx={{ mt: 2.5, pt: 2, borderTop: "1px solid", borderColor: "divider" }}
+          >
+            <PowerSettingsNewOutlinedIcon fontSize="small" color={connectionStatus.is_active ? "success" : "disabled"} />
+            <FormControlLabel
+              sx={{ flexGrow: 1, mr: 0 }}
+              control={
+                <Switch
+                  checked={connectionStatus.is_active}
+                  disabled={isTogglingSync}
+                  onChange={handleToggleSyncEnabled}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>
+                    همگام‌سازی خودکار این سایت {connectionStatus.is_active ? "روشن" : "خاموش"} است
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    با خاموش‌کردن، این سایت دیگر در چرخه Sync خودکار (و اجرای دستی) شرکت نمی‌کند —
+                    بدون نیاز به حذف اطلاعات اتصال.
+                  </Typography>
+                </Box>
+              }
+            />
+          </Stack>
+        )}
+        {!connectionStatus && selectedSiteId && (
+          <Alert severity="info" sx={{ mt: 2.5 }}>
+            برای این سایت هنوز اتصال دیتابیسی از صفحه «سایت‌ها» تعریف نشده است.
+          </Alert>
+        )}
 
         {testResult && (
           <Alert severity={testResult.success ? "success" : "error"} sx={{ mt: 2 }}>

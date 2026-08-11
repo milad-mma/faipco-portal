@@ -9,6 +9,7 @@ from app.schemas.site import (
     EmployeeMappingIn,
     EmployeeMappingOut,
     SiteActiveUpdate,
+    SiteConnectionActiveUpdate,
     SiteConnectionIn,
     SiteConnectionOut,
     SiteCreate,
@@ -100,6 +101,20 @@ async def delete_connection(
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
     await SiteService(db).delete_connection(site_id)
+
+
+@router.patch("/{site_id}/connection/status", response_model=SiteConnectionOut)
+async def update_connection_active(
+    site_id: int,
+    payload: SiteConnectionActiveUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sync.manage", site_scoped=True)),
+):
+    """روشن/خاموش‌کردن همگام‌سازی خودکار این Site (بدون تغییر اطلاعات اتصال)."""
+    conn = await SiteService(db).set_connection_active(site_id, payload.is_active)
+    if conn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اتصال دیتابیس این سایت تعریف نشده است")
+    return conn
 
 
 # ---------- Employee Mapping ----------

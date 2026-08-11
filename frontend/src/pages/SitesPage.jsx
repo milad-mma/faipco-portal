@@ -83,6 +83,7 @@ export default function SitesPage() {
   const [deleteDialogSite, setDeleteDialogSite] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deactivateDialogSite, setDeactivateDialogSite] = useState(null);
 
   function loadSites() {
     fetchSites().then(setSites);
@@ -92,27 +93,38 @@ export default function SitesPage() {
     loadSites();
   }, []);
 
-  async function handleToggleActive(site) {
-    const nextActive = !site.is_active;
-    if (
-      !window.confirm(
-        nextActive
-          ? `سایت «${site.name}» دوباره فعال شود؟`
-          : `سایت «${site.name}» غیرفعال شود؟ Sync این سایت متوقف نمی‌شود، ولی توصیه می‌شود همزمان Sync آن را هم غیرفعال کنید.`
-      )
-    ) {
-      return;
-    }
+  async function applyToggleActive(site, nextActive) {
     setTogglingId(site.id);
     try {
       const updated = await setSiteActive(site.id, nextActive);
       setSites((prev) => prev.map((s) => (s.id === site.id ? updated : s)));
-      setSnackbar(nextActive ? `سایت «${site.name}» فعال شد.` : `سایت «${site.name}» غیرفعال شد.`);
+      setSnackbar(
+        nextActive
+          ? `سایت «${site.name}» فعال شد.`
+          : `سایت «${site.name}» و همگام‌سازی خودکار آن غیرفعال شد.`
+      );
     } catch (err) {
       setSnackbar(err.response?.data?.detail || "تغییر وضعیت سایت ناموفق بود.");
     } finally {
       setTogglingId(null);
     }
+  }
+
+  function handleToggleActive(site) {
+    if (site.is_active) {
+      // غیرفعال‌کردن سایت اثر جانبی مهم دارد (خاموش‌شدن خودکار Sync)، پس با
+      // یک Dialog صریح و دکمه‌های تأیید/انصراف از Admin تأییدیه گرفته می‌شود.
+      setDeactivateDialogSite(site);
+    } else {
+      applyToggleActive(site, true);
+    }
+  }
+
+  function handleConfirmDeactivate() {
+    if (!deactivateDialogSite) return;
+    const site = deactivateDialogSite;
+    setDeactivateDialogSite(null);
+    applyToggleActive(site, false);
   }
 
   function openDeleteDialog(site) {
@@ -516,6 +528,30 @@ export default function SitesPage() {
           </Stack>
         </DialogActions>
       </Dialog>
+      {/* Dialog: تأیید غیرفعال‌کردن سایت — چون این کار خودکار Sync آن را هم
+          خاموش می‌کند، Admin باید صریحاً این اثر جانبی را تأیید کند. */}
+      <Dialog
+        open={Boolean(deactivateDialogSite)}
+        onClose={() => setDeactivateDialogSite(null)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>غیرفعال‌کردن سایت «{deactivateDialogSite?.name}»</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning">
+            با غیرفعال‌کردن این سایت، همگام‌سازی خودکار آن نیز به‌صورت خودکار خاموش می‌شود
+            (بدون حذف اطلاعات اتصال دیتابیس) — می‌توانید بعداً از صفحه «همگام‌سازی دیتابیس»
+            دوباره روشنش کنید.
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setDeactivateDialogSite(null)}>عدم تأیید</Button>
+          <Button variant="contained" color="warning" onClick={handleConfirmDeactivate}>
+            تأیید و غیرفعال‌سازی
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Dialog: حذف قطعی سایت — با تأییدیه قوی (تایپ‌کردن DELETE) چون این عملیات
           کل واحدهای سازمانی، پرسنل، اتصال دیتابیس و Mapping این سایت را هم حذف می‌کند */}
       <Dialog open={Boolean(deleteDialogSite)} onClose={() => !isDeleting && setDeleteDialogSite(null)} fullWidth maxWidth="xs">

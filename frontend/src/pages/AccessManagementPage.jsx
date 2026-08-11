@@ -22,12 +22,8 @@ import { fetchEmployees } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { fetchAccessOverview } from "../api/users";
 import { monoFontSx } from "../theme";
+import { roleDisplayName } from "../utils/roleLabels";
 import AssignAccessDialog from "../components/AssignAccessDialog";
-
-const ROLE_DISPLAY_NAMES = {
-  site_manager: "مدیر سایت",
-  middle_manager: "مدیر میانی",
-};
 
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
@@ -182,7 +178,7 @@ export default function AccessManagementPage() {
                           color="primary"
                           variant="outlined"
                           label={
-                            (ROLE_DISPLAY_NAMES[r.role_name] || r.role_name) +
+                            roleDisplayName(r.role_name) +
                             (r.site_name ? ` — ${r.site_name}` : " (سراسری)")
                           }
                         />

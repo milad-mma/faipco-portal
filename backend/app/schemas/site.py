@@ -53,6 +53,13 @@ class SiteConnectionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SiteConnectionActiveUpdate(BaseModel):
+    """روشن/خاموش‌کردن همگام‌سازی خودکار این Site — بدون نیاز به حذف یا ویرایش
+    مجدد اطلاعات اتصال دیتابیس (Host/Username/Password و ...)."""
+
+    is_active: bool
+
+
 class EmployeeMappingIn(BaseModel):
     table_name: str
     personnel_code_column: str

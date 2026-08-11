@@ -305,7 +305,7 @@ export default function EmployeesPage() {
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       {search
                         ? "با این عبارت جستجو، پرسنلی یافت نشد."
-                        : "هیچ پرسنلی یافت نشد. ابتدا از بخش «مدیریت Sync»، همگام‌سازی را اجرا کنید."}
+                        : "هیچ پرسنلی یافت نشد. ابتدا از بخش «همگام‌سازی دیتابیس»، همگام‌سازی را اجرا کنید."}
                     </Typography>
                   </TableCell>
                 </TableRow>

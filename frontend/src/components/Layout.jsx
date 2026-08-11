@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
 import {
   AppBar,
   Avatar,
   Box,
+  Collapse,
   Divider,
   Drawer,
   IconButton,
@@ -29,21 +30,32 @@ import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useAuth } from "../context/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 
 const DRAWER_WIDTH = 260;
 
+// «واحدهای سازمانی» به‌عنوان زیرمجموعه «مدیریت دسترسی» تعریف شده — چون تعیین
+// سرپرست واحد یک تصمیم دسترسی/مسئولیت سازمانی است، نه صرفاً داده پرسنلی.
 const NAV_ITEMS = [
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
   { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: true },
-  { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, adminOnly: true },
   { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, adminOnly: true },
-  { label: "مدیریت Sync", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
+  { label: "همگام‌سازی دیتابیس", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
   { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
-  { label: "مدیریت دسترسی", path: "/access", icon: <AdminPanelSettingsOutlinedIcon />, adminOnly: true },
+  {
+    label: "مدیریت دسترسی",
+    path: "/access",
+    icon: <AdminPanelSettingsOutlinedIcon />,
+    adminOnly: true,
+    children: [
+      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon /> },
+    ],
+  },
 ];
 
 export default function Layout() {
@@ -54,7 +66,31 @@ export default function Layout() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState("");
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || user?.is_superuser);
+  const visibleNavItems = useMemo(
+    () =>
+      NAV_ITEMS.filter((item) => !item.adminOnly || user?.is_superuser).map((item) => ({
+        ...item,
+        children: item.children?.filter((child) => !child.adminOnly || user?.is_superuser),
+      })),
+    [user]
+  );
+
+  // زیرمنو اگر خودش یا یکی از زیرمجموعه‌هایش فعال باشد، به‌طور پیش‌فرض باز است
+  const [openMenus, setOpenMenus] = useState(() => {
+    const initial = {};
+    NAV_ITEMS.forEach((item) => {
+      if (item.children?.length) {
+        initial[item.path] =
+          location.pathname === item.path ||
+          item.children.some((child) => location.pathname.startsWith(child.path));
+      }
+    });
+    return initial;
+  });
+
+  function toggleMenu(path) {
+    setOpenMenus((prev) => ({ ...prev, [path]: !prev[path] }));
+  }
 
   // برای پرسنل، نام و نام خانوادگی واقعی نمایش داده می‌شود؛ برای کاربران
   // مدیریتی محض (بدون رکورد پرسنلی متصل، مثل admin) به Username بازمی‌گردیم.
@@ -99,35 +135,100 @@ export default function Layout() {
       <Divider />
       <List sx={{ px: 1.5, py: 2, flexGrow: 1 }}>
         {visibleNavItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const hasChildren = item.children?.length > 0;
+          const isActive =
+            location.pathname === item.path ||
+            (hasChildren && item.children.some((child) => location.pathname === child.path));
+          const isOpen = hasChildren && (openMenus[item.path] ?? false);
+
           return (
-            <ListItemButton
-              key={item.path}
-              component={RouterLink}
-              to={item.path}
-              onClick={() => setMobileOpen(false)}
-              selected={isActive}
-              sx={{
-                borderRadius: 2,
-                mb: 0.5,
-                borderInlineEnd: isActive ? "3px solid" : "3px solid transparent",
-                borderInlineEndColor: isActive ? "secondary.main" : "transparent",
-                "&.Mui-selected": {
-                  backgroundColor: "rgba(22, 50, 79, 0.08)",
-                },
-              }}
-            >
-              <ListItemIcon sx={{ color: isActive ? "primary.main" : "text.secondary", minWidth: 40 }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.label}
-                primaryTypographyProps={{
-                  fontWeight: isActive ? 700 : 500,
-                  color: isActive ? "primary.main" : "text.primary",
-                }}
-              />
-            </ListItemButton>
+            <Box key={item.path}>
+              <Box sx={{ display: "flex", alignItems: "stretch" }}>
+                <ListItemButton
+                  component={RouterLink}
+                  to={item.path}
+                  onClick={() => setMobileOpen(false)}
+                  selected={isActive}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.5,
+                    flexGrow: 1,
+                    borderInlineEnd: isActive ? "3px solid" : "3px solid transparent",
+                    borderInlineEndColor: isActive ? "secondary.main" : "transparent",
+                    "&.Mui-selected": {
+                      backgroundColor: "rgba(22, 50, 79, 0.08)",
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ color: isActive ? "primary.main" : "text.secondary", minWidth: 40 }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={{
+                      fontWeight: isActive ? 700 : 500,
+                      color: isActive ? "primary.main" : "text.primary",
+                    }}
+                  />
+                </ListItemButton>
+                {hasChildren && (
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      toggleMenu(item.path);
+                    }}
+                    sx={{ alignSelf: "center", mr: 0.5 }}
+                  >
+                    {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                  </IconButton>
+                )}
+              </Box>
+
+              {hasChildren && (
+                <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                  <List component="div" disablePadding>
+                    {item.children.map((child) => {
+                      const isChildActive = location.pathname === child.path;
+                      return (
+                        <ListItemButton
+                          key={child.path}
+                          component={RouterLink}
+                          to={child.path}
+                          onClick={() => setMobileOpen(false)}
+                          selected={isChildActive}
+                          sx={{
+                            borderRadius: 2,
+                            mb: 0.5,
+                            pl: 5,
+                            borderInlineEnd: isChildActive ? "3px solid" : "3px solid transparent",
+                            borderInlineEndColor: isChildActive ? "secondary.main" : "transparent",
+                            "&.Mui-selected": {
+                              backgroundColor: "rgba(22, 50, 79, 0.08)",
+                            },
+                          }}
+                        >
+                          <ListItemIcon
+                            sx={{ color: isChildActive ? "primary.main" : "text.secondary", minWidth: 32 }}
+                          >
+                            {child.icon}
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={child.label}
+                            primaryTypographyProps={{
+                              fontSize: 14,
+                              fontWeight: isChildActive ? 700 : 500,
+                              color: isChildActive ? "primary.main" : "text.primary",
+                            }}
+                          />
+                        </ListItemButton>
+                      );
+                    })}
+                  </List>
+                </Collapse>
+              )}
+            </Box>
           );
         })}
       </List>

@@ -31,9 +31,27 @@ class SiteService:
         if site is None:
             return None
         site.is_active = is_active
+        # وقتی یک Site غیرفعال می‌شود، همگام‌سازی خودکار آن هم باید متوقف شود —
+        # وگرنه Scheduler هر بار تلاش می‌کند یک اتصال دیتابیس را Sync کند که
+        # صاحبش دیگر «فعال» اعلام نشده. این تغییر همیشه با غیرفعال‌کردن Site
+        # همراه است (نه اختیاری) — تأییدیه‌اش در سطح UI (پیش از این فراخوانی) گرفته می‌شود.
+        if not is_active:
+            conn = await self.get_connection(site_id)
+            if conn is not None:
+                conn.is_active = False
         await self.db.commit()
         await self.db.refresh(site)
         return site
+
+    async def set_connection_active(self, site_id: int, is_active: bool) -> SiteConnection | None:
+        """روشن/خاموش‌کردن همگام‌سازی خودکار این Site — بدون دست‌زدن به اطلاعات اتصال."""
+        conn = await self.get_connection(site_id)
+        if conn is None:
+            return None
+        conn.is_active = is_active
+        await self.db.commit()
+        await self.db.refresh(conn)
+        return conn
 
     async def delete_site(self, site_id: int) -> bool:
         """

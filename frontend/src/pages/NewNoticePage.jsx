@@ -154,6 +154,26 @@ export default function NewNoticePage() {
     }));
   }
 
+  const supervisorOptions = availableTargets?.supervisor_employees || [];
+  const allSupervisorsSelected =
+    supervisorOptions.length > 0 && form.supervisors.length === supervisorOptions.length;
+
+  function toggleSupervisor(employeeId) {
+    setForm((prev) => ({
+      ...prev,
+      supervisors: prev.supervisors.includes(employeeId)
+        ? prev.supervisors.filter((id) => id !== employeeId)
+        : [...prev.supervisors, employeeId],
+    }));
+  }
+
+  function toggleSelectAllSupervisors() {
+    setForm((prev) => ({
+      ...prev,
+      supervisors: allSupervisorsSelected ? [] : supervisorOptions.map((e) => e.id),
+    }));
+  }
+
   async function handleCreate() {
     if (isSubmitting) return; // جلوگیری از ارسال تکراری با کلیک چندباره
     setError("");
@@ -165,7 +185,13 @@ export default function NewNoticePage() {
     form.departmentIds.forEach((id) => targets.push({ target_type: "department", target_id: id }));
 
     const employeeIds = new Set();
-    [...form.employees, ...form.supervisors].forEach((emp) => {
+    form.supervisors.forEach((id) => {
+      if (!employeeIds.has(id)) {
+        employeeIds.add(id);
+        targets.push({ target_type: "employee", target_id: id });
+      }
+    });
+    form.employees.forEach((emp) => {
       if (!employeeIds.has(emp.id)) {
         employeeIds.add(emp.id);
         targets.push({ target_type: "employee", target_id: emp.id });
@@ -384,8 +410,8 @@ export default function NewNoticePage() {
                     <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
                       ارسال به یک یا چند واحد سازمانی
                     </Typography>
-                    <FormGroup>
-                      {allowedDepartments.length > 1 && (
+                    {allowedDepartments.length > 1 && (
+                      <>
                         <FormControlLabel
                           control={
                             <Checkbox
@@ -397,11 +423,14 @@ export default function NewNoticePage() {
                           }
                           label={<Typography fontWeight={600}>انتخاب همه واحدها</Typography>}
                         />
-                      )}
-                      {allowedDepartments.length > 1 && <Divider sx={{ my: 0.5 }} />}
+                        <Divider sx={{ my: 0.5 }} />
+                      </>
+                    )}
+                    <FormGroup row>
                       {allowedDepartments.map((dept) => (
                         <FormControlLabel
                           key={dept.id}
+                          sx={{ minWidth: 0 }}
                           control={
                             <Checkbox
                               checked={form.departmentIds.includes(dept.id)}
@@ -416,29 +445,44 @@ export default function NewNoticePage() {
                   </Box>
                 )}
 
-                {availableTargets?.supervisor_employees?.length > 0 && (
-                  <Autocomplete
-                    multiple
-                    disabled={isSubmitting}
-                    options={availableTargets.supervisor_employees}
-                    getOptionLabel={(e) => `${e.first_name} ${e.last_name} (${e.personnel_code})`}
-                    isOptionEqualToValue={(a, b) => a.id === b.id}
-                    value={form.supervisors}
-                    onChange={(_, selected) => setForm({ ...form, supervisors: selected })}
-                    renderInput={(params) => (
-                      <TextField {...params} label="میان‌بر: ارسال به یک یا چند سرپرست واحد" />
-                    )}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          size="small"
-                          label={`${option.first_name} ${option.last_name}`}
-                          {...getTagProps({ index })}
-                          key={option.id}
+                {supervisorOptions.length > 0 && (
+                  <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
+                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                      ارسال به یک یا چند سرپرست واحد
+                    </Typography>
+                    {supervisorOptions.length > 1 && (
+                      <>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={allSupervisorsSelected}
+                              indeterminate={form.supervisors.length > 0 && !allSupervisorsSelected}
+                              onChange={toggleSelectAllSupervisors}
+                              disabled={isSubmitting}
+                            />
+                          }
+                          label={<Typography fontWeight={600}>انتخاب همه سرپرستان</Typography>}
                         />
-                      ))
-                    }
-                  />
+                        <Divider sx={{ my: 0.5 }} />
+                      </>
+                    )}
+                    <FormGroup row>
+                      {supervisorOptions.map((emp) => (
+                        <FormControlLabel
+                          key={emp.id}
+                          sx={{ minWidth: 0 }}
+                          control={
+                            <Checkbox
+                              checked={form.supervisors.includes(emp.id)}
+                              onChange={() => toggleSupervisor(emp.id)}
+                              disabled={isSubmitting}
+                            />
+                          }
+                          label={`${emp.first_name} ${emp.last_name} (${emp.personnel_code})`}
+                        />
+                      ))}
+                    </FormGroup>
+                  </Box>
                 )}
 
                 {availableTargets?.can_target_employee && (

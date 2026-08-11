@@ -19,6 +19,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { assignRoleToEmployee, fetchEmployeeRoles, fetchSupervisedDepartments } from "../api/employees";
 import { fetchRoles, removeRoleAssignment } from "../api/users";
 import { assignDepartmentSupervisor, fetchDepartments } from "../api/departments";
+import { roleDisplayName } from "../utils/roleLabels";
 
 export default function AssignAccessDialog({ employee, sites, onClose }) {
   const [roles, setRoles] = useState([]);
@@ -45,7 +46,10 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
   if (!employee) return null;
 
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
-  const roleLabel = (id) => roles.find((r) => r.id === id)?.name || id;
+  const roleLabel = (id) => {
+    const found = roles.find((r) => r.id === id);
+    return found ? roleDisplayName(found.name) : id;
+  };
   const selectedRoleIsSiteScoped = roles.find((r) => r.id === roleToAssign)?.name === "site_manager";
 
   async function handleAssignRole() {
@@ -130,7 +134,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
         >
           {roles.map((r) => (
             <MenuItem key={r.id} value={r.id}>
-              {r.name === "site_manager" ? "مدیر سایت" : r.name === "middle_manager" ? "مدیر میانی" : r.name}
+              {roleDisplayName(r.name)}
             </MenuItem>
           ))}
         </TextField>

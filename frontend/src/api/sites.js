@@ -33,6 +33,11 @@ export async function deleteSiteConnection(siteId) {
   await apiClient.delete(`/sites/${siteId}/connection`);
 }
 
+export async function setSiteConnectionActive(siteId, isActive) {
+  const { data } = await apiClient.patch(`/sites/${siteId}/connection/status`, { is_active: isActive });
+  return data;
+}
+
 export async function fetchSiteMapping(siteId) {
   const { data } = await apiClient.get(`/sites/${siteId}/mapping`);
   return data; // null اگر تعریف نشده باشد
