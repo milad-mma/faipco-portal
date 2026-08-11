@@ -24,11 +24,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # نکته مهم: بر خلاف op.create_table (که خودش Type مربوط به Enum را اول
+    # می‌سازد)، op.add_column روی جدول موجود این کار را انجام نمی‌دهد —
+    # باید صریحاً قبل از ALTER TABLE، خودِ Type را در PostgreSQL بسازیم.
+    notice_type_enum = sa.Enum("normal", "payroll", name="notice_type_enum")
+    notice_type_enum.create(op.get_bind(), checkfirst=True)
+
     op.add_column(
         "notices",
         sa.Column(
             "notice_type",
-            sa.Enum("normal", "payroll", name="notice_type_enum"),
+            notice_type_enum,
             nullable=False,
             server_default="normal",
         ),
@@ -67,4 +73,4 @@ def downgrade() -> None:
     op.drop_index("ix_payroll_receipts_employee_id", table_name="payroll_receipts")
     op.drop_table("payroll_receipts")
     op.drop_column("notices", "notice_type")
-    op.execute("DROP TYPE IF EXISTS notice_type_enum")
+    sa.Enum(name="notice_type_enum").drop(op.get_bind(), checkfirst=True)
