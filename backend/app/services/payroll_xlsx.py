@@ -271,10 +271,15 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
                     label_col, label_text = cells[-1]
                     if not (value_text and label_text and value_col != label_col):
                         continue
-                    if label_text.startswith("جمع") or label_text in FOOTER_LABEL_COLUMN:
+                    if name != "سایر" and (label_text.startswith("جمع") or label_text in FOOTER_LABEL_COLUMN):
                         # این یک ویجت جمع‌بندی پایین فیش است که به‌صورت تصادفی
                         # در محدوده ستونی این Section افتاده — قلم واقعی این
                         # Section نیست؛ به فوتر (مرحله بعد) واگذار می‌شود.
+                        # نکته مهم: این استثنا فقط برای وام/کسور/مزایا اعمال
+                        # می‌شود، نه «سایر» — چون در «سایر» (بخش Attendance در
+                        # XML)، آیتم‌هایی مثل «جمع مزایا»، «جمع کسور»، «خالص
+                        # پرداختی» و «جمع ماههای کارکرد» قلم‌های واقعی و
+                        # قانونی همان بخش‌اند، نه نشتی از فوتر.
                         continue
                     section_rows_map[name].append({"label": label_text, "value": value_text})
                     matched_this_row = True

@@ -131,22 +131,10 @@ def _shape(text: str) -> str:
         return text
 
 
-def _wrap_and_shape(text: str, font_name: str, font_size: float, max_width_pts: float) -> str:
-    """
-    متن را بر اساس عرض واقعی (px) به چند خط می‌شکند و هر خط را جداگانه Shape
-    می‌کند — چون Shape کردن کل رشته و سپس گذاشتن خط‌شکنی به عهده ReportLab
-    باعث به‌هم‌ریختن ترتیب کلمات بین خطوط می‌شود (نتیجه یک بار درست‌کردن این
-    مشکل واقعی بود؛ توضیح کامل در docstring بالای فایل).
-
-    نکته حیاتی: محاسبه عرض با pdfmetrics.stringWidth همیشه دقیقاً با
-    محاسبه داخلی ReportLab یکی نیست؛ اگر خیلی به مرز عرض واقعی نزدیک حساب
-    کنیم، ممکن است تصور کنیم یک خط جا می‌شود ولی ReportLab موقع رسم واقعی
-    دوباره آن را (این‌بار روی رشته‌ی از قبل Reverse‌شده و با ترتیب غلط)
-    بشکند. برای همین با ضریب اطمینان ۰٫۸ محاسبه می‌کنیم تا تصمیم شکستن خط
-    همیشه دست خودمان بماند، نه ReportLab.
-    """
+def _wrap_lines(text: str, font_name: str, font_size: float, max_width_pts: float) -> list[str]:
+    """مثل _wrap_and_shape ولی خط‌های خام (هنوز Shape نشده) را برمی‌گرداند — برای ترکیب با محتوای دیگر (مثل برچسب) قبل از Shape نهایی."""
     if not text:
-        return text
+        return []
     safe_width_pts = max_width_pts * 0.8
     words = text.split(" ")
     lines: list[str] = []
@@ -161,7 +149,52 @@ def _wrap_and_shape(text: str, font_name: str, font_size: float, max_width_pts: 
             current = word
     if current:
         lines.append(current)
-    return "<br/>".join(_shape(line) for line in lines)
+    return lines
+
+
+def _wrap_and_shape(text: str, font_name: str, font_size: float, max_width_pts: float) -> str:
+    """
+    متن را بر اساس عرض واقعی (px) به چند خط می‌شکند و هر خط را جداگانه Shape
+    می‌کند — چون Shape کردن کل رشته و سپس گذاشتن خط‌شکنی به عهده ReportLab
+    باعث به‌هم‌ریختن ترتیب کلمات بین خطوط می‌شود (نتیجه یک بار درست‌کردن این
+    مشکل واقعی بود؛ توضیح کامل در docstring بالای فایل).
+
+    نکته حیاتی: محاسبه عرض با pdfmetrics.stringWidth همیشه دقیقاً با
+    محاسبه داخلی ReportLab یکی نیست؛ اگر خیلی به مرز عرض واقعی نزدیک حساب
+    کنیم، ممکن است تصور کنیم یک خط جا می‌شود ولی ReportLab موقع رسم واقعی
+    دوباره آن را (این‌بار روی رشته‌ی از قبل Reverse‌شده و با ترتیب غلط)
+    بشکند. برای همین با ضریب اطمینان ۰٫۸ محاسبه می‌کنیم تا تصمیم شکستن خط
+    همیشه دست خودمان بماند، نه ReportLab.
+    """
+    return "<br/>".join(_shape(line) for line in _wrap_lines(text, font_name, font_size, max_width_pts))
+
+
+def _build_label_value_html(
+    label: str, value: str, font_name: str, font_bold_name: str, font_size: float, max_width_pts: float
+) -> str:
+    """
+    برای نوار مشخصات: «<b>برچسب:</b> مقدار». نکته مهم: اگر مقدار طولانی باشد
+    و به چند خط بشکند، فقط خط اولش کنار برچسب می‌آید (با عرض کمی کمتر، چون
+    جای برچسب را هم اشغال کرده)؛ برچسب هرگز داخل خط‌های بعدی گم یا به انتهای
+    متن منتقل نمی‌شود — چون یک‌بار امتحان شد که همه‌چیز (برچسب+مقدار) با هم
+    در یک رشته Wrap شود و باعث می‌شد ReportLab خودش دوباره خط بشکند و ترتیب
+    را به‌هم بریزد (همان مشکلی که در _wrap_and_shape حلش کردیم، اینجا چون
+    برچسب هم به رشته اضافه می‌شد دوباره سر بلند کرده بود).
+    """
+    label_clean = label.rstrip(": ：")
+    label_shaped = _shape(label_clean)
+    label_prefix_width = pdfmetrics.stringWidth(f"{label_clean}: ", font_bold_name, font_size)
+    reduced_width = max(max_width_pts - label_prefix_width, max_width_pts * 0.3)
+
+    value_lines = _wrap_lines(value, font_name, font_size, reduced_width)
+    if not value_lines:
+        return f"<b>{label_shaped}:</b>"
+
+    lines_html = [f"<b>{label_shaped}:</b> {_shape(value_lines[0])}"]
+    lines_html.extend(_shape(line) for line in value_lines[1:])
+    return "<br/>".join(lines_html)
+
+
 
 
 def render_payroll_receipt_pdf(
@@ -256,9 +289,8 @@ def render_payroll_receipt_pdf(
         info_col_width_pts = (doc.width / len(header_rows)) - 12  # منهای Padding داخلی سلول
         info_cells = []
         for row in header_rows:
-            label_shaped = _shape(row["label"].rstrip(":"))
-            value_wrapped = _wrap_and_shape(row["value"], font_name, 9, info_col_width_pts)
-            info_cells.append(Paragraph(f"<b>{label_shaped}:</b> {value_wrapped}", info_cell_style))
+            cell_html = _build_label_value_html(row["label"], row["value"], font_name, font_bold, 9, info_col_width_pts)
+            info_cells.append(Paragraph(cell_html, info_cell_style))
         # ترتیب طبیعی سند (مرکز هزینه، نام، کد پرسنلی) از چپ به راست همان
         # چیزی است که در نمایش راست‌به‌چپ، کد پرسنلی را در سمت راست می‌گذارد
         # — پس هیچ Reverse ای لازم نیست.
@@ -307,7 +339,15 @@ def render_payroll_receipt_pdf(
     header_row = []
     span_commands = []
     for i, title in enumerate(column_titles):
-        header_row.append(Paragraph(_shape(title), col_header_style))
+        # نکته مهم: عمداً رشته خام (نه Paragraph) استفاده می‌شود — وقتی یک
+        # Paragraph داخل سلولی قرار می‌گیرد که با SPAN بین دو ستون با عرض
+        # نامساوی (مقدار ۴۰٪ / برچسب ۶۰٪) ادغام شده، مرکز‌چینی داخلی خودِ
+        # Paragraph گاهی بر اساس عرض فقط اولین زیرستون محاسبه می‌شود، نه کل
+        # عرض ادغام‌شده — نتیجه‌اش این بود که عنوان هر ستون به‌جای وسط واقعی
+        # ستون، کمی به چپ متمایل می‌شد. رشته خام + ALIGN در TableStyle این
+        # مشکل را ندارد چون مستقیماً نسبت به عرض واقعی سلول (بعد از Span)
+        # وسط‌چین می‌شود.
+        header_row.append(_shape(title))
         header_row.append("")
         span_commands.append(("SPAN", (i * 2, 0), (i * 2 + 1, 0)))
 
@@ -347,6 +387,10 @@ def render_payroll_receipt_pdf(
                 *group_dividers,
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d3d3d3")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), font_bold),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
                 ("TOPPADDING", (0, 0), (-1, 0), 3),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
                 ("TOPPADDING", (0, 1), (-1, -1), 1.5),
@@ -405,6 +449,16 @@ def render_payroll_receipt_pdf(
                                 ]
                             ],
                             colWidths=[footer_value_width_map[title], footer_label_width_map[title]],
+                            style=TableStyle(
+                                [
+                                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#d3d3d3")),
+                                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                ]
+                            ),
                         )
                         table_row.append(cell)
                     else:
