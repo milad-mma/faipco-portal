@@ -119,7 +119,16 @@ class PayrollNoticeService:
                 employee_receipt_data[employee.id] = (item.code, item.fields)
 
         for employee_id, (code, fields) in employee_receipt_data.items():
-            notice.targets.append(NoticeTarget(target_type=NoticeTargetType.employee, target_id=employee_id))
+            # نکته مهم: مستقیماً notice.targets.append(...) استفاده نمی‌شود —
+            # در AsyncSession، دسترسی به یک Relationship که هنوز در حافظه
+            # Load نشده (حتی روی یک شیء تازه‌ساخته‌شده بعد از flush) می‌تواند
+            # باعث خطای MissingGreenlet شود (چون SQLAlchemy async نمی‌تواند
+            # Lazy-Load را بیرون از یک Await مدیریت‌شده انجام دهد). به‌جایش
+            # مستقیماً یک NoticeTarget با notice_id مشخص به Session اضافه
+            # می‌شود — کاملاً معادل، ولی هیچ Relationship ای را Touch نمی‌کند.
+            self.db.add(
+                NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=employee_id)
+            )
             self.db.add(
                 PayrollReceipt(
                     notice_id=notice.id,
