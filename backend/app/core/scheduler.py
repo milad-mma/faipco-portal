@@ -1,10 +1,13 @@
 """
 اجرای خودکار و دوره‌ای Sync برای همه Site های فعال، با APScheduler.
-فاصله زمانی ابتدا از دیتابیس (system_settings) خوانده می‌شود — اگر هنوز از
-پنل تغییر داده نشده باشد، از SYNC_INTERVAL_MINUTES در .env استفاده می‌شود
-(سازگار با نصب‌های قبلی). با reschedule_sync_interval() می‌توان فاصله زمانی
-Job در حال اجرا را بدون Restart سرور تغییر داد — از Endpoint مدیریت Sync
-صدا زده می‌شود.
+فقط سایت‌هایی که هم خودشان فعال‌اند و هم SiteConnection.is_active روشن است
+(یعنی Sync خودکار برایشان خاموش نشده) وارد این چرخه دوره‌ای می‌شوند. اجرای
+دستی از پنل Admin مستقل از این پرچم است و همیشه کار می‌کند (به SyncService
+مراجعه کنید). فاصله زمانی ابتدا از دیتابیس (system_settings) خوانده می‌شود —
+اگر هنوز از پنل تغییر داده نشده باشد، از SYNC_INTERVAL_MINUTES در .env
+استفاده می‌شود (سازگار با نصب‌های قبلی). با reschedule_sync_interval()
+می‌توان فاصله زمانی Job در حال اجرا را بدون Restart سرور تغییر داد — از
+Endpoint مدیریت Sync صدا زده می‌شود.
 اگر SYNC_ENABLED=false باشد، هیچ Job ای زمان‌بندی نمی‌شود.
 """
 import logging
@@ -15,7 +18,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
-from app.models.site import Site
+from app.models.site import Site, SiteConnection
 from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncService
 
@@ -28,7 +31,14 @@ scheduler = AsyncIOScheduler()
 
 async def _run_sync_for_all_active_sites() -> None:
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Site).where(Site.is_active.is_(True)))
+        # فقط سایت‌هایی که هم خودشان فعال‌اند و هم Sync خودکارشان روشن است
+        # (SiteConnection.is_active) وارد چرخه خودکار می‌شوند — اجرای دستی از
+        # پنل Admin از این محدودیت مستقل است و همیشه در دسترس می‌ماند.
+        result = await db.execute(
+            select(Site)
+            .join(SiteConnection, SiteConnection.site_id == Site.id)
+            .where(Site.is_active.is_(True), SiteConnection.is_active.is_(True))
+        )
         sites = list(result.scalars().all())
 
     for site in sites:

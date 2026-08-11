@@ -41,24 +41,42 @@ const INLINE_TARGET_LIMIT = 3;
 
 /**
  * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» و هم برای «گزارش کامل Admin»
- * استفاده می‌شود؛ در هر دو با allowDelete=true قابلیت حذف فعال است (Backend
- * اجازه می‌دهد: خودِ فرستنده هر اطلاعیه، یا Admin برای اطلاعیه هرکسی). حذف
- * همیشه Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی خودِ این ردیف
- * در گزارش با برچسب «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود) — پس بعد
- * از حذف موفق، فقط وضعیت ردیف به‌روزرسانی می‌شود، نه حذف آن از جدول.
+ * استفاده می‌شود. برخلاف قبل، این کامپوننت خودش صفحه‌بندی سمت سرور را مدیریت
+ * می‌کند (نه گرفتن کل لیست از والد و برش آن در فرانت‌اند) — چون واکشی و
+ * پردازش هم‌زمان همه اطلاعیه‌های سیستم در یک درخواست، با رشد تعدادشان به‌شدت
+ * کند می‌شد. کافی است تابع fetchPage(page, pageSize) داده شود که یک Promise
+ * برگرداند شامل {items, total} برای همان صفحه.
+ *
+ * در هر دو استفاده با allowDelete=true قابلیت حذف فعال است (Backend اجازه
+ * می‌دهد: خودِ فرستنده هر اطلاعیه، یا Admin برای اطلاعیه هرکسی). حذف همیشه
+ * Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی خودِ این ردیف در
+ * گزارش با برچسب «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود).
  */
-export default function NoticeReportTable({ notices, showSender = false, allowDelete = false, onChanged }) {
+export default function NoticeReportTable({ fetchPage, showSender = false, allowDelete = false, reloadKey }) {
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [readersNoticeId, setReadersNoticeId] = useState(null);
   const [bodyNotice, setBodyNotice] = useState(null);
   const [targetsNotice, setTargetsNotice] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [page, setPage] = useState(0);
 
-  // اگر لیست اطلاعیه‌ها عوض شود (Reload بعد از حذف، تغییر تب و ...)، به صفحه
-  // اول برگرد تا صفحه فعلی نامعتبر/خالی نماند.
+  function loadPage(pageIndex) {
+    setIsLoading(true);
+    return fetchPage(pageIndex + 1, ROWS_PER_PAGE)
+      .then(({ items: pageItems, total: pageTotal }) => {
+        setItems(pageItems);
+        setTotal(pageTotal);
+      })
+      .finally(() => setIsLoading(false));
+  }
+
   useEffect(() => {
-    setPage(0);
-  }, [notices]);
+    loadPage(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, reloadKey]);
 
   async function handleDelete(notice) {
     if (!window.confirm(`اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`)) {
@@ -67,7 +85,13 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
     setDeletingId(notice.id);
     try {
       await deleteNotice(notice.id);
-      onChanged?.();
+      // اگر آخرین ردیف همین صفحه حذف شد و صفحه اول نیست، یک صفحه به عقب برو؛
+      // وگرنه همین صفحه را دوباره از سرور بخوان.
+      if (items.length === 1 && page > 0) {
+        setPage((p) => p - 1);
+      } else {
+        await loadPage(page);
+      }
     } catch (err) {
       alert(err.response?.data?.detail || "حذف اطلاعیه ناموفق بود");
     } finally {
@@ -75,15 +99,13 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
     }
   }
 
-  if (notices.length === 0) {
+  if (!isLoading && items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
         هنوز اطلاعیه‌ای ثبت نشده.
       </Typography>
     );
   }
-
-  const pagedNotices = notices.slice(page * ROWS_PER_PAGE, page * ROWS_PER_PAGE + ROWS_PER_PAGE);
 
   return (
     <>
@@ -105,7 +127,7 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
             </TableRow>
           </TableHead>
           <TableBody>
-            {pagedNotices.map((n) => (
+            {items.map((n) => (
               <TableRow key={n.id} hover sx={n.is_deleted ? { opacity: 0.6 } : undefined}>
                 <TableCell sx={monoFontSx}>
                   {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
@@ -193,7 +215,7 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
 
       <TablePagination
         component="div"
-        count={notices.length}
+        count={total}
         page={page}
         onPageChange={(_, newPage) => setPage(newPage)}
         rowsPerPage={ROWS_PER_PAGE}

@@ -86,6 +86,15 @@ class NoticeDetailOut(BaseModel):
     deleted_at: datetime | None = None
 
 
+class NoticeDetailPageOut(BaseModel):
+    """یک صفحه از گزارش اطلاعیه‌ها — برای Pagination سمت سرور (به‌جای واکشی و
+    پردازش همه اطلاعیه‌های سیستم در یک درخواست، که با رشد تعداد اطلاعیه‌ها
+    به‌شدت کند می‌شود)."""
+
+    items: list[NoticeDetailOut]
+    total: int
+
+
 class NoticeReaderOut(BaseModel):
     """یک نفر که یک اطلاعیه مشخص را دیده — برای درون‌رفت (Drill-down) به جزئیات."""
     user_id: int

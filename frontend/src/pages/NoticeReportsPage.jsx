@@ -1,15 +1,8 @@
-import { useEffect, useState } from "react";
 import { Box, Card, Typography } from "@mui/material";
 import { fetchAdminReport } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
 
 export default function NoticeReportsPage() {
-  const [notices, setNotices] = useState([]);
-
-  useEffect(() => {
-    fetchAdminReport().then(setNotices);
-  }, []);
-
   return (
     <Box>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
@@ -20,7 +13,7 @@ export default function NoticeReportsPage() {
       </Typography>
 
       <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
-        <NoticeReportTable notices={notices} showSender allowDelete onChanged={() => fetchAdminReport().then(setNotices)} />
+        <NoticeReportTable fetchPage={fetchAdminReport} showSender allowDelete />
       </Card>
     </Box>
   );

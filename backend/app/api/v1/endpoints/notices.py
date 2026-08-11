@@ -27,7 +27,7 @@ from app.models.notice import Notice, NoticePriority
 from app.models.user import User
 from app.schemas.notice import (
     NoticeCreate,
-    NoticeDetailOut,
+    NoticeDetailPageOut,
     NoticeOut,
     NoticeReaderOut,
     PayrollNoticeResultOut,
@@ -93,22 +93,36 @@ async def mark_notice_read(
     await NoticeService(db).mark_as_read(notice_id, current_user.id)
 
 
-@router.get("/sent-by-me", response_model=list[NoticeDetailOut])
+@router.get("/sent-by-me", response_model=NoticeDetailPageOut)
 async def sent_by_me(
+    page: int = 1,
+    page_size: int = 10,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """گزارش شخصی فرستنده: چه چیزهایی به چه کسانی/واحدهایی فرستاده و چند نفر دیده‌اند."""
-    return await NoticeService(db).get_detailed_notices(sender_id=current_user.id)
+    """گزارش شخصی فرستنده: چه چیزهایی به چه کسانی/واحدهایی فرستاده و چند نفر دیده‌اند (صفحه‌بندی‌شده)."""
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    items, total = await NoticeService(db).get_detailed_notices(
+        sender_id=current_user.id, limit=page_size, offset=(page - 1) * page_size
+    )
+    return NoticeDetailPageOut(items=items, total=total)
 
 
-@router.get("/admin-report", response_model=list[NoticeDetailOut])
+@router.get("/admin-report", response_model=NoticeDetailPageOut)
 async def admin_report(
+    page: int = 1,
+    page_size: int = 10,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("notices.view")),
 ):
-    """گزارش کامل Admin: همه اطلاعیه‌های سیستم، فرستنده هرکدام، و آمار بازدید."""
-    return await NoticeService(db).get_detailed_notices(sender_id=None)
+    """گزارش کامل Admin: همه اطلاعیه‌های سیستم، فرستنده هرکدام، و آمار بازدید (صفحه‌بندی‌شده)."""
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    items, total = await NoticeService(db).get_detailed_notices(
+        sender_id=None, limit=page_size, offset=(page - 1) * page_size
+    )
+    return NoticeDetailPageOut(items=items, total=total)
 
 
 @router.get("/{notice_id}/readers", response_model=list[NoticeReaderOut])

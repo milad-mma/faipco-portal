@@ -463,45 +463,177 @@ class NoticeService:
             names[user_id] = f"{first_name} {last_name}" if first_name else username
         return names
 
-    async def _describe_target(self, target: NoticeTarget) -> NoticeTargetDescription:
+    async def _describe_targets_batch(
+        self, targets: list[NoticeTarget]
+    ) -> dict[tuple[NoticeTargetType, int | None], NoticeTargetDescription]:
+        """
+        توصیف («کارخانه ۱» به‌جای site_id=۱) همه Target های داده‌شده را در چند
+        Query دسته‌ای (نه یک Query جداگانه به‌ازای هر Target) برمی‌گرداند —
+        جایگزین حلقه‌ی قبلی که به‌ازای هر Target یک رفت‌وبرگشت جدا به دیتابیس
+        می‌زد و روی گزارش‌های پرتعداد به‌شدت کند بود.
+        """
         from app.models.site import Site  # پرهیز از Circular Import
 
-        if target.target_type == NoticeTargetType.all:
-            label = "کل سازمان"
-        elif target.target_type == NoticeTargetType.site:
-            site = await self.db.get(Site, target.target_id)
-            label = site.name if site else f"سایت #{target.target_id}"
-        elif target.target_type == NoticeTargetType.department:
-            dept = await self.db.get(Department, target.target_id)
-            label = dept.name if dept else f"واحد #{target.target_id}"
-        elif target.target_type == NoticeTargetType.employee:
-            emp = await self.db.get(Employee, target.target_id)
-            label = f"{emp.first_name} {emp.last_name} ({emp.personnel_code})" if emp else f"پرسنل #{target.target_id}"
-        elif target.target_type == NoticeTargetType.role:
-            role = await self.db.get(Role, target.target_id)
-            label = role.name if role else f"نقش #{target.target_id}"
-        else:
-            label = "نامشخص"
+        site_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.site}
+        dept_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.department}
+        emp_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.employee}
+        role_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.role}
 
-        return NoticeTargetDescription(target_type=target.target_type, target_id=target.target_id, label=label)
+        site_names: dict[int, str] = {}
+        if site_ids:
+            result = await self.db.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
+            site_names = dict(result.all())
 
-    async def get_detailed_notices(self, sender_id: int | None = None) -> list[NoticeDetailOut]:
+        dept_names: dict[int, str] = {}
+        if dept_ids:
+            result = await self.db.execute(select(Department.id, Department.name).where(Department.id.in_(dept_ids)))
+            dept_names = dict(result.all())
+
+        emp_labels: dict[int, str] = {}
+        if emp_ids:
+            result = await self.db.execute(
+                select(Employee.id, Employee.first_name, Employee.last_name, Employee.personnel_code).where(
+                    Employee.id.in_(emp_ids)
+                )
+            )
+            emp_labels = {r[0]: f"{r[1]} {r[2]} ({r[3]})" for r in result.all()}
+
+        role_names: dict[int, str] = {}
+        if role_ids:
+            result = await self.db.execute(select(Role.id, Role.name).where(Role.id.in_(role_ids)))
+            role_names = dict(result.all())
+
+        descriptions: dict[tuple[NoticeTargetType, int | None], NoticeTargetDescription] = {}
+        for t in targets:
+            key = (t.target_type, t.target_id)
+            if key in descriptions:
+                continue
+            if t.target_type == NoticeTargetType.all:
+                label = "کل سازمان"
+            elif t.target_type == NoticeTargetType.site:
+                label = site_names.get(t.target_id, f"سایت #{t.target_id}")
+            elif t.target_type == NoticeTargetType.department:
+                label = dept_names.get(t.target_id, f"واحد #{t.target_id}")
+            elif t.target_type == NoticeTargetType.employee:
+                label = emp_labels.get(t.target_id, f"پرسنل #{t.target_id}")
+            elif t.target_type == NoticeTargetType.role:
+                label = role_names.get(t.target_id, f"نقش #{t.target_id}")
+            else:
+                label = "نامشخص"
+            descriptions[key] = NoticeTargetDescription(target_type=t.target_type, target_id=t.target_id, label=label)
+        return descriptions
+
+    async def _resolve_audience_counts_batch(self, notices: list[Notice]) -> dict[int, int]:
         """
-        گزارش کامل اطلاعیه‌ها با نام فرستنده، توصیف مقصدها و آمار بازدید.
+        تعداد مخاطبان هر اطلاعیه را برمی‌گرداند — با یک Query دسته‌ای به‌ازای هر
+        نوع Target (نه به‌ازای هر Target/هر اطلاعیه جداگانه). مجموعه کاربران هر
+        Target یکتا (مثلاً همان site_id) فقط یک‌بار محاسبه و در بین اطلاعیه‌هایی
+        که آن Target را مشترک دارند بازاستفاده می‌شود.
+        """
+        unique_keys = {(t.target_type, t.target_id) for n in notices for t in n.targets}
+        user_ids_by_key: dict[tuple[NoticeTargetType, int | None], set[int]] = {}
+
+        if (NoticeTargetType.all, None) in unique_keys:
+            result = await self.db.execute(select(User.id).where(User.is_active.is_(True)))
+            user_ids_by_key[(NoticeTargetType.all, None)] = {row[0] for row in result.all()}
+
+        site_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.site}
+        if site_ids:
+            result = await self.db.execute(
+                select(Employee.site_id, User.id)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(
+                    Employee.site_id.in_(site_ids),
+                    Employee.is_active.is_(True),
+                    Employee.is_enabled.is_(True),
+                )
+            )
+            grouped: dict[int, set[int]] = {}
+            for site_id, user_id in result.all():
+                grouped.setdefault(site_id, set()).add(user_id)
+            for site_id in site_ids:
+                user_ids_by_key[(NoticeTargetType.site, site_id)] = grouped.get(site_id, set())
+
+        dept_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.department}
+        if dept_ids:
+            result = await self.db.execute(
+                select(Employee.department_id, User.id)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(
+                    Employee.department_id.in_(dept_ids),
+                    Employee.is_active.is_(True),
+                    Employee.is_enabled.is_(True),
+                )
+            )
+            grouped = {}
+            for dept_id, user_id in result.all():
+                grouped.setdefault(dept_id, set()).add(user_id)
+            for dept_id in dept_ids:
+                user_ids_by_key[(NoticeTargetType.department, dept_id)] = grouped.get(dept_id, set())
+
+        emp_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.employee}
+        if emp_ids:
+            result = await self.db.execute(
+                select(Employee.id, User.id).join(User, User.employee_id == Employee.id).where(Employee.id.in_(emp_ids))
+            )
+            for emp_id, user_id in result.all():
+                user_ids_by_key[(NoticeTargetType.employee, emp_id)] = {user_id}
+            for emp_id in emp_ids:
+                user_ids_by_key.setdefault((NoticeTargetType.employee, emp_id), set())
+
+        role_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.role}
+        if role_ids:
+            result = await self.db.execute(
+                select(UserRole.role_id, UserRole.user_id).where(UserRole.role_id.in_(role_ids))
+            )
+            grouped = {}
+            for role_id, user_id in result.all():
+                grouped.setdefault(role_id, set()).add(user_id)
+            for role_id in role_ids:
+                user_ids_by_key[(NoticeTargetType.role, role_id)] = grouped.get(role_id, set())
+
+        counts: dict[int, int] = {}
+        for notice in notices:
+            union_ids: set[int] = set()
+            for t in notice.targets:
+                union_ids |= user_ids_by_key.get((t.target_type, t.target_id), set())
+            counts[notice.id] = len(union_ids)
+        return counts
+
+    async def get_detailed_notices(
+        self, sender_id: int | None = None, limit: int = 10, offset: int = 0
+    ) -> tuple[list[NoticeDetailOut], int]:
+        """
+        یک صفحه از گزارش اطلاعیه‌ها (نام فرستنده، توصیف مقصدها، آمار بازدید).
         اگر sender_id داده شود فقط اطلاعیه‌های همان فرستنده («ارسالی من»)،
-        وگرنه همه اطلاعیه‌های سیستم (گزارش کامل Admin).
+        وگرنه همه اطلاعیه‌های سیستم (گزارش کامل Admin). به‌جای واکشی و پردازش
+        همه اطلاعیه‌های سیستم در یک درخواست (که با رشد تعداد اطلاعیه‌ها به‌شدت
+        کند می‌شد)، Pagination در سطح SQL انجام می‌شود — فقط همین صفحه پردازش
+        می‌شود، و آن پردازش هم با Query های دسته‌ای انجام می‌شود، نه N+1.
+        خروجی: (لیست اطلاعیه‌های همین صفحه, تعداد کل اطلاعیه‌ها).
         """
-        stmt = select(Notice).options(selectinload(Notice.targets)).order_by(Notice.created_at.desc())
+        base_stmt = select(Notice)
         if sender_id is not None:
-            stmt = stmt.where(Notice.sender_id == sender_id)
+            base_stmt = base_stmt.where(Notice.sender_id == sender_id)
+
+        total = (
+            await self.db.execute(select(func.count()).select_from(base_stmt.subquery()))
+        ).scalar_one()
+
+        stmt = (
+            base_stmt.options(selectinload(Notice.targets))
+            .order_by(Notice.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.db.execute(stmt)
         notices = list(result.scalars().unique().all())
         if not notices:
-            return []
+            return [], total
 
         sender_names = await self._resolve_sender_names({n.sender_id for n in notices})
 
-        # شمارش بازدیدها برای همه این اطلاعیه‌ها در یک Query
+        # شمارش بازدیدها برای همین صفحه در یک Query
         notice_ids = [n.id for n in notices]
         read_result = await self.db.execute(
             select(NoticeRead.notice_id, func.count(NoticeRead.id))
@@ -510,10 +642,15 @@ class NoticeService:
         )
         read_counts = dict(read_result.all())
 
+        all_targets = [t for n in notices for t in n.targets]
+        target_descriptions_by_key = await self._describe_targets_batch(all_targets)
+        audience_counts = await self._resolve_audience_counts_batch(notices)
+
         detailed: list[NoticeDetailOut] = []
         for notice in notices:
-            target_descriptions = [await self._describe_target(t) for t in notice.targets]
-            audience_count = len(await self._resolve_audience_user_ids(notice))
+            target_descriptions = [
+                target_descriptions_by_key[(t.target_type, t.target_id)] for t in notice.targets
+            ]
             detailed.append(
                 NoticeDetailOut(
                     id=notice.id,
@@ -527,13 +664,13 @@ class NoticeService:
                     created_at=notice.created_at,
                     publish_at=notice.publish_at,
                     targets=target_descriptions,
-                    audience_count=audience_count,
+                    audience_count=audience_counts.get(notice.id, 0),
                     read_count=read_counts.get(notice.id, 0),
                     is_deleted=notice.is_deleted,
                     deleted_at=notice.deleted_at,
                 )
             )
-        return detailed
+        return detailed, total
 
     async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
         """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down."""

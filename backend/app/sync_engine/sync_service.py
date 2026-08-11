@@ -89,12 +89,17 @@ class SyncService:
     # ---------- کمکی ----------
 
     async def _get_site_connection(self, site_id: int) -> SiteConnection:
+        """
+        اتصال دیتابیس این Site را برمی‌گرداند — صرف‌نظر از این‌که Sync خودکار
+        برایش روشن است یا خاموش (SiteConnection.is_active). آن فیلد فقط تعیین
+        می‌کند آیا Scheduler خودکار این Site را در چرخه دوره‌ای اجرا کند یا نه؛
+        اجرای دستی (از پنل Admin) و تست اتصال همیشه باید کار کنند تا وقتی Sync
+        خودکار خاموش است هم بشود در صورت نیاز به‌صورت دستی همگام‌سازی کرد.
+        """
         result = await self.db.execute(select(SiteConnection).where(SiteConnection.site_id == site_id))
         conn = result.scalar_one_or_none()
         if conn is None:
             raise SyncError("اتصال دیتابیس برای این Site تعریف نشده است")
-        if not conn.is_active:
-            raise SyncError("اتصال دیتابیس این Site غیرفعال است")
         return conn
 
     async def _get_mapping(self, site_id: int) -> EmployeeMapping:

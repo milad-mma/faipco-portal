@@ -155,15 +155,11 @@ export default function NoticesPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState([]);
-  const [sentNotices, setSentNotices] = useState([]);
+  const [sentReloadKey, setSentReloadKey] = useState(0);
   const [availableTargets, setAvailableTargets] = useState(null);
 
   function loadNotices() {
     fetchMyNotices().then(setNotices);
-  }
-
-  function loadSentNotices() {
-    fetchSentByMe().then(setSentNotices);
   }
 
   useEffect(() => {
@@ -178,15 +174,11 @@ export default function NoticesPage() {
     function handleMessage(event) {
       if (event.data?.type === "faipco-notice-push") {
         loadNotices();
-        if (tab === "sent") loadSentNotices();
+        if (tab === "sent") setSentReloadKey((k) => k + 1);
       }
     }
     navigator.serviceWorker.addEventListener("message", handleMessage);
     return () => navigator.serviceWorker.removeEventListener("message", handleMessage);
-  }, [tab]);
-
-  useEffect(() => {
-    if (tab === "sent") loadSentNotices();
   }, [tab]);
 
   const canCreateAnything =
@@ -288,10 +280,10 @@ export default function NoticesPage() {
       {tab === "sent" && (
         <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
           <NoticeReportTable
-            notices={sentNotices}
+            fetchPage={fetchSentByMe}
             showSender={false}
             allowDelete
-            onChanged={loadSentNotices}
+            reloadKey={sentReloadKey}
           />
         </Card>
       )}

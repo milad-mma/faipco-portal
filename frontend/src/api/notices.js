@@ -29,14 +29,14 @@ export async function markNoticeRead(noticeId) {
   await apiClient.post(`/notices/${noticeId}/read`);
 }
 
-export async function fetchSentByMe() {
-  const { data } = await apiClient.get("/notices/sent-by-me");
-  return data;
+export async function fetchSentByMe(page = 1, pageSize = 10) {
+  const { data } = await apiClient.get("/notices/sent-by-me", { params: { page, page_size: pageSize } });
+  return data; // { items, total }
 }
 
-export async function fetchAdminReport() {
-  const { data } = await apiClient.get("/notices/admin-report");
-  return data;
+export async function fetchAdminReport(page = 1, pageSize = 10) {
+  const { data } = await apiClient.get("/notices/admin-report", { params: { page, page_size: pageSize } });
+  return data; // { items, total }
 }
 
 export async function fetchNoticeReaders(noticeId) {

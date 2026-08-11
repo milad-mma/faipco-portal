@@ -201,7 +201,7 @@ export default function SyncPage() {
             variant="contained"
             startIcon={<SyncOutlinedIcon />}
             onClick={handleRunSync}
-            disabled={!selectedSiteId || isRunning || connectionStatus?.is_active === false}
+            disabled={!selectedSiteId || isRunning}
           >
             {isRunning ? "در حال اجرا..." : "اجرای دستی Sync"}
           </Button>
@@ -230,8 +230,9 @@ export default function SyncPage() {
                     همگام‌سازی خودکار این سایت {connectionStatus.is_active ? "روشن" : "خاموش"} است
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    با خاموش‌کردن، این سایت دیگر در چرخه Sync خودکار (و اجرای دستی) شرکت نمی‌کند —
-                    بدون نیاز به حذف اطلاعات اتصال.
+                    با خاموش‌کردن، این سایت دیگر در چرخه Sync خودکار دوره‌ای شرکت نمی‌کند —
+                    ولی اتصال دیتابیس قطع نمی‌شود و همچنان می‌توانید از همین صفحه به‌صورت
+                    دستی Sync را اجرا کنید.
                   </Typography>
                 </Box>
               }
