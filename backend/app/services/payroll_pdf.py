@@ -230,7 +230,14 @@ def render_payroll_receipt_pdf(
     """
     has_font = _ensure_font_registered()
     font_name = _FONT_NAME if has_font else "Helvetica"
-    font_bold = _FONT_NAME_BOLD if has_font else "Helvetica-Bold"
+    # نکته مهم: _FONT_NAME_BOLD فقط وقتی یک فونت Bold واقعی پیدا و Register
+    # شده باشد (_bold_font_available) قابل استفاده است — وگرنه این نام هرگز
+    # واقعاً Register نشده و ارجاع مستقیم بهش باعث خطای ReportLab می‌شود
+    # («Can't map determine family/bold/italic»). اگر فونت اختصاصی (مثلاً
+    # Tahoma) نسخه Bold نداشت (رایج است، چون کاربر معمولاً فقط Regular را
+    # می‌دهد)، همان فونت عادی برای متن‌های Bold هم استفاده می‌شود — وزن یکی
+    # می‌شود ولی چیزی خراب/کرش نمی‌شود.
+    font_bold = _FONT_NAME_BOLD if (has_font and _bold_font_available) else (font_name if has_font else "Helvetica-Bold")
 
     # ---------- بازسازی فیلدهای تخت به بخش‌های معنادار ----------
     report_title: str | None = None
@@ -343,8 +350,25 @@ def render_payroll_receipt_pdf(
     col_width_map = {
         t: doc.width * (column_weights.get(t, default_weight) / total_weight) for t in column_titles
     }
-    value_width_map = {t: w * 0.4 for t, w in col_width_map.items()}
-    label_width_map = {t: w * 0.6 for t, w in col_width_map.items()}
+    # نکته مهم: عرض ستون «مقدار» فقط با درصد (۴۰٪) تعیین نمی‌شود، چون در
+    # ستون‌های باریک‌تر (مثل «وام») این عرض برای اعداد ۱۰-۱۳ رقمی (با
+    # جداکننده هزارگان) کافی نیست و ReportLab مجبور می‌شود خودش وسط عدد را
+    # بشکند (دقیقاً همان مشکلی که با تغییر فونت به Tahoma - که کمی عریض‌تر
+    # از DejaVu Condensed است - خودش را نشان داد). برای همین یک حداقل مطلق
+    # (بر حسب پوینت) هم تضمین می‌شود؛ چون برچسب‌های همین ستون‌های باریک
+    # (مثل «مانده»، «مبلغ قسط») کوتاهند، کم‌شدن سهم برچسب مشکلی ایجاد نمی‌کند.
+    # ۴۶٫۸ پوینت عرض واقعی متن لازم است (اندازه‌گیری‌شده با فونت Tahoma برای
+    # بزرگ‌ترین اعداد معمول مثل «مانده» وام)، به‌علاوه ۴pt Padding داخلی سلول
+    # و چند پوینت حاشیه اطمینان. این حداقل فقط برای ستون «وام» اعمال می‌شود
+    # (تنها ستونی که این مشکل در آن دیده شد) — نه برای هر ۴ ستون، چون عرض
+    # طبیعی «کسور» و «مزایا» هم به‌صورت اتفاقی زیر همین حد بود و اعمال
+    # سراسری این حداقل باعث می‌شد برچسب‌های آن دو ستون هم بیشتر بشکنند و
+    # ارتفاع کل جدول (که بین هر ۴ ستون مشترک است) چند رکورد را به ۲ صفحه سرریز کند.
+    min_value_width_pts_by_column = {"وام": 58}
+    value_width_map = {
+        t: max(w * 0.4, min_value_width_pts_by_column.get(t, 0)) for t, w in col_width_map.items()
+    }
+    label_width_map = {t: col_width_map[t] - value_width_map[t] for t in column_titles}
     label_col_width_pts_map = {t: label_width_map[t] - 6 for t in column_titles}
 
     max_rows = max((len(section_rows.get(title, [])) for title in column_titles), default=0)
