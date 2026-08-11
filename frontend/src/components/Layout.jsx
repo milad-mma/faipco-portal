@@ -35,6 +35,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useAuth } from "../context/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
+import faipcoLogo from "../assets/faipco-logo.png";
 
 const DRAWER_WIDTH = 260;
 
@@ -106,22 +107,11 @@ export default function Layout() {
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Toolbar sx={{ gap: 1.5, px: 3 }}>
         <Box
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: "10px",
-            background: "linear-gradient(135deg, #16324F 0%, #1F4B75 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "secondary.main",
-            fontWeight: 800,
-            fontSize: 16,
-            flexShrink: 0,
-          }}
-        >
-          F
-        </Box>
+          component="img"
+          src={faipcoLogo}
+          alt="FAIPCO"
+          sx={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }}
+        />
         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
           FAIPCO Portal
         </Typography>
@@ -150,7 +140,7 @@ export default function Layout() {
                     borderInlineEnd: isActive ? "3px solid" : "3px solid transparent",
                     borderInlineEndColor: isActive ? "secondary.main" : "transparent",
                     "&.Mui-selected": {
-                      backgroundColor: "rgba(22, 50, 79, 0.08)",
+                      backgroundColor: "rgba(16, 52, 152, 0.08)",
                     },
                   }}
                 >
@@ -199,7 +189,7 @@ export default function Layout() {
                             borderInlineEnd: isChildActive ? "3px solid" : "3px solid transparent",
                             borderInlineEndColor: isChildActive ? "secondary.main" : "transparent",
                             "&.Mui-selected": {
-                              backgroundColor: "rgba(22, 50, 79, 0.08)",
+                              backgroundColor: "rgba(16, 52, 152, 0.08)",
                             },
                           }}
                         >

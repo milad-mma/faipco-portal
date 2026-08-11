@@ -72,7 +72,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         overflow: "hidden",
         borderInlineStart: isUnread ? "4px solid" : "4px solid transparent",
         borderInlineStartColor: isUnread ? "secondary.main" : "transparent",
-        backgroundColor: isUnread ? "rgba(224, 164, 88, 0.06)" : "transparent",
+        backgroundColor: isUnread ? "rgba(16, 52, 152, 0.05)" : "transparent",
       }}
     >
       <Box
@@ -88,7 +88,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          {isUnread ? <MailOutlineIcon color="secondary" /> : <DraftsOutlinedIcon color="disabled" />}
+          {isUnread ? <MailOutlineIcon color="primary" /> : <DraftsOutlinedIcon color="disabled" />}
           <Box sx={{ minWidth: 0 }}>
             <Typography
               variant="body1"
@@ -104,7 +104,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center">
-          {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
+          {isPayroll && <Chip size="small" label="فیش حقوقی" color="primary" variant="outlined" />}
           <Chip
             size="small"
             label={PRIORITY_LABELS[notice.priority]?.label}
@@ -195,27 +195,10 @@ export default function NoticesPage() {
 
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>
-            اطلاعیه‌ها
-          </Typography>
-        </Box>
-        {canCreateAnything && (
-          <Button
-            variant="contained"
-            startIcon={<AddOutlinedIcon />}
-            component={RouterLink}
-            to="/notices/new"
-          >
-            اطلاعیه جدید
-          </Button>
-        )}
-      </Box>
-
-      {/* باکس اطلاعات شخصی/سازمانی کاربر جاری — فقط برای پرسنلی که به یک
-          رکورد Employee سینک‌شده وصل هستند؛ کاربران مدیریتی محض (بدون
-          employee_id، مثل admin) این باکس را نمی‌بینند چون داده‌ای برایش ندارند. */}
+      {/* باکس اطلاعات شخصی/سازمانی کاربر جاری — بالای عنوان اطلاعیه‌ها؛ فقط
+          برای پرسنلی که به یک رکورد Employee سینک‌شده وصل هستند؛ کاربران
+          مدیریتی محض (بدون employee_id، مثل admin) این باکس را نمی‌بینند
+          چون داده‌ای برایش ندارند. */}
       {user?.employee_id && (
         <Card variant="outlined" sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>
           <Stack direction="row" spacing={4} flexWrap="wrap" useFlexGap rowGap={2}>
@@ -254,6 +237,24 @@ export default function NoticesPage() {
           </Stack>
         </Card>
       )}
+
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>
+            اطلاعیه‌ها
+          </Typography>
+        </Box>
+        {canCreateAnything && (
+          <Button
+            variant="contained"
+            startIcon={<AddOutlinedIcon />}
+            component={RouterLink}
+            to="/notices/new"
+          >
+            اطلاعیه جدید
+          </Button>
+        )}
+      </Box>
 
       {canCreateAnything && (
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>

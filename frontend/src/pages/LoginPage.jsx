@@ -5,6 +5,7 @@ import GetAppOutlinedIcon from "@mui/icons-material/GetAppOutlined";
 import { useAuth } from "../context/AuthContext";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
+import faipcoLogo from "../assets/faipco-logo.png";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -61,29 +62,18 @@ export default function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(160deg, #0E2138 0%, #16324F 55%, #1F4B75 100%)",
+        background: "linear-gradient(160deg, #0C256D 0%, #103498 55%, #536DB5 100%)",
         px: 2,
       }}
     >
       <Paper elevation={0} sx={{ width: "100%", maxWidth: 400, p: 4, borderRadius: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>
           <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: "14px",
-              background: "linear-gradient(135deg, #16324F 0%, #1F4B75 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "secondary.main",
-              fontWeight: 800,
-              fontSize: 24,
-              mb: 1.5,
-            }}
-          >
-            F
-          </Box>
+            component="img"
+            src={faipcoLogo}
+            alt="FAIPCO"
+            sx={{ width: 88, height: 88, objectFit: "contain", mb: 1.5 }}
+          />
           <Typography variant="h6" fontWeight={700}>
             ورود به FAIPCO Portal
           </Typography>
