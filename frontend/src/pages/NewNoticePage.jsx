@@ -47,6 +47,7 @@ const EMPTY_FORM = {
   siteIds: [],
   departmentIds: [],
   employees: [],
+  supervisors: [],
 };
 
 const EMPTY_PAYROLL_FORM = {
@@ -162,7 +163,14 @@ export default function NewNoticePage() {
     if (form.targetAll) targets.push({ target_type: "all" });
     form.siteIds.forEach((id) => targets.push({ target_type: "site", target_id: id }));
     form.departmentIds.forEach((id) => targets.push({ target_type: "department", target_id: id }));
-    form.employees.forEach((emp) => targets.push({ target_type: "employee", target_id: emp.id }));
+
+    const employeeIds = new Set();
+    [...form.employees, ...form.supervisors].forEach((emp) => {
+      if (!employeeIds.has(emp.id)) {
+        employeeIds.add(emp.id);
+        targets.push({ target_type: "employee", target_id: emp.id });
+      }
+    });
 
     if (targets.length === 0) {
       setError("حداقل یک مخاطب (سایت، واحد یا شخص) انتخاب کنید.");
@@ -406,6 +414,31 @@ export default function NewNoticePage() {
                       ))}
                     </FormGroup>
                   </Box>
+                )}
+
+                {availableTargets?.supervisor_employees?.length > 0 && (
+                  <Autocomplete
+                    multiple
+                    disabled={isSubmitting}
+                    options={availableTargets.supervisor_employees}
+                    getOptionLabel={(e) => `${e.first_name} ${e.last_name} (${e.personnel_code})`}
+                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    value={form.supervisors}
+                    onChange={(_, selected) => setForm({ ...form, supervisors: selected })}
+                    renderInput={(params) => (
+                      <TextField {...params} label="میان‌بر: ارسال به یک یا چند سرپرست واحد" />
+                    )}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip
+                          size="small"
+                          label={`${option.first_name} ${option.last_name}`}
+                          {...getTagProps({ index })}
+                          key={option.id}
+                        />
+                      ))
+                    }
+                  />
                 )}
 
                 {availableTargets?.can_target_employee && (

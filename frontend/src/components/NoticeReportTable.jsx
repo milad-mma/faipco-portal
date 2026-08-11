@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Box,
   Button,
   Chip,
   Dialog,
@@ -13,6 +14,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tooltip,
   Typography,
@@ -31,6 +33,12 @@ const PRIORITY_LABELS = {
   urgent: "فوری",
 };
 
+const ROWS_PER_PAGE = 10;
+// بیش از این تعداد Chip داخل خودِ سطر جدول نمایش داده نمی‌شود — مقصدهای بیشتر
+// فقط با کلیک روی «و N مورد دیگر» داخل یک Dialog قابل‌اسکرول دیده می‌شوند، تا
+// سطر جدول بیش‌ازحد بزرگ نشود و لود گزارش کند نشود.
+const INLINE_TARGET_LIMIT = 3;
+
 /**
  * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» و هم برای «گزارش کامل Admin»
  * استفاده می‌شود؛ در هر دو با allowDelete=true قابلیت حذف فعال است (Backend
@@ -42,7 +50,15 @@ const PRIORITY_LABELS = {
 export default function NoticeReportTable({ notices, showSender = false, allowDelete = false, onChanged }) {
   const [readersNoticeId, setReadersNoticeId] = useState(null);
   const [bodyNotice, setBodyNotice] = useState(null);
+  const [targetsNotice, setTargetsNotice] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [page, setPage] = useState(0);
+
+  // اگر لیست اطلاعیه‌ها عوض شود (Reload بعد از حذف، تغییر تب و ...)، به صفحه
+  // اول برگرد تا صفحه فعلی نامعتبر/خالی نماند.
+  useEffect(() => {
+    setPage(0);
+  }, [notices]);
 
   async function handleDelete(notice) {
     if (!window.confirm(`اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`)) {
@@ -67,6 +83,8 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
     );
   }
 
+  const pagedNotices = notices.slice(page * ROWS_PER_PAGE, page * ROWS_PER_PAGE + ROWS_PER_PAGE);
+
   return (
     <>
       <TableContainer>
@@ -87,7 +105,7 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
             </TableRow>
           </TableHead>
           <TableBody>
-            {notices.map((n) => (
+            {pagedNotices.map((n) => (
               <TableRow key={n.id} hover sx={n.is_deleted ? { opacity: 0.6 } : undefined}>
                 <TableCell sx={monoFontSx}>
                   {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
@@ -104,12 +122,28 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
                 <TableCell>
                   <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
                 </TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                    {n.targets.map((t, i) => (
-                      <Chip key={i} size="small" variant="outlined" label={t.label} />
-                    ))}
-                  </Stack>
+                <TableCell sx={{ maxWidth: 260 }}>
+                  {n.targets.length <= INLINE_TARGET_LIMIT ? (
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      {n.targets.map((t, i) => (
+                        <Chip key={i} size="small" variant="outlined" label={t.label} />
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center">
+                      {n.targets.slice(0, INLINE_TARGET_LIMIT - 1).map((t, i) => (
+                        <Chip key={i} size="small" variant="outlined" label={t.label} />
+                      ))}
+                      <Chip
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        clickable
+                        onClick={() => setTargetsNotice(n)}
+                        label={`و ${n.targets.length - (INLINE_TARGET_LIMIT - 1)} مورد دیگر`}
+                      />
+                    </Stack>
+                  )}
                 </TableCell>
                 <TableCell sx={monoFontSx} align="center">
                   {n.audience_count}
@@ -157,6 +191,17 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
         </Table>
       </TableContainer>
 
+      <TablePagination
+        component="div"
+        count={notices.length}
+        page={page}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        rowsPerPage={ROWS_PER_PAGE}
+        rowsPerPageOptions={[ROWS_PER_PAGE]}
+        labelRowsPerPage="سطر در هر صفحه"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+      />
+
       <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
 
       <Dialog open={Boolean(bodyNotice)} onClose={() => setBodyNotice(null)} fullWidth maxWidth="sm">
@@ -168,6 +213,27 @@ export default function NoticeReportTable({ notices, showSender = false, allowDe
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setBodyNotice(null)}>بستن</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: فهرست کامل مقصدهای یک اطلاعیه — وقتی تعداد زیاد است، خودِ این
+          Dialog اسکرول می‌شود تا سطر جدول اصلی بزرگ و کند نشود. */}
+      <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
+        <DialogTitle>
+          مقصدهای اطلاعیه «{targetsNotice?.title}»
+          <Typography variant="caption" color="text.secondary" display="block">
+            {targetsNotice?.targets.length} مورد
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers sx={{ maxHeight: 400, overflowY: "auto" }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+            {targetsNotice?.targets.map((t, i) => (
+              <Chip key={i} size="small" variant="outlined" label={t.label} />
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setTargetsNotice(null)}>بستن</Button>
         </DialogActions>
       </Dialog>
     </>

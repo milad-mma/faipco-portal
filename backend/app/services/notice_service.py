@@ -380,6 +380,30 @@ class NoticeService:
             can_employee = False
             employee_target_department_ids = None
 
+        # میان‌بر «ارسال به سرپرست واحد(ها)» — فقط برای کاربرانی که مجوز
+        # گسترده‌تری از «فقط سرپرست بودن واحد خودشان» دارند (مثل HR/مدیر سایت/
+        # مدیر میانی) نمایش داده می‌شود. برای سرپرستی که *فقط* سرپرست واحد
+        # خودش است، این میان‌بر بی‌فایده و گمراه‌کننده است (چون تنها می‌تواند
+        # همان واحد خودش را هدف بگیرد که با فیلدهای عادی هم در دسترس است)، پس
+        # برای او خالی برمی‌گردد و در UI اصلاً نمایش داده نمی‌شود.
+        supervisor_employees: list[dict] = []
+        if has_broad_employee_permission:
+            supervisor_user_ids = {
+                dept.supervisor_user_id
+                for dept in all_departments
+                if dept.id in allowed_department_ids and dept.supervisor_user_id is not None
+            }
+            if supervisor_user_ids:
+                result = await self.db.execute(
+                    select(Employee.id, Employee.first_name, Employee.last_name, Employee.personnel_code)
+                    .join(User, User.employee_id == Employee.id)
+                    .where(User.id.in_(supervisor_user_ids))
+                )
+                supervisor_employees = [
+                    {"id": r[0], "first_name": r[1], "last_name": r[2], "personnel_code": r[3]}
+                    for r in result.all()
+                ]
+
         return {
             "can_target_all": can_all,
             "can_target_role": can_role,
@@ -388,6 +412,7 @@ class NoticeService:
             "can_upload_payroll": can_upload_payroll,
             "site_ids": sorted(allowed_site_ids),
             "department_ids": sorted(allowed_department_ids),
+            "supervisor_employees": supervisor_employees,
         }
 
     # ---------- حذف اطلاعیه ----------
