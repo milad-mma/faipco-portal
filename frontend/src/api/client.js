@@ -37,7 +37,17 @@ apiClient.interceptors.response.use(
     }
 
     const refreshToken = localStorage.getItem("refresh_token");
-    if (!refreshToken || originalRequest.url?.includes("/auth/")) {
+    // فقط خودِ اندپوینت‌های ورود (که ۴۰۱ یعنی رمز/کد ملی اشتباه است، نه توکن
+    // منقضی) و رفرش (برای جلوگیری از حلقه بی‌نهایت اگر رفرش‌توکن هم نامعتبر
+    // باشد) از تلاش مجدد با Refresh معاف‌اند. قبلاً هر مسیری که شامل "/auth/"
+    // بود معاف می‌شد — که یعنی GET /auth/me (که هر بار باز شدن اپ صدا زده
+    // می‌شود) هرگز فرصت Refresh نمی‌گرفت و کاربر با هر انقضای معمولی
+    // access_token (یا هر Reload خودکار بعد از Deploy) کامل Logout می‌شد.
+    if (
+      !refreshToken ||
+      originalRequest.url?.includes("/auth/login") ||
+      originalRequest.url?.includes("/auth/refresh")
+    ) {
       return Promise.reject(error);
     }
 

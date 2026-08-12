@@ -80,6 +80,10 @@ class EmployeeMappingIn(BaseModel):
     position_lookup_table: str | None = None
     position_lookup_id_column: str | None = None
     position_lookup_name_column: str | None = None
+    # اختیاری: نگاشت جدول عکس پرسنل (EmployeeExtendedInfo)
+    photo_table: str | None = None
+    photo_emp_no_column: str | None = None
+    photo_thumbnail_column: str | None = None
 
 
 class EmployeeMappingOut(EmployeeMappingIn):

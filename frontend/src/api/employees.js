@@ -47,6 +47,13 @@ export async function fetchTodayBirthdays() {
   return data;
 }
 
+export async function fetchEmployeePhotoThumbnailBlob(employeeId) {
+  const { data } = await apiClient.get(`/employees/${employeeId}/photo-thumbnail`, {
+    responseType: "blob",
+  });
+  return data; // Blob از نوع image/gif
+}
+
 export async function fetchEmployeeRoles(employeeId) {
   const { data } = await apiClient.get(`/employees/${employeeId}/roles`);
   return data;

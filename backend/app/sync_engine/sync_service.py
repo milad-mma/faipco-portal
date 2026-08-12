@@ -15,6 +15,7 @@
 7. ثبت نتیجه در SyncLog و به‌روزرسانی last_sync_* در SiteConnection
 """
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,8 @@ from app.models.employee import Department, Employee, EmployeeMapping
 from app.models.site import Site, SiteConnection, SyncStatus
 from app.models.sync_log import SyncLog, SyncRunStatus
 from app.sync_engine.adapter_factory import get_adapter
+
+logger = logging.getLogger("faipco.sync")
 
 # مقادیری که در ستون is_active منبع به معنای «غیرفعال» تلقی می‌شوند
 _FALSY_ACTIVE_VALUES = {"0", "false", "no", "n", "inactive", "f", "غیرفعال"}
@@ -74,6 +77,16 @@ class SyncService:
             inserted, updated, seen_codes = await self._upsert_employees(
                 site_id, columns, raw_rows, department_lookup, position_lookup, mapping.is_active_inverted
             )
+
+            try:
+                await self._sync_employee_photos(site_id, adapter, mapping)
+            except Exception as photo_error:  # noqa: BLE001 - عکس پرسنل نباید کل Sync را ناموفق کند
+                logger.warning(
+                    "همگام‌سازی عکس پرسنل سایت %s ناموفق بود (بقیه Sync ادامه یافت): %s",
+                    site_id,
+                    photo_error,
+                )
+
             deactivated = await self._deactivate_missing(site_id, seen_codes)
 
             log.status = SyncRunStatus.success
@@ -398,6 +411,47 @@ class SyncService:
 
         await self.db.flush()
         return inserted, updated, seen_codes
+
+    async def _sync_employee_photos(self, site_id: int, adapter, mapping: EmployeeMapping) -> None:
+        """
+        اگر Mapping شامل اطلاعات جدول عکس پرسنل باشد (مثل EmployeeExtendedInfo
+        با ستون‌های Emp_No/ThumbnailImg)، تصویر بندانگشتی هر پرسنل را می‌خواند
+        و روی همان رکورد Employee که در همین چرخه Sync درج/به‌روزرسانی شد،
+        ذخیره می‌کند. اگر این سه فیلد در Mapping تعریف نشده باشند، کاری انجام
+        نمی‌دهد — یعنی این قابلیت کاملاً اختیاری است و نبودش خطا ایجاد نمی‌کند.
+        فراخوانی این تابع در run_sync داخل try/except جداگانه است، پس حتی اگر
+        جدول/ستون‌ها اشتباه تعریف شده باشند، کل Sync پرسنل شکست نمی‌خورد.
+        """
+        if not (mapping.photo_table and mapping.photo_emp_no_column and mapping.photo_thumbnail_column):
+            return
+
+        rows = await adapter.fetch_rows(
+            mapping.photo_table, [mapping.photo_emp_no_column, mapping.photo_thumbnail_column]
+        )
+
+        photo_by_code: dict[str, bytes] = {}
+        for row in rows:
+            raw_code = row.get(mapping.photo_emp_no_column)
+            if raw_code is None:
+                continue
+            raw_photo = row.get(mapping.photo_thumbnail_column)
+            if raw_photo:
+                photo_by_code[str(raw_code).strip()] = bytes(raw_photo)
+
+        if not photo_by_code:
+            return
+
+        result = await self.db.execute(
+            select(Employee).where(
+                Employee.site_id == site_id, Employee.personnel_code.in_(photo_by_code.keys())
+            )
+        )
+        for employee in result.scalars().all():
+            photo = photo_by_code.get(employee.personnel_code)
+            if photo is not None:
+                employee.photo_thumbnail = photo
+
+        await self.db.flush()
 
     async def _deactivate_missing(self, site_id: int, seen_codes: set[str]) -> int:
         """پرسنلی که دیگر اصلاً در منبع دیده نشدند (حذف فیزیکی از منبع)، غیرفعال می‌شوند."""

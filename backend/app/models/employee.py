@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -62,6 +62,11 @@ class Employee(Base, TimestampMixin):
     # Foreign Key مثل Department)، چون سمت فقط برای نمایش اطلاعاتی است و به آن
     # نیازی مثل هدف‌گیری اطلاعیه یا تعیین سرپرست ندارد.
     position_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # تصویر بندانگشتی پرسنل (از جدول جدا EmployeeExtendedInfo، ستون ThumbnailImg
+    # — معمولاً GIF) — فقط برای نمایش آواتار کوچک؛ تصویر اصلی با کیفیت بالا
+    # عمداً همگام‌سازی/ذخیره نمی‌شود.
+    photo_thumbnail: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     department_id: Mapped[int | None] = mapped_column(
@@ -133,5 +138,12 @@ class EmployeeMapping(Base, TimestampMixin):
     position_lookup_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
     position_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     position_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # اختیاری: جدول جداگانه‌ی عکس پرسنل (مثل EmployeeExtendedInfo با ستون‌های
+    # Emp_No/ThumbnailImg) — اگر هر سه فیلد زیر تعریف شوند، Sync Engine بعد
+    # از همگام‌سازی معمول پرسنل، تصویر بندانگشتی هرکدام را هم می‌خواند.
+    photo_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    photo_emp_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    photo_thumbnail_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     site: Mapped["Site"] = relationship()

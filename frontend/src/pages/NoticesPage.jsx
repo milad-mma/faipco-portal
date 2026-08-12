@@ -29,6 +29,7 @@ import {
   markNoticeRead,
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
+import { fetchEmployeePhotoThumbnailBlob } from "../api/employees";
 import { useAuth } from "../context/AuthContext";
 import { monoFontSx } from "../theme";
 
@@ -180,16 +181,23 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               )}
             </>
           )}
-          <Box sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
-            <Typography variant="caption" color="text.secondary" display="block">
-              فرستنده: {notice.sender_name}
-            </Typography>
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}
+          >
+            <Chip size="small" variant="outlined" color="info" label={`فرستنده: ${notice.sender_name}`} />
             {notice.sender_department_name && (
-              <Typography variant="caption" color="text.secondary" display="block">
-                واحد: {notice.sender_department_name}
-              </Typography>
+              <Chip
+                size="small"
+                variant="outlined"
+                color="info"
+                label={`واحد: ${notice.sender_department_name}`}
+              />
             )}
-          </Box>
+          </Stack>
         </Box>
       </Collapse>
     </Card>
@@ -202,6 +210,7 @@ export default function NoticesPage() {
   const [notices, setNotices] = useState([]);
   const [sentReloadKey, setSentReloadKey] = useState(0);
   const [availableTargets, setAvailableTargets] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(null);
 
   function loadNotices() {
     fetchMyNotices().then(setNotices);
@@ -211,6 +220,27 @@ export default function NoticesPage() {
     loadNotices();
     fetchAvailableTargets().then(setAvailableTargets);
   }, []);
+
+  // عکس پرسنلی — فقط اگر واقعاً برای این کاربر ثبت شده باشد (has_photo از
+  // /auth/me)، تا برای اکثر افراد که هنوز عکسشان Sync نشده، یک درخواست
+  // ۴۰۴ اضافه به سرور نزنیم. Object URL موقع خروج از صفحه آزاد می‌شود تا
+  // حافظه مرورگر نشتی نداشته باشد.
+  useEffect(() => {
+    if (!user?.employee_id || !user?.has_photo) {
+      setPhotoUrl(null);
+      return;
+    }
+    let objectUrl = null;
+    fetchEmployeePhotoThumbnailBlob(user.employee_id)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoUrl(objectUrl);
+      })
+      .catch(() => setPhotoUrl(null));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [user?.employee_id, user?.has_photo]);
 
   // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
   // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من).
@@ -255,7 +285,10 @@ export default function NoticesPage() {
           }}
         >
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
-            <Avatar sx={{ width: 52, height: 52, bgcolor: "primary.main", fontSize: 20, fontWeight: 700 }}>
+            <Avatar
+              src={photoUrl || undefined}
+              sx={{ width: 52, height: 52, bgcolor: "primary.main", fontSize: 20, fontWeight: 700 }}
+            >
               {(user.first_name?.[0] || "") + (user.last_name?.[0] || "")}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>

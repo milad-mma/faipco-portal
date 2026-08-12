@@ -147,4 +147,5 @@ class AuthService:
         base.department_id = employee.department_id
         base.department_name = department_name
         base.position_title = employee.position_title
+        base.has_photo = bool(employee.photo_thumbnail)
         return base

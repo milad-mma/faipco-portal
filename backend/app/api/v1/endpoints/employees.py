@@ -10,7 +10,7 @@ Endpoint های پرسنل: لیست/جستجو، انتصاب مستقیم نق
 """
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -205,6 +205,28 @@ async def list_birthdays_today(
         )
         for e, site_name, department_name in result.all()
     ]
+
+
+@router.get("/{employee_id}/photo-thumbnail")
+async def get_employee_photo_thumbnail(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    تصویر بندانگشتی پرسنل (از EmployeeExtendedInfo، طبق Mapping هر سایت).
+    فقط خودِ همان شخص یا یک Admin کامل اجازه دیدن این عکس را دارد — نه هر
+    کاربر لاگین‌شده‌ای برای هر پرسنلی، چون تصویر چهره اطلاعات حساسی است.
+    """
+    if current_user.employee_id != employee_id and not current_user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
+
+    employee = await db.get(Employee, employee_id)
+    if employee is None or not employee.photo_thumbnail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
+
+    # ThumbnailImg در EmployeeExtendedInfo همیشه GIF است (بر اساس نمونه واقعی داده)
+    return Response(content=employee.photo_thumbnail, media_type="image/gif")
 
 
 @router.get("/count")

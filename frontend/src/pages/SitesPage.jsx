@@ -69,6 +69,9 @@ const EMPTY_MAPPING = {
   position_lookup_table: "",
   position_lookup_id_column: "",
   position_lookup_name_column: "",
+  photo_table: "",
+  photo_emp_no_column: "",
+  photo_thumbnail_column: "",
 };
 
 export default function SitesPage() {
@@ -208,6 +211,9 @@ export default function SitesPage() {
         position_lookup_table: existing.position_lookup_table || "",
         position_lookup_id_column: existing.position_lookup_id_column || "",
         position_lookup_name_column: existing.position_lookup_name_column || "",
+        photo_table: existing.photo_table || "",
+        photo_emp_no_column: existing.photo_emp_no_column || "",
+        photo_thumbnail_column: existing.photo_thumbnail_column || "",
       });
       setHasExistingMapping(true);
     }
@@ -560,6 +566,34 @@ export default function SitesPage() {
             value={mappingForm.position_lookup_name_column}
             onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_name_column: e.target.value })}
             helperText="مثال: Title"
+          />
+
+          <Divider sx={{ my: 1 }} />
+
+          <Typography variant="subtitle2" fontWeight={700}>
+            عکس پرسنل (اختیاری)
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            اگر جدول جداگانه‌ای عکس بندانگشتی پرسنل را نگه می‌دارد (مثل EmployeeExtendedInfo)،
+            هر سه فیلد زیر را پر کنید:
+          </Typography>
+          <TextField
+            label="نام جدول عکس"
+            value={mappingForm.photo_table}
+            onChange={(e) => setMappingForm({ ...mappingForm, photo_table: e.target.value })}
+            helperText="مثال: EmployeeExtendedInfo"
+          />
+          <TextField
+            label="ستون کد پرسنلی در جدول عکس"
+            value={mappingForm.photo_emp_no_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, photo_emp_no_column: e.target.value })}
+            helperText="مثال: Emp_No"
+          />
+          <TextField
+            label="ستون تصویر بندانگشتی"
+            value={mappingForm.photo_thumbnail_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, photo_thumbnail_column: e.target.value })}
+            helperText="مثال: ThumbnailImg"
           />
         </DialogContent>
         <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
