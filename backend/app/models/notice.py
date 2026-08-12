@@ -42,12 +42,17 @@ class NoticeTargetType(str, enum.Enum):
 
 class NoticeType(str, enum.Enum):
     """
-    normal  → اطلاعیه متنی معمولی (رفتار همیشگی).
-    payroll → اطلاعیه فیش حقوقی: هر مخاطب فقط PDF فیش خودش را می‌بیند
-              (payroll_receipts)، نه متن یکسان برای همه.
+    normal          → اطلاعیه متنی معمولی (رفتار همیشگی).
+    payroll         → اطلاعیه فیش حقوقی: هر مخاطب فقط PDF فیش خودش را می‌بیند
+                      (payroll_receipts)، نه متن یکسان برای همه.
+    attendance_card → اطلاعیه فیش کارکرد (کارت ماهانه کارکرد پرسنل): مثل
+                      payroll، هر مخاطب فقط کارت خودش را می‌بیند
+                      (attendance_card_receipts)، از روی آپلود اکسل توسط
+                      مدیر منابع انسانی (hr-manager).
     """
     normal = "normal"
     payroll = "payroll"
+    attendance_card = "attendance_card"
 
 
 class Notice(Base, TimestampMixin):

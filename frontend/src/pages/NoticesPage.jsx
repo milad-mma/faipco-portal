@@ -23,6 +23,7 @@ import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import {
   fetchAvailableTargets,
+  fetchMyAttendanceCardBlob,
   fetchMyNotices,
   fetchMyPayrollReceiptBlob,
   fetchSentByMe,
@@ -52,6 +53,22 @@ async function downloadPayrollReceipt(noticeId, setDownloadError) {
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
         : "دانلود فیش ناموفق بود."
+    );
+  }
+}
+
+async function downloadAttendanceCard(noticeId, setDownloadError) {
+  setDownloadError("");
+  try {
+    const blob = await fetchMyAttendanceCardBlob(noticeId);
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    setDownloadError(
+      err.response?.status === 404
+        ? "کارتی برای شما در این اطلاعیه یافت نشد."
+        : "دانلود کارت ناموفق بود."
     );
   }
 }
@@ -91,6 +108,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
   const [downloadError, setDownloadError] = useState("");
   const isUnread = !notice.is_read;
   const isPayroll = notice.notice_type === "payroll";
+  const isAttendanceCard = notice.notice_type === "attendance_card";
 
   function handleToggle() {
     if (!expanded && isUnread) {
@@ -141,6 +159,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center">
           {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
+          {isAttendanceCard && <Chip size="small" label="فیش کارکرد" color="info" variant="outlined" />}
           <Chip
             size="small"
             label={PRIORITY_LABELS[notice.priority]?.label}
@@ -151,7 +170,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
           {notice.body && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: isPayroll ? 1.5 : 0 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: isPayroll || isAttendanceCard ? 1.5 : 0 }}>
               {notice.body}
             </Typography>
           )}
@@ -172,6 +191,32 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               ) : (
                 <Typography variant="caption" color="text.secondary">
                   فیشی برای شما در این اطلاعیه یافت نشد.
+                </Typography>
+              )}
+              {downloadError && (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  {downloadError}
+                </Alert>
+              )}
+            </>
+          )}
+          {isAttendanceCard && (
+            <>
+              {notice.has_my_attendance_card ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PictureAsPdfOutlinedIcon />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadAttendanceCard(notice.id, setDownloadError);
+                  }}
+                >
+                  دانلود کارت کارکرد من (PDF)
+                </Button>
+              ) : (
+                <Typography variant="caption" color="text.secondary">
+                  کارتی برای شما در این اطلاعیه یافت نشد.
                 </Typography>
               )}
               {downloadError && (
@@ -262,7 +307,8 @@ export default function NoticesPage() {
       availableTargets.site_ids.length > 0 ||
       availableTargets.department_ids.length > 0 ||
       availableTargets.can_target_employee ||
-      availableTargets.can_upload_payroll);
+      availableTargets.can_upload_payroll ||
+      availableTargets.can_upload_attendance_card);
 
   function handleMarkedRead(noticeId) {
     setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));

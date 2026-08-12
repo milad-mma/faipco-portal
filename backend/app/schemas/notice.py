@@ -58,6 +58,7 @@ class NoticeOut(BaseModel):
     targets: list[NoticeTargetOut]
     is_read: bool = False  # فقط در /notices/me معنا دارد؛ جای دیگر همیشه False است
     has_my_payroll_receipt: bool = False  # فقط در /notices/me: آیا فیش حقوقی خودِ من برای این اطلاعیه موجود است
+    has_my_attendance_card: bool = False  # همین‌طور فقط در /notices/me: آیا فیش کارکرد خودِ من موجود است
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,6 +110,14 @@ class NoticeReaderOut(BaseModel):
 
 class PayrollNoticeResultOut(BaseModel):
     """پاسخ آپلود فیش حقوقی — برای اطلاع فوری acc_manager از نتیجه تطبیق کدها."""
+    notice_id: int
+    matched_employee_count: int
+    missing_codes: list[str]
+    invalid_row_count: int
+
+
+class AttendanceCardResultOut(BaseModel):
+    """پاسخ آپلود فیش کارکرد — برای اطلاع فوری hr-manager از نتیجه تطبیق کدها."""
     notice_id: int
     matched_employee_count: int
     missing_codes: list[str]

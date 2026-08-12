@@ -5,6 +5,7 @@ export const ROLE_DISPLAY_NAMES = {
   site_manager: "مدیر سایت",
   middle_manager: "مدیر میانی",
   acc_manager: "مدیر حسابداری",
+  "hr-manager": "مدیر منابع انسانی",
 };
 
 export function roleDisplayName(roleName) {

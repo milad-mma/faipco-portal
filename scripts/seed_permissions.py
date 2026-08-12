@@ -12,6 +12,9 @@ Seed اولیه Permission ها و نقش‌های سیستمی — شامل س�
 - acc_manager      : مدیر حسابداری — فقط اطلاعیه فیش حقوقی (Payroll) می‌سازد؛ با
                       آپلود XML، مخاطبان به‌صورت خودکار از روی کدهای موجود در همان
                       XML تعیین می‌شوند (نه با انتخاب دستی Site/Department/Employee)
+- hr-manager       : مدیر منابع انسانی — فقط اطلاعیه فیش کارکرد (Attendance Card)
+                      می‌سازد؛ با آپلود اکسل، مخاطبان به‌صورت خودکار از روی کدهای
+                      موجود در همان اکسل تعیین می‌شوند (دقیقاً هم‌ساختار acc_manager)
 
 «مدیر واحد» (سرپرست) اصلاً نقش RBAC جداگانه‌ای ندارد — کافی است از طریق
 PUT /departments/{id}/supervisor مستقیماً سرپرست آن واحد تعیین شود.
@@ -48,6 +51,7 @@ DEFAULT_PERMISSIONS = [
     ("notices.target.role", "ارسال اطلاعیه به یک نقش خاص"),
     ("notices.target.employee", "ارسال اطلاعیه به یک یا چند پرسنل خاص"),
     ("notices.payroll", "آپلود و ارسال اطلاعیه فیش حقوقی (Payroll Notice)"),
+    ("notices.attendance_card", "آپلود و ارسال اطلاعیه فیش کارکرد (Attendance Card Notice)"),
     ("roles.manage", "مدیریت نقش‌ها و مجوزها"),
     ("users.manage", "مدیریت کاربران Portal و انتصاب نقش"),
 ]
@@ -77,6 +81,16 @@ ADDITIONAL_ROLES = {
         ),
         "permissions": [
             "notices.payroll",
+            "notices.view",  # برای دیدن گزارش «ارسالی من»
+        ],
+    },
+    "hr-manager": {
+        "description": (
+            "مدیر منابع انسانی — فقط می‌تواند اطلاعیه فیش کارکرد (Attendance Card) با آپلود اکسل بسازد؛ "
+            "مخاطبان به‌صورت خودکار از روی کدهای موجود در همان اکسل تعیین می‌شوند، نه با انتخاب دستی Target"
+        ),
+        "permissions": [
+            "notices.attendance_card",
             "notices.view",  # برای دیدن گزارش «ارسالی من»
         ],
     },

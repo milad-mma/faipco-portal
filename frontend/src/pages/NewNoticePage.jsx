@@ -23,6 +23,7 @@ import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
+  createAttendanceCardNotice,
   createNotice,
   createPayrollNotice,
   fetchAvailableTargets,
@@ -57,13 +58,23 @@ const EMPTY_PAYROLL_FORM = {
   file: null,
 };
 
+const EMPTY_ATTENDANCE_CARD_FORM = {
+  title: "فیش کارکرد",
+  body: "",
+  priority: "normal",
+  headerRows: 4,
+  file: null,
+};
+
 export default function NewNoticePage() {
   const navigate = useNavigate();
 
-  const [createMode, setCreateMode] = useState("normal"); // "normal" | "payroll"
+  const [createMode, setCreateMode] = useState("normal"); // "normal" | "payroll" | "attendance_card"
   const [form, setForm] = useState(EMPTY_FORM);
   const [payrollForm, setPayrollForm] = useState(EMPTY_PAYROLL_FORM);
   const [payrollResult, setPayrollResult] = useState(null);
+  const [attendanceCardForm, setAttendanceCardForm] = useState(EMPTY_ATTENDANCE_CARD_FORM);
+  const [attendanceCardResult, setAttendanceCardResult] = useState(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -84,7 +95,8 @@ export default function NewNoticePage() {
     fetchDepartments().then(setDepartments);
   }, []);
 
-  // اگر کاربر فقط می‌تواند فیش حقوقی بفرستد (مثل acc_manager)، مستقیم همان حالت باز شود
+  // اگر کاربر فقط می‌تواند فیش حقوقی/فیش کارکرد بفرستد (مثل acc_manager یا
+  // hr-manager)، مستقیم همان حالت باز شود
   useEffect(() => {
     if (!availableTargets) return;
     const hasNormal =
@@ -94,6 +106,8 @@ export default function NewNoticePage() {
       availableTargets.can_target_employee;
     if (!hasNormal && availableTargets.can_upload_payroll) {
       setCreateMode("payroll");
+    } else if (!hasNormal && availableTargets.can_upload_attendance_card) {
+      setCreateMode("attendance_card");
     }
   }, [availableTargets]);
 
@@ -280,12 +294,51 @@ export default function NewNoticePage() {
     }
   }
 
+  async function handleCreateAttendanceCard() {
+    if (isSubmitting) return;
+    setError("");
+    setResult(null);
+    setAttendanceCardResult(null);
+
+    if (!attendanceCardForm.title.trim()) {
+      setError("عنوان اطلاعیه را وارد کنید.");
+      return;
+    }
+    if (!attendanceCardForm.file) {
+      setError("فایل اکسل فیش کارکرد را انتخاب کنید.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const uploadResult = await createAttendanceCardNotice({
+        title: attendanceCardForm.title,
+        body: attendanceCardForm.body,
+        priority: attendanceCardForm.priority,
+        headerRows: attendanceCardForm.headerRows,
+        file: attendanceCardForm.file,
+      });
+      setAttendanceCardResult(uploadResult);
+      const message = `اطلاعیه فیش کارکرد ارسال شد. تعداد پرسنل منطبق (دریافت‌کننده): ${uploadResult.matched_employee_count}`;
+      setResult({ success: true, message });
+    } catch (err) {
+      setResult({
+        success: false,
+        message: err.response?.data?.detail || "آپلود فیش کارکرد ناموفق بود.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function handleSendAnother() {
     setResult(null);
     setError("");
     setForm(EMPTY_FORM);
     setPayrollForm(EMPTY_PAYROLL_FORM);
     setPayrollResult(null);
+    setAttendanceCardForm(EMPTY_ATTENDANCE_CARD_FORM);
+    setAttendanceCardResult(null);
   }
 
   if (!availableTargets) {
@@ -296,7 +349,7 @@ export default function NewNoticePage() {
     );
   }
 
-  if (!canAnyNormalTarget && !availableTargets.can_upload_payroll) {
+  if (!canAnyNormalTarget && !availableTargets.can_upload_payroll && !availableTargets.can_upload_attendance_card) {
     return (
       <Box sx={{ maxWidth: 640, mx: "auto" }}>
         <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/notices")} sx={{ mb: 2 }}>
@@ -328,6 +381,12 @@ export default function NewNoticePage() {
             {result.success &&
               payrollResult?.invalid_row_count > 0 &&
               `\n${payrollResult.invalid_row_count} ردیف در فایل فاقد کد پرسنلی بود و نادیده گرفته شد.`}
+            {result.success &&
+              attendanceCardResult?.missing_codes?.length > 0 &&
+              `\nکدهای موجود در فایل که در سامانه پیدا نشدند (${attendanceCardResult.missing_codes.length} مورد) — کارت برای این افراد ارسال نشد:\n${attendanceCardResult.missing_codes.join("، ")}`}
+            {result.success &&
+              attendanceCardResult?.invalid_row_count > 0 &&
+              `\n${attendanceCardResult.invalid_row_count} ردیف در فایل فاقد کد پرسنلی بود و نادیده گرفته شد.`}
           </Alert>
         )}
 
@@ -344,7 +403,9 @@ export default function NewNoticePage() {
           <Stack spacing={2}>
             {error && <Alert severity="error">{error}</Alert>}
 
-            {canAnyNormalTarget && availableTargets?.can_upload_payroll && (
+            {((canAnyNormalTarget ? 1 : 0) +
+              (availableTargets?.can_upload_payroll ? 1 : 0) +
+              (availableTargets?.can_upload_attendance_card ? 1 : 0)) > 1 && (
               <Tabs
                 value={createMode}
                 onChange={(_, v) => {
@@ -354,8 +415,13 @@ export default function NewNoticePage() {
                 variant="fullWidth"
                 sx={{ mb: 1 }}
               >
-                <Tab value="normal" label="اطلاعیه متنی" disabled={isSubmitting} />
-                <Tab value="payroll" label="فیش حقوقی (Payroll)" disabled={isSubmitting} />
+                {canAnyNormalTarget && <Tab value="normal" label="اطلاعیه متنی" disabled={isSubmitting} />}
+                {availableTargets?.can_upload_payroll && (
+                  <Tab value="payroll" label="فیش حقوقی (Payroll)" disabled={isSubmitting} />
+                )}
+                {availableTargets?.can_upload_attendance_card && (
+                  <Tab value="attendance_card" label="فیش کارکرد" disabled={isSubmitting} />
+                )}
               </Tabs>
             )}
 
@@ -614,6 +680,90 @@ export default function NewNoticePage() {
                     variant="contained"
                     startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
                     onClick={handleCreatePayroll}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? "در حال آپلود و ارسال..." : "آپلود و ارسال"}
+                  </Button>
+                </Box>
+              </>
+            )}
+
+            {createMode === "attendance_card" && (
+              <>
+                <Alert severity="info">
+                  فقط کارکنانی که کدشان در فایل باشد، به‌صورت خودکار مخاطب این اطلاعیه می‌شوند —
+                  هرکس فقط کارت کارکرد خودش را می‌بیند.
+                </Alert>
+                <TextField
+                  label="عنوان اطلاعیه"
+                  value={attendanceCardForm.title}
+                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, title: e.target.value })}
+                  onKeyDown={handleTitleKeyDown}
+                  fullWidth
+                  disabled={isSubmitting}
+                  helperText="این عنوان به‌عنوان زیرعنوان ماه/سال روی خودِ کارت هم چاپ می‌شود — مثلاً «تیر ماه 1405»"
+                />
+                <TextField
+                  label="توضیح (اختیاری — برای همه دریافت‌کنندگان یکسان است)"
+                  value={attendanceCardForm.body}
+                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, body: e.target.value })}
+                  onKeyDown={handleBodyKeyDown}
+                  multiline
+                  rows={2}
+                  fullWidth
+                  disabled={isSubmitting}
+                />
+                <TextField
+                  select
+                  label="اولویت"
+                  value={attendanceCardForm.priority}
+                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, priority: e.target.value })}
+                  disabled={isSubmitting}
+                >
+                  {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
+                    <MenuItem key={value} value={value}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  label="تعداد سطرهای سرستون قبل از داده واقعی"
+                  value={attendanceCardForm.headerRows}
+                  onChange={(e) =>
+                    setAttendanceCardForm({ ...attendanceCardForm, headerRows: Number(e.target.value) })
+                  }
+                  disabled={isSubmitting}
+                  helperText="در فایل استاندارد «فیش کارکرد»، معمولاً ۴ سطر اول عنوان/سرستون است"
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <MenuItem key={n} value={n}>
+                      {n}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  startIcon={<UploadFileOutlinedIcon />}
+                  disabled={isSubmitting}
+                >
+                  {attendanceCardForm.file ? attendanceCardForm.file.name : "انتخاب فایل اکسل فیش کارکرد"}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    hidden
+                    onChange={(e) =>
+                      setAttendanceCardForm({ ...attendanceCardForm, file: e.target.files?.[0] || null })
+                    }
+                  />
+                </Button>
+
+                <Box>
+                  <Button
+                    variant="contained"
+                    startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
+                    onClick={handleCreateAttendanceCard}
                     disabled={isSubmitting}
                   >
                     {isSubmitting ? "در حال آپلود و ارسال..." : "آپلود و ارسال"}

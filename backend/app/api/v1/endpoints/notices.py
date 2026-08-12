@@ -13,6 +13,8 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
 /notices/payroll               (POST)  آپلود XML فیش حقوقی و ارسال خودکار — فقط notices.payroll
 /notices/{id}/payroll/mine     (GET)   دانلود PDF فیش حقوقی خودِ کاربر جاری برای این اطلاعیه (و فقط خودش)
+/notices/attendance-card               (POST)  آپلود اکسل فیش کارکرد و ارسال خودکار — فقط notices.attendance_card
+/notices/{id}/attendance-card/mine     (GET)   دانلود PDF فیش کارکرد خودِ کاربر جاری برای این اطلاعیه (و فقط خودش)
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -26,6 +28,7 @@ from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority
 from app.models.user import User
 from app.schemas.notice import (
+    AttendanceCardResultOut,
     NoticeCreate,
     NoticeDetailPageOut,
     NoticeOut,
@@ -36,6 +39,8 @@ from app.services.notice_service import NoticePermissionError, NoticeService, se
 from app.services.payroll_pdf import render_payroll_receipt_pdf
 from app.services.payroll_service import PayrollNoticeService
 from app.services.payroll_common import PayrollParseError
+from app.services.attendance_card_pdf import render_attendance_card_pdf
+from app.services.attendance_card_service import AttendanceCardNoticeService
 
 router = APIRouter()
 
@@ -267,4 +272,82 @@ async def download_my_payroll_receipt(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="payroll-{notice_id}.pdf"'},
+    )
+
+
+# ---------- اطلاعیه فیش کارکرد (Attendance Card Notice) ----------
+
+
+@router.post("/attendance-card", response_model=AttendanceCardResultOut)
+async def create_attendance_card_notice(
+    background_tasks: BackgroundTasks,
+    title: str = Form(...),
+    body: str = Form(""),
+    priority: NoticePriority = Form(NoticePriority.normal),
+    header_rows: int = Form(4, description="تعداد سطرهای سرستون قبل از شروع داده واقعی"),
+    file: UploadFile = File(..., description="فایل اکسل فیش کارکرد پرسنل"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("notices.attendance_card")),
+):
+    """
+    فایل اکسل آپلود می‌شود، کد هر رکورد با Employee.personnel_code تطبیق
+    داده می‌شود، و اطلاعیه بلافاصله فقط برای پرسنل منطبق منتشر می‌شود.
+    کدهای پیدا نشده در پاسخ گزارش می‌شوند (ارسال نمی‌شوند).
+    """
+    file_bytes = await file.read()
+    try:
+        result = await AttendanceCardNoticeService(db).create_attendance_card_notice(
+            sender=current_user,
+            title=title,
+            body=body,
+            priority=priority,
+            file_bytes=file_bytes,
+            header_rows=header_rows,
+        )
+    except PayrollParseError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    background_tasks.add_task(send_publish_notifications, result.notice.id)
+
+    return AttendanceCardResultOut(
+        notice_id=result.notice.id,
+        matched_employee_count=result.matched_employee_count,
+        missing_codes=result.missing_codes,
+        invalid_row_count=result.invalid_row_count,
+    )
+
+
+@router.get("/{notice_id}/attendance-card/mine")
+async def download_my_attendance_card(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    PDF فیش کارکرد خودِ کاربر جاری برای این اطلاعیه — و *فقط* خودش. دقیقاً
+    همان مدل دسترسی ساختاری فیش حقوقی: همیشه از روی current_user.employee_id،
+    هیچ پارامتری برای انتخاب employee_id دیگری وجود ندارد.
+    """
+    notice = await db.get(Notice, notice_id)
+    if notice is None or notice.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
+
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کارتی برای شما یافت نشد")
+
+    receipt = await AttendanceCardNoticeService(db).get_my_receipt(notice_id, current_user.employee_id)
+    if receipt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کارتی برای شما یافت نشد")
+
+    employee = await db.get(Employee, current_user.employee_id)
+    fields = json.loads(receipt.fields_json)
+    pdf_bytes = render_attendance_card_pdf(
+        employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
+        month_year=notice.title,
+        fields=fields,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="attendance-card-{notice_id}.pdf"'},
     )

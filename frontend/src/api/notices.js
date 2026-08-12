@@ -71,3 +71,23 @@ export async function fetchMyPayrollReceiptBlob(noticeId) {
   });
   return data; // Blob از نوع application/pdf — فقط فیش خودِ کاربر جاری
 }
+
+export async function createAttendanceCardNotice({ title, body, priority, headerRows, file }) {
+  const formData = new FormData();
+  formData.append("title", title);
+  formData.append("body", body || "");
+  formData.append("priority", priority);
+  formData.append("header_rows", headerRows || 4);
+  formData.append("file", file);
+  const { data } = await apiClient.post("/notices/attendance-card", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function fetchMyAttendanceCardBlob(noticeId) {
+  const { data } = await apiClient.get(`/notices/${noticeId}/attendance-card/mine`, {
+    responseType: "blob",
+  });
+  return data; // Blob از نوع application/pdf — فقط کارت خودِ کاربر جاری
+}

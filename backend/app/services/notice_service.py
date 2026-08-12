@@ -313,6 +313,21 @@ class NoticeService:
                 )
                 payroll_receipt_notice_ids = {row[0] for row in receipt_result.all()}
 
+        # همین منطق، برای اطلاعیه‌های نوع attendance_card
+        attendance_card_notice_ids: set[int] = set()
+        if user.employee_id is not None:
+            attendance_notice_ids = [n.id for n in notices if n.notice_type == NoticeType.attendance_card]
+            if attendance_notice_ids:
+                from app.models.attendance_card_receipt import AttendanceCardReceipt
+
+                receipt_result = await self.db.execute(
+                    select(AttendanceCardReceipt.notice_id).where(
+                        AttendanceCardReceipt.notice_id.in_(attendance_notice_ids),
+                        AttendanceCardReceipt.employee_id == user.employee_id,
+                    )
+                )
+                attendance_card_notice_ids = {row[0] for row in receipt_result.all()}
+
         sender_details = await self._resolve_sender_details({n.sender_id for n in notices})
 
         return [
@@ -334,6 +349,7 @@ class NoticeService:
                 ],
                 is_read=n.id in read_ids,
                 has_my_payroll_receipt=n.id in payroll_receipt_notice_ids,
+                has_my_attendance_card=n.id in attendance_card_notice_ids,
             )
             for n in notices
         ]
@@ -348,6 +364,7 @@ class NoticeService:
         can_all = await self._has_permission(user, "notices.target.all")
         can_role = await self._has_permission(user, "notices.target.role")
         can_upload_payroll = await self._has_permission(user, "notices.payroll")
+        can_upload_attendance_card = await self._has_permission(user, "notices.attendance_card")
 
         from app.models.site import Site  # import محلی برای پرهیز از Circular Import
 
@@ -428,6 +445,7 @@ class NoticeService:
             "can_target_employee": can_employee,
             "employee_target_department_ids": employee_target_department_ids,
             "can_upload_payroll": can_upload_payroll,
+            "can_upload_attendance_card": can_upload_attendance_card,
             "site_ids": sorted(allowed_site_ids),
             "department_ids": sorted(allowed_department_ids),
             "supervisor_employees": supervisor_employees,
