@@ -15,6 +15,7 @@ import NoticesPage from "./pages/NoticesPage";
 import NewNoticePage from "./pages/NewNoticePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
+import BackupPage from "./pages/BackupPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_DURATION_MS = 2000;
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/sites/:siteId/settings" element={<AdminRoute><SiteSettingsPage /></AdminRoute>} />
           <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
+          <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
 
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />

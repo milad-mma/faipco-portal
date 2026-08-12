@@ -54,6 +54,7 @@ DEFAULT_PERMISSIONS = [
     ("notices.attendance_card", "آپلود و ارسال اطلاعیه فیش کارکرد (Attendance Card Notice)"),
     ("roles.manage", "مدیریت نقش‌ها و مجوزها"),
     ("users.manage", "مدیریت کاربران Portal و انتصاب نقش"),
+    ("system.backup", "دانلود بکاپ کامل سیستم — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
 ]
 
 # نقش -> فهرست کدهای Permission (به‌جز superadmin که همه را می‌گیرد)

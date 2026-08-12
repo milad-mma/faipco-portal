@@ -25,6 +25,13 @@
 #   --install-dir /var/www/html   Install path (default: /var/www/html)
 #   --repo <git-url>              Repository URL
 #   --branch main                 Branch to use
+#   --restore-backup /path/to/backup.zip
+#                                  Restore a backup produced from Admin panel → پشتیبان‌گیری
+#                                  onto this (fresh) install — reproduces the exact same data
+#                                  as a clone, including the encryption key needed to decrypt
+#                                  site DB connection passwords. Only allowed on a fresh
+#                                  install (refuses if an existing installation is detected,
+#                                  to never risk overwriting live data).
 #
 # The full install log is always saved to /var/log/faipco-install.log —
 # check that file for troubleshooting if anything goes wrong.
@@ -41,6 +48,8 @@ ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-admin}"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
 BACKEND_PORT=8000
+RESTORE_BACKUP_PATH=""
+RESTORE_TMP_DIR=""
 LOG_FILE="/var/log/faipco-install.log"
 IS_UPDATE="false"
 
@@ -59,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
     --repo) REPO_URL="$2"; shift 2 ;;
     --branch) REPO_BRANCH="$2"; shift 2 ;;
+    --restore-backup) RESTORE_BACKUP_PATH="$2"; shift 2 ;;
     *) err "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -85,6 +95,37 @@ on_error() {
   exit "$exit_code"
 }
 trap 'on_error $LINENO' ERR
+
+# ---------- Restore-from-backup support ----------
+# اگر --restore-backup داده شده باشد، فایل بکاپ (خروجی «پشتیبان‌گیری» در
+# پنل Admin) را باز می‌کنیم تا هم database.sql هم secrets.json را برای
+# مراحل بعدی (generate_env و restore_database_data) در دسترس داشته باشیم.
+extract_restore_backup() {
+  if [[ -z "$RESTORE_BACKUP_PATH" ]]; then
+    return
+  fi
+
+  if [[ "$IS_UPDATE" == "true" ]]; then
+    err "گزینه --restore-backup فقط روی یک نصب کاملاً تازه مجاز است — نصب موجودی در ${INSTALL_DIR} پیدا شد."
+    err "برای بازیابی روی یک سرور جدید، یک INSTALL_DIR خالی/جدید استفاده کنید."
+    exit 1
+  fi
+
+  if [[ ! -f "$RESTORE_BACKUP_PATH" ]]; then
+    err "فایل بکاپ پیدا نشد: ${RESTORE_BACKUP_PATH}"
+    exit 1
+  fi
+
+  log "Extracting backup bundle from ${RESTORE_BACKUP_PATH}..."
+  RESTORE_TMP_DIR="$(mktemp -d)"
+  unzip -q "$RESTORE_BACKUP_PATH" -d "$RESTORE_TMP_DIR"
+
+  if [[ ! -f "$RESTORE_TMP_DIR/database.sql" || ! -f "$RESTORE_TMP_DIR/secrets.json" ]]; then
+    err "فایل بکاپ نامعتبر است — database.sql یا secrets.json داخلش نیست."
+    exit 1
+  fi
+  log "Backup bundle looks valid — will restore exact data + encryption keys after migrations run."
+}
 
 # ---------- Create swap if RAM is low ----------
 ensure_swap() {
@@ -219,14 +260,27 @@ generate_env() {
 
   log "Generating .env file with unique security keys (fresh install)..."
   local secret_key fernet_key
-  secret_key="$(openssl rand -hex 32)"
-  fernet_key="$("$INSTALL_DIR/backend/.venv/bin/python" -c \
-    "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
+  if [[ -n "$RESTORE_BACKUP_PATH" ]]; then
+    # حیاتی: کلید رمزنگاری رمز عبور اتصال دیتابیس سایت‌ها (و SECRET_KEY/VAPID)
+    # باید دقیقاً همان کلیدهای بکاپ باشند، وگرنه رمزهای عبور اتصال سایت‌ها
+    # روی سرور جدید برای همیشه غیرقابل‌رمزگشایی می‌شوند — یعنی دیگر «کلون»
+    # واقعی نیست. این مقادیر را از secrets.json داخل بکاپ می‌خوانیم، نه
+    # این‌که تصادفی جدید بسازیم.
+    log "Restoring encryption keys from backup (required for a true clone)..."
+    secret_key="$(python3 -c "import json; print(json.load(open('${RESTORE_TMP_DIR}/secrets.json'))['SECRET_KEY'])")"
+    fernet_key="$(python3 -c "import json; print(json.load(open('${RESTORE_TMP_DIR}/secrets.json'))['DB_CREDENTIALS_ENCRYPTION_KEY'])")"
+    VAPID_PUBLIC_KEY="$(python3 -c "import json; print(json.load(open('${RESTORE_TMP_DIR}/secrets.json'))['VAPID_PUBLIC_KEY'])")"
+    VAPID_PRIVATE_KEY="$(python3 -c "import json; print(json.load(open('${RESTORE_TMP_DIR}/secrets.json'))['VAPID_PRIVATE_KEY'])")"
+  else
+    secret_key="$(openssl rand -hex 32)"
+    fernet_key="$("$INSTALL_DIR/backend/.venv/bin/python" -c \
+      "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
 
-  local vapid_keys
-  vapid_keys="$(cd "$INSTALL_DIR" && "$INSTALL_DIR/backend/.venv/bin/python" -m scripts.generate_vapid_keys)"
-  VAPID_PUBLIC_KEY="$(echo "$vapid_keys" | sed -n '1p')"
-  VAPID_PRIVATE_KEY="$(echo "$vapid_keys" | sed -n '2p')"
+    local vapid_keys
+    vapid_keys="$(cd "$INSTALL_DIR" && "$INSTALL_DIR/backend/.venv/bin/python" -m scripts.generate_vapid_keys)"
+    VAPID_PUBLIC_KEY="$(echo "$vapid_keys" | sed -n '1p')"
+    VAPID_PRIVATE_KEY="$(echo "$vapid_keys" | sed -n '2p')"
+  fi
 
   # چون فرانت‌اند همیشه با مسیرهای نسبی (/api/v1/...) به بک‌اند وصل می‌شود و
   # هر دو از همین Nginx سرو می‌شوند، همیشه Same-Origin است؛ CORS محدودکننده
@@ -260,6 +314,25 @@ run_migrations() {
   source .venv/bin/activate
   alembic upgrade head
   deactivate
+}
+
+restore_database_data() {
+  if [[ -z "$RESTORE_BACKUP_PATH" ]]; then
+    return
+  fi
+  # این تابع بعد از run_migrations صدا زده می‌شود — یعنی جدول‌ها طبق آخرین
+  # نسخه کد از قبل ساخته شده‌اند (خالی)، و اینجا فقط داده‌های خودِ بکاپ
+  # (database.sql، که با --data-only گرفته شده) داخلشان بارگذاری می‌شود.
+  # این ترتیب باعث می‌شود حتی اگر کد از زمان گرفتن بکاپ تغییر کرده باشد
+  # (migration های جدید)، بازیابی همچنان روی جدیدترین Schema کار کند.
+  log "Restoring database data from backup — this reproduces the exact same data as the source install..."
+  PGPASSWORD="${DB_PASSWORD}" psql \
+    -h localhost -U "${DB_USER}" -d "${DB_NAME}" \
+    -v ON_ERROR_STOP=1 \
+    -f "$RESTORE_TMP_DIR/database.sql" \
+    >> "$LOG_FILE" 2>&1
+  log "Database data restored successfully from backup."
+  rm -rf "$RESTORE_TMP_DIR"
 }
 
 build_frontend() {
@@ -385,6 +458,8 @@ seed_and_create_admin() {
 
   if [[ "$IS_UPDATE" == "true" ]]; then
     log "Existing installation — skipping admin creation (your current admin account and password are untouched)."
+  elif [[ -n "$RESTORE_BACKUP_PATH" ]]; then
+    log "Restored from backup — skipping admin creation (all users/admins already exist in the restored data)."
   else
     log "Creating the initial admin user..."
     python -m scripts.create_admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
@@ -410,6 +485,8 @@ print_summary() {
   echo -e "${GREEN}=============================================="
   if [[ "$IS_UPDATE" == "true" ]]; then
     echo -e " FAIPCO Portal updated successfully  ✅"
+  elif [[ -n "$RESTORE_BACKUP_PATH" ]]; then
+    echo -e " FAIPCO Portal restored from backup successfully  ✅"
   else
     echo -e " FAIPCO Portal installed successfully  ✅"
   fi
@@ -417,6 +494,8 @@ print_summary() {
   echo -e "$domain_note Local/IP URL:    ${ip_url}"
   if [[ "$IS_UPDATE" == "true" ]]; then
     echo -e " Admin account:   unchanged — use your existing username/password"
+  elif [[ -n "$RESTORE_BACKUP_PATH" ]]; then
+    echo -e " Admin account:   restored from backup — use the same username/password as on the source server"
   else
     echo -e " Admin username:  ${ADMIN_USERNAME}"
     echo -e " Admin password:  ${ADMIN_PASSWORD}"
@@ -425,7 +504,7 @@ print_summary() {
   echo -e " Config file:     ${INSTALL_DIR}/backend/.env"
   echo -e " Full install log: ${LOG_FILE}"
   echo ""
-  if [[ "$IS_UPDATE" != "true" && "$ADMIN_PASSWORD" == "admin" ]]; then
+  if [[ "$IS_UPDATE" != "true" && -z "$RESTORE_BACKUP_PATH" && "$ADMIN_PASSWORD" == "admin" ]]; then
     echo -e "${YELLOW}⚠ You're using the default password 'admin' — change it right after logging in.${NC}"
     echo ""
   fi
@@ -456,6 +535,8 @@ main() {
     log "Your .env, database, and current settings will NOT be touched."
   fi
 
+  extract_restore_backup
+
   stage "Step 3 - Setting up backend"
   setup_backend
 
@@ -464,6 +545,7 @@ main() {
 
   stage "Step 5 - Database migrations"
   run_migrations
+  restore_database_data
 
   stage "Step 6 - Building frontend"
   build_frontend
