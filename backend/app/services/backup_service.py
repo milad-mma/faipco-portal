@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -36,16 +37,40 @@ def _to_libpq_url(database_url: str) -> str:
     return database_url.replace("+asyncpg", "").replace("+psycopg2", "")
 
 
+def _find_pg_binary(name: str) -> str:
+    """
+    مسیر کامل ابزار pg_dump/psql را پیدا می‌کند — نه فقط با تکیه بر متغیر
+    محیطی PATH فرآیند (که مثلاً وقتی بک‌اند به‌عنوان یک سرویس Systemd اجرا
+    می‌شود، ممکن است عمداً محدود به پوشه venv باشد و /usr/bin را نداشته
+    باشد — دقیقاً همان چیزی که باعث شکست این قابلیت شد)، بلکه با جست‌وجوی
+    مسیرهای رایج نصب PostgreSQL هم، تا مستقل از تنظیمات محیطی سرویس همیشه کار کند.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    candidate_dirs = ["/usr/bin", "/usr/local/bin", "/usr/lib/postgresql"]
+    for d in candidate_dirs:
+        base = Path(d)
+        if not base.exists():
+            continue
+        # /usr/lib/postgresql/<version>/bin/pg_dump — جدیدترین نسخه نصب‌شده اولویت دارد
+        for candidate in sorted(base.glob(f"**/{name}"), reverse=True):
+            if candidate.is_file():
+                return str(candidate)
+    return name  # آخرین راه‌حل: به همان نام خام تکیه می‌کنیم
+
+
 async def create_backup_archive() -> bytes:
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
+    pg_dump_path = _find_pg_binary("pg_dump")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         dump_path = Path(tmp_dir) / "database.sql"
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "pg_dump",
+                pg_dump_path,
                 "--data-only",
                 "--disable-triggers",
                 "--no-owner",
@@ -58,18 +83,23 @@ async def create_backup_archive() -> bytes:
             )
             _, stderr = await proc.communicate()
             if proc.returncode != 0:
-                raise BackupError(f"pg_dump ناموفق بود: {stderr.decode(errors='ignore')[:500]}")
+                raise BackupError(f"pg_dump ناموفق بود (کد {proc.returncode}): {stderr.decode(errors='ignore')[:800]}")
         except FileNotFoundError as e:
             raise BackupError(
-                "ابزار pg_dump روی این سرور پیدا نشد — بسته postgresql-client باید نصب باشد."
+                f"ابزار pg_dump روی این سرور پیدا نشد (مسیر بررسی‌شده: {pg_dump_path}) — "
+                "بسته postgresql-client باید نصب باشد."
             ) from e
+        except OSError as e:
+            raise BackupError(f"اجرای pg_dump ناموفق بود: {e}") from e
 
         manifest = {
             "app_name": settings.APP_NAME,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "format": "faipco-portal-backup-v1",
             "restore_instructions": (
-                "روی سرور جدید (نصب کاملاً تازه): "
+                "برای بازیابی روی همین سرور (جایگزینی داده فعلی): "
+                "sudo bash install.sh --restore-in-place /path/to/this-file.zip | "
+                "برای نصب تازه روی سرور دیگر (Clone): "
                 "sudo bash install.sh --restore-backup /path/to/this-file.zip [سایر گزینه‌های معمول نصب]"
             ),
         }

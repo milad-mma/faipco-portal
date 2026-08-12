@@ -32,6 +32,14 @@
 #                                  site DB connection passwords. Only allowed on a fresh
 #                                  install (refuses if an existing installation is detected,
 #                                  to never risk overwriting live data).
+#   --restore-in-place /path/to/backup.zip
+#                                  Restore a backup onto THIS SAME already-installed server —
+#                                  wipes current data and replaces it with the backup's data.
+#                                  Only allowed on an EXISTING installation (opposite of
+#                                  --restore-backup). Stops the backend service during the
+#                                  restore, asks for a typed "RESTORE" confirmation, and
+#                                  restarts the service when done. Runs standalone — does not
+#                                  perform a normal install/update.
 #
 # The full install log is always saved to /var/log/faipco-install.log —
 # check that file for troubleshooting if anything goes wrong.
@@ -50,6 +58,7 @@ DB_USER="faipco_user"
 BACKEND_PORT=8000
 RESTORE_BACKUP_PATH=""
 RESTORE_TMP_DIR=""
+RESTORE_IN_PLACE_PATH=""
 LOG_FILE="/var/log/faipco-install.log"
 IS_UPDATE="false"
 
@@ -69,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --repo) REPO_URL="$2"; shift 2 ;;
     --branch) REPO_BRANCH="$2"; shift 2 ;;
     --restore-backup) RESTORE_BACKUP_PATH="$2"; shift 2 ;;
+    --restore-in-place) RESTORE_IN_PLACE_PATH="$2"; shift 2 ;;
     *) err "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -125,6 +135,115 @@ extract_restore_backup() {
     exit 1
   fi
   log "Backup bundle looks valid — will restore exact data + encryption keys after migrations run."
+}
+
+# ---------- Restore-in-place support (same server, existing install) ----------
+# برخلاف extract_restore_backup/restore_database_data (که بخشی از یک نصب
+# تازه هستند)، این تابع کاملاً مستقل اجرا می‌شود: سرویس را متوقف می‌کند،
+# همه دادهٔ فعلی را پاک می‌کند، دادهٔ بکاپ را جایگزین می‌کند، کلیدهای
+# رمزنگاری حیاتی .env را با کلیدهای همان بکاپ جایگزین می‌کند (تا رمز عبور
+# اتصال دیتابیس سایت‌هایی که در بکاپ هستند قابل‌رمزگشایی بماند)، و سرویس
+# را دوباره راه‌اندازی می‌کند.
+restore_in_place() {
+  # اگر همین اسکریپت از داخل خودِ پوشه نصب‌شده اجرا شود (مثل fetch_source
+  # در جریان نصب معمولی)، INSTALL_DIR را خودکار همان‌جا تشخیص می‌دهیم — تا
+  # اگر کاربر --install-dir سفارشی داشته و اینجا فراموش کند بدهدش، باز هم
+  # مسیر درست پیدا شود.
+  if [[ -f "./backend/app/main.py" ]]; then
+    INSTALL_DIR="$(pwd)"
+  fi
+
+  log "Restoring backup IN-PLACE on this same server (${INSTALL_DIR})..."
+
+  if [[ ! -f "$INSTALL_DIR/backend/.env" ]]; then
+    err "گزینه --restore-in-place فقط روی یک نصب موجود کار می‌کند — .env در ${INSTALL_DIR}/backend پیدا نشد."
+    err "برای بازیابی روی یک سرور/پوشه کاملاً تازه، به‌جایش از --restore-backup استفاده کنید."
+    exit 1
+  fi
+  if [[ ! -f "$RESTORE_IN_PLACE_PATH" ]]; then
+    err "فایل بکاپ پیدا نشد: ${RESTORE_IN_PLACE_PATH}"
+    exit 1
+  fi
+
+  log "Extracting backup bundle..."
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  unzip -q "$RESTORE_IN_PLACE_PATH" -d "$tmp_dir"
+  if [[ ! -f "$tmp_dir/database.sql" || ! -f "$tmp_dir/secrets.json" ]]; then
+    err "فایل بکاپ نامعتبر است — database.sql یا secrets.json داخلش نیست."
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  # مقادیر واقعی اتصال دیتابیس را از .env همین سرور می‌خوانیم (نه از بکاپ) —
+  # چون دیتابیس/کاربر/پسورد دیتابیسِ خودِ این سرور باید دست‌نخورده بماند؛
+  # فقط محتوای جدول‌ها و چند کلید رمزنگاری خاص از بکاپ جایگزین می‌شوند.
+  local env_file="$INSTALL_DIR/backend/.env"
+  local db_url local_db_user local_db_pass local_db_name
+  db_url="$(grep '^DATABASE_URL=' "$env_file" | cut -d= -f2-)"
+  local_db_user="$(echo "$db_url" | sed -E 's#.*://([^:]+):.*#\1#')"
+  local_db_pass="$(echo "$db_url" | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#')"
+  local_db_name="$(echo "$db_url" | sed -E 's#.*/([^/?]+)(\?.*)?$#\1#')"
+
+  echo ""
+  echo -e "${YELLOW}⚠ هشدار مهم: این کار همهٔ داده‌های فعلی روی همین سرور (پرسنل، اطلاعیه‌ها، کاربران، سایت‌ها و...) را کاملاً پاک می‌کند و با محتوای این فایل بکاپ جایگزین می‌کند. این عملیات برگشت‌ناپذیر است.${NC}"
+  read -r -p "برای تأیید و ادامه، دقیقاً بنویسید RESTORE و Enter بزنید: " confirm
+  if [[ "$confirm" != "RESTORE" ]]; then
+    log "لغو شد — هیچ تغییری اعمال نشد."
+    rm -rf "$tmp_dir"
+    exit 0
+  fi
+
+  log "Stopping faipco-backend service..."
+  systemctl stop faipco-backend || true
+
+  log "Running latest migrations first (schema must match current code before loading data)..."
+  cd "$INSTALL_DIR/backend"
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  alembic upgrade head
+  deactivate
+  cd "$INSTALL_DIR"
+
+  log "Wiping current data (schema and alembic_version are kept)..."
+  PGPASSWORD="${local_db_pass}" psql -h localhost -U "${local_db_user}" -d "${local_db_name}" -v ON_ERROR_STOP=1 \
+    >> "$LOG_FILE" 2>&1 <<'SQL'
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'alembic_version')
+    LOOP
+        EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
+    END LOOP;
+END $$;
+SQL
+
+  log "Loading data from backup..."
+  PGPASSWORD="${local_db_pass}" psql -h localhost -U "${local_db_user}" -d "${local_db_name}" \
+    -v ON_ERROR_STOP=1 -f "$tmp_dir/database.sql" >> "$LOG_FILE" 2>&1
+
+  log "Restoring critical encryption keys from backup into .env (so site connection passwords stay decryptable)..."
+  local new_fernet new_secret new_vapid_pub new_vapid_priv
+  new_fernet="$(python3 -c "import json; print(json.load(open('${tmp_dir}/secrets.json'))['DB_CREDENTIALS_ENCRYPTION_KEY'])")"
+  new_secret="$(python3 -c "import json; print(json.load(open('${tmp_dir}/secrets.json'))['SECRET_KEY'])")"
+  new_vapid_pub="$(python3 -c "import json; print(json.load(open('${tmp_dir}/secrets.json'))['VAPID_PUBLIC_KEY'])")"
+  new_vapid_priv="$(python3 -c "import json; print(json.load(open('${tmp_dir}/secrets.json'))['VAPID_PRIVATE_KEY'])")"
+
+  sed -i "s#^DB_CREDENTIALS_ENCRYPTION_KEY=.*#DB_CREDENTIALS_ENCRYPTION_KEY=${new_fernet}#" "$env_file"
+  sed -i "s#^SECRET_KEY=.*#SECRET_KEY=${new_secret}#" "$env_file"
+  sed -i "s#^VAPID_PUBLIC_KEY=.*#VAPID_PUBLIC_KEY=${new_vapid_pub}#" "$env_file"
+  sed -i "s#^VAPID_PRIVATE_KEY=.*#VAPID_PRIVATE_KEY=${new_vapid_priv}#" "$env_file"
+
+  rm -rf "$tmp_dir"
+
+  log "Starting faipco-backend service..."
+  systemctl start faipco-backend
+
+  echo ""
+  echo -e "${GREEN}✅ Restore completed — this server now has the exact same data as the backup.${NC}"
+  echo -e "${YELLOW}⚠ Note: encryption/VAPID keys were replaced with the backup's — existing browser push-notification subscriptions are now invalid; users just need to re-enable notifications from the account menu.${NC}"
+  echo -e "⚠ Everyone's login sessions were also invalidated (SECRET_KEY changed) — users simply need to log in again."
 }
 
 # ---------- Create swap if RAM is low ----------
@@ -362,7 +481,7 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=${INSTALL_DIR}/backend
-Environment="PATH=${INSTALL_DIR}/backend/.venv/bin"
+Environment="PATH=${INSTALL_DIR}/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=${INSTALL_DIR}/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 2
 Restart=always
 RestartSec=5
@@ -518,6 +637,13 @@ print_summary() {
 main() {
   require_root
   setup_logging
+
+  if [[ -n "$RESTORE_IN_PLACE_PATH" ]]; then
+    log "Running in restore-in-place mode (full log saved to ${LOG_FILE})"
+    restore_in_place
+    exit 0
+  fi
+
   log "Starting FAIPCO Portal installer... (full log saved to ${LOG_FILE})"
 
   stage "Step 1 - Installing prerequisites"

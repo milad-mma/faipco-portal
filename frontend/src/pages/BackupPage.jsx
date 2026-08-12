@@ -73,6 +73,35 @@ export default function BackupPage() {
         </Button>
       </Card>
 
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+          <WarningAmberOutlinedIcon color="warning" fontSize="small" />
+          <Typography variant="subtitle2" fontWeight={700}>
+            بازیابی روی همین سرور (جایگزینی داده فعلی)
+          </Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          اگر می‌خواهید داده فعلی همین سرور را با محتوای یک بکاپ قدیمی‌تر جایگزین کنید (مثلاً
+          بازگشت به قبل از یک اشتباه)، این دستور را روی همین سرور اجرا کنید — سرویس را موقتاً
+          متوقف می‌کند، داده فعلی را پاک و داده بکاپ را جایگزین می‌کند، و دوباره سرویس را
+          راه‌اندازی می‌کند. قبل از اجرا، تأیید تایپی (نوشتن دقیق «RESTORE») از شما می‌خواهد:
+        </Typography>
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 2,
+            backgroundColor: "rgba(192, 57, 43, 0.06)",
+            ...monoFontSx,
+            fontSize: 13,
+            direction: "ltr",
+            textAlign: "left",
+            overflowX: "auto",
+          }}
+        >
+          sudo bash install.sh --restore-in-place /path/to/faipco-backup-....zip
+        </Box>
+      </Card>
+
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <WarningAmberOutlinedIcon color="warning" fontSize="small" />
@@ -81,10 +110,8 @@ export default function BackupPage() {
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          به‌دلایل امنیتی، بازیابی از داخل همین پنل وب انجام نمی‌شود — چون بازنویسی کامل
-          دیتابیسِ در حال کار از داخل خودِ همان برنامه ریسک واقعی دارد. به‌جایش، فایل بکاپ را
-          روی یک <strong>نصب کاملاً تازه</strong> (سرور جدید، یا همین سرور با پوشه نصب خالی)
-          بازیابی کنید:
+          برای ساخت یک نسخه کامل از پرتال روی یک سرور جدید، فایل بکاپ را روی یک{" "}
+          <strong>نصب کاملاً تازه</strong> (سرور جدید، یا همین سرور با پوشه نصب خالی) بازیابی کنید:
         </Typography>
         <Box
           sx={{
