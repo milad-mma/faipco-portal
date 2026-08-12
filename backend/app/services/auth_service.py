@@ -146,4 +146,5 @@ class AuthService:
         base.site_name = site_name
         base.department_id = employee.department_id
         base.department_name = department_name
+        base.position_title = employee.position_title
         return base

@@ -58,6 +58,11 @@ class Employee(Base, TimestampMixin):
     birth_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     birth_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # نام سمت/عنوان شغلی — مستقیماً به‌صورت متن ذخیره می‌شود (نه یک جدول جدا با
+    # Foreign Key مثل Department)، چون سمت فقط برای نمایش اطلاعاتی است و به آن
+    # نیازی مثل هدف‌گیری اطلاعیه یا تعیین سرپرست ندارد.
+    position_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     department_id: Mapped[int | None] = mapped_column(
         ForeignKey("departments.id", ondelete="SET NULL"), nullable=True
@@ -120,5 +125,13 @@ class EmployeeMapping(Base, TimestampMixin):
     department_lookup_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
     department_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     department_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # اختیاری: نام ستونی در جدول پرسنل مبدأ که کد سمت/عنوان شغلی است (مثلاً
+    # ستون Pos_No). اگر تعریف شود، Sync Engine نام واقعی سمت را از جدول
+    # Lookup زیر ترجمه می‌کند — دقیقاً همان الگوی واحد سازمانی بالا.
+    position_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    position_lookup_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    position_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    position_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     site: Mapped["Site"] = relationship()

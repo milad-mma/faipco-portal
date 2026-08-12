@@ -75,6 +75,11 @@ class EmployeeMappingIn(BaseModel):
     department_lookup_table: str | None = None
     department_lookup_id_column: str | None = None
     department_lookup_name_column: str | None = None
+    # اختیاری: نگاشت سمت/عنوان شغلی — دقیقاً همان الگوی واحد سازمانی بالا
+    position_column: str | None = None
+    position_lookup_table: str | None = None
+    position_lookup_id_column: str | None = None
+    position_lookup_name_column: str | None = None
 
 
 class EmployeeMappingOut(EmployeeMappingIn):

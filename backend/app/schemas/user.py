@@ -21,5 +21,6 @@ class UserOut(BaseModel):
     site_name: str | None = None
     department_id: int | None = None
     department_name: str | None = None
+    position_title: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

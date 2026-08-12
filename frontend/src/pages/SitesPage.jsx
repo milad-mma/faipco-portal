@@ -65,6 +65,10 @@ const EMPTY_MAPPING = {
   department_lookup_table: "",
   department_lookup_id_column: "",
   department_lookup_name_column: "",
+  position_column: "",
+  position_lookup_table: "",
+  position_lookup_id_column: "",
+  position_lookup_name_column: "",
 };
 
 export default function SitesPage() {
@@ -200,6 +204,10 @@ export default function SitesPage() {
         department_lookup_table: existing.department_lookup_table || "",
         department_lookup_id_column: existing.department_lookup_id_column || "",
         department_lookup_name_column: existing.department_lookup_name_column || "",
+        position_column: existing.position_column || "",
+        position_lookup_table: existing.position_lookup_table || "",
+        position_lookup_id_column: existing.position_lookup_id_column || "",
+        position_lookup_name_column: existing.position_lookup_name_column || "",
       });
       setHasExistingMapping(true);
     }
@@ -517,6 +525,40 @@ export default function SitesPage() {
             label="ستون نام واحد در جدول Lookup"
             value={mappingForm.department_lookup_name_column}
             onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_name_column: e.target.value })}
+            helperText="مثال: Title"
+          />
+
+          <Divider sx={{ my: 1 }} />
+
+          <Typography variant="subtitle2" fontWeight={700}>
+            سمت / عنوان شغلی (اختیاری)
+          </Typography>
+          <TextField
+            label="ستون کد سمت در جدول پرسنل"
+            value={mappingForm.position_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, position_column: e.target.value })}
+            helperText="مثال: Pos_No"
+          />
+          <Typography variant="caption" color="text.secondary">
+            اگر جدول جداگانه‌ای این کد را به نام واقعی سمت ترجمه می‌کند (مثل Position با
+            ستون‌های Pos_No/Title)، سه فیلد زیر را هم پر کنید:
+          </Typography>
+          <TextField
+            label="نام جدول Lookup"
+            value={mappingForm.position_lookup_table}
+            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_table: e.target.value })}
+            helperText="مثال: Position"
+          />
+          <TextField
+            label="ستون کد در جدول Lookup"
+            value={mappingForm.position_lookup_id_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_id_column: e.target.value })}
+            helperText="مثال: Pos_No"
+          />
+          <TextField
+            label="ستون عنوان سمت در جدول Lookup"
+            value={mappingForm.position_lookup_name_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_name_column: e.target.value })}
             helperText="مثال: Title"
           />
         </DialogContent>

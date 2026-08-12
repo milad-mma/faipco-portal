@@ -11,6 +11,7 @@ class EmployeeOut(BaseModel):
     mobile: str | None
     site_id: int
     department_id: int | None
+    position_title: str | None = None
     is_active: bool  # وضعیت در منبع (فقط توسط Sync Engine تعیین می‌شود؛ غیرقابل‌ویرایش دستی)
     is_enabled: bool  # تصمیم دستی Admin — کاملاً مستقل از Sync، با آن بازنویسی نمی‌شود
     has_custom_password: bool = False  # آیا رمز عبور اختصاصی دارد (یعنی دیگر با کد ملی وارد نمی‌شود)

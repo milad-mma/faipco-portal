@@ -140,6 +140,7 @@ async def list_employees(
             mobile=e.mobile,
             site_id=e.site_id,
             department_id=e.department_id,
+            position_title=e.position_title,
             is_active=e.is_active,
             is_enabled=e.is_enabled,
             has_custom_password=custom_password_by_employee.get(e.id, False),

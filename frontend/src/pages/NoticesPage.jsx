@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Card,
   Chip,
   Collapse,
+  Divider,
   Stack,
   Tab,
   Tabs,
@@ -16,6 +18,9 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
+import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
+import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import {
   fetchAvailableTargets,
   fetchMyNotices,
@@ -48,6 +53,36 @@ async function downloadPayrollReceipt(noticeId, setDownloadError) {
         : "دانلود فیش ناموفق بود."
     );
   }
+}
+
+function InfoField({ icon, label, value }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
+      <Box
+        sx={{
+          width: 36,
+          height: 36,
+          borderRadius: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "rgba(22, 50, 79, 0.08)",
+          color: "primary.main",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" display="block">
+          {label}
+        </Typography>
+        <Typography variant="body2" fontWeight={600} noWrap>
+          {value || "—"}
+        </Typography>
+      </Box>
+    </Box>
+  );
 }
 
 function ReceivedNoticeCard({ notice, onOpened }) {
@@ -210,40 +245,43 @@ export default function NoticesPage() {
           مدیریتی محض (بدون employee_id، مثل admin) این باکس را نمی‌بینند
           چون داده‌ای برایش ندارند. */}
       {user?.employee_id && (
-        <Card variant="outlined" sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>
-          <Stack direction="row" spacing={4} flexWrap="wrap" useFlexGap rowGap={2}>
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                نام و نام خانوادگی
-              </Typography>
-              <Typography variant="body2" fontWeight={600}>
+        <Card
+          variant="outlined"
+          sx={{
+            p: 2.5,
+            borderRadius: 3,
+            mb: 3,
+            background: "linear-gradient(135deg, rgba(22, 50, 79, 0.04) 0%, rgba(224, 164, 88, 0.05) 100%)",
+          }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
+            <Avatar sx={{ width: 52, height: 52, bgcolor: "primary.main", fontSize: 20, fontWeight: 700 }}>
+              {(user.first_name?.[0] || "") + (user.last_name?.[0] || "")}
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle1" fontWeight={700} noWrap>
                 {user.first_name} {user.last_name}
               </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                کد پرسنلی
-              </Typography>
-              <Typography variant="body2" fontWeight={600} sx={monoFontSx}>
-                {user.personnel_code}
+              <Typography variant="body2" color="text.secondary" sx={monoFontSx}>
+                کد پرسنلی: {user.personnel_code}
               </Typography>
             </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                سایت
-              </Typography>
-              <Typography variant="body2" fontWeight={600}>
-                {user.site_name || "—"}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                واحد سازمانی
-              </Typography>
-              <Typography variant="body2" fontWeight={600}>
-                {user.department_name || "—"}
-              </Typography>
-            </Box>
+          </Stack>
+
+          <Divider sx={{ mb: 2.5 }} />
+
+          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap rowGap={2.5}>
+            <InfoField icon={<ApartmentOutlinedIcon fontSize="small" />} label="سایت" value={user.site_name} />
+            <InfoField
+              icon={<CorporateFareOutlinedIcon fontSize="small" />}
+              label="واحد سازمانی"
+              value={user.department_name}
+            />
+            <InfoField
+              icon={<WorkOutlineOutlinedIcon fontSize="small" />}
+              label="سمت"
+              value={user.position_title}
+            />
           </Stack>
         </Card>
       )}

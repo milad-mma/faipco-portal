@@ -58,10 +58,21 @@ class SyncService:
         try:
             columns = self._mapping_columns(mapping)
             raw_rows = await adapter.fetch_rows(mapping.table_name, list(columns.values()))
-            department_lookup = await self._load_department_lookup(adapter, mapping)
+            department_lookup = await self._load_lookup_table(
+                adapter,
+                mapping.department_lookup_table,
+                mapping.department_lookup_id_column,
+                mapping.department_lookup_name_column,
+            )
+            position_lookup = await self._load_lookup_table(
+                adapter,
+                mapping.position_lookup_table,
+                mapping.position_lookup_id_column,
+                mapping.position_lookup_name_column,
+            )
 
             inserted, updated, seen_codes = await self._upsert_employees(
-                site_id, columns, raw_rows, department_lookup, mapping.is_active_inverted
+                site_id, columns, raw_rows, department_lookup, position_lookup, mapping.is_active_inverted
             )
             deactivated = await self._deactivate_missing(site_id, seen_codes)
 
@@ -172,32 +183,30 @@ class SyncService:
             columns["is_active_raw"] = mapping.is_active_column
         if mapping.department_column:
             columns["department_raw"] = mapping.department_column
+        if mapping.position_column:
+            columns["position_raw"] = mapping.position_column
         return columns
 
-    async def _load_department_lookup(self, adapter, mapping: EmployeeMapping) -> dict[str, str]:
+    async def _load_lookup_table(
+        self, adapter, table: str | None, id_column: str | None, name_column: str | None
+    ) -> dict[str, str]:
         """
-        اگر جدول Lookup واحدها تعریف شده باشد (مثل dbo.Sections)، آن را می‌خواند
-        و دیکشنری «کد بخش -> نام واقعی بخش» برمی‌گرداند. اگر تعریف نشده باشد،
-        دیکشنری خالی برمی‌گردد (یعنی همان کد خام به‌عنوان نام واحد استفاده می‌شود).
+        یک جدول Lookup عمومی «کد -> نام واقعی» را می‌خواند — هم برای واحد
+        سازمانی (مثل dbo.Sections) و هم برای سمت (مثل Position با ستون‌های
+        Pos_No/Title) استفاده می‌شود. اگر تعریف نشده باشد، دیکشنری خالی
+        برمی‌گردد (یعنی همان کد خام به‌جای نام واقعی نمایش داده می‌شود).
         """
-        if not (
-            mapping.department_lookup_table
-            and mapping.department_lookup_id_column
-            and mapping.department_lookup_name_column
-        ):
+        if not (table and id_column and name_column):
             return {}
 
-        rows = await adapter.fetch_rows(
-            mapping.department_lookup_table,
-            [mapping.department_lookup_id_column, mapping.department_lookup_name_column],
-        )
+        rows = await adapter.fetch_rows(table, [id_column, name_column])
 
         lookup: dict[str, str] = {}
         for row in rows:
-            raw_id = row.get(mapping.department_lookup_id_column)
+            raw_id = row.get(id_column)
             if raw_id is None:
                 continue
-            raw_name = row.get(mapping.department_lookup_name_column)
+            raw_name = row.get(name_column)
             lookup[str(raw_id).strip()] = str(raw_name).strip() if raw_name is not None else str(raw_id).strip()
         return lookup
 
@@ -280,6 +289,7 @@ class SyncService:
         columns: dict[str, str],
         raw_rows: list[dict],
         department_lookup: dict[str, str],
+        position_lookup: dict[str, str],
         is_active_inverted: bool = False,
     ) -> tuple[int, int, set[str]]:
         inserted = 0
@@ -319,6 +329,13 @@ class SyncService:
                 if parsed_birth is not None:
                     birth_month, birth_day = parsed_birth
 
+            position_title = None
+            if "position_raw" in columns:
+                raw_position = row.get(columns["position_raw"])
+                position_code = str(raw_position).strip() if raw_position not in (None, "") else None
+                if position_code:
+                    position_title = position_lookup.get(position_code, position_code)
+
             if "is_active_raw" in columns:
                 is_active = self._coerce_is_active(row.get(columns["is_active_raw"]))
                 if is_active_inverted:
@@ -351,6 +368,7 @@ class SyncService:
                         is_active=is_active,
                         birth_month=birth_month,
                         birth_day=birth_day,
+                        position_title=position_title,
                         # is_enabled عمداً اینجا تنظیم نمی‌شود — مقدار پیش‌فرض
                         # ستون (True) اعمال می‌شود؛ این فیلد فقط دستی از پنل تغییر می‌کند.
                         last_synced_at=now,
@@ -367,6 +385,8 @@ class SyncService:
                 if "birth_date_raw" in columns:
                     existing.birth_month = birth_month
                     existing.birth_day = birth_day
+                if "position_raw" in columns:
+                    existing.position_title = position_title
                 if has_department_mapping:
                     existing.department_id = department_id
                 existing.is_active = is_active
