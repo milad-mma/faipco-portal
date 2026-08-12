@@ -40,97 +40,104 @@ def render_attendance_card_pdf(
     month_year: str,
     fields: list[dict],  # [{"label": ..., "value": ...}]
 ) -> bytes:
-    has_font = _ensure_font_registered()
-    font_name = _FONT_NAME if has_font else "Helvetica"
-    font_bold = _FONT_NAME_BOLD if has_font else "Helvetica-Bold"
+    def _build(include_logo: bool) -> bytes:
+        has_font = _ensure_font_registered()
+        font_name = _FONT_NAME if has_font else "Helvetica"
+        font_bold = _FONT_NAME_BOLD if has_font else "Helvetica-Bold"
 
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        topMargin=30 * mm,
-        bottomMargin=30 * mm,
-        leftMargin=20 * mm,
-        rightMargin=20 * mm,
-    )
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=30 * mm,
+            bottomMargin=30 * mm,
+            leftMargin=20 * mm,
+            rightMargin=20 * mm,
+        )
 
-    title_style = ParagraphStyle(
-        "cardTitle", fontName=font_bold, fontSize=16, alignment=TA_CENTER, textColor=_NAVY, leading=20
-    )
-    subtitle_style = ParagraphStyle(
-        "cardSubtitle", fontName=font_name, fontSize=11, alignment=TA_CENTER, textColor=colors.HexColor("#333333")
-    )
-    label_style = ParagraphStyle(
-        "cellLabel", fontName=font_bold, fontSize=9.5, alignment=TA_RIGHT, textColor=_NAVY, leading=13
-    )
-    value_style = ParagraphStyle(
-        "cellValue", fontName=font_name, fontSize=10, alignment=TA_CENTER, leading=13
-    )
+        title_style = ParagraphStyle(
+            "cardTitle", fontName=font_bold, fontSize=16, alignment=TA_CENTER, textColor=_NAVY, leading=20
+        )
+        subtitle_style = ParagraphStyle(
+            "cardSubtitle", fontName=font_name, fontSize=11, alignment=TA_CENTER, textColor=colors.HexColor("#333333")
+        )
+        label_style = ParagraphStyle(
+            "cellLabel", fontName=font_bold, fontSize=9.5, alignment=TA_RIGHT, textColor=_NAVY, leading=13
+        )
+        value_style = ParagraphStyle(
+            "cellValue", fontName=font_name, fontSize=10, alignment=TA_CENTER, leading=13
+        )
 
-    story = []
+        story = []
 
-    if _LOGO_PATH.exists():
-        try:
+        if include_logo and _LOGO_PATH.exists():
             logo = Image(str(_LOGO_PATH), width=22 * mm, height=22 * mm)
             logo.hAlign = "CENTER"
             story.append(logo)
             story.append(Spacer(1, 4 * mm))
-        except Exception:  # noqa: BLE001 - نبود/خرابی لوگو نباید کل PDF را متوقف کند
-            pass
 
-    story.append(Paragraph(_shape("فیش کارکرد"), title_style))
-    story.append(Paragraph(_shape(month_year), subtitle_style))
-    story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph(_shape("فیش کارکرد"), title_style))
+        story.append(Paragraph(_shape(month_year), subtitle_style))
+        story.append(Spacer(1, 6 * mm))
 
-    # ترتیب دقیقاً مطابق کارت مرجع: راست‌چین از بالا به پایین، سپس چپ‌چین
-    right_column = ["name", "totalWork", "nightDays", "absence", "unpaidLeave", "deduction", "dailyMission", "unit"]
-    left_column = ["code", "overtime", "fridayHours", "sickLeave", "socialSick", "bonusLeave", "leaveUsed", "remainLeave"]
-    by_key = {}
-    # fields در ترتیب مرجع (name, code, totalWork, ...) با label فارسی می‌آید؛
-    # چون کلید انگلیسی در PDF لازم نیست، مستقیم بر اساس همان ترتیب ورودی نگاشت می‌کنیم
-    field_keys_in_order = [
-        "name", "code", "totalWork", "nightDays", "overtime", "fridayHours", "leaveUsed",
-        "sickLeave", "socialSick", "unpaidLeave", "bonusLeave", "absence", "deduction",
-        "dailyMission", "unit", "remainLeave",
-    ]
-    for key, item in zip(field_keys_in_order, fields):
-        by_key[key] = item
+        # ترتیب دقیقاً مطابق کارت مرجع: راست‌چین از بالا به پایین، سپس چپ‌چین
+        right_column = ["name", "totalWork", "nightDays", "absence", "unpaidLeave", "deduction", "dailyMission", "unit"]
+        left_column = ["code", "overtime", "fridayHours", "sickLeave", "socialSick", "bonusLeave", "leaveUsed", "remainLeave"]
+        by_key = {}
+        # fields در ترتیب مرجع (name, code, totalWork, ...) با label فارسی می‌آید؛
+        # چون کلید انگلیسی در PDF لازم نیست، مستقیم بر اساس همان ترتیب ورودی نگاشت می‌کنیم
+        field_keys_in_order = [
+            "name", "code", "totalWork", "nightDays", "overtime", "fridayHours", "leaveUsed",
+            "sickLeave", "socialSick", "unpaidLeave", "bonusLeave", "absence", "deduction",
+            "dailyMission", "unit", "remainLeave",
+        ]
+        for key, item in zip(field_keys_in_order, fields):
+            by_key[key] = item
 
-    col_width = (doc.width) / 4
-    table_data = []
-    max_rows = max(len(right_column), len(left_column))
-    for i in range(max_rows):
-        row = []
-        for key_list in (right_column, left_column):
-            key = key_list[i] if i < len(key_list) else None
-            if key and key in by_key:
-                item = by_key[key]
-                label_text = _shape(item["label"])
-                value_text = _wrap_and_shape(str(item["value"]), font_name, 10, col_width - 6)
-                row.append(Paragraph(label_text, label_style))
-                row.append(Paragraph(value_text, value_style))
-            else:
-                row.append("")
-                row.append("")
-        table_data.append(row)
+        col_width = (doc.width) / 4
+        table_data = []
+        max_rows = max(len(right_column), len(left_column))
+        for i in range(max_rows):
+            row = []
+            for key_list in (right_column, left_column):
+                key = key_list[i] if i < len(key_list) else None
+                if key and key in by_key:
+                    item = by_key[key]
+                    label_text = _shape(item["label"])
+                    value_text = _wrap_and_shape(str(item["value"]), font_name, 10, col_width - 6)
+                    row.append(Paragraph(label_text, label_style))
+                    row.append(Paragraph(value_text, value_style))
+                else:
+                    row.append("")
+                    row.append("")
+            table_data.append(row)
 
-    table = Table(table_data, colWidths=[col_width] * 4, repeatRows=0)
-    table.setStyle(
-        TableStyle(
-            [
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7cbe0")),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#fafbfd")),
-                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#fafbfd")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("BOX", (0, 0), (-1, -1), 1.5, _NAVY),
-            ]
+        table = Table(table_data, colWidths=[col_width] * 4, repeatRows=0)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7cbe0")),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#fafbfd")),
+                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#fafbfd")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("BOX", (0, 0), (-1, -1), 1.5, _NAVY),
+                ]
+            )
         )
-    )
-    story.append(table)
+        story.append(table)
 
-    doc.build(story)
-    return buffer.getvalue()
+        doc.build(story)
+        return buffer.getvalue()
+
+    try:
+        return _build(include_logo=True)
+    except Exception:
+        # اگر ساخت PDF همراه لوگو به هر دلیلی شکست بخورد (مثلاً فایل لوگو روی
+        # این سرور خاص Deploy/Push نشده یا خراب است)، دوباره و این‌بار بدون
+        # لوگو می‌سازیم — یک عنصر کاملاً تزئینی هرگز نباید باعث شود کل قابلیت
+        # دانلود کارت (که چیز حیاتی است) با خطای ۵۰۰ کاملاً از کار بیفتد.
+        return _build(include_logo=False)
