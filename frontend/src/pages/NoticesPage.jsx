@@ -287,7 +287,7 @@ export default function NoticesPage() {
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
             <Avatar
               src={photoUrl || undefined}
-              sx={{ width: 52, height: 52, bgcolor: "primary.main", fontSize: 20, fontWeight: 700 }}
+              sx={{ width: 72, height: 72, bgcolor: "primary.main", fontSize: 26, fontWeight: 700 }}
             >
               {(user.first_name?.[0] || "") + (user.last_name?.[0] || "")}
             </Avatar>

@@ -9,6 +9,7 @@ import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import SitesPage from "./pages/SitesPage";
+import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import NewNoticePage from "./pages/NewNoticePage";
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
           <Route path="/departments" element={<AdminRoute><DepartmentsPage /></AdminRoute>} />
           <Route path="/sites" element={<AdminRoute><SitesPage /></AdminRoute>} />
+          <Route path="/sites/:siteId/settings" element={<AdminRoute><SiteSettingsPage /></AdminRoute>} />
           <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
 

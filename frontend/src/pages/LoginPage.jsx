@@ -75,10 +75,10 @@ export default function LoginPage() {
             sx={{ width: 88, height: 88, objectFit: "contain", mb: 1.5 }}
           />
           <Typography variant="h6" fontWeight={700}>
-            ورود به FAIPCO Portal
+            ورود به پرتال فایپکو
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            پرتال سازمانی مدیریت پرسنل
+            شرکت تولیدی صنعتی فوادالیاف
           </Typography>
         </Box>
 

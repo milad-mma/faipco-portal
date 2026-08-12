@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Alert,
   Box,
   Button,
   Card,
-  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
-  FormControlLabel,
   Grid,
-  MenuItem,
   Snackbar,
   Stack,
   Switch,
@@ -24,67 +22,14 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import SettingsEthernetOutlinedIcon from "@mui/icons-material/SettingsEthernetOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import {
-  createSite,
-  deleteSite,
-  deleteSiteConnection,
-  deleteSiteMapping,
-  fetchSiteConnection,
-  fetchSiteMapping,
-  fetchSites,
-  setSiteActive,
-  upsertSiteConnection,
-  upsertSiteMapping,
-} from "../api/sites";
-
-const DB_TYPES = [
-  { value: "postgresql", label: "PostgreSQL" },
-  { value: "mysql", label: "MySQL" },
-  { value: "mssql", label: "SQL Server" },
-];
-
-const EMPTY_CONNECTION = {
-  db_type: "postgresql",
-  host: "",
-  port: 5432,
-  database_name: "",
-  username: "",
-  password: "",
-};
-const EMPTY_MAPPING = {
-  table_name: "",
-  personnel_code_column: "",
-  national_code_column: "",
-  first_name_column: "",
-  last_name_column: "",
-  mobile_column: "",
-  birth_date_column: "",
-  is_active_column: "",
-  is_active_inverted: false,
-  department_column: "",
-  department_lookup_table: "",
-  department_lookup_id_column: "",
-  department_lookup_name_column: "",
-  position_column: "",
-  position_lookup_table: "",
-  position_lookup_id_column: "",
-  position_lookup_name_column: "",
-  photo_table: "",
-  photo_emp_no_column: "",
-  photo_thumbnail_column: "",
-};
+import { createSite, deleteSite, fetchSites, setSiteActive } from "../api/sites";
 
 export default function SitesPage() {
+  const navigate = useNavigate();
   const [sites, setSites] = useState([]);
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
-  const [connectionDialogSite, setConnectionDialogSite] = useState(null);
-  const [mappingDialogSite, setMappingDialogSite] = useState(null);
-  const [hasExistingConnection, setHasExistingConnection] = useState(false);
-  const [hasExistingMapping, setHasExistingMapping] = useState(false);
 
   const [newSite, setNewSite] = useState({ name: "", code: "", description: "" });
-  const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
-  const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [error, setError] = useState("");
   const [snackbar, setSnackbar] = useState("");
   const [togglingId, setTogglingId] = useState(null);
@@ -167,92 +112,6 @@ export default function SitesPage() {
     }
   }
 
-  async function openConnectionDialog(site) {
-    setError("");
-    setConnectionDialogSite(site);
-    setConnectionForm(EMPTY_CONNECTION);
-    setHasExistingConnection(false);
-    const existing = await fetchSiteConnection(site.id).catch(() => null);
-    if (existing) {
-      setConnectionForm({
-        db_type: existing.db_type,
-        host: existing.host,
-        port: existing.port,
-        database_name: existing.database_name,
-        username: existing.username,
-        password: "", // پسورد هرگز از سرور برنمی‌گردد؛ خالی یعنی بدون تغییر
-      });
-      setHasExistingConnection(true);
-    }
-  }
-
-  async function openMappingDialog(site) {
-    setError("");
-    setMappingDialogSite(site);
-    setMappingForm(EMPTY_MAPPING);
-    setHasExistingMapping(false);
-    const existing = await fetchSiteMapping(site.id).catch(() => null);
-    if (existing) {
-      setMappingForm({
-        table_name: existing.table_name,
-        personnel_code_column: existing.personnel_code_column,
-        national_code_column: existing.national_code_column || "",
-        first_name_column: existing.first_name_column,
-        last_name_column: existing.last_name_column,
-        mobile_column: existing.mobile_column || "",
-        birth_date_column: existing.birth_date_column || "",
-        is_active_column: existing.is_active_column || "",
-        is_active_inverted: existing.is_active_inverted || false,
-        department_column: existing.department_column || "",
-        department_lookup_table: existing.department_lookup_table || "",
-        department_lookup_id_column: existing.department_lookup_id_column || "",
-        department_lookup_name_column: existing.department_lookup_name_column || "",
-        position_column: existing.position_column || "",
-        position_lookup_table: existing.position_lookup_table || "",
-        position_lookup_id_column: existing.position_lookup_id_column || "",
-        position_lookup_name_column: existing.position_lookup_name_column || "",
-        photo_table: existing.photo_table || "",
-        photo_emp_no_column: existing.photo_emp_no_column || "",
-        photo_thumbnail_column: existing.photo_thumbnail_column || "",
-      });
-      setHasExistingMapping(true);
-    }
-  }
-
-  async function handleSaveConnection() {
-    setError("");
-    try {
-      await upsertSiteConnection(connectionDialogSite.id, connectionForm);
-      setConnectionDialogSite(null);
-      loadSites();
-    } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره اتصال ناموفق بود");
-    }
-  }
-
-  async function handleDeleteConnection() {
-    if (!window.confirm("اتصال دیتابیس این سایت حذف شود؟")) return;
-    await deleteSiteConnection(connectionDialogSite.id);
-    setConnectionDialogSite(null);
-    loadSites();
-  }
-
-  async function handleSaveMapping() {
-    setError("");
-    try {
-      await upsertSiteMapping(mappingDialogSite.id, mappingForm);
-      setMappingDialogSite(null);
-    } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره Mapping ناموفق بود");
-    }
-  }
-
-  async function handleDeleteMapping() {
-    if (!window.confirm("Mapping ستون‌های این سایت حذف شود؟")) return;
-    await deleteSiteMapping(mappingDialogSite.id);
-    setMappingDialogSite(null);
-  }
-
   return (
     <Box>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3, flexWrap: "wrap", gap: 2 }}>
@@ -311,7 +170,7 @@ export default function SitesPage() {
                   size="small"
                   variant="outlined"
                   startIcon={<SettingsEthernetOutlinedIcon />}
-                  onClick={() => openConnectionDialog(site)}
+                  onClick={() => navigate(`/sites/${site.id}/settings?tab=connection`)}
                 >
                   اتصال دیتابیس
                 </Button>
@@ -319,7 +178,7 @@ export default function SitesPage() {
                   size="small"
                   variant="outlined"
                   startIcon={<ViewColumnOutlinedIcon />}
-                  onClick={() => openMappingDialog(site)}
+                  onClick={() => navigate(`/sites/${site.id}/settings?tab=mapping`)}
                 >
                   Mapping ستون‌ها
                 </Button>
@@ -372,246 +231,6 @@ export default function SitesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: تعریف/ویرایش اتصال دیتابیس */}
-      <Dialog open={Boolean(connectionDialogSite)} onClose={() => setConnectionDialogSite(null)} fullWidth maxWidth="xs">
-        <DialogTitle>اتصال دیتابیس — {connectionDialogSite?.name}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            select
-            label="نوع دیتابیس"
-            value={connectionForm.db_type}
-            onChange={(e) => setConnectionForm({ ...connectionForm, db_type: e.target.value })}
-          >
-            {DB_TYPES.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            label="Host"
-            value={connectionForm.host}
-            onChange={(e) => setConnectionForm({ ...connectionForm, host: e.target.value })}
-          />
-          <TextField
-            label="Port"
-            type="number"
-            value={connectionForm.port}
-            onChange={(e) => setConnectionForm({ ...connectionForm, port: Number(e.target.value) })}
-          />
-          <TextField
-            label="نام دیتابیس"
-            value={connectionForm.database_name}
-            onChange={(e) => setConnectionForm({ ...connectionForm, database_name: e.target.value })}
-          />
-          <TextField
-            label="نام کاربری"
-            value={connectionForm.username}
-            onChange={(e) => setConnectionForm({ ...connectionForm, username: e.target.value })}
-          />
-          <TextField
-            label="رمز عبور"
-            type="password"
-            value={connectionForm.password}
-            onChange={(e) => setConnectionForm({ ...connectionForm, password: e.target.value })}
-            helperText={
-              hasExistingConnection
-                ? "برای حفظ رمز فعلی، این فیلد را خالی بگذارید"
-                : "در دیتابیس Portal به‌صورت رمزنگاری‌شده ذخیره می‌شود"
-            }
-          />
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
-          {hasExistingConnection ? (
-            <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={handleDeleteConnection}>
-              حذف اتصال
-            </Button>
-          ) : (
-            <span />
-          )}
-          <Stack direction="row" spacing={1}>
-            <Button onClick={() => setConnectionDialogSite(null)}>انصراف</Button>
-            <Button variant="contained" onClick={handleSaveConnection}>
-              ذخیره
-            </Button>
-          </Stack>
-        </DialogActions>
-      </Dialog>
-
-      {/* Dialog: تعریف/ویرایش Mapping ستون‌ها */}
-      <Dialog open={Boolean(mappingDialogSite)} onClose={() => setMappingDialogSite(null)} fullWidth maxWidth="sm">
-        <DialogTitle>Mapping ستون‌ها — {mappingDialogSite?.name}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
-
-          <Typography variant="subtitle2" fontWeight={700}>
-            جدول اصلی پرسنل
-          </Typography>
-          <TextField
-            label="نام جدول"
-            value={mappingForm.table_name}
-            onChange={(e) => setMappingForm({ ...mappingForm, table_name: e.target.value })}
-          />
-          <TextField
-            label="ستون کد پرسنلی"
-            value={mappingForm.personnel_code_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, personnel_code_column: e.target.value })}
-          />
-          <TextField
-            label="ستون کد ملی (اختیاری)"
-            value={mappingForm.national_code_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, national_code_column: e.target.value })}
-          />
-          <TextField
-            label="ستون نام"
-            value={mappingForm.first_name_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, first_name_column: e.target.value })}
-          />
-          <TextField
-            label="ستون نام خانوادگی"
-            value={mappingForm.last_name_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, last_name_column: e.target.value })}
-          />
-          <TextField
-            label="ستون موبایل (اختیاری)"
-            value={mappingForm.mobile_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, mobile_column: e.target.value })}
-          />
-          <TextField
-            label="ستون تاریخ تولد شمسی (اختیاری — برای کارت «متولدین روز جاری» در داشبورد)"
-            value={mappingForm.birth_date_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, birth_date_column: e.target.value })}
-            helperText='فرمت مورد انتظار مثل «1370/05/21» یا «13700521»'
-          />
-          <TextField
-            label="ستون وضعیت فعال/غیرفعال (اختیاری)"
-            value={mappingForm.is_active_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, is_active_column: e.target.value })}
-            helperText="اگر منبع ستونی مثل IsActive یا IsCut دارد که با ۰/۱ نشان می‌دهد"
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={mappingForm.is_active_inverted}
-                onChange={(e) => setMappingForm({ ...mappingForm, is_active_inverted: e.target.checked })}
-              />
-            }
-            label="منطق این ستون برعکس است (مثل IsCut: ۱=غیرفعال، ۰=فعال)"
-          />
-
-          <Divider sx={{ my: 1 }} />
-
-          <Typography variant="subtitle2" fontWeight={700}>
-            واحد سازمانی (اختیاری)
-          </Typography>
-          <TextField
-            label="ستون کد واحد در جدول پرسنل"
-            value={mappingForm.department_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, department_column: e.target.value })}
-            helperText="مثال: Sec_No"
-          />
-          <Typography variant="caption" color="text.secondary">
-            اگر جدول جداگانه‌ای این کد را به نام واقعی واحد ترجمه می‌کند (مثل dbo.Sections)،
-            سه فیلد زیر را هم پر کنید تا نام واحدها خودکار همگام شود:
-          </Typography>
-          <TextField
-            label="نام جدول Lookup"
-            value={mappingForm.department_lookup_table}
-            onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_table: e.target.value })}
-            helperText="مثال: dbo.Sections"
-          />
-          <TextField
-            label="ستون کد در جدول Lookup"
-            value={mappingForm.department_lookup_id_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_id_column: e.target.value })}
-            helperText="مثال: Sec_No"
-          />
-          <TextField
-            label="ستون نام واحد در جدول Lookup"
-            value={mappingForm.department_lookup_name_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_name_column: e.target.value })}
-            helperText="مثال: Title"
-          />
-
-          <Divider sx={{ my: 1 }} />
-
-          <Typography variant="subtitle2" fontWeight={700}>
-            سمت / عنوان شغلی (اختیاری)
-          </Typography>
-          <TextField
-            label="ستون کد سمت در جدول پرسنل"
-            value={mappingForm.position_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, position_column: e.target.value })}
-            helperText="مثال: Pos_No"
-          />
-          <Typography variant="caption" color="text.secondary">
-            اگر جدول جداگانه‌ای این کد را به نام واقعی سمت ترجمه می‌کند (مثل Position با
-            ستون‌های Pos_No/Title)، سه فیلد زیر را هم پر کنید:
-          </Typography>
-          <TextField
-            label="نام جدول Lookup"
-            value={mappingForm.position_lookup_table}
-            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_table: e.target.value })}
-            helperText="مثال: Position"
-          />
-          <TextField
-            label="ستون کد در جدول Lookup"
-            value={mappingForm.position_lookup_id_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_id_column: e.target.value })}
-            helperText="مثال: Pos_No"
-          />
-          <TextField
-            label="ستون عنوان سمت در جدول Lookup"
-            value={mappingForm.position_lookup_name_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_name_column: e.target.value })}
-            helperText="مثال: Title"
-          />
-
-          <Divider sx={{ my: 1 }} />
-
-          <Typography variant="subtitle2" fontWeight={700}>
-            عکس پرسنل (اختیاری)
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            اگر جدول جداگانه‌ای عکس بندانگشتی پرسنل را نگه می‌دارد (مثل EmployeeExtendedInfo)،
-            هر سه فیلد زیر را پر کنید:
-          </Typography>
-          <TextField
-            label="نام جدول عکس"
-            value={mappingForm.photo_table}
-            onChange={(e) => setMappingForm({ ...mappingForm, photo_table: e.target.value })}
-            helperText="مثال: EmployeeExtendedInfo"
-          />
-          <TextField
-            label="ستون کد پرسنلی در جدول عکس"
-            value={mappingForm.photo_emp_no_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, photo_emp_no_column: e.target.value })}
-            helperText="مثال: Emp_No"
-          />
-          <TextField
-            label="ستون تصویر بندانگشتی"
-            value={mappingForm.photo_thumbnail_column}
-            onChange={(e) => setMappingForm({ ...mappingForm, photo_thumbnail_column: e.target.value })}
-            helperText="مثال: ThumbnailImg"
-          />
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
-          {hasExistingMapping ? (
-            <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={handleDeleteMapping}>
-              حذف Mapping
-            </Button>
-          ) : (
-            <span />
-          )}
-          <Stack direction="row" spacing={1}>
-            <Button onClick={() => setMappingDialogSite(null)}>انصراف</Button>
-            <Button variant="contained" onClick={handleSaveMapping}>
-              ذخیره
-            </Button>
-          </Stack>
-        </DialogActions>
-      </Dialog>
       {/* Dialog: تأیید غیرفعال‌کردن سایت — چون این کار خودکار Sync آن را هم
           خاموش می‌کند، Admin باید صریحاً این اثر جانبی را تأیید کند. */}
       <Dialog
