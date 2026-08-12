@@ -81,11 +81,10 @@ class PushService:
         )
         name_by_user_id = {row[0]: f"{row[1]} {row[2]}" for row in name_result.all()}
 
-        # اطلاعیه‌های با اولویت بالا/فوری هم در FCM با Urgency=high سریع‌تر و
-        # مطمئن‌تر تحویل داده می‌شوند (حتی وقتی گوشی در حالت Doze/کم‌مصرف است)،
-        # هم در Service Worker با ویبره قوی‌تر و requireInteraction نمایش داده
-        # می‌شوند — تا واقعاً دیده شوند، نه این‌که بی‌صدا از دست بروند.
-        is_urgent = priority in ("high", "urgent")
+        # طبق درخواست، صرف‌نظر از اولویت اطلاعیه، اعلان باید همیشه سریع و
+        # قابل‌اعتماد برسد (نه فقط برای اولویت بالا/فوری) — پس Urgency همیشه
+        # high فرستاده می‌شود تا FCM حتی در حالت Doze/کم‌مصرف گوشی هم آن را
+        # فوری تحویل بدهد، نه با تأخیر یا Batch شده با بقیه.
 
         sent_count = 0
         failed_count = 0
@@ -115,7 +114,7 @@ class PushService:
                     # اگر دستگاه گیرنده لحظه ارسال آفلاین باشد، تا ۲۴ ساعت روی
                     # سرور Push نگه داشته می‌شود و به‌محض آنلاین‌شدن تحویل داده می‌شود
                     ttl=60 * 60 * 24,
-                    headers={"Urgency": "high" if is_urgent else "normal"},
+                    headers={"Urgency": "high"},
                 )
                 sent_count += 1
             except WebPushException as e:

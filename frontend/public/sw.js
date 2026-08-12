@@ -6,7 +6,7 @@
  * نه یک اپ کاملاً Offline-first.
  */
 
-const CACHE_NAME = "faipco-shell-v3";
+const CACHE_NAME = "faipco-shell-v4";
 const SHELL_FILES = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -39,10 +39,9 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی —
-// اطلاعیه‌های با اولویت «بالا»/«فوری» قوی‌تر نمایش داده می‌شوند: با ویبره
-// محسوس‌تر و requireInteraction (تا کاربر خودش آن را ببندد، به‌جای این‌که
-// چند ثانیه بعد خودکار محو شود و از دست برود).
+// دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی — طبق
+// درخواست، صرف‌نظر از اولویت اطلاعیه، همیشه با صدا + ویبره محسوس (مثل
+// یک آلارم واقعی) نمایش داده می‌شود، نه فقط برای اولویت‌های بالا.
 self.addEventListener("push", (event) => {
   let payload = { title: "FAIPCO Portal", body: "اطلاعیه جدید", url: "/notices", priority: "normal" };
   try {
@@ -53,20 +52,22 @@ self.addEventListener("push", (event) => {
     // اگر بدنه پیام JSON نبود، از مقادیر پیش‌فرض بالا استفاده می‌شود
   }
 
-  const isUrgent = payload.priority === "high" || payload.priority === "urgent";
-
   event.waitUntil(
     (async () => {
       await self.registration.showNotification(payload.title, {
         body: payload.body,
+        // icon: تصویر رنگی بزرگ لوگو — داخل بدنه اعلان (وقتی باز می‌شود) دیده می‌شود
         icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
+        // badge: نسخه تک‌رنگ (سفید روی شفاف) لوگو — مخصوص نوار وضعیت اندروید؛
+        // اگر همان آیکون رنگی اینجا داده شود، اندروید آن را به یک لکه نامفهوم
+        // تبدیل می‌کند، چون badge را همیشه یک‌رنگ/Silhouette رندر می‌کند.
+        badge: "/icons/badge-96.png",
         dir: "rtl",
         lang: "fa",
         data: { url: payload.url || "/notices" },
-        requireInteraction: isUrgent, // اطلاعیه فوری خودش بسته نمی‌شود، تا کاربر ببیندش
-        vibrate: isUrgent ? [300, 100, 300, 100, 300] : [200, 100, 200],
-        renotify: true,
+        requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
+        silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
+        vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
         tag: `faipco-notice-${Date.now()}`, // هر Push جدا نمایش داده شود، نه جایگزین قبلی
       });
 
