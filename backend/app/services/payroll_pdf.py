@@ -230,14 +230,18 @@ def render_payroll_receipt_pdf(
     """
     has_font = _ensure_font_registered()
     font_name = _FONT_NAME if has_font else "Helvetica"
-    # نکته مهم: _FONT_NAME_BOLD فقط وقتی یک فونت Bold واقعی پیدا و Register
-    # شده باشد (_bold_font_available) قابل استفاده است — وگرنه این نام هرگز
-    # واقعاً Register نشده و ارجاع مستقیم بهش باعث خطای ReportLab می‌شود
-    # («Can't map determine family/bold/italic»). اگر فونت اختصاصی (مثلاً
-    # Tahoma) نسخه Bold نداشت (رایج است، چون کاربر معمولاً فقط Regular را
-    # می‌دهد)، همان فونت عادی برای متن‌های Bold هم استفاده می‌شود — وزن یکی
-    # می‌شود ولی چیزی خراب/کرش نمی‌شود.
-    font_bold = _FONT_NAME_BOLD if (has_font and _bold_font_available) else (font_name if has_font else "Helvetica-Bold")
+    # نکته مهم: هرگز _FONT_NAME_BOLD مستقیماً به‌عنوان fontName یک Paragraph
+    # Style استفاده نمی‌شود. برخلاف چیزی که قبلاً اینجا نوشته شده بود،
+    # چک‌کردن _bold_font_available کافی نیست: ReportLab برای Paragraph (نه
+    # drawString ساده)، fontName هر Style را با ps2tt() به یک «خانواده» فونت
+    # نگاشت می‌کند؛ این تابع فقط خانواده‌ای که با registerFontFamily ثبت شده
+    # (فقط _FONT_NAME) را می‌شناسد، نه نام مستقیم فونت Bold را — و بسته به
+    # این‌که کدام فایل Bold واقعاً روی هر سرور پیدا/Register شود، همین حالت
+    # می‌تواند با خطای «Can't map determine family/bold/italic» کل PDF را
+    # خراب کند (در تولید واقعاً رخ داده). پس این‌جا برای «حس Bold» فقط از
+    # رنگ/سایز فونت استفاده می‌شود، نه وزن واقعی Bold — تضمین می‌کند این
+    # مستقل از فونت Register‌شده روی هر سرور، همیشه قابل‌ساخت بماند.
+    font_bold = font_name if has_font else "Helvetica-Bold"
 
     # ---------- بازسازی فیلدهای تخت به بخش‌های معنادار ----------
     report_title: str | None = None

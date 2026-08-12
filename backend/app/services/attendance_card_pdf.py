@@ -24,7 +24,6 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 
 from app.services.payroll_pdf import (
     _FONT_NAME,
-    _FONT_NAME_BOLD,
     _ensure_font_registered,
     _shape,
     _wrap_and_shape,
@@ -43,7 +42,18 @@ def render_attendance_card_pdf(
     def _build(include_logo: bool) -> bytes:
         has_font = _ensure_font_registered()
         font_name = _FONT_NAME if has_font else "Helvetica"
-        font_bold = _FONT_NAME_BOLD if has_font else "Helvetica-Bold"
+        # نکته مهم: عمداً از _FONT_NAME_BOLD مستقیماً به‌عنوان fontName یک
+        # ParagraphStyle استفاده نمی‌شود. ReportLab برای Paragraph (نه
+        # drawString ساده)، fontName هر Style را با ps2tt() به یک "خانواده"
+        # فونت Map می‌کند؛ این تابع فقط خانواده‌ای که با registerFontFamily
+        # ثبت شده (اینجا فقط _FONT_NAME) را می‌شناسد، نه نام مستقیم فونت
+        # Bold را. استفاده مستقیم از _FONT_NAME_BOLD اینجا — بسته به این‌که
+        # کدام فونت Bold روی هر سرور واقعاً پیدا/ثبت شود — می‌تواند با خطای
+        # «Can't map determine family/bold/italic» کل تولید PDF را خراب کند.
+        # پس این‌جا برای «حس Bold»، فقط از رنگ سرمه‌ای + سایز بزرگ‌تر استفاده
+        # می‌شود، نه وزن واقعی Bold — تضمین می‌کند این کارت مستقل از این‌که
+        # کدام فونت روی کدام سرور Register شده، همیشه قابل‌ساخت بماند.
+        font_bold = font_name
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(
