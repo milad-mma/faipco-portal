@@ -26,7 +26,7 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.services.payroll_pdf import _FONT_NAME, _ensure_font_registered, _shape, _wrap_and_shape
 
@@ -79,34 +79,27 @@ def render_attendance_card_pdf(
 
         story = []
 
-        # ---------- سربرگ: لوگو گوشه چپ‌بالا + عنوان واقعاً وسط عرض کارت ----------
-        logo_flowable = ""
-        if include_logo and _LOGO_PATH.exists():
-            logo_flowable = Image(str(_LOGO_PATH), width=16 * mm, height=16 * mm)
+        # ---------- سربرگ ----------
+        # لوگو با Callback مستقیم روی Canvas کشیده می‌شود (نه به‌عنوان یک
+        # Flowable داخل جریان متن) — دقیقاً معادل CSS مرجع (position:absolute
+        # روی گوشه بالا-چپ کارت)، مستقل از قدشِ متن عنوان/زیرعنوان. این باعث
+        # می‌شود ارتفاع لوگو هیچ فاصله اضافه‌ای بین متن سربرگ و جدول اصلی
+        # ایجاد نکند (که با روش قبلی — لوگو داخل همان ردیف جدول — می‌شد).
+        logo_size = 26 * mm
 
-        title_block = [
-            Paragraph(f"<b>{_shape('فیش کارکرد')}</b>", title_style),
-            Paragraph(_shape(month_year), subtitle_style),
-        ]
-        header_table = Table(
-            [[logo_flowable, title_block, ""]],
-            colWidths=[20 * mm, doc.width - 40 * mm, 20 * mm],
-        )
-        header_table.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("ALIGN", (0, 0), (0, 0), "LEFT"),
-                    ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                    ("TOPPADDING", (0, 0), (-1, -1), 0),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                ]
-            )
-        )
-        story.append(header_table)
-        story.append(Spacer(1, 6 * mm))
+        def _draw_logo(canvas, _doc):
+            if include_logo and _LOGO_PATH.exists():
+                canvas.saveState()
+                x = _doc.leftMargin
+                y = _doc.pagesize[1] - _doc.topMargin - logo_size + 6 * mm
+                canvas.drawImage(
+                    str(_LOGO_PATH), x, y, width=logo_size, height=logo_size, mask="auto", preserveAspectRatio=True
+                )
+                canvas.restoreState()
+
+        story.append(Paragraph(f"<b>{_shape('فیش کارکرد')}</b>", title_style))
+        story.append(Paragraph(_shape(month_year), subtitle_style))
+        story.append(Spacer(1, 4 * mm))
 
         # ---------- جدول اصلی ----------
         by_key = {}
@@ -170,7 +163,7 @@ def render_attendance_card_pdf(
         table.setStyle(TableStyle(style_commands))
         story.append(table)
 
-        doc.build(story)
+        doc.build(story, onFirstPage=_draw_logo, onLaterPages=_draw_logo)
         return buffer.getvalue()
 
     try:
