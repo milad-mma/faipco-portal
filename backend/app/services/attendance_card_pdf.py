@@ -1,14 +1,20 @@
 """
-تولید PDF «فیش کارکرد» — طراحی مطابق نمونه HTML مرجع: کادر سرمه‌ای دور کارت،
-لوگو گوشه بالا، عنوان «فیش کارکرد» + زیرعنوان ماه/سال، و جدول دو‌ستونی
-برچسب/مقدار (۸ ردیف سمت راست، ۸ ردیف سمت چپ).
+تولید PDF «فیش کارکرد» — بازسازیِ دقیق طراحی نمونه HTML مرجع:
 
-برخلاف ابزار HTML مرجع (که ۸ کارت را کنار هم روی یک برگه A4 برای چاپ دستی
-می‌چیند)، اینجا هر پرسنل فایل PDF مستقل خودش را می‌گیرد (یک کارت در وسط
-صفحه) — چون توزیع از طریق پرتال و به‌صورت انفرادی است، نه چاپ گروهی.
+- سربرگ: لوگو به‌صورت یک نشان کوچک در گوشه بالا-چپ کارت (نه وسط)، و عنوان
+  «فیش کارکرد» + زیرعنوان ماه/سال، دقیقاً وسط عرض کارت (مستقل از لوگو).
+- جدول ۴ ستونی: چون مرجع HTML با dir="rtl" است، ترتیب DOM هر ردیف
+  (برچسبِ‌راست، مقدارِراست، برچسبِ‌چپ، مقدارِچپ) در نمایش فیزیکی برعکس
+  می‌شود؛ یعنی چیدمان فیزیکی چپ‌به‌راست واقعی: [مقدارِچپ، برچسبِ‌چپ،
+  مقدارِراست، برچسبِ‌راست]. ReportLab برخلاف HTML خودش این برعکس‌شدن را
+  انجام نمی‌دهد، پس اینجا صریحاً همین ترتیب فیزیکی ساخته می‌شود.
+- ستون برچسب و مقدار هر دو Bold هستند (با تگ <b> داخل متن، نه با تنظیم
+  fontName روی نسخه Bold فونت — چون آن روش با خطای شناخته‌شده ReportLab
+  «Can't map determine family/bold/italic» در برخی سرورها کرش می‌کند).
+- سلول‌های مقدارِ «نام» و «کد پرسنلی» پس‌زمینه روشن مشخصی دارند (highlight)،
+  دقیقاً مثل کلاس value.highlight در CSS مرجع.
 
-از همان زیرساخت فونت/Shape فارسی payroll_pdf.py استفاده می‌شود تا رفتار
-یکسان و بدون تکرار کد باشد.
+از همان زیرساخت فونت/Shape فارسی payroll_pdf.py استفاده می‌شود.
 """
 from __future__ import annotations
 
@@ -22,15 +28,17 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.services.payroll_pdf import (
-    _FONT_NAME,
-    _ensure_font_registered,
-    _shape,
-    _wrap_and_shape,
-)
+from app.services.payroll_pdf import _FONT_NAME, _ensure_font_registered, _shape, _wrap_and_shape
 
 _NAVY = colors.HexColor("#2b3990")
+_LABEL_BG = colors.HexColor("#fafbfd")
+_GRID_COLOR = colors.HexColor("#c7cbe0")
 _LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "images" / "faipco-logo.png"
+
+# ترتیب دقیقاً مطابق کارت مرجع (RIGHT_COLUMN / LEFT_COLUMN ابزار HTML)
+_RIGHT_COLUMN = ["name", "totalWork", "nightDays", "absence", "unpaidLeave", "deduction", "dailyMission", "unit"]
+_LEFT_COLUMN = ["code", "overtime", "fridayHours", "sickLeave", "socialSick", "bonusLeave", "leaveUsed", "remainLeave"]
+_HIGHLIGHT_KEYS = {"name", "code"}  # مقدار این دو کلید پس‌زمینه روشن می‌گیرد (مثل value.highlight در CSS)
 
 
 def render_attendance_card_pdf(
@@ -42,60 +50,66 @@ def render_attendance_card_pdf(
     def _build(include_logo: bool) -> bytes:
         has_font = _ensure_font_registered()
         font_name = _FONT_NAME if has_font else "Helvetica"
-        # نکته مهم: عمداً از _FONT_NAME_BOLD مستقیماً به‌عنوان fontName یک
-        # ParagraphStyle استفاده نمی‌شود. ReportLab برای Paragraph (نه
-        # drawString ساده)، fontName هر Style را با ps2tt() به یک "خانواده"
-        # فونت Map می‌کند؛ این تابع فقط خانواده‌ای که با registerFontFamily
-        # ثبت شده (اینجا فقط _FONT_NAME) را می‌شناسد، نه نام مستقیم فونت
-        # Bold را. استفاده مستقیم از _FONT_NAME_BOLD اینجا — بسته به این‌که
-        # کدام فونت Bold روی هر سرور واقعاً پیدا/ثبت شود — می‌تواند با خطای
-        # «Can't map determine family/bold/italic» کل تولید PDF را خراب کند.
-        # پس این‌جا برای «حس Bold»، فقط از رنگ سرمه‌ای + سایز بزرگ‌تر استفاده
-        # می‌شود، نه وزن واقعی Bold — تضمین می‌کند این کارت مستقل از این‌که
-        # کدام فونت روی کدام سرور Register شده، همیشه قابل‌ساخت بماند.
-        font_bold = font_name
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            topMargin=30 * mm,
-            bottomMargin=30 * mm,
+            topMargin=25 * mm,
+            bottomMargin=25 * mm,
             leftMargin=20 * mm,
             rightMargin=20 * mm,
         )
 
+        # نکته: هرگز فونت "-Bold" مستقیماً به‌عنوان fontName یک Style تنظیم
+        # نمی‌شود (دلیل بالای فایل) — به‌جایش از تگ <b> داخل متنِ خودِ
+        # Paragraph استفاده می‌شود تا هم واقعاً Bold دربیاید، هم کرش نکند.
         title_style = ParagraphStyle(
-            "cardTitle", fontName=font_bold, fontSize=16, alignment=TA_CENTER, textColor=_NAVY, leading=20
+            "cardTitle", fontName=font_name, fontSize=15, alignment=TA_CENTER, textColor=_NAVY, leading=19
         )
         subtitle_style = ParagraphStyle(
-            "cardSubtitle", fontName=font_name, fontSize=11, alignment=TA_CENTER, textColor=colors.HexColor("#333333")
+            "cardSubtitle", fontName=font_name, fontSize=10.5, alignment=TA_CENTER, textColor=colors.HexColor("#333333")
         )
         label_style = ParagraphStyle(
-            "cellLabel", fontName=font_bold, fontSize=9.5, alignment=TA_RIGHT, textColor=_NAVY, leading=13
+            "cellLabel", fontName=font_name, fontSize=9.5, alignment=TA_RIGHT, textColor=_NAVY, leading=13
         )
         value_style = ParagraphStyle(
-            "cellValue", fontName=font_name, fontSize=10, alignment=TA_CENTER, leading=13
+            "cellValue", fontName=font_name, fontSize=9.5, alignment=TA_CENTER, leading=13
         )
 
         story = []
 
+        # ---------- سربرگ: لوگو گوشه چپ‌بالا + عنوان واقعاً وسط عرض کارت ----------
+        logo_flowable = ""
         if include_logo and _LOGO_PATH.exists():
-            logo = Image(str(_LOGO_PATH), width=22 * mm, height=22 * mm)
-            logo.hAlign = "CENTER"
-            story.append(logo)
-            story.append(Spacer(1, 4 * mm))
+            logo_flowable = Image(str(_LOGO_PATH), width=16 * mm, height=16 * mm)
 
-        story.append(Paragraph(_shape("فیش کارکرد"), title_style))
-        story.append(Paragraph(_shape(month_year), subtitle_style))
+        title_block = [
+            Paragraph(f"<b>{_shape('فیش کارکرد')}</b>", title_style),
+            Paragraph(_shape(month_year), subtitle_style),
+        ]
+        header_table = Table(
+            [[logo_flowable, title_block, ""]],
+            colWidths=[20 * mm, doc.width - 40 * mm, 20 * mm],
+        )
+        header_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                    ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        story.append(header_table)
         story.append(Spacer(1, 6 * mm))
 
-        # ترتیب دقیقاً مطابق کارت مرجع: راست‌چین از بالا به پایین، سپس چپ‌چین
-        right_column = ["name", "totalWork", "nightDays", "absence", "unpaidLeave", "deduction", "dailyMission", "unit"]
-        left_column = ["code", "overtime", "fridayHours", "sickLeave", "socialSick", "bonusLeave", "leaveUsed", "remainLeave"]
+        # ---------- جدول اصلی ----------
         by_key = {}
-        # fields در ترتیب مرجع (name, code, totalWork, ...) با label فارسی می‌آید؛
-        # چون کلید انگلیسی در PDF لازم نیست، مستقیم بر اساس همان ترتیب ورودی نگاشت می‌کنیم
         field_keys_in_order = [
             "name", "code", "totalWork", "nightDays", "overtime", "fridayHours", "leaveUsed",
             "sickLeave", "socialSick", "unpaidLeave", "bonusLeave", "absence", "deduction",
@@ -104,44 +118,56 @@ def render_attendance_card_pdf(
         for key, item in zip(field_keys_in_order, fields):
             by_key[key] = item
 
-        col_width = (doc.width) / 4
+        # نسبت عرض دقیقاً مطابق CSS مرجع: value≈23%، label≈29% از عرض کارت (هر جفت ۵۲٪)
+        pair_width = doc.width / 2
+        value_width = pair_width * (23 / 52)
+        label_width = pair_width * (29 / 52)
+        col_widths = [value_width, label_width, value_width, label_width]
+
         table_data = []
-        max_rows = max(len(right_column), len(left_column))
+        highlight_cells = []  # [(col, row), ...] برای پس‌زمینه روشن مقدار نام/کد
+        max_rows = max(len(_RIGHT_COLUMN), len(_LEFT_COLUMN))
         for i in range(max_rows):
-            row = []
-            # نکته مهم: ReportLab ستون‌های جدول را همیشه از چپ به راست در
-            # آرایه قرار می‌دهد (برخلاف HTML با dir=rtl که خودکار برعکس
-            # می‌کند) — پس برای اینکه «right_column» واقعاً سمت راستِ فیزیکی
-            # صفحه دربیاید، باید اول left_column را در آرایه بگذاریم.
-            for key_list in (left_column, right_column):
-                key = key_list[i] if i < len(key_list) else None
+            right_key = _RIGHT_COLUMN[i] if i < len(_RIGHT_COLUMN) else None
+            left_key = _LEFT_COLUMN[i] if i < len(_LEFT_COLUMN) else None
+
+            def _cell_pair(key):
                 if key and key in by_key:
                     item = by_key[key]
-                    label_text = _shape(item["label"])
-                    value_text = _wrap_and_shape(str(item["value"]), font_name, 10, col_width - 6)
-                    row.append(Paragraph(label_text, label_style))
-                    row.append(Paragraph(value_text, value_style))
-                else:
-                    row.append("")
-                    row.append("")
-            table_data.append(row)
+                    label_p = Paragraph(f"<b>{_shape(item['label'])}</b>", label_style)
+                    value_text = _wrap_and_shape(str(item["value"]), font_name, 9.5, value_width - 6)
+                    value_p = Paragraph(f"<b>{value_text}</b>", value_style)
+                    return label_p, value_p
+                return "", ""
 
-        table = Table(table_data, colWidths=[col_width] * 4, repeatRows=0)
-        table.setStyle(
-            TableStyle(
-                [
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7cbe0")),
-                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#fafbfd")),
-                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#fafbfd")),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("BOX", (0, 0), (-1, -1), 1.5, _NAVY),
-                ]
-            )
-        )
+            left_label, left_value = _cell_pair(left_key)
+            right_label, right_value = _cell_pair(right_key)
+
+            # چیدمان فیزیکی چپ‌به‌راست واقعی (نگاه کنید به توضیح بالای فایل):
+            # [مقدارِچپ، برچسبِ‌چپ، مقدارِراست، برچسبِ‌راست]
+            row_index = len(table_data)
+            if left_key in _HIGHLIGHT_KEYS:
+                highlight_cells.append((0, row_index))
+            if right_key in _HIGHLIGHT_KEYS:
+                highlight_cells.append((2, row_index))
+
+            table_data.append([left_value, left_label, right_value, right_label])
+
+        table = Table(table_data, colWidths=col_widths, repeatRows=0)
+        style_commands = [
+            ("GRID", (0, 0), (-1, -1), 0.5, _GRID_COLOR),
+            ("BACKGROUND", (1, 0), (1, -1), _LABEL_BG),  # ستون برچسبِ‌چپ
+            ("BACKGROUND", (3, 0), (3, -1), _LABEL_BG),  # ستون برچسبِ‌راست
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("BOX", (0, 0), (-1, -1), 1.5, _NAVY),
+        ]
+        for col, row_idx in highlight_cells:
+            style_commands.append(("BACKGROUND", (col, row_idx), (col, row_idx), _LABEL_BG))
+        table.setStyle(TableStyle(style_commands))
         story.append(table)
 
         doc.build(story)

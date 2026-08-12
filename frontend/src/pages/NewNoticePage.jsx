@@ -62,6 +62,7 @@ const EMPTY_ATTENDANCE_CARD_FORM = {
   title: "فیش کارکرد",
   body: "",
   priority: "normal",
+  cardSubtitle: "",
   file: null,
 };
 
@@ -303,6 +304,10 @@ export default function NewNoticePage() {
       setError("عنوان اطلاعیه را وارد کنید.");
       return;
     }
+    if (!attendanceCardForm.cardSubtitle.trim()) {
+      setError("ماه/سالی که روی خودِ کارت چاپ می‌شود را وارد کنید (مثلاً «تیر ماه 1405»).");
+      return;
+    }
     if (!attendanceCardForm.file) {
       setError("فایل اکسل فیش کارکرد را انتخاب کنید.");
       return;
@@ -314,6 +319,7 @@ export default function NewNoticePage() {
         title: attendanceCardForm.title,
         body: attendanceCardForm.body,
         priority: attendanceCardForm.priority,
+        cardSubtitle: attendanceCardForm.cardSubtitle,
         file: attendanceCardForm.file,
       });
       setAttendanceCardResult(uploadResult);
@@ -699,7 +705,17 @@ export default function NewNoticePage() {
                   onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
-                  helperText="این عنوان به‌عنوان زیرعنوان ماه/سال روی خودِ کارت هم چاپ می‌شود — مثلاً «تیر ماه 1405»"
+                  helperText="این عنوان فقط در لیست اطلاعیه‌های دریافتی نمایش داده می‌شود"
+                />
+                <TextField
+                  label="ماه/سال روی خودِ کارت"
+                  value={attendanceCardForm.cardSubtitle}
+                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, cardSubtitle: e.target.value })}
+                  onKeyDown={handleTitleKeyDown}
+                  fullWidth
+                  disabled={isSubmitting}
+                  placeholder="مثلاً: تیر ماه 1405"
+                  helperText="این متن دقیقاً همان‌طور که وارد می‌کنید، به‌عنوان زیرعنوان روی خودِ کارت PDF چاپ می‌شود"
                 />
                 <TextField
                   label="توضیح (اختیاری — برای همه دریافت‌کنندگان یکسان است)"

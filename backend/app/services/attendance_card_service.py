@@ -48,6 +48,7 @@ class AttendanceCardNoticeService:
         body: str,
         priority: NoticePriority,
         file_bytes: bytes,
+        card_subtitle: str,
     ) -> AttendanceCardNoticeResult:
         try:
             items = parse_attendance_cards_xlsx(file_bytes)
@@ -71,6 +72,7 @@ class AttendanceCardNoticeService:
             status=NoticeStatus.published,
             notice_type=NoticeType.attendance_card,
             publish_at=datetime.now(timezone.utc),
+            card_subtitle=card_subtitle,
         )
         self.db.add(notice)
         await self.db.flush()

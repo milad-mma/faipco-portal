@@ -64,6 +64,12 @@ class Notice(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # فقط برای اطلاعیه‌های نوع attendance_card: زیرعنوان ماه/سال که روی خودِ
+    # کارت PDF چاپ می‌شود (مثلاً «تیر ماه 1405») — عمداً از title جدا است،
+    # چون title برای نمایش در لیست اطلاعیه‌های دریافتی است، نه لزوماً همان
+    # متنی که روی خودِ کارت باید بیاید.
+    card_subtitle: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
     priority: Mapped[NoticePriority] = mapped_column(
         Enum(NoticePriority, name="notice_priority_enum"), default=NoticePriority.normal, nullable=False
     )

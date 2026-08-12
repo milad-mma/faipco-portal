@@ -284,6 +284,7 @@ async def create_attendance_card_notice(
     title: str = Form(...),
     body: str = Form(""),
     priority: NoticePriority = Form(NoticePriority.normal),
+    card_subtitle: str = Form(..., description="زیرعنوان ماه/سال که روی خودِ کارت چاپ می‌شود، مثلاً «تیر ماه 1405»"),
     file: UploadFile = File(..., description="فایل اکسل فیش کارکرد پرسنل"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("notices.attendance_card")),
@@ -302,6 +303,7 @@ async def create_attendance_card_notice(
             body=body,
             priority=priority,
             file_bytes=file_bytes,
+            card_subtitle=card_subtitle,
         )
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -342,7 +344,7 @@ async def download_my_attendance_card(
     fields = json.loads(receipt.fields_json)
     pdf_bytes = render_attendance_card_pdf(
         employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
-        month_year=notice.title,
+        month_year=notice.card_subtitle or notice.title,
         fields=fields,
     )
     return Response(
