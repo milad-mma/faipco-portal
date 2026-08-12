@@ -34,7 +34,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useAuth } from "../context/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
-import { enablePushNotifications, isPushSupported } from "../utils/push";
+import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import faipcoLogo from "../assets/faipco-logo.png";
 
 const DRAWER_WIDTH = 260;
@@ -89,6 +89,8 @@ export default function Layout() {
     return initial;
   });
 
+  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
+
   function toggleMenu(path) {
     setOpenMenus((prev) => ({ ...prev, [path]: !prev[path] }));
   }
@@ -97,8 +99,10 @@ export default function Layout() {
     setMenuAnchor(null);
     try {
       await enablePushNotifications();
-      setSnackbar("اعلان‌ها با موفقیت فعال شد ✅");
+      setPushPermission(getNotificationPermission());
+      setSnackbar("اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید");
     } catch (err) {
+      setPushPermission(getNotificationPermission());
       setSnackbar(err.message || "فعال‌سازی اعلان ناموفق بود");
     }
   }
@@ -253,11 +257,18 @@ export default function Layout() {
             </IconButton>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
               {isPushSupported() && (
-                <MenuItem onClick={handleEnableNotifications}>
+                <MenuItem onClick={handleEnableNotifications} disabled={pushPermission !== "default"}>
                   <ListItemIcon>
-                    <NotificationsActiveOutlinedIcon fontSize="small" />
+                    <NotificationsActiveOutlinedIcon
+                      fontSize="small"
+                      color={pushPermission === "granted" ? "success" : "inherit"}
+                    />
                   </ListItemIcon>
-                  فعال‌سازی اعلان‌ها
+                  {pushPermission === "granted"
+                    ? "اعلان‌ها فعال است ✓"
+                    : pushPermission === "denied"
+                      ? "اعلان‌ها مسدود شده (از تنظیمات مرورگر باز کنید)"
+                      : "فعال‌سازی اعلان‌ها"}
                 </MenuItem>
               )}
               <MenuItem

@@ -25,6 +25,7 @@
 superuser همیشه به همه چیز دسترسی دارد.
 """
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,8 @@ from app.schemas.notice import (
     NoticeTargetOut,
 )
 from app.services.push_service import PushService
+
+logger = logging.getLogger("faipco.notices")
 
 
 class NoticePermissionError(Exception):
@@ -69,9 +72,20 @@ async def send_publish_notifications(notice_id: int) -> None:
                 return
             service = NoticeService(db)
             audience = await service._resolve_audience_user_ids(notice)
-            await PushService(db).notify_users(audience, title=notice.title, body=notice.body, url="/notices")
-        except Exception:  # noqa: BLE001 - ارسال Push هرگز نباید کل عملیات را متوقف کند
-            pass
+            await PushService(db).notify_users(
+                audience,
+                title=notice.title,
+                body=notice.body,
+                url="/notices",
+                priority=notice.priority.value,
+                notice_type=notice.notice_type.value,
+            )
+        except Exception:
+            # ارسال Push هرگز نباید کل عملیات انتشار اطلاعیه را متوقف کند —
+            # ولی قبلاً این خطا کاملاً بی‌صدا نادیده گرفته می‌شد و هیچ ردی
+            # در لاگ نمی‌ماند. حالا حداقل با جزئیات کامل (Traceback) لاگ
+            # می‌شود تا بشود علت ناموفق‌بودن ارسال Push را در آینده پیدا کرد.
+            logger.exception("ارسال Push برای اطلاعیه #%s با خطا مواجه شد", notice_id)
 
 
 class NoticeService:

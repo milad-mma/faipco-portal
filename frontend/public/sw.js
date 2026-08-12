@@ -6,7 +6,7 @@
  * نه یک اپ کاملاً Offline-first.
  */
 
-const CACHE_NAME = "faipco-shell-v2";
+const CACHE_NAME = "faipco-shell-v3";
 const SHELL_FILES = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -39,9 +39,12 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی
+// دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی —
+// اطلاعیه‌های با اولویت «بالا»/«فوری» قوی‌تر نمایش داده می‌شوند: با ویبره
+// محسوس‌تر و requireInteraction (تا کاربر خودش آن را ببندد، به‌جای این‌که
+// چند ثانیه بعد خودکار محو شود و از دست برود).
 self.addEventListener("push", (event) => {
-  let payload = { title: "FAIPCO Portal", body: "اطلاعیه جدید", url: "/notices" };
+  let payload = { title: "FAIPCO Portal", body: "اطلاعیه جدید", url: "/notices", priority: "normal" };
   try {
     if (event.data) {
       payload = { ...payload, ...event.data.json() };
@@ -49,6 +52,8 @@ self.addEventListener("push", (event) => {
   } catch (e) {
     // اگر بدنه پیام JSON نبود، از مقادیر پیش‌فرض بالا استفاده می‌شود
   }
+
+  const isUrgent = payload.priority === "high" || payload.priority === "urgent";
 
   event.waitUntil(
     (async () => {
@@ -59,6 +64,10 @@ self.addEventListener("push", (event) => {
         dir: "rtl",
         lang: "fa",
         data: { url: payload.url || "/notices" },
+        requireInteraction: isUrgent, // اطلاعیه فوری خودش بسته نمی‌شود، تا کاربر ببیندش
+        vibrate: isUrgent ? [300, 100, 300, 100, 300] : [200, 100, 200],
+        renotify: true,
+        tag: `faipco-notice-${Date.now()}`, // هر Push جدا نمایش داده شود، نه جایگزین قبلی
       });
 
       // به هر تب بازِ اپلیکیشن پیام می‌دهیم تا لیست اطلاعیه‌ها را خودش
