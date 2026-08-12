@@ -48,10 +48,9 @@ class AttendanceCardNoticeService:
         body: str,
         priority: NoticePriority,
         file_bytes: bytes,
-        header_rows: int = 4,
     ) -> AttendanceCardNoticeResult:
         try:
-            items = parse_attendance_cards_xlsx(file_bytes, header_rows=header_rows)
+            items = parse_attendance_cards_xlsx(file_bytes)
         except PayrollParseError:
             raise
 

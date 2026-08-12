@@ -62,7 +62,6 @@ const EMPTY_ATTENDANCE_CARD_FORM = {
   title: "فیش کارکرد",
   body: "",
   priority: "normal",
-  headerRows: 4,
   file: null,
 };
 
@@ -315,7 +314,6 @@ export default function NewNoticePage() {
         title: attendanceCardForm.title,
         body: attendanceCardForm.body,
         priority: attendanceCardForm.priority,
-        headerRows: attendanceCardForm.headerRows,
         file: attendanceCardForm.file,
       });
       setAttendanceCardResult(uploadResult);
@@ -723,22 +721,6 @@ export default function NewNoticePage() {
                   {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
                     <MenuItem key={value} value={value}>
                       {label}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  select
-                  label="تعداد سطرهای سرستون قبل از داده واقعی"
-                  value={attendanceCardForm.headerRows}
-                  onChange={(e) =>
-                    setAttendanceCardForm({ ...attendanceCardForm, headerRows: Number(e.target.value) })
-                  }
-                  disabled={isSubmitting}
-                  helperText="در فایل استاندارد «فیش کارکرد»، معمولاً ۴ سطر اول عنوان/سرستون است"
-                >
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <MenuItem key={n} value={n}>
-                      {n}
                     </MenuItem>
                   ))}
                 </TextField>

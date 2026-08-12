@@ -109,7 +109,11 @@ def render_attendance_card_pdf(
         max_rows = max(len(right_column), len(left_column))
         for i in range(max_rows):
             row = []
-            for key_list in (right_column, left_column):
+            # نکته مهم: ReportLab ستون‌های جدول را همیشه از چپ به راست در
+            # آرایه قرار می‌دهد (برخلاف HTML با dir=rtl که خودکار برعکس
+            # می‌کند) — پس برای اینکه «right_column» واقعاً سمت راستِ فیزیکی
+            # صفحه دربیاید، باید اول left_column را در آرایه بگذاریم.
+            for key_list in (left_column, right_column):
                 key = key_list[i] if i < len(key_list) else None
                 if key and key in by_key:
                     item = by_key[key]

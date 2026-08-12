@@ -284,7 +284,6 @@ async def create_attendance_card_notice(
     title: str = Form(...),
     body: str = Form(""),
     priority: NoticePriority = Form(NoticePriority.normal),
-    header_rows: int = Form(4, description="تعداد سطرهای سرستون قبل از شروع داده واقعی"),
     file: UploadFile = File(..., description="فایل اکسل فیش کارکرد پرسنل"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("notices.attendance_card")),
@@ -292,7 +291,8 @@ async def create_attendance_card_notice(
     """
     فایل اکسل آپلود می‌شود، کد هر رکورد با Employee.personnel_code تطبیق
     داده می‌شود، و اطلاعیه بلافاصله فقط برای پرسنل منطبق منتشر می‌شود.
-    کدهای پیدا نشده در پاسخ گزارش می‌شوند (ارسال نمی‌شوند).
+    کدهای پیدا نشده در پاسخ گزارش می‌شوند (ارسال نمی‌شوند). تعداد سطرهای
+    سرستون فایل به‌صورت خودکار تشخیص داده می‌شود (نیازی به ورودی دستی نیست).
     """
     file_bytes = await file.read()
     try:
@@ -302,7 +302,6 @@ async def create_attendance_card_notice(
             body=body,
             priority=priority,
             file_bytes=file_bytes,
-            header_rows=header_rows,
         )
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

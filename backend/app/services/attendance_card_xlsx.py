@@ -9,9 +9,11 @@
     M(12)=مرخصی بدون حقوق، N(13)=مرخصی تشویقی، O(14)=غیبت، P(15)=کسر کار،
     Q(16)=ماموریت روزانه، S(18)=واحد، V(21)=مانده مرخصی تا پایان ماه
 
-تعداد سطرهای سرستون (پیش‌فرض ۴) قابل تنظیم است — محتوای واقعی از همان سطر
-به بعد خوانده می‌شود. هر ردیفی که هم کد پرسنلی و هم نام آن خالی باشد،
-نادیده گرفته می‌شود (ردیف خالی/تزئینی).
+تعداد سطرهای سرستون به‌صورت خودکار تشخیص داده می‌شود (نیازی به ورودی دستی
+از کاربر نیست): از ابتدای فایل خط‌به‌خط جلو می‌رویم تا اولین سطری که ستون
+«کد پرسنلی» آن واقعاً یک عدد باشد (نه متن سرستون مثل «کد پرسنلی») — همان‌جا
+اولین سطر داده واقعی است. اگر به هر دلیلی هیچ‌جا چنین سطری پیدا نشد،
+پیش‌فرض منطقی «۴ سطر سرستون» به کار می‌رود (ساختار رایج این نوع گزارش).
 """
 from __future__ import annotations
 
@@ -62,6 +64,9 @@ _FIELD_LABELS: list[tuple[str, str]] = [
     ("remainLeave", "مانده مرخصی تا پایان ماه"),
 ]
 
+_HEADER_SCAN_LIMIT = 30  # حداکثر تا این سطر دنبال اولین ردیف داده می‌گردیم
+_FALLBACK_HEADER_ROWS = 4  # اگر تشخیص خودکار جواب نداد
+
 
 @dataclass
 class AttendanceCardItem:
@@ -69,26 +74,62 @@ class AttendanceCardItem:
     fields: list[dict] = field(default_factory=list)  # [{"label": ..., "value": ...}]
 
 
-def _cell_str(value) -> str:
+def _looks_like_personnel_code(value) -> bool:
+    """کد پرسنلی همیشه عدد است — برخلاف متنِ سرستون (مثل «کد پرسنلی»)."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        return value.strip().isdigit()
+    return False
+
+
+def _detect_first_data_row(ws) -> int:
+    code_col = _COLUMNS["code"]
+    for row in ws.iter_rows(min_row=1, max_row=_HEADER_SCAN_LIMIT):
+        cell = row[code_col] if code_col < len(row) else None
+        if cell is not None and _looks_like_personnel_code(cell.value):
+            return cell.row
+    return _FALLBACK_HEADER_ROWS + 1
+
+
+def _format_cell_value(value) -> str:
+    """
+    مقدار سلول را دقیقاً همان‌طور که در اکسل «دیده می‌شود» برمی‌گرداند — نه
+    مقدار خام اعشاری داخلی. اکسل به‌خاطر محاسبات داخلی گاهی عددی مثل
+    ۱ را به‌صورت 0.9999999999999989 ذخیره می‌کند ولی روی صفحه به کاربر
+    «۱» نشان می‌دهد؛ اینجا هم دقیقاً همان رفتار شبیه‌سازی می‌شود: ابتدا
+    نویز اعشاری بسیار ریز حذف می‌شود، و اگر نتیجه یک عدد صحیح بود، بدون
+    اعشار نمایش داده می‌شود.
+    """
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        rounded = round(value, 6)
+        if rounded == int(rounded):
+            return str(int(rounded))
+        return f"{rounded:.6f}".rstrip("0").rstrip(".")
     return str(value).strip()
 
 
-def parse_attendance_cards_xlsx(file_bytes: bytes, header_rows: int = 4) -> list[AttendanceCardItem]:
+def parse_attendance_cards_xlsx(file_bytes: bytes) -> list[AttendanceCardItem]:
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     except Exception as e:  # noqa: BLE001 - هر خطای خواندن فایل به پیام قابل‌نمایش تبدیل می‌شود
         raise PayrollParseError("فایل اکسل قابل‌خواندن نیست — فرمت آن را بررسی کنید.") from e
 
     ws = wb.worksheets[0]
+    first_data_row = _detect_first_data_row(ws)
     items: list[AttendanceCardItem] = []
 
-    for row in ws.iter_rows(min_row=header_rows + 1):
+    for row in ws.iter_rows(min_row=first_data_row):
         raw = {}
         for field_name, col_idx in _COLUMNS.items():
             cell = row[col_idx] if col_idx < len(row) else None
-            raw[field_name] = _cell_str(cell.value if cell is not None else None)
+            raw[field_name] = _format_cell_value(cell.value if cell is not None else None)
 
         code = raw.get("code") or None
         name = raw.get("name") or ""
