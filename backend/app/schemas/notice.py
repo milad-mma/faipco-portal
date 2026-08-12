@@ -45,6 +45,7 @@ class NoticeCreate(BaseModel):
 class NoticeOut(BaseModel):
     id: int
     sender_id: int
+    sender_name: str = "—"  # فقط در /notices/me پر می‌شود (نام فرستنده برای اطلاعیه‌های دریافتی)
     title: str
     body: str
     priority: NoticePriority

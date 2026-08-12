@@ -174,6 +174,27 @@ export default function NewNoticePage() {
     }));
   }
 
+  // فیلد «عنوان» تک‌خطی است — این صفحه اصلاً <form> ندارد، پس Enter به‌خودی‌خود
+  // چیزی را Submit نمی‌کند؛ ولی برای اطمینان کامل (بعضی کیبوردهای موبایل با
+  // IME فارسی/ایموجی، Enter را به‌عنوان «تأیید» تفسیر می‌کنند) صریحاً از هر
+  // رفتار پیش‌فرض روی این فیلد جلوگیری می‌کنیم.
+  function handleTitleKeyDown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+    }
+  }
+
+  // برخلاف فیلد عنوان، توی فیلد «متن اطلاعیه» باید Enter دقیقاً کار همیشگی‌اش
+  // (خط جدید) را انجام بدهد — این‌جا فقط جلوی سرریزشدن رویداد به هر Listener
+  // بالاتری گرفته می‌شود، بدون این‌که رفتار پیش‌فرض textarea تغییر کند. ایموجی
+  // نیازی به کد جداگانه ندارد؛ چون این یک <textarea>/<input> معمولی است، هر
+  // چیزی که کیبورد موبایل بفرستد (شامل ایموجی) عیناً وارد متن می‌شود.
+  function handleBodyKeyDown(e) {
+    if (e.key === "Enter") {
+      e.stopPropagation();
+    }
+  }
+
   async function handleCreate() {
     if (isSubmitting) return; // جلوگیری از ارسال تکراری با کلیک چندباره
     setError("");
@@ -344,6 +365,7 @@ export default function NewNoticePage() {
                   label="عنوان"
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
                 />
@@ -351,6 +373,7 @@ export default function NewNoticePage() {
                   label="متن اطلاعیه"
                   value={form.body}
                   onChange={(e) => setForm({ ...form, body: e.target.value })}
+                  onKeyDown={handleBodyKeyDown}
                   multiline
                   rows={3}
                   fullWidth
@@ -544,6 +567,7 @@ export default function NewNoticePage() {
                   label="عنوان اطلاعیه"
                   value={payrollForm.title}
                   onChange={(e) => setPayrollForm({ ...payrollForm, title: e.target.value })}
+                  onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
                 />
@@ -551,6 +575,7 @@ export default function NewNoticePage() {
                   label="توضیح (اختیاری — برای همه دریافت‌کنندگان یکسان است)"
                   value={payrollForm.body}
                   onChange={(e) => setPayrollForm({ ...payrollForm, body: e.target.value })}
+                  onKeyDown={handleBodyKeyDown}
                   multiline
                   rows={2}
                   fullWidth

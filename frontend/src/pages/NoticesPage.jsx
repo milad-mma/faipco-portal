@@ -99,7 +99,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               {notice.title}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {new Date(notice.created_at).toLocaleString("fa-IR")}
+              از {notice.sender_name} — {new Date(notice.created_at).toLocaleString("fa-IR")}
             </Typography>
           </Box>
         </Stack>
@@ -259,7 +259,7 @@ export default function NoticesPage() {
       {canCreateAnything && (
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
           <Tab value="received" label="دریافتی" />
-          <Tab value="sent" label="ارسالی من" />
+          <Tab value="sent" label="ارسالی" />
         </Tabs>
       )}
 

@@ -313,10 +313,13 @@ class NoticeService:
                 )
                 payroll_receipt_notice_ids = {row[0] for row in receipt_result.all()}
 
+        sender_names = await self._resolve_sender_names({n.sender_id for n in notices})
+
         return [
             NoticeOut(
                 id=n.id,
                 sender_id=n.sender_id,
+                sender_name=sender_names.get(n.sender_id, "—"),
                 title=n.title,
                 body=n.body,
                 priority=n.priority,
