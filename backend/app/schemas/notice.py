@@ -46,6 +46,7 @@ class NoticeOut(BaseModel):
     id: int
     sender_id: int
     sender_name: str = "—"  # فقط در /notices/me پر می‌شود (نام فرستنده برای اطلاعیه‌های دریافتی)
+    sender_department_name: str | None = None  # همین‌طور فقط در /notices/me — واحد سازمانی فرستنده
     title: str
     body: str
     priority: NoticePriority

@@ -58,6 +58,7 @@ const EMPTY_MAPPING = {
   first_name_column: "",
   last_name_column: "",
   mobile_column: "",
+  birth_date_column: "",
   is_active_column: "",
   is_active_inverted: false,
   department_column: "",
@@ -192,6 +193,7 @@ export default function SitesPage() {
         first_name_column: existing.first_name_column,
         last_name_column: existing.last_name_column,
         mobile_column: existing.mobile_column || "",
+        birth_date_column: existing.birth_date_column || "",
         is_active_column: existing.is_active_column || "",
         is_active_inverted: existing.is_active_inverted || false,
         department_column: existing.department_column || "",
@@ -461,6 +463,12 @@ export default function SitesPage() {
             label="ستون موبایل (اختیاری)"
             value={mappingForm.mobile_column}
             onChange={(e) => setMappingForm({ ...mappingForm, mobile_column: e.target.value })}
+          />
+          <TextField
+            label="ستون تاریخ تولد شمسی (اختیاری — برای کارت «متولدین روز جاری» در داشبورد)"
+            value={mappingForm.birth_date_column}
+            onChange={(e) => setMappingForm({ ...mappingForm, birth_date_column: e.target.value })}
+            helperText='فرمت مورد انتظار مثل «1370/05/21» یا «13700521»'
           />
           <TextField
             label="ستون وضعیت فعال/غیرفعال (اختیاری)"

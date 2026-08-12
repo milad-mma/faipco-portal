@@ -8,6 +8,8 @@ Endpoint های پرسنل: لیست/جستجو، انتصاب مستقیم نق
 (User) نداشته باشد (چون هنوز خودش وارد نشده)، همین‌جا به‌صورت خودکار ساخته
 می‌شود — دقیقاً با همان منطقی که هنگام ورود پرسنل (employee-login) استفاده می‌شود.
 """
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +20,13 @@ from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.employee import EmployeeEnabledUpdate, EmployeeOut, EmployeePageOut, EmployeePasswordSet
+from app.schemas.employee import (
+    BirthdayEmployeeOut,
+    EmployeeEnabledUpdate,
+    EmployeeOut,
+    EmployeePageOut,
+    EmployeePasswordSet,
+)
 from app.schemas.user_management import AssignRoleIn, UserRoleOut
 from app.services.user_management_service import UserManagementService
 
@@ -158,6 +166,44 @@ async def count_portal_disabled_employees(
     )
     result = await db.execute(stmt)
     return {"count": result.scalar_one()}
+
+
+@router.get("/birthdays-today", response_model=list[BirthdayEmployeeOut])
+async def list_birthdays_today(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    """
+    پرسنل فعالی که امروز (تقویم شمسی) روز تولدشان است — برای کارت «متولدین
+    روز جاری» در داشبورد Admin. تاریخ امروز (میلادی، ساعت سرور) به شمسی
+    تبدیل می‌شود تا با birth_month/birth_day مقایسه شود (که خودشان از قبل
+    شمسی ذخیره شده‌اند — نگاه کنید به سرویس Sync).
+    """
+    import jdatetime
+
+    today_jalali = jdatetime.date.fromgregorian(date=datetime.now().date())
+
+    stmt = (
+        select(Employee, Site.name, Department.name)
+        .join(Site, Site.id == Employee.site_id)
+        .outerjoin(Department, Department.id == Employee.department_id)
+        .where(
+            Employee.is_active.is_(True),
+            Employee.birth_month == today_jalali.month,
+            Employee.birth_day == today_jalali.day,
+        )
+    )
+    result = await db.execute(stmt)
+    return [
+        BirthdayEmployeeOut(
+            id=e.id,
+            first_name=e.first_name,
+            last_name=e.last_name,
+            site_name=site_name,
+            department_name=department_name,
+        )
+        for e, site_name, department_name in result.all()
+    ]
 
 
 @router.get("/count")

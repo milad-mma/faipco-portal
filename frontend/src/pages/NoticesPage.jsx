@@ -99,7 +99,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               {notice.title}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              از {notice.sender_name} — {new Date(notice.created_at).toLocaleString("fa-IR")}
+              {new Date(notice.created_at).toLocaleString("fa-IR")}
             </Typography>
           </Box>
         </Stack>
@@ -145,6 +145,16 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               )}
             </>
           )}
+          <Box sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
+            <Typography variant="caption" color="text.secondary" display="block">
+              فرستنده: {notice.sender_name}
+            </Typography>
+            {notice.sender_department_name && (
+              <Typography variant="caption" color="text.secondary" display="block">
+                واحد: {notice.sender_department_name}
+              </Typography>
+            )}
+          </Box>
         </Box>
       </Collapse>
     </Card>

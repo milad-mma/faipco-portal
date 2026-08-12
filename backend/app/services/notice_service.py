@@ -313,13 +313,14 @@ class NoticeService:
                 )
                 payroll_receipt_notice_ids = {row[0] for row in receipt_result.all()}
 
-        sender_names = await self._resolve_sender_names({n.sender_id for n in notices})
+        sender_details = await self._resolve_sender_details({n.sender_id for n in notices})
 
         return [
             NoticeOut(
                 id=n.id,
                 sender_id=n.sender_id,
-                sender_name=sender_names.get(n.sender_id, "—"),
+                sender_name=sender_details.get(n.sender_id, {}).get("name", "—"),
+                sender_department_name=sender_details.get(n.sender_id, {}).get("department_name"),
                 title=n.title,
                 body=n.body,
                 priority=n.priority,
@@ -466,6 +467,29 @@ class NoticeService:
         await self.db.commit()
 
     # ---------- گزارش‌ها ----------
+
+    async def _resolve_sender_details(self, sender_ids: set[int]) -> dict[int, dict]:
+        """
+        نام و نام واحد سازمانی فرستنده — برای نمایش «فرستنده: ... / واحد: ...»
+        در انتهای هر اطلاعیه دریافتی. اگر فرستنده به یک Employee متصل نباشد
+        (کاربر مدیریتی محض مثل admin) یا آن Employee واحدی نداشته باشد،
+        department_name مقدار None می‌گیرد.
+        """
+        if not sender_ids:
+            return {}
+        result = await self.db.execute(
+            select(User.id, User.username, Employee.first_name, Employee.last_name, Department.name)
+            .outerjoin(Employee, Employee.id == User.employee_id)
+            .outerjoin(Department, Department.id == Employee.department_id)
+            .where(User.id.in_(sender_ids))
+        )
+        details: dict[int, dict] = {}
+        for user_id, username, first_name, last_name, dept_name in result.all():
+            details[user_id] = {
+                "name": f"{first_name} {last_name}" if first_name else username,
+                "department_name": dept_name,
+            }
+        return details
 
     async def _resolve_sender_names(self, sender_ids: set[int]) -> dict[int, str]:
         if not sender_ids:

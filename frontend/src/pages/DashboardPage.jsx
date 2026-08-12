@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { Box, Card, Chip, Grid, Skeleton, Typography } from "@mui/material";
+import { Avatar, Box, Card, Chip, Grid, Skeleton, Stack, Typography } from "@mui/material";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import PersonOffOutlinedIcon from "@mui/icons-material/PersonOffOutlined";
-import { fetchEmployeeCount, fetchPortalDisabledCount } from "../api/employees";
+import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import { fetchEmployeeCount, fetchPortalDisabledCount, fetchTodayBirthdays } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
-import { fetchMyNotices, fetchNoticeStatsSummary } from "../api/notices";
+import { fetchNoticeStatsSummary } from "../api/notices";
 import { fetchSyncStatusSummary } from "../api/sync";
 import { useAuth } from "../context/AuthContext";
 
@@ -62,7 +63,7 @@ export default function DashboardPage() {
   const [syncSummary, setSyncSummary] = useState(null);
   const [weeklyNoticeCount, setWeeklyNoticeCount] = useState(null);
   const [portalDisabledCount, setPortalDisabledCount] = useState(null);
-  const [notices, setNotices] = useState([]);
+  const [birthdays, setBirthdays] = useState([]);
 
   useEffect(() => {
     fetchEmployeeCount().then(setEmployeeCount);
@@ -76,7 +77,7 @@ export default function DashboardPage() {
     fetchSyncStatusSummary().then(setSyncSummary);
     fetchNoticeStatsSummary().then((data) => setWeeklyNoticeCount(data.published_this_week));
     fetchPortalDisabledCount().then(setPortalDisabledCount);
-    fetchMyNotices().then(setNotices);
+    fetchTodayBirthdays().then(setBirthdays);
   }, []);
 
   return (
@@ -149,31 +150,41 @@ export default function DashboardPage() {
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
         <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
-          آخرین اطلاعیه‌های من
+          🎂 متولدین روز جاری
         </Typography>
-        {notices.length === 0 && (
+        {birthdays.length === 0 && (
           <Typography variant="body2" color="text.secondary">
-            در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
+            امروز تولد هیچ‌کدام از پرسنل نیست.
           </Typography>
         )}
-        {notices.slice(0, 5).map((notice) => (
-          <Box
-            key={notice.id}
-            sx={{
-              py: 1.5,
-              borderBottom: "1px solid",
-              borderColor: "divider",
-              "&:last-of-type": { borderBottom: "none" },
-            }}
-          >
-            <Typography variant="body1" fontWeight={600}>
-              {notice.title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {notice.body}
-            </Typography>
-          </Box>
-        ))}
+        <Stack spacing={0}>
+          {birthdays.map((emp) => (
+            <Box
+              key={emp.id}
+              sx={{
+                py: 1.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                borderBottom: "1px solid",
+                borderColor: "divider",
+                "&:last-of-type": { borderBottom: "none" },
+              }}
+            >
+              <Avatar sx={{ bgcolor: "secondary.main", color: "secondary.contrastText" }}>
+                <CakeOutlinedIcon />
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body1" fontWeight={600}>
+                  {emp.first_name} {emp.last_name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {[emp.department_name, emp.site_name].filter(Boolean).join(" — ") || "—"}
+                </Typography>
+              </Box>
+            </Box>
+          ))}
+        </Stack>
       </Card>
     </Box>
   );

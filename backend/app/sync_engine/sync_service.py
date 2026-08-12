@@ -166,6 +166,8 @@ class SyncService:
             columns["national_code"] = mapping.national_code_column
         if mapping.mobile_column:
             columns["mobile"] = mapping.mobile_column
+        if mapping.birth_date_column:
+            columns["birth_date_raw"] = mapping.birth_date_column
         if mapping.is_active_column:
             columns["is_active_raw"] = mapping.is_active_column
         if mapping.department_column:
@@ -233,6 +235,45 @@ class SyncService:
             return bool(raw_value)
         return str(raw_value).strip().lower() not in _FALSY_ACTIVE_VALUES
 
+    @staticmethod
+    def _parse_birth_month_day(raw_value) -> tuple[int, int] | None:
+        """
+        روز/ماه تولد را از مقدار خام ستون تاریخ تولد (شمسی) دیتابیس مبدأ
+        استخراج می‌کند — بدون نیاز به تبدیل تقویم، چون فقط برای «متولدین
+        روز جاری» لازم است، نه محاسبه سن. دو فرمت رایج پشتیبانی می‌شود:
+        - رشته جداشده با / یا - یا . به ترتیب سال-ماه-روز (مثل «1370/05/21»)
+        - رشته ۸ رقمی چسبیده به همان ترتیب (مثل «13700521»)
+        اگر مقدار خام قابل‌تفسیر نبود (خالی، NULL، فرمت ناشناس)، None برمی‌گردد
+        و آن پرسنل فقط بدون تاریخ تولد ثبت می‌شود — Sync هرگز به همین دلیل شکست نمی‌خورد.
+        """
+        if raw_value is None:
+            return None
+        text = str(raw_value).strip()
+        if not text:
+            return None
+
+        for sep in ("/", "-", "."):
+            if sep in text:
+                parts = text.split(sep)
+                if len(parts) == 3:
+                    try:
+                        _year, month, day = (int(p) for p in parts)
+                        if 1 <= month <= 12 and 1 <= day <= 31:
+                            return month, day
+                    except ValueError:
+                        return None
+                return None
+
+        if text.isdigit() and len(text) == 8:
+            try:
+                month, day = int(text[4:6]), int(text[6:8])
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    return month, day
+            except ValueError:
+                return None
+
+        return None
+
     async def _upsert_employees(
         self,
         site_id: int,
@@ -272,6 +313,12 @@ class SyncService:
                 raw_mobile = row.get(columns["mobile"])
                 mobile = str(raw_mobile).strip() if raw_mobile is not None else None
 
+            birth_month = birth_day = None
+            if "birth_date_raw" in columns:
+                parsed_birth = self._parse_birth_month_day(row.get(columns["birth_date_raw"]))
+                if parsed_birth is not None:
+                    birth_month, birth_day = parsed_birth
+
             if "is_active_raw" in columns:
                 is_active = self._coerce_is_active(row.get(columns["is_active_raw"]))
                 if is_active_inverted:
@@ -302,6 +349,8 @@ class SyncService:
                         site_id=site_id,
                         department_id=department_id,
                         is_active=is_active,
+                        birth_month=birth_month,
+                        birth_day=birth_day,
                         # is_enabled عمداً اینجا تنظیم نمی‌شود — مقدار پیش‌فرض
                         # ستون (True) اعمال می‌شود؛ این فیلد فقط دستی از پنل تغییر می‌کند.
                         last_synced_at=now,
@@ -315,6 +364,9 @@ class SyncService:
                     existing.national_code = national_code
                 if mobile is not None:
                     existing.mobile = mobile
+                if "birth_date_raw" in columns:
+                    existing.birth_month = birth_month
+                    existing.birth_day = birth_day
                 if has_department_mapping:
                     existing.department_id = department_id
                 existing.is_active = is_active

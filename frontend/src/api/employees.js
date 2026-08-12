@@ -42,6 +42,11 @@ export async function fetchPortalDisabledCount() {
   return data.count;
 }
 
+export async function fetchTodayBirthdays() {
+  const { data } = await apiClient.get("/employees/birthdays-today");
+  return data;
+}
+
 export async function fetchEmployeeRoles(employeeId) {
   const { data } = await apiClient.get(`/employees/${employeeId}/roles`);
   return data;

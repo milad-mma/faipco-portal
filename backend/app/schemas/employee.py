@@ -31,6 +31,16 @@ class EmployeePageOut(BaseModel):
     total: int
 
 
+class BirthdayEmployeeOut(BaseModel):
+    """یک پرسنل متولد امروز (شمسی) — برای کارت «متولدین روز جاری» در داشبورد."""
+
+    id: int
+    first_name: str
+    last_name: str
+    site_name: str | None = None
+    department_name: str | None = None
+
+
 class EmployeeEnabledUpdate(BaseModel):
     """فعال/غیرفعال‌کردن دستی یک پرسنل از پنل Admin — مستقل از is_active که توسط Sync Engine کنترل می‌شود."""
     is_enabled: bool

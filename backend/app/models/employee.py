@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -51,6 +51,13 @@ class Employee(Base, TimestampMixin):
     last_name: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    # فقط روز/ماه تولد (شمسی) — بدون سال، چون فقط برای کارت «متولدین روز
+    # جاری» در داشبورد استفاده می‌شود، نه محاسبه سن. مقدار خام از دیتابیس
+    # مبدأ (طبق EmployeeMapping.birth_date_column، در صورت تعریف) توسط
+    # Sync Engine استخراج و اینجا ذخیره می‌شود.
+    birth_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    birth_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     department_id: Mapped[int | None] = mapped_column(
         ForeignKey("departments.id", ondelete="SET NULL"), nullable=True
@@ -90,6 +97,12 @@ class EmployeeMapping(Base, TimestampMixin):
     first_name_column: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name_column: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # اختیاری: نام ستون تاریخ تولد شمسی خام در دیتابیس مبدأ (فرمت رایج
+    # «۱۳۷۰/۰۵/۲۱» یا مشابه) — Sync Engine فقط روز/ماه را از آن استخراج
+    # می‌کند (برای کارت «متولدین روز جاری» در داشبورد)، بدون نیاز به تبدیل
+    # تقویم شمسی/میلادی.
+    birth_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری: اگر دیتابیس مبدأ ستونی برای فعال/غیرفعال بودن پرسنل داشته باشد
     is_active_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
