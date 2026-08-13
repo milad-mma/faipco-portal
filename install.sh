@@ -492,6 +492,19 @@ EOF
 
   chown -R www-data:www-data "$INSTALL_DIR"
 
+  # اجازه محدود و دقیق (فقط همین یک دستور، بدون رمز) به www-data می‌دهیم تا
+  # پنل «پشتیبان‌گیری → بازیابی از همین پنل» بتواند بعد از Restore، سرویس
+  # خودش را Restart کند (لازم است تا کلیدهای رمزنگاری تازه از .env واقعاً
+  # بارگذاری شوند). هیچ اجازه دیگری داده نمی‌شود.
+  cat > /etc/sudoers.d/faipco-backend-restart <<'EOF'
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart faipco-backend
+EOF
+  chmod 440 /etc/sudoers.d/faipco-backend-restart
+  visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
+    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore restart won't work, CLI restore paths are unaffected)."
+    rm -f /etc/sudoers.d/faipco-backend-restart
+  }
+
   systemctl daemon-reload
   systemctl enable faipco-backend >/dev/null
   systemctl restart faipco-backend

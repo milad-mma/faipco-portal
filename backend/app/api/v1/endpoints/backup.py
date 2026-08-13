@@ -1,21 +1,27 @@
 """
-/backup/export   (GET)   دانلود یک بکاپ کامل و قابل‌جابه‌جایی — فقط Admin کامل.
+/backup/export    (GET)   دانلود یک بکاپ کامل و قابل‌جابه‌جایی — فقط Admin کامل.
+/backup/restore   (POST)  بازیابی یک بکاپ از همین پنل، روی همین سرور — فقط Admin کامل.
 
-این Endpoint فقط بکاپ را می‌سازد و برای دانلود برمی‌گرداند؛ خودِ Restore
-عمداً از طریق پنل وب انجام نمی‌شود (چون بازنویسی کامل دیتابیسِ در حالِ سرویس‌دهی
-از داخل خودِ همان برنامه، ریسک واقعی دارد). Restore باید روی یک نصب کاملاً
-تازه، از طریق `install.sh --restore-backup` انجام شود — راهنمای دقیقش در
-پاسخ همین Endpoint (و در صفحه «پشتیبان‌گیری» پنل Admin) نوشته شده.
+Restore داخل یک Transaction واحد اجرا می‌شود (اگر هر خطایی وسط پیش بیاید،
+کل عملیات Rollback می‌شود و داده فعلی دست‌نخورده می‌ماند)، و بعد از موفقیت،
+خودِ سرویس Backend را (از طریق sudo systemctl restart — که نصب‌کننده مجوزش
+را از قبل به‌صورت محدود به همین یک دستور به کاربر www-data داده) در پس‌زمینه
+Restart می‌کند تا کلیدهای رمزنگاری تازه از .env واقعاً بارگذاری شوند.
 """
+import asyncio
 import logging
-
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
 from app.core.deps import require_permission
-from app.services.backup_service import BackupError, create_backup_archive
+from app.services.backup_service import (
+    RESTORE_CONFIRMATION_PHRASE,
+    BackupError,
+    create_backup_archive,
+    restore_from_archive,
+)
 
 logger = logging.getLogger("faipco.backup")
 router = APIRouter()
@@ -45,3 +51,56 @@ async def export_backup(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+async def _restart_backend_service() -> None:
+    # کمی مکث تا پاسخ HTTP این درخواست کاملاً برای کاربر ارسال شود، قبل از
+    # اینکه خودِ فرآیند Backend در جریان Restart قطع شود.
+    await asyncio.sleep(1.5)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "sudo", "-n", "/usr/bin/systemctl", "restart", "faipco-backend",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+    except Exception:
+        logger.exception(
+            "Restart خودکار سرویس بعد از Restore ناموفق بود — لطفاً دستی روی سرور اجرا کنید: "
+            "sudo systemctl restart faipco-backend"
+        )
+
+
+@router.post("/restore")
+async def restore_backup(
+    background_tasks: BackgroundTasks,
+    confirm: str = Form(..., description=f'برای تأیید باید دقیقاً "{RESTORE_CONFIRMATION_PHRASE}" ارسال شود'),
+    file: UploadFile = File(..., description="فایلی که از همین صفحه «پشتیبان‌گیری» دانلود شده"),
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    داده فعلی همین سرور را کاملاً پاک و با محتوای فایل بکاپ جایگزین می‌کند —
+    برگشت‌ناپذیر است. بعد از موفقیت، سرویس Backend خودکار Restart می‌شود
+    (چند ثانیه طول می‌کشد) و همه Session های ورود باطل می‌شوند (چون
+    SECRET_KEY هم از بکاپ جایگزین می‌شود) — باید دوباره وارد شوید.
+    """
+    file_bytes = await file.read()
+    try:
+        await restore_from_archive(file_bytes, confirm_phrase=confirm)
+    except BackupError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception:
+        logger.exception("بازیابی بکاپ با خطای پیش‌بینی‌نشده مواجه شد")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="بازیابی با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد. "
+            "چون این عملیات در یک Transaction واحد انجام می‌شود، اگر همین‌جا با خطا مواجه شدید، "
+            "داده فعلی سرور دست‌نخورده باقی مانده است.",
+        )
+
+    background_tasks.add_task(_restart_backend_service)
+    return {
+        "success": True,
+        "message": "بازیابی با موفقیت انجام شد. سرویس در حال Restart است (چند ثانیه طول می‌کشد)؛ "
+        "بعد از آن باید دوباره وارد شوید.",
+    }
