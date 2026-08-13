@@ -118,9 +118,9 @@ export const lightTheme = createTheme({
 // ============================================================
 // ۲) مدرن شیشه‌ای (Dark/Glass)
 // ============================================================
-const GLASS_SURFACE = "rgba(22, 30, 50, 0.6)";
-const GLASS_SURFACE_STRONG = "rgba(13, 18, 32, 0.75)";
-const GLASS_BORDER = "1px solid rgba(255, 255, 255, 0.08)";
+const GLASS_SURFACE = "rgba(42, 53, 82, 0.55)";
+const GLASS_SURFACE_STRONG = "rgba(30, 39, 62, 0.7)";
+const GLASS_BORDER = "1px solid rgba(255, 255, 255, 0.09)";
 const GLASS_BLUR = "blur(20px)";
 const GRADIENT_ACCENT = "linear-gradient(135deg, #2DD4BF 0%, #A78BFA 100%)";
 
@@ -141,17 +141,19 @@ export const darkTheme = createTheme({
       contrastText: "#150F26",
     },
     background: {
-      default: "#070B14",
+      // پیش‌تر تقریباً مشکی (#070B14) بود — طبق بازخورد، الان یک سرمه‌ای
+      // متوسط و قابل‌تحمل‌تر است، نه یک Dark Mode افراطی
+      default: "#161F33",
       paper: GLASS_SURFACE,
     },
     text: {
-      primary: "#EAF0F5",
-      secondary: "#8E9BB3",
+      primary: "#EEF2F7",
+      secondary: "#A0ABC0",
     },
     success: { main: "#34D399" },
     warning: { main: "#FBBF24" },
     error: { main: "#F87171" },
-    divider: "rgba(255, 255, 255, 0.09)",
+    divider: "rgba(255, 255, 255, 0.10)",
   },
   typography: sharedTypography,
   shape: {
@@ -163,13 +165,12 @@ export const darkTheme = createTheme({
       styleOverrides: {
         body: {
           minHeight: "100vh",
-          // پس‌زمینه گرادیانت محو (نه رنگ یک‌دست) — تفاوت فوری و آشکار با
-          // استایل کلاسیک که پس‌زمینه‌اش تخت و یک‌دست است
+          // پس‌زمینه گرادیانت محو (نه رنگ یک‌دست) — روشن‌تر از نسخه قبلی
           background:
-            "radial-gradient(circle at 15% 10%, rgba(45, 212, 191, 0.16), transparent 42%)," +
-            "radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.18), transparent 45%)," +
-            "radial-gradient(circle at 50% 100%, rgba(45, 212, 191, 0.08), transparent 50%)," +
-            "#070B14",
+            "radial-gradient(circle at 15% 10%, rgba(45, 212, 191, 0.18), transparent 45%)," +
+            "radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.20), transparent 48%)," +
+            "radial-gradient(circle at 50% 100%, rgba(45, 212, 191, 0.10), transparent 55%)," +
+            "#161F33",
           backgroundAttachment: "fixed",
         },
       },
@@ -188,13 +189,13 @@ export const darkTheme = createTheme({
           backdropFilter: GLASS_BLUR,
           WebkitBackdropFilter: GLASS_BLUR,
           border: GLASS_BORDER,
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.45)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.32)",
         },
         elevation1: {
           backgroundColor: GLASS_SURFACE,
           backdropFilter: GLASS_BLUR,
           WebkitBackdropFilter: GLASS_BLUR,
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.45)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.32)",
         },
       },
     },
