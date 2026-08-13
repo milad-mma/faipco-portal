@@ -4,6 +4,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  // بدون Timeout، اگر بک‌اند از دسترس خارج بشه یا در حال Restart گیر کنه،
+  // درخواست‌ها (مثلاً همون GET /auth/me موقع باز شدن اپ) می‌تونن برای همیشه
+  // معلق بمونن و کل پنل فقط روی «در حال بارگذاری» گیر کنه، بدون هیچ خطای
+  // قابل‌مشاهده‌ای. با این Timeout، حداکثر بعد از ۲۰ ثانیه با خطا Reject
+  // می‌شه و برنامه می‌تونه به‌درستی به صفحه ورود برگرده.
+  timeout: 20_000,
 });
 
 // --- تزریق خودکار Access Token در هر درخواست ---

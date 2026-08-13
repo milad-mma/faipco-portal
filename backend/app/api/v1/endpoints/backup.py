@@ -8,11 +8,11 @@ Restore داخل یک Transaction واحد اجرا می‌شود (اگر هر �
 را از قبل به‌صورت محدود به همین یک دستور به کاربر www-data داده) در پس‌زمینه
 Restart می‌کند تا کلیدهای رمزنگاری تازه از .env واقعاً بارگذاری شوند.
 """
-import asyncio
 import logging
+import subprocess
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
 from app.core.deps import require_permission
@@ -53,27 +53,33 @@ async def export_backup(
     )
 
 
-async def _restart_backend_service() -> None:
-    # کمی مکث تا پاسخ HTTP این درخواست کاملاً برای کاربر ارسال شود، قبل از
-    # اینکه خودِ فرآیند Backend در جریان Restart قطع شود.
-    await asyncio.sleep(1.5)
+def _schedule_backend_restart() -> None:
+    """
+    Restart را با یک فرآیند کاملاً مستقل (نه یک Task داخل همین Event Loop و
+    نه فرزند این Worker) زمان‌بندی می‌کند. اگر این کار به‌صورت یک Task
+    Async با Sleep داخل همین فرآیند انجام می‌شد، درست همون لحظه‌ای که uvicorn
+    Worker خودش در جریان Restart از بین می‌رفت (Race Condition واقعی)، آن
+    Task هم قبل از رسیدن به دستور واقعی Restart کشته می‌شد — این خودش دقیقاً
+    می‌توانست باعث شود Restore واقعاً کامل انجام شود ولی سرویس هرگز درست
+    بالا نیاید. با setsid + start_new_session، این فرآیند کاملاً از Session
+    والدش جدا می‌شود و مستقل از سرنوشت Worker فعلی، کارش را کامل انجام می‌دهد.
+    """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "sudo", "-n", "/usr/bin/systemctl", "restart", "faipco-backend",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        subprocess.Popen(
+            ["setsid", "sh", "-c", "sleep 4 && sudo -n /usr/bin/systemctl restart faipco-backend"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
-        await proc.communicate()
     except Exception:
         logger.exception(
-            "Restart خودکار سرویس بعد از Restore ناموفق بود — لطفاً دستی روی سرور اجرا کنید: "
+            "زمان‌بندی Restart خودکار بعد از Restore ناموفق بود — لطفاً دستی روی سرور اجرا کنید: "
             "sudo systemctl restart faipco-backend"
         )
 
 
 @router.post("/restore")
 async def restore_backup(
-    background_tasks: BackgroundTasks,
     confirm: str = Form(..., description=f'برای تأیید باید دقیقاً "{RESTORE_CONFIRMATION_PHRASE}" ارسال شود'),
     file: UploadFile = File(..., description="فایلی که از همین صفحه «پشتیبان‌گیری» دانلود شده"),
     _user=Depends(require_permission("system.backup")),
@@ -94,13 +100,15 @@ async def restore_backup(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="بازیابی با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد. "
-            "چون این عملیات در یک Transaction واحد انجام می‌شود، اگر همین‌جا با خطا مواجه شدید، "
-            "داده فعلی سرور دست‌نخورده باقی مانده است.",
+            "چون قبل از هر تغییری در دیتابیس، .env با نسخه اصلی جایگزین می‌شود، سیستم به‌حالت "
+            "قبل از شروع Restore برگردانده شده است.",
         )
 
-    background_tasks.add_task(_restart_backend_service)
+    # Popen بدون بلاک‌شدن فوراً برمی‌گردد — نیازی به BackgroundTasks نیست؛
+    # پاسخ HTTP زیر، مستقل از این فرآیند مجزا، به‌طور معمول برای کاربر ارسال می‌شود.
+    _schedule_backend_restart()
     return {
         "success": True,
-        "message": "بازیابی با موفقیت انجام شد. سرویس در حال Restart است (چند ثانیه طول می‌کشد)؛ "
+        "message": "بازیابی با موفقیت انجام شد. سرویس چند ثانیه دیگر Restart می‌شود؛ "
         "بعد از آن باید دوباره وارد شوید.",
     }

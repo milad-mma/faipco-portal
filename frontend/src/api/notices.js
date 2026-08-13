@@ -61,6 +61,7 @@ export async function createPayrollNotice({ title, body, priority, file }) {
   formData.append("file", file);
   const { data } = await apiClient.post("/notices/payroll", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 2 * 60 * 1000, // فایل‌های حجیم ممکن است بیشتر از حالت پیش‌فرض طول بکشند
   });
   return data;
 }
@@ -81,6 +82,7 @@ export async function createAttendanceCardNotice({ title, body, priority, cardSu
   formData.append("file", file);
   const { data } = await apiClient.post("/notices/attendance-card", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 2 * 60 * 1000, // فایل‌های حجیم ممکن است بیشتر از حالت پیش‌فرض طول بکشند
   });
   return data;
 }

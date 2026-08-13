@@ -1,7 +1,10 @@
 import { apiClient } from "./client";
 
 export async function downloadBackupArchive() {
-  const { data } = await apiClient.get("/backup/export", { responseType: "blob" });
+  const { data } = await apiClient.get("/backup/export", {
+    responseType: "blob",
+    timeout: 5 * 60 * 1000, // دیتابیس‌های بزرگ ممکن است چند دقیقه طول بکشد
+  });
   return data; // Blob از نوع application/zip
 }
 
