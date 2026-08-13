@@ -14,7 +14,9 @@ import {
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
+import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
 import { downloadBackupArchive, restoreBackupArchive } from "../api/backup";
+import { bustAppCache } from "../api/system";
 import { useAuth } from "../context/AuthContext";
 import { monoFontSx } from "../theme";
 
@@ -31,6 +33,9 @@ export default function BackupPage() {
   const [confirmText, setConfirmText] = useState("");
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null); // { success, message } | null
+
+  const [isBustingCache, setIsBustingCache] = useState(false);
+  const [cacheBustResult, setCacheBustResult] = useState(null); // { success, message } | null
 
   async function handleDownload() {
     setDownloadError("");
@@ -78,6 +83,22 @@ export default function BackupPage() {
       setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی ناموفق بود." });
     } finally {
       setIsRestoring(false);
+    }
+  }
+
+  async function handleBustCache() {
+    setCacheBustResult(null);
+    setIsBustingCache(true);
+    try {
+      const data = await bustAppCache();
+      setCacheBustResult({ success: true, message: data.message });
+    } catch (err) {
+      setCacheBustResult({
+        success: false,
+        message: err.response?.data?.detail || "پاک‌کردن کش ناموفق بود.",
+      });
+    } finally {
+      setIsBustingCache(false);
     }
   }
 
@@ -219,6 +240,42 @@ export default function BackupPage() {
           بدهید. اگر روی همان مسیر نصب موجود اجرا کنید (نه یک پوشه/سرور تازه)، برای جلوگیری از
           خطر از‌بین‌رفتن داده زنده، نصب‌کننده با خطا متوقف می‌شود.
         </Typography>
+      </Card>
+
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mt: 3 }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
+          نگهداری اپلیکیشن
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          ابزارهای عمومی نگهداری اپ — مستقل از بکاپ/بازیابی.
+        </Typography>
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+          پاک‌کردن کش اپلیکیشن برای همه کاربران
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          دفعه بعدی که هر کاربر سایت را باز کند (یا صفحه را Refresh کند)، اپ کاملاً تازه دریافت
+          می‌کند — انگار اولین‌بار است. اگه گوشی نصب‌شده‌ای رفتار عجیب دارد (مثلاً آیکون یا صفحه
+          قدیمی می‌ماند)، معمولاً همین کافی است. نیازی به هماهنگی خاصی نیست و برای کاربران فعلی
+          هیچ داده‌ای پاک نمی‌شود — فقط فایل‌های ذخیره‌شده اپ (نه اطلاعات ورود یا داده‌های سرور).
+        </Typography>
+
+        {cacheBustResult && (
+          <Alert severity={cacheBustResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+            {cacheBustResult.message}
+          </Alert>
+        )}
+
+        <Button
+          variant="outlined"
+          startIcon={isBustingCache ? <CircularProgress size={18} /> : <DeleteSweepOutlinedIcon />}
+          onClick={handleBustCache}
+          disabled={isBustingCache}
+        >
+          {isBustingCache ? "در حال اعمال..." : "پاک‌کردن کش برای همه کاربران"}
+        </Button>
       </Card>
     </Box>
   );
