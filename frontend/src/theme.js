@@ -220,6 +220,46 @@ export const darkTheme = createTheme({
         },
       },
     },
+    // نکته مهم: کارت‌های داخل خودِ صفحه (MuiPaper "outlined"/"elevation1")
+    // عمداً شفافیت دارن تا پس‌زمینه گرادیانت از پشتشون کمی دیده بشه — این
+    // بخشی از حس «شیشه‌ای» است. ولی Dialog و Menu/Popover روی محتوای دیگه
+    // باز می‌شن و باید کاملاً خوانا باشن، نه این‌که پشتشون معلوم باشه؛ پس
+    // این دو عمداً تقریباً کدر (Opacity ~0.97) هستن، نه شفاف.
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "rgba(24, 32, 52, 0.97)",
+          backgroundImage: "none",
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          border: GLASS_BORDER,
+          boxShadow: "0 20px 60px rgba(0, 0, 0, 0.5)",
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "rgba(24, 32, 52, 0.97)",
+          backgroundImage: "none",
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          border: GLASS_BORDER,
+          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.45)",
+        },
+      },
+    },
+    MuiAutocomplete: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "rgba(24, 32, 52, 0.97)",
+          backgroundImage: "none",
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          border: GLASS_BORDER,
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
