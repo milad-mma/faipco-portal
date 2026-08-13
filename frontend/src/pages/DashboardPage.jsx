@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Avatar, Box, Card, Chip, Grid, Skeleton, Stack, Typography } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
@@ -57,6 +58,7 @@ function StatCard({ icon, label, value, color, helperText, helperColor }) {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const theme = useTheme();
   const [employeeCount, setEmployeeCount] = useState(null);
   const [activeSiteCount, setActiveSiteCount] = useState(null);
   const [departmentStats, setDepartmentStats] = useState(null); // { total, withoutSupervisor }
@@ -91,10 +93,10 @@ export default function DashboardPage() {
 
       <Grid container spacing={2.5} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<GroupOutlinedIcon />} label="پرسنل فعال" value={employeeCount} color="#16324F" />
+          <StatCard icon={<GroupOutlinedIcon />} label="پرسنل فعال" value={employeeCount} color={theme.palette.primary.main} />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<ApartmentOutlinedIcon />} label="سایت‌های فعال" value={activeSiteCount} color="#1F4B75" />
+          <StatCard icon={<ApartmentOutlinedIcon />} label="سایت‌های فعال" value={activeSiteCount} color={theme.palette.primary.light} />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
           <StatCard

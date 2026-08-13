@@ -1,23 +1,37 @@
 import { createTheme } from "@mui/material/styles";
 
 /**
- * Design Tokens — FAIPCO Portal
+ * دو Design Token کاملاً مستقل — «کلاسیک» (پیش‌فرض قبلی پروژه) و «مدرن تیره»
+ * (استایل دوم، انتخابی از پنل). فقط رنگ‌بندی/شکل ظاهری فرق دارن — متن‌ها،
+ * لوگو، و ساختار صفحات کاملاً دست‌نخورده می‌مونن چون این‌ها فقط Theme
+ * سطح MUI هستن، نه چیزی که محتوای صفحات رو عوض کنه.
  * ------------------------------------------------------------
- * Primary:   #16324F  (سرمه‌ای صنعتی — اقتدار و ثبات سازمانی)
- * Primary+:  #1F4B75
- * Accent:    #E0A458  (طلایی‌کهربایی — برای اکشن‌ها و برجسته‌سازی)
- * Surface:   #FFFFFF
- * Background:#F5F7FA
- * Text:      #1A1F29
- * Success:   #2E7D5B
- * Warning:   #C97A2B
- * Error:     #C0392B
- * Border:    #E3E6EB
+ * کلاسیک (Light):
+ *   Primary:   #16324F  (سرمه‌ای صنعتی)      Accent: #E0A458 (طلایی‌کهربایی)
+ *   Background:#F5F7FA                       Surface: #FFFFFF
  * ------------------------------------------------------------
- * Type: Vazirmatn برای متن فارسی (نمایش + بدنه)
- *       "JetBrains Mono" برای اعداد/کدهای پرسنلی در جداول
+ * مدرن تیره (Dark):
+ *   Primary:   #2DD4BF  (فیروزه‌ای مدرن)      Accent: #FBBF24 (کهربایی روشن)
+ *   Background:#0B1220  (سرمه‌ای تقریباً مشکی) Surface: #141B2D
+ * ------------------------------------------------------------
+ * Type (هر دو حالت): Vazirmatn برای متن فارسی، "JetBrains Mono" برای
+ * اعداد/کدهای پرسنلی در جداول.
  */
-export const theme = createTheme({
+
+const FONT_FAMILY = "'Vazirmatn', 'Tahoma', sans-serif";
+
+const sharedTypography = {
+  fontFamily: FONT_FAMILY,
+  h1: { fontWeight: 700 },
+  h2: { fontWeight: 700 },
+  h3: { fontWeight: 700 },
+  h4: { fontWeight: 600 },
+  h5: { fontWeight: 600 },
+  h6: { fontWeight: 600 },
+  button: { fontWeight: 600, textTransform: "none" },
+};
+
+export const lightTheme = createTheme({
   direction: "rtl",
   palette: {
     mode: "light",
@@ -46,16 +60,7 @@ export const theme = createTheme({
     error: { main: "#C0392B" },
     divider: "#E3E6EB",
   },
-  typography: {
-    fontFamily: "'Vazirmatn', 'Tahoma', sans-serif",
-    h1: { fontWeight: 700 },
-    h2: { fontWeight: 700 },
-    h3: { fontWeight: 700 },
-    h4: { fontWeight: 600 },
-    h5: { fontWeight: 600 },
-    h6: { fontWeight: 600 },
-    button: { fontWeight: 600, textTransform: "none" },
-  },
+  typography: sharedTypography,
   shape: {
     borderRadius: 10,
   },
@@ -79,6 +84,75 @@ export const theme = createTheme({
         head: {
           fontWeight: 700,
           backgroundColor: "#F5F7FA",
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontWeight: 600,
+        },
+      },
+    },
+  },
+});
+
+export const darkTheme = createTheme({
+  direction: "rtl",
+  palette: {
+    mode: "dark",
+    primary: {
+      main: "#2DD4BF",
+      light: "#5EEAD4",
+      dark: "#14B8A6",
+      contrastText: "#08130F",
+    },
+    secondary: {
+      main: "#FBBF24",
+      light: "#FDD061",
+      dark: "#E0A812",
+      contrastText: "#1A1204",
+    },
+    background: {
+      default: "#0B1220",
+      paper: "#141B2D",
+    },
+    text: {
+      primary: "#E8EDF2",
+      secondary: "#8B96A8",
+    },
+    success: { main: "#34D399" },
+    warning: { main: "#F59E0B" },
+    error: { main: "#F87171" },
+    divider: "#232B40",
+  },
+  typography: sharedTypography,
+  shape: {
+    // شعاع بزرگ‌تر — یکی از سیگنال‌های بصری که این استایل رو از استایل
+    // کلاسیک (که شعاع کوچیک‌تر و رسمی‌تری داره) متمایز می‌کنه
+    borderRadius: 16,
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: "none",
+          border: "1px solid #232B40",
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        head: {
+          fontWeight: 700,
+          backgroundColor: "#1A2338",
         },
       },
     },

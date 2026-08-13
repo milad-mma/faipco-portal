@@ -17,6 +17,7 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
@@ -33,7 +34,10 @@ import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsAc
 import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
+import { useThemeMode } from "../context/ThemeModeContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import faipcoLogo from "../assets/faipco-logo.png";
@@ -63,6 +67,7 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState(null);
@@ -139,16 +144,16 @@ export default function Layout() {
                   to={item.path}
                   onClick={() => setMobileOpen(false)}
                   selected={isActive}
-                  sx={{
+                  sx={(theme) => ({
                     borderRadius: 2,
                     mb: 0.5,
                     flexGrow: 1,
                     borderInlineEnd: isActive ? "3px solid" : "3px solid transparent",
                     borderInlineEndColor: isActive ? "secondary.main" : "transparent",
                     "&.Mui-selected": {
-                      backgroundColor: "rgba(22, 50, 79, 0.08)",
+                      backgroundColor: alpha(theme.palette.primary.main, 0.08),
                     },
-                  }}
+                  })}
                 >
                   <ListItemIcon sx={{ color: isActive ? "primary.main" : "text.secondary", minWidth: 40 }}>
                     {item.icon}
@@ -188,16 +193,16 @@ export default function Layout() {
                           to={child.path}
                           onClick={() => setMobileOpen(false)}
                           selected={isChildActive}
-                          sx={{
+                          sx={(theme) => ({
                             borderRadius: 2,
                             mb: 0.5,
                             pl: 5,
                             borderInlineEnd: isChildActive ? "3px solid" : "3px solid transparent",
                             borderInlineEndColor: isChildActive ? "secondary.main" : "transparent",
                             "&.Mui-selected": {
-                              backgroundColor: "rgba(22, 50, 79, 0.08)",
+                              backgroundColor: alpha(theme.palette.primary.main, 0.08),
                             },
-                          }}
+                          })}
                         >
                           <ListItemIcon
                             sx={{ color: isChildActive ? "primary.main" : "text.secondary", minWidth: 32 }}
@@ -273,6 +278,20 @@ export default function Layout() {
                       : "فعال‌سازی اعلان‌ها"}
                 </MenuItem>
               )}
+              <MenuItem
+                onClick={() => {
+                  toggleMode();
+                }}
+              >
+                <ListItemIcon>
+                  {mode === "dark" ? (
+                    <LightModeOutlinedIcon fontSize="small" />
+                  ) : (
+                    <DarkModeOutlinedIcon fontSize="small" />
+                  )}
+                </ListItemIcon>
+                {mode === "dark" ? "استایل کلاسیک (روشن)" : "استایل مدرن (تیره)"}
+              </MenuItem>
               <MenuItem
                 onClick={() => {
                   setMenuAnchor(null);

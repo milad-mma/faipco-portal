@@ -33,6 +33,7 @@ import NoticeReportTable from "../components/NoticeReportTable";
 import { fetchEmployeePhotoThumbnailBlob } from "../api/employees";
 import { useAuth } from "../context/AuthContext";
 import { monoFontSx } from "../theme";
+import { alpha } from "@mui/material/styles";
 
 const PRIORITY_LABELS = {
   low: { label: "کم", color: "default" },
@@ -77,17 +78,17 @@ function InfoField({ icon, label, value }) {
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
       <Box
-        sx={{
+        sx={(theme) => ({
           width: 36,
           height: 36,
           borderRadius: 2,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(22, 50, 79, 0.08)",
+          backgroundColor: alpha(theme.palette.primary.main, 0.08),
           color: "primary.main",
           flexShrink: 0,
-        }}
+        })}
       >
         {icon}
       </Box>
@@ -121,13 +122,13 @@ function ReceivedNoticeCard({ notice, onOpened }) {
   return (
     <Card
       variant="outlined"
-      sx={{
+      sx={(theme) => ({
         borderRadius: 3,
         overflow: "hidden",
         borderInlineStart: isUnread ? "4px solid" : "4px solid transparent",
         borderInlineStartColor: isUnread ? "secondary.main" : "transparent",
-        backgroundColor: isUnread ? "rgba(224, 164, 88, 0.06)" : "transparent",
-      }}
+        backgroundColor: isUnread ? alpha(theme.palette.secondary.main, 0.06) : "transparent",
+      })}
     >
       <Box
         onClick={handleToggle}
@@ -323,12 +324,12 @@ export default function NoticesPage() {
       {user?.employee_id && (
         <Card
           variant="outlined"
-          sx={{
+          sx={(theme) => ({
             p: 2.5,
             borderRadius: 3,
             mb: 3,
-            background: "linear-gradient(135deg, rgba(22, 50, 79, 0.04) 0%, rgba(224, 164, 88, 0.05) 100%)",
-          }}
+            background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.04)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+          })}
         >
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
             <Avatar
