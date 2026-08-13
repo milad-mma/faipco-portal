@@ -32,6 +32,7 @@ from app.schemas.notice import (
     NoticeCreate,
     NoticeDetailPageOut,
     NoticeOut,
+    NoticePageOut,
     NoticeReaderOut,
     PayrollNoticeResultOut,
 )
@@ -80,12 +81,15 @@ async def list_notices(
     return await NoticeService(db).list_all()
 
 
-@router.get("/me", response_model=list[NoticeOut])
+@router.get("/me", response_model=NoticePageOut)
 async def my_notices(
+    page: int = 1,
+    page_size: int = 10,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await NoticeService(db).list_for_user(current_user)
+    items, total = await NoticeService(db).list_for_user(current_user, page=page, page_size=page_size)
+    return NoticePageOut(items=items, total=total)
 
 
 @router.post("/{notice_id}/read", status_code=status.HTTP_204_NO_CONTENT)

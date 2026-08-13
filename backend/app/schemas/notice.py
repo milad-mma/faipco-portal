@@ -98,6 +98,14 @@ class NoticeDetailPageOut(BaseModel):
     total: int
 
 
+class NoticePageOut(BaseModel):
+    """یک صفحه از اطلاعیه‌های دریافتی خودِ کاربر جاری (GET /notices/me) —
+    همان الگوی Pagination سمت سرور."""
+
+    items: list[NoticeOut]
+    total: int
+
+
 class NoticeReaderOut(BaseModel):
     """یک نفر که یک اطلاعیه مشخص را دیده — برای درون‌رفت (Drill-down) به جزئیات."""
     user_id: int

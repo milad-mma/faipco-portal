@@ -83,6 +83,14 @@ export default function Layout() {
     [user]
   );
 
+  // اگر کاربر فقط یک مقصد قابل‌دسترس دارد (مثلاً یک پرسنل عادی که فقط
+  // «اطلاعیه‌ها» را می‌بیند)، نشون‌دادن یک منوی کناری/همبرگری با یک گزینه
+  // تکراری بی‌فایده است — چون جایی برای رفتن جز همون صفحه فعلی نیست. کل
+  // منو مخفی می‌شود و صفحه تمام‌عرض می‌شود؛ به‌محض این‌که (مثلاً بعداً)
+  // مجوز/نقش دومی به این کاربر اضافه شود، همین شرط خودکار false می‌شود و
+  // منو دوباره ظاهر می‌شود — بدون نیاز به هیچ تغییر دستی دیگری.
+  const hasSingleNavItem = visibleNavItems.length <= 1;
+
   // زیرمنو اگر خودش یا یکی از زیرمجموعه‌هایش فعال باشد، به‌طور پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {
     const initial = {};
@@ -237,20 +245,22 @@ export default function Layout() {
         elevation={0}
         color="inherit"
         sx={{
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: hasSingleNavItem ? "100%" : { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           borderBottom: "1px solid",
           borderColor: "divider",
           zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
-          <IconButton
-            edge="start"
-            sx={{ display: { md: "none" } }}
-            onClick={() => setMobileOpen((prev) => !prev)}
-          >
-            <MenuIcon />
-          </IconButton>
+          {!hasSingleNavItem && (
+            <IconButton
+              edge="start"
+              sx={{ display: { md: "none" } }}
+              onClick={() => setMobileOpen((prev) => !prev)}
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
 
           <Box />
 
@@ -319,46 +329,50 @@ export default function Layout() {
         صفحه سمت چپ می‌نشیند! برای اینکه واقعاً سمت راست بنشیند، باید anchor="left"
         بدهیم تا بعد از Mirror شدن توسط پلاگین RTL، در سمت راست قرار بگیرد.
       */}
-      <Drawer
-        variant="permanent"
-        anchor="left"
-        sx={{
-          display: { xs: "none", md: "block" },
-          width: DRAWER_WIDTH,
-          flexShrink: 0,
-          "& .MuiDrawer-paper": {
+      {!hasSingleNavItem && (
+        <Drawer
+          variant="permanent"
+          anchor="left"
+          sx={{
+            display: { xs: "none", md: "block" },
             width: DRAWER_WIDTH,
-            boxSizing: "border-box",
-            borderInlineEnd: "1px solid",
-            borderInlineEndColor: "divider",
-            borderInlineStart: "none",
-          },
-        }}
-        open
-      >
-        {drawerContent}
-      </Drawer>
+            flexShrink: 0,
+            "& .MuiDrawer-paper": {
+              width: DRAWER_WIDTH,
+              boxSizing: "border-box",
+              borderInlineEnd: "1px solid",
+              borderInlineEndColor: "divider",
+              borderInlineStart: "none",
+            },
+          }}
+          open
+        >
+          {drawerContent}
+        </Drawer>
+      )}
 
-      <Drawer
-        variant="temporary"
-        anchor="left"
-        open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        ModalProps={{ keepMounted: true }}
-        sx={{
-          display: { xs: "block", md: "none" },
-          "& .MuiDrawer-paper": { width: DRAWER_WIDTH },
-        }}
-      >
-        {drawerContent}
-      </Drawer>
+      {!hasSingleNavItem && (
+        <Drawer
+          variant="temporary"
+          anchor="left"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            display: { xs: "block", md: "none" },
+            "& .MuiDrawer-paper": { width: DRAWER_WIDTH },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
 
       <Box
         component="main"
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          width: { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: hasSingleNavItem ? "100%" : { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
           p: { xs: 2, md: 4 },
           mt: 8,
           overflowX: "hidden",

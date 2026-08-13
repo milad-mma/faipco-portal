@@ -230,7 +230,7 @@ class NoticeService:
         )
         return list(result.scalars().unique().all())
 
-    async def list_for_user(self, user: User) -> list[Notice]:
+    async def list_for_user(self, user: User, page: int = 1, page_size: int = 10) -> tuple[list[NoticeOut], int]:
         now = datetime.now(timezone.utc)
 
         result = await self.db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
@@ -269,23 +269,36 @@ class NoticeService:
                 )
             )
 
+        # به‌جای JOIN مستقیم با NoticeTarget (که وقتی یک اطلاعیه چند Target
+        # مطابق برای همین کاربر دارد، همان Notice را چندبار برمی‌گرداند و
+        # Pagination درست را خراب می‌کند)، از یک Subquery استفاده می‌کنیم —
+        # هر Notice دقیقاً یک‌بار در نتیجه می‌آید، پس LIMIT/OFFSET بدون نیاز
+        # به .unique() یا هیچ منطق تکراری‌زدایی در پایتون درست کار می‌کند.
+        matching_notice_ids = select(NoticeTarget.notice_id).where(or_(*target_conditions))
+
+        base_filters = (
+            Notice.status == NoticeStatus.published,
+            Notice.is_deleted.is_(False),
+            or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
+            or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
+            Notice.id.in_(matching_notice_ids),
+        )
+
+        count_stmt = select(func.count()).select_from(Notice).where(*base_filters)
+        total = (await self.db.execute(count_stmt)).scalar_one()
+
         stmt = (
             select(Notice)
             .options(selectinload(Notice.targets))
-            .join(NoticeTarget, NoticeTarget.notice_id == Notice.id)
-            .where(
-                Notice.status == NoticeStatus.published,
-                Notice.is_deleted.is_(False),
-                or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
-                or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
-                or_(*target_conditions),
-            )
+            .where(*base_filters)
             .order_by(Notice.created_at.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
         )
         result = await self.db.execute(stmt)
-        notices = list(result.scalars().unique().all())
+        notices = list(result.scalars().all())
         if not notices:
-            return []
+            return [], total
 
         # اطلاعیه‌هایی که کاربر جاری قبلاً باز/مشاهده کرده — برای رنگ‌بندی متفاوت
         # پیام‌های خوانده‌شده در UI
@@ -330,7 +343,7 @@ class NoticeService:
 
         sender_details = await self._resolve_sender_details({n.sender_id for n in notices})
 
-        return [
+        items = [
             NoticeOut(
                 id=n.id,
                 sender_id=n.sender_id,
@@ -353,6 +366,7 @@ class NoticeService:
             )
             for n in notices
         ]
+        return items, total
 
     # ---------- کمکی برای UI: کدام Target ها برای کاربر جاری مجازند؟ ----------
 

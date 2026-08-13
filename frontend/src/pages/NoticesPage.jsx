@@ -9,6 +9,7 @@ import {
   Chip,
   Collapse,
   Divider,
+  Pagination,
   Stack,
   Tab,
   Tabs,
@@ -254,16 +255,23 @@ export default function NoticesPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState([]);
+  const [noticesTotal, setNoticesTotal] = useState(0);
+  const [noticesPage, setNoticesPage] = useState(1);
+  const NOTICES_PAGE_SIZE = 10;
   const [sentReloadKey, setSentReloadKey] = useState(0);
   const [availableTargets, setAvailableTargets] = useState(null);
   const [photoUrl, setPhotoUrl] = useState(null);
 
-  function loadNotices() {
-    fetchMyNotices().then(setNotices);
+  function loadNotices(page = noticesPage) {
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE }).then((data) => {
+      setNotices(data.items);
+      setNoticesTotal(data.total);
+    });
   }
 
   useEffect(() => {
-    loadNotices();
+    loadNotices(1);
+    setNoticesPage(1);
     fetchAvailableTargets().then(setAvailableTargets);
   }, []);
 
@@ -289,12 +297,15 @@ export default function NoticesPage() {
   }, [user?.employee_id, user?.has_photo]);
 
   // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
-  // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من).
+  // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من). چون
+  // اطلاعیه جدید همیشه بالای لیست می‌آید، صفحه‌بندی «دریافتی» را هم به
+  // صفحه اول برمی‌گردانیم تا همان‌جا دیده شود.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     function handleMessage(event) {
       if (event.data?.type === "faipco-notice-push") {
-        loadNotices();
+        setNoticesPage(1);
+        loadNotices(1);
         if (tab === "sent") setSentReloadKey((k) => k + 1);
       }
     }
@@ -403,6 +414,19 @@ export default function NoticesPage() {
           {notices.map((notice) => (
             <ReceivedNoticeCard key={notice.id} notice={notice} onOpened={handleMarkedRead} />
           ))}
+          {noticesTotal > NOTICES_PAGE_SIZE && (
+            <Stack alignItems="center" sx={{ pt: 1.5 }}>
+              <Pagination
+                count={Math.ceil(noticesTotal / NOTICES_PAGE_SIZE)}
+                page={noticesPage}
+                onChange={(_, value) => {
+                  setNoticesPage(value);
+                  loadNotices(value);
+                }}
+                color="primary"
+              />
+            </Stack>
+          )}
         </Stack>
       )}
 

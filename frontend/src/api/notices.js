@@ -5,9 +5,9 @@ export async function fetchAllNotices() {
   return data;
 }
 
-export async function fetchMyNotices() {
-  const { data } = await apiClient.get("/notices/me");
-  return data;
+export async function fetchMyNotices({ page = 1, pageSize = 10 } = {}) {
+  const { data } = await apiClient.get("/notices/me", { params: { page, page_size: pageSize } });
+  return data; // { items, total }
 }
 
 export async function createNotice(payload) {
