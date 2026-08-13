@@ -1,21 +1,20 @@
 import { createTheme } from "@mui/material/styles";
 
 /**
- * دو Design Token کاملاً مستقل — «کلاسیک» (پیش‌فرض قبلی پروژه) و «مدرن تیره»
- * (استایل دوم، انتخابی از پنل). فقط رنگ‌بندی/شکل ظاهری فرق دارن — متن‌ها،
- * لوگو، و ساختار صفحات کاملاً دست‌نخورده می‌مونن چون این‌ها فقط Theme
- * سطح MUI هستن، نه چیزی که محتوای صفحات رو عوض کنه.
- * ------------------------------------------------------------
- * کلاسیک (Light):
- *   Primary:   #16324F  (سرمه‌ای صنعتی)      Accent: #E0A458 (طلایی‌کهربایی)
- *   Background:#F5F7FA                       Surface: #FFFFFF
- * ------------------------------------------------------------
- * مدرن تیره (Dark):
- *   Primary:   #2DD4BF  (فیروزه‌ای مدرن)      Accent: #FBBF24 (کهربایی روشن)
- *   Background:#0B1220  (سرمه‌ای تقریباً مشکی) Surface: #141B2D
- * ------------------------------------------------------------
- * Type (هر دو حالت): Vazirmatn برای متن فارسی، "JetBrains Mono" برای
- * اعداد/کدهای پرسنلی در جداول.
+ * دو زبان طراحی کاملاً متفاوت — نه فقط دو پالت رنگ:
+ *
+ * ۱) کلاسیک (Light) — همون ظاهر همیشگی پروژه: کارت‌های تخت با کادر نازک،
+ *    گوشه‌های نسبتاً تیز، دکمه‌های مستطیلی ساده، پس‌زمینه یک‌دست.
+ *
+ * ۲) مدرن شیشه‌ای (Dark/Glass) — یک زبان بصری کاملاً متفاوت:
+ *    - پس‌زمینه گرادیانت محو (نه رنگ یک‌دست)
+ *    - کارت‌ها «شیشه‌ای» (پس‌زمینه نیمه‌شفاف + Blur + سایه نرم، بدون کادر تیز)
+ *    - دکمه‌های اصلی، Pill-شکل با گرادیانت فیروزه‌ای→بنفش
+ *    - نوار بالا/کناری هم شیشه‌ای و شناور (Blur)، نه یک‌دست و صاف
+ *    - گوشه‌های خیلی گردتر همه‌جا
+ *
+ * متن‌ها، لوگو، و ساختار صفحات کاملاً دست‌نخورده می‌مونن — این‌ها فقط Theme
+ * سطح MUI هستن.
  */
 
 const FONT_FAMILY = "'Vazirmatn', 'Tahoma', sans-serif";
@@ -31,6 +30,9 @@ const sharedTypography = {
   button: { fontWeight: 600, textTransform: "none" },
 };
 
+// ============================================================
+// ۱) کلاسیک (Light)
+// ============================================================
 export const lightTheme = createTheme({
   direction: "rtl",
   palette: {
@@ -72,6 +74,22 @@ export const lightTheme = createTheme({
         },
       },
     },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: "#FFFFFF",
+          backgroundImage: "none",
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "#FFFFFF",
+          backgroundImage: "none",
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
@@ -97,6 +115,15 @@ export const lightTheme = createTheme({
   },
 });
 
+// ============================================================
+// ۲) مدرن شیشه‌ای (Dark/Glass)
+// ============================================================
+const GLASS_SURFACE = "rgba(22, 30, 50, 0.6)";
+const GLASS_SURFACE_STRONG = "rgba(13, 18, 32, 0.75)";
+const GLASS_BORDER = "1px solid rgba(255, 255, 255, 0.08)";
+const GLASS_BLUR = "blur(20px)";
+const GRADIENT_ACCENT = "linear-gradient(135deg, #2DD4BF 0%, #A78BFA 100%)";
+
 export const darkTheme = createTheme({
   direction: "rtl",
   palette: {
@@ -105,46 +132,112 @@ export const darkTheme = createTheme({
       main: "#2DD4BF",
       light: "#5EEAD4",
       dark: "#14B8A6",
-      contrastText: "#08130F",
+      contrastText: "#07110E",
     },
     secondary: {
-      main: "#FBBF24",
-      light: "#FDD061",
-      dark: "#E0A812",
-      contrastText: "#1A1204",
+      main: "#A78BFA",
+      light: "#C4B5FD",
+      dark: "#8B5CF6",
+      contrastText: "#150F26",
     },
     background: {
-      default: "#0B1220",
-      paper: "#141B2D",
+      default: "#070B14",
+      paper: GLASS_SURFACE,
     },
     text: {
-      primary: "#E8EDF2",
-      secondary: "#8B96A8",
+      primary: "#EAF0F5",
+      secondary: "#8E9BB3",
     },
     success: { main: "#34D399" },
-    warning: { main: "#F59E0B" },
+    warning: { main: "#FBBF24" },
     error: { main: "#F87171" },
-    divider: "#232B40",
+    divider: "rgba(255, 255, 255, 0.09)",
   },
   typography: sharedTypography,
   shape: {
-    // شعاع بزرگ‌تر — یکی از سیگنال‌های بصری که این استایل رو از استایل
-    // کلاسیک (که شعاع کوچیک‌تر و رسمی‌تری داره) متمایز می‌کنه
-    borderRadius: 16,
+    // شعاع خیلی بزرگ‌تر — یکی از سیگنال‌های اصلی زبان بصری «شیشه‌ای/نرم»
+    borderRadius: 22,
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          minHeight: "100vh",
+          // پس‌زمینه گرادیانت محو (نه رنگ یک‌دست) — تفاوت فوری و آشکار با
+          // استایل کلاسیک که پس‌زمینه‌اش تخت و یک‌دست است
+          background:
+            "radial-gradient(circle at 15% 10%, rgba(45, 212, 191, 0.16), transparent 42%)," +
+            "radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.18), transparent 45%)," +
+            "radial-gradient(circle at 50% 100%, rgba(45, 212, 191, 0.08), transparent 50%)," +
+            "#070B14",
+          backgroundAttachment: "fixed",
+        },
+      },
+    },
     MuiPaper: {
       styleOverrides: {
         root: {
           backgroundImage: "none",
-          border: "1px solid #232B40",
+        },
+        // این دقیقاً همون Style ای است که همه Card های "variant=outlined" این
+        // پروژه استفاده می‌کنن — یعنی بدون تغییر یک خط کد در صفحات، همه
+        // کارت‌ها خودکار «شیشه‌ای» می‌شن: نیمه‌شفاف + Blur + سایه نرم،
+        // بدون کادر تیز مثل حالت کلاسیک
+        outlined: {
+          backgroundColor: GLASS_SURFACE,
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          border: GLASS_BORDER,
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.45)",
+        },
+        elevation1: {
+          backgroundColor: GLASS_SURFACE,
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.45)",
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: GLASS_SURFACE_STRONG,
+          backgroundImage: "none",
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          boxShadow: "none",
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: GLASS_SURFACE_STRONG,
+          backgroundImage: "none",
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
         },
       },
     },
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
+          // Pill کامل — یکی دیگه از سیگنال‌های واضح تمایز با دکمه‌های
+          // نیمه‌گرد استایل کلاسیک
+          borderRadius: 999,
+          paddingInline: "20px",
+        },
+        contained: {
+          backgroundImage: GRADIENT_ACCENT,
+          color: "#07110E",
+          boxShadow: "0 6px 20px rgba(45, 212, 191, 0.28)",
+          "&:hover": {
+            backgroundImage: "linear-gradient(135deg, #5EEAD4 0%, #C4B5FD 100%)",
+            boxShadow: "0 8px 26px rgba(45, 212, 191, 0.4)",
+          },
+        },
+        outlined: {
+          borderColor: "rgba(255, 255, 255, 0.18)",
         },
       },
     },
@@ -152,7 +245,11 @@ export const darkTheme = createTheme({
       styleOverrides: {
         head: {
           fontWeight: 700,
-          backgroundColor: "#1A2338",
+          backgroundColor: "rgba(255, 255, 255, 0.04)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.09)",
+        },
+        root: {
+          borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
         },
       },
     },
@@ -160,6 +257,23 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           fontWeight: 600,
+          borderRadius: 999,
+        },
+      },
+    },
+    MuiTextField: {
+      defaultProps: {
+        variant: "filled",
+      },
+    },
+    MuiFilledInput: {
+      styleOverrides: {
+        root: {
+          borderRadius: 14,
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          "&:before, &:after": { display: "none" },
+          "&:hover": { backgroundColor: "rgba(255, 255, 255, 0.07)" },
+          "&.Mui-focused": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
         },
       },
     },

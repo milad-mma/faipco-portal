@@ -240,7 +240,6 @@ export default function Layout() {
           width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           borderBottom: "1px solid",
           borderColor: "divider",
-          backgroundColor: "background.paper",
           zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
