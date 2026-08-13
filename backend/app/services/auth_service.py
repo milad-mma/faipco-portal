@@ -17,11 +17,25 @@ from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.schemas.user import UserOut
 
 
 class AuthError(Exception):
     """خطای قابل نمایش به کاربر (نام‌کاربری اشتباه، توکن نامعتبر و ...)."""
+
+
+class AuthLockedError(AuthError):
+    """ورود به‌خاطر تلاش‌های ناموفق پیاپی موقتاً قفل شده — retry_after ثانیه باقی‌مانده تا باز شدن قفل است."""
+
+    def __init__(self, retry_after_seconds: int):
+        self.retry_after_seconds = retry_after_seconds
+        minutes = retry_after_seconds // 60
+        if minutes >= 1:
+            human = f"{minutes} دقیقه"
+        else:
+            human = f"{retry_after_seconds} ثانیه"
+        super().__init__(f"به‌خاطر تلاش‌های ناموفق پیاپی، ورود موقتاً قفل شده — {human} دیگر دوباره امتحان کنید.")
 
 
 class AuthService:
@@ -51,15 +65,25 @@ class AuthService:
         فرم ورود یکپارچه: همان دو فیلد، چه برای مدیریت و چه برای پرسنل.
         ابتدا به‌عنوان (یوزرنیم + رمز عبور) کاربر مدیریتی امتحان می‌شود؛
         اگر تطبیق نداشت، به‌عنوان (کد پرسنلی + کد ملی) پرسنل امتحان می‌شود.
+
+        قبل از هر بررسی رمز عبوری، وضعیت قفل موقت (بعد از تلاش‌های ناموفق
+        پیاپی روی همین identifier) چک می‌شود — اگر قفل باشد، حتی رمز درست
+        هم پذیرفته نمی‌شود (تا شمارش تلاش‌های Brute-Force معنا داشته باشد).
         """
+        locked_remaining = check_login_lockout(identifier)
+        if locked_remaining is not None:
+            raise AuthLockedError(retry_after_seconds=int(locked_remaining) + 1)
+
         user = await self.authenticate(identifier, credential)
 
         if user is None:
             employee = await self.repo.find_employee_for_login(identifier, credential)
             if employee is None:
+                record_failed_login(identifier)
                 raise AuthError("اطلاعات ورود اشتباه است")
             user = await self.repo.get_or_create_employee_user(employee)
 
+        reset_login_attempts(identifier)
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, refresh_token

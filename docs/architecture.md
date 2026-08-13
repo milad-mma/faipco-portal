@@ -58,3 +58,18 @@ Sync Service این مراحل را برای هر Site اجرا می‌کند:
 ## نقشه راه توسعه
 
 جزئیات هر مرحله در README.md اصلی پروژه آمده است.
+
+## پشته فناوری
+
+| لایه | تکنولوژی |
+|---|---|
+| Backend | FastAPI (Async) + SQLAlchemy 2 (Async) + Alembic |
+| دیتابیس اصلی Portal | PostgreSQL |
+| Auth | JWT (Access + Refresh با Sliding Window) |
+| Scheduler | APScheduler (Sync خودکار پرسنل) |
+| Frontend | React + MUI (RTL کامل با `stylis-plugin-rtl`) + Vite |
+| Push | Web Push (VAPID) |
+| PDF (فیش حقوقی) | ReportLab + arabic-reshaper + python-bidi |
+| XLSX (فیش حقوقی) | openpyxl |
+| Web Server تولید | Nginx (Reverse Proxy + Serve فایل‌های Frontend) |
+

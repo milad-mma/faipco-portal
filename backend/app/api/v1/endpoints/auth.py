@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse
 from app.schemas.user import UserOut
-from app.services.auth_service import AuthError, AuthService
+from app.services.auth_service import AuthError, AuthLockedError, AuthService
 
 router = APIRouter()
 
@@ -22,6 +22,12 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     service = AuthService(db)
     try:
         access_token, refresh_token = await service.login(payload.username, payload.password)
+    except AuthLockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+            headers={"Retry-After": str(e.retry_after_seconds)},
+        )
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
