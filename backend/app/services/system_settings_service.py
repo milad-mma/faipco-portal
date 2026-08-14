@@ -9,6 +9,7 @@ from app.models.system_setting import SystemSetting
 
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
 IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
+IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
@@ -64,3 +65,13 @@ class SystemSettingsService:
             raise ValueError("متن پیام نمی‌تواند خالی باشد")
         await self._set_raw(IP_BLOCKED_MESSAGE_KEY, message)
         return message
+
+    # ---------- کلید فعال/غیرفعال محدودیت IP — مستقل از این‌که رنجی ثبت شده یا نه ----------
+
+    async def get_ip_allowlist_enabled(self) -> bool:
+        raw = await self._get_raw(IP_ALLOWLIST_ENABLED_KEY)
+        return raw == "true"
+
+    async def set_ip_allowlist_enabled(self, enabled: bool) -> bool:
+        await self._set_raw(IP_ALLOWLIST_ENABLED_KEY, "true" if enabled else "false")
+        return enabled

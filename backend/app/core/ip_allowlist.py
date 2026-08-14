@@ -45,7 +45,20 @@ def _normalize_ip(ip: str) -> str:
 
 
 async def is_ip_allowlist_enforced(db: AsyncSession) -> bool:
-    """اگر حداقل یک رنج ثبت شده باشد، محدودیت فعال است."""
+    """
+    محدودیت واقعاً فعال است فقط اگر هر دو شرط برقرار باشند:
+    ۱) کلید فعال/غیرفعال (که از پنل، مستقل از تعداد رنج‌ها، کنترل می‌شود) روشن باشد
+    ۲) حداقل یک رنج هم واقعاً ثبت شده باشد
+
+    اگر کلید روشن باشد ولی هیچ رنجی ثبت نشده، عمداً محدودیت اعمال نمی‌شود —
+    وگرنه یک اشتباه ساده (روشن‌کردن کلید قبل از ثبت رنج‌ها) همه را قفل می‌کرد.
+    """
+    from app.services.system_settings_service import SystemSettingsService
+
+    enabled = await SystemSettingsService(db).get_ip_allowlist_enabled()
+    if not enabled:
+        return False
+
     result = await db.execute(select(IpAllowlistEntry.id).limit(1))
     return result.first() is not None
 

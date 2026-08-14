@@ -5,36 +5,18 @@ export async function bustAppCache() {
   return data; // { success, version, message }
 }
 
-export async function fetchIpAllowlist() {
-  const { data } = await apiClient.get("/system/ip-allowlist");
-  return data;
+export async function fetchIpAllowlistState() {
+  const { data } = await apiClient.get("/system/ip-allowlist", { timeout: 60_000 });
+  return data; // { enabled, text, count }
 }
 
-export async function addIpAllowlistEntry({ cidr, label }) {
-  const { data } = await apiClient.post("/system/ip-allowlist", { cidr, label: label || null });
-  return data;
-}
-
-export async function deleteIpAllowlistEntry(entryId) {
-  await apiClient.delete(`/system/ip-allowlist/${entryId}`);
-}
-
-export async function extractIpAllowlistCandidates(text) {
-  const { data } = await apiClient.post(
-    "/system/ip-allowlist/extract",
-    { text },
-    { timeout: 60_000 } // متن‌های خیلی بزرگ (مثلاً فایروال با هزاران رنج) ممکن است بیشتر طول بکشد
+export async function saveIpAllowlistState({ enabled, text }) {
+  const { data } = await apiClient.put(
+    "/system/ip-allowlist",
+    { enabled, text },
+    { timeout: 60_000 } // فهرست‌های خیلی بزرگ (مثلاً فایروال با هزاران رنج) ممکن است بیشتر طول بکشد
   );
-  return data.candidates; // [{ cidr, already_exists }]
-}
-
-export async function bulkAddIpAllowlist({ cidrs, label }) {
-  const { data } = await apiClient.post(
-    "/system/ip-allowlist/bulk-add",
-    { cidrs, label: label || null },
-    { timeout: 60_000 }
-  );
-  return data; // { added, added_count, duplicate_count }
+  return data; // { enabled, text, count }
 }
 
 export async function fetchIpBlockedMessage() {
