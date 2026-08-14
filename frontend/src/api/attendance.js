@@ -46,3 +46,15 @@ export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employee
   });
   return data; // { items, total }
 }
+
+export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline } = {}) {
+  const { data } = await apiClient.get("/attendance/presence-sessions", {
+    params: {
+      page,
+      page_size: pageSize,
+      employee_id: employeeId || undefined,
+      only_online: onlyOnline || undefined,
+    },
+  });
+  return data; // { items, total }
+}

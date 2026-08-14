@@ -526,6 +526,18 @@ configure_nginx() {
   #     برای همیشه Cache می‌شوند، چون هر Build جدید نام‌فایل جدیدی تولید
   #     می‌کند — نیازی به Revalidate نیست و کاربر همیشه خودکار فایل جدید
   #     را می‌گیرد (چون index.html تازه، به نام جدید اشاره می‌کند).
+  # نگاشت استاندارد Nginx برای پشتیبانی WebSocket: فقط وقتی درخواست واقعاً
+  # Upgrade باشد (مثل اتصال presence-ws)، هدر Connection را به "upgrade"
+  # تنظیم می‌کند؛ برای بقیه درخواست‌های HTTP معمولی دست‌نخورده می‌ماند. این
+  # باید در سطح http{} تعریف شود (نه داخل server{})، پس در conf.d جداگانه است.
+  mkdir -p /etc/nginx/conf.d
+  cat > /etc/nginx/conf.d/faipco-websocket-map.conf <<'EOF'
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+EOF
+
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
     listen 80 default_server;
@@ -544,6 +556,15 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # پشتیبانی از WebSocket (مثلاً /api/v1/attendance/presence-ws) — بدون
+        # این خطوط، Nginx فقط HTTP معمولی رد می‌کند و Handshake وب‌ساکت
+        # شکست می‌خورد. این‌ها فقط وقتی درخواست واقعاً Upgrade باشد فعال
+        # می‌شوند، پس درخواست‌های HTTP معمولی تحت تأثیر قرار نمی‌گیرند.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_read_timeout 600s;
     }
 
     location = /sw.js {

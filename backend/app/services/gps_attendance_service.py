@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
+from app.models.presence_session import PresenceSession
 from app.models.site import Site
 
 
@@ -174,6 +175,30 @@ class GpsAttendanceService:
             select(GpsActivityLog)
             .where(*filters)
             .order_by(GpsActivityLog.created_at.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all()), total
+
+    async def get_presence_sessions_page(
+        self, *, page: int = 1, page_size: int = 50, employee_id: int | None = None, only_online: bool = False
+    ) -> tuple[list[PresenceSession], int]:
+        """گزارش «آنلاین/آفلاین» زنده مبتنی بر WebSocket — هر ردیف یک Session
+        واقعی با شروع/پایان دقیق است، نه یک لاگ نقطه‌ای."""
+        filters = []
+        if employee_id is not None:
+            filters.append(PresenceSession.employee_id == employee_id)
+        if only_online:
+            filters.append(PresenceSession.disconnected_at.is_(None))
+
+        count_stmt = select(func.count()).select_from(PresenceSession).where(*filters)
+        total = (await self.db.execute(count_stmt)).scalar_one()
+
+        stmt = (
+            select(PresenceSession)
+            .where(*filters)
+            .order_by(PresenceSession.connected_at.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
         )

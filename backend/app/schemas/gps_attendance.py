@@ -45,3 +45,22 @@ class GpsActivityLogAdminOut(GpsActivityLogOut):
 class GpsActivityLogPageOut(BaseModel):
     items: list[GpsActivityLogAdminOut]
     total: int
+
+
+class PresenceSessionAdminOut(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    personnel_code: str
+    connected_at: datetime
+    disconnected_at: datetime | None
+    duration_seconds: int | None
+    is_online_now: bool
+    matched_site_name: str | None
+    last_distance_meters: float | None
+    is_within_geofence: bool | None
+
+
+class PresenceSessionPageOut(BaseModel):
+    items: list[PresenceSessionAdminOut]
+    total: int

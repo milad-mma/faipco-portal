@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
 import {
   AppBar,
@@ -41,8 +41,7 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
 import { useThemeMode } from "../context/ThemeModeContext";
-import { logGpsPresence } from "../api/attendance";
-import { getCurrentPosition } from "../utils/geolocation";
+import { usePresenceMonitor } from "../utils/presenceSocket";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import faipcoLogo from "../assets/faipco-logo.png";
@@ -76,7 +75,7 @@ const NAV_ITEMS = [
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
-  { label: "گزارش پرسنل آنلاین کارخانه", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
+  { label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
   { label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon />, adminOnly: true },
 ];
 
@@ -110,40 +109,11 @@ export default function Layout() {
   // منو دوباره ظاهر می‌شود — بدون نیاز به هیچ تغییر دستی دیگری.
   const hasSingleNavItem = visibleNavItems.length <= 1;
 
-  // «حضور دوره‌ای» — فقط برای پرسنلی که صراحتاً وارد آزمایش «ثبت ورود/خروج
-  // GPS» شده‌اند (can_clock_in_out)، نه برای همه کاربران؛ چون هر بار موقعیت
-  // گرفته شود، مرورگر ممکن است یک بار درخواست اجازه دسترسی به مکان نشان
-  // بدهد — نباید همه پرسنل عادی این درخواست را ببینند. کاملاً بی‌صدا اجرا
-  // می‌شود (هیچ Alert/پیامی به کاربر نشان داده نمی‌شود)؛ اگر موقعیت رد شد
-  // یا خطا داد، فقط نادیده گرفته می‌شود.
-  useEffect(() => {
-    if (!user?.can_clock_in_out) return undefined;
-    if (!("geolocation" in navigator)) return undefined;
-
-    let cancelled = false;
-
-    async function checkPresence() {
-      if (!navigator.onLine) return;
-      try {
-        const position = await getCurrentPosition({ enableHighAccuracy: false, timeout: 20000 });
-        if (cancelled) return;
-        await logGpsPresence({
-          latitude: position.latitude,
-          longitude: position.longitude,
-          accuracyMeters: position.accuracyMeters,
-        });
-      } catch {
-        // بی‌صدا نادیده گرفته می‌شود — این یک چک پس‌زمینه‌ای است
-      }
-    }
-
-    checkPresence();
-    const intervalId = setInterval(checkPresence, 10 * 60 * 1000); // هر ۱۰ دقیقه
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [user?.can_clock_in_out]);
+  // نشانگر زنده «آنلاین/آفلاین» با WebSocket — دقیقاً مثل یک سیستم چت: تا
+  // وقتی این کامپوننت زنده است، یک Session باز نگه داشته می‌شود؛ سرور خودش
+  // لحظه‌ی قطع‌شدن (بستن تب/قطعی شبکه/هرچیز دیگر) را تشخیص و مدت‌زمان دقیق
+  // را محاسبه می‌کند. فقط برای پرسنلی که وارد آزمایش شده‌اند (can_clock_in_out).
+  usePresenceMonitor(Boolean(user?.can_clock_in_out));
 
   // زیرمنو اگر خودش یا یکی از زیرمجموعه‌هایش فعال باشد، به‌طور پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {
