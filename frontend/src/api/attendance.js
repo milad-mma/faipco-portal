@@ -34,3 +34,15 @@ export async function fetchMyAttendanceLogs() {
   const { data } = await apiClient.get("/attendance/my-logs");
   return data;
 }
+
+export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType } = {}) {
+  const { data } = await apiClient.get("/attendance/logs", {
+    params: {
+      page,
+      page_size: pageSize,
+      employee_id: employeeId || undefined,
+      log_type: logType || undefined,
+    },
+  });
+  return data; // { items, total }
+}

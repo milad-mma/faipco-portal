@@ -28,6 +28,7 @@ import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettin
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
+import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
@@ -75,6 +76,7 @@ const NAV_ITEMS = [
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
+  { label: "گزارش حضور GPS", path: "/attendance-reports", icon: <ScienceOutlinedIcon />, adminOnly: true },
 ];
 
 export default function Layout() {

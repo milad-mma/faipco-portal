@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
@@ -147,3 +147,35 @@ class GpsAttendanceService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_all_logs_page(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        employee_id: int | None = None,
+        log_type: GpsLogType | None = None,
+    ) -> tuple[list[GpsActivityLog], int]:
+        """
+        گزارش کامل Admin — همه لاگ‌ها (حضور دوره‌ای + ورود/خروج) برای همه
+        پرسنل. چون «حضور دوره‌ای» هر ۱۰ دقیقه به‌ازای هر پرسنل آزمایش ثبت
+        می‌شود، این جدول می‌تواند خیلی سریع بزرگ شود — همیشه Paginated است.
+        """
+        filters = []
+        if employee_id is not None:
+            filters.append(GpsActivityLog.employee_id == employee_id)
+        if log_type is not None:
+            filters.append(GpsActivityLog.log_type == log_type)
+
+        count_stmt = select(func.count()).select_from(GpsActivityLog).where(*filters)
+        total = (await self.db.execute(count_stmt)).scalar_one()
+
+        stmt = (
+            select(GpsActivityLog)
+            .where(*filters)
+            .order_by(GpsActivityLog.created_at.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all()), total

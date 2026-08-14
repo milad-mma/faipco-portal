@@ -31,3 +31,17 @@ class GpsActivityLogOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class GpsActivityLogAdminOut(GpsActivityLogOut):
+    """همان اطلاعات، به‌علاوه هویت پرسنل و نام سایت — فقط برای گزارش Admin."""
+
+    employee_id: int
+    employee_name: str
+    personnel_code: str
+    matched_site_name: str | None = None
+
+
+class GpsActivityLogPageOut(BaseModel):
+    items: list[GpsActivityLogAdminOut]
+    total: int
