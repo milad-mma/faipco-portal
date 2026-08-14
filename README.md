@@ -58,4 +58,5 @@ cd frontend && npm install && npm run dev
 | [`docs/employee-management.md`](docs/employee-management.md) | مدیریت پرسنل از پنل Admin |
 | [`docs/rbac.md`](docs/rbac.md) | نقش‌ها و سطوح دسترسی |
 | [`docs/rate-limiting.md`](docs/rate-limiting.md) | قفل موقت ورود و محدودیت ارسال اطلاعیه |
+| [`docs/ip-allowlist.md`](docs/ip-allowlist.md) | محدودکردن ورود به رنج‌های IP مجاز (ضدVPN) |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه + کارهای باز |

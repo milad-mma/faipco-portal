@@ -56,6 +56,7 @@ DEFAULT_PERMISSIONS = [
     ("users.manage", "مدیریت کاربران Portal و انتصاب نقش"),
     ("system.backup", "دانلود بکاپ کامل سیستم — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
     ("system.cache_bust", "پاک‌کردن کش اپ برای همه کاربران — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
+    ("system.ip_allowlist", "مدیریت رنج‌های IP مجاز برای ورود — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
 ]
 
 # نقش -> فهرست کدهای Permission (به‌جز superadmin که همه را می‌گیرد)

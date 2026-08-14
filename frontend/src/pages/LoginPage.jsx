@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Box, Button, Paper, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import GetAppOutlinedIcon from "@mui/icons-material/GetAppOutlined";
+import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import { useAuth } from "../context/AuthContext";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
@@ -14,6 +27,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canInstall, setCanInstall] = useState(getIsInstallable());
 
@@ -49,7 +63,17 @@ export default function LoginPage() {
 
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.response?.data?.detail || "ورود ناموفق بود. اطلاعات وارد‌شده را بررسی کنید.");
+      // اگر IP کاربر خارج از رنج‌های مجاز باشد (۴۰۳)، به‌جای هشدار معمولی
+      // بالای فرم، یک Dialog جدا و پررنگ نشان می‌دهیم — چون این خطا با بقیه
+      // خطاهای ورود (رمز اشتباه و...) فرق دارد و باید واضح‌تر دیده شود.
+      if (err.response?.status === 403) {
+        setVpnBlockedMessage(
+          err.response?.data?.detail ||
+            "دسترسی به پرتال فقط از شبکه مجاز امکان‌پذیر است. لطفاً اتصال VPN خود را قطع کنید."
+        );
+      } else {
+        setError(err.response?.data?.detail || "ورود ناموفق بود. اطلاعات وارد‌شده را بررسی کنید.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -128,6 +152,23 @@ export default function LoginPage() {
           </Button>
         </Box>
       </Paper>
+
+      <Dialog open={Boolean(vpnBlockedMessage)} onClose={() => setVpnBlockedMessage("")} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <VpnLockOutlinedIcon color="error" />
+            <span>اتصال VPN شناسایی شد</span>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{vpnBlockedMessage}</Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button variant="contained" onClick={() => setVpnBlockedMessage("")}>
+            متوجه شدم
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

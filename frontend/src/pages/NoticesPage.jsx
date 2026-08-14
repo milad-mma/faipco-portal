@@ -150,7 +150,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
               variant="body1"
               fontWeight={isUnread ? 700 : 400}
               color={isUnread ? "text.primary" : "text.secondary"}
-              noWrap
+              sx={{ wordBreak: "break-word" }}
             >
               {notice.title}
             </Typography>
@@ -172,7 +172,15 @@ function ReceivedNoticeCard({ notice, onOpened }) {
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
           {notice.body && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: isPayroll || isAttendanceCard ? 1.5 : 0 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mb: isPayroll || isAttendanceCard ? 1.5 : 0,
+                whiteSpace: "pre-line",
+                wordBreak: "break-word",
+              }}
+            >
               {notice.body}
             </Typography>
           )}

@@ -1,19 +1,20 @@
 """Endpoint های Authentication: یک فرم ورود یکپارچه برای مدیریت و پرسنل، refresh، دریافت اطلاعات کاربر جاری."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
+from app.core.ip_allowlist import get_client_ip
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse
 from app.schemas.user import UserOut
-from app.services.auth_service import AuthError, AuthLockedError, AuthService
+from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 
 router = APIRouter()
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     فرم ورود یکپارچه: همان دو فیلد (username/password) هم برای مدیریت
     (یوزرنیم + رمز عبور) و هم برای پرسنل (کد پرسنلی + کد ملی) کار می‌کند —
@@ -21,7 +22,11 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     service = AuthService(db)
     try:
-        access_token, refresh_token = await service.login(payload.username, payload.password)
+        access_token, refresh_token = await service.login(
+            payload.username, payload.password, client_ip=get_client_ip(request)
+        )
+    except AuthIpBlockedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except AuthLockedError as e:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

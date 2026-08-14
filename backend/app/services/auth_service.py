@@ -17,6 +17,7 @@ from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.schemas.user import UserOut
 
@@ -36,6 +37,16 @@ class AuthLockedError(AuthError):
         else:
             human = f"{retry_after_seconds} ثانیه"
         super().__init__(f"به‌خاطر تلاش‌های ناموفق پیاپی، ورود موقتاً قفل شده — {human} دیگر دوباره امتحان کنید.")
+
+
+class AuthIpBlockedError(AuthError):
+    """IP کاربر داخل رنج‌های مجاز ثبت‌شده در پنل Admin نیست."""
+
+    def __init__(self):
+        super().__init__(
+            "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
+            "لطفاً اتصال VPN خود را قطع کنید و دوباره تلاش کنید."
+        )
 
 
 class AuthService:
@@ -60,7 +71,7 @@ class AuthService:
         await self.db.commit()
         return user
 
-    async def login(self, identifier: str, credential: str) -> tuple[str, str]:
+    async def login(self, identifier: str, credential: str, client_ip: str | None = None) -> tuple[str, str]:
         """
         فرم ورود یکپارچه: همان دو فیلد، چه برای مدیریت و چه برای پرسنل.
         ابتدا به‌عنوان (یوزرنیم + رمز عبور) کاربر مدیریتی امتحان می‌شود؛
@@ -69,7 +80,15 @@ class AuthService:
         قبل از هر بررسی رمز عبوری، وضعیت قفل موقت (بعد از تلاش‌های ناموفق
         پیاپی روی همین identifier) چک می‌شود — اگر قفل باشد، حتی رمز درست
         هم پذیرفته نمی‌شود (تا شمارش تلاش‌های Brute-Force معنا داشته باشد).
+
+        اگر رنج IP مجاز در پنل تعریف شده باشد، IP کاربر هم چک می‌شود — این
+        بررسی قبل از هر چیز دیگری انجام می‌شود (حتی قبل از چک رمز)، چون اگر
+        IP مجاز نیست، اصلاً نیازی به بررسی درست/غلط بودن رمز نیست.
         """
+        if client_ip is not None and await is_ip_allowlist_enforced(self.db):
+            if not await is_ip_allowed(self.db, client_ip):
+                raise AuthIpBlockedError()
+
         locked_remaining = check_login_lockout(identifier)
         if locked_remaining is not None:
             raise AuthLockedError(retry_after_seconds=int(locked_remaining) + 1)

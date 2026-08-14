@@ -16,6 +16,7 @@ import NewNoticePage from "./pages/NewNoticePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import BackupPage from "./pages/BackupPage";
+import IpAllowlistPage from "./pages/IpAllowlistPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_DURATION_MS = 2000;
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
+          <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
 
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />
