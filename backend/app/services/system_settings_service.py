@@ -8,6 +8,12 @@ from app.core.config import get_settings
 from app.models.system_setting import SystemSetting
 
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
+IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
+
+DEFAULT_IP_BLOCKED_MESSAGE = (
+    "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
+    "لطفاً اتصال VPN خود را قطع کنید و دوباره تلاش کنید."
+)
 
 
 class SystemSettingsService:
@@ -45,3 +51,16 @@ class SystemSettingsService:
             raise ValueError("فاصله زمانی Sync باید حداقل ۱ دقیقه باشد")
         await self._set_raw(SYNC_INTERVAL_KEY, str(minutes))
         return minutes
+
+    # ---------- پیام نمایش‌داده‌شده وقتی IP کاربر مجاز نیست ----------
+
+    async def get_ip_blocked_message(self) -> str:
+        raw = await self._get_raw(IP_BLOCKED_MESSAGE_KEY)
+        return raw if raw else DEFAULT_IP_BLOCKED_MESSAGE
+
+    async def set_ip_blocked_message(self, message: str) -> str:
+        message = message.strip()
+        if not message:
+            raise ValueError("متن پیام نمی‌تواند خالی باشد")
+        await self._set_raw(IP_BLOCKED_MESSAGE_KEY, message)
+        return message

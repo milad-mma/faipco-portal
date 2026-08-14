@@ -19,6 +19,7 @@ from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
+from app.services.system_settings_service import SystemSettingsService
 from app.schemas.user import UserOut
 
 
@@ -40,13 +41,11 @@ class AuthLockedError(AuthError):
 
 
 class AuthIpBlockedError(AuthError):
-    """IP کاربر داخل رنج‌های مجاز ثبت‌شده در پنل Admin نیست."""
+    """IP کاربر داخل رنج‌های مجاز ثبت‌شده در پنل Admin نیست — متن پیام از
+    تنظیمات قابل‌تغییر از پنل خوانده می‌شود (نه یک متن ثابت در کد)."""
 
-    def __init__(self):
-        super().__init__(
-            "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
-            "لطفاً اتصال VPN خود را قطع کنید و دوباره تلاش کنید."
-        )
+    def __init__(self, message: str):
+        super().__init__(message)
 
 
 class AuthService:
@@ -87,7 +86,8 @@ class AuthService:
         """
         if client_ip is not None and await is_ip_allowlist_enforced(self.db):
             if not await is_ip_allowed(self.db, client_ip):
-                raise AuthIpBlockedError()
+                message = await SystemSettingsService(self.db).get_ip_blocked_message()
+                raise AuthIpBlockedError(message)
 
         locked_remaining = check_login_lockout(identifier)
         if locked_remaining is not None:

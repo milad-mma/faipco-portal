@@ -31,3 +31,42 @@ class IpAllowlistEntryOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class IpAllowlistBulkImportIn(BaseModel):
+    """متن خام (مثلاً محتوای یک فایل txt/لاگ Copy-Paste شده) — هر چیزی که شبیه
+    IP یا CIDR باشد استخراج می‌شود؛ چون همیشه امکان تشخیص اشتباه وجود دارد
+    (مثلاً یک عدد نسخه مرورگر شبیه IP)، این فقط استخراج/پیش‌نمایش است، هنوز
+    چیزی ذخیره نمی‌شود — کاربر باید فهرست را ببیند و تأیید کند."""
+
+    text: str
+
+
+class IpAllowlistCandidate(BaseModel):
+    cidr: str
+    already_exists: bool
+
+
+class IpAllowlistExtractResult(BaseModel):
+    candidates: list[IpAllowlistCandidate]
+
+
+class IpAllowlistBulkAddIn(BaseModel):
+    """فهرست نهایی CIDR هایی که کاربر بعد از دیدن پیش‌نمایش تأیید کرده."""
+
+    cidrs: list[str]
+    label: str | None = None
+
+
+class IpAllowlistBulkAddResult(BaseModel):
+    added: list[IpAllowlistEntryOut]
+    added_count: int
+    duplicate_count: int
+
+
+class IpBlockedMessageIn(BaseModel):
+    message: str
+
+
+class IpBlockedMessageOut(BaseModel):
+    message: str
