@@ -273,13 +273,25 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                 latitude = data.get("latitude")
                 longitude = data.get("longitude")
                 if latitude is None or longitude is None:
-                    continue  # بدون موقعیت نمی‌شود محدوده را تأیید کرد — این Heartbeat را نادیده می‌گیریم
+                    # بدون موقعیت نمی‌شود محدوده را تأیید کرد — این Heartbeat نادیده گرفته می‌شود؛
+                    # ولی برای اینکه مشکل احتمالی (مثلاً رد کردن دسترسی GPS در مرورگر) قابل‌تشخیص
+                    # باشد، همیشه یک پاسخ تشخیصی به کلاینت برمی‌گردد (کنسول DevTools قابل‌مشاهده است)
+                    await websocket.send_json({"status": "no_position", "message": "موقعیتی در این Heartbeat ارسال نشده بود."})
+                    continue
 
                 geofence = await check_geofence(db, data.get("site_id"), latitude, longitude)
 
                 if not geofence.is_within:
                     # خارج از محدوده — اگر Session بازی داشتیم می‌بندیمش؛ چیز جدیدی ثبت نمی‌شود
                     await close_open_session()
+                    await websocket.send_json(
+                        {
+                            "status": "outside_geofence",
+                            "matched_site_name": geofence.matched_site.name if geofence.matched_site else None,
+                            "distance_meters": geofence.distance_meters,
+                            "allowed_radius_meters": geofence.matched_site.gps_radius_meters if geofence.matched_site else None,
+                        }
+                    )
                     continue
 
                 if session is None:
@@ -295,6 +307,13 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                 session.last_distance_meters = geofence.distance_meters
                 session.is_within_geofence = True
                 await db.commit()
+                await websocket.send_json(
+                    {
+                        "status": "logged",
+                        "matched_site_name": geofence.matched_site.name if geofence.matched_site else None,
+                        "distance_meters": geofence.distance_meters,
+                    }
+                )
         except WebSocketDisconnect:
             pass
         except Exception:
