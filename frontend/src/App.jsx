@@ -18,7 +18,8 @@ import AccessManagementPage from "./pages/AccessManagementPage";
 import BackupPage from "./pages/BackupPage";
 import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
-import AttendanceReportsPage from "./pages/AttendanceReportsPage";
+import PresenceReportPage from "./pages/PresenceReportPage";
+import ClockInOutReportPage from "./pages/ClockInOutReportPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_DURATION_MS = 2000;
@@ -60,7 +61,8 @@ export default function App() {
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
           <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
-          <Route path="/attendance-reports" element={<AdminRoute><AttendanceReportsPage /></AdminRoute>} />
+          <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
+          <Route path="/clock-in-out-report" element={<AdminRoute><ClockInOutReportPage /></AdminRoute>} />
 
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />

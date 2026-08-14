@@ -76,7 +76,8 @@ const NAV_ITEMS = [
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
-  { label: "گزارش حضور GPS", path: "/attendance-reports", icon: <ScienceOutlinedIcon />, adminOnly: true },
+  { label: "گزارش پرسنل آنلاین کارخانه", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
+  { label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon />, adminOnly: true },
 ];
 
 export default function Layout() {
