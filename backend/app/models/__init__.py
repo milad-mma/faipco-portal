@@ -21,3 +21,4 @@ from app.models.system_setting import SystemSetting  # noqa: F401
 from app.models.payroll_receipt import PayrollReceipt  # noqa: F401
 from app.models.attendance_card_receipt import AttendanceCardReceipt  # noqa: F401
 from app.models.ip_allowlist_entry import IpAllowlistEntry  # noqa: F401
+from app.models.gps_activity_log import GpsActivityLog  # noqa: F401

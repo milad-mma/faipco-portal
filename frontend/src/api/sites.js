@@ -19,6 +19,15 @@ export async function deleteSite(siteId) {
   await apiClient.delete(`/sites/${siteId}`);
 }
 
+export async function updateSiteGpsLocation(siteId, { gps_latitude, gps_longitude, gps_radius_meters }) {
+  const { data } = await apiClient.put(`/sites/${siteId}/gps`, {
+    gps_latitude,
+    gps_longitude,
+    gps_radius_meters,
+  });
+  return data;
+}
+
 export async function fetchSiteConnection(siteId) {
   const { data } = await apiClient.get(`/sites/${siteId}/connection`);
   return data; // null اگر تعریف نشده باشد

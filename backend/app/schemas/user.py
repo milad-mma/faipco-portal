@@ -23,5 +23,6 @@ class UserOut(BaseModel):
     department_name: str | None = None
     position_title: str | None = None
     has_photo: bool = False
+    can_clock_in_out: bool = False  # آیا مجوز آزمایشی «ثبت ورود/خروج مبتنی بر GPS» را دارد
 
     model_config = ConfigDict(from_attributes=True)

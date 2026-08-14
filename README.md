@@ -59,4 +59,5 @@ cd frontend && npm install && npm run dev
 | [`docs/rbac.md`](docs/rbac.md) | نقش‌ها و سطوح دسترسی |
 | [`docs/rate-limiting.md`](docs/rate-limiting.md) | قفل موقت ورود و محدودیت ارسال اطلاعیه |
 | [`docs/ip-allowlist.md`](docs/ip-allowlist.md) | محدودکردن ورود به رنج‌های IP مجاز (ضدVPN) |
+| [`docs/gps-attendance.md`](docs/gps-attendance.md) | حضور مبتنی بر GPS + ثبت ورود/خروج آزمایشی |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه + کارهای باز |

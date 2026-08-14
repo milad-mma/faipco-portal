@@ -25,6 +25,7 @@ import {
   fetchSiteConnection,
   fetchSiteMapping,
   fetchSites,
+  updateSiteGpsLocation,
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
@@ -70,7 +71,7 @@ export default function SiteSettingsPage() {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = searchParams.get("tab") === "mapping" ? "mapping" : "connection";
+  const initialTab = ["mapping", "gps"].includes(searchParams.get("tab")) ? searchParams.get("tab") : "connection";
 
   const [site, setSite] = useState(null);
   const [tab, setTab] = useState(initialTab);
@@ -80,6 +81,9 @@ export default function SiteSettingsPage() {
   const [hasExistingConnection, setHasExistingConnection] = useState(false);
   const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [hasExistingMapping, setHasExistingMapping] = useState(false);
+  const [gpsForm, setGpsForm] = useState({ gps_latitude: "", gps_longitude: "", gps_radius_meters: "" });
+  const [isSavingGps, setIsSavingGps] = useState(false);
+  const [gpsResult, setGpsResult] = useState(null);
 
   const [error, setError] = useState("");
   const [result, setResult] = useState(null); // { success, message } | null
@@ -92,6 +96,13 @@ export default function SiteSettingsPage() {
       fetchSiteMapping(siteId).catch(() => null),
     ]).then(([siteData, connection, mapping]) => {
       setSite(siteData || null);
+      if (siteData) {
+        setGpsForm({
+          gps_latitude: siteData.gps_latitude ?? "",
+          gps_longitude: siteData.gps_longitude ?? "",
+          gps_radius_meters: siteData.gps_radius_meters ?? "",
+        });
+      }
       if (connection) {
         setConnectionForm({
           db_type: connection.db_type,
@@ -200,6 +211,54 @@ export default function SiteSettingsPage() {
     }
   }
 
+  function handleUseCurrentLocation() {
+    if (!("geolocation" in navigator)) {
+      setGpsResult({ success: false, message: "مرورگر شما از موقعیت‌یابی پشتیبانی نمی‌کند." });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsForm((prev) => ({
+          ...prev,
+          gps_latitude: position.coords.latitude,
+          gps_longitude: position.coords.longitude,
+        }));
+      },
+      () => {
+        setGpsResult({ success: false, message: "دریافت موقعیت فعلی ناموفق بود — دسترسی مکان را بررسی کنید." });
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  async function handleSaveGps() {
+    setGpsResult(null);
+    setIsSavingGps(true);
+    try {
+      const hasAny = gpsForm.gps_latitude !== "" || gpsForm.gps_longitude !== "" || gpsForm.gps_radius_meters !== "";
+      const hasAll = gpsForm.gps_latitude !== "" && gpsForm.gps_longitude !== "" && gpsForm.gps_radius_meters !== "";
+      if (hasAny && !hasAll) {
+        setGpsResult({ success: false, message: "برای تنظیم موقعیت، هر سه فیلد را پر کنید (یا برای پاک‌کردن، هر سه را خالی بگذارید)." });
+        return;
+      }
+      const updated = await updateSiteGpsLocation(siteId, {
+        gps_latitude: hasAll ? Number(gpsForm.gps_latitude) : null,
+        gps_longitude: hasAll ? Number(gpsForm.gps_longitude) : null,
+        gps_radius_meters: hasAll ? Number(gpsForm.gps_radius_meters) : null,
+      });
+      setGpsForm({
+        gps_latitude: updated.gps_latitude ?? "",
+        gps_longitude: updated.gps_longitude ?? "",
+        gps_radius_meters: updated.gps_radius_meters ?? "",
+      });
+      setGpsResult({ success: true, message: hasAll ? "موقعیت GPS ذخیره شد." : "محدودیت مکانی این سایت غیرفعال شد." });
+    } catch (err) {
+      setGpsResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+    } finally {
+      setIsSavingGps(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -234,6 +293,7 @@ export default function SiteSettingsPage() {
         <Tabs value={tab} onChange={handleTabChange} sx={{ mb: 3 }}>
           <Tab value="connection" label="اتصال دیتابیس" disabled={isSaving} />
           <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
+          <Tab value="gps" label="موقعیت GPS" disabled={isSaving} />
         </Tabs>
 
         {tab === "connection" && (
@@ -510,6 +570,71 @@ export default function SiteSettingsPage() {
                   حذف Mapping
                 </Button>
               )}
+            </Stack>
+          </Stack>
+        )}
+
+        {tab === "gps" && (
+          <Stack spacing={2.5}>
+            <Alert severity="info">
+              اگر هر سه فیلد را پر و ذخیره کنید، «حضور دوره‌ای» و «ثبت ورود/خروج آزمایشی» فقط برای
+              پرسنل این سایت وقتی داخل این شعاع باشند مجاز می‌شود. اگر خالی بماند، هیچ محدودیت مکانی
+              برای این سایت اعمال نمی‌شود.
+            </Alert>
+            <Alert severity="warning">
+              دقت GPS داخل ساختمان‌های صنعتی معمولاً ضعیف می‌شود (گاهی ۵۰ تا ۱۰۰+ متر خطا). حداقل
+              ۱۰۰ تا ۱۵۰ متر شعاع پیشنهاد می‌شود تا پرسنلی که واقعاً حاضرند به‌اشتباه رد نشوند.
+            </Alert>
+
+            {gpsResult && (
+              <Alert severity={gpsResult.success ? "success" : "error"}>{gpsResult.message}</Alert>
+            )}
+
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="عرض جغرافیایی (Latitude)"
+                type="number"
+                value={gpsForm.gps_latitude}
+                onChange={(e) => setGpsForm({ ...gpsForm, gps_latitude: e.target.value })}
+                disabled={isSavingGps}
+                fullWidth
+                inputProps={{ step: "any" }}
+              />
+              <TextField
+                label="طول جغرافیایی (Longitude)"
+                type="number"
+                value={gpsForm.gps_longitude}
+                onChange={(e) => setGpsForm({ ...gpsForm, gps_longitude: e.target.value })}
+                disabled={isSavingGps}
+                fullWidth
+                inputProps={{ step: "any" }}
+              />
+            </Stack>
+            <TextField
+              label="شعاع مجاز (متر)"
+              type="number"
+              value={gpsForm.gps_radius_meters}
+              onChange={(e) => setGpsForm({ ...gpsForm, gps_radius_meters: e.target.value })}
+              disabled={isSavingGps}
+              helperText="پیشنهاد: حداقل ۱۰۰ تا ۱۵۰ متر"
+              inputProps={{ min: 1 }}
+            />
+
+            <Box>
+              <Button onClick={handleUseCurrentLocation} disabled={isSavingGps}>
+                استفاده از موقعیت فعلی من
+              </Button>
+            </Box>
+
+            <Stack direction="row" spacing={1.5}>
+              <Button
+                variant="contained"
+                startIcon={isSavingGps ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                onClick={handleSaveGps}
+                disabled={isSavingGps}
+              >
+                {isSavingGps ? "در حال ذخیره..." : "ذخیره"}
+              </Button>
             </Stack>
           </Stack>
         )}

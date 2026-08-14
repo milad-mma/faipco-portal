@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
 import {
   AppBar,
@@ -27,6 +27,7 @@ import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
@@ -39,6 +40,8 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
 import { useThemeMode } from "../context/ThemeModeContext";
+import { logGpsPresence } from "../api/attendance";
+import { getCurrentPosition } from "../utils/geolocation";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import faipcoLogo from "../assets/faipco-logo.png";
@@ -53,6 +56,13 @@ const NAV_ITEMS = [
   { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, adminOnly: true },
   { label: "همگام‌سازی دیتابیس", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
+  {
+    label: "ثبت ورود و خروج",
+    path: "/attendance-clock",
+    icon: <FingerprintOutlinedIcon />,
+    adminOnly: false,
+    requiresClockInOut: true,
+  },
   { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
   {
     label: "مدیریت دسترسی",
@@ -78,7 +88,11 @@ export default function Layout() {
 
   const visibleNavItems = useMemo(
     () =>
-      NAV_ITEMS.filter((item) => !item.adminOnly || user?.is_superuser).map((item) => ({
+      NAV_ITEMS.filter((item) => {
+        if (item.adminOnly && !user?.is_superuser) return false;
+        if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
+        return true;
+      }).map((item) => ({
         ...item,
         children: item.children?.filter((child) => !child.adminOnly || user?.is_superuser),
       })),
@@ -92,6 +106,41 @@ export default function Layout() {
   // مجوز/نقش دومی به این کاربر اضافه شود، همین شرط خودکار false می‌شود و
   // منو دوباره ظاهر می‌شود — بدون نیاز به هیچ تغییر دستی دیگری.
   const hasSingleNavItem = visibleNavItems.length <= 1;
+
+  // «حضور دوره‌ای» — فقط برای پرسنلی که صراحتاً وارد آزمایش «ثبت ورود/خروج
+  // GPS» شده‌اند (can_clock_in_out)، نه برای همه کاربران؛ چون هر بار موقعیت
+  // گرفته شود، مرورگر ممکن است یک بار درخواست اجازه دسترسی به مکان نشان
+  // بدهد — نباید همه پرسنل عادی این درخواست را ببینند. کاملاً بی‌صدا اجرا
+  // می‌شود (هیچ Alert/پیامی به کاربر نشان داده نمی‌شود)؛ اگر موقعیت رد شد
+  // یا خطا داد، فقط نادیده گرفته می‌شود.
+  useEffect(() => {
+    if (!user?.can_clock_in_out) return undefined;
+    if (!("geolocation" in navigator)) return undefined;
+
+    let cancelled = false;
+
+    async function checkPresence() {
+      if (!navigator.onLine) return;
+      try {
+        const position = await getCurrentPosition({ enableHighAccuracy: false, timeout: 20000 });
+        if (cancelled) return;
+        await logGpsPresence({
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracyMeters: position.accuracyMeters,
+        });
+      } catch {
+        // بی‌صدا نادیده گرفته می‌شود — این یک چک پس‌زمینه‌ای است
+      }
+    }
+
+    checkPresence();
+    const intervalId = setInterval(checkPresence, 10 * 60 * 1000); // هر ۱۰ دقیقه
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [user?.can_clock_in_out]);
 
   // زیرمنو اگر خودش یا یکی از زیرمجموعه‌هایش فعال باشد، به‌طور پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {

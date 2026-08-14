@@ -167,6 +167,9 @@ class AuthService:
         employee_id، مثل admin) فقط فیلدهای پایه را دارند.
         """
         base = UserOut.model_validate(user)
+        base.can_clock_in_out = user.is_superuser or "attendance.clock_in_out" in (
+            await self.repo.get_permission_codes(user.id)
+        )
         if user.employee_id is None:
             return base
 

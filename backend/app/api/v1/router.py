@@ -3,7 +3,19 @@
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, backup, departments, employees, notices, push, sites, sync, system, users
+from app.api.v1.endpoints import (
+    attendance,
+    auth,
+    backup,
+    departments,
+    employees,
+    notices,
+    push,
+    sites,
+    sync,
+    system,
+    users,
+)
 
 api_router = APIRouter()
 
@@ -17,3 +29,4 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(push.router, prefix="/push", tags=["push"])
 api_router.include_router(backup.router, prefix="/backup", tags=["backup"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
+api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])

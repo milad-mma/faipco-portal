@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -38,6 +38,13 @@ class Site(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # موقعیت GPS + شعاع مجاز (اختیاری) — اگر تنظیم نشده باشد (NULL)، هیچ
+    # محدودیت مکانی برای پرسنل این سایت اعمال نمی‌شود. برای «حضور دوره‌ای»
+    # و «ثبت ورود/خروج آزمایشی» استفاده می‌شود.
+    gps_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_radius_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     connection: Mapped["SiteConnection"] = relationship(
         back_populates="site", cascade="all, delete-orphan", uselist=False

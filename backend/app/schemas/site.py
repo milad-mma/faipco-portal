@@ -16,8 +16,20 @@ class SiteOut(BaseModel):
     code: str
     description: str | None
     is_active: bool
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
+    gps_radius_meters: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SiteGpsLocationIn(BaseModel):
+    """تنظیم/پاک‌کردن موقعیت GPS یک سایت — هر سه فیلد با هم NULL یا با هم
+    مقداردار می‌شوند (یا موقعیت کامل تنظیم شده یا اصلاً تنظیم نشده)."""
+
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
+    gps_radius_meters: int | None = None
 
 
 class SiteActiveUpdate(BaseModel):

@@ -13,6 +13,7 @@ from app.schemas.site import (
     SiteConnectionIn,
     SiteConnectionOut,
     SiteCreate,
+    SiteGpsLocationIn,
     SiteOut,
 )
 from app.services.site_service import SiteService
@@ -49,6 +50,26 @@ async def update_site_active(
 ):
     """فعال/غیرفعال‌کردن یک Site (بدون حذف داده‌ها)."""
     site = await SiteService(db).set_active(site_id, payload.is_active)
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
+    return site
+
+
+@router.put("/{site_id}/gps", response_model=SiteOut)
+async def update_site_gps_location(
+    site_id: int,
+    payload: SiteGpsLocationIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """
+    موقعیت GPS + شعاع مجاز این سایت را تنظیم می‌کند — برای «حضور دوره‌ای» و
+    «ثبت ورود/خروج آزمایشی». برای پاک‌کردن (غیرفعال‌کردن محدودیت مکانی این
+    سایت)، هر سه فیلد را null بفرستید.
+    """
+    site = await SiteService(db).set_gps_location(
+        site_id, payload.gps_latitude, payload.gps_longitude, payload.gps_radius_meters
+    )
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
     return site

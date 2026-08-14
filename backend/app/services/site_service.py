@@ -43,6 +43,19 @@ class SiteService:
         await self.db.refresh(site)
         return site
 
+    async def set_gps_location(
+        self, site_id: int, latitude: float | None, longitude: float | None, radius_meters: int | None
+    ) -> Site | None:
+        site = await self.db.get(Site, site_id)
+        if site is None:
+            return None
+        site.gps_latitude = latitude
+        site.gps_longitude = longitude
+        site.gps_radius_meters = radius_meters
+        await self.db.commit()
+        await self.db.refresh(site)
+        return site
+
     async def set_connection_active(self, site_id: int, is_active: bool) -> SiteConnection | None:
         """روشن/خاموش‌کردن همگام‌سازی خودکار این Site — بدون دست‌زدن به اطلاعات اتصال."""
         conn = await self.get_connection(site_id)
