@@ -19,12 +19,14 @@ import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
   addBirthdayTemplate,
   deleteBirthdayTemplate,
   fetchBirthdayEnabled,
   fetchBirthdaySendTime,
   fetchBirthdayTemplates,
+  sendBirthdayGreetingsNow,
   updateBirthdayEnabled,
   updateBirthdaySendTime,
 } from "../api/hr";
@@ -45,6 +47,9 @@ export default function BirthdayMessagesPage() {
   const [settingsResult, setSettingsResult] = useState(null);
 
   const [todayBirthdays, setTodayBirthdays] = useState(null);
+
+  const [isSendingNow, setIsSendingNow] = useState(false);
+  const [sendNowResult, setSendNowResult] = useState(null);
 
   function loadTemplates() {
     fetchBirthdayTemplates().then(setTemplates);
@@ -99,6 +104,19 @@ export default function BirthdayMessagesPage() {
     }
   }
 
+  async function handleSendNow() {
+    setSendNowResult(null);
+    setIsSendingNow(true);
+    try {
+      const result = await sendBirthdayGreetingsNow();
+      setSendNowResult({ success: true, message: result.message });
+    } catch (err) {
+      setSendNowResult({ success: false, message: err.response?.data?.detail || "ارسال ناموفق بود." });
+    } finally {
+      setIsSendingNow(false);
+    }
+  }
+
   return (
     <Box sx={{ maxWidth: 720, mx: "auto" }}>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
@@ -112,12 +130,28 @@ export default function BirthdayMessagesPage() {
 
       {/* ---------- متولدین امروز ---------- */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-          <CakeOutlinedIcon color="secondary" />
-          <Typography variant="subtitle2" fontWeight={700}>
-            متولدین امروز
-          </Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }} flexWrap="wrap" rowGap={1}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <CakeOutlinedIcon color="secondary" />
+            <Typography variant="subtitle2" fontWeight={700}>
+              متولدین امروز
+            </Typography>
+          </Stack>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={isSendingNow ? <CircularProgress size={16} /> : <SendOutlinedIcon />}
+            onClick={handleSendNow}
+            disabled={isSendingNow}
+          >
+            ارسال همین الان
+          </Button>
         </Stack>
+        {sendNowResult && (
+          <Alert severity={sendNowResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+            {sendNowResult.message}
+          </Alert>
+        )}
         {todayBirthdays === null ? (
           <CircularProgress size={20} />
         ) : todayBirthdays.length === 0 ? (

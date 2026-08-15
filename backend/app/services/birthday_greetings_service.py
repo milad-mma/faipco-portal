@@ -12,10 +12,10 @@ import logging
 import random
 from datetime import datetime, timezone
 
-import jdatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.persian_date import get_current_jalali_date
 from app.models.birthday_message_template import BirthdayMessageTemplate
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
@@ -88,12 +88,12 @@ class BirthdayGreetingsService:
             logger.info("پول پیام تبریک تولد خالی است — امروز چیزی فرستاده نشد.")
             return 0
 
-        today_jalali = jdatetime.date.fromgregorian(date=datetime.now().date())
+        today_year, today_month, today_day = get_current_jalali_date()
         employees_result = await self.db.execute(
             select(Employee).where(
                 Employee.is_active.is_(True),
-                Employee.birth_month == today_jalali.month,
-                Employee.birth_day == today_jalali.day,
+                Employee.birth_month == today_month,
+                Employee.birth_day == today_day,
             )
         )
         birthday_employees = list(employees_result.scalars().all())

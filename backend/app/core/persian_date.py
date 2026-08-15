@@ -19,6 +19,13 @@ def get_current_jalali_year_month() -> tuple[int, int]:
     return today.year, today.month
 
 
+def get_current_jalali_date() -> tuple[int, int, int]:
+    """(سال, ماه, روز) شمسی — بر اساس منطقه زمانی ایران، نه ساعت خام سرور
+    (که معمولاً UTC است، مخصوصاً روی VPS های تازه‌نصب)."""
+    today = jdatetime.date.fromgregorian(date=datetime.now(_IRAN_TZ).date())
+    return today.year, today.month, today.day
+
+
 def jalali_month_range_utc(year: int, month: int) -> tuple[datetime, datetime]:
     """بازه [شروع، پایان) این ماه شمسی را به‌صورت datetime آگاه از منطقه زمانی UTC برمی‌گرداند."""
     start_jalali = jdatetime.date(year, month, 1)

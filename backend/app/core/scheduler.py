@@ -11,6 +11,7 @@ Endpoint مدیریت Sync صدا زده می‌شود.
 اگر SYNC_ENABLED=false باشد، هیچ Job ای زمان‌بندی نمی‌شود.
 """
 import logging
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.base import JobLookupError
@@ -28,7 +29,11 @@ settings = get_settings()
 
 JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
-scheduler = AsyncIOScheduler()
+# نکته حیاتی: بدون این، APScheduler به‌طور پیش‌فرض از منطقه زمانی سیستم‌عامل
+# سرور استفاده می‌کند — که روی اکثر VPS های تازه‌نصب UTC است، نه ایران. یعنی
+# «ساعت ۱۲» که مدیر منابع انسانی از پنل تنظیم می‌کند، بدون این خط ممکن است
+# در عمل ساعت ۱۵:۳۰ ایران اجرا شود (یا اصلاً هنوز به آن زمان نرسیده باشد).
+scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Tehran"))
 
 
 async def _run_sync_for_all_active_sites() -> None:

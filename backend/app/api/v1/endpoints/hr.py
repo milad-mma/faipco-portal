@@ -97,3 +97,19 @@ async def update_birthday_enabled(
 ):
     enabled = await BirthdayGreetingsService(db).set_enabled(payload.enabled)
     return BirthdayEnabledOut(enabled=enabled)
+
+
+@router.post("/birthday-send-now")
+async def send_birthday_greetings_now(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("hr.birthday_messages")),
+):
+    """
+    ارسال فوری و دستی — بدون صبر تا ساعت زمان‌بندی‌شده. مفید برای همین امروز
+    اگر ساعت تنظیم‌شده از قبل گذشته، یا برای تست کردن این‌که تنظیمات درست کار می‌کنند.
+    """
+    sent_count = await BirthdayGreetingsService(db).send_todays_birthday_greetings()
+    return {
+        "sent_count": sent_count,
+        "message": f"{sent_count} پیام تبریک تولد فرستاده شد." if sent_count else "هیچ پیامی فرستاده نشد (یا امروز کسی تولد ندارد، یا فهرست خالی است، یا ارسال خودکار غیرفعال است).",
+    }

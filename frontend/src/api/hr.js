@@ -33,3 +33,8 @@ export async function updateBirthdayEnabled(enabled) {
   const { data } = await apiClient.put("/hr/birthday-enabled", { enabled });
   return data.enabled;
 }
+
+export async function sendBirthdayGreetingsNow() {
+  const { data } = await apiClient.post("/hr/birthday-send-now");
+  return data; // { sent_count, message }
+}

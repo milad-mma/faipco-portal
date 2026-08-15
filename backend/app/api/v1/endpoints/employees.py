@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.persian_date import get_current_jalali_date
 from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.site import Site
@@ -176,13 +177,11 @@ async def list_birthdays_today(
 ):
     """
     پرسنل فعالی که امروز (تقویم شمسی) روز تولدشان است — برای کارت «متولدین
-    روز جاری» در داشبورد Admin. تاریخ امروز (میلادی، ساعت سرور) به شمسی
-    تبدیل می‌شود تا با birth_month/birth_day مقایسه شود (که خودشان از قبل
-    شمسی ذخیره شده‌اند — نگاه کنید به سرویس Sync).
+    روز جاری» در داشبورد Admin. تاریخ امروز بر اساس منطقه زمانی ایران محاسبه
+    می‌شود (نه ساعت خام سرور که معمولاً UTC است) تا با birth_month/birth_day
+    مقایسه شود (که خودشان از قبل شمسی ذخیره شده‌اند — نگاه کنید به سرویس Sync).
     """
-    import jdatetime
-
-    today_jalali = jdatetime.date.fromgregorian(date=datetime.now().date())
+    today_year, today_month, today_day = get_current_jalali_date()
 
     stmt = (
         select(Employee, Site.name, Department.name)
@@ -190,8 +189,8 @@ async def list_birthdays_today(
         .outerjoin(Department, Department.id == Employee.department_id)
         .where(
             Employee.is_active.is_(True),
-            Employee.birth_month == today_jalali.month,
-            Employee.birth_day == today_jalali.day,
+            Employee.birth_month == today_month,
+            Employee.birth_day == today_day,
         )
     )
     result = await db.execute(stmt)
