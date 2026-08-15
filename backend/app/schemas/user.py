@@ -24,5 +24,7 @@ class UserOut(BaseModel):
     position_title: str | None = None
     has_photo: bool = False
     can_clock_in_out: bool = False  # آیا مجوز آزمایشی «ثبت ورود/خروج مبتنی بر GPS» را دارد
+    can_view_attendance_logs: bool = False  # آیا مجوز مشاهده گزارش «پرسنل آنلاین» (Session زنده) را دارد
+    can_view_clock_records: bool = False  # آیا مجوز مشاهده گزارش ورود/خروج آزمایشی همه پرسنل را دارد
 
     model_config = ConfigDict(from_attributes=True)

@@ -5,9 +5,9 @@
 /attendance/clock-in     (POST)  ثبت ورود آزمایشی — فقط با مجوز attendance.clock_in_out
 /attendance/clock-out    (POST)  ثبت خروج آزمایشی — فقط با مجوز attendance.clock_in_out
 /attendance/my-logs      (GET)   تاریخچه ورود/خروج خودِ کاربر جاری
-/attendance/logs         (GET)   گزارش کامل Admin — همه لاگ‌ها (حضور دوره‌ای
-                                  + ورود/خروج) برای همه پرسنل، Paginated —
-                                  فقط با مجوز attendance.view_logs
+/attendance/logs         (GET)   گزارش کامل Admin/hr-manager — همه لاگ‌ها (حضور
+                                  دوره‌ای + ورود/خروج) برای همه پرسنل، Paginated —
+                                  فقط با مجوز attendance.view_clock_records
 /attendance/presence-ws  (WS)    نشانگر زنده «آنلاین/آفلاین» — دقیقاً مثل یک
                                   سیستم چت: وصل‌شدن Socket = شروع Session،
                                   قطع‌شدن (بستن تب/قطعی شبکه/هرچیز دیگر) =
@@ -154,7 +154,7 @@ async def list_all_logs(
     employee_id: int | None = None,
     log_type: GpsLogType | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.view_logs")),
+    _user: User = Depends(require_permission("attendance.view_clock_records")),
 ):
     """
     گزارش کامل Admin — همان چیزی که «حضور دوره‌ای» هر ۱۰ دقیقه برای پرسنل

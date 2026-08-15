@@ -62,7 +62,9 @@ const NAV_ITEMS = [
     icon: <FingerprintOutlinedIcon />,
     adminOnly: false,
     requiresClockInOut: true,
+    hiddenForAdmin: true,
   },
+  { label: "گزارش ورود و خروج من", path: "/my-clock-in-out-report", icon: <AssessmentOutlinedIcon />, adminOnly: false, requiresClockInOut: true, hiddenForAdmin: true },
   { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
   {
     label: "مدیریت دسترسی",
@@ -76,7 +78,13 @@ const NAV_ITEMS = [
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
   { label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
-  { label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon />, adminOnly: true },
+  {
+    label: "گزارش ورود و خروج",
+    path: "/clock-in-out-report",
+    icon: <FingerprintOutlinedIcon />,
+    adminOnly: false,
+    requiresClockRecordsView: true,
+  },
 ];
 
 export default function Layout() {
@@ -93,6 +101,8 @@ export default function Layout() {
       NAV_ITEMS.filter((item) => {
         if (item.adminOnly && !user?.is_superuser) return false;
         if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
+        if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
+        if (item.hiddenForAdmin && user?.is_superuser) return false;
         return true;
       }).map((item) => ({
         ...item,
