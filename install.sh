@@ -90,6 +90,99 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
+ensure_swap() {
+  # روی سرورهای کم‌حافظه (مثلاً ۱ گیگابایت RAM)، نصب وابستگی‌ها (npm install،
+  # ساخت فرانت‌اند با Vite، pip install) می‌تواند به‌قدری حافظه مصرف کند که
+  # OOM Killer فرآیند نصب را بی‌دلیل از وسط بکشد. اگر سرور Swap فعال ندارد،
+  # یک فایل Swap ۲ گیگابایتی می‌سازیم تا این ریسک را از بین ببریم.
+  if swapon --show | grep -q .; then
+    log "Swap از قبل فعال است — رد می‌شویم."
+    return
+  fi
+
+  local mem_total_kb
+  mem_total_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+  if [[ "$mem_total_kb" -ge 2097152 ]]; then
+    log "RAM سیستم کافی است (بیش از ۲ گیگابایت) — نیازی به Swap نیست."
+    return
+  fi
+
+  log "RAM محدود شناسایی شد و Swap فعال نیست — در حال ساخت یک فایل Swap ۲ گیگابایتی..."
+  if [[ ! -f /swapfile ]]; then
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+  fi
+  swapon /swapfile 2>/dev/null || true
+  if ! grep -q '^/swapfile' /etc/fstab; then
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  fi
+  log "Swap فعال شد."
+}
+
+install_prerequisites() {
+  log "Updating package lists and installing prerequisites..."
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    curl git build-essential software-properties-common \
+    python3 python3-venv python3-pip python3-dev \
+    libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
+    nginx ufw openssl ca-certificates unzip
+}
+
+install_nodejs() {
+  if command -v node >/dev/null 2>&1; then
+    local major_version
+    major_version="$(node -v | grep -oE '^v[0-9]+' | tr -d v)"
+    if [[ "$major_version" -ge 18 ]]; then
+      log "Node.js is already installed: $(node -v)"
+      return
+    fi
+  fi
+  log "Installing Node.js 20.x..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+}
+
+install_postgresql() {
+  if command -v psql >/dev/null 2>&1; then
+    log "PostgreSQL is already installed: $(psql --version)"
+  else
+    log "Installing PostgreSQL..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql postgresql-contrib
+  fi
+  systemctl enable postgresql >/dev/null 2>&1 || true
+  systemctl start postgresql
+}
+
+setup_database() {
+  log "Setting up PostgreSQL role and database..."
+
+  # اگر نصب موجودی از قبل هست، پسورد فعلی دیتابیس را از همان .env می‌خوانیم
+  # تا با آن هماهنگ بمانیم — هرگز پسورد یک نصب موجود را عوض نمی‌کنیم (طبق
+  # همان قانون کلی این اسکریپت: در حالت Update، هیچ Secret ای دست‌نخورده نمی‌ماند).
+  DB_PASSWORD=""
+  if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
+    DB_PASSWORD="$(grep '^DATABASE_URL=' "$INSTALL_DIR/backend/.env" 2>/dev/null | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#')"
+  fi
+  if [[ -z "$DB_PASSWORD" ]]; then
+    DB_PASSWORD="$(openssl rand -hex 16)"
+  fi
+
+  local role_exists db_exists
+  role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'")"
+  db_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'")"
+
+  if [[ "$role_exists" == "1" ]]; then
+    sudo -u postgres psql -c "ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" >/dev/null
+  else
+    sudo -u postgres psql -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
+  fi
+
+  if [[ "$db_exists" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" >/dev/null
+  fi
+}
 
 fetch_source() {
   if [[ -f "./backend/app/main.py" ]]; then
@@ -244,14 +337,15 @@ EOF
 
   # اجازه محدود و دقیق (فقط همین یک دستور، بدون رمز) به www-data می‌دهیم تا
   # پنل «پشتیبان‌گیری → بازیابی از همین پنل» بتواند بعد از Restore، سرویس
-  # خودش را Restart کند (لازم است تا کلیدهای رمزنگاری تازه از .env واقعاً
-  # بارگذاری شوند). هیچ اجازه دیگری داده نمی‌شود.
+  # خودش را Restart کند (چون pg_restore --clean جدول‌ها را Drop و از نو
+  # می‌سازد — یک Restart ساده، Pool اتصال بک‌اند را کاملاً تازه می‌کند).
+  # هیچ اجازه دیگری داده نمی‌شود.
   cat > /etc/sudoers.d/faipco-backend-restart <<'EOF'
 www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart faipco-backend
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
-    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore restart won't work, CLI restore paths are unaffected)."
+    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore's auto-restart won't work; you'll need to run 'systemctl restart faipco-backend' manually after a restore)."
     rm -f /etc/sudoers.d/faipco-backend-restart
   }
 
@@ -435,6 +529,7 @@ main() {
 
   stage "Step 3 - Setting up backend"
   setup_backend
+  setup_database
 
   stage "Step 4 - Generating .env file"
   generate_env
