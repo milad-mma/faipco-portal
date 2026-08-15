@@ -21,6 +21,7 @@ import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { fetchAllAttendanceLogs } from "../api/attendance";
 import { fetchEmployees } from "../api/employees";
+import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import { monoFontSx } from "../theme";
 
 const LOG_TYPE_META = {
@@ -34,6 +35,7 @@ export default function ClockInOutReportPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [period, setPeriod] = useState({ year: null, month: null }); // null یعنی هنوز از سرور نگرفتیم (ماه جاری پیش‌فرض)
 
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -44,8 +46,22 @@ export default function ClockInOutReportPage() {
     // درخواست جدا می‌زنیم و نتیجه را با هم ترکیب می‌کنیم — سرور فقط یک
     // log_type در هر درخواست قبول می‌کند.
     Promise.all([
-      fetchAllAttendanceLogs({ page: 1, pageSize: 500, employeeId: selectedEmployee?.id, logType: "check_in" }),
-      fetchAllAttendanceLogs({ page: 1, pageSize: 500, employeeId: selectedEmployee?.id, logType: "check_out" }),
+      fetchAllAttendanceLogs({
+        page: 1,
+        pageSize: 500,
+        employeeId: selectedEmployee?.id,
+        logType: "check_in",
+        year: period.year,
+        month: period.month,
+      }),
+      fetchAllAttendanceLogs({
+        page: 1,
+        pageSize: 500,
+        employeeId: selectedEmployee?.id,
+        logType: "check_out",
+        year: period.year,
+        month: period.month,
+      }),
     ]).then(([inData, outData]) => {
       const combined = [...inData.items, ...outData.items].sort(
         (a, b) => new Date(b.created_at) - new Date(a.created_at)
@@ -53,8 +69,10 @@ export default function ClockInOutReportPage() {
       const start = (page - 1) * PAGE_SIZE;
       setLogs(combined.slice(start, start + PAGE_SIZE));
       setTotal(inData.total + outData.total);
+      // اولین بار (بدون year/month)، مقدار پیش‌فرضِ ماه جاری را از سرور می‌گیریم
+      setPeriod({ year: inData.year, month: inData.month });
     });
-  }, [page, selectedEmployee]);
+  }, [page, selectedEmployee, period.year, period.month]);
 
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
@@ -70,7 +88,7 @@ export default function ClockInOutReportPage() {
         کارخانه انجام شود — این فقط ثبت‌های صریحی است که خودِ پرسنل از داخل اپ زده‌اند.
       </Alert>
 
-      <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2}>
+      <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <Autocomplete
           sx={{ minWidth: 260 }}
           options={employeeOptions}
@@ -83,6 +101,15 @@ export default function ClockInOutReportPage() {
           onInputChange={(_, value) => setEmployeeSearch(value)}
           renderInput={(params) => <TextField {...params} label="فیلتر بر اساس پرسنل" size="small" />}
           isOptionEqualToValue={(o, v) => o.id === v.id}
+        />
+        <JalaliMonthYearFilter
+          year={period.year}
+          month={period.month}
+          onChange={(next) => {
+            setPeriod(next);
+            setPage(1);
+          }}
+          disabled={logs === null}
         />
       </Stack>
 

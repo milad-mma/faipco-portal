@@ -45,6 +45,14 @@ class GpsActivityLogAdminOut(GpsActivityLogOut):
 class GpsActivityLogPageOut(BaseModel):
     items: list[GpsActivityLogAdminOut]
     total: int
+    year: int
+    month: int
+
+
+class MyClockLogsOut(BaseModel):
+    items: list[GpsActivityLogOut]
+    year: int
+    month: int
 
 
 class PresenceSessionAdminOut(BaseModel):

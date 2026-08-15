@@ -30,21 +30,25 @@ export async function clockOut({ latitude, longitude, accuracyMeters, siteId }) 
   return data;
 }
 
-export async function fetchMyAttendanceLogs() {
-  const { data } = await apiClient.get("/attendance/my-logs");
-  return data;
+export async function fetchMyAttendanceLogs({ year, month } = {}) {
+  const { data } = await apiClient.get("/attendance/my-logs", {
+    params: { year: year || undefined, month: month || undefined },
+  });
+  return data; // { items, year, month }
 }
 
-export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType } = {}) {
+export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType, year, month } = {}) {
   const { data } = await apiClient.get("/attendance/logs", {
     params: {
       page,
       page_size: pageSize,
       employee_id: employeeId || undefined,
       log_type: logType || undefined,
+      year: year || undefined,
+      month: month || undefined,
     },
   });
-  return data; // { items, total }
+  return data; // { items, total, year, month }
 }
 
 export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline } = {}) {

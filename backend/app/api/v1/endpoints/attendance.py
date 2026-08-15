@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.persian_date import get_current_jalali_year_month
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.employee import Employee
@@ -40,6 +41,7 @@ from app.schemas.gps_attendance import (
     GpsActivityLogPageOut,
     GpsCheckResultOut,
     GpsPositionIn,
+    MyClockLogsOut,
     PresenceSessionAdminOut,
     PresenceSessionPageOut,
 )
@@ -137,14 +139,19 @@ async def clock_out(
     return await _clock(payload, GpsLogType.check_out, db, current_user)
 
 
-@router.get("/my-logs", response_model=list[GpsActivityLogOut])
+@router.get("/my-logs", response_model=MyClockLogsOut)
 async def my_logs(
+    year: int | None = None,
+    month: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("attendance.clock_in_out")),
 ):
+    """پیش‌فرض (بدون year/month): ماه شمسی جاری. برای دیدن ماه‌های قبل، همین دو پارامتر را بدهید."""
     employee_id = _require_employee(current_user)
-    logs = await GpsAttendanceService(db).get_my_logs(employee_id)
-    return [GpsActivityLogOut.model_validate(log) for log in logs]
+    if year is None or month is None:
+        year, month = get_current_jalali_year_month()
+    logs = await GpsAttendanceService(db).get_my_logs(employee_id, year=year, month=month)
+    return MyClockLogsOut(items=[GpsActivityLogOut.model_validate(log) for log in logs], year=year, month=month)
 
 
 @router.get("/logs", response_model=GpsActivityLogPageOut)
@@ -153,19 +160,23 @@ async def list_all_logs(
     page_size: int = 50,
     employee_id: int | None = None,
     log_type: GpsLogType | None = None,
+    year: int | None = None,
+    month: int | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("attendance.view_clock_records")),
 ):
     """
-    گزارش کامل Admin — همان چیزی که «حضور دوره‌ای» هر ۱۰ دقیقه برای پرسنل
-    آزمایش ثبت می‌کند، به‌همراه ثبت‌های ورود/خروج، همه‌جا یک‌جا. چون حضور
-    دوره‌ای می‌تواند حجم بالایی تولید کند، همیشه Paginated است.
+    گزارش کامل Admin/hr-manager — همان چیزی که «حضور دوره‌ای» هر ۱۰ دقیقه برای
+    پرسنل آزمایش ثبت می‌کند، به‌همراه ثبت‌های ورود/خروج، همه‌جا یک‌جا. همیشه
+    محدود به یک ماه شمسی مشخص (پیش‌فرض: ماه جاری) و Paginated است.
     """
+    if year is None or month is None:
+        year, month = get_current_jalali_year_month()
     logs, total = await GpsAttendanceService(db).get_all_logs_page(
-        page=page, page_size=page_size, employee_id=employee_id, log_type=log_type
+        page=page, page_size=page_size, employee_id=employee_id, log_type=log_type, year=year, month=month
     )
     if not logs:
-        return GpsActivityLogPageOut(items=[], total=total)
+        return GpsActivityLogPageOut(items=[], total=total, year=year, month=month)
 
     employee_ids = {log.employee_id for log in logs}
     site_ids = {log.matched_site_id for log in logs if log.matched_site_id is not None}
@@ -203,7 +214,7 @@ async def list_all_logs(
             )
         )
 
-    return GpsActivityLogPageOut(items=items, total=total)
+    return GpsActivityLogPageOut(items=items, total=total, year=year, month=month)
 
 
 async def _authenticate_websocket_user(token: str) -> User | None:

@@ -20,7 +20,6 @@ import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
 import PresenceReportPage from "./pages/PresenceReportPage";
 import ClockInOutReportPage from "./pages/ClockInOutReportPage";
-import MyClockInOutReportPage from "./pages/MyClockInOutReportPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_DURATION_MS = 2000;
@@ -70,7 +69,6 @@ export default function App() {
           <Route path="/notices/new" element={<NewNoticePage />} />
           <Route path="/notice-reports" element={<AdminRoute><NoticeReportsPage /></AdminRoute>} />
           <Route path="/attendance-clock" element={<AttendanceClockPage />} />
-          <Route path="/my-clock-in-out-report" element={<MyClockInOutReportPage />} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

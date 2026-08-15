@@ -64,7 +64,6 @@ const NAV_ITEMS = [
     requiresClockInOut: true,
     hiddenForAdmin: true,
   },
-  { label: "گزارش ورود و خروج من", path: "/my-clock-in-out-report", icon: <AssessmentOutlinedIcon />, adminOnly: false, requiresClockInOut: true, hiddenForAdmin: true },
   { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
   {
     label: "مدیریت دسترسی",

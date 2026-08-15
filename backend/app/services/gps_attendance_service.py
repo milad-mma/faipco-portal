@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
+from app.core.persian_date import jalali_month_range_utc
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
@@ -140,10 +141,18 @@ class GpsAttendanceService:
             site_id=site_id,
         )
 
-    async def get_my_logs(self, employee_id: int, limit: int = 50) -> list[GpsActivityLog]:
+    async def get_my_logs(
+        self, employee_id: int, *, year: int, month: int, limit: int = 200
+    ) -> list[GpsActivityLog]:
+        start, end = jalali_month_range_utc(year, month)
         result = await self.db.execute(
             select(GpsActivityLog)
-            .where(GpsActivityLog.employee_id == employee_id, GpsActivityLog.log_type != GpsLogType.presence)
+            .where(
+                GpsActivityLog.employee_id == employee_id,
+                GpsActivityLog.log_type != GpsLogType.presence,
+                GpsActivityLog.created_at >= start,
+                GpsActivityLog.created_at < end,
+            )
             .order_by(GpsActivityLog.created_at.desc())
             .limit(limit)
         )
@@ -156,13 +165,17 @@ class GpsAttendanceService:
         page_size: int = 50,
         employee_id: int | None = None,
         log_type: GpsLogType | None = None,
+        year: int,
+        month: int,
     ) -> tuple[list[GpsActivityLog], int]:
         """
-        گزارش کامل Admin — همه لاگ‌ها (حضور دوره‌ای + ورود/خروج) برای همه
-        پرسنل. چون «حضور دوره‌ای» هر ۱۰ دقیقه به‌ازای هر پرسنل آزمایش ثبت
-        می‌شود، این جدول می‌تواند خیلی سریع بزرگ شود — همیشه Paginated است.
+        گزارش کامل Admin/hr-manager — همه لاگ‌ها (حضور دوره‌ای + ورود/خروج)
+        برای همه پرسنل، همیشه محدود به یک ماه شمسی مشخص. چون «حضور دوره‌ای»
+        هر ۱۰ دقیقه به‌ازای هر پرسنل آزمایش ثبت می‌شود، این جدول می‌تواند
+        خیلی سریع بزرگ شود — همیشه هم به یک ماه محدود است هم Paginated.
         """
-        filters = []
+        start, end = jalali_month_range_utc(year, month)
+        filters = [GpsActivityLog.created_at >= start, GpsActivityLog.created_at < end]
         if employee_id is not None:
             filters.append(GpsActivityLog.employee_id == employee_id)
         if log_type is not None:

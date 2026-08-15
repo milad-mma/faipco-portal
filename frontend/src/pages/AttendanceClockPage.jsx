@@ -1,14 +1,35 @@
-import { useState } from "react";
-import { Alert, Box, Button, Card, CircularProgress, Stack, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { Alert, Box, Button, Card, Chip, CircularProgress, Divider, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
-import { clockIn, clockOut } from "../api/attendance";
+import { clockIn, clockOut, fetchMyAttendanceLogs } from "../api/attendance";
 import { getCurrentPosition } from "../utils/geolocation";
+import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import { monoFontSx } from "../theme";
+
+const LOG_TYPE_LABELS = {
+  check_in: { label: "ورود", color: "success", icon: <LoginOutlinedIcon fontSize="small" /> },
+  check_out: { label: "خروج", color: "default", icon: <LogoutOutlinedIcon fontSize="small" /> },
+};
 
 export default function AttendanceClockPage() {
+  const [logs, setLogs] = useState(null);
+  const [period, setPeriod] = useState({ year: null, month: null }); // null یعنی هنوز از سرور نگرفتیم (ماه جاری پیش‌فرض)
   const [isWorking, setIsWorking] = useState(false); // در حال گرفتن موقعیت + ارسال
   const [result, setResult] = useState(null);
+
+  function loadLogs(overridePeriod) {
+    const params = overridePeriod || period;
+    fetchMyAttendanceLogs({ year: params.year, month: params.month }).then((data) => {
+      setLogs(data.items);
+      setPeriod({ year: data.year, month: data.month });
+    });
+  }
+
+  useEffect(() => {
+    loadLogs({ year: null, month: null }); // اولین بار: بدون فیلتر -> سرور خودش ماه جاری را برمی‌گرداند
+  }, []);
 
   async function handleClock(action) {
     setResult(null);
@@ -22,6 +43,7 @@ export default function AttendanceClockPage() {
         accuracyMeters: position.accuracyMeters,
       });
       setResult({ success: true, message: action === "in" ? "ورود شما ثبت شد." : "خروج شما ثبت شد." });
+      loadLogs();
     } catch (err) {
       setResult({
         success: false,
@@ -50,7 +72,7 @@ export default function AttendanceClockPage() {
         </Alert>
       )}
 
-      <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           با زدن هرکدام از دکمه‌های زیر، موقعیت فعلی گوشی شما گرفته و بررسی می‌شود که داخل محدوده
           مجاز کارخانه باشد. اگر خارج از محدوده باشید، ثبت انجام نمی‌شود.
@@ -78,6 +100,53 @@ export default function AttendanceClockPage() {
             ثبت خروج
           </Button>
         </Stack>
+      </Card>
+
+      <Card variant="outlined" sx={{ borderRadius: 3 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          flexWrap="wrap"
+          rowGap={1.5}
+          sx={{ p: 2.5, pb: 1.5 }}
+        >
+          <Typography variant="subtitle2" fontWeight={700}>
+            تاریخچه من
+          </Typography>
+          <JalaliMonthYearFilter
+            year={period.year}
+            month={period.month}
+            onChange={(next) => loadLogs(next)}
+            disabled={logs === null}
+          />
+        </Stack>
+        {logs === null ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : logs.length === 0 ? (
+          <Box sx={{ px: 2.5, pb: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              برای این ماه هیچ ثبتی ندارید.
+            </Typography>
+          </Box>
+        ) : (
+          logs.map((log, index) => {
+            const meta = LOG_TYPE_LABELS[log.log_type] || { label: log.log_type, color: "default" };
+            return (
+              <Box key={log.id}>
+                {index > 0 && <Divider />}
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
+                  <Chip size="small" color={meta.color} icon={meta.icon} label={meta.label} />
+                  <Typography variant="body2" sx={monoFontSx}>
+                    {new Date(log.created_at).toLocaleString("fa-IR")}
+                  </Typography>
+                </Stack>
+              </Box>
+            );
+          })
+        )}
       </Card>
     </Box>
   );
