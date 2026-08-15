@@ -66,13 +66,14 @@ export default function BackupPage() {
     try {
       const data = await restoreBackupArchive(restoreFile, confirmText);
       setRestoreResult({ success: true, message: data.message });
-      // چون .env/کلید رمزنگاری دیگر عوض نمی‌شود، ورود فعلی همچنان معتبر
-      // است — فقط چند ثانیه صبر می‌کنیم (تا سرویس Restart را تمام کند) و
-      // بعد صفحه را Refresh می‌کنیم تا داده‌های تازه بازیابی‌شده لود شوند؛
-      // نیازی به خروج و ورود دوباره نیست.
+      // این پاسخ فقط یعنی «بازیابی شروع شد» — چون سرویس باید قبل از تماس با
+      // pg_restore کامل متوقف بشه (وگرنه Connection Pool زنده‌اش رو همون
+      // جدول‌ها قفل می‌گیره)، کار واقعی در پس‌زمینه ادامه داره، نه همین‌جا.
+      // چند لحظه صبر می‌کنیم (توقف + بازیابی + Migration + روشن‌شدن دوباره
+      // می‌تونه ۳۰-۶۰ ثانیه طول بکشه) و بعد صفحه رو Refresh می‌کنیم.
       setTimeout(() => {
         window.location.reload();
-      }, 6000);
+      }, 45000);
     } catch (err) {
       setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی ناموفق بود." });
     } finally {
@@ -146,7 +147,7 @@ export default function BackupPage() {
         {restoreResult && (
           <Alert severity={restoreResult.success ? "success" : "error"} sx={{ mb: 2 }}>
             {restoreResult.message}
-            {restoreResult.success && " — چند ثانیه دیگر صفحه به‌صورت خودکار Refresh می‌شود."}
+            {restoreResult.success && " — حدود ۴۵ ثانیه دیگر صفحه به‌صورت خودکار Refresh می‌شود."}
           </Alert>
         )}
 

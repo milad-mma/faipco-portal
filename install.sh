@@ -335,17 +335,18 @@ EOF
 
   chown -R www-data:www-data "$INSTALL_DIR"
 
-  # اجازه محدود و دقیق (فقط همین یک دستور، بدون رمز) به www-data می‌دهیم تا
-  # پنل «پشتیبان‌گیری → بازیابی از همین پنل» بتواند بعد از Restore، سرویس
-  # خودش را Restart کند (چون pg_restore --clean جدول‌ها را Drop و از نو
-  # می‌سازد — یک Restart ساده، Pool اتصال بک‌اند را کاملاً تازه می‌کند).
-  # هیچ اجازه دیگری داده نمی‌شود.
+  # اجازه محدود و دقیق (فقط همین چند دستور، بدون رمز) به www-data می‌دهیم
+  # تا پنل «پشتیبان‌گیری → بازیابی از همین پنل» بتواند خودِ سرویس را قبل از
+  # Restore متوقف کند (وگرنه سرویس در حال اجرا هم‌زمان به همان جدول‌هایی که
+  # pg_restore می‌خواهد Drop/بازسازی کند وصل می‌ماند و باعث قفل‌شدن دائمی
+  # pg_restore می‌شود — همان مشکلی که باعث گیرکردن Restore شد) و بعد از
+  # اتمام کار دوباره بالا بیاورد. هیچ اجازه دیگری داده نمی‌شود.
   cat > /etc/sudoers.d/faipco-backend-restart <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart faipco-backend
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart faipco-backend, /usr/bin/systemctl stop faipco-backend, /usr/bin/systemctl start faipco-backend
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
-    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore's auto-restart won't work; you'll need to run 'systemctl restart faipco-backend' manually after a restore)."
+    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore's auto stop/restart won't work; you'll need to run 'systemctl stop/start faipco-backend' manually around a restore)."
     rm -f /etc/sudoers.d/faipco-backend-restart
   }
 

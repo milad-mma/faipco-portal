@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -128,88 +129,107 @@ async def create_backup_archive() -> bytes:
 # مقداری که کاربر باید عیناً تایپ کند تا Restore واقعاً اجرا شود — یک لایه
 # محافظتی اضافه، مستقل از تأیید سمت فرانت‌اند (چون فرانت‌اند قابل‌دورزدن است).
 RESTORE_CONFIRMATION_PHRASE = "RESTORE"
+_RESTORE_STAGING_DIR = Path("/tmp/faipco-restore-staging")
+_RESTORE_LOG_PATH = Path("/tmp/faipco-restore.log")
 
 
-async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> None:
+def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Path:
     """
-    بازیابی کامل از یک بکاپ گرفته‌شده از همین سرور — طراحی‌شده فقط برای
-    همین Use Case (نه Clone به سرور دیگر). مراحل:
-      1. اعتبارسنجی عبارت تأیید + محتوای بکاپ
-      2. pg_restore --clean --if-exists --single-transaction — همه Object ها
-         (جدول‌ها، از جمله alembic_version) قبل از بازسازی درست حذف
-         می‌شوند، بعد کل بکاپ (Schema + Data) بازسازی می‌شود؛ دیگر نیازی به
-         TRUNCATE دستی با استثنا نیست — این دقیقاً همان چیزی بود که قبلاً
-         باعث خرابی alembic_version می‌شد. --single-transaction حیاتی است:
-         بدون آن، اگر بازیابی از وسط با خطا مواجه شود، دیتابیس در یک حالت
-         نیمه‌خراب (بعضی جدول‌ها Drop شده، بعضی نه) باقی می‌ماند — با این
-         پرچم، هر خطایی یعنی کل این مرحله کامل Rollback می‌شود و دیتابیس
-         دقیقاً به حالت قبل از شروع Restore برمی‌گردد.
-      3. اجرای Migration های آخرین کد (اگر بکاپ از نسخه قدیمی‌تری بود، Schema
-         به آخرین نسخه می‌رسد — Migration ها هیچ‌وقت داده حذف نمی‌کنند)
-    چون فقط روی همین سرور بازیابی می‌شود، .env و کلیدهای رمزنگاری دست‌نخورده
-    می‌مانند — نیازی به Restart سرویس هم نیست (فقط داده در دیتابیس عوض
-    می‌شود، نه کدی که در حال اجراست).
+    فقط اعتبارسنجی + آماده‌سازی — کاری با دیتابیس ندارد، پس همین‌جا (داخل
+    درخواست HTTP فعلی) به‌سرعت قابل‌انجام است و خطاهای واضح (فایل خراب،
+    عبارت تأیید اشتباه) فوراً به کاربر نشان داده می‌شود؛ خودِ Restore واقعی
+    (که نیاز به توقف سرویس دارد) جدا انجام می‌شود — نگاه کنید به
+    schedule_restore().
     """
     if confirm_phrase != RESTORE_CONFIRMATION_PHRASE:
         raise BackupError(f'برای تأیید، باید دقیقاً عبارت «{RESTORE_CONFIRMATION_PHRASE}» ارسال شود.')
 
+    if _RESTORE_STAGING_DIR.exists():
+        shutil.rmtree(_RESTORE_STAGING_DIR)
+    _RESTORE_STAGING_DIR.mkdir(parents=True)
+
+    try:
+        with zipfile.ZipFile(BytesIO(archive_bytes)) as zf:
+            zf.extractall(_RESTORE_STAGING_DIR)
+    except zipfile.BadZipFile as e:
+        raise BackupError("فایل بکاپ معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
+
+    dump_path = _RESTORE_STAGING_DIR / "database.dump"
+    if not dump_path.exists():
+        raise BackupError(
+            "فایل بکاپ نامعتبر است — database.dump داخلش نیست "
+            "(اگر این یک بکاپ خیلی قدیمی‌تر است، دوباره یک بکاپ تازه از همین صفحه بگیرید)."
+        )
+    return dump_path
+
+
+def schedule_restore(dump_path: Path) -> None:
+    """
+    برخلاف نسخه قبلی (که pg_restore را همان لحظه، داخل همین درخواست HTTP و
+    درحالی‌که خودِ سرویس هنوز کاملاً روشن بود اجرا می‌کرد)، اینجا کل کار
+    واقعی به یک اسکریپت کاملاً جدا و مستقل (setsid) واگذار می‌شود که:
+      ۱. اول خودِ سرویس بک‌اند را کامل متوقف می‌کند
+      ۲. بعد pg_restore را اجرا می‌کند
+      ۳. Migration های آخرین کد را اجرا می‌کند
+      ۴. سرویس را دوباره بالا می‌آورد
+
+    چرا این تغییر لازم بود: نسخه قبلی، سرویس را روشن نگه می‌داشت — یعنی
+    همان لحظه که pg_restore سعی می‌کرد جدول‌ها را Drop/بازسازی کند، خودِ
+    سرویس (با Connection Pool زنده‌اش) هنوز به همان جدول‌ها وصل بود و رویشان
+    قفل داشت؛ pg_restore برای گرفتن قفل انحصاری بی‌نهایت منتظر می‌ماند —
+    دقیقاً همان چیزی که باعث گیرکردن یک Restore واقعی شد. چون همین درخواست
+    HTTP از داخل خودِ سرویسی می‌آید که قرار است متوقف شود، توقف سرویس باید
+    از یک فرآیند کاملاً مستقل (نه از داخل همین درخواست) انجام شود — وگرنه
+    خودِ این درخواست هم قبل از تمام‌شدن کشته می‌شد.
+    """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
     pg_restore_path = _find_pg_binary("pg_restore")
     alembic_path = _find_alembic_binary()
+    backend_dir = Path(__file__).resolve().parent.parent.parent
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        try:
-            with zipfile.ZipFile(BytesIO(archive_bytes)) as zf:
-                zf.extractall(tmp_path)
-        except zipfile.BadZipFile as e:
-            raise BackupError("فایل بکاپ معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
+    script = f"""
+set +e
+exec >> {_RESTORE_LOG_PATH} 2>&1
+echo "=== Restore started: $(date -Iseconds) ==="
 
-        dump_path = tmp_path / "database.dump"
-        if not dump_path.exists():
-            raise BackupError(
-                "فایل بکاپ نامعتبر است — database.dump داخلش نیست "
-                "(اگر این یک بکاپ خیلی قدیمی‌تر است، دوباره یک بکاپ تازه از همین صفحه بگیرید)."
-            )
+echo "Stopping faipco-backend..."
+sudo -n /usr/bin/systemctl stop faipco-backend
+sleep 2
 
-        # ---------- مرحله ۱: بازسازی کامل (Schema + Data) ----------
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                pg_restore_path,
-                "--clean",
-                "--if-exists",
-                "--single-transaction",
-                "--no-owner",
-                "--no-privileges",
-                f"--dbname={libpq_url}",
-                str(dump_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                raise BackupError(
-                    f"بازیابی دیتابیس (pg_restore) ناموفق بود: {stderr.decode(errors='ignore')[:800]}"
-                )
-        except FileNotFoundError as e:
-            raise BackupError(f"ابزار pg_restore پیدا نشد (مسیر بررسی‌شده: {pg_restore_path}).") from e
+echo "Running pg_restore..."
+{pg_restore_path} --clean --if-exists --single-transaction --no-owner --no-privileges \
+  --dbname={libpq_url} {dump_path}
+restore_exit=$?
 
-        # ---------- مرحله ۲: Migration های آخرین کد (اگر بکاپ قدیمی‌تر بود) ----------
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                alembic_path,
-                "upgrade",
-                "head",
-                cwd=str(Path(__file__).resolve().parent.parent.parent),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                raise BackupError(
-                    f"بازسازی دیتابیس موفق بود، ولی اجرای Migration های جدید بعدش ناموفق بود: "
-                    f"{stderr.decode(errors='ignore')[:800]}"
-                )
-        except FileNotFoundError as e:
-            raise BackupError(f"ابزار alembic پیدا نشد (مسیر بررسی‌شده: {alembic_path}).") from e
+if [ "$restore_exit" -eq 0 ]; then
+  echo "Running alembic upgrade head..."
+  cd {backend_dir}
+  {alembic_path} upgrade head
+  migrate_exit=$?
+else
+  echo "pg_restore failed with exit code $restore_exit — skipping migrations (--single-transaction means the database was rolled back to exactly its pre-restore state)."
+  migrate_exit=1
+fi
+
+echo "Starting faipco-backend..."
+sudo -n /usr/bin/systemctl start faipco-backend
+
+rm -rf {_RESTORE_STAGING_DIR}
+
+if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
+  echo "=== Restore finished successfully: $(date -Iseconds) ==="
+else
+  echo "=== Restore FAILED: $(date -Iseconds) — check the output above. The service was restarted regardless, on the original pre-restore data. ==="
+fi
+"""
+    script_path = Path("/tmp/faipco-restore-run.sh")
+    script_path.write_text(script, encoding="utf-8")
+    script_path.chmod(0o700)
+
+    subprocess.Popen(
+        ["setsid", "sh", str(script_path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
