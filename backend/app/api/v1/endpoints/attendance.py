@@ -53,6 +53,13 @@ router = APIRouter()
 # شبکه بی‌صدا قطع شده). کلاینت باید هر ۳۰-۶۰ ثانیه یک‌بار Heartbeat بفرسته.
 _HEARTBEAT_TIMEOUT_SECONDS = 90
 
+# اگه دقت موقعیت گزارش‌شده بدتر از این باشه (مثلاً موقعیت‌یابی خام بر پایه
+# IP/شبکه به‌جای GPS واقعی — که می‌تونه خطاش صدها کیلومتر باشه)، اون
+# Heartbeat قابل‌اعتماد نیست و برای تصمیم‌گیری محدوده استفاده نمی‌شه. عدد
+# ۵۰۰ متر با فاصله زیادی بزرگ‌تر از شعاع معمول محدوده مجاز (۱۰۰-۳۰۰ متر) است
+# تا حتی GPS متوسط داخل ساختمان هم رد نشه، ولی چیزی به‌وضوح خراب (کیلومتری) رو بگیره.
+_MAX_TRUSTED_ACCURACY_METERS = 500
+
 
 def _require_employee(current_user: User) -> int:
     if current_user.employee_id is None:
@@ -277,6 +284,21 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                     # ولی برای اینکه مشکل احتمالی (مثلاً رد کردن دسترسی GPS در مرورگر) قابل‌تشخیص
                     # باشد، همیشه یک پاسخ تشخیصی به کلاینت برمی‌گردد (کنسول DevTools قابل‌مشاهده است)
                     await websocket.send_json({"status": "no_position", "message": "موقعیتی در این Heartbeat ارسال نشده بود."})
+                    continue
+
+                accuracy_meters = data.get("accuracy_meters")
+                if accuracy_meters is not None and accuracy_meters > _MAX_TRUSTED_ACCURACY_METERS:
+                    # موقعیتی که خطای اندازه‌گیری‌اش (مثلاً موقعیت‌یابی خام بر پایه IP/شبکه،
+                    # نه GPS واقعی) خیلی زیاد است، قابل‌اعتماد نیست — نه Session باز را
+                    # می‌بندیم (چون ممکن است واقعاً هنوز حاضر باشد، فقط این یک Heartbeat
+                    # ضعیف بوده) و نه چیز جدیدی با این داده نامطمئن ثبت می‌کنیم؛ فقط رد می‌شود.
+                    await websocket.send_json(
+                        {
+                            "status": "low_accuracy",
+                            "accuracy_meters": accuracy_meters,
+                            "message": f"دقت موقعیت (±{int(accuracy_meters)}m) خیلی پایین است — نادیده گرفته شد.",
+                        }
+                    )
                     continue
 
                 geofence = await check_geofence(db, data.get("site_id"), latitude, longitude)

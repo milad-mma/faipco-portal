@@ -59,7 +59,11 @@ export function usePresenceMonitor(enabled) {
         console.warn(`${LOG_PREFIX} تلاش برای ارسال Heartbeat ولی اتصال باز نیست.`);
         return;
       }
-      getCurrentPosition({ enableHighAccuracy: false, timeout: 20000 })
+      // enableHighAccuracy:true عمداً است — چون این قابلیت برای محدوده مجاز
+      // فقط ۱۰۰-۳۰۰ متری طراحی شده، دقت پایین (مثل موقعیت‌یابی بر پایه IP/شبکه
+      // که خطایش می‌تواند صدها کیلومتر باشد) عملاً این قابلیت را بی‌فایده
+      // می‌کند؛ هزینه‌ش کمی باتری بیشتر روی گوشی است، ولی لازم است.
+      getCurrentPosition({ enableHighAccuracy: true, timeout: 20000 })
         .then((position) => {
           console.info(
             `${LOG_PREFIX} موقعیت گرفته شد:`,
@@ -116,6 +120,8 @@ export function usePresenceMonitor(enabled) {
             );
           } else if (data.status === "no_position") {
             console.warn(`${LOG_PREFIX} موقعیتی برای این Heartbeat ارسال نشد.`);
+          } else if (data.status === "low_accuracy") {
+            console.warn(`${LOG_PREFIX} ⚠️ دقت موقعیت خیلی پایین بود (±${Math.round(data.accuracy_meters)}m) — نادیده گرفته شد. این معمولاً یعنی GPS واقعی گوشی استفاده نشده (موقعیت‌یابی بر پایه IP/شبکه بوده). روی گوشی واقعی و با GPS روشن تست کنید.`);
           }
         } catch {
           // نادیده گرفته می‌شود
