@@ -145,6 +145,17 @@ extract_restore_backup() {
 # اتصال دیتابیس سایت‌هایی که در بکاپ هستند قابل‌رمزگشایی بماند)، و سرویس
 # را دوباره راه‌اندازی می‌کند.
 restore_in_place() {
+  # این تابع کاملاً مستقل و بدون عبور از install_prerequisites() اجرا
+  # می‌شود (برای سرعت، چون فرض بر این است که یک نصب کامل قبلاً انجام شده) —
+  # پس اگر unzip از قبل روی سرور نصب نباشد (مثلاً روی یک نصب پایه/خیلی
+  # ساده Ubuntu)، همینجا صریحاً نصبش می‌کنیم، نه اینکه با خطای مبهم
+  # "command not found" وسط کار متوقف شویم.
+  if ! command -v unzip >/dev/null 2>&1; then
+    log "unzip روی این سرور نصب نیست — در حال نصب..."
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip
+  fi
+
   # اگر همین اسکریپت از داخل خودِ پوشه نصب‌شده اجرا شود (مثل fetch_source
   # در جریان نصب معمولی)، INSTALL_DIR را خودکار همان‌جا تشخیص می‌دهیم — تا
   # اگر کاربر --install-dir سفارشی داشته و اینجا فراموش کند بدهدش، باز هم
@@ -270,7 +281,7 @@ install_prerequisites() {
     curl git build-essential software-properties-common \
     python3 python3-venv python3-pip python3-dev \
     libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
-    nginx ufw openssl ca-certificates
+    nginx ufw openssl ca-certificates unzip
 }
 
 install_nodejs() {
