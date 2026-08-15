@@ -104,7 +104,7 @@ export default function ClockInOutReportPage() {
             setPeriod(next);
             setPage(1);
           }}
-          disabled={logs === null}
+          disabled={groupedRows === null}
         />
       </Stack>
 
