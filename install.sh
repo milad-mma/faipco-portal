@@ -328,6 +328,15 @@ fetch_source() {
   log "Fetching source from ${REPO_URL} (branch: ${REPO_BRANCH}) into ${INSTALL_DIR}..."
   mkdir -p "$INSTALL_DIR"
 
+  # از Git 2.35.2 به بعد، اگر مالک پوشه با کاربری که git را اجرا می‌کند
+  # (اینجا معمولاً root، چون این اسکریپت با sudo اجرا می‌شود) فرق داشته
+  # باشد، git با خطای "detected dubious ownership" کار را متوقف می‌کند —
+  # یک قابلیت امنیتی برای جلوگیری از سوءاستفاده در مسیرهای مشترک. چون این
+  # مسیر (${INSTALL_DIR}) کاملاً تحت مدیریت خودِ همین اسکریپت نصب است، اینجا
+  # این هشدار بی‌مورد است — صریحاً به‌عنوان مسیر امن معرفی می‌شود تا هرگز
+  # نیازی به دخالت دستی کاربر (git config --add safe.directory ...) نباشد.
+  git config --global --add safe.directory "$INSTALL_DIR"
+
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log "Source already exists at ${INSTALL_DIR}. Updating..."
     git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
