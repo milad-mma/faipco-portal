@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -26,7 +27,7 @@ import { createSite, deleteSite, fetchSites, setSiteActive } from "../api/sites"
 
 export default function SitesPage() {
   const navigate = useNavigate();
-  const [sites, setSites] = useState([]);
+  const [sites, setSites] = useState(null);
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
 
   const [newSite, setNewSite] = useState({ name: "", code: "", description: "" });
@@ -129,7 +130,14 @@ export default function SitesPage() {
       </Box>
 
       <Grid container spacing={2.5}>
-        {sites.map((site) => (
+        {sites === null ? (
+          <Grid item xs={12}>
+            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+              <CircularProgress />
+            </Box>
+          </Grid>
+        ) : (
+          sites.map((site) => (
           <Grid item xs={12} md={6} lg={4} key={site.id}>
             <Card variant="outlined" sx={{ p: 3, borderRadius: 3, height: "100%" }}>
               <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
@@ -194,7 +202,8 @@ export default function SitesPage() {
               </Stack>
             </Card>
           </Grid>
-        ))}
+          ))
+        )}
       </Grid>
 
       {/* Dialog: ساخت سایت جدید */}

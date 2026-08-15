@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
   Collapse,
   Divider,
   Pagination,
@@ -262,7 +263,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
 export default function NoticesPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState("received");
-  const [notices, setNotices] = useState([]);
+  const [notices, setNotices] = useState(null);
   const [noticesTotal, setNoticesTotal] = useState(0);
   const [noticesPage, setNoticesPage] = useState(1);
   const NOTICES_PAGE_SIZE = 10;
@@ -412,17 +413,25 @@ export default function NoticesPage() {
 
       {tab === "received" && (
         <Stack spacing={1.5}>
-          {notices.length === 0 && (
-            <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">
-                در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
-              </Typography>
-            </Card>
+          {notices === null ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
+              {notices.length === 0 && (
+                <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
+                  </Typography>
+                </Card>
+              )}
+              {notices.map((notice) => (
+                <ReceivedNoticeCard key={notice.id} notice={notice} onOpened={handleMarkedRead} />
+              ))}
+            </>
           )}
-          {notices.map((notice) => (
-            <ReceivedNoticeCard key={notice.id} notice={notice} onOpened={handleMarkedRead} />
-          ))}
-          {noticesTotal > NOTICES_PAGE_SIZE && (
+          {notices !== null && noticesTotal > NOTICES_PAGE_SIZE && (
             <Stack alignItems="center" sx={{ pt: 1.5 }}>
               <Pagination
                 count={Math.ceil(noticesTotal / NOTICES_PAGE_SIZE)}

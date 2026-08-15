@@ -74,7 +74,7 @@ class Notice(Base, TimestampMixin):
         Enum(NoticePriority, name="notice_priority_enum"), default=NoticePriority.normal, nullable=False
     )
     status: Mapped[NoticeStatus] = mapped_column(
-        Enum(NoticeStatus, name="notice_status_enum"), default=NoticeStatus.draft, nullable=False
+        Enum(NoticeStatus, name="notice_status_enum"), default=NoticeStatus.draft, nullable=False, index=True
     )
     notice_type: Mapped[NoticeType] = mapped_column(
         Enum(NoticeType, name="notice_type_enum"), default=NoticeType.normal, nullable=False
@@ -86,7 +86,7 @@ class Notice(Base, TimestampMixin):
     # حذف اطلاعیه همیشه Soft-Delete است: رکورد فیزیکی هرگز پاک نمی‌شود (تا آمار
     # بازدید و گزارش‌ها دست‌نخورده بمانند)، فقط از لیست دریافتی مخاطبان کنار
     # گذاشته می‌شود و در گزارش فرستنده/Admin با برچسب «حذف شده» نمایش داده می‌شود.
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     targets: Mapped[list["NoticeTarget"]] = relationship(
@@ -98,7 +98,9 @@ class NoticeTarget(Base):
     __tablename__ = "notice_targets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    notice_id: Mapped[int] = mapped_column(ForeignKey("notices.id", ondelete="CASCADE"), nullable=False)
+    notice_id: Mapped[int] = mapped_column(
+        ForeignKey("notices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     target_type: Mapped[NoticeTargetType] = mapped_column(
         Enum(NoticeTargetType, name="notice_target_type_enum"), nullable=False

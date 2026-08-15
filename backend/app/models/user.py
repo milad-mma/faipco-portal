@@ -30,7 +30,7 @@ class User(Base, TimestampMixin):
 
     # اتصال اختیاری به رکورد پرسنلی سینک‌شده (کاربر می‌تواند بدون Employee هم وجود داشته باشد؛ مثلاً Admin سیستم)
     employee_id: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

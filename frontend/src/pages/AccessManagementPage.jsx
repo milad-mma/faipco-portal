@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
   Grid,
   InputAdornment,
   Stack,
@@ -27,7 +28,7 @@ import AssignAccessDialog from "../components/AssignAccessDialog";
 
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
-  const [overview, setOverview] = useState([]);
+  const [overview, setOverview] = useState(null);
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
@@ -148,16 +149,26 @@ export default function AccessManagementPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {overview.length === 0 && (
+              {overview === null ? (
                 <TableRow>
                   <TableCell colSpan={5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
-                      هنوز هیچ‌کس نقش سازمانی یا سرپرستی واحدی ندارد.
-                    </Typography>
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+                      <CircularProgress size={24} />
+                    </Box>
                   </TableCell>
                 </TableRow>
-              )}
-              {overview.map((entry) => (
+              ) : (
+                <>
+                  {overview.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5}>
+                        <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
+                          هنوز هیچ‌کس نقش سازمانی یا سرپرستی واحدی ندارد.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {overview.map((entry) => (
                 <TableRow key={entry.employee_id} hover>
                   <TableCell sx={monoFontSx}>{entry.personnel_code}</TableCell>
                   <TableCell>
@@ -199,6 +210,8 @@ export default function AccessManagementPage() {
                   </TableCell>
                 </TableRow>
               ))}
+                </>
+              )}
             </TableBody>
           </Table>
         </TableContainer>

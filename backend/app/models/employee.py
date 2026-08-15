@@ -29,7 +29,7 @@ class Department(Base, TimestampMixin):
     # سرپرست این واحد — می‌تواند برای پرسنل همین واحد اطلاعیه ارسال کند
     # (بدون نیاز به هیچ نقش RBAC جداگانه‌ای؛ صرفاً همین اتصال کافی است)
     supervisor_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
 
@@ -70,7 +70,7 @@ class Employee(Base, TimestampMixin):
 
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     department_id: Mapped[int | None] = mapped_column(
-        ForeignKey("departments.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
