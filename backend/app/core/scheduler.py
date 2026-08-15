@@ -15,7 +15,8 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.base import JobLookupError
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
@@ -35,34 +36,67 @@ BIRTHDAY_JOB_ID = "send_birthday_greetings"
 # در عمل ساعت ۱۵:۳۰ ایران اجرا شود (یا اصلاً هنوز به آن زمان نرسیده باشد).
 scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Tehran"))
 
+# نکته حیاتی دیگر: این سرویس با چند Worker جدا (uvicorn --workers 2) اجرا
+# می‌شود — هر Worker یک نسخه کاملاً مستقل از این Scheduler را استارت می‌کند
+# (چون start_scheduler() در main.py، در startup هر Worker جدا صدا زده
+# می‌شود). یعنی بدون قفل، هر Job زمان‌بندی‌شده (مثل ارسال پیام تبریک تولد)
+# هم‌زمان توسط هر دو Worker اجرا می‌شود — دقیقاً همان چیزی که باعث شد یک نفر
+# دو پیام (با متن‌های متفاوت، چون هرکدام تصادفی جدا انتخاب می‌کند) دریافت کند.
+# راه‌حل: یک Advisory Lock سطح PostgreSQL — فقط Worker ای که قفل را می‌گیرد
+# واقعاً Job را اجرا می‌کند؛ Worker دیگر می‌بیند قفل گرفته شده و بی‌صدا رد می‌شود.
+_SYNC_LOCK_KEY = 875312001
+_BIRTHDAY_LOCK_KEY = 875312002
+
+
+async def _try_advisory_lock(db: AsyncSession, lock_key: int) -> bool:
+    result = await db.execute(select(func.pg_try_advisory_lock(lock_key)))
+    return bool(result.scalar_one())
+
+
+async def _advisory_unlock(db: AsyncSession, lock_key: int) -> None:
+    await db.execute(select(func.pg_advisory_unlock(lock_key)))
+
 
 async def _run_sync_for_all_active_sites() -> None:
-    async with AsyncSessionLocal() as db:
-        # فقط سایت‌هایی که هم خودشان فعال‌اند و هم Sync خودکارشان روشن است
-        # (SiteConnection.is_active) وارد چرخه خودکار می‌شوند — اجرای دستی از
-        # پنل Admin از این محدودیت مستقل است و همیشه در دسترس می‌ماند.
-        result = await db.execute(
-            select(Site)
-            .join(SiteConnection, SiteConnection.site_id == Site.id)
-            .where(Site.is_active.is_(True), SiteConnection.is_active.is_(True))
-        )
-        sites = list(result.scalars().all())
+    async with AsyncSessionLocal() as lock_db:
+        acquired = await _try_advisory_lock(lock_db, _SYNC_LOCK_KEY)
+        if not acquired:
+            logger.info("Job سینک خودکار همزمان توسط Worker دیگری در حال اجراست — این نمونه رد می‌شود.")
+            return
+        try:
+            # فقط سایت‌هایی که هم خودشان فعال‌اند و هم Sync خودکارشان روشن است
+            # (SiteConnection.is_active) وارد چرخه خودکار می‌شوند — اجرای دستی از
+            # پنل Admin از این محدودیت مستقل است و همیشه در دسترس می‌ماند.
+            result = await lock_db.execute(
+                select(Site)
+                .join(SiteConnection, SiteConnection.site_id == Site.id)
+                .where(Site.is_active.is_(True), SiteConnection.is_active.is_(True))
+            )
+            sites = list(result.scalars().all())
 
-    for site in sites:
-        async with AsyncSessionLocal() as db:
-            try:
-                await SyncService(db).run_sync(site.id)
-                logger.info("Sync خودکار موفق برای Site '%s'", site.code)
-            except Exception:  # noqa: BLE001 - خطای هر Site نباید بقیه را متوقف کند
-                logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
+            for site in sites:
+                async with AsyncSessionLocal() as db:
+                    try:
+                        await SyncService(db).run_sync(site.id)
+                        logger.info("Sync خودکار موفق برای Site '%s'", site.code)
+                    except Exception:  # noqa: BLE001 - خطای هر Site نباید بقیه را متوقف کند
+                        logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
+        finally:
+            await _advisory_unlock(lock_db, _SYNC_LOCK_KEY)
 
 
 async def _send_birthday_greetings() -> None:
     async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _BIRTHDAY_LOCK_KEY)
+        if not acquired:
+            logger.info("Job پیام تبریک تولد همزمان توسط Worker دیگری در حال اجراست — این نمونه رد می‌شود.")
+            return
         try:
             await BirthdayGreetingsService(db).send_todays_birthday_greetings()
         except Exception:  # noqa: BLE001 - نباید کل Scheduler را متوقف کند
             logger.exception("خطا در ارسال خودکار پیام تبریک تولد")
+        finally:
+            await _advisory_unlock(db, _BIRTHDAY_LOCK_KEY)
 
 
 async def start_scheduler() -> None:
