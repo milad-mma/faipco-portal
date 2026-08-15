@@ -135,11 +135,15 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
     بازیابی کامل از یک بکاپ گرفته‌شده از همین سرور — طراحی‌شده فقط برای
     همین Use Case (نه Clone به سرور دیگر). مراحل:
       1. اعتبارسنجی عبارت تأیید + محتوای بکاپ
-      2. pg_restore --clean --if-exists — همه Object ها (جدول‌ها، از جمله
-         alembic_version) قبل از بازسازی درست حذف می‌شوند، بعد کل بکاپ
-         (Schema + Data) بازسازی می‌شود؛ دیگر نیازی به TRUNCATE دستی با
-         استثنا نیست — این دقیقاً همان چیزی بود که قبلاً باعث خرابی
-         alembic_version می‌شد.
+      2. pg_restore --clean --if-exists --single-transaction — همه Object ها
+         (جدول‌ها، از جمله alembic_version) قبل از بازسازی درست حذف
+         می‌شوند، بعد کل بکاپ (Schema + Data) بازسازی می‌شود؛ دیگر نیازی به
+         TRUNCATE دستی با استثنا نیست — این دقیقاً همان چیزی بود که قبلاً
+         باعث خرابی alembic_version می‌شد. --single-transaction حیاتی است:
+         بدون آن، اگر بازیابی از وسط با خطا مواجه شود، دیتابیس در یک حالت
+         نیمه‌خراب (بعضی جدول‌ها Drop شده، بعضی نه) باقی می‌ماند — با این
+         پرچم، هر خطایی یعنی کل این مرحله کامل Rollback می‌شود و دیتابیس
+         دقیقاً به حالت قبل از شروع Restore برمی‌گردد.
       3. اجرای Migration های آخرین کد (اگر بکاپ از نسخه قدیمی‌تری بود، Schema
          به آخرین نسخه می‌رسد — Migration ها هیچ‌وقت داده حذف نمی‌کنند)
     چون فقط روی همین سرور بازیابی می‌شود، .env و کلیدهای رمزنگاری دست‌نخورده
@@ -175,6 +179,7 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
                 pg_restore_path,
                 "--clean",
                 "--if-exists",
+                "--single-transaction",
                 "--no-owner",
                 "--no-privileges",
                 f"--dbname={libpq_url}",
