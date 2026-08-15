@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models.site import Site, SiteConnection
+from app.services.birthday_greetings_service import BirthdayGreetingsService
 from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncService
 
@@ -26,6 +27,7 @@ logger = logging.getLogger("faipco.scheduler")
 settings = get_settings()
 
 JOB_ID = "auto_sync_all_sites"
+BIRTHDAY_JOB_ID = "send_birthday_greetings"
 scheduler = AsyncIOScheduler()
 
 
@@ -50,23 +52,44 @@ async def _run_sync_for_all_active_sites() -> None:
                 logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
 
 
+async def _send_birthday_greetings() -> None:
+    async with AsyncSessionLocal() as db:
+        try:
+            await BirthdayGreetingsService(db).send_todays_birthday_greetings()
+        except Exception:  # noqa: BLE001 - نباید کل Scheduler را متوقف کند
+            logger.exception("خطا در ارسال خودکار پیام تبریک تولد")
+
+
 async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
-        return
+    else:
+        async with AsyncSessionLocal() as db:
+            interval_minutes = await SystemSettingsService(db).get_sync_interval_minutes()
+
+        scheduler.add_job(
+            _run_sync_for_all_active_sites,
+            trigger="interval",
+            minutes=interval_minutes,
+            id=JOB_ID,
+            replace_existing=True,
+        )
+        logger.info("Scheduler سینک خودکار هر %s دقیقه اجرا خواهد شد", interval_minutes)
 
     async with AsyncSessionLocal() as db:
-        interval_minutes = await SystemSettingsService(db).get_sync_interval_minutes()
+        birthday_hour, birthday_minute = await BirthdayGreetingsService(db).get_send_time()
 
     scheduler.add_job(
-        _run_sync_for_all_active_sites,
-        trigger="interval",
-        minutes=interval_minutes,
-        id=JOB_ID,
+        _send_birthday_greetings,
+        trigger="cron",
+        hour=birthday_hour,
+        minute=birthday_minute,
+        id=BIRTHDAY_JOB_ID,
         replace_existing=True,
     )
+    logger.info("Scheduler پیام تبریک تولد هر روز ساعت %02d:%02d اجرا خواهد شد", birthday_hour, birthday_minute)
+
     scheduler.start()
-    logger.info("Scheduler سینک خودکار هر %s دقیقه اجرا خواهد شد", interval_minutes)
 
 
 def reschedule_sync_interval(minutes: int) -> None:
@@ -83,6 +106,15 @@ def reschedule_sync_interval(minutes: int) -> None:
             "Job سینک خودکار در حال حاضر زمان‌بندی نشده (SYNC_ENABLED=false) — "
             "مقدار جدید فقط در دیتابیس ذخیره شد و در اجرای بعدی اعمال می‌شود."
         )
+
+
+def reschedule_birthday_send_time(hour: int, minute: int) -> None:
+    """ساعت ارسال روزانه پیام تبریک تولد را بدون Restart سرور تغییر می‌دهد."""
+    try:
+        scheduler.reschedule_job(BIRTHDAY_JOB_ID, trigger="cron", hour=hour, minute=minute)
+        logger.info("ساعت ارسال پیام تبریک تولد به %02d:%02d تغییر کرد", hour, minute)
+    except JobLookupError:
+        logger.warning("Job پیام تبریک تولد پیدا نشد — این نباید اتفاق بیفتد چون همیشه زمان‌بندی می‌شود.")
 
 
 def stop_scheduler() -> None:

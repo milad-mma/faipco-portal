@@ -28,6 +28,7 @@ import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettin
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
+import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -84,6 +85,13 @@ const NAV_ITEMS = [
     adminOnly: false,
     requiresClockRecordsView: true,
   },
+  {
+    label: "پیام‌های تبریک تولد",
+    path: "/birthday-messages",
+    icon: <CakeOutlinedIcon />,
+    adminOnly: false,
+    requiresBirthdayMessages: true,
+  },
 ];
 
 export default function Layout() {
@@ -101,6 +109,7 @@ export default function Layout() {
         if (item.adminOnly && !user?.is_superuser) return false;
         if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
         if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
+        if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
         if (item.hiddenForAdmin && user?.is_superuser) return false;
         return true;
       }).map((item) => ({

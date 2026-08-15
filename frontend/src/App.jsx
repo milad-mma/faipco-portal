@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
+import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
 import SplashScreen from "./components/SplashScreen";
 import LoginPage from "./pages/LoginPage";
@@ -20,6 +21,7 @@ import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
 import PresenceReportPage from "./pages/PresenceReportPage";
 import ClockInOutReportPage from "./pages/ClockInOutReportPage";
+import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_DURATION_MS = 2000;
@@ -62,13 +64,35 @@ export default function App() {
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
           <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
           <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
-          <Route path="/clock-in-out-report" element={<ClockInOutReportPage />} />
+          <Route
+            path="/clock-in-out-report"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_clock_records}>
+                <ClockInOutReportPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/birthday-messages"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_birthday_messages}>
+                <BirthdayMessagesPage />
+              </PermissionRoute>
+            }
+          />
 
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />
           <Route path="/notices/new" element={<NewNoticePage />} />
           <Route path="/notice-reports" element={<AdminRoute><NoticeReportsPage /></AdminRoute>} />
-          <Route path="/attendance-clock" element={<AttendanceClockPage />} />
+          <Route
+            path="/attendance-clock"
+            element={
+              <PermissionRoute check={(u) => u?.can_clock_in_out && !u?.is_superuser}>
+                <AttendanceClockPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

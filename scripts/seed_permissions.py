@@ -69,6 +69,10 @@ DEFAULT_PERMISSIONS = [
         "attendance.view_clock_records",
         "مشاهده گزارش ورود/خروج آزمایشی GPS همه پرسنل — به superadmin و نقش hr-manager داده می‌شود",
     ),
+    (
+        "hr.birthday_messages",
+        "مدیریت پیام‌های تبریک تولد (متن‌ها + ساعت ارسال) — به superadmin و نقش hr-manager داده می‌شود",
+    ),
 ]
 
 # نقش -> فهرست کدهای Permission (به‌جز superadmin که همه را می‌گیرد)
@@ -109,6 +113,7 @@ ADDITIONAL_ROLES = {
             "notices.attendance_card",
             "notices.view",  # برای دیدن گزارش «ارسالی من»
             "attendance.view_clock_records",  # گزارش ورود/خروج آزمایشی GPS همه پرسنل
+            "hr.birthday_messages",  # مدیریت پیام‌های تبریک تولد
         ],
     },
     "attendance-pilot": {

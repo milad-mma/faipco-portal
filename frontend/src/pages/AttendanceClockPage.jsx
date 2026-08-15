@@ -131,36 +131,40 @@ export default function AttendanceClockPage() {
           groupLogsByDay(logs).map((row, index) => (
             <Box key={row.key}>
               {index > 0 && <Divider />}
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }} flexWrap="wrap" rowGap={1}>
                 <Typography variant="body2" sx={monoFontSx}>
                   {row.dateLabel}
                 </Typography>
-                <Stack direction="row" spacing={1}>
-                  {row.checkIn ? (
-                    <Chip
-                      size="small"
-                      color="success"
-                      icon={<LoginOutlinedIcon fontSize="small" />}
-                      label={new Date(row.checkIn.created_at).toLocaleTimeString("fa-IR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    />
-                  ) : (
-                    <Chip size="small" variant="outlined" label="بدون ورود" />
-                  )}
-                  {row.checkOut ? (
-                    <Chip
-                      size="small"
-                      icon={<LogoutOutlinedIcon fontSize="small" />}
-                      label={new Date(row.checkOut.created_at).toLocaleTimeString("fa-IR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    />
-                  ) : (
-                    <Chip size="small" variant="outlined" label="بدون خروج" />
-                  )}
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent="flex-end">
+                  {row.sessions.map((session, sessionIndex) => (
+                    <Stack key={sessionIndex} direction="row" spacing={0.5}>
+                      {session.checkIn ? (
+                        <Chip
+                          size="small"
+                          color="success"
+                          icon={<LoginOutlinedIcon fontSize="small" />}
+                          label={new Date(session.checkIn.created_at).toLocaleTimeString("fa-IR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        />
+                      ) : (
+                        <Chip size="small" variant="outlined" label="بدون ورود" />
+                      )}
+                      {session.checkOut ? (
+                        <Chip
+                          size="small"
+                          icon={<LogoutOutlinedIcon fontSize="small" />}
+                          label={new Date(session.checkOut.created_at).toLocaleTimeString("fa-IR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        />
+                      ) : (
+                        <Chip size="small" variant="outlined" label="بدون خروج" />
+                      )}
+                    </Stack>
+                  ))}
                 </Stack>
               </Stack>
             </Box>

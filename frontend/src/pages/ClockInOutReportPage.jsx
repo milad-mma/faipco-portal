@@ -122,8 +122,7 @@ export default function ClockInOutReportPage() {
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
                   <TableCell>تاریخ</TableCell>
-                  <TableCell>ورود</TableCell>
-                  <TableCell>خروج</TableCell>
+                  <TableCell>ورود/خروج‌ها</TableCell>
                   <TableCell>سایت مطابق</TableCell>
                 </TableRow>
               </TableHead>
@@ -138,39 +137,41 @@ export default function ClockInOutReportPage() {
                     </TableCell>
                     <TableCell sx={monoFontSx}>{row.dateLabel}</TableCell>
                     <TableCell>
-                      {row.checkIn ? (
-                        <Chip
-                          size="small"
-                          color="success"
-                          icon={<LoginOutlinedIcon fontSize="small" />}
-                          label={new Date(row.checkIn.created_at).toLocaleTimeString("fa-IR", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        />
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
+                      <Stack spacing={0.75}>
+                        {row.sessions.map((session, sessionIndex) => (
+                          <Stack key={sessionIndex} direction="row" spacing={0.5}>
+                            {session.checkIn ? (
+                              <Chip
+                                size="small"
+                                color="success"
+                                icon={<LoginOutlinedIcon fontSize="small" />}
+                                label={new Date(session.checkIn.created_at).toLocaleTimeString("fa-IR", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              />
+                            ) : (
+                              <Chip size="small" variant="outlined" label="بدون ورود" />
+                            )}
+                            {session.checkOut ? (
+                              <Chip
+                                size="small"
+                                icon={<LogoutOutlinedIcon fontSize="small" />}
+                                label={new Date(session.checkOut.created_at).toLocaleTimeString("fa-IR", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              />
+                            ) : (
+                              <Chip size="small" variant="outlined" label="بدون خروج" />
+                            )}
+                          </Stack>
+                        ))}
+                      </Stack>
                     </TableCell>
                     <TableCell>
-                      {row.checkOut ? (
-                        <Chip
-                          size="small"
-                          icon={<LogoutOutlinedIcon fontSize="small" />}
-                          label={new Date(row.checkOut.created_at).toLocaleTimeString("fa-IR", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        />
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
+                      {row.sessions[0]?.checkIn?.matched_site_name || row.sessions[0]?.checkOut?.matched_site_name || "—"}
                     </TableCell>
-                    <TableCell>{row.checkIn?.matched_site_name || row.checkOut?.matched_site_name || "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

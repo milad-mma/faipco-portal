@@ -10,11 +10,15 @@ from app.models.system_setting import SystemSetting
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
 IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
 IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
+BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
+BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
+BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
     "لطفاً اتصال VPN خود را قطع کنید و دوباره تلاش کنید."
 )
+DEFAULT_BIRTHDAY_SEND_TIME = "09:00"
 
 
 class SystemSettingsService:
@@ -74,4 +78,40 @@ class SystemSettingsService:
 
     async def set_ip_allowlist_enabled(self, enabled: bool) -> bool:
         await self._set_raw(IP_ALLOWLIST_ENABLED_KEY, "true" if enabled else "false")
+        return enabled
+
+    # ---------- ساعت ارسال روزانه پیام تبریک تولد ----------
+
+    async def get_birthday_send_time(self) -> tuple[int, int]:
+        """(ساعت, دقیقه) — پیش‌فرض ۰۹:۰۰."""
+        raw = await self._get_raw(BIRTHDAY_SEND_TIME_KEY) or DEFAULT_BIRTHDAY_SEND_TIME
+        hour_str, minute_str = raw.split(":")
+        return int(hour_str), int(minute_str)
+
+    async def set_birthday_send_time(self, hour: int, minute: int) -> tuple[int, int]:
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError("ساعت/دقیقه نامعتبر است")
+        await self._set_raw(BIRTHDAY_SEND_TIME_KEY, f"{hour:02d}:{minute:02d}")
+        return hour, minute
+
+    # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
+
+    async def get_birthday_greetings_enabled(self) -> bool:
+        raw = await self._get_raw(BIRTHDAY_GREETINGS_ENABLED_KEY)
+        # پیش‌فرض True است (برخلاف IP Allowlist) چون خودِ «پول خالی = ارسال نشدن»
+        # از قبل یک محافظت کافی است؛ این کلید فقط برای خاموش‌کردن موقت است.
+        return raw != "false"
+
+    async def set_birthday_greetings_enabled(self, enabled: bool) -> bool:
+        await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
+        return enabled
+
+    # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
+
+    async def get_birthday_greetings_enabled(self) -> bool:
+        raw = await self._get_raw(BIRTHDAY_GREETINGS_ENABLED_KEY)
+        return raw == "true"
+
+    async def set_birthday_greetings_enabled(self, enabled: bool) -> bool:
+        await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
         return enabled
