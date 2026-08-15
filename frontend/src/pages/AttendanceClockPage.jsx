@@ -6,12 +6,8 @@ import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { clockIn, clockOut, fetchMyAttendanceLogs } from "../api/attendance";
 import { getCurrentPosition } from "../utils/geolocation";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
-
-const LOG_TYPE_LABELS = {
-  check_in: { label: "ورود", color: "success", icon: <LoginOutlinedIcon fontSize="small" /> },
-  check_out: { label: "خروج", color: "default", icon: <LogoutOutlinedIcon fontSize="small" /> },
-};
 
 export default function AttendanceClockPage() {
   const [logs, setLogs] = useState(null);
@@ -132,20 +128,43 @@ export default function AttendanceClockPage() {
             </Typography>
           </Box>
         ) : (
-          logs.map((log, index) => {
-            const meta = LOG_TYPE_LABELS[log.log_type] || { label: log.log_type, color: "default" };
-            return (
-              <Box key={log.id}>
-                {index > 0 && <Divider />}
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
-                  <Chip size="small" color={meta.color} icon={meta.icon} label={meta.label} />
-                  <Typography variant="body2" sx={monoFontSx}>
-                    {new Date(log.created_at).toLocaleString("fa-IR")}
-                  </Typography>
+          groupLogsByDay(logs).map((row, index) => (
+            <Box key={row.key}>
+              {index > 0 && <Divider />}
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
+                <Typography variant="body2" sx={monoFontSx}>
+                  {row.dateLabel}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  {row.checkIn ? (
+                    <Chip
+                      size="small"
+                      color="success"
+                      icon={<LoginOutlinedIcon fontSize="small" />}
+                      label={new Date(row.checkIn.created_at).toLocaleTimeString("fa-IR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    />
+                  ) : (
+                    <Chip size="small" variant="outlined" label="بدون ورود" />
+                  )}
+                  {row.checkOut ? (
+                    <Chip
+                      size="small"
+                      icon={<LogoutOutlinedIcon fontSize="small" />}
+                      label={new Date(row.checkOut.created_at).toLocaleTimeString("fa-IR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    />
+                  ) : (
+                    <Chip size="small" variant="outlined" label="بدون خروج" />
+                  )}
                 </Stack>
-              </Box>
-            );
-          })
+              </Stack>
+            </Box>
+          ))
         )}
       </Card>
     </Box>

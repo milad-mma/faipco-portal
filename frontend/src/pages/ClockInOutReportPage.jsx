@@ -22,17 +22,13 @@ import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { fetchAllAttendanceLogs } from "../api/attendance";
 import { fetchEmployees } from "../api/employees";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
 
-const LOG_TYPE_META = {
-  check_in: { label: "ورود", color: "success", icon: <LoginOutlinedIcon fontSize="small" /> },
-  check_out: { label: "خروج", color: "default", icon: <LogoutOutlinedIcon fontSize="small" /> },
-};
 const PAGE_SIZE = 50;
 
 export default function ClockInOutReportPage() {
-  const [logs, setLogs] = useState(null);
-  const [total, setTotal] = useState(0);
+  const [groupedRows, setGroupedRows] = useState(null);
   const [page, setPage] = useState(1);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [period, setPeriod] = useState({ year: null, month: null }); // null یعنی هنوز از سرور نگرفتیم (ماه جاری پیش‌فرض)
@@ -41,14 +37,15 @@ export default function ClockInOutReportPage() {
   const [employeeSearch, setEmployeeSearch] = useState("");
 
   useEffect(() => {
-    setLogs(null);
+    setGroupedRows(null);
     // چون این گزارش هم «ورود» هم «خروج» را با هم می‌خواهد (نه فقط یکی)، دو
     // درخواست جدا می‌زنیم و نتیجه را با هم ترکیب می‌کنیم — سرور فقط یک
-    // log_type در هر درخواست قبول می‌کند.
+    // log_type در هر درخواست قبول می‌کند. بعد، ورود/خروج هر پرسنل در هر
+    // روز در یک ردیف واحد ترکیب می‌شود.
     Promise.all([
       fetchAllAttendanceLogs({
         page: 1,
-        pageSize: 500,
+        pageSize: 1000,
         employeeId: selectedEmployee?.id,
         logType: "check_in",
         year: period.year,
@@ -56,19 +53,15 @@ export default function ClockInOutReportPage() {
       }),
       fetchAllAttendanceLogs({
         page: 1,
-        pageSize: 500,
+        pageSize: 1000,
         employeeId: selectedEmployee?.id,
         logType: "check_out",
         year: period.year,
         month: period.month,
       }),
     ]).then(([inData, outData]) => {
-      const combined = [...inData.items, ...outData.items].sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      );
-      const start = (page - 1) * PAGE_SIZE;
-      setLogs(combined.slice(start, start + PAGE_SIZE));
-      setTotal(inData.total + outData.total);
+      const combined = groupLogsByDay([...inData.items, ...outData.items]);
+      setGroupedRows(combined);
       // اولین بار (بدون year/month)، مقدار پیش‌فرضِ ماه جاری را از سرور می‌گیریم
       setPeriod({ year: inData.year, month: inData.month });
     });
@@ -77,6 +70,8 @@ export default function ClockInOutReportPage() {
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
   }, [employeeSearch]);
+
+  const pageRows = groupedRows ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : null;
 
   return (
     <Box>
@@ -113,11 +108,11 @@ export default function ClockInOutReportPage() {
         />
       </Stack>
 
-      {logs === null ? (
+      {groupedRows === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
         </Box>
-      ) : logs.length === 0 ? (
+      ) : groupedRows.length === 0 ? (
         <Alert severity="info">هیچ رکوردی پیدا نشد.</Alert>
       ) : (
         <>
@@ -126,42 +121,66 @@ export default function ClockInOutReportPage() {
               <TableHead>
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
-                  <TableCell>نوع</TableCell>
+                  <TableCell>تاریخ</TableCell>
+                  <TableCell>ورود</TableCell>
+                  <TableCell>خروج</TableCell>
                   <TableCell>سایت مطابق</TableCell>
-                  <TableCell>فاصله</TableCell>
-                  <TableCell>زمان</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {logs.map((log) => {
-                  const meta = LOG_TYPE_META[log.log_type] || { label: log.log_type, color: "default" };
-                  return (
-                    <TableRow key={log.id}>
-                      <TableCell>
-                        <Typography variant="body2">{log.employee_name}</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
-                          {log.personnel_code}
+                {pageRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell>
+                      <Typography variant="body2">{row.employeeName}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
+                        {row.personnelCode}
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={monoFontSx}>{row.dateLabel}</TableCell>
+                    <TableCell>
+                      {row.checkIn ? (
+                        <Chip
+                          size="small"
+                          color="success"
+                          icon={<LoginOutlinedIcon fontSize="small" />}
+                          label={new Date(row.checkIn.created_at).toLocaleTimeString("fa-IR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          —
                         </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip size="small" color={meta.color} icon={meta.icon} label={meta.label} />
-                      </TableCell>
-                      <TableCell>{log.matched_site_name || "—"}</TableCell>
-                      <TableCell sx={monoFontSx}>
-                        {log.distance_meters != null ? `${Math.round(log.distance_meters)} متر` : "—"}
-                      </TableCell>
-                      <TableCell sx={monoFontSx}>{new Date(log.created_at).toLocaleString("fa-IR")}</TableCell>
-                    </TableRow>
-                  );
-                })}
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.checkOut ? (
+                        <Chip
+                          size="small"
+                          icon={<LogoutOutlinedIcon fontSize="small" />}
+                          label={new Date(row.checkOut.created_at).toLocaleTimeString("fa-IR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{row.checkIn?.matched_site_name || row.checkOut?.matched_site_name || "—"}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
 
-          {total > PAGE_SIZE && (
+          {groupedRows.length > PAGE_SIZE && (
             <Stack alignItems="center" sx={{ mt: 3 }}>
               <Pagination
-                count={Math.ceil(total / PAGE_SIZE)}
+                count={Math.ceil(groupedRows.length / PAGE_SIZE)}
                 page={page}
                 onChange={(_, value) => setPage(value)}
                 color="primary"
