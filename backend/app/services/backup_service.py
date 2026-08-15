@@ -3,16 +3,25 @@
 تازه (نصب تمیز همین پروژه + `install.sh --restore-backup backup.zip`)
 دقیقاً همان اطلاعات را برگرداند؛ انگار پروژه Clone شده باشد.
 
-بکاپ شامل دو بخش حیاتی است:
-1. database.sql — فقط داده (نه Schema)، با pg_dump --data-only گرفته
-   می‌شود؛ چون Schema همیشه از روی Migration های خودِ کد در سرور جدید ساخته
-   می‌شود (نه از روی بکاپ) — این یعنی حتی اگر کد از زمان گرفتن بکاپ تغییر
-   کرده باشد (Migration های جدید)، بازیابی همچنان با آخرین نسخه کد سازگار
-   می‌ماند.
+⚠️ تغییر نسخه فرمت (v2): به‌جای SQL متنی ساده + اجرای دستی با psql، از
+فرمت باینری Custom خودِ pg_dump (-Fc) به‌همراه pg_restore استفاده می‌شود —
+این همان روش استاندارد و به‌شدت تست‌شده PostgreSQL برای این کار است، به‌جای
+این‌که ما خودمان دستی فایل SQL بسازیم/به‌هم بچسبانیم (که منبع چند باگ قبلی
+مثل مشکل ساخت Type تکراری بود). فایل‌های بکاپ قدیمی (فرمت متنی v1) هم
+همچنان با همان مسیر قدیمی (psql) قابل‌بازیابی هستند — تشخیص فرمت خودکار
+و بر اساس امضای باینری اول فایل (PGDMP) انجام می‌شود، نه پسوند نام فایل.
+
+بکاپ شامل سه بخش است:
+1. database.dump — فقط داده (نه Schema)، با pg_dump --format=custom
+   گرفته می‌شود؛ چون Schema همیشه از روی Migration های خودِ کد در سرور
+   جدید ساخته می‌شود (نه از روی بکاپ) — این یعنی حتی اگر کد از زمان گرفتن
+   بکاپ تغییر کرده باشد (Migration های جدید)، بازیابی همچنان با آخرین
+   نسخه کد سازگار می‌ماند.
 2. secrets.json — کلیدهای رمزنگاری حیاتی، مخصوصاً DB_CREDENTIALS_ENCRYPTION_KEY.
    بدون این کلید دقیق، رمز عبور اتصال دیتابیس سایت‌ها (که در همان
-   database.sql رمزنگاری‌شده ذخیره شده) روی سرور جدید برای همیشه
+   database.dump رمزنگاری‌شده ذخیره شده) روی سرور جدید برای همیشه
    غیرقابل‌رمزگشایی می‌شود — یعنی دیگر یک Clone واقعی نیست.
+3. manifest.json — اطلاعات نسخه/راهنما.
 """
 from __future__ import annotations
 
@@ -31,6 +40,10 @@ from app.core.config import get_settings
 # فایل .env همیشه دقیقاً کنار خودِ پوشه app/ است (backend/.env)
 _ENV_FILE_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
+# امضای باینری استاندارد فرمت Custom/Directory/Tar خودِ pg_dump — همیشه ۵
+# بایت اول فایل است؛ برای تشخیص خودکار بکاپ‌های جدید (v2) از قدیمی (v1، SQL متنی)
+_PG_CUSTOM_FORMAT_MAGIC = b"PGDMP"
+
 
 class BackupError(Exception):
     pass
@@ -38,17 +51,17 @@ class BackupError(Exception):
 
 def _to_libpq_url(database_url: str) -> str:
     """postgresql+asyncpg://... یا postgresql+psycopg2://... را به فرمتی که
-    ابزارهای خط‌فرمان pg_dump/psql می‌فهمند (postgresql://...) تبدیل می‌کند."""
+    ابزارهای خط‌فرمان pg_dump/psql/pg_restore می‌فهمند (postgresql://...) تبدیل می‌کند."""
     return database_url.replace("+asyncpg", "").replace("+psycopg2", "")
 
 
 def _find_pg_binary(name: str) -> str:
     """
-    مسیر کامل ابزار pg_dump/psql را پیدا می‌کند — نه فقط با تکیه بر متغیر
-    محیطی PATH فرآیند (که مثلاً وقتی بک‌اند به‌عنوان یک سرویس Systemd اجرا
-    می‌شود، ممکن است عمداً محدود به پوشه venv باشد و /usr/bin را نداشته
-    باشد — دقیقاً همان چیزی که باعث شکست این قابلیت شد)، بلکه با جست‌وجوی
-    مسیرهای رایج نصب PostgreSQL هم، تا مستقل از تنظیمات محیطی سرویس همیشه کار کند.
+    مسیر کامل ابزار pg_dump/psql/pg_restore را پیدا می‌کند — نه فقط با تکیه
+    بر متغیر محیطی PATH فرآیند (که مثلاً وقتی بک‌اند به‌عنوان یک سرویس
+    Systemd اجرا می‌شود، ممکن است عمداً محدود به پوشه venv باشد و /usr/bin
+    را نداشته باشد)، بلکه با جست‌وجوی مسیرهای رایج نصب PostgreSQL هم، تا
+    مستقل از تنظیمات محیطی سرویس همیشه کار کند.
     """
     found = shutil.which(name)
     if found:
@@ -85,16 +98,15 @@ async def create_backup_archive() -> bytes:
     pg_dump_path = _find_pg_binary("pg_dump")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        dump_path = Path(tmp_dir) / "database.sql"
+        dump_path = Path(tmp_dir) / "database.dump"
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 pg_dump_path,
                 "--data-only",
-                "--disable-triggers",
+                "--format=custom",
                 "--no-owner",
                 "--no-privileges",
-                "--format=plain",
                 f"--file={dump_path}",
                 libpq_url,
                 stdout=asyncio.subprocess.PIPE,
@@ -114,7 +126,7 @@ async def create_backup_archive() -> bytes:
         manifest = {
             "app_name": settings.APP_NAME,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "format": "faipco-portal-backup-v1",
+            "format": "faipco-portal-backup-v2",
             "restore_instructions": (
                 "برای بازیابی روی همین سرور (جایگزینی داده فعلی): "
                 "sudo bash install.sh --restore-in-place /path/to/this-file.zip | "
@@ -123,7 +135,7 @@ async def create_backup_archive() -> bytes:
             ),
         }
         # این کلیدها باید عیناً روی سرور جدید بازیابی شوند، وگرنه رمز عبور
-        # اتصال دیتابیس سایت‌ها (که داخل database.sql رمزنگاری‌شده) دیگر
+        # اتصال دیتابیس سایت‌ها (که داخل database.dump رمزنگاری‌شده) دیگر
         # قابل‌رمزگشایی نخواهد بود.
         secrets = {
             "DB_CREDENTIALS_ENCRYPTION_KEY": settings.DB_CREDENTIALS_ENCRYPTION_KEY,
@@ -134,7 +146,7 @@ async def create_backup_archive() -> bytes:
 
         zip_path = Path(tmp_dir) / "backup.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(dump_path, "database.sql")
+            zf.write(dump_path, "database.dump")
             zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             zf.writestr("secrets.json", json.dumps(secrets, ensure_ascii=False, indent=2))
 
@@ -144,6 +156,22 @@ async def create_backup_archive() -> bytes:
 # مقداری که کاربر باید عیناً تایپ کند تا Restore واقعاً اجرا شود — یک لایه
 # محافظتی اضافه، مستقل از تأیید سمت فرانت‌اند (چون فرانت‌اند قابل‌دورزدن است).
 RESTORE_CONFIRMATION_PHRASE = "RESTORE"
+
+
+def _find_dump_file(tmp_path: Path) -> Path:
+    """هم فرمت جدید (database.dump) هم فرمت قدیمی (database.sql) را پیدا می‌کند."""
+    new_format = tmp_path / "database.dump"
+    if new_format.exists():
+        return new_format
+    old_format = tmp_path / "database.sql"
+    if old_format.exists():
+        return old_format
+    raise BackupError("فایل بکاپ نامعتبر است — database.dump/database.sql داخلش نیست.")
+
+
+def _is_custom_format(dump_path: Path) -> bool:
+    with open(dump_path, "rb") as f:
+        return f.read(len(_PG_CUSTOM_FORMAT_MAGIC)) == _PG_CUSTOM_FORMAT_MAGIC
 
 
 async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> None:
@@ -156,10 +184,18 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
       2. .env با کلیدهای بکاپ به‌روزرسانی می‌شود (محتوای قبلی در حافظه نگه
          داشته می‌شود تا در صورت خطا در مراحل بعدی، دقیقاً همان برگردانده شود)
       3. Migration های آخرین کد
-      4. پاک‌کردن کامل داده فعلی + بارگذاری داده بکاپ، هر دو در یک
-         Transaction واحد (BEGIN...COMMIT) — اگر اینجا خطا رخ دهد، هم
-         Transaction دیتابیس خودکار Rollback می‌شود، هم .env به حالت قبلی
-         برمی‌گردد.
+      4. پاک‌کردن کامل داده فعلی (TRUNCATE)
+      5. بارگذاری داده بکاپ — با pg_restore برای فرمت جدید (v2)، یا psql
+         برای بکاپ‌های قدیمی‌تر (v1، تشخیص خودکار بر اساس امضای فایل)
+
+    نکته درباره Atomicity: مراحل ۴ و ۵ دو Transaction جدا هستند (نه یکی،
+    برخلاف نسخه قبلی) — چون pg_restore، برخلاف psql -f، یک فایل SQL دستی
+    نمی‌گیرد که بشود قبلش دستور TRUNCATE را همان تراکنش تزریق کرد. در ازایش،
+    بارگذاری خودِ داده (سنگین‌ترین و پرخطرترین بخش) را به ابزار رسمی و
+    تست‌شده PostgreSQL می‌سپاریم، نه یک فایل SQL دست‌ساز. اگر مرحله ۵ شکست
+    بخورد، چون TRUNCATE و بارگذاری هر دو کاملاً Idempotent هستند (دوباره از
+    ابتدا هم کاملاً بی‌خطر قابل‌تکرارند)، فقط کافی است همین عملیات را دوباره
+    امتحان کنید.
     ری‌استارت خودِ سرویس (تا کلیدهای جدید .env واقعاً بارگذاری شوند) مسئولیت
     فراخوان این تابع است — چون باید بعد از پاسخ HTTP انجام شود.
     """
@@ -169,6 +205,7 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
     psql_path = _find_pg_binary("psql")
+    pg_restore_path = _find_pg_binary("pg_restore")
     alembic_path = _find_alembic_binary()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -179,10 +216,10 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
         except zipfile.BadZipFile as e:
             raise BackupError("فایل بکاپ معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
 
-        dump_path = tmp_path / "database.sql"
+        dump_path = _find_dump_file(tmp_path)
         secrets_path = tmp_path / "secrets.json"
-        if not dump_path.exists() or not secrets_path.exists():
-            raise BackupError("فایل بکاپ نامعتبر است — database.sql یا secrets.json داخلش نیست.")
+        if not secrets_path.exists():
+            raise BackupError("فایل بکاپ نامعتبر است — secrets.json داخلش نیست.")
 
         try:
             backup_secrets = json.loads(secrets_path.read_text(encoding="utf-8"))
@@ -217,11 +254,26 @@ async def restore_from_archive(archive_bytes: bytes, confirm_phrase: str) -> Non
             except FileNotFoundError as e:
                 raise BackupError(f"ابزار alembic پیدا نشد (مسیر بررسی‌شده: {alembic_path}).") from e
 
-            # ---------- مرحله ۳: پاک‌کردن + بارگذاری، در یک Transaction واحد ----------
-            combined_sql_path = tmp_path / "combined_restore.sql"
-            truncate_block = """
-BEGIN;
+            # ---------- مرحله ۳: پاک‌کردن داده فعلی ----------
+            await _truncate_all_tables(psql_path, libpq_url)
 
+            # ---------- مرحله ۴: بارگذاری داده بکاپ ----------
+            if _is_custom_format(dump_path):
+                await _restore_with_pg_restore(pg_restore_path, libpq_url, dump_path)
+            else:
+                # فرمت قدیمی (v1، SQL متنی ساده) — برای سازگاری با بکاپ‌های قبلی
+                await _restore_with_psql_legacy(psql_path, libpq_url, dump_path)
+
+        except Exception:
+            # هر خطایی بعد از تغییر .env رخ بدهد، .env را دقیقاً به حالت قبل
+            # از شروع Restore برمی‌گردانیم — تا هرگز کلیدهای رمزنگاری با
+            # دادهٔ دیتابیس ناهماهنگ نمانند.
+            _ENV_FILE_PATH.write_text(original_env_content, encoding="utf-8")
+            raise
+
+
+async def _truncate_all_tables(psql_path: str, libpq_url: str) -> None:
+    truncate_sql = """
 DO $$
 DECLARE
     r RECORD;
@@ -231,39 +283,77 @@ BEGIN
         EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
     END LOOP;
 END $$;
-
 """
-            with open(combined_sql_path, "w", encoding="utf-8") as out_f:
-                out_f.write(truncate_block)
-                out_f.write(dump_path.read_text(encoding="utf-8"))
-                out_f.write("\nCOMMIT;\n")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            psql_path,
+            libpq_url,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            truncate_sql,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise BackupError(f"پاک‌کردن داده فعلی ناموفق بود: {stderr.decode(errors='ignore')[:800]}")
+    except FileNotFoundError as e:
+        raise BackupError(f"ابزار psql پیدا نشد (مسیر بررسی‌شده: {psql_path}).") from e
 
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    psql_path,
-                    libpq_url,
-                    "-v",
-                    "ON_ERROR_STOP=1",
-                    "-f",
-                    str(combined_sql_path),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await proc.communicate()
-                if proc.returncode != 0:
-                    raise BackupError(
-                        f"بازیابی دیتابیس ناموفق بود — Transaction دیتابیس کامل Rollback شد: "
-                        f"{stderr.decode(errors='ignore')[:800]}"
-                    )
-            except FileNotFoundError as e:
-                raise BackupError(f"ابزار psql پیدا نشد (مسیر بررسی‌شده: {psql_path}).") from e
 
-        except Exception:
-            # هر خطایی بعد از تغییر .env رخ بدهد، .env را دقیقاً به حالت قبل
-            # از شروع Restore برمی‌گردانیم — تا هرگز کلیدهای رمزنگاری با
-            # دادهٔ دیتابیس ناهماهنگ نمانند.
-            _ENV_FILE_PATH.write_text(original_env_content, encoding="utf-8")
-            raise
+async def _restore_with_pg_restore(pg_restore_path: str, libpq_url: str, dump_path: Path) -> None:
+    """
+    بارگذاری با ابزار رسمی pg_restore — به‌جای این‌که ما دستی فایل SQL بسازیم.
+    --disable-triggers یعنی موقع بارگذاری، Trigger ها (از جمله محدودیت‌های
+    FK) موقتاً غیرفعال می‌شوند تا ترتیب بارگذاری جدول‌ها اهمیتی نداشته باشد.
+    --single-transaction یعنی خودِ عملیات بارگذاری (این مرحله به‌تنهایی)
+    همه‌یا‌هیچ است — اگر جایی از وسط شکست بخورد، این مرحله کامل Rollback
+    می‌شود (نه این‌که نصفه‌کاره روی جدول‌ها بماند).
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            pg_restore_path,
+            "--data-only",
+            "--disable-triggers",
+            "--single-transaction",
+            "--no-owner",
+            "--no-privileges",
+            f"--dbname={libpq_url}",
+            str(dump_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise BackupError(
+                f"بازیابی دیتابیس ناموفق بود (pg_restore) — این مرحله کامل Rollback شد: "
+                f"{stderr.decode(errors='ignore')[:800]}"
+            )
+    except FileNotFoundError as e:
+        raise BackupError(f"ابزار pg_restore پیدا نشد (مسیر بررسی‌شده: {pg_restore_path}).") from e
+
+
+async def _restore_with_psql_legacy(psql_path: str, libpq_url: str, dump_path: Path) -> None:
+    """برای بکاپ‌های قدیمی‌تر (فرمت v1، SQL متنی ساده) — همان مسیر قبلی، برای سازگاری با عقب."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            psql_path,
+            libpq_url,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-f",
+            str(dump_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise BackupError(
+                f"بازیابی دیتابیس ناموفق بود (فرمت قدیمی): {stderr.decode(errors='ignore')[:800]}"
+            )
+    except FileNotFoundError as e:
+        raise BackupError(f"ابزار psql پیدا نشد (مسیر بررسی‌شده: {psql_path}).") from e
 
 
 def _atomic_write(path: Path, content: str) -> None:

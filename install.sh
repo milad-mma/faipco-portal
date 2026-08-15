@@ -130,8 +130,12 @@ extract_restore_backup() {
   RESTORE_TMP_DIR="$(mktemp -d)"
   unzip -q "$RESTORE_BACKUP_PATH" -d "$RESTORE_TMP_DIR"
 
-  if [[ ! -f "$RESTORE_TMP_DIR/database.sql" || ! -f "$RESTORE_TMP_DIR/secrets.json" ]]; then
-    err "فایل بکاپ نامعتبر است — database.sql یا secrets.json داخلش نیست."
+  if [[ ! -f "$RESTORE_TMP_DIR/database.dump" && ! -f "$RESTORE_TMP_DIR/database.sql" ]]; then
+    err "فایل بکاپ نامعتبر است — database.dump/database.sql داخلش نیست."
+    exit 1
+  fi
+  if [[ ! -f "$RESTORE_TMP_DIR/secrets.json" ]]; then
+    err "فایل بکاپ نامعتبر است — secrets.json داخلش نیست."
     exit 1
   fi
   log "Backup bundle looks valid — will restore exact data + encryption keys after migrations run."
@@ -180,8 +184,18 @@ restore_in_place() {
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   unzip -q "$RESTORE_IN_PLACE_PATH" -d "$tmp_dir"
-  if [[ ! -f "$tmp_dir/database.sql" || ! -f "$tmp_dir/secrets.json" ]]; then
-    err "فایل بکاپ نامعتبر است — database.sql یا secrets.json داخلش نیست."
+  local dump_file
+  if [[ -f "$tmp_dir/database.dump" ]]; then
+    dump_file="$tmp_dir/database.dump"
+  elif [[ -f "$tmp_dir/database.sql" ]]; then
+    dump_file="$tmp_dir/database.sql"
+  else
+    err "فایل بکاپ نامعتبر است — database.dump/database.sql داخلش نیست."
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+  if [[ ! -f "$tmp_dir/secrets.json" ]]; then
+    err "فایل بکاپ نامعتبر است — secrets.json داخلش نیست."
     rm -rf "$tmp_dir"
     exit 1
   fi
@@ -231,8 +245,16 @@ END $$;
 SQL
 
   log "Loading data from backup..."
-  PGPASSWORD="${local_db_pass}" psql -h localhost -U "${local_db_user}" -d "${local_db_name}" \
-    -v ON_ERROR_STOP=1 -f "$tmp_dir/database.sql" >> "$LOG_FILE" 2>&1
+  if head -c 5 "$dump_file" | grep -q "PGDMP"; then
+    log "Detected custom-format backup (v2) — restoring with pg_restore..."
+    PGPASSWORD="${local_db_pass}" pg_restore -h localhost -U "${local_db_user}" -d "${local_db_name}" \
+      --data-only --disable-triggers --single-transaction --no-owner --no-privileges \
+      "$dump_file" >> "$LOG_FILE" 2>&1
+  else
+    log "Detected legacy plain-SQL backup (v1) — restoring with psql..."
+    PGPASSWORD="${local_db_pass}" psql -h localhost -U "${local_db_user}" -d "${local_db_name}" \
+      -v ON_ERROR_STOP=1 -f "$dump_file" >> "$LOG_FILE" 2>&1
+  fi
 
   log "Restoring critical encryption keys from backup into .env (so site connection passwords stay decryptable)..."
   local new_fernet new_secret new_vapid_pub new_vapid_priv
@@ -461,15 +483,37 @@ restore_database_data() {
   fi
   # این تابع بعد از run_migrations صدا زده می‌شود — یعنی جدول‌ها طبق آخرین
   # نسخه کد از قبل ساخته شده‌اند (خالی)، و اینجا فقط داده‌های خودِ بکاپ
-  # (database.sql، که با --data-only گرفته شده) داخلشان بارگذاری می‌شود.
-  # این ترتیب باعث می‌شود حتی اگر کد از زمان گرفتن بکاپ تغییر کرده باشد
-  # (migration های جدید)، بازیابی همچنان روی جدیدترین Schema کار کند.
+  # داخلشان بارگذاری می‌شود. این ترتیب باعث می‌شود حتی اگر کد از زمان گرفتن
+  # بکاپ تغییر کرده باشد (migration های جدید)، بازیابی همچنان روی جدیدترین
+  # Schema کار کند.
+  #
+  # تشخیص فرمت خودکار: بکاپ‌های جدید (v2) با فرمت باینری Custom خودِ
+  # pg_dump گرفته می‌شوند (بارگذاری با pg_restore — ابزار رسمی و تست‌شده
+  # PostgreSQL، نه یک فایل SQL دست‌ساز)؛ بکاپ‌های قدیمی‌تر (v1) هنوز SQL
+  # متنی ساده‌اند (بارگذاری با psql، برای سازگاری با عقب).
+  local dump_file
+  if [[ -f "$RESTORE_TMP_DIR/database.dump" ]]; then
+    dump_file="$RESTORE_TMP_DIR/database.dump"
+  else
+    dump_file="$RESTORE_TMP_DIR/database.sql"
+  fi
+
   log "Restoring database data from backup — this reproduces the exact same data as the source install..."
-  PGPASSWORD="${DB_PASSWORD}" psql \
-    -h localhost -U "${DB_USER}" -d "${DB_NAME}" \
-    -v ON_ERROR_STOP=1 \
-    -f "$RESTORE_TMP_DIR/database.sql" \
-    >> "$LOG_FILE" 2>&1
+  if head -c 5 "$dump_file" | grep -q "PGDMP"; then
+    log "Detected custom-format backup (v2) — restoring with pg_restore..."
+    PGPASSWORD="${DB_PASSWORD}" pg_restore \
+      -h localhost -U "${DB_USER}" -d "${DB_NAME}" \
+      --data-only --disable-triggers --single-transaction --no-owner --no-privileges \
+      "$dump_file" \
+      >> "$LOG_FILE" 2>&1
+  else
+    log "Detected legacy plain-SQL backup (v1) — restoring with psql..."
+    PGPASSWORD="${DB_PASSWORD}" psql \
+      -h localhost -U "${DB_USER}" -d "${DB_NAME}" \
+      -v ON_ERROR_STOP=1 \
+      -f "$dump_file" \
+      >> "$LOG_FILE" 2>&1
+  fi
   log "Database data restored successfully from backup."
   rm -rf "$RESTORE_TMP_DIR"
 }
