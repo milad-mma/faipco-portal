@@ -170,7 +170,7 @@ function ReceivedNoticeCard({ notice, onOpened }) {
           />
         </Stack>
       </Box>
-      <Collapse in={expanded} timeout={200}>
+      <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
           {notice.body && (
             <Typography

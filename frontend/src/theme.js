@@ -157,9 +157,8 @@ export const darkTheme = createTheme({
   },
   typography: sharedTypography,
   shape: {
-    // شعاع بزرگ‌تر از تم روشن — یکی از سیگنال‌های اصلی زبان بصری «شیشه‌ای/نرم»،
-    // ولی نه اغراق‌آمیز (قبلاً ۲۲ بود که خیلی گرد به نظر می‌رسید)
-    borderRadius: 12,
+    // شعاع خیلی بزرگ‌تر — یکی از سیگنال‌های اصلی زبان بصری «شیشه‌ای/نرم»
+    borderRadius: 22,
   },
   components: {
     MuiCssBaseline: {
