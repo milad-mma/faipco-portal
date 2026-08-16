@@ -22,6 +22,7 @@ from app.services.backup_service import (
     RESTORE_CONFIRMATION_PHRASE,
     BackupError,
     create_backup_archive,
+    get_restore_status,
     schedule_restore,
     validate_and_stage_archive,
 )
@@ -95,3 +96,16 @@ async def restore_backup(
         "سپس خودکار دوباره بالا می‌آید — نیازی به ورود دوباره نیست. لطفاً ۳۰ تا ۶۰ ثانیه صبر کنید و "
         "بعد صفحه را Refresh کنید تا نتیجه واقعی را ببینید.",
     }
+
+
+@router.get("/restore-status")
+async def restore_status(
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    وضعیت زنده آخرین Restore — پنل هر چند ثانیه یک‌بار این را می‌پرسد تا
+    مراحل واقعی (نه یک شمارش‌معکوس کور) نشان بدهد. طبیعی است که خودِ همین
+    Endpoint هم برای چند ثانیه (دقیقاً همان لحظه‌ای که سرویس Stop/Start
+    می‌شود) در دسترس نباشد — فرانت‌اند باید آن گپ را با Retry پر کند.
+    """
+    return get_restore_status()

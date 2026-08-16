@@ -14,10 +14,13 @@ import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
-import { downloadBackupArchive, restoreBackupArchive } from "../api/backup";
+import { downloadBackupArchive, fetchRestoreStatus, restoreBackupArchive } from "../api/backup";
 import { bustAppCache } from "../api/system";
+import { monoFontSx } from "../theme";
 
 const CONFIRM_PHRASE = "RESTORE";
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 60; // ۳ ثانیه × ۶۰ = تا ۳ دقیقه صبر می‌کنیم
 
 export default function BackupPage() {
   const [isDownloading, setIsDownloading] = useState(false);
@@ -27,6 +30,7 @@ export default function BackupPage() {
   const [confirmText, setConfirmText] = useState("");
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null); // { success, message } | null
+  const [restoreLog, setRestoreLog] = useState(""); // خروجی زنده اسکریپت Restore
 
   const [isBustingCache, setIsBustingCache] = useState(false);
   const [cacheBustResult, setCacheBustResult] = useState(null); // { success, message } | null
@@ -52,8 +56,41 @@ export default function BackupPage() {
     }
   }
 
+  async function pollRestoreStatus(attemptsLeft) {
+    if (attemptsLeft <= 0) {
+      setRestoreResult({
+        success: false,
+        message: "بعد از ۳ دقیقه هنوز نتیجه مشخص نشد — لطفاً دستی از سرور چک کنید: sudo cat /tmp/faipco-restore.log",
+      });
+      setIsRestoring(false);
+      return;
+    }
+    try {
+      const status = await fetchRestoreStatus();
+      setRestoreLog(status.log || "");
+      if (status.is_finished) {
+        setRestoreResult({ success: true, message: "بازیابی با موفقیت انجام شد." });
+        setIsRestoring(false);
+        setTimeout(() => window.location.reload(), 2000);
+        return;
+      }
+      if (status.is_failed) {
+        setRestoreResult({ success: false, message: "بازیابی ناموفق بود — جزئیات کامل در لاگ زیر است." });
+        setIsRestoring(false);
+        return;
+      }
+      // هنوز در حال اجراست — دوباره امتحان کن
+      setTimeout(() => pollRestoreStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
+    } catch {
+      // طبیعی است: دقیقاً همان چند ثانیه‌ای که سرویس Stop/Start می‌شود، این
+      // درخواست هم موقتاً جواب نمی‌دهد — فقط دوباره امتحان می‌کنیم، خطا نشان نمی‌دهیم
+      setTimeout(() => pollRestoreStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
+    }
+  }
+
   async function handleRestore() {
     setRestoreResult(null);
+    setRestoreLog("");
     if (!restoreFile) {
       setRestoreResult({ success: false, message: "فایل بکاپ را انتخاب کنید." });
       return;
@@ -64,19 +101,14 @@ export default function BackupPage() {
     }
     setIsRestoring(true);
     try {
-      const data = await restoreBackupArchive(restoreFile, confirmText);
-      setRestoreResult({ success: true, message: data.message });
+      await restoreBackupArchive(restoreFile, confirmText);
       // این پاسخ فقط یعنی «بازیابی شروع شد» — چون سرویس باید قبل از تماس با
-      // pg_restore کامل متوقف بشه (وگرنه Connection Pool زنده‌اش رو همون
-      // جدول‌ها قفل می‌گیره)، کار واقعی در پس‌زمینه ادامه داره، نه همین‌جا.
-      // چند لحظه صبر می‌کنیم (توقف + بازیابی + Migration + روشن‌شدن دوباره
-      // می‌تونه ۳۰-۶۰ ثانیه طول بکشه) و بعد صفحه رو Refresh می‌کنیم.
-      setTimeout(() => {
-        window.location.reload();
-      }, 45000);
+      // pg_restore کامل متوقف بشه، کار واقعی در پس‌زمینه ادامه داره. از همین
+      // لحظه، وضعیت واقعی رو هر چند ثانیه یک‌بار می‌پرسیم و همون‌جا نشون
+      // می‌دیم — نه یه شمارش‌معکوس کور.
+      pollRestoreStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
       setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی ناموفق بود." });
-    } finally {
       setIsRestoring(false);
     }
   }
@@ -147,8 +179,34 @@ export default function BackupPage() {
         {restoreResult && (
           <Alert severity={restoreResult.success ? "success" : "error"} sx={{ mb: 2 }}>
             {restoreResult.message}
-            {restoreResult.success && " — حدود ۴۵ ثانیه دیگر صفحه به‌صورت خودکار Refresh می‌شود."}
+            {restoreResult.success && " — الان صفحه Refresh می‌شود."}
           </Alert>
+        )}
+
+        {isRestoring && !restoreResult && (
+          <Alert severity="info" icon={<CircularProgress size={18} />} sx={{ mb: 2 }}>
+            در حال بازیابی — این بخش هر چند ثانیه یک‌بار به‌صورت خودکار به‌روزرسانی می‌شود.
+          </Alert>
+        )}
+
+        {restoreLog && (
+          <Box
+            sx={{
+              mb: 2,
+              p: 2,
+              borderRadius: 2,
+              backgroundColor: "rgba(22, 50, 79, 0.06)",
+              ...monoFontSx,
+              fontSize: 12,
+              direction: "ltr",
+              textAlign: "left",
+              whiteSpace: "pre-wrap",
+              maxHeight: 260,
+              overflowY: "auto",
+            }}
+          >
+            {restoreLog}
+          </Box>
         )}
 
         {!restoreResult?.success && (

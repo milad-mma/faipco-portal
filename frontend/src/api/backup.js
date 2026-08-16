@@ -18,3 +18,11 @@ export async function restoreBackupArchive(file, confirmPhrase) {
   });
   return data;
 }
+
+export async function fetchRestoreStatus() {
+  // Timeout کوتاه عمدی است: دقیقاً همان چند ثانیه‌ای که خودِ سرویس Stop/Start
+  // می‌شود، این درخواست باید سریع Fail شود تا فرانت‌اند فوراً دوباره امتحان
+  // کند، نه این‌که طولانی معطل یک Timeout بزرگ بماند.
+  const { data } = await apiClient.get("/backup/restore-status", { timeout: 5000 });
+  return data; // { log, is_running, is_finished, is_failed }
+}

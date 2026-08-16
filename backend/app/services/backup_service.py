@@ -133,6 +133,37 @@ _RESTORE_STAGING_DIR = Path("/tmp/faipco-restore-staging")
 _RESTORE_LOG_PATH = Path("/tmp/faipco-restore.log")
 
 
+def get_restore_status() -> dict:
+    """
+    وضعیت فعلی آخرین Restore را برمی‌گرداند — با خواندن لاگ + پرسیدن از
+    خودِ systemd آیا Unit موقت هنوز در حال اجراست. توجه: در همان چند ثانیه‌ای
+    که خودِ سرویس بک‌اند دارد Stop/Start می‌شود، این Endpoint هم موقتاً در
+    دسترس نیست (چون بخشی از همان سرویس است) — فرانت‌اند باید این حالت را با
+    Retry کردن مدیریت کند، نه خطا نشان دادن.
+    """
+    log_content = ""
+    if _RESTORE_LOG_PATH.exists():
+        log_content = _RESTORE_LOG_PATH.read_text(encoding="utf-8", errors="ignore")
+
+    is_unit_active = False
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "faipco-restore"],
+            capture_output=True,
+            timeout=5,
+        )
+        is_unit_active = result.stdout.decode().strip() == "active"
+    except Exception:
+        pass
+
+    return {
+        "log": log_content,
+        "is_running": is_unit_active or (bool(log_content) and "===" in log_content and "FAILED" not in log_content and "finished successfully" not in log_content),
+        "is_finished": "Restore finished successfully" in log_content,
+        "is_failed": "Restore FAILED" in log_content,
+    }
+
+
 def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Path:
     """
     فقط اعتبارسنجی + آماده‌سازی — کاری با دیتابیس ندارد، پس همین‌جا (داخل
@@ -186,6 +217,11 @@ def schedule_restore(dump_path: Path) -> None:
     pg_restore_path = _find_pg_binary("pg_restore")
     alembic_path = _find_alembic_binary()
     backend_dir = Path(__file__).resolve().parent.parent.parent
+
+    # لاگ Restore قبلی را پاک می‌کنیم تا get_restore_status() این تلاش تازه
+    # را با ته‌مانده‌ی یک تلاش قدیمی‌تر اشتباه نگیرد.
+    if _RESTORE_LOG_PATH.exists():
+        _RESTORE_LOG_PATH.unlink()
 
     # این اسکریپت از داخل systemd-run --collect به‌عنوان root اجرا می‌شود
     # (نگاه کنید پایین‌تر) — پس دیگر نیازی به sudo داخل خودِ اسکریپت نیست.
