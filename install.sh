@@ -410,6 +410,25 @@ map $http_upgrade $connection_upgrade {
 }
 EOF
 
+  # این دو رشته را یک‌بار این‌جا تعریف می‌کنیم و پایین‌تر (هم سطح server هم
+  # هر ۴ Location ای که خودشان add_header دارند — Nginx بین این دو Level
+  # ارث‌بری نمی‌کند) استفاده می‌کنیم، تا مجبور نباشیم این رشته طولانی را
+  # ۵ بار جدا بنویسیم.
+  #
+  # CSP: فقط منابعی که این پروژه واقعاً استفاده می‌کند مجازند —
+  # cdn.jsdelivr.net برای فونت Vazirmatn، blob: برای عکس پرسنلی (که با
+  # createObjectURL از یک Blob ساخته می‌شود، نه data: یا یک URL معمولی)،
+  # 'unsafe-inline' برای style-src چون MUI (کتابخانه رابط کاربری) با
+  # Emotion یک CSS-in-JS است و در زمان اجرا تگ <style> تزریق می‌کند —
+  # بدون این، کل ظاهر برنامه می‌شکند.
+  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+
+  # Permissions-Policy: این پروژه فقط از Geolocation استفاده می‌کند (حضور
+  # GPS) — همه قابلیت‌های دیگر (دوربین، میکروفون، USB، پرداخت و...) که
+  # اصلاً لازم ندارد، صریحاً بسته می‌شوند؛ حتی اگر یک روز یک اسکریپت مخرب
+  # از یک راه دیگر وارد صفحه شود، نمی‌تواند این‌ها را درخواست کند.
+  permissions_policy_header="geolocation=(self), camera=(), microphone=(), usb=(), payment=(), magnetometer=(), gyroscope=(), accelerometer=()"
+
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
     listen 80 default_server;
@@ -428,6 +447,8 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "${csp_header}" always;
+    add_header Permissions-Policy "${permissions_policy_header}" always;
 
     # پیش‌فرض Nginx فقط ۱ مگابایت است — برای آپلود فیش حقوقی (XLSX سازمان‌های
     # بزرگ می‌تواند چند مگابایت باشد) باید بیشتر باشد.
@@ -465,6 +486,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Permissions-Policy "${permissions_policy_header}" always;
         try_files \$uri =404;
     }
 
@@ -480,6 +503,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Permissions-Policy "${permissions_policy_header}" always;
         try_files \$uri =404;
     }
 
@@ -489,6 +514,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Permissions-Policy "${permissions_policy_header}" always;
         try_files \$uri =404;
     }
 
@@ -498,6 +525,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Permissions-Policy "${permissions_policy_header}" always;
         try_files \$uri \$uri/ /index.html;
     }
 }
