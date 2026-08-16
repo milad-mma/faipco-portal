@@ -415,13 +415,14 @@ EOF
   # ارث‌بری نمی‌کند) استفاده می‌کنیم، تا مجبور نباشیم این رشته طولانی را
   # ۵ بار جدا بنویسیم.
   #
-  # CSP: فقط منابعی که این پروژه واقعاً استفاده می‌کند مجازند —
-  # cdn.jsdelivr.net برای فونت Vazirmatn، blob: برای عکس پرسنلی (که با
-  # createObjectURL از یک Blob ساخته می‌شود، نه data: یا یک URL معمولی)،
-  # 'unsafe-inline' برای style-src چون MUI (کتابخانه رابط کاربری) با
-  # Emotion یک CSS-in-JS است و در زمان اجرا تگ <style> تزریق می‌کند —
-  # بدون این، کل ظاهر برنامه می‌شکند.
-  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+  # CSP: فقط منابعی که این پروژه واقعاً استفاده می‌کند مجازند — همه چیز
+  # هم‌مبدأ است (فونت وزیرمتن هم دیگر با @fontsource در زمان Build بسته‌بندی
+  # می‌شود، نه از یک CDN بیرونی)، پس نیازی به هیچ دامنه خارجی نیست. blob:
+  # برای عکس پرسنلی (که با createObjectURL از یک Blob ساخته می‌شود، نه
+  # data: یا یک URL معمولی)، 'unsafe-inline' برای style-src چون MUI
+  # (کتابخانه رابط کاربری) با Emotion یک CSS-in-JS است و در زمان اجرا تگ
+  # <style> تزریق می‌کند — بدون این، کل ظاهر برنامه می‌شکند.
+  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
 
   # Permissions-Policy: این پروژه فقط از Geolocation استفاده می‌کند (حضور
   # GPS) — همه قابلیت‌های دیگر (دوربین، میکروفون، USB، پرداخت و...) که
