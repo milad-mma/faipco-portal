@@ -456,6 +456,15 @@ server {
     location = /sw.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache, must-revalidate";
+        # نکته مهم Nginx: add_header داخل یک location، هدرهای سطح server را
+        # به‌طور کامل نادیده می‌گیرد (نه فقط Override، بلکه کاملاً حذف) —
+        # پس این ۴ هدر امنیتی باید در هر Location ای که خودش add_header
+        # دارد، دوباره تکرار شوند؛ وگرنه (همان‌طور که یک تست نفوذ زنده نشان
+        # داد) کاملاً از پاسخ حذف می‌شوند.
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         try_files \$uri =404;
     }
 
@@ -467,16 +476,28 @@ server {
         # واقعی، فقط یک میان‌بر معمولی (با نشان خودِ کروم روی آیکون) می‌سازد.
         default_type application/manifest+json;
         add_header Cache-Control "no-cache, must-revalidate";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         try_files \$uri =404;
     }
 
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         try_files \$uri =404;
     }
 
     location / {
         add_header Cache-Control "no-cache, must-revalidate";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         try_files \$uri \$uri/ /index.html;
     }
 }
