@@ -144,7 +144,7 @@ export default function BirthdayMessagesPage() {
             onClick={handleSendNow}
             disabled={isSendingNow}
           >
-            همین الان ارسال کنید
+            ارسال همین الان
           </Button>
         </Stack>
         {sendNowResult && (
@@ -156,7 +156,7 @@ export default function BirthdayMessagesPage() {
           <CircularProgress size={20} />
         ) : todayBirthdays.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            امروز تولد نداریم.
+            امروز کسی تولد ندارد.
           </Typography>
         ) : (
           <Stack spacing={1.5}>
