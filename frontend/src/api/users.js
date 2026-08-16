@@ -31,3 +31,13 @@ export async function fetchAccessOverview() {
   const { data } = await apiClient.get("/users/access-overview");
   return data;
 }
+
+export async function bulkAssignRole({ roleId, employeeIds, siteId, departmentId }) {
+  const { data } = await apiClient.post("/users/bulk-assign-role", {
+    role_id: roleId,
+    employee_ids: employeeIds || undefined,
+    site_id: siteId || undefined,
+    department_id: departmentId || undefined,
+  });
+  return data; // { assigned_count, already_had_count, not_found_count, total_matched }
+}

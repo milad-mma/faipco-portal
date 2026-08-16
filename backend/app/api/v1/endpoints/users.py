@@ -13,6 +13,8 @@ from app.db.session import get_db
 from app.schemas.user_management import (
     AccessOverviewEntry,
     AssignRoleIn,
+    BulkAssignRoleIn,
+    BulkAssignRoleOut,
     RoleOut,
     UserManagementOut,
     UserRoleOut,
@@ -67,6 +69,30 @@ async def assign_role(
         return await UserManagementService(db).assign_role(user_id, payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/bulk-assign-role", response_model=BulkAssignRoleOut)
+async def bulk_assign_role(
+    payload: BulkAssignRoleIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("users.manage")),
+):
+    """
+    یک نقش را هم‌زمان به فهرستی از پرسنل (employee_ids) یا همه پرسنل یک
+    سایت/واحد (site_id/department_id) اختصاص می‌دهد — برای مواردی مثل
+    فعال‌کردن یک قابلیت آزمایشی برای صدها نفر یک‌جا، بدون نیاز به انتصاب
+    دستی یکی‌یکی.
+    """
+    try:
+        result = await UserManagementService(db).bulk_assign_role(
+            role_id=payload.role_id,
+            employee_ids=payload.employee_ids,
+            site_id=payload.site_id,
+            department_id=payload.department_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return BulkAssignRoleOut(**result)
 
 
 @router.delete("/roles/{user_role_id}", status_code=status.HTTP_204_NO_CONTENT)

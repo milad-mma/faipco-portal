@@ -16,6 +16,7 @@ import NoticesPage from "./pages/NoticesPage";
 import NewNoticePage from "./pages/NewNoticePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
+import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
 import BackupPage from "./pages/BackupPage";
 import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/sites/:siteId/settings" element={<AdminRoute><SiteSettingsPage /></AdminRoute>} />
           <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
+          <Route path="/bulk-role-assignment" element={<AdminRoute><BulkRoleAssignmentPage /></AdminRoute>} />
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
           <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
           <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />

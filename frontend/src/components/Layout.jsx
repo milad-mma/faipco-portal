@@ -27,6 +27,7 @@ import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
@@ -74,6 +75,7 @@ const NAV_ITEMS = [
     children: [
       { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon /> },
       { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
+      { label: "انتصاب دسته‌جمعی نقش", path: "/bulk-role-assignment", icon: <GroupAddOutlinedIcon /> },
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },

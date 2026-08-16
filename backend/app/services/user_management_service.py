@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import Role, User, UserRole
+from app.repositories.user_repository import UserRepository
 from app.schemas.user_management import AssignRoleIn
 
 
@@ -47,6 +48,73 @@ class UserManagementService:
         await self.db.delete(user_role)
         await self.db.commit()
         return True
+
+    async def bulk_assign_role(
+        self,
+        *,
+        role_id: int,
+        employee_ids: list[int] | None = None,
+        site_id: int | None = None,
+        department_id: int | None = None,
+    ) -> dict:
+        """
+        یک نقش را هم‌زمان به تعداد زیادی پرسنل اختصاص می‌دهد — یا با فهرست
+        دقیق employee_id، یا با فیلتر (همه پرسنل یک سایت/واحد سازمانی).
+        برای هر پرسنل، اگر حساب User ای هنوز نداشته باشد، همینجا خودکار
+        ساخته می‌شود (همان منطق get_or_create_employee_user که هنگام اولین
+        ورود موفق هم استفاده می‌شود) — پرسنلی که هنوز هیچ‌وقت وارد پرتال
+        نشده هم می‌تواند این‌طور نقش بگیرد.
+        """
+        role = await self.db.get(Role, role_id)
+        if role is None:
+            raise ValueError("نقش پیدا نشد")
+        if role.name == "superadmin":
+            raise ValueError("نقش superadmin را نمی‌توان از این طریق اختصاص داد")
+
+        if employee_ids:
+            stmt = select(Employee).where(Employee.id.in_(employee_ids))
+        elif site_id is not None or department_id is not None:
+            stmt = select(Employee).where(Employee.is_active.is_(True))
+            if site_id is not None:
+                stmt = stmt.where(Employee.site_id == site_id)
+            if department_id is not None:
+                stmt = stmt.where(Employee.department_id == department_id)
+        else:
+            raise ValueError("باید یا فهرست پرسنل یا حداقل یک فیلتر (سایت/واحد) داده شود")
+
+        result = await self.db.execute(stmt)
+        employees = list(result.scalars().all())
+
+        not_found_count = len(employee_ids) - len(employees) if employee_ids else 0
+
+        # مرحله سریع: چه کاربرانی از قبل همین نقش را دارند؟ (برای گزارش
+        # already_had — و برای این‌که مجبور نباشیم به‌ازای هر نفر یک کوئری جدا بزنیم)
+        user_repo = UserRepository(self.db)
+
+        assigned_count = 0
+        already_had_count = 0
+        for employee in employees:
+            user = await user_repo.get_or_create_employee_user(employee)
+            existing = await self.db.execute(
+                select(UserRole).where(
+                    UserRole.user_id == user.id,
+                    UserRole.role_id == role_id,
+                    UserRole.site_id.is_(None),
+                )
+            )
+            if existing.scalar_one_or_none() is not None:
+                already_had_count += 1
+                continue
+            self.db.add(UserRole(user_id=user.id, role_id=role_id, site_id=None))
+            assigned_count += 1
+
+        await self.db.commit()
+        return {
+            "assigned_count": assigned_count,
+            "already_had_count": already_had_count,
+            "not_found_count": not_found_count,
+            "total_matched": len(employees),
+        }
 
     # ---------- نمای کلی دسترسی‌ها ----------
 

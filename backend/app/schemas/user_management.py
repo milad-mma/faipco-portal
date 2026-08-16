@@ -38,6 +38,25 @@ class AssignRoleIn(BaseModel):
     site_id: int | None = None
 
 
+class BulkAssignRoleIn(BaseModel):
+    """
+    انتصاب یک نقش به چند پرسنل هم‌زمان — یا با فهرست دقیق employee_id ها،
+    یا با فیلتر (همه پرسنل یک سایت/واحد). حداقل یکی از این دو راه باید داده شود.
+    """
+
+    role_id: int
+    employee_ids: list[int] | None = None
+    site_id: int | None = None
+    department_id: int | None = None
+
+
+class BulkAssignRoleOut(BaseModel):
+    assigned_count: int  # چند نفر تازه این نقش را گرفتند
+    already_had_count: int  # چند نفر از قبل همین نقش را داشتند (نادیده گرفته شد)
+    not_found_count: int  # چند employee_id نامعتبر بود (پیدا نشد)
+    total_matched: int  # مجموع پرسنلی که این عملیات رویشان اعمال شد
+
+
 class AccessOverviewRole(BaseModel):
     role_name: str
     site_name: str | None  # None یعنی نقش سراسری است
