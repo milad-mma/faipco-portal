@@ -335,18 +335,22 @@ EOF
 
   chown -R www-data:www-data "$INSTALL_DIR"
 
-  # اجازه محدود و دقیق (فقط همین چند دستور، بدون رمز) به www-data می‌دهیم
-  # تا پنل «پشتیبان‌گیری → بازیابی از همین پنل» بتواند خودِ سرویس را قبل از
-  # Restore متوقف کند (وگرنه سرویس در حال اجرا هم‌زمان به همان جدول‌هایی که
-  # pg_restore می‌خواهد Drop/بازسازی کند وصل می‌ماند و باعث قفل‌شدن دائمی
-  # pg_restore می‌شود — همان مشکلی که باعث گیرکردن Restore شد) و بعد از
-  # اتمام کار دوباره بالا بیاورد. هیچ اجازه دیگری داده نمی‌شود.
+  # اجازه محدود و دقیق (فقط همین یک دستور ثابت، بدون رمز) به www-data
+  # می‌دهیم — نه برای stop/start مستقیم، بلکه برای اجرای اسکریپت Restore
+  # داخل یک Scope کاملاً جدا و مستقل از systemd (systemd-run). این حیاتی
+  # است: اگر آن اسکریپت مستقیم زیرمجموعه‌ی خودِ faipco-backend.service اجرا
+  # می‌شد (حتی با setsid)، وقتی خودش دستور «متوقف‌کردن faipco-backend» را
+  # صادر می‌کرد، systemd کل Cgroup آن سرویس — از جمله خودِ همین اسکریپت را
+  # هم می‌کشت (چون setsid فقط از Session/Process Group جدا می‌کند، نه از
+  # Cgroup) — دقیقاً همان چیزی که باعث شد Restore درست بعد از خط «در حال
+  # توقف سرویس» بی‌صدا متوقف شود. با systemd-run، اسکریپت در یک Scope کاملاً
+  # جدا (و به‌عنوان root) اجرا می‌شود که از این Cgroup Kill در امان است.
   cat > /etc/sudoers.d/faipco-backend-restart <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart faipco-backend, /usr/bin/systemctl stop faipco-backend, /usr/bin/systemctl start faipco-backend
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-restore --collect /bin/sh /tmp/faipco-restore-run.sh
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
-    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore's auto stop/restart won't work; you'll need to run 'systemctl stop/start faipco-backend' manually around a restore)."
+    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore won't work; you'll need to restore manually around a stop/start of faipco-backend)."
     rm -f /etc/sudoers.d/faipco-backend-restart
   }
 

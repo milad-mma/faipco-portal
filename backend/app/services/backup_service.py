@@ -165,22 +165,21 @@ def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Pat
 
 def schedule_restore(dump_path: Path) -> None:
     """
-    برخلاف نسخه قبلی (که pg_restore را همان لحظه، داخل همین درخواست HTTP و
-    درحالی‌که خودِ سرویس هنوز کاملاً روشن بود اجرا می‌کرد)، اینجا کل کار
-    واقعی به یک اسکریپت کاملاً جدا و مستقل (setsid) واگذار می‌شود که:
+    برخلاف نسخه‌های قبلی، اینجا کل کار واقعی به یک Scope کاملاً مستقل و جدا
+    از systemd (با systemd-run) واگذار می‌شود که:
       ۱. اول خودِ سرویس بک‌اند را کامل متوقف می‌کند
       ۲. بعد pg_restore را اجرا می‌کند
       ۳. Migration های آخرین کد را اجرا می‌کند
       ۴. سرویس را دوباره بالا می‌آورد
 
-    چرا این تغییر لازم بود: نسخه قبلی، سرویس را روشن نگه می‌داشت — یعنی
-    همان لحظه که pg_restore سعی می‌کرد جدول‌ها را Drop/بازسازی کند، خودِ
-    سرویس (با Connection Pool زنده‌اش) هنوز به همان جدول‌ها وصل بود و رویشان
-    قفل داشت؛ pg_restore برای گرفتن قفل انحصاری بی‌نهایت منتظر می‌ماند —
-    دقیقاً همان چیزی که باعث گیرکردن یک Restore واقعی شد. چون همین درخواست
-    HTTP از داخل خودِ سرویسی می‌آید که قرار است متوقف شود، توقف سرویس باید
-    از یک فرآیند کاملاً مستقل (نه از داخل همین درخواست) انجام شود — وگرنه
-    خودِ این درخواست هم قبل از تمام‌شدن کشته می‌شد.
+    چرا systemd-run لازم بود (نه فقط setsid): تلاش قبلی از یک فرآیند
+    setsid‌شده (ولی هنوز زیرمجموعه Cgroup خودِ faipco-backend.service)
+    استفاده می‌کرد — همان لحظه که آن اسکریپت دستور «متوقف‌کردن
+    faipco-backend» را صادر می‌کرد، systemd کل Cgroup آن سرویس (که خودِ
+    همین اسکریپت هم داخلش بود) را می‌کشت، درست بعد از چاپ «در حال توقف
+    سرویس» و قبل از رسیدن به pg_restore — یعنی هیچ‌وقت واقعاً بازیابی
+    اجرا نمی‌شد. systemd-run یک Scope واقعاً جدا (و به‌عنوان root) می‌سازد
+    که از این Cgroup Kill در امان است.
     """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
@@ -188,13 +187,15 @@ def schedule_restore(dump_path: Path) -> None:
     alembic_path = _find_alembic_binary()
     backend_dir = Path(__file__).resolve().parent.parent.parent
 
+    # این اسکریپت از داخل systemd-run --collect به‌عنوان root اجرا می‌شود
+    # (نگاه کنید پایین‌تر) — پس دیگر نیازی به sudo داخل خودِ اسکریپت نیست.
     script = f"""
 set +e
 exec >> {_RESTORE_LOG_PATH} 2>&1
 echo "=== Restore started: $(date -Iseconds) ==="
 
 echo "Stopping faipco-backend..."
-sudo -n /usr/bin/systemctl stop faipco-backend
+systemctl stop faipco-backend
 sleep 2
 
 echo "Running pg_restore..."
@@ -213,7 +214,7 @@ else
 fi
 
 echo "Starting faipco-backend..."
-sudo -n /usr/bin/systemctl start faipco-backend
+systemctl start faipco-backend
 
 rm -rf {_RESTORE_STAGING_DIR}
 
@@ -227,9 +228,29 @@ fi
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)
 
-    subprocess.Popen(
-        ["setsid", "sh", str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
+    # اجرا در یک Scope کاملاً مستقل از systemd، به‌عنوان root — نه زیرمجموعه
+    # Cgroup سرویس فعلی. sudo -n دقیقاً همان دستور ثابتی است که در sudoers
+    # مجاز شده (نگاه کنید install.sh) — هیچ آرگومان دیگری قابل‌تزریق نیست.
+    # چون systemd-run معمولاً بلافاصله بعد از ساخت Scope برمی‌گردد (منتظر
+    # اتمام خودِ اسکریپت نمی‌ماند)، همین‌جا synchronous صبر می‌کنیم تا از
+    # موفقیت خودِ «راه‌اندازی» مطمئن شویم — اگر مثلاً sudoers درست تنظیم
+    # نشده باشد، همین‌جا با یک خطای واضح متوجه می‌شویم، نه با یک لاگ خالی
+    # و سکوت کامل.
+    result = subprocess.run(
+        [
+            "sudo",
+            "-n",
+            "/usr/bin/systemd-run",
+            "--unit=faipco-restore",
+            "--collect",
+            "/bin/sh",
+            str(script_path),
+        ],
+        capture_output=True,
+        timeout=15,
     )
+    if result.returncode != 0:
+        raise BackupError(
+            "راه‌اندازی فرآیند بازیابی در پس‌زمینه ناموفق بود (دیتابیس دست‌نخورده ماند): "
+            f"{result.stderr.decode(errors='ignore')[:500]}"
+        )
