@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -199,9 +200,10 @@ def schedule_restore(dump_path: Path) -> None:
     برخلاف نسخه‌های قبلی، اینجا کل کار واقعی به یک Scope کاملاً مستقل و جدا
     از systemd (با systemd-run) واگذار می‌شود که:
       ۱. اول خودِ سرویس بک‌اند را کامل متوقف می‌کند
-      ۲. بعد pg_restore را اجرا می‌کند
-      ۳. Migration های آخرین کد را اجرا می‌کند
-      ۴. سرویس را دوباره بالا می‌آورد
+      ۲. Schema "public" را کامل با CASCADE پاک و از نو می‌سازد
+      ۳. pg_restore را روی همان Schema خالی اجرا می‌کند
+      ۴. Migration های آخرین کد را اجرا می‌کند
+      ۵. سرویس را دوباره بالا می‌آورد
 
     چرا systemd-run لازم بود (نه فقط setsid): تلاش قبلی از یک فرآیند
     setsid‌شده (ولی هنوز زیرمجموعه Cgroup خودِ faipco-backend.service)
@@ -211,12 +213,36 @@ def schedule_restore(dump_path: Path) -> None:
     سرویس» و قبل از رسیدن به pg_restore — یعنی هیچ‌وقت واقعاً بازیابی
     اجرا نمی‌شد. systemd-run یک Scope واقعاً جدا (و به‌عنوان root) می‌سازد
     که از این Cgroup Kill در امان است.
+
+    چرا DROP SCHEMA CASCADE به‌جای pg_restore --clean --if-exists: روی
+    بازیابی بین دو نصب مختلف (مثلاً بکاپ سرور اصلی روی یک نصب تازه دیگر)،
+    pg_restore --clean هنگام تلاش برای Drop کردن هر Object به‌تنهایی (بدون
+    CASCADE) با خطای «چیز دیگری به این وابسته است» شکست می‌خورد — مثلاً یک
+    Constraint روی جدول دیگر که به یک Primary Key وابسته است. این یک
+    محدودیت شناخته‌شده pg_restore --clean است، نه چیزی که بشود با ترتیب
+    دادن درست کرد. راه‌حل قابل‌اطمینان‌تر: کل Schema را یک‌جا با CASCADE پاک
+    و از نو بسازیم، بعد pg_restore را روی یک Schema کاملاً خالی اجرا کنیم —
+    دیگر هیچ «ترتیب Drop» ای در کار نیست.
+
+    نکته Atomicity: چون پاک‌کردن Schema یک مرحله جدا (نه بخشی از تراکنش
+    pg_restore) است، اگر pg_restore بعد از این مرحله شکست بخورد، دیتابیس
+    با یک Schema خالی (بدون جدول) باقی می‌ماند — نه دقیقاً حالت قبل از
+    شروع. این قابل‌قبول است چون: (۱) دوباره‌اجراکردن کل فرآیند کاملاً
+    بی‌خطر و Idempotent است (پاک‌کردن یک Schema خالی هم مشکلی ندارد)،
+    (۲) سرویس در هر صورت (چه موفق چه ناموفق) دوباره روشن می‌شود و لاگ خطا
+    واضح نشان داده می‌شود.
     """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
     pg_restore_path = _find_pg_binary("pg_restore")
+    psql_path = _find_pg_binary("psql")
     alembic_path = _find_alembic_binary()
     backend_dir = Path(__file__).resolve().parent.parent.parent
+
+    # نام کاربر دیتابیس را از همان DATABASE_URL استخراج می‌کنیم — برای
+    # مالک‌کردن دوباره Schema public بعد از بازسازی کاملش (پایین‌تر توضیح داده شده)
+    db_user_match = re.search(r"://([^:]+):", libpq_url)
+    db_user = db_user_match.group(1) if db_user_match else ""
 
     # نکته حیاتی: خودِ این تابع با کاربر www-data اجرا می‌شود، ولی خودِ
     # اسکریپت (چند خط پایین‌تر) با systemd-run به‌عنوان root اجرا می‌شود —
@@ -241,10 +267,19 @@ echo "Stopping faipco-backend..."
 systemctl stop faipco-backend
 sleep 2
 
-echo "Running pg_restore..."
-{pg_restore_path} --clean --if-exists --single-transaction --no-owner --no-privileges \
-  --dbname={libpq_url} {dump_path}
-restore_exit=$?
+echo "Resetting public schema (DROP CASCADE + CREATE) before restoring..."
+{psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; ALTER SCHEMA public OWNER TO {db_user}; GRANT ALL ON SCHEMA public TO {db_user};"
+reset_exit=$?
+
+if [ "$reset_exit" -eq 0 ]; then
+  echo "Running pg_restore..."
+  {pg_restore_path} --single-transaction --no-owner --no-privileges \
+    --dbname={libpq_url} {dump_path}
+  restore_exit=$?
+else
+  echo "Schema reset failed with exit code $reset_exit — aborting before touching pg_restore."
+  restore_exit=1
+fi
 
 if [ "$restore_exit" -eq 0 ]; then
   echo "Running alembic upgrade head..."
@@ -252,7 +287,7 @@ if [ "$restore_exit" -eq 0 ]; then
   {alembic_path} upgrade head
   migrate_exit=$?
 else
-  echo "pg_restore failed with exit code $restore_exit — skipping migrations (--single-transaction means the database was rolled back to exactly its pre-restore state)."
+  echo "pg_restore failed with exit code $restore_exit — skipping migrations."
   migrate_exit=1
 fi
 
