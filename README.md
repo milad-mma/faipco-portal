@@ -61,4 +61,5 @@ cd frontend && npm install && npm run dev
 | [`docs/ip-allowlist.md`](docs/ip-allowlist.md) | محدودکردن ورود به رنج‌های IP مجاز (ضدVPN) |
 | [`docs/gps-attendance.md`](docs/gps-attendance.md) | حضور مبتنی بر GPS + ثبت ورود/خروج آزمایشی |
 | [`docs/birthday-greetings.md`](docs/birthday-greetings.md) | پیام‌های تبریک تولد (ارسال خودکار روزانه) |
+| [`docs/reverse-proxy-firewall.md`](docs/reverse-proxy-firewall.md) | ⚠️ محدودکردن دسترسی مستقیم به سرور (یافته امنیتی واقعی) |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه + کارهای باز |

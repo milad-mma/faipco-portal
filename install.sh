@@ -25,6 +25,19 @@
 #   --install-dir /var/www/html   Install path (default: /var/www/html)
 #   --repo <git-url>              Repository URL
 #   --branch main                 Branch to use
+#   --reverse-proxy-ip <IP>        IP of your external SSL reverse proxy — if given,
+#                                  restricts ports 80/443 (via UFW) so only that IP can
+#                                  reach this server directly. IMPORTANT: use the IP that
+#                                  THIS server actually sees as the connection source —
+#                                  if your proxy is on a separate private network (common
+#                                  2-tier setup), that's the proxy's LOCAL/private IP, not
+#                                  its public internet-facing IP (this server never sees
+#                                  the public IP directly in that case). Without this,
+#                                  anyone who finds this server's own IP can forge
+#                                  X-Forwarded-For headers and bypass IP-based restrictions
+#                                  (like the IP allowlist / anti-VPN feature) — confirmed
+#                                  by a live pentest. Strongly recommended if you have an
+#                                  external reverse proxy.
 #
 # Backup/restore is handled entirely from the Admin panel (پشتیبان‌گیری) —
 # there is no command-line restore option anymore. This installer only sets
@@ -42,6 +55,7 @@ INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
 ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-admin}"
+REVERSE_PROXY_IP="${FAIPCO_REVERSE_PROXY_IP:-}"
 DB_NAME="faipco_portal"
 DB_USER="faipco_user"
 BACKEND_PORT=8000
@@ -63,6 +77,7 @@ while [[ $# -gt 0 ]]; do
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
     --repo) REPO_URL="$2"; shift 2 ;;
     --branch) REPO_BRANCH="$2"; shift 2 ;;
+    --reverse-proxy-ip) REVERSE_PROXY_IP="$2"; shift 2 ;;
     *) err "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -400,6 +415,20 @@ server {
     listen 80 default_server;
     server_name _;
 
+    # نسخه دقیق Nginx را توی هدر Server مخفی می‌کند — کمک کوچکی به Attacker
+    # که نداند دقیقاً کدام نسخه/آسیب‌پذیری‌های شناخته‌شده را امتحان کند.
+    server_tokens off;
+
+    # هدرهای امنیتی پایه — برای همه پاسخ‌ها (چه فایل‌های فرانت‌اند، چه API).
+    # Strict-Transport-Security این‌جا (روی HTTP ساده) اثری روی همین لایه
+    # ندارد، ولی چون این هدر از طریق پروکسی خارجی (که HTTPS واقعی را ترمینال
+    # می‌کند) به مرورگر می‌رسد، همچنان مؤثر است — مگر پروکسی خارجی هدرها را
+    # صریحاً حذف کند.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     # پیش‌فرض Nginx فقط ۱ مگابایت است — برای آپلود فیش حقوقی (XLSX سازمان‌های
     # بزرگ می‌تواند چند مگابایت باشد) باید بیشتر باشد.
     client_max_body_size 25m;
@@ -478,7 +507,26 @@ seed_and_create_admin() {
 configure_firewall() {
   log "Configuring firewall (UFW)..."
   ufw allow OpenSSH >/dev/null 2>&1 || true
-  ufw allow 'Nginx Full' >/dev/null 2>&1 || true
+
+  if [[ -n "$REVERSE_PROXY_IP" ]]; then
+    # حیاتی: بدون این، هرکسی که مستقیماً IP این سرور را بداند (نه فقط
+    # دامنه) می‌تواند هدرهای X-Forwarded-For جعلی بفرستد و محدودیت‌هایی
+    # مثل «رنج‌های IP مجاز» (ضدVPN) را کاملاً دور بزند — چون سرور فقط به
+    # این هدر اعتماد می‌کند و نمی‌تواند خودش تشخیص بدهد این هدر واقعاً از
+    # همان پروکسی خارجی معتبر آمده یا مستقیماً توسط یک مهاجم جعل شده است.
+    # این یافته واقعی از یک تست نفوذ زنده تأیید شد.
+    log "Restricting ports 80/443 to only the reverse proxy IP (${REVERSE_PROXY_IP})..."
+    ufw allow from "$REVERSE_PROXY_IP" to any port 80 >/dev/null 2>&1 || true
+    ufw allow from "$REVERSE_PROXY_IP" to any port 443 >/dev/null 2>&1 || true
+  else
+    warn "No --reverse-proxy-ip given — ports 80/443 remain open to the whole internet."
+    warn "If you have an external SSL reverse proxy in front of this server, re-run with:"
+    warn "  sudo bash install.sh --reverse-proxy-ip <its-IP>"
+    warn "Otherwise, anyone who finds this server's direct IP can bypass IP-based restrictions"
+    warn "(like the IP allowlist / anti-VPN feature) by connecting directly and forging headers."
+    ufw allow 'Nginx Full' >/dev/null 2>&1 || true
+  fi
+
   ufw --force enable >/dev/null 2>&1 || true
 }
 

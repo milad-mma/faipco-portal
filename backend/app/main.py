@@ -25,9 +25,14 @@ app = FastAPI(
     title=settings.APP_NAME,
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    # مستندات تعاملی API (Swagger/ReDoc) فقط وقتی DEBUG=true فعال است —
+    # روی Production این‌ها نقشه کامل هر Endpoint را بدون نیاز به ورود در
+    # اختیار هرکسی می‌گذارند؛ چیزی که یک مهاجم را از حدس‌زدن/Fuzz کردن
+    # مسیرها بی‌نیاز می‌کند. توسعه‌دهنده‌ها می‌توانند موقتاً DEBUG=true را
+    # روی سرور خودشان (نه Production واقعی) فعال کنند.
+    docs_url="/api/docs" if settings.DEBUG else None,
+    redoc_url="/api/redoc" if settings.DEBUG else None,
+    openapi_url="/api/openapi.json" if settings.DEBUG else None,
 )
 
 app.add_middleware(
