@@ -48,11 +48,11 @@ from app.services.attendance_card_service import AttendanceCardNoticeService
 router = APIRouter()
 
 
-def _enforce_message_rate_limit(user_id: int) -> None:
+async def _enforce_message_rate_limit(db: AsyncSession, user_id: int) -> None:
     """هر کاربر حداکثر یک اطلاعیه در هر ۶۰ ثانیه می‌تواند بفرستد — روی هر
     سه مسیر ارسال واقعی (متنی، فیش حقوقی، فیش کارکرد) به‌طور یکسان اعمال
     می‌شود، چون هر سه از نظر این محدودیت «فرستادن یک پیام» محسوب می‌شوند."""
-    remaining = check_message_rate_limit(user_id)
+    remaining = await check_message_rate_limit(db, user_id)
     if remaining is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -80,13 +80,13 @@ async def publish_notice(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _enforce_message_rate_limit(current_user.id)
+    await _enforce_message_rate_limit(db, current_user.id)
     notice = await NoticeService(db).publish_notice(notice_id)
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
     # ارسال Push به Background منتقل می‌شود تا پاسخ فوراً برگردد (بدون مکث شبکه)
     background_tasks.add_task(send_publish_notifications, notice.id)
-    record_message_sent(current_user.id)
+    await record_message_sent(db, current_user.id)
     return notice
 
 
@@ -230,7 +230,7 @@ async def create_payroll_notice(
     فقط برای پرسنل منطبق منتشر می‌شود. کدهای پیدا نشده در پاسخ گزارش می‌شوند
     (ارسال نمی‌شوند).
     """
-    _enforce_message_rate_limit(current_user.id)
+    await _enforce_message_rate_limit(db, current_user.id)
     file_bytes = await file.read()
     try:
         result = await PayrollNoticeService(db).create_payroll_notice(
@@ -245,7 +245,7 @@ async def create_payroll_notice(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     background_tasks.add_task(send_publish_notifications, result.notice.id)
-    record_message_sent(current_user.id)
+    await record_message_sent(db, current_user.id)
 
     return PayrollNoticeResultOut(
         notice_id=result.notice.id,
@@ -318,7 +318,7 @@ async def create_attendance_card_notice(
     کدهای پیدا نشده در پاسخ گزارش می‌شوند (ارسال نمی‌شوند). تعداد سطرهای
     سرستون فایل به‌صورت خودکار تشخیص داده می‌شود (نیازی به ورودی دستی نیست).
     """
-    _enforce_message_rate_limit(current_user.id)
+    await _enforce_message_rate_limit(db, current_user.id)
     file_bytes = await file.read()
     try:
         result = await AttendanceCardNoticeService(db).create_attendance_card_notice(
@@ -333,7 +333,7 @@ async def create_attendance_card_notice(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     background_tasks.add_task(send_publish_notifications, result.notice.id)
-    record_message_sent(current_user.id)
+    await record_message_sent(db, current_user.id)
 
     return AttendanceCardResultOut(
         notice_id=result.notice.id,

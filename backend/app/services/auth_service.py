@@ -89,7 +89,7 @@ class AuthService:
                 message = await SystemSettingsService(self.db).get_ip_blocked_message()
                 raise AuthIpBlockedError(message)
 
-        locked_remaining = check_login_lockout(identifier)
+        locked_remaining = await check_login_lockout(self.db, identifier)
         if locked_remaining is not None:
             raise AuthLockedError(retry_after_seconds=int(locked_remaining) + 1)
 
@@ -98,11 +98,11 @@ class AuthService:
         if user is None:
             employee = await self.repo.find_employee_for_login(identifier, credential)
             if employee is None:
-                record_failed_login(identifier)
+                await record_failed_login(self.db, identifier)
                 raise AuthError("اطلاعات ورود اشتباه است")
             user = await self.repo.get_or_create_employee_user(employee)
 
-        reset_login_attempts(identifier)
+        await reset_login_attempts(self.db, identifier)
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, refresh_token
