@@ -83,11 +83,14 @@ async def restore_backup(
 
     try:
         schedule_restore(dump_path)
+    except BackupError as e:
+        logger.error("راه‌اندازی فرآیند بازیابی ناموفق بود: %s", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     except Exception:
-        logger.exception("راه‌اندازی فرآیند بازیابی ناموفق بود")
+        logger.exception("راه‌اندازی فرآیند بازیابی با خطای کاملاً پیش‌بینی‌نشده مواجه شد")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="راه‌اندازی فرآیند بازیابی ناموفق بود — جزئیات کامل در لاگ سرور ثبت شد.",
+            detail="راه‌اندازی فرآیند بازیابی با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
         )
 
     return {

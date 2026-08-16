@@ -182,6 +182,14 @@ setup_database() {
   if [[ "$db_exists" != "1" ]]; then
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" >/dev/null
   fi
+
+  # نکته حیاتی: مالکیت خودِ دیتابیس با CREATE DATABASE ... OWNER تنظیم
+  # می‌شود، ولی Schema "public" داخلش از روی Template کپی می‌شود و معمولاً
+  # همچنان مالکش کاربر postgres می‌ماند، نه ${DB_USER} — یعنی بدون این خط،
+  # ${DB_USER} نمی‌تواند حتی روی همین Schema عملیات‌های ساده‌ای مثل COMMENT
+  # (که در بازیابی کامل بکاپ لازم می‌شود) انجام بدهد. این خط Idempotent است
+  # (روی یک نصب موجود هم بی‌خطر دوباره اجرا می‌شود).
+  sudo -u postgres psql -d "${DB_NAME}" -c "ALTER SCHEMA public OWNER TO ${DB_USER};" >/dev/null
 }
 
 fetch_source() {
