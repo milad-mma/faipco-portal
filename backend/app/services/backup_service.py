@@ -218,16 +218,23 @@ def schedule_restore(dump_path: Path) -> None:
     alembic_path = _find_alembic_binary()
     backend_dir = Path(__file__).resolve().parent.parent.parent
 
-    # لاگ Restore قبلی را پاک می‌کنیم تا get_restore_status() این تلاش تازه
-    # را با ته‌مانده‌ی یک تلاش قدیمی‌تر اشتباه نگیرد.
-    if _RESTORE_LOG_PATH.exists():
-        _RESTORE_LOG_PATH.unlink()
+    # نکته حیاتی: خودِ این تابع با کاربر www-data اجرا می‌شود، ولی خودِ
+    # اسکریپت (چند خط پایین‌تر) با systemd-run به‌عنوان root اجرا می‌شود —
+    # یعنی هرکدام این‌ها لاگ را بسازند/دست بزنند، مالکش همان کاربر می‌شود.
+    # اگر اینجا (www-data) سعی کنیم فایل لاگِ ساخته‌شده توسط تلاش قبلی
+    # (که مالکش root بود) را پاک کنیم، چون /tmp با Sticky Bit است، www-data
+    # اجازه حذف فایل root را ندارد و با PermissionError کل این تابع (حتی
+    # قبل از رسیدن به systemd-run) شکست می‌خورد — دقیقاً همان چیزی که باعث
+    # پیام مبهم «راه‌اندازی ناموفق بود» شد. راه‌حل: اصلاً از این‌جا لاگ را
+    # پاک نمی‌کنیم؛ به‌جایش خودِ اسکریپت (که همیشه به‌عنوان root اجرا
+    # می‌شود) با ">" (نه ">>") آن را از نو می‌سازد — همیشه یک‌دست، همیشه
+    # مالکش root.
 
     # این اسکریپت از داخل systemd-run --collect به‌عنوان root اجرا می‌شود
     # (نگاه کنید پایین‌تر) — پس دیگر نیازی به sudo داخل خودِ اسکریپت نیست.
     script = f"""
 set +e
-exec >> {_RESTORE_LOG_PATH} 2>&1
+exec > {_RESTORE_LOG_PATH} 2>&1
 echo "=== Restore started: $(date -Iseconds) ==="
 
 echo "Stopping faipco-backend..."
