@@ -18,6 +18,7 @@ import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
 import BackupPage from "./pages/BackupPage";
+import UpdatePage from "./pages/UpdatePage";
 import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
 import PresenceReportPage from "./pages/PresenceReportPage";
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
           <Route path="/bulk-role-assignment" element={<AdminRoute><BulkRoleAssignmentPage /></AdminRoute>} />
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
+          <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
           <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
           <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
           <Route

@@ -26,6 +26,7 @@ import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
+import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
@@ -79,6 +80,7 @@ const NAV_ITEMS = [
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
+  { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
   { label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
   {
     label: "گزارش ورود و خروج",

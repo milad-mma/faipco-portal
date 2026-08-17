@@ -13,7 +13,7 @@ import re
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,13 @@ from app.models.ip_allowlist_entry import IpAllowlistEntry
 from app.schemas.system import IpAllowlistStateIn, IpAllowlistStateOut, IpBlockedMessageIn, IpBlockedMessageOut
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.system_settings_service import SystemSettingsService
+from app.services.update_service import (
+    UPDATE_CONFIRMATION_PHRASE,
+    UpdateError,
+    check_for_update,
+    get_update_status,
+    schedule_update,
+)
 
 logger = logging.getLogger("faipco.system")
 router = APIRouter()
@@ -50,6 +57,56 @@ async def get_app_version():
     """
     settings = get_settings()
     return {"version": settings.APP_VERSION}
+
+
+@router.get("/check-update")
+async def check_update(
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    بررسی وجود نسخه جدیدتر در GitHub — کاملاً Read-Only. همان مجوز
+    Backup/Restore را می‌خواهد چون این قابلیت هم عملاً یک قابلیت
+    سطح-زیرساخت است، نه یک تنظیم معمولی.
+    """
+    return await check_for_update()
+
+
+@router.post("/apply-update")
+async def apply_update(
+    confirm: str = Form(..., description=f'برای تأیید باید دقیقاً "{UPDATE_CONFIRMATION_PHRASE}" ارسال شود'),
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    ⚠️ این Endpoint عملاً معادل اجرای دستی «sudo bash install.sh» از طریق
+    SSH است — نصب/آپدیت کامل (شامل نصب پکیج‌های سیستمی در صورت نیاز، Build
+    مجدد فرانت‌اند، Migration های دیتابیس، و Restart سرویس) را از راه دور،
+    از همین پنل، راه می‌اندازد. مثل Restore، فقط اعتبارسنجی سریع همین‌جا
+    انجام می‌شود؛ خودِ کار واقعی (که سرویس را چند لحظه متوقف می‌کند) در
+    پس‌زمینه ادامه پیدا می‌کند — این پاسخ فقط یعنی «شروع شد».
+    """
+    try:
+        schedule_update(confirm_phrase=confirm)
+    except UpdateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception:
+        logger.exception("راه‌اندازی فرآیند آپدیت با خطای پیش‌بینی‌نشده مواجه شد")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="راه‌اندازی فرآیند آپدیت با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
+        )
+    return {
+        "success": True,
+        "message": "آپدیت شروع شد. سرویس چند لحظه (بسته به حجم تغییرات، معمولاً یک تا چند دقیقه) در دسترس "
+        "نخواهد بود، سپس خودکار دوباره بالا می‌آید.",
+    }
+
+
+@router.get("/update-status")
+async def update_status(
+    _user=Depends(require_permission("system.backup")),
+):
+    """وضعیت زنده آخرین آپدیت — دقیقاً همان الگوی /backup/restore-status."""
+    return get_update_status()
 
 
 @router.post("/cache-bust")

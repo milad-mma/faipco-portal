@@ -275,6 +275,24 @@ generate_env() {
     else
       echo "APP_VERSION=${app_version}" >> "$INSTALL_DIR/backend/.env"
     fi
+    # حیاتی: --reverse-proxy-ip باید «چسبنده» باشد. اگر این اجرا صریحاً این
+    # پرچم را نگرفته باشد (مثلاً یک آپدیت خودکار از پنل، یا صرفاً یادتان
+    # رفته دوباره بدهیدش)، باید مقدار قبلی را از همین .env بخوانیم و به
+    # configure_firewall() بدهیم — وگرنه بدون این، فایروال به‌طور خاموش به
+    # حالت «باز برای همه اینترنت» برمی‌گردد و محدودیتی که از یک تست نفوذ
+    # زنده اضافه شده بود، دوباره باز می‌شود.
+    if [[ -n "$REVERSE_PROXY_IP" ]]; then
+      if grep -q "^REVERSE_PROXY_IP=" "$INSTALL_DIR/backend/.env"; then
+        sed -i "s/^REVERSE_PROXY_IP=.*/REVERSE_PROXY_IP=${REVERSE_PROXY_IP}/" "$INSTALL_DIR/backend/.env"
+      else
+        echo "REVERSE_PROXY_IP=${REVERSE_PROXY_IP}" >> "$INSTALL_DIR/backend/.env"
+      fi
+    elif grep -q "^REVERSE_PROXY_IP=" "$INSTALL_DIR/backend/.env"; then
+      REVERSE_PROXY_IP="$(grep '^REVERSE_PROXY_IP=' "$INSTALL_DIR/backend/.env" | cut -d= -f2-)"
+      if [[ -n "$REVERSE_PROXY_IP" ]]; then
+        log "Using previously-configured reverse proxy IP for firewall: ${REVERSE_PROXY_IP}"
+      fi
+    fi
     if grep -q "^VAPID_PUBLIC_KEY=" "$INSTALL_DIR/backend/.env"; then
       VAPID_PUBLIC_KEY="$(grep '^VAPID_PUBLIC_KEY=' "$INSTALL_DIR/backend/.env" | cut -d= -f2-)"
     else
@@ -312,6 +330,7 @@ generate_env() {
   cat > "$INSTALL_DIR/backend/.env" <<EOF
 APP_NAME=FAIPCO Portal
 APP_VERSION=${app_version}
+REVERSE_PROXY_IP=${REVERSE_PROXY_IP}
 APP_ENV=production
 DEBUG=false
 DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}
@@ -377,22 +396,28 @@ EOF
 
   chown -R www-data:www-data "$INSTALL_DIR"
 
-  # اجازه محدود و دقیق (فقط همین یک دستور ثابت، بدون رمز) به www-data
-  # می‌دهیم — نه برای stop/start مستقیم، بلکه برای اجرای اسکریپت Restore
+  # اجازه محدود و دقیق (فقط همین دو دستور ثابت، بدون رمز) به www-data
+  # می‌دهیم — نه برای stop/start مستقیم، بلکه برای اجرای یک اسکریپت خاص
   # داخل یک Scope کاملاً جدا و مستقل از systemd (systemd-run). این حیاتی
   # است: اگر آن اسکریپت مستقیم زیرمجموعه‌ی خودِ faipco-backend.service اجرا
   # می‌شد (حتی با setsid)، وقتی خودش دستور «متوقف‌کردن faipco-backend» را
-  # صادر می‌کرد، systemd کل Cgroup آن سرویس — از جمله خودِ همین اسکریپت را
-  # هم می‌کشت (چون setsid فقط از Session/Process Group جدا می‌کند، نه از
-  # Cgroup) — دقیقاً همان چیزی که باعث شد Restore درست بعد از خط «در حال
-  # توقف سرویس» بی‌صدا متوقف شود. با systemd-run، اسکریپت در یک Scope کاملاً
-  # جدا (و به‌عنوان root) اجرا می‌شود که از این Cgroup Kill در امان است.
-  cat > /etc/sudoers.d/faipco-backend-restart <<'EOF'
+  # صادر می‌کرد (یا install.sh در پایان کارش سرویس را Restart می‌کرد)،
+  # systemd کل Cgroup آن سرویس — از جمله خودِ همین اسکریپت را هم می‌کشت
+  # (چون setsid فقط از Session/Process Group جدا می‌کند، نه از Cgroup) —
+  # دقیقاً همان چیزی که باعث شد اولین تلاش Restore درست بعد از خط «در حال
+  # توقف سرویس» بی‌صدا متوقف شود. با systemd-run، اسکریپت در یک Scope
+  # کاملاً جدا (و به‌عنوان root) اجرا می‌شود که از این Cgroup Kill در امان
+  # است. قانون دومِ faipco-update دقیقاً همین نیاز را برای «آپدیت از پنل»
+  # (پنل → اجرای install.sh واقعی، معادل sudo bash install.sh دستی) برطرف
+  # می‌کند — این قابلیت آگاهانه همان قدرت کامل SSH+sudo را از راه دور
+  # می‌دهد، فقط پشت همان مجوز Admin کامل که برای Backup/Restore هم لازم است.
+  cat > /etc/sudoers.d/faipco-backend-restart <<EOF
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-restore --collect /bin/sh /tmp/faipco-restore-run.sh
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-update --collect /bin/bash ${INSTALL_DIR}/install.sh
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
-    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore won't work; you'll need to restore manually around a stop/start of faipco-backend)."
+    err "sudoers rule for faipco-backend-restart failed validation — removing it (in-panel restore/update won't work; you'll need to restore/update manually via SSH)."
     rm -f /etc/sudoers.d/faipco-backend-restart
   }
 

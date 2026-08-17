@@ -5,6 +5,27 @@ export async function fetchAppVersion() {
   return data.version;
 }
 
+export async function checkForUpdate() {
+  const { data } = await apiClient.get("/system/check-update", { timeout: 15000 });
+  return data; // { checked, current_version, latest_version, has_update, release_url }
+}
+
+export async function applyUpdate(confirmPhrase) {
+  const formData = new FormData();
+  formData.append("confirm", confirmPhrase);
+  const { data } = await apiClient.post("/system/apply-update", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function fetchUpdateStatus() {
+  // Timeout کوتاه عمدی — دقیقاً همان چند ثانیه‌ای که سرویس Stop/Start
+  // می‌شود، این درخواست باید سریع Fail شود تا فوراً دوباره امتحان کنیم.
+  const { data } = await apiClient.get("/system/update-status", { timeout: 5000 });
+  return data; // { log, is_running, is_finished, is_failed }
+}
+
 export async function bustAppCache() {
   const { data } = await apiClient.post("/system/cache-bust");
   return data; // { success, version, message }

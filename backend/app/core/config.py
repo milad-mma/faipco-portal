@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # .env می‌نویسد؛ اگر اینجا اجرا نشده باشد (مثلاً محیط توسعه محلی)،
     # "dev" پیش‌فرض است.
     APP_VERSION: str = "dev"
+    # مخزن GitHub — برای بررسی وجود نسخه جدید (پنل «بررسی آپدیت»). این
+    # قابلیت کاملاً اختیاری و غیرمسدودکننده است — اگر اینترنت نبود یا
+    # GitHub در دسترس نبود، فقط پیام «آپدیتی پیدا نشد» نشان داده می‌شود؛
+    # هیچ بخش دیگری از برنامه تحت تأثیر قرار نمی‌گیرد.
+    GITHUB_REPO: str = "milad-mma/faipco-portal"
     APP_ENV: str = "production"  # development | production
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
