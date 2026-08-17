@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Box,
   Button,
+  Card,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   Stack,
   Table,
@@ -18,6 +20,8 @@ import {
   TableRow,
   Tooltip,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
@@ -53,6 +57,9 @@ const INLINE_TARGET_LIMIT = 3;
  * گزارش با برچسب «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود).
  */
 export default function NoticeReportTable({ fetchPage, showSender = false, allowDelete = false, reloadKey }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -99,6 +106,35 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     }
   }
 
+  // مشترک بین حالت جدول (دسکتاپ) و حالت کارت (موبایل) — تا منطق «نمایش
+  // Chip های مقصد + دکمه و N مورد دیگر» را دوبار ننویسیم.
+  function renderTargets(n) {
+    if (n.targets.length <= INLINE_TARGET_LIMIT) {
+      return (
+        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+          {n.targets.map((t, i) => (
+            <Chip key={i} size="small" variant="outlined" label={t.label} />
+          ))}
+        </Stack>
+      );
+    }
+    return (
+      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center">
+        {n.targets.slice(0, INLINE_TARGET_LIMIT - 1).map((t, i) => (
+          <Chip key={i} size="small" variant="outlined" label={t.label} />
+        ))}
+        <Chip
+          size="small"
+          color="primary"
+          variant="outlined"
+          clickable
+          onClick={() => setTargetsNotice(n)}
+          label={`و ${n.targets.length - (INLINE_TARGET_LIMIT - 1)} مورد دیگر`}
+        />
+      </Stack>
+    );
+  }
+
   if (!isLoading && items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
@@ -106,6 +142,134 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
       </Typography>
     );
   }
+
+  // ---------- حالت موبایل: کارت به‌جای جدول — چون این جدول ۱۰-۱۱ ستون دارد
+  // و روی صفحه کوچک هیچ‌جوره بدون اسکرول افقی (که خیلی آزاردهنده‌ست) جا
+  // نمی‌شود، این‌جا هر اطلاعیه یک کارت مستقل با چیدمان عمودی می‌شود —
+  // هیچ‌وقت نیازی به اسکرول چپ/راست نیست.
+  if (isMobile) {
+    return (
+      <>
+        <Stack spacing={1.5}>
+          {items.map((n) => (
+            <Card
+              key={n.id}
+              variant="outlined"
+              sx={{ p: 2, borderRadius: 2, opacity: n.is_deleted ? 0.6 : 1 }}
+            >
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>
+                    {n.title}
+                  </Typography>
+                  <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
+                </Stack>
+
+                <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
+                  {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
+                </Typography>
+
+                {showSender && (
+                  <Typography variant="caption" color="text.secondary">
+                    فرستنده: {n.sender_name}
+                  </Typography>
+                )}
+
+                {renderTargets(n)}
+
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Typography variant="caption" sx={monoFontSx}>
+                    مخاطبان: {n.audience_count}
+                  </Typography>
+                  <Typography variant="caption" sx={monoFontSx}>
+                    دیده‌شده: {n.read_count}/{n.audience_count}
+                  </Typography>
+                  {n.is_deleted ? (
+                    <Chip size="small" color="error" variant="outlined" label="حذف شده" />
+                  ) : (
+                    <Chip size="small" color="success" variant="outlined" label="فعال" />
+                  )}
+                </Stack>
+
+                <Divider />
+
+                <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+                  <Tooltip title="مشاهده متن کامل">
+                    <IconButton size="small" onClick={() => setBodyNotice(n)}>
+                      <ArticleOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => setReadersNoticeId(n.id)}>
+                    چه کسانی دیدند
+                  </Button>
+                  {allowDelete && !n.is_deleted && (
+                    <Tooltip title="حذف اطلاعیه">
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          disabled={deletingId === n.id}
+                          onClick={() => handleDelete(n)}
+                        >
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  )}
+                </Stack>
+              </Stack>
+            </Card>
+          ))}
+        </Stack>
+
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={ROWS_PER_PAGE}
+          rowsPerPageOptions={[ROWS_PER_PAGE]}
+          labelRowsPerPage="سطر در هر صفحه"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+        />
+
+        <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
+
+        <Dialog open={Boolean(bodyNotice)} onClose={() => setBodyNotice(null)} fullWidth maxWidth="sm">
+          <DialogTitle>{bodyNotice?.title}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+              {bodyNotice?.body}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => setBodyNotice(null)}>بستن</Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
+          <DialogTitle>
+            مقصدهای اطلاعیه «{targetsNotice?.title}»
+            <Typography variant="caption" color="text.secondary" display="block">
+              {targetsNotice?.targets.length} مورد
+            </Typography>
+          </DialogTitle>
+          <DialogContent dividers sx={{ maxHeight: 400, overflowY: "auto" }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+              {targetsNotice?.targets.map((t, i) => (
+                <Chip key={i} size="small" variant="outlined" label={t.label} />
+              ))}
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => setTargetsNotice(null)}>بستن</Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
+  }
+
+  // ---------- حالت دسکتاپ/تبلت: همان جدول قبلی ----------
 
   return (
     <>
@@ -145,27 +309,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                   <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
                 </TableCell>
                 <TableCell sx={{ maxWidth: 260 }}>
-                  {n.targets.length <= INLINE_TARGET_LIMIT ? (
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                      {n.targets.map((t, i) => (
-                        <Chip key={i} size="small" variant="outlined" label={t.label} />
-                      ))}
-                    </Stack>
-                  ) : (
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center">
-                      {n.targets.slice(0, INLINE_TARGET_LIMIT - 1).map((t, i) => (
-                        <Chip key={i} size="small" variant="outlined" label={t.label} />
-                      ))}
-                      <Chip
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        clickable
-                        onClick={() => setTargetsNotice(n)}
-                        label={`و ${n.targets.length - (INLINE_TARGET_LIMIT - 1)} مورد دیگر`}
-                      />
-                    </Stack>
-                  )}
+                  {renderTargets(n)}
                 </TableCell>
                 <TableCell sx={monoFontSx} align="center">
                   {n.audience_count}
