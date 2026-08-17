@@ -21,7 +21,9 @@ from app.core.deps import require_permission
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.ip_allowlist_entry import IpAllowlistEntry
+from app.models.user import User
 from app.schemas.system import IpAllowlistStateIn, IpAllowlistStateOut, IpBlockedMessageIn, IpBlockedMessageOut
+from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.system_settings_service import SystemSettingsService
 from app.services.update_service import (
@@ -74,7 +76,9 @@ async def check_update(
 @router.post("/apply-update")
 async def apply_update(
     confirm: str = Form(..., description=f'برای تأیید باید دقیقاً "{UPDATE_CONFIRMATION_PHRASE}" ارسال شود'),
-    _user=Depends(require_permission("system.backup")),
+    password: str = Form(..., description="رمز عبور فعلی همین حساب — برای تأیید اضافی، مستقل از Session"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("system.backup")),
 ):
     """
     ⚠️ این Endpoint عملاً معادل اجرای دستی «sudo bash install.sh» از طریق
@@ -83,7 +87,17 @@ async def apply_update(
     از همین پنل، راه می‌اندازد. مثل Restore، فقط اعتبارسنجی سریع همین‌جا
     انجام می‌شود؛ خودِ کار واقعی (که سرویس را چند لحظه متوقف می‌کند) در
     پس‌زمینه ادامه پیدا می‌کند — این پاسخ فقط یعنی «شروع شد».
+
+    علاوه بر عبارت تأیید، رمز عبور فعلی حساب هم دوباره خواسته می‌شود —
+    چون این یک عملیات با دسترسی کامل root است، تکیه‌کردن فقط به همان
+    Session ورود (که در صورت دزدیده‌شدن Token به‌تنهایی کافی می‌بود) کافی
+    نیست.
     """
+    try:
+        await AuthService(db).verify_current_credential(current_user, password)
+    except AuthError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
     try:
         schedule_update(confirm_phrase=confirm)
     except UpdateError as e:

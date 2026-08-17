@@ -411,9 +411,16 @@ EOF
   # (پنل → اجرای install.sh واقعی، معادل sudo bash install.sh دستی) برطرف
   # می‌کند — این قابلیت آگاهانه همان قدرت کامل SSH+sudo را از راه دور
   # می‌دهد، فقط پشت همان مجوز Admin کامل که برای Backup/Restore هم لازم است.
+  #
+  # نکته --setenv=HOME=/root در قانون دوم: برخلاف یک نشست تعاملی sudo
+  # (که PAM خودش HOME=/root را تنظیم می‌کند)، Scope موقت systemd-run این
+  # متغیر محیطی را به‌طور پیش‌فرض ندارد — و چون install.sh از
+  # «git config --global --add safe.directory» استفاده می‌کند (که باید
+  # ~/.gitconfig را پیدا کند)، بدون HOME با خطای "$HOME not set"
+  # متوقف می‌شود.
   cat > /etc/sudoers.d/faipco-backend-restart <<EOF
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-restore --collect /bin/sh /tmp/faipco-restore-run.sh
-www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-update --collect /bin/bash ${INSTALL_DIR}/install.sh
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-update --collect --setenv=HOME=/root /bin/bash ${INSTALL_DIR}/install.sh
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {

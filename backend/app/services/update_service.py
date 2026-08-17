@@ -111,7 +111,10 @@ def schedule_update(confirm_phrase: str) -> None:
     # دقیقاً همان الگوی schedule_restore (نگاه کنید backup_service.py) —
     # یک Scope کاملاً مستقل از systemd، به‌عنوان root، تا وقتی install.sh
     # خودش سرویس faipco-backend را Restart می‌کند، این فرآیند خودش کشته
-    # نشود.
+    # نشود. --setenv=HOME=/root حیاتی است: برخلاف یک نشست تعاملی sudo،
+    # Scope موقت systemd-run این متغیر را ندارد — و install.sh با
+    # «git config --global» کار می‌کند که بدون HOME با خطای
+    # "$HOME not set" متوقف می‌شود.
     result = subprocess.run(
         [
             "sudo",
@@ -119,6 +122,7 @@ def schedule_update(confirm_phrase: str) -> None:
             "/usr/bin/systemd-run",
             "--unit=faipco-update",
             "--collect",
+            "--setenv=HOME=/root",
             "/bin/bash",
             str(install_script),
         ],

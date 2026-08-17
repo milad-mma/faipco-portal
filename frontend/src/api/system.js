@@ -10,9 +10,10 @@ export async function checkForUpdate() {
   return data; // { checked, current_version, latest_version, has_update, release_url }
 }
 
-export async function applyUpdate(confirmPhrase) {
+export async function applyUpdate(confirmPhrase, password) {
   const formData = new FormData();
   formData.append("confirm", confirmPhrase);
+  formData.append("password", password);
   const { data } = await apiClient.post("/system/apply-update", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });

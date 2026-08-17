@@ -128,6 +128,26 @@ class AuthService:
         new_refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, new_refresh_token
 
+    async def verify_current_credential(self, user: User, current_password: str) -> None:
+        """
+        فقط بررسی می‌کند که «رمز عبور/کد ملی فعلی» درست وارد شده — بدون هیچ
+        تغییری. هم توسط change_password (قبل از تنظیم رمز جدید) و هم برای
+        تأیید هویت قبل از عملیات‌های حساس (مثل «تأیید و آپدیت» در پنل)
+        استفاده می‌شود؛ چون Session به‌تنهایی (اگر دزدیده شود) نباید برای
+        این‌جور عملیات کافی باشد.
+        """
+        if user.employee_id is None or user.has_custom_password:
+            if not verify_password(current_password, user.password_hash):
+                raise AuthError("رمز عبور فعلی اشتباه است")
+        else:
+            employee = await self.db.get(Employee, user.employee_id)
+            if (
+                employee is None
+                or not employee.national_code
+                or current_password.strip() != employee.national_code.strip()
+            ):
+                raise AuthError("کد ملی وارد شده اشتباه است")
+
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
         """
         تغییر رمز عبور توسط خودِ کاربر.
@@ -143,17 +163,7 @@ class AuthService:
         (بررسی رمز عبور فعلی) استفاده می‌کنند — آن‌ها اصلاً پرسنل نیستند که
         بخواهند به روش «کد ملی» وارد شوند.
         """
-        if user.employee_id is None or user.has_custom_password:
-            if not verify_password(current_password, user.password_hash):
-                raise AuthError("رمز عبور فعلی اشتباه است")
-        else:
-            employee = await self.db.get(Employee, user.employee_id)
-            if (
-                employee is None
-                or not employee.national_code
-                or current_password.strip() != employee.national_code.strip()
-            ):
-                raise AuthError("کد ملی وارد شده اشتباه است")
+        await self.verify_current_credential(user, current_password)
 
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True

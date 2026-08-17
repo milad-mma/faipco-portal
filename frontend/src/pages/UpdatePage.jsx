@@ -24,6 +24,7 @@ export default function UpdatePage() {
   const [isChecking, setIsChecking] = useState(true);
 
   const [confirmText, setConfirmText] = useState("");
+  const [password, setPassword] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState(null); // { success, message } | null
   const [updateLog, setUpdateLog] = useState("");
@@ -78,13 +79,19 @@ export default function UpdatePage() {
       setUpdateResult({ success: false, message: `برای تأیید، دقیقاً «${CONFIRM_PHRASE}» را تایپ کنید.` });
       return;
     }
+    if (!password) {
+      setUpdateResult({ success: false, message: "رمز عبور فعلی خودتان را وارد کنید." });
+      return;
+    }
     setIsUpdating(true);
     try {
-      await applyUpdate(confirmText);
+      await applyUpdate(confirmText, password);
       pollUpdateStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
       setUpdateResult({ success: false, message: err.response?.data?.detail || "آپدیت ناموفق بود." });
       setIsUpdating(false);
+    } finally {
+      setPassword("");
     }
   }
 
@@ -189,6 +196,15 @@ export default function UpdatePage() {
 
               <Stack spacing={2}>
                 <TextField
+                  label="رمز عبور فعلی شما"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  fullWidth
+                  disabled={isUpdating}
+                  helperText="برای تأیید اضافی — مستقل از ورود فعلی‌تان"
+                />
+                <TextField
                   label={`برای تأیید، «${CONFIRM_PHRASE}» را تایپ کنید`}
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
@@ -201,7 +217,7 @@ export default function UpdatePage() {
                     color="warning"
                     startIcon={isUpdating ? <CircularProgress size={18} color="inherit" /> : <SystemUpdateAltOutlinedIcon />}
                     onClick={handleUpdate}
-                    disabled={isUpdating || confirmText !== CONFIRM_PHRASE}
+                    disabled={isUpdating || confirmText !== CONFIRM_PHRASE || !password}
                   >
                     {isUpdating ? "در حال آپدیت..." : "تأیید و آپدیت"}
                   </Button>
