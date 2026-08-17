@@ -175,6 +175,14 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                   </Typography>
                 )}
 
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                >
+                  {n.body}
+                </Typography>
+
                 {renderTargets(n)}
 
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
@@ -194,11 +202,6 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                 <Divider />
 
                 <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
-                  <Tooltip title="مشاهده متن کامل">
-                    <IconButton size="small" onClick={() => setBodyNotice(n)}>
-                      <ArticleOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
                   <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => setReadersNoticeId(n.id)}>
                     چه کسانی دیدند
                   </Button>
@@ -234,18 +237,6 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         />
 
         <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
-
-        <Dialog open={Boolean(bodyNotice)} onClose={() => setBodyNotice(null)} fullWidth maxWidth="sm">
-          <DialogTitle>{bodyNotice?.title}</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-              {bodyNotice?.body}
-            </Typography>
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setBodyNotice(null)}>بستن</Button>
-          </DialogActions>
-        </Dialog>
 
         <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
           <DialogTitle>
