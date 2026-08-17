@@ -18,6 +18,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_permission
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.ip_allowlist_entry import IpAllowlistEntry
 from app.schemas.system import IpAllowlistStateIn, IpAllowlistStateOut, IpBlockedMessageIn, IpBlockedMessageOut
@@ -38,6 +39,17 @@ def _normalize_cidr(raw: str) -> str | None:
     except ValueError:
         return None
     return str(network) if "/" in raw else f"{network.network_address}/32"
+
+
+@router.get("/version")
+async def get_app_version():
+    """
+    نسخه فعلی برنامه — عمداً بدون هیچ احراز هویتی، چون قرار است حتی در
+    صفحه ورود (قبل از Login) هم قابل دیدن باشد — مثلاً برای تأیید اینکه
+    آخرین Deploy واقعاً روی سرور نشسته، بدون نیاز به SSH یا ورود به پنل.
+    """
+    settings = get_settings()
+    return {"version": settings.APP_VERSION}
 
 
 @router.post("/cache-bust")

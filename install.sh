@@ -228,7 +228,10 @@ fetch_source() {
 
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log "Source already exists at ${INSTALL_DIR}. Updating..."
-    git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
+    # --tags حیاتی است: بدون آن، تگ‌های Release (مثل v1.0.0-beta.1) اصلاً
+    # واکشی نمی‌شوند و git describe --tags (که برای نمایش نسخه در پنل
+    # استفاده می‌شود) چیزی پیدا نمی‌کند.
+    git -C "$INSTALL_DIR" fetch --tags origin "$REPO_BRANCH"
     git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
   else
     if [[ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
@@ -236,6 +239,8 @@ fetch_source() {
       find "$INSTALL_DIR" -mindepth 1 -delete
     fi
     git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    # همان دلیل بالا — Clone کم‌عمق به‌تنهایی معمولاً تگ‌ها را نمی‌آورد.
+    git -C "$INSTALL_DIR" fetch --tags --depth 1 origin >/dev/null 2>&1 || true
   fi
   log "Source code ready at: ${INSTALL_DIR}"
 }
@@ -255,8 +260,21 @@ setup_backend() {
 }
 
 generate_env() {
+  # نسخه واقعی از تگ Git — نه دستی تایپ‌شده، همیشه دقیقاً همان چیزی که این
+  # اجرا واقعاً از GitHub Checkout کرده. اگر هیچ تگی نبود (چک‌اوت خیلی
+  # قدیمی یا یک Commit ساده)، به هش کوتاه Commit برمی‌گردد.
+  local app_version
+  app_version="$(cd "$INSTALL_DIR" && git describe --tags --always 2>/dev/null || echo "unknown")"
+
   if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
     log "Existing .env found — keeping current settings (secrets, DB password, VAPID keys unchanged)."
+    # نسخه برنامه استثناست: این یکی هر بار (حتی روی نصب موجود) باید
+    # به‌روزرسانی شود، چون کل هدفش نشان‌دادن آخرین Deploy واقعی است.
+    if grep -q "^APP_VERSION=" "$INSTALL_DIR/backend/.env"; then
+      sed -i "s/^APP_VERSION=.*/APP_VERSION=${app_version}/" "$INSTALL_DIR/backend/.env"
+    else
+      echo "APP_VERSION=${app_version}" >> "$INSTALL_DIR/backend/.env"
+    fi
     if grep -q "^VAPID_PUBLIC_KEY=" "$INSTALL_DIR/backend/.env"; then
       VAPID_PUBLIC_KEY="$(grep '^VAPID_PUBLIC_KEY=' "$INSTALL_DIR/backend/.env" | cut -d= -f2-)"
     else
@@ -293,6 +311,7 @@ generate_env() {
 
   cat > "$INSTALL_DIR/backend/.env" <<EOF
 APP_NAME=FAIPCO Portal
+APP_VERSION=${app_version}
 APP_ENV=production
 DEBUG=false
 DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}

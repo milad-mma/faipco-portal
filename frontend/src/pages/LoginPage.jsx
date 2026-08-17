@@ -18,6 +18,7 @@ import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import { useAuth } from "../context/AuthContext";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
+import { fetchAppVersion } from "../api/system";
 import faipcoLogo from "../assets/faipco-logo.png";
 
 export default function LoginPage() {
@@ -30,6 +31,15 @@ export default function LoginPage() {
   const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canInstall, setCanInstall] = useState(getIsInstallable());
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    // بی‌صدا — اگه به هر دلیلی این درخواست شکست بخوره (مثلاً بک‌اند هنوز
+    // بالا نیومده)، فقط شماره نسخه نشون داده نمی‌شه، صفحه ورود خراب نمی‌شه
+    fetchAppVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     function handleInstallableChange() {
@@ -84,6 +94,7 @@ export default function LoginPage() {
       sx={{
         minHeight: "100vh",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         background: "linear-gradient(160deg, #0E2138 0%, #16324F 55%, #1F4B75 100%)",
@@ -152,6 +163,16 @@ export default function LoginPage() {
           </Button>
         </Box>
       </Paper>
+
+      {appVersion && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ mt: 2, opacity: 0.6, direction: "ltr" }}
+        >
+          {appVersion}
+        </Typography>
+      )}
 
       <Dialog open={Boolean(vpnBlockedMessage)} onClose={() => setVpnBlockedMessage("")} maxWidth="xs" fullWidth>
         <DialogTitle>

@@ -19,6 +19,10 @@ _ENV_FILE_PATH = _BACKEND_DIR / ".env"
 class Settings(BaseSettings):
     # --- برنامه ---
     APP_NAME: str = "FAIPCO Portal"
+    # نسخه واقعی، از تگ Git — install.sh این را موقع هر نصب/آپدیت خودکار در
+    # .env می‌نویسد؛ اگر اینجا اجرا نشده باشد (مثلاً محیط توسعه محلی)،
+    # "dev" پیش‌فرض است.
+    APP_VERSION: str = "dev"
     APP_ENV: str = "production"  # development | production
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"

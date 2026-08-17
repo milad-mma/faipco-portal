@@ -1,5 +1,10 @@
 import { apiClient } from "./client";
 
+export async function fetchAppVersion() {
+  const { data } = await apiClient.get("/system/version", { timeout: 5000 });
+  return data.version;
+}
+
 export async function bustAppCache() {
   const { data } = await apiClient.post("/system/cache-bust");
   return data; // { success, version, message }
