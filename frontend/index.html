@@ -6,12 +6,15 @@
     <title>FAIPCO Portal</title>
 
     <!-- PWA -->
-    <!-- نکته: ?v=2 در همین لینک باید هر بار که خودِ manifest.json یا هر
-         کدام از آیکون‌های داخلش عوض می‌شود (نه هر Deploy معمولی)، دستی
-         بالا برود — تا Chrome روی اندروید (که این فایل‌ها را به‌شدت Cache
-         می‌کند) مجبور به دریافت نسخه تازه شود. باید همزمان با v=X داخل
-         manifest.json (کلید icons) هماهنگ نگه داشته شود. -->
-    <link rel="manifest" href="/manifest.json?v=2" />
+    <!-- نکته: نسخه قبلی این لینک یک ?v=2 برای Cache Busting داشت — حذف شد،
+         چون باعث می‌شد Chrome روی اندروید این را «نسخه/آدرس متفاوتی» از
+         Manifest نصب‌شده قبلی تشخیص بدهد و دکمه «نصب» را دوباره نشان دهد،
+         حتی برای کاربرانی که از قبل PWA را نصب کرده بودند. نیازی هم به آن
+         نبود: location = /manifest.json در Nginx از قبل هدر
+         Cache-Control: no-cache, must-revalidate می‌فرستد — یعنی مرورگر
+         همیشه قبل از استفاده از نسخه Cache شده، با سرور تأیید می‌گیرد؛
+         همین برای جلوگیری از قدیمی‌ماندن Manifest کافی است. -->
+    <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#16324F" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
