@@ -17,7 +17,8 @@
  * نه اینکه داده‌های API هم آفلاین در دسترس باشند.
  */
 import { precacheAndRoute, createHandlerBoundToURL } from "workbox-precaching";
-import { registerRoute, NavigationRoute, NetworkOnly } from "workbox-routing";
+import { registerRoute, NavigationRoute } from "workbox-routing";
+import { NetworkOnly } from "workbox-strategies";
 
 // self.__WB_MANIFEST نقطه‌ای است که vite-plugin-pwa موقع Build، فهرست
 // واقعی فایل‌های خروجی (با Hash نسخه، برای رفع باگ Cache شدید Chrome روی
@@ -39,7 +40,18 @@ const navigationHandler = createHandlerBoundToURL("/index.html");
 registerRoute(new NavigationRoute(navigationHandler));
 
 self.addEventListener("install", () => {
-  self.skipWaiting();
+  // ⚠️ عمداً دیگر self.skipWaiting() خودکار اینجا صدا زده نمی‌شود — نسخه
+  // جدید در حالت "waiting" می‌ماند تا کاربر خودش با دکمه «بارگذاری» در پنل
+  // تأیید کند. این‌طوری اگر دقیقاً همان لحظه یک فرم طولانی (مثلاً نوشتن یک
+  // اطلاعیه) باز باشد، Reload خودکار میانش نمی‌آید و چیزی از دست نمی‌رود.
+});
+
+// از frontend/src/utils/serviceWorker.js صدا زده می‌شود — وقتی کاربر خودش
+// دکمه «بارگذاری نسخه جدید» را می‌زند.
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
