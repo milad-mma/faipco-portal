@@ -16,6 +16,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { registerServiceWorker } from "./utils/serviceWorker";
 import "./utils/pwaInstall"; // ثبت زودهنگام listener رویداد beforeinstallprompt
 import UpdatePrompt from "./components/UpdatePrompt";
+import MandatoryPasswordChangeGuard from "./components/MandatoryPasswordChangeGuard";
 import App from "./App";
 
 registerServiceWorker();
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <App />
             {/* در سطح ریشه (نه داخل Layout) تا حتی توی صفحه ورود هم دیده شود */}
             <UpdatePrompt />
+            <MandatoryPasswordChangeGuard />
           </AuthProvider>
         </BrowserRouter>
       </ThemeModeProvider>

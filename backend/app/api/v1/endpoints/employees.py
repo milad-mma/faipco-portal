@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
 from app.core.persian_date import get_current_jalali_date
+from app.core.security import WeakPasswordError
 from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.site import Site
@@ -357,7 +358,10 @@ async def set_employee_password(
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
-    await UserRepository(db).set_employee_password(employee, payload.new_password)
+    try:
+        await UserRepository(db).set_employee_password(employee, payload.new_password)
+    except WeakPasswordError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.delete("/{employee_id}/password", status_code=status.HTTP_204_NO_CONTENT)

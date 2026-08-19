@@ -8,7 +8,7 @@ import secrets
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
+from app.core.security import hash_password, validate_password_strength
 from app.models.employee import Employee
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
@@ -139,10 +139,16 @@ class UserRepository:
         همان personnel_code است، از این پس پرسنل با «کد پرسنلی + این رمز جدید»
         وارد می‌شود؛ has_custom_password=True می‌شود و از همین لحظه ورود با
         کد ملی دیگر برای این پرسنل کار نمی‌کند (طبق find_employee_for_login).
+
+        must_change_password=True تنظیم می‌شود — چون این رمز را خودِ پرسنل
+        انتخاب نکرده (Admin برایش تعیین کرده)، باید بعد از اولین ورود موفق
+        مجبور شود یک رمز جدید (که فقط خودش می‌داند) تعیین کند.
         """
+        validate_password_strength(new_password)
         user = await self.get_or_create_employee_user(employee)
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True
+        user.must_change_password = True
         await self.db.commit()
         return user
 

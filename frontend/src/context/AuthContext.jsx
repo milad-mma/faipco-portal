@@ -33,6 +33,14 @@ export function AuthProvider({ children }) {
     return currentUser;
   }
 
+  /** بعد از تغییر موفق رمز عبور (مثلاً پاک‌شدن must_change_password) صدا
+   * زده می‌شود — بدون نیاز به خروج/ورود دوباره یا Reload کامل صفحه. */
+  async function refetchUser() {
+    const currentUser = await fetchCurrentUser();
+    setUser(currentUser);
+    return currentUser;
+  }
+
   function logout() {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
@@ -40,7 +48,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, refetchUser }}>
       {children}
     </AuthContext.Provider>
   );

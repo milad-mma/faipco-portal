@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from sqlalchemy import select
 
-from app.core.security import hash_password
+from app.core.security import check_password_strength, hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.user import Role, User, UserRole
 
@@ -34,12 +34,22 @@ async def create_admin(username: str, password: str, email: str | None) -> None:
             print("نقش superadmin پیدا نشد. ابتدا 'python -m scripts.seed_permissions' را اجرا کنید.")
             return
 
+        # اگر رمز داده‌شده قانون قدرت رمز (حداقل ۱۰ کاراکتر + حرف کوچک +
+        # حرف بزرگ + عدد) را رعایت نکند — مثلاً رمز پیش‌فرض نصب "admin" —
+        # حساب همچنان ساخته می‌شود (برای سازگاری با install.sh که همیشه
+        # یک رمز اولیه لازم دارد)، ولی must_change_password=True می‌شود تا
+        # همان اولین ورود، مجبور به تعیین یک رمز واقعی شود.
+        weakness = check_password_strength(password)
+        if weakness:
+            print(f"⚠️  توجه: {weakness} این حساب بعد از اولین ورود مجبور به تغییر رمز خواهد شد.")
+
         user = User(
             username=username,
             email=email,
             password_hash=hash_password(password),
             is_active=True,
             is_superuser=True,
+            must_change_password=bool(weakness),
         )
         db.add(user)
         await db.flush()

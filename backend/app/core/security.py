@@ -1,11 +1,13 @@
 """
 هسته امنیتی برنامه:
 - هش و بررسی پسورد کاربران (bcrypt)
+- قانون قدرت رمز عبور
 - تولید و اعتبارسنجی JWT
 - رمزنگاری/رمزگشایی Credential های اتصال به دیتابیس سایت‌ها (Fernet/AES)
 
 هیچ پسورد یا Credential ای هرگز نباید به‌صورت متن ساده در دیتابیس ذخیره شود.
 """
+import re
 from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet
@@ -17,6 +19,39 @@ from app.core.config import get_settings
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _fernet = Fernet(settings.DB_CREDENTIALS_ENCRYPTION_KEY.encode())
+
+MIN_PASSWORD_LENGTH = 10
+
+
+class WeakPasswordError(Exception):
+    """رمز عبور داده‌شده قانون قدرت رمز را رعایت نمی‌کند."""
+
+
+def check_password_strength(password: str) -> str | None:
+    """اگر رمز ضعیف باشد، پیام خطای فارسی مربوطه را برمی‌گرداند؛ وگرنه None
+    (یعنی رمز قابل‌قبول است). عمداً یک تابع «بررسی» جدا از یک Exception
+    است تا هم بشود در جاهایی که فقط می‌خواهیم بی‌سروصدا تشخیص بدهیم (مثلاً
+    create_admin.py، برای تصمیم‌گیری درباره must_change_password) و هم در
+    جاهایی که باید Exception پرتاب شود (validate_password_strength) از آن
+    استفاده کرد."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"رمز عبور باید حداقل {MIN_PASSWORD_LENGTH} کاراکتر باشد."
+    if not re.search(r"[a-z]", password):
+        return "رمز عبور باید حداقل یک حرف کوچک انگلیسی داشته باشد."
+    if not re.search(r"[A-Z]", password):
+        return "رمز عبور باید حداقل یک حرف بزرگ انگلیسی داشته باشد."
+    if not re.search(r"[0-9]", password):
+        return "رمز عبور باید حداقل یک عدد داشته باشد."
+    return None
+
+
+def validate_password_strength(password: str) -> None:
+    """اگر رمز ضعیف باشد WeakPasswordError پرتاب می‌کند — برای مسیرهایی که
+    کاربر واقعاً در حال تعیین/تغییر رمز است (باید حتماً رد شود، نه فقط
+    علامت‌گذاری)."""
+    error = check_password_strength(password)
+    if error:
+        raise WeakPasswordError(error)
 
 
 # ---------- پسورد کاربران ----------

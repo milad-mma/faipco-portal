@@ -11,7 +11,9 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    validate_password_strength,
     verify_password,
+    WeakPasswordError,
 )
 from app.models.employee import Department, Employee
 from app.models.site import Site
@@ -164,9 +166,14 @@ class AuthService:
         بخواهند به روش «کد ملی» وارد شوند.
         """
         await self.verify_current_credential(user, current_password)
+        try:
+            validate_password_strength(new_password)
+        except WeakPasswordError as e:
+            raise AuthError(str(e))
 
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True
+        user.must_change_password = False
         await self.db.commit()
 
     async def get_me(self, user: User) -> UserOut:

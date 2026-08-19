@@ -44,6 +44,13 @@ class User(Base, TimestampMixin):
     # همچنان از مسیر کد ملی انجام می‌شود.
     has_custom_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # اگر True باشد، کاربر بعد از ورود موفق، تا وقتی رمز عبورش را عوض نکند
+    # (طبق قانون قدرت رمز — حداقل ۱۰ کاراکتر + حرف کوچک + حرف بزرگ + عدد)
+    # به بقیه پنل دسترسی ندارد. موقع ساخت حساب Admin (اگر رمز داده‌شده این
+    # قانون را رعایت نکند، مثلاً رمز پیش‌فرض نصب) یا وقتی Admin برای یک
+    # پرسنل رمز تعیین می‌کند، True تنظیم می‌شود.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 

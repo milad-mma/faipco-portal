@@ -9,6 +9,7 @@ class UserOut(BaseModel):
     is_active: bool
     is_superuser: bool
     has_custom_password: bool
+    must_change_password: bool
 
     # اطلاعات پرسنلی/سازمانی — فقط اگر این حساب به یک رکورد Employee سینک‌شده
     # وصل باشد (User.employee_id). کاربران مدیریتی محض (مثل admin) همه این

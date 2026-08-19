@@ -67,8 +67,8 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 
   async function handleSave() {
     setError("");
-    if (password.length < 6) {
-      setError("رمز عبور باید حداقل ۶ کاراکتر باشد.");
+    if (password.length < 10 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      setError("رمز عبور باید حداقل ۱۰ کاراکتر باشد و شامل حرف کوچک، حرف بزرگ، و عدد باشد.");
       return;
     }
     if (password !== confirmPassword) {
@@ -78,7 +78,9 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
     setIsSaving(true);
     try {
       await setEmployeePassword(employee.id, password);
-      setSuccess("رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — کد ملی دیگر کار نمی‌کند.");
+      setSuccess(
+        "رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — کد ملی دیگر کار نمی‌کند. این پرسنل بعد از اولین ورود موفق، مجبور به تعیین یک رمز جدید (که فقط خودش می‌داند) خواهد شد."
+      );
       onChanged?.();
     } catch (err) {
       setError(err.response?.data?.detail || "تعیین رمز عبور ناموفق بود.");
@@ -123,6 +125,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
               onChange={(e) => setPassword(e.target.value)}
               disabled={isSaving}
               autoFocus
+              helperText="حداقل ۱۰ کاراکتر، شامل حرف کوچک، حرف بزرگ، و عدد"
             />
             <TextField
               label="تکرار رمز عبور"
