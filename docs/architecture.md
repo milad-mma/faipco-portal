@@ -52,12 +52,12 @@ Sync Service این مراحل را برای هر Site اجرا می‌کند:
 
 - پسورد کاربران: bcrypt (یک‌طرفه)
 - Credential دیتابیس سایت‌ها: Fernet (AES) — دوطرفه، چون Sync Engine باید بتواند آن را بخواند
-- JWT با Access Token کوتاه‌مدت + Refresh Token
+- JWT با Access Token کوتاه‌مدت + Refresh Token، الگوریتم HS256 با لیست سفید صریح (در برابر حمله `alg: none` مقاوم)
 - تمام کلیدها از Environment Variables خوانده می‌شوند، هرگز در کد نیستند
-
-## نقشه راه توسعه
-
-جزئیات هر مرحله در README.md اصلی پروژه آمده است.
+- قفل موقت ورود و محدودیت ارسال اطلاعیه — با شمارنده در دیتابیس (نه درون‌حافظه‌ای)، بین همه Worker های سرویس مشترک ([`docs/rate-limiting.md`](rate-limiting.md))
+- رنج‌های IP مجاز (ضدVPN) — به‌همراه محدودیت Firewall الزامی روی سرور اصلی برای جلوگیری از دورزدن با جعل `X-Forwarded-For` ([`docs/ip-allowlist.md`](ip-allowlist.md))
+- هدرهای امنیتی HTTP کامل (CSP، Permissions-Policy، HSTS و...)، بدون هیچ وابستگی به CDN خارجی
+- عملیات‌های سطح-زیرساخت از پنل (بازیابی بکاپ، اعمال آپدیت) از یک الگوی مشترک استفاده می‌کنند: یک قانون Sudoers محدود و دقیق + اجرا در یک Scope مستقل با `systemd-run` (نه زیرمجموعه Cgroup خودِ سرویس، که باعث می‌شد وقتی سرویس Restart می‌شود، خودِ عملیات هم کشته شود) — جزئیات در [`docs/backup.md`](backup.md)
 
 ## پشته فناوری
 

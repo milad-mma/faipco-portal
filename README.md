@@ -1,8 +1,9 @@
 # FAIPCO Portal
 
 پرتال سازمانی برای مدیریت پرسنل، اطلاعیه‌ها (متنی، فیش حقوقی، فیش کارکرد)،
-دسترسی‌ها (RBAC)، و اتصال به دیتابیس‌های چندگانه‌ی سایت‌های مختلف یک سازمان
-(چند کارخانه/شعبه، هرکدام با ساختار دیتابیس پرسنلی متفاوت).
+دسترسی‌ها (RBAC)، حضور مبتنی بر GPS، پیام تبریک تولد خودکار، و اتصال به
+دیتابیس‌های چندگانه‌ی سایت‌های مختلف یک سازمان (چند کارخانه/شعبه، هرکدام با
+ساختار دیتابیس پرسنلی متفاوت).
 
 **پشته فناوری**: FastAPI (Async) + PostgreSQL در بک‌اند، React + MUI (RTL) در
 فرانت‌اند، PWA با Web Push. جزئیات کامل در [`docs/architecture.md`](docs/architecture.md).
@@ -15,16 +16,19 @@
 curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh | sudo bash
 ```
 
-یا با آرگومان‌های دلخواه:
+یا با آرگومان‌های دلخواه — **اگر یک Reverse Proxy خارجی برای SSL دارید،
+حتماً `--reverse-proxy-ip` را هم بدهید** (یک یافته امنیتی واقعی، نه یک
+احتیاط نظری — جزئیات در [`docs/deployment.md`](docs/deployment.md)):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/milad-mma/faipco-portal/main/install.sh -o install.sh
-sudo bash install.sh --domain portal.mycompany.com --admin-username admin
+sudo bash install.sh --domain portal.mycompany.com --admin-username admin --reverse-proxy-ip <IP-پروکسی>
 ```
 
 همین دستور برای **آپدیت** نصب موجود هم استفاده می‌شود (خودکار تشخیص داده
-می‌شود) — جزئیات کامل، همه آرگومان‌ها، و نکات SSL در
-[`docs/deployment.md`](docs/deployment.md).
+می‌شود). علاوه بر خط‌فرمان، از داخل پنل هم (منوی «بررسی و اعمال آپدیت»، فقط
+Admin) می‌توانید نسخه فعلی را با GitHub مقایسه و آپدیت را مستقیم اجرا کنید —
+جزئیات کامل، همه آرگومان‌ها، و نکات SSL در [`docs/deployment.md`](docs/deployment.md).
 
 ## اجرای محلی (Development)
 
@@ -54,12 +58,20 @@ cd frontend && npm install && npm run dev
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |
 | [`docs/notices.md`](docs/notices.md) | سیستم اطلاعیه‌ها |
-| [`docs/payroll-notices.md`](docs/payroll-notices.md) | اطلاعیه فیش حقوقی (آپلود XML/XLSX) |
+| [`docs/payroll-notices.md`](docs/payroll-notices.md) | اطلاعیه فیش حقوقی (XML/XLSX) و فیش کارکرد (XLSX) |
 | [`docs/employee-management.md`](docs/employee-management.md) | مدیریت پرسنل از پنل Admin |
-| [`docs/rbac.md`](docs/rbac.md) | نقش‌ها و سطوح دسترسی |
+| [`docs/rbac.md`](docs/rbac.md) | نقش‌ها، سطوح دسترسی، و انتصاب دسته‌جمعی نقش |
 | [`docs/rate-limiting.md`](docs/rate-limiting.md) | قفل موقت ورود و محدودیت ارسال اطلاعیه |
 | [`docs/ip-allowlist.md`](docs/ip-allowlist.md) | محدودکردن ورود به رنج‌های IP مجاز (ضدVPN) |
 | [`docs/gps-attendance.md`](docs/gps-attendance.md) | حضور مبتنی بر GPS + ثبت ورود/خروج آزمایشی |
 | [`docs/birthday-greetings.md`](docs/birthday-greetings.md) | پیام‌های تبریک تولد (ارسال خودکار روزانه) |
+| [`docs/backup.md`](docs/backup.md) | پشتیبان‌گیری و بازیابی از پنل |
 | [`docs/reverse-proxy-firewall.md`](docs/reverse-proxy-firewall.md) | ⚠️ محدودکردن دسترسی مستقیم به سرور (یافته امنیتی واقعی) |
-| [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه + کارهای باز |
+| [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه |
+
+### گزارش‌های تست نفوذ (تاریخی)
+
+نتیجه ممیزی‌های امنیتی قبلی، برای مرجع — یافته‌های واقعی همگی رفع شده‌اند
+(نگاه کنید بخش‌های امنیتی اسناد بالا برای وضعیت فعلی):
+[`docs/pentest-report-2026-08-16.md`](docs/pentest-report-2026-08-16.md),
+[`docs/pentest-manual-checklist.md`](docs/pentest-manual-checklist.md).
