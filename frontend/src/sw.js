@@ -17,13 +17,20 @@
  * نه اینکه داده‌های API هم آفلاین در دسترس باشند.
  */
 import { precacheAndRoute, createHandlerBoundToURL } from "workbox-precaching";
-import { registerRoute, NavigationRoute } from "workbox-routing";
+import { registerRoute, NavigationRoute, NetworkOnly } from "workbox-routing";
 
 // self.__WB_MANIFEST نقطه‌ای است که vite-plugin-pwa موقع Build، فهرست
 // واقعی فایل‌های خروجی (با Hash نسخه، برای رفع باگ Cache شدید Chrome روی
 // اندروید) را جایگزینش می‌کند — دستی نگه‌داشتن این فهرست ممکن نیست چون نام
 // فایل‌های Vite با هر Build عوض می‌شود.
 precacheAndRoute(self.__WB_MANIFEST);
+
+// تضمین صریح (نه فقط اتفاقی از نبود Route دیگری): درخواست‌های API هرگز از
+// Cache پاسخ داده نمی‌شوند — همیشه مستقیم از سرور. این پرتال یک اپلیکیشن
+// مدیریتی زنده است؛ داده قدیمی/کش‌شده (مثلاً لیست اطلاعیه‌ها یا وضعیت
+// پرسنل) هرگز نباید نشان داده شود، فقط App Shell (خودِ کد برنامه) باید
+// برای تحمل قطعی آنی اینترنت Cache شود، نه محتوای API.
+registerRoute(({ url }) => url.pathname.startsWith("/api/"), new NetworkOnly());
 
 // درخواست‌های ناوبری (مثلاً کاربر مستقیم /notices را در نوار آدرس بزند یا
 // Refresh کند) به همان index.html پیش‌کش‌شده هدایت می‌شوند — استاندارد
