@@ -472,8 +472,12 @@ EOF
   # برای عکس پرسنلی (که با createObjectURL از یک Blob ساخته می‌شود، نه
   # data: یا یک URL معمولی)، 'unsafe-inline' برای style-src چون MUI
   # (کتابخانه رابط کاربری) با Emotion یک CSS-in-JS است و در زمان اجرا تگ
-  # <style> تزریق می‌کند — بدون این، کل ظاهر برنامه می‌شکند.
-  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+  # <style> تزریق می‌کند — بدون این، کل ظاهر برنامه می‌شکند. manifest-src و
+  # worker-src صریحاً تعریف شده‌اند (نه فقط تکیه بر Fallback خودکارشان به
+  # default-src/script-src) تا مطمئن باشیم ثبت Service Worker و بارگذاری
+  # manifest.json (هر دو حیاتی برای نصب PWA روی اندروید) هرگز به‌خاطر یک
+  # رفتار غیرمنتظره Fallback در نسخه‌های قدیمی‌تر مرورگر بلاک نشوند.
+  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
 
   # Permissions-Policy: این پروژه فقط از Geolocation استفاده می‌کند (حضور
   # GPS) — همه قابلیت‌های دیگر (دوربین، میکروفون، USB، پرداخت و...) که

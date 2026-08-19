@@ -30,7 +30,8 @@ faipco-portal/
 │       │                           # NoticeReports، Access، BulkRoleAssignment، Backup،
 │       │                           # Update، IpAllowlist، AttendanceClock،
 │       │                           # ClockInOutReport، PresenceReport، BirthdayMessages
-│       └── utils/                  # Service Worker، Push، نصب PWA، presenceSocket (WebSocket)
+│       ├── sw.js                     # Service Worker (با vite-plugin-pwa ساخته می‌شود)
+│       └── utils/                    # ثبت Service Worker، Push، نصب PWA، presenceSocket (WebSocket)
 ├── database/migrations/           # Alembic Migrations (ترتیبی، نه Autogenerate)
 ├── scripts/                        # seed_permissions, create_admin, generate_vapid_keys
 ├── docs/                            # همین مستندات — نگاه کنید README.md برای فهرست کامل

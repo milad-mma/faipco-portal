@@ -73,7 +73,9 @@
 
 ## PWA و اعلان‌ها
 
-- نصب به‌عنوان یک اپلیکیشن مستقل (PWA) روی موبایل/دسکتاپ.
+- نصب به‌عنوان یک اپلیکیشن مستقل (PWA) روی موبایل/دسکتاپ — Service Worker
+  با `vite-plugin-pwa` (استراتژی injectManifest) ساخته می‌شود، با
+  Precache خودکار App Shell (جزئیات در [`docs/pwa.md`](pwa.md)).
 - Push Notification (Web Push / VAPID) با به‌روزرسانی خودکار Service Worker
   بدون نیاز به خروج کاربر از حساب.
 
