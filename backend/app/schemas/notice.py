@@ -41,6 +41,17 @@ class NoticeCreate(BaseModel):
             raise ValueError("حداقل یک مخاطب برای اطلاعیه الزامی است")
         return self
 
+    @model_validator(mode="after")
+    def validate_title_and_body(self) -> "NoticeCreate":
+        # عمداً بعد از strip() چک می‌شود — چون یک رشته فقط شامل فاصله
+        # (مثلاً کاربر چندبار Space زده) نباید معتبر حساب شود، ولی خودِ
+        # مقدار ذخیره‌شده دست‌نخورده (بدون strip) می‌ماند.
+        if not self.title.strip():
+            raise ValueError("عنوان اطلاعیه الزامی است")
+        if not self.body.strip():
+            raise ValueError("متن اطلاعیه الزامی است")
+        return self
+
 
 class NoticeOut(BaseModel):
     id: int

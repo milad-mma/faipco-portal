@@ -237,6 +237,14 @@ export default function NewNoticePage() {
       setError("حداقل یک مخاطب (سایت، واحد یا شخص) انتخاب کنید.");
       return;
     }
+    if (!form.title.trim()) {
+      setError("عنوان اطلاعیه را وارد کنید.");
+      return;
+    }
+    if (!form.body.trim()) {
+      setError("متن اطلاعیه را وارد کنید.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -436,6 +444,7 @@ export default function NewNoticePage() {
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   onKeyDown={handleTitleKeyDown}
+                  required
                   fullWidth
                   disabled={isSubmitting}
                 />
@@ -444,6 +453,7 @@ export default function NewNoticePage() {
                   value={form.body}
                   onChange={(e) => setForm({ ...form, body: e.target.value })}
                   onKeyDown={handleBodyKeyDown}
+                  required
                   multiline
                   rows={3}
                   fullWidth
