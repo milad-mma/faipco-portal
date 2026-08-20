@@ -6,6 +6,7 @@ export async function fetchEmployees({
   search,
   includeInactive,
   includePortalDisabled,
+  hasRole,
   page,
   pageSize,
   sortBy,
@@ -22,6 +23,7 @@ export async function fetchEmployees({
   if (search) params.append("search", search);
   if (includeInactive) params.append("include_inactive", "true");
   if (includePortalDisabled) params.append("include_portal_disabled", "true");
+  if (hasRole) params.append("has_role", hasRole);
   if (page) params.append("page", page);
   if (pageSize) params.append("page_size", pageSize);
   if (sortBy) params.append("sort_by", sortBy);

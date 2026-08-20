@@ -34,7 +34,7 @@ from app.core.persian_date import get_current_jalali_year_month
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.employee import Employee
-from app.models.gps_activity_log import GpsLogType
+from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
 from app.models.user import User
@@ -224,17 +224,35 @@ async def list_all_logs(
     return GpsActivityLogPageOut(items=items, total=total, year=year, month=month)
 
 
+async def _check_clock_manage_access(db: AsyncSession, current_user: User, site_id: int | None) -> None:
+    """
+    برخلاف require_permission ساده (که فقط نقش‌های سراسری را می‌بیند)، اینجا
+    site_id واقعیِ پرسنل هدف چک می‌شود — یک hr-manager که فقط برای یک سایت
+    خاص انتصاب شده، باید بتواند برای همان سایت رکورد مدیریت کند، ولی برای
+    سایت‌های دیگر نه (حتی اگر permission code یکسان باشد).
+    """
+    if current_user.is_superuser:
+        return
+    codes = await UserRepository(db).get_permission_codes(current_user.id, site_id=site_id)
+    if "attendance.manage_clock_records" not in codes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="دسترسی لازم برای این عملیات را ندارید (این پرسنل خارج از محدوده سایت شماست)",
+        )
+
+
 @router.post("/logs", response_model=GpsActivityLogOut, status_code=status.HTTP_201_CREATED)
 async def create_manual_log(
     payload: GpsManualLogIn,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+    current_user: User = Depends(get_current_user),
 ):
     """افزودن دستی یک رکورد ورود/خروج — برای اصلاح موارد فراموش‌شده یا رفع
     خطا. بدون مختصات GPS واقعی؛ در گزارش با یک ستاره (is_manual) مشخص می‌شود."""
     employee = await db.get(Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _check_clock_manage_access(db, current_user, employee.site_id)
     try:
         log_type = GpsLogType(payload.log_type)
     except ValueError:
@@ -254,8 +272,14 @@ async def update_log(
     log_id: int,
     payload: GpsLogUpdateIn,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+    current_user: User = Depends(get_current_user),
 ):
+    existing = await db.get(GpsActivityLog, log_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
+    employee = await db.get(Employee, existing.employee_id)
+    await _check_clock_manage_access(db, current_user, employee.site_id if employee else None)
+
     log_type = None
     if payload.log_type is not None:
         try:
@@ -275,8 +299,14 @@ async def update_log(
 async def delete_log(
     log_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+    current_user: User = Depends(get_current_user),
 ):
+    existing = await db.get(GpsActivityLog, log_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
+    employee = await db.get(Employee, existing.employee_id)
+    await _check_clock_manage_access(db, current_user, employee.site_id if employee else None)
+
     deleted = await GpsAttendanceService(db).delete_log(log_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")

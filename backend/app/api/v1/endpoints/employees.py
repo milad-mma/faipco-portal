@@ -20,7 +20,7 @@ from app.core.security import WeakPasswordError
 from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.site import Site
-from app.models.user import User
+from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.employee import (
     BirthdayEmployeeOut,
@@ -59,6 +59,11 @@ async def list_employees(
     ),
     search: str | None = Query(
         default=None, description="جستجو در نام، نام خانوادگی، کد پرسنلی یا کد ملی"
+    ),
+    has_role: str | None = Query(
+        default=None,
+        description="فقط پرسنلی که این نقش (مثلاً attendance-pilot) را دارند — برای محدودکردن "
+        "جست‌وجوهایی که فقط باید بین پرسنل واجدشرایط یک قابلیت خاص باشند",
     ),
     include_inactive: bool = Query(
         default=False,
@@ -103,6 +108,14 @@ async def list_employees(
                     Employee.national_code.ilike(pattern),
                 )
             )
+        if has_role:
+            role_exists = (
+                select(UserRole.id)
+                .join(Role, Role.id == UserRole.role_id)
+                .join(User, User.id == UserRole.user_id)
+                .where(User.employee_id == Employee.id, Role.name == has_role)
+            )
+            stmt = stmt.where(role_exists.exists())
         return stmt
 
     count_stmt = apply_filters(

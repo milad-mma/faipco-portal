@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -11,7 +11,6 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  MenuItem,
   Pagination,
   Stack,
   Table,
@@ -41,22 +40,33 @@ import { fetchEmployees } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { useAuth } from "../context/AuthContext";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
 
 const PAGE_SIZE = 50;
+const ATTENDANCE_PILOT_ROLE = "attendance-pilot";
 
-// ورودی <input type="datetime-local"> رشته محلی بدون Timezone می‌خواهد (نه
-// ISO با Z) — این تابع یک Date را به همان فرمت تبدیل می‌کند.
-function toDatetimeLocalValue(date) {
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+// وقتی از دکمه «افزودن» کنار یک اسلات خالی (بدون ورود/بدون خروج) باز می‌شود،
+// پرسنل و نوع رکورد از قبل مشخص است — فقط تاریخ/ساعت باید تعیین شود. اگر
+// خودِ روز گذشته باشد، ساعت پیش‌فرض ۰۸:۰۰ منطقی‌تر از «همین لحظه» است.
+function buildPresetDate(dayDate) {
+  const d = new Date(dayDate);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return now;
+  d.setHours(8, 0, 0, 0);
+  return d;
 }
 
-function LogEditDialog({ open, onClose, onSaved, mode, initialLog, employeeOptions, siteOptions }) {
+function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteOptions }) {
+  // mode: "create" (دکمه بالای صفحه، انتخاب پرسنل آزاد) | "createForSlot"
+  // (آیکون + کنار یک اسلات خالی، پرسنل/نوع از قبل مشخص) | "edit"
   const [employee, setEmployee] = useState(null);
+  const [employeeOptions, setEmployeeOptions] = useState([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [logType, setLogType] = useState("check_in");
-  const [dateTimeLocal, setDateTimeLocal] = useState("");
+  const [dateValue, setDateValue] = useState(new Date());
   const [site, setSite] = useState(null);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -66,39 +76,49 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, employeeOptio
     setError("");
     if (mode === "edit" && initialLog) {
       setLogType(initialLog.log_type);
-      setDateTimeLocal(toDatetimeLocalValue(new Date(initialLog.created_at)));
+      setDateValue(new Date(initialLog.created_at));
       setSite(siteOptions.find((s) => s.id === initialLog.matched_site_id) || null);
       setEmployee(null);
+    } else if (mode === "createForSlot" && preset) {
+      setLogType(preset.logType);
+      setDateValue(buildPresetDate(preset.dayDate));
+      setSite(null);
+      setEmployee({ id: preset.employeeId, first_name: preset.employeeName, last_name: "", personnel_code: preset.personnelCode });
     } else {
       setLogType("check_in");
-      setDateTimeLocal(toDatetimeLocalValue(new Date()));
+      setDateValue(new Date());
       setSite(null);
       setEmployee(null);
     }
-  }, [open, mode, initialLog, siteOptions]);
+  }, [open, mode, initialLog, preset, siteOptions]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    // فقط پرسنلی که نقش attendance-pilot را دارند — چون فقط همان‌ها اصلاً
+    // مجاز به استفاده از این قابلیت هستند
+    fetchEmployees({ search: employeeSearch, pageSize: 20, hasRole: ATTENDANCE_PILOT_ROLE }).then((data) =>
+      setEmployeeOptions(data.items || [])
+    );
+  }, [mode, employeeSearch]);
 
   async function handleSave() {
     setError("");
-    if (mode === "create" && !employee) {
+    if (!employee) {
       setError("پرسنل را انتخاب کنید.");
-      return;
-    }
-    if (!dateTimeLocal) {
-      setError("تاریخ و ساعت را وارد کنید.");
       return;
     }
     setIsSaving(true);
     try {
-      const createdAtIso = new Date(dateTimeLocal).toISOString();
-      if (mode === "create") {
+      const createdAtIso = dateValue.toISOString();
+      if (mode === "edit") {
+        await updateAttendanceLog(initialLog.id, { logType, createdAt: createdAtIso, siteId: site?.id || null });
+      } else {
         await createManualAttendanceLog({
           employeeId: employee.id,
           logType,
           createdAt: createdAtIso,
           siteId: site?.id || null,
         });
-      } else {
-        await updateAttendanceLog(initialLog.id, { logType, createdAt: createdAtIso, siteId: site?.id || null });
       }
       onSaved();
     } catch (err) {
@@ -108,32 +128,57 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, employeeOptio
     }
   }
 
+  const employeeIsLocked = mode === "createForSlot" || mode === "edit";
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>{mode === "create" ? "افزودن رکورد دستی" : "ویرایش رکورد"}</DialogTitle>
+      <DialogTitle>
+        {mode === "create" && "افزودن رکورد دستی"}
+        {mode === "createForSlot" && "ثبت رکورد"}
+        {mode === "edit" && "ویرایش رکورد"}
+      </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
-        {mode === "create" && (
+
+        {employeeIsLocked ? (
+          <TextField
+            label="پرسنل"
+            value={
+              mode === "edit"
+                ? `${initialLog?.employee_name || ""} (${initialLog?.personnel_code || ""})`
+                : `${employee?.first_name || ""} (${employee?.personnel_code || ""})`
+            }
+            disabled
+          />
+        ) : (
           <Autocomplete
             options={employeeOptions}
             getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}
             value={employee}
             onChange={(_, value) => setEmployee(value)}
-            renderInput={(params) => <TextField {...params} label="پرسنل" autoFocus />}
+            onInputChange={(_, value) => setEmployeeSearch(value)}
+            renderInput={(params) => (
+              <TextField {...params} label="پرسنل (فقط دارای دسترسی ثبت ورود/خروج)" autoFocus />
+            )}
             isOptionEqualToValue={(o, v) => o.id === v.id}
+            noOptionsText="پرسنلی با این مشخصات (و دسترسی ثبت ورود/خروج) پیدا نشد"
           />
         )}
-        <TextField select label="نوع رکورد" value={logType} onChange={(e) => setLogType(e.target.value)}>
-          <MenuItem value="check_in">ورود</MenuItem>
-          <MenuItem value="check_out">خروج</MenuItem>
-        </TextField>
+
         <TextField
-          label="تاریخ و ساعت"
-          type="datetime-local"
-          value={dateTimeLocal}
-          onChange={(e) => setDateTimeLocal(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-        />
+          select
+          label="نوع رکورد"
+          value={logType}
+          onChange={(e) => setLogType(e.target.value)}
+          disabled={mode === "createForSlot"}
+          SelectProps={{ native: true }}
+        >
+          <option value="check_in">ورود</option>
+          <option value="check_out">خروج</option>
+        </TextField>
+
+        <JalaliDateTimePicker value={dateValue} onChange={setDateValue} label="تاریخ و ساعت (شمسی)" />
+
         <Autocomplete
           options={siteOptions}
           getOptionLabel={(o) => o.name}
@@ -153,9 +198,22 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, employeeOptio
   );
 }
 
-function LogChip({ log, type, canManage, onEdit, onDelete }) {
+function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
   if (!log) {
-    return <Chip size="small" variant="outlined" label={type === "in" ? "بدون ورود" : "بدون خروج"} />;
+    if (!canManage) {
+      return (
+        <Typography variant="caption" color="text.secondary">
+          —
+        </Typography>
+      );
+    }
+    return (
+      <Tooltip title={type === "in" ? "ثبت ورود" : "ثبت خروج"}>
+        <IconButton size="small" onClick={() => onAdd(row, type)}>
+          <AddCircleOutlineIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    );
   }
   const timeLabel = new Date(log.created_at).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
   return (
@@ -202,8 +260,9 @@ export default function ClockInOutReportPage() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [siteOptions, setSiteOptions] = useState([]);
 
-  const [dialogMode, setDialogMode] = useState(null); // "create" | "edit" | null
+  const [dialogMode, setDialogMode] = useState(null); // "create" | "createForSlot" | "edit" | null
   const [editingLog, setEditingLog] = useState(null);
+  const [slotPreset, setSlotPreset] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -246,6 +305,7 @@ export default function ClockInOutReportPage() {
   function handleSaved() {
     setDialogMode(null);
     setEditingLog(null);
+    setSlotPreset(null);
     setReloadKey((k) => k + 1);
   }
 
@@ -256,7 +316,27 @@ export default function ClockInOutReportPage() {
     setReloadKey((k) => k + 1);
   }
 
+  function handleAddMissing(row, type) {
+    setSlotPreset({
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      personnelCode: row.personnelCode,
+      logType: type === "in" ? "check_in" : "check_out",
+      dayDate: row.sessions[0]?.checkIn?.created_at || row.sessions[0]?.checkOut?.created_at || new Date(),
+    });
+    setDialogMode("createForSlot");
+  }
+
   const pageRows = groupedRows ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : null;
+
+  // تعداد ستون‌های ورود/خروج پویا است — بر اساس بیشترین تعداد نوبت در بین
+  // ردیف‌های همین صفحه، نه یک عدد ثابت. اگر یک پرسنل آن روز ۳ بار ورود/خروج
+  // زده باشد، ۳ زوج ستون نشان داده می‌شود؛ ردیف‌های دیگر همان ستون‌های اضافه
+  // را خالی می‌بینند.
+  const maxSessions = useMemo(() => {
+    if (!pageRows) return 1;
+    return Math.max(1, ...pageRows.map((r) => r.sessions.length));
+  }, [pageRows]);
 
   return (
     <Box>
@@ -273,6 +353,7 @@ export default function ClockInOutReportPage() {
             onClick={() => {
               setDialogMode("create");
               setEditingLog(null);
+              setSlotPreset(null);
             }}
           >
             افزودن رکورد دستی
@@ -317,13 +398,16 @@ export default function ClockInOutReportPage() {
         <Alert severity="info">هیچ رکوردی پیدا نشد.</Alert>
       ) : (
         <>
-          <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+          <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, overflowX: "auto" }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
                   <TableCell>تاریخ</TableCell>
-                  <TableCell>ورود/خروج‌ها</TableCell>
+                  {Array.from({ length: maxSessions }, (_, i) => i).flatMap((i) => [
+                    <TableCell key={`h-in-${i}`}>{maxSessions > 1 ? `ورود ${i + 1}` : "ورود"}</TableCell>,
+                    <TableCell key={`h-out-${i}`}>{maxSessions > 1 ? `خروج ${i + 1}` : "خروج"}</TableCell>,
+                  ])}
                   <TableCell>سایت مطابق</TableCell>
                 </TableRow>
               </TableHead>
@@ -337,34 +421,39 @@ export default function ClockInOutReportPage() {
                       </Typography>
                     </TableCell>
                     <TableCell sx={monoFontSx}>{row.dateLabel}</TableCell>
-                    <TableCell>
-                      <Stack spacing={0.75}>
-                        {row.sessions.map((session, sessionIndex) => (
-                          <Stack key={sessionIndex} direction="row" spacing={1} flexWrap="wrap" rowGap={0.5}>
-                            <LogChip
-                              log={session.checkIn}
-                              type="in"
-                              canManage={canManage}
-                              onEdit={(log) => {
-                                setDialogMode("edit");
-                                setEditingLog(log);
-                              }}
-                              onDelete={(log) => setDeleteTarget(log)}
-                            />
-                            <LogChip
-                              log={session.checkOut}
-                              type="out"
-                              canManage={canManage}
-                              onEdit={(log) => {
-                                setDialogMode("edit");
-                                setEditingLog(log);
-                              }}
-                              onDelete={(log) => setDeleteTarget(log)}
-                            />
-                          </Stack>
-                        ))}
-                      </Stack>
-                    </TableCell>
+                    {Array.from({ length: maxSessions }, (_, i) => i).flatMap((i) => {
+                      const session = row.sessions[i];
+                      return [
+                        <TableCell key={`in-${i}`}>
+                          <LogCell
+                            log={session?.checkIn}
+                            type="in"
+                            canManage={canManage}
+                            row={row}
+                            onEdit={(log) => {
+                              setDialogMode("edit");
+                              setEditingLog(log);
+                            }}
+                            onAdd={handleAddMissing}
+                            onDelete={(log) => setDeleteTarget(log)}
+                          />
+                        </TableCell>,
+                        <TableCell key={`out-${i}`}>
+                          <LogCell
+                            log={session?.checkOut}
+                            type="out"
+                            canManage={canManage}
+                            row={row}
+                            onEdit={(log) => {
+                              setDialogMode("edit");
+                              setEditingLog(log);
+                            }}
+                            onAdd={handleAddMissing}
+                            onDelete={(log) => setDeleteTarget(log)}
+                          />
+                        </TableCell>,
+                      ];
+                    })}
                     <TableCell>
                       {row.sessions[0]?.checkIn?.matched_site_name || row.sessions[0]?.checkOut?.matched_site_name || "—"}
                     </TableCell>
@@ -391,11 +480,12 @@ export default function ClockInOutReportPage() {
         open={dialogMode !== null}
         mode={dialogMode}
         initialLog={editingLog}
-        employeeOptions={employeeOptions}
+        preset={slotPreset}
         siteOptions={siteOptions}
         onClose={() => {
           setDialogMode(null);
           setEditingLog(null);
+          setSlotPreset(null);
         }}
         onSaved={handleSaved}
       />
