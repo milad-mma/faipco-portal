@@ -564,6 +564,16 @@ server {
         try_files \$uri =404;
     }
 
+    location = /.well-known/assetlinks.json {
+        # برای تأیید مالکیت دامنه توسط اپلیکیشن اندروید بسته‌بندی‌شده با
+        # TWA (Trusted Web Activity) — بدون این، اندروید نمی‌تواند تشخیص
+        # بدهد این اپ و این دامنه واقعاً مال یک صاحب هستند، و TWA در حالت
+        # Fallback (با نوار آدرس مرورگر، نه تمام‌صفحه واقعی) اجرا می‌شود.
+        default_type application/json;
+        add_header Cache-Control "no-cache, must-revalidate";
+        try_files \$uri =404;
+    }
+
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;

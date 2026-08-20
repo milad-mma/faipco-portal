@@ -115,12 +115,12 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
           <>
             {usesNationalCode && (
               <Alert severity="info">
-                شما هنوز رمز عبور اختصاصی تعیین نکرده‌اید. در فیلد «رمز عبور فعلی»، همان کد ملی
-                خودتان را وارد کنید.
+                شما هنوز رمز عبور اختصاصی تعیین نکرده‌اید. در فیلد «رمز عبور فعلی»، همان اطلاعاتی
+                که برای ورود استفاده می‌کنید را وارد کنید.
               </Alert>
             )}
             <TextField
-              label={usesNationalCode ? "رمز عبور فعلی (کد ملی)" : "رمز عبور فعلی"}
+              label="رمز عبور فعلی"
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}

@@ -148,7 +148,7 @@ class AuthService:
                 or not employee.national_code
                 or current_password.strip() != employee.national_code.strip()
             ):
-                raise AuthError("کد ملی وارد شده اشتباه است")
+                raise AuthError("رمز عبور فعلی وارد شده اشتباه است")
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
         """
@@ -189,6 +189,15 @@ class AuthService:
         base.can_view_attendance_logs = user.is_superuser or "attendance.view_logs" in permission_codes
         base.can_view_clock_records = user.is_superuser or "attendance.view_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
+        # کد ملی هم خودش یک اعتبار ضعیف است (جاهای زیادی در دسترس است، قابل
+        # تغییر/چرخش نیست) — پس هر پرسنلی که هنوز رمز اختصاصی تعیین نکرده
+        # (همچنان با کد ملی وارد می‌شود)، صرف‌نظر از مقدار ذخیره‌شده در
+        # دیتابیس، باید مجبور به تعیین یک رمز واقعی شود. این مقدار همیشه
+        # محاسبه‌شده است، نه صرفاً یک فلگ ثابت — چون هیچ Migration ای برای
+        # «همه پرسنلی که هنوز حساب کاربری نساخته‌اند» عملی نیست (حساب‌شان
+        # فقط موقع اولین ورود واقعی خودکار ساخته می‌شود).
+        if user.employee_id is not None and not user.has_custom_password:
+            base.must_change_password = True
         if user.employee_id is None:
             return base
 

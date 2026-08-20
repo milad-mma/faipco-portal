@@ -79,7 +79,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
     try {
       await setEmployeePassword(employee.id, password);
       setSuccess(
-        "رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — کد ملی دیگر کار نمی‌کند. این پرسنل بعد از اولین ورود موفق، مجبور به تعیین یک رمز جدید (که فقط خودش می‌داند) خواهد شد."
+        "رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — روش قبلی ورود دیگر کار نمی‌کند. این پرسنل بعد از اولین ورود موفق، مجبور به تعیین یک رمز جدید (که فقط خودش می‌داند) خواهد شد."
       );
       onChanged?.();
     } catch (err) {
@@ -90,12 +90,12 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
   }
 
   async function handleReset() {
-    if (!window.confirm("رمز عبور اختصاصی این پرسنل حذف شود و ورود دوباره با کد ملی فعال شود؟")) return;
+    if (!window.confirm("رمز عبور اختصاصی این پرسنل حذف شود و روش ورود پیش‌فرض دوباره فعال شود؟")) return;
     setIsSaving(true);
     setError("");
     try {
       await resetEmployeePassword(employee.id);
-      setSuccess("بازگردانده شد — این پرسنل از این پس دوباره با کد پرسنلی + کد ملی وارد می‌شود.");
+      setSuccess("بازگردانده شد — این پرسنل از این پس دوباره با روش ورود پیش‌فرض وارد می‌شود.");
       onChanged?.();
     } catch (err) {
       setError(err.response?.data?.detail || "بازگرداندن ناموفق بود.");
@@ -110,7 +110,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         رمز عبور ورود — {employee.first_name} {employee.last_name}
         <Typography variant="caption" color="text.secondary" display="block">
           کد پرسنلی: {employee.personnel_code} — روش فعلی ورود:{" "}
-          {employee.has_custom_password ? "رمز عبور اختصاصی" : "کد ملی (پیش‌فرض)"}
+          {employee.has_custom_password ? "رمز عبور اختصاصی" : "روش پیش‌فرض (بدون رمز اختصاصی)"}
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
@@ -141,7 +141,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         <Box>
           {!success && employee.has_custom_password && (
             <Button color="warning" onClick={handleReset} disabled={isSaving}>
-              بازگشت به ورود با کد ملی
+              بازگشت به روش ورود پیش‌فرض
             </Button>
           )}
         </Box>

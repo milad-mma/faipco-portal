@@ -67,6 +67,7 @@ cd frontend && npm install && npm run dev
 | [`docs/birthday-greetings.md`](docs/birthday-greetings.md) | پیام‌های تبریک تولد (ارسال خودکار روزانه) |
 | [`docs/backup.md`](docs/backup.md) | پشتیبان‌گیری و بازیابی از پنل |
 | [`docs/pwa.md`](docs/pwa.md) | PWA، Service Worker، و مشکلات نصب روی اندروید/iOS |
+| [`docs/android-app-twa.md`](docs/android-app-twa.md) | ⚠️ بسته‌بندی به اپلیکیشن اندروید واقعی (TWA) — رفع محدودیت نصب مرورگری |
 | [`docs/reverse-proxy-firewall.md`](docs/reverse-proxy-firewall.md) | ⚠️ محدودکردن دسترسی مستقیم به سرور (یافته امنیتی واقعی) |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | تصمیم‌های طراحی آگاهانه |
 
