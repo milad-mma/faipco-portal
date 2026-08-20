@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -13,22 +14,56 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
-import { fetchNoticeReaders } from "../api/notices";
+import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
+import { fetchNoticeReaders, resendNoticePush } from "../api/notices";
 import { monoFontSx } from "../theme";
 
 export default function NoticeReadersDialog({ noticeId, onClose }) {
   const [readers, setReaders] = useState([]);
+  const [isResending, setIsResending] = useState(false);
+  const [resendResult, setResendResult] = useState(null); // { success, message } | null
 
   useEffect(() => {
     if (noticeId) {
+      setReaders([]);
+      setResendResult(null);
       fetchNoticeReaders(noticeId).then(setReaders);
     }
   }, [noticeId]);
+
+  async function handleResendClick() {
+    const confirmed = window.confirm(
+      "این اعلان فقط برای کسانی که هنوز این اطلاعیه را نخوانده‌اند دوباره ارسال می‌شود — کسانی که قبلاً دیده‌اند، اعلان جدیدی دریافت نمی‌کنند. ادامه می‌دهید؟"
+    );
+    if (!confirmed) return;
+
+    setResendResult(null);
+    setIsResending(true);
+    try {
+      const { sent_count } = await resendNoticePush(noticeId);
+      setResendResult({
+        success: true,
+        message:
+          sent_count > 0
+            ? `اعلان مجدداً برای ${sent_count} نفر ارسال شد.`
+            : "همه مخاطبان این اطلاعیه را قبلاً دیده‌اند — چیزی برای ارسال مجدد نبود.",
+      });
+    } catch (err) {
+      setResendResult({ success: false, message: err.response?.data?.detail || "ارسال مجدد اعلان ناموفق بود." });
+    } finally {
+      setIsResending(false);
+    }
+  }
 
   return (
     <Dialog open={Boolean(noticeId)} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>چه کسانی این اطلاعیه را دیده‌اند</DialogTitle>
       <DialogContent>
+        {resendResult && (
+          <Alert severity={resendResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+            {resendResult.message}
+          </Alert>
+        )}
         {readers.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
             هنوز کسی این اطلاعیه را باز نکرده است.
@@ -59,6 +94,13 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
         )}
       </DialogContent>
       <DialogActions sx={{ p: 2.5 }}>
+        <Button
+          startIcon={<NotificationsActiveOutlinedIcon />}
+          onClick={handleResendClick}
+          disabled={isResending}
+        >
+          {isResending ? "در حال ارسال..." : "ارسال مجدد اعلان"}
+        </Button>
         <Button onClick={onClose}>بستن</Button>
       </DialogActions>
     </Dialog>

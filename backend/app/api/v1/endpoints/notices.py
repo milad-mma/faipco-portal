@@ -171,6 +171,31 @@ async def notice_readers(
     return await NoticeService(db).get_notice_readers(notice_id)
 
 
+@router.post("/{notice_id}/resend-push")
+async def resend_notice_push(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ارسال دوباره Push — فقط خودِ Push، نه خودِ اطلاعیه (که هیچ تغییری
+    نمی‌کند)، و فقط برای کسانی که هنوز این اطلاعیه را باز نکرده‌اند. مجوز
+    دقیقاً مثل حذف اطلاعیه (فقط فرستنده یا Admin) داخل خودِ Service چک
+    می‌شود. از همان محدودیت «حداکثر هر ۶۰ ثانیه یک بار» بقیه مسیرهای ارسال
+    واقعی استفاده می‌کند — تا کلیک پیاپی این دکمه هم کاربران را با ارسال
+    Push پشت‌سرهم اذیت نکند.
+    """
+    await _enforce_message_rate_limit(db, current_user.id)
+    try:
+        sent_count = await NoticeService(db).resend_push(notice_id, current_user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except NoticePermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    await record_message_sent(db, current_user.id)
+    return {"sent_count": sent_count}
+
+
 @router.delete("/{notice_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_notice(
     notice_id: int,

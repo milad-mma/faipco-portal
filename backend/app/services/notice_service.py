@@ -788,3 +788,47 @@ class NoticeService:
             )
             for row in result.all()
         ]
+
+    async def resend_push(self, notice_id: int, current_user: User) -> int:
+        """
+        ارسال دوباره Push — فقط خودِ Push (نه خودِ اطلاعیه، که هیچ تغییری
+        نمی‌کند)، و فقط به کسانی که هنوز این اطلاعیه را باز نکرده‌اند (نه
+        کل مخاطبان اولیه — تا کسانی که قبلاً دیده‌اند دوباره اذیت نشوند).
+
+        فقط خودِ فرستنده یا superuser اجازه دارد — دقیقاً همان مجوز حذف.
+
+        عدد برگشتی، تعداد نفراتی است که Push برایشان ارسال شد (نه لزوماً
+        تعداد کسانی که واقعاً دریافت کردند — Web Push هیچ تأییدیه تحویل
+        واقعی به سرور برنمی‌گرداند).
+        """
+        result = await self.db.execute(
+            select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
+        )
+        notice = result.scalar_one_or_none()
+        if notice is None:
+            raise ValueError("اطلاعیه یافت نشد")
+        if notice.sender_id != current_user.id and not current_user.is_superuser:
+            raise NoticePermissionError("شما اجازه ارسال مجدد اعلان این اطلاعیه را ندارید")
+        if notice.is_deleted:
+            raise NoticePermissionError("این اطلاعیه حذف شده — امکان ارسال مجدد اعلان نیست")
+
+        full_audience = await self._resolve_audience_user_ids(notice)
+
+        read_result = await self.db.execute(
+            select(NoticeRead.user_id).where(NoticeRead.notice_id == notice_id)
+        )
+        already_read_ids = {row[0] for row in read_result.all()}
+
+        unread_user_ids = full_audience - already_read_ids
+        if not unread_user_ids:
+            return 0
+
+        await PushService(self.db).notify_users(
+            unread_user_ids,
+            title=notice.title,
+            body=notice.body,
+            url="/notices",
+            priority=notice.priority.value,
+            notice_type=notice.notice_type.value,
+        )
+        return len(unread_user_ids)

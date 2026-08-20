@@ -49,6 +49,11 @@ export async function fetchNoticeReaders(noticeId) {
   return data;
 }
 
+export async function resendNoticePush(noticeId) {
+  const { data } = await apiClient.post(`/notices/${noticeId}/resend-push`);
+  return data; // { sent_count }
+}
+
 export async function deleteNotice(noticeId) {
   await apiClient.delete(`/notices/${noticeId}`);
 }
