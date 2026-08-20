@@ -1,11 +1,17 @@
 import { Box, Typography } from "@mui/material";
-import faipcoLogo from "../assets/faipco-logo.png";
 
 /**
- * اسپلش‌اسکرین برند — پس‌زمینه سفید، لوگو وسط، و نام شرکت زیرش. حدود ۲ ثانیه
- * روی صفحه اصلی برنامه (App.jsx) نمایش داده می‌شود و بعد با یک Fade کوتاه
- * محو می‌شود. هم در حالت نصب‌شده (PWA/Standalone) و هم در مرورگر عادی دیده
- * می‌شود، تا اولین تجربه‌ی باز کردن اپ همیشه یکدست و برندشده باشد.
+ * اسپلش‌اسکرین برند — پس‌زمینه سفید، لوگو وسط، و نام شرکت زیرش. تا وقتی اپ
+ * واقعاً آماده است (نه یک تایمر ثابت دلخواه) روی صفحه اصلی برنامه
+ * (App.jsx) نمایش داده می‌شود و بعد با یک Fade کوتاه محو می‌شود.
+ *
+ * دو نکته عمدی برای جلوگیری از «دیر ظاهرشدن لوگو/فونت»:
+ *   - لوگو یک مسیر ثابت (public/faipco-logo.png) است، نه یک Import داخل
+ *     JS — همراه با یک <link rel="preload"> در index.html، دانلودش همان
+ *     لحظه شروع Parse شدن HTML آغاز می‌شود، نه بعد از کامل‌شدن باندل JS.
+ *   - متن زیر لوگو عمداً از فونت سیستم استفاده می‌کند (نه فونت وزیرمتن
+ *     سفارشی که باید دانلود شود) — چون این متن فقط چند ثانیه دیده می‌شود،
+ *     نمایش فوری با فونت سیستم بهتر از یک تعویض فونت محسوس وسط اسپلش است.
  */
 export default function SplashScreen({ visible }) {
   return (
@@ -27,15 +33,24 @@ export default function SplashScreen({ visible }) {
     >
       <Box
         component="img"
-        src={faipcoLogo}
+        src="/faipco-logo.png"
         alt="FAIPCO"
         sx={{ width: { xs: 120, sm: 150 }, height: { xs: 120, sm: 150 }, objectFit: "contain" }}
       />
       <Box sx={{ textAlign: "center" }}>
-        <Typography variant="subtitle1" fontWeight={700} color="#16324F">
+        <Typography
+          variant="subtitle1"
+          fontWeight={700}
+          color="#16324F"
+          sx={{ fontFamily: "Tahoma, sans-serif" }}
+        >
           شرکت تولیدی صنعتی فواد الیاف
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
+        >
           FAIPCO Portal
         </Typography>
       </Box>

@@ -107,10 +107,10 @@ export default function LoginPage() {
             component="img"
             src={faipcoLogo}
             alt="FAIPCO"
-            sx={{ width: 88, height: 88, objectFit: "contain", mb: 1.5 }}
+            sx={{ width: 128, height: 128, objectFit: "contain", mb: 1.5 }}
           />
           <Typography variant="h6" fontWeight={700}>
-            ورود به پرتال فایپکو
+            پرتال سازمانی پرسنل
           </Typography>
           <Typography variant="body2" color="text.secondary">
             شرکت تولیدی صنعتی فوادالیاف

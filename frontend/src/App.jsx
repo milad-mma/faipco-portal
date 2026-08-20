@@ -5,6 +5,7 @@ import AdminRoute from "./components/AdminRoute";
 import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
 import SplashScreen from "./components/SplashScreen";
+import { useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
@@ -26,25 +27,26 @@ import ClockInOutReportPage from "./pages/ClockInOutReportPage";
 import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
-const SPLASH_DURATION_MS = 2000;
 const SPLASH_FADE_MS = 400;
 
 export default function App() {
+  // به‌جای یک تایمر ثابت دلخواه (که قبلاً همیشه ۲ ثانیه صبر می‌کرد، حتی
+  // وقتی اپ زودتر آماده بود، و باعث می‌شد هر صفحه‌ای — از جمله «اطلاعیه
+  // جدید» اگر کاربر رویش Refresh می‌زد — با یک تأخیر ثابت و بی‌دلیل باز
+  // شود)، اسپلش دقیقاً تا وقتی isLoading واقعی احراز هویت (چک اولیه
+  // Session) تمام شود نمایش داده می‌شود — نه بیشتر، نه کمتر.
+  const { isLoading } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
-  const [splashVisible, setSplashVisible] = useState(true);
 
   useEffect(() => {
-    const hideTimer = setTimeout(() => setSplashVisible(false), SPLASH_DURATION_MS);
-    const removeTimer = setTimeout(() => setShowSplash(false), SPLASH_DURATION_MS + SPLASH_FADE_MS);
-    return () => {
-      clearTimeout(hideTimer);
-      clearTimeout(removeTimer);
-    };
-  }, []);
+    if (isLoading) return;
+    const removeTimer = setTimeout(() => setShowSplash(false), SPLASH_FADE_MS);
+    return () => clearTimeout(removeTimer);
+  }, [isLoading]);
 
   return (
     <>
-      {showSplash && <SplashScreen visible={splashVisible} />}
+      {showSplash && <SplashScreen visible={isLoading} />}
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 

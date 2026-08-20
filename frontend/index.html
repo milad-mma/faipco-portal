@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FAIPCO Portal</title>
+    <!-- لوگو صفحه اسپلش را همان لحظه شروع Parse شدن HTML (نه بعد از دانلود
+         کامل و اجرای JS) پیش‌بارگذاری می‌کند — علت اصلی «دیر ظاهرشدن لوگو
+         در اسپلش» این بود که قبلاً به‌صورت Import داخل JS بود، پس تا باندل
+         JS کامل دانلود/Parse نمی‌شد، اصلاً درخواستش هم شروع نمی‌شد. -->
+    <link rel="preload" as="image" href="/faipco-logo.png" />
 
     <!-- PWA -->
     <!-- نکته: نسخه قبلی این لینک یک ?v=2 برای Cache Busting داشت — حذف شد،
@@ -21,6 +26,24 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- اسپلش‌اسکرین بومی iOS — دقیقاً پس‌زمینه سفید (مثل SplashScreen.jsx)
+         تا گذار بین این و اسپلش سفارشی React کاملاً بی‌درز باشد، نه یک
+         فلاش/پرش محسوس. بدون این، iOS برای هر مدل گوشی حدس متفاوتی
+         می‌زند — دقیقاً همان چیزی که باعث می‌شد روی iPhone 12 Pro Max
+         تمام‌صفحه نباشد. -->
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1170-2532.png"
+          media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1284-2778.png"
+          media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1179-2556.png"
+          media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1290-2796.png"
+          media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1080-2340.png"
+          media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-750-1334.png"
+          media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="FAIPCO" />
