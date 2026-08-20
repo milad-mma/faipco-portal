@@ -62,3 +62,26 @@ export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeI
   });
   return data; // { items, total }
 }
+
+export async function createManualAttendanceLog({ employeeId, logType, createdAt, siteId }) {
+  const { data } = await apiClient.post("/attendance/logs", {
+    employee_id: employeeId,
+    log_type: logType,
+    created_at: createdAt,
+    site_id: siteId || null,
+  });
+  return data;
+}
+
+export async function updateAttendanceLog(logId, { logType, createdAt, siteId } = {}) {
+  const { data } = await apiClient.put(`/attendance/logs/${logId}`, {
+    log_type: logType || undefined,
+    created_at: createdAt || undefined,
+    site_id: siteId ?? undefined,
+  });
+  return data;
+}
+
+export async function deleteAttendanceLog(logId) {
+  await apiClient.delete(`/attendance/logs/${logId}`);
+}

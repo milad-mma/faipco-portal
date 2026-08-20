@@ -22,12 +22,13 @@ class GpsCheckResultOut(BaseModel):
 class GpsActivityLogOut(BaseModel):
     id: int
     log_type: str
-    latitude: float
-    longitude: float
+    latitude: float | None
+    longitude: float | None
     accuracy_meters: float | None
     matched_site_id: int | None
     distance_meters: float | None
     is_within_geofence: bool
+    is_manual: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -53,6 +54,25 @@ class MyClockLogsOut(BaseModel):
     items: list[GpsActivityLogOut]
     year: int
     month: int
+
+
+class GpsManualLogIn(BaseModel):
+    """افزودن دستی یک رکورد ورود/خروج توسط Admin/hr-manager — بدون مختصات
+    GPS واقعی (چون خودِ پرسنل آنجا نبوده که ثبت کند)."""
+
+    employee_id: int
+    log_type: str  # "check_in" یا "check_out"
+    created_at: datetime
+    site_id: int | None = None
+
+
+class GpsLogUpdateIn(BaseModel):
+    """ویرایش دستی یک رکورد موجود — هر فیلد اختیاری است (فقط همان‌هایی که
+    داده شوند تغییر می‌کنند)."""
+
+    log_type: str | None = None
+    created_at: datetime | None = None
+    site_id: int | None = None
 
 
 class PresenceSessionAdminOut(BaseModel):

@@ -8,6 +8,10 @@
 /attendance/logs         (GET)   گزارش کامل Admin/hr-manager — همه لاگ‌ها (حضور
                                   دوره‌ای + ورود/خروج) برای همه پرسنل، Paginated —
                                   فقط با مجوز attendance.view_clock_records
+/attendance/logs         (POST)  افزودن دستی یک رکورد ورود/خروج — فقط با مجوز
+                                  attendance.manage_clock_records
+/attendance/logs/{id}    (PUT)   ویرایش دستی یک رکورد — همان مجوز بالا
+/attendance/logs/{id}    (DELETE) حذف یک رکورد — همان مجوز بالا
 /attendance/presence-ws  (WS)    نشانگر زنده «آنلاین/آفلاین» — دقیقاً مثل یک
                                   سیستم چت: وصل‌شدن Socket = شروع Session،
                                   قطع‌شدن (بستن تب/قطعی شبکه/هرچیز دیگر) =
@@ -40,6 +44,8 @@ from app.schemas.gps_attendance import (
     GpsActivityLogOut,
     GpsActivityLogPageOut,
     GpsCheckResultOut,
+    GpsLogUpdateIn,
+    GpsManualLogIn,
     GpsPositionIn,
     MyClockLogsOut,
     PresenceSessionAdminOut,
@@ -206,6 +212,7 @@ async def list_all_logs(
                 matched_site_id=log.matched_site_id,
                 distance_meters=log.distance_meters,
                 is_within_geofence=log.is_within_geofence,
+                is_manual=log.is_manual,
                 created_at=log.created_at,
                 employee_id=log.employee_id,
                 employee_name=employee_name,
@@ -215,6 +222,64 @@ async def list_all_logs(
         )
 
     return GpsActivityLogPageOut(items=items, total=total, year=year, month=month)
+
+
+@router.post("/logs", response_model=GpsActivityLogOut, status_code=status.HTTP_201_CREATED)
+async def create_manual_log(
+    payload: GpsManualLogIn,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+):
+    """افزودن دستی یک رکورد ورود/خروج — برای اصلاح موارد فراموش‌شده یا رفع
+    خطا. بدون مختصات GPS واقعی؛ در گزارش با یک ستاره (is_manual) مشخص می‌شود."""
+    employee = await db.get(Employee, payload.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    try:
+        log_type = GpsLogType(payload.log_type)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="نوع رکورد نامعتبر است")
+
+    log = await GpsAttendanceService(db).create_manual_log(
+        employee_id=payload.employee_id,
+        log_type=log_type,
+        created_at=payload.created_at,
+        site_id=payload.site_id,
+    )
+    return GpsActivityLogOut.model_validate(log)
+
+
+@router.put("/logs/{log_id}", response_model=GpsActivityLogOut)
+async def update_log(
+    log_id: int,
+    payload: GpsLogUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+):
+    log_type = None
+    if payload.log_type is not None:
+        try:
+            log_type = GpsLogType(payload.log_type)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="نوع رکورد نامعتبر است")
+
+    log = await GpsAttendanceService(db).update_log(
+        log_id, log_type=log_type, created_at=payload.created_at, site_id=payload.site_id
+    )
+    if log is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
+    return GpsActivityLogOut.model_validate(log)
+
+
+@router.delete("/logs/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_log(
+    log_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("attendance.manage_clock_records")),
+):
+    deleted = await GpsAttendanceService(db).delete_log(log_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
 
 
 async def _authenticate_websocket_user(token: str) -> User | None:

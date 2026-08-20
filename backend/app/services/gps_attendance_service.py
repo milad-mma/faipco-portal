@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,8 @@ from app.core.persian_date import jalali_month_range_utc
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
+
+DUPLICATE_WINDOW_MINUTES = 2
 
 
 class GpsAttendanceError(Exception):
@@ -122,7 +124,28 @@ class GpsAttendanceService:
         """
         برخلاف log_presence، اینجا اگر خارج از محدوده مجاز باشد، عملاً ثبت
         رد می‌شود (Exception) — چون ورود/خروج باید واقعاً از محل کارخانه باشد.
+
+        همچنین اگر همین پرسنل کمتر از ۲ دقیقه پیش از همین نوع (فقط ورود با
+        ورود، یا فقط خروج با خروج — نه ورود با خروج) ثبت کرده باشد، رد
+        می‌شود — جلوگیری از رکورد تکراری با کلیک‌های پیاپی/تصادفی.
         """
+        recent_duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
+        result = await self.db.execute(
+            select(GpsActivityLog.id)
+            .where(
+                GpsActivityLog.employee_id == employee_id,
+                GpsActivityLog.log_type == log_type,
+                GpsActivityLog.created_at >= recent_duplicate_cutoff,
+            )
+            .limit(1)
+        )
+        if result.scalar_one_or_none() is not None:
+            action_fa = "ورود" if log_type == GpsLogType.check_in else "خروج"
+            raise GpsAttendanceError(
+                f"شما همین چند لحظه پیش یک ثبت {action_fa} انجام داده‌اید — برای جلوگیری از ثبت "
+                f"تکراری، هر {DUPLICATE_WINDOW_MINUTES} دقیقه فقط یک بار امکان ثبت {action_fa} وجود دارد."
+            )
+
         geofence = await check_geofence(self.db, site_id, latitude, longitude)
         if not geofence.is_within and geofence.matched_site is not None:
             distance_text = f"{int(geofence.distance_meters)} متر" if geofence.distance_meters else "نامشخص"
@@ -140,6 +163,67 @@ class GpsAttendanceService:
             accuracy_meters=accuracy_meters,
             site_id=site_id,
         )
+
+    async def create_manual_log(
+        self,
+        *,
+        employee_id: int,
+        log_type: GpsLogType,
+        created_at: datetime,
+        site_id: int | None,
+    ) -> GpsActivityLog:
+        """Admin/hr-manager یک رکورد را دستی اضافه می‌کند — بدون مختصات GPS
+        واقعی (چون خودِ پرسنل آنجا نبوده)، با is_manual=True تا در گزارش با
+        یک ستاره مشخص شود."""
+        log = GpsActivityLog(
+            employee_id=employee_id,
+            log_type=log_type,
+            latitude=None,
+            longitude=None,
+            accuracy_meters=None,
+            matched_site_id=site_id,
+            distance_meters=None,
+            is_within_geofence=True,
+            is_manual=True,
+            created_at=created_at,
+        )
+        self.db.add(log)
+        await self.db.commit()
+        await self.db.refresh(log)
+        return log
+
+    async def update_log(
+        self,
+        log_id: int,
+        *,
+        log_type: GpsLogType | None = None,
+        created_at: datetime | None = None,
+        site_id: int | None = None,
+    ) -> GpsActivityLog | None:
+        """ویرایش دستی یک رکورد موجود (توسط خودِ پرسنل ثبت‌شده باشد یا از قبل
+        دستی) — همیشه بعد از ویرایش is_manual=True می‌شود تا مشخص باشد این
+        رکورد دیگر عیناً همان چیزی نیست که خودِ پرسنل فرستاده."""
+        log = await self.db.get(GpsActivityLog, log_id)
+        if log is None:
+            return None
+        if log_type is not None:
+            log.log_type = log_type
+        if created_at is not None:
+            log.created_at = created_at
+        if site_id is not None:
+            log.matched_site_id = site_id
+        log.is_manual = True
+        await self.db.commit()
+        await self.db.refresh(log)
+        return log
+
+    async def delete_log(self, log_id: int) -> bool:
+        log = await self.db.get(GpsActivityLog, log_id)
+        if log is None:
+            return False
+        await self.db.delete(log)
+        await self.db.commit()
+        return True
 
     async def get_my_logs(
         self, employee_id: int, *, year: int, month: int, limit: int = 200

@@ -188,6 +188,7 @@ class AuthService:
         base.can_clock_in_out = user.is_superuser or "attendance.clock_in_out" in permission_codes
         base.can_view_attendance_logs = user.is_superuser or "attendance.view_logs" in permission_codes
         base.can_view_clock_records = user.is_superuser or "attendance.view_clock_records" in permission_codes
+        base.can_manage_clock_records = user.is_superuser or "attendance.manage_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
         # کد ملی هم خودش یک اعتبار ضعیف است (جاهای زیادی در دسترس است، قابل
         # تغییر/چرخش نیست) — پس هر پرسنلی که هنوز رمز اختصاصی تعیین نکرده

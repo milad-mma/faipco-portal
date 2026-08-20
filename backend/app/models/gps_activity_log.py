@@ -32,8 +32,8 @@ class GpsActivityLog(Base):
     )
     log_type: Mapped[GpsLogType] = mapped_column(Enum(GpsLogType, name="gps_log_type_enum"), nullable=False)
 
-    latitude: Mapped[float] = mapped_column(Float, nullable=False)
-    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     # شعاع اطمینان GPS به متر (هرچه کمتر، دقیق‌تر) — از مرورگر گرفته می‌شود؛
     # ممکن است خالی باشد اگر مرورگر گزارش نداد
     accuracy_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -43,5 +43,11 @@ class GpsActivityLog(Base):
     )
     distance_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_within_geofence: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    # True اگر Admin/hr-manager دستی این رکورد را ثبت/ویرایش کرده باشد (نه
+    # خودِ پرسنل با GPS واقعی) — در گزارش با یک ستاره کنار زمان مشخص می‌شود.
+    # این رکوردها latitude/longitude واقعی ندارند (پرسنل آنجا نبوده که ثبت
+    # کند)، پس آن دو ستون هم Nullable شدند.
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
