@@ -26,6 +26,7 @@ from app.schemas.system import IpAllowlistStateIn, IpAllowlistStateOut, IpBlocke
 from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.system_settings_service import SystemSettingsService
+from app.services.usage_stats_service import get_usage_stats
 from app.services.update_service import (
     UPDATE_CONFIRMATION_PHRASE,
     UpdateError,
@@ -59,6 +60,22 @@ async def get_app_version():
     """
     settings = get_settings()
     return {"version": settings.APP_VERSION}
+
+
+@router.get("/usage-stats")
+async def usage_stats(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    داده خام ساعتی استفاده از پرتال (آخرین ۹۰ روز) — برای نمودار «میزان
+    استفاده» در پنل Admin. تجمیع روزانه/هفتگی/ماهانه و «کدام ساعت
+    شبانه‌روز پرترافیک‌تر است» عمداً در فرانت‌اند انجام می‌شود.
+    """
+    stats = await get_usage_stats(db)
+    return [
+        {"date": s.date.isoformat(), "hour": s.hour, "request_count": s.request_count} for s in stats
+    ]
 
 
 @router.get("/check-update")

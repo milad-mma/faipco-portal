@@ -25,3 +25,4 @@ from app.models.gps_activity_log import GpsActivityLog  # noqa: F401
 from app.models.presence_session import PresenceSession  # noqa: F401
 from app.models.birthday_message_template import BirthdayMessageTemplate  # noqa: F401
 from app.models.rate_limit import LoginAttempt, MessageRateLimit  # noqa: F401
+from app.models.usage_stat import UsageStat  # noqa: F401

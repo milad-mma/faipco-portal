@@ -2,14 +2,16 @@
 نقطه ورود اصلی برنامه FAIPCO Portal.
 اجرا: uvicorn app.main:app --reload
 """
+import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.router import api_router
+from app.services.usage_stats_service import record_usage
 
 settings = get_settings()
 
@@ -54,6 +56,33 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# نگه‌داشتن ارجاع تسک‌های پس‌زمینه — یک گوچای شناخته‌شده asyncio: اگر تسکی
+# که با create_task ساخته شده هیچ‌جا نگه داشته نشود، ممکن است قبل از تمام
+# شدن Garbage Collect شود. با افزودن به این Set (و حذف در پایان)، این خطر
+# از بین می‌رود.
+_background_tasks: set[asyncio.Task] = set()
+
+
+@app.middleware("http")
+async def track_usage_middleware(request: Request, call_next):
+    """
+    برای نمودار «میزان استفاده از پرتال» در پنل Admin — یک شمارنده ساعتی
+    (نه لاگ تک‌تک درخواست‌ها). فقط برای درخواست‌های واقعاً احرازهویت‌شده
+    (هدر Authorization دارند) به مسیرهای API شمارش می‌شود؛ نه health-check
+    خودِ Nginx/Monitoring، نه فایل‌های استاتیک.
+
+    با asyncio.create_task (نه await مستقیم) اجرا می‌شود — یعنی ثبت این آمار
+    هیچ تأخیری به پاسخ واقعی کاربر اضافه نمی‌کند؛ حتی اگر خودِ ثبت کند یا
+    شکست بخورد (که در خودِ record_usage با try/except پوشانده شده)، تأثیری
+    روی درخواست اصلی ندارد.
+    """
+    if request.url.path.startswith(settings.API_V1_PREFIX) and "authorization" in request.headers:
+        task = asyncio.create_task(record_usage())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+    return await call_next(request)
 
 
 @app.get("/api/health", tags=["health"])

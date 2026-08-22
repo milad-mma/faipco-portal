@@ -14,6 +14,7 @@ import { fetchDepartments } from "../api/departments";
 import { fetchNoticeStatsSummary } from "../api/notices";
 import { fetchSyncStatusSummary } from "../api/sync";
 import { useAuth } from "../context/AuthContext";
+import UsageStatsCard from "../components/UsageStatsCard";
 
 function StatCard({ icon, label, value, color, helperText, helperColor }) {
   return (
@@ -150,7 +151,7 @@ export default function DashboardPage() {
         </Grid>
       </Grid>
 
-      <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: user?.is_superuser ? 3 : 0 }}>
         <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
           🎂 متولدین روز جاری
         </Typography>
@@ -188,6 +189,9 @@ export default function DashboardPage() {
           ))}
         </Stack>
       </Card>
+
+      {/* فقط Admin — چون خودِ Endpoint هم فقط با مجوز system.backup پاسخ می‌دهد */}
+      {user?.is_superuser && <UsageStatsCard />}
     </Box>
   );
 }

@@ -5,6 +5,11 @@ export async function fetchAppVersion() {
   return data.version;
 }
 
+export async function fetchUsageStats() {
+  const { data } = await apiClient.get("/system/usage-stats");
+  return data; // [{ date, hour, request_count }]
+}
+
 export async function checkForUpdate() {
   const { data } = await apiClient.get("/system/check-update", { timeout: 15000 });
   return data; // { checked, current_version, latest_version, has_update, release_url }
