@@ -8,7 +8,7 @@ import secrets
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password, validate_password_strength
+from app.core.security import hash_password, normalize_login_credential, validate_password_strength
 from app.models.employee import Employee
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
@@ -59,13 +59,20 @@ class UserRepository:
         نکته مهم: اگر این پرسنل قبلاً رمز عبور اختصاصی تعیین کرده باشد
         (User.has_custom_password=True)، ورود با کد ملی دیگر برایش کار
         نمی‌کند — باید حتماً از رمز عبور جدیدش استفاده کند.
+
+        ورودی‌ها قبل از مقایسه با normalize_login_credential نرمال‌سازی
+        می‌شوند (ارقام فارسی/عربی→لاتین، حذف کاراکترهای نامرئی) — رفع یک
+        مشکل واقعی: پرسنلی که از کیبورد فارسی موبایل استفاده می‌کرد، با
+        تایپ کاملاً درست کد ملی‌اش «اطلاعات ورود اشتباه است» می‌گرفت.
         """
+        normalized_personnel_code = normalize_login_credential(personnel_code)
+        normalized_national_code = normalize_login_credential(national_code)
         result = await self.db.execute(
             select(Employee)
             .outerjoin(User, User.employee_id == Employee.id)
             .where(
-                Employee.personnel_code == personnel_code.strip(),
-                Employee.national_code == national_code.strip(),
+                Employee.personnel_code == normalized_personnel_code,
+                Employee.national_code == normalized_national_code,
                 Employee.is_active.is_(True),
                 Employee.is_enabled.is_(True),
                 or_(User.id.is_(None), User.has_custom_password.is_(False)),

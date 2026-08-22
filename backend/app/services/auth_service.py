@@ -2,6 +2,7 @@
 منطق تجاری Authentication: بررسی نام‌کاربری/پسورد، صدور و تمدید توکن.
 """
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    normalize_login_credential,
     validate_password_strength,
     verify_password,
     WeakPasswordError,
@@ -23,6 +25,8 @@ from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.services.system_settings_service import SystemSettingsService
 from app.schemas.user import UserOut
+
+logger = logging.getLogger("faipco.auth")
 
 
 class AuthError(Exception):
@@ -101,6 +105,21 @@ class AuthService:
             employee = await self.repo.find_employee_for_login(identifier, credential)
             if employee is None:
                 await record_failed_login(self.db, identifier)
+                # لاگ تشخیصی — عمداً بدون خودِ کد ملی/رمز واقعی (که یک PII حساس
+                # است)، فقط برای اینکه اگر این مورد دوباره پیش آمد، داده واقعی
+                # برای بررسی وجود داشته باشد به‌جای حدس زدن. length_before /
+                # changed_by_normalization مشخص می‌کند آیا رقم فارسی/عربی یا
+                # کاراکتر نامرئی در ورودی بوده (که با نرمال‌سازی رفع می‌شود) یا
+                # مشکل واقعاً چیز دیگری (مثلاً کد ملی/پرسنلی که اصلاً درست نیست).
+                normalized = normalize_login_credential(credential)
+                logger.info(
+                    "ورود پرسنل ناموفق — identifier=%s، طول ورودی=%d، "
+                    "نرمال‌سازی مقدار را تغییر داد=%s (یعنی رقم فارسی/عربی یا "
+                    "کاراکتر نامرئی در ورودی بوده)",
+                    identifier,
+                    len(credential),
+                    credential.strip() != normalized,
+                )
                 raise AuthError("اطلاعات ورود اشتباه است")
             user = await self.repo.get_or_create_employee_user(employee)
 
@@ -146,7 +165,7 @@ class AuthService:
             if (
                 employee is None
                 or not employee.national_code
-                or current_password.strip() != employee.national_code.strip()
+                or normalize_login_credential(current_password) != normalize_login_credential(employee.national_code)
             ):
                 raise AuthError("رمز عبور فعلی وارد شده اشتباه است")
 

@@ -20,7 +20,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decrypt_secret
+from app.core.security import decrypt_secret, normalize_login_credential
 from app.models.employee import Department, Employee, EmployeeMapping
 from app.models.site import Site, SiteConnection, SyncStatus
 from app.models.sync_log import SyncLog, SyncRunStatus
@@ -296,6 +296,35 @@ class SyncService:
 
         return None
 
+    @staticmethod
+    def _normalize_fixed_length_digits(raw_value, length: int) -> str | None:
+        """
+        برای فیلدهایی مثل کد ملی (همیشه دقیقاً ۱۰ رقم) و موبایل (همیشه دقیقاً
+        ۱۱ رقم، با ۰ شروع می‌شود) — یک باگ واقعی که روی همین پروژه کشف شد:
+        اگر ستون مبدأ در دیتابیس خارجی به‌صورت عددی (نه متنی) ذخیره شده باشد،
+        درایور دیتابیس این مقدار را به‌صورت int/float برمی‌گرداند، که صفرهای
+        ابتدایی را برای همیشه از دست می‌دهد (چون در یک عدد، ۰۰۱۲۳۴۵۶۷۸ همان
+        ۱۲۳۴۵۶۷۸ است) — دقیقاً پرسنلی که کد ملی‌شان با ۰ یا ۰۰ شروع می‌شود
+        (خیلی از استان‌ها) از این آسیب می‌دیدند: ورود اولشان (که کد ملی رمز
+        پیش‌فرض است) با «اطلاعات ورود اشتباه است» رد می‌شد، چون مقدار
+        ذخیره‌شده در دیتابیس پرتال با کد ملی واقعی روی کارتشان یکی نبود.
+
+        چون طول این دو فیلد در ایران همیشه ثابت است، این تابع با اطمینان
+        صفرهای ابتدایی گم‌شده را با zfill بازمی‌گرداند — چه مقدار مبدأ از
+        اول رشته بوده چه عدد.
+        """
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, float):
+            raw_value = int(raw_value)
+        # normalize_login_credential ارقام فارسی/عربی احتمالی را هم به لاتین
+        # تبدیل می‌کند و کاراکترهای نامرئی را حذف می‌کند — برای هم‌خوانی با
+        # همان تابعی که هنگام ورود کاربر استفاده می‌شود.
+        text = normalize_login_credential(str(raw_value))
+        if not text:
+            return None
+        return text.zfill(length)
+
     async def _upsert_employees(
         self,
         site_id: int,
@@ -329,12 +358,12 @@ class SyncService:
             national_code = None
             if "national_code" in columns:
                 raw_nc = row.get(columns["national_code"])
-                national_code = str(raw_nc).strip() if raw_nc is not None else None
+                national_code = self._normalize_fixed_length_digits(raw_nc, 10)
 
             mobile = None
             if "mobile" in columns:
                 raw_mobile = row.get(columns["mobile"])
-                mobile = str(raw_mobile).strip() if raw_mobile is not None else None
+                mobile = self._normalize_fixed_length_digits(raw_mobile, 11)
 
             birth_month = birth_day = None
             if "birth_date_raw" in columns:
