@@ -66,6 +66,7 @@ cd frontend && npm install && npm run dev
 | [`docs/gps-attendance.md`](docs/gps-attendance.md) | حضور مبتنی بر GPS + ثبت ورود/خروج آزمایشی |
 | [`docs/birthday-greetings.md`](docs/birthday-greetings.md) | پیام‌های تبریک تولد (ارسال خودکار روزانه) |
 | [`docs/backup.md`](docs/backup.md) | پشتیبان‌گیری و بازیابی از پنل |
+| [`docs/pgadmin.md`](docs/pgadmin.md) | ⚠️ نصب pgAdmin 4 برای مدیریت مستقیم دیتابیس (فقط شبکه محلی) |
 | [`docs/usage-stats.md`](docs/usage-stats.md) | نمودار میزان استفاده از پرتال و مصرف سرور (CPU/RAM/دیسک) |
 | [`docs/pwa.md`](docs/pwa.md) | PWA، Service Worker، و مشکلات نصب روی اندروید/iOS |
 | [`docs/android-app-twa.md`](docs/android-app-twa.md) | ⚠️ بسته‌بندی به اپلیکیشن اندروید واقعی (TWA) — رفع محدودیت نصب مرورگری |
