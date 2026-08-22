@@ -1,7 +1,7 @@
 import { Alert, Snackbar } from "@mui/material";
 import WifiOffOutlinedIcon from "@mui/icons-material/WifiOffOutlined";
 import { useLocation } from "react-router-dom";
-import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useOnlineStatus } from "../context/OnlineStatusContext";
 
 /**
  * بنر شناور قرمز — فقط وقتی کاربر داخل برنامه است و اتصال قطع می‌شود.

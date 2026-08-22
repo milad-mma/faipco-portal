@@ -80,9 +80,16 @@ apiClient.interceptors.response.use(
       return apiClient(originalRequest);
     } catch (refreshError) {
       resolvePendingQueue(refreshError, null);
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      window.location.href = "/login";
+      // فقط اگر سرور واقعاً رفرش‌توکن را رد کرد (۴۰۱، یعنی واقعاً منقضی/باطل
+      // شده) پاک کن و به صفحه ورود بفرست — نه برای خطای شبکه (آفلاین بودن)،
+      // چون در آن حالت رفرش‌توکن هنوز کاملاً معتبر است، فقط همین لحظه
+      // قابل‌تأیید نیست. AuthContext همین که اینترنت برگردد، دوباره تلاش
+      // می‌کند؛ پاک‌کردن توکن اینجا آن تلاش بعدی را هم خراب می‌کرد.
+      if (refreshError.response?.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        window.location.href = "/login";
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

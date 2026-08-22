@@ -18,14 +18,14 @@ import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import WifiOffOutlinedIcon from "@mui/icons-material/WifiOffOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import { useAuth } from "../context/AuthContext";
-import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useOnlineStatus } from "../context/OnlineStatusContext";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 import { fetchAppVersion } from "../api/system";
 import faipcoLogo from "../assets/faipco-logo.png";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
@@ -36,6 +36,16 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canInstall, setCanInstall] = useState(getIsInstallable());
   const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    // اگر کاربر همین الان اینجا (صفحه ورود) نشسته، ولی Session او در پس‌زمینه
+    // معتبر تشخیص داده شد (مثلاً بعد از قطعی موقت اینترنت که با توکن قبلی
+    // خودکار دوباره تأیید شد — نگاه کنید AuthContext)، نباید مجبور به تایپ
+    // دوباره رمز عبور شود؛ همان لحظه به صفحه اصلی هدایت می‌شود.
+    if (user) {
+      navigate("/", { replace: true });
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
     // بی‌صدا — اگه به هر دلیلی این درخواست شکست بخوره (مثلاً بک‌اند هنوز

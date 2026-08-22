@@ -13,6 +13,7 @@ import "@fontsource/vazirmatn/700.css";
 import { rtlCache } from "./rtlCache";
 import { ThemeModeProvider } from "./context/ThemeModeContext";
 import { AuthProvider } from "./context/AuthContext";
+import { OnlineStatusProvider } from "./context/OnlineStatusContext";
 import { registerServiceWorker } from "./utils/serviceWorker";
 import "./utils/pwaInstall"; // ثبت زودهنگام listener رویداد beforeinstallprompt
 import UpdatePrompt from "./components/UpdatePrompt";
@@ -26,15 +27,20 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <CacheProvider value={rtlCache}>
       <ThemeModeProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <App />
-            {/* در سطح ریشه (نه داخل Layout) تا حتی توی صفحه ورود هم دیده شود */}
-            <UpdatePrompt />
-            <MandatoryPasswordChangeGuard />
-            <OfflineBanner />
-          </AuthProvider>
-        </BrowserRouter>
+        {/* بیرون از BrowserRouter/AuthProvider — چون AuthContext هم به همین
+            وضعیت اتصال نیاز دارد (برای تلاش خودکار دوباره وقتی اینترنت
+            برمی‌گردد)، و این یک نگرانی کاملاً سراسری/مستقل از مسیر است. */}
+        <OnlineStatusProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <App />
+              {/* در سطح ریشه (نه داخل Layout) تا حتی توی صفحه ورود هم دیده شود */}
+              <UpdatePrompt />
+              <MandatoryPasswordChangeGuard />
+              <OfflineBanner />
+            </AuthProvider>
+          </BrowserRouter>
+        </OnlineStatusProvider>
       </ThemeModeProvider>
     </CacheProvider>
   </React.StrictMode>
