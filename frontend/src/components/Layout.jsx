@@ -67,7 +67,13 @@ const NAV_ITEMS = [
     requiresClockInOut: true,
     hiddenForAdmin: true,
   },
-  { label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon />, adminOnly: true },
+  {
+    label: "گزارش اطلاعیه‌ها",
+    path: "/notice-reports",
+    icon: <AssessmentOutlinedIcon />,
+    adminOnly: false,
+    requiresSiteNoticeReport: true,
+  },
   {
     label: "مدیریت دسترسی",
     path: "/access",
@@ -114,6 +120,7 @@ export default function Layout() {
         if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
         if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
         if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
+        if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
         if (item.hiddenForAdmin && user?.is_superuser) return false;
         return true;
       }).map((item) => ({

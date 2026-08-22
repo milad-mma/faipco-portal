@@ -209,6 +209,9 @@ class AuthService:
         base.can_view_clock_records = user.is_superuser or "attendance.view_clock_records" in permission_codes
         base.can_manage_clock_records = user.is_superuser or "attendance.manage_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
+        base.can_view_site_notice_report = user.is_superuser or bool(
+            await self.repo.get_managed_site_ids(user.id, "site_manager")
+        )
         # کد ملی هم خودش یک اعتبار ضعیف است (جاهای زیادی در دسترس است، قابل
         # تغییر/چرخش نیست) — پس هر پرسنلی که هنوز رمز اختصاصی تعیین نکرده
         # (همچنان با کد ملی وارد می‌شود)، صرف‌نظر از مقدار ذخیره‌شده در

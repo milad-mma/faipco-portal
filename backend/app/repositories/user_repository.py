@@ -48,6 +48,23 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return {row[0] for row in result.all()}
 
+    async def get_managed_site_ids(self, user_id: int, role_name: str) -> list[int]:
+        """
+        شناسه‌های Site هایی که این کاربر برایشان نقش role_name را با site_id
+        مشخص دارد (مثلاً «مدیر کدام سایت‌هاست؟») — برای گزارش‌هایی که به یک
+        Site خاص محدود می‌شوند (مثل «گزارش اطلاعیه‌های سایت من»)، نه یک
+        Permission ساده. اگر کاربر این نقش را سراسری (بدون site_id) داشته
+        باشد، نادیده گرفته می‌شود — این متد فقط انتصاب‌های Site-scoped را
+        برمی‌گرداند.
+        """
+        stmt = (
+            select(UserRole.site_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(UserRole.user_id == user_id, Role.name == role_name, UserRole.site_id.is_not(None))
+        )
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.all()]
+
     # ---------- ورود پرسنل (کد پرسنلی + کد ملی) ----------
 
     async def find_employee_for_login(self, personnel_code: str, national_code: str) -> Employee | None:

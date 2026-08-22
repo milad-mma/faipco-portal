@@ -39,6 +39,11 @@ export async function fetchAdminReport(page = 1, pageSize = 10) {
   return data; // { items, total }
 }
 
+export async function fetchSiteReport(page = 1, pageSize = 10) {
+  const { data } = await apiClient.get("/notices/site-report", { params: { page, page_size: pageSize } });
+  return data; // { items, total }
+}
+
 export async function fetchNoticeStatsSummary() {
   const { data } = await apiClient.get("/notices/stats-summary");
   return data; // { published_this_week }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
+import SiteNoticeReportRoute from "./components/SiteNoticeReportRoute";
 import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
 import SplashScreen from "./components/SplashScreen";
@@ -90,7 +91,7 @@ export default function App() {
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />
           <Route path="/notices/new" element={<NewNoticePage />} />
-          <Route path="/notice-reports" element={<AdminRoute><NoticeReportsPage /></AdminRoute>} />
+          <Route path="/notice-reports" element={<SiteNoticeReportRoute><NoticeReportsPage /></SiteNoticeReportRoute>} />
           <Route
             path="/attendance-clock"
             element={

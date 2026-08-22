@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -26,6 +27,7 @@ import {
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { monoFontSx } from "../theme";
 import { deleteNotice } from "../api/notices";
 import NoticeReadersDialog from "./NoticeReadersDialog";
@@ -42,6 +44,105 @@ const ROWS_PER_PAGE = 10;
 // فقط با کلیک روی «و N مورد دیگر» داخل یک Dialog قابل‌اسکرول دیده می‌شوند، تا
 // سطر جدول بیش‌ازحد بزرگ نشود و لود گزارش کند نشود.
 const INLINE_TARGET_LIMIT = 3;
+
+/**
+ * کارت اطلاعیه روی موبایل — دقیقاً هم‌الگو با ReceivedNoticeCard (صفحه
+ * «دریافتی»): در حالت عادی فقط یک هدر خلاصه (عنوان، تاریخ، اولویت) دیده
+ * می‌شود؛ بدنه کامل (متن، مقصدها، تعداد مخاطب/دیده‌شده، دکمه‌های عملیات)
+ * فقط با کلیک باز می‌شود. قبلاً همه این‌ها یک‌جا و همیشه نمایش داده
+ * می‌شد — با تعداد زیاد اطلاعیه، صفحه موبایل بیش‌ازحد شلوغ و طولانی
+ * می‌شد.
+ */
+function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onDelete, isDeleting, renderTargets }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", opacity: n.is_deleted ? 0.6 : 1 }}>
+      <Box
+        onClick={() => setExpanded((v) => !v)}
+        sx={{
+          p: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          gap: 1.5,
+          "&:hover": { backgroundColor: "action.hover" },
+        }}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ wordBreak: "break-word" }}>
+            {n.title}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
+            {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+          <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
+          <ExpandMoreIcon
+            fontSize="small"
+            color="action"
+            sx={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+          />
+        </Stack>
+      </Box>
+
+      <Collapse in={expanded}>
+        <Box sx={{ px: 2, pb: 2 }}>
+          <Stack spacing={1}>
+            {showSender && (
+              <Typography variant="caption" color="text.secondary">
+                فرستنده: {n.sender_name}
+              </Typography>
+            )}
+
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+            >
+              {n.body}
+            </Typography>
+
+            {renderTargets(n)}
+
+            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+              <Typography variant="caption" sx={monoFontSx}>
+                مخاطبان: {n.audience_count}
+              </Typography>
+              <Typography variant="caption" sx={monoFontSx}>
+                دیده‌شده: {n.read_count}/{n.audience_count}
+              </Typography>
+              {n.is_deleted ? (
+                <Chip size="small" color="error" variant="outlined" label="حذف شده" />
+              ) : (
+                <Chip size="small" color="success" variant="outlined" label="فعال" />
+              )}
+            </Stack>
+
+            <Divider />
+
+            <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+              <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => onShowReaders(n.id)}>
+                چه کسانی دیدند
+              </Button>
+              {allowDelete && !n.is_deleted && (
+                <Tooltip title="حذف اطلاعیه">
+                  <span>
+                    <IconButton size="small" color="error" disabled={isDeleting} onClick={() => onDelete(n)}>
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+            </Stack>
+          </Stack>
+        </Box>
+      </Collapse>
+    </Card>
+  );
+}
 
 /**
  * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» و هم برای «گزارش کامل Admin»
@@ -152,76 +253,16 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
       <>
         <Stack spacing={1.5}>
           {items.map((n) => (
-            <Card
+            <SentNoticeCard
               key={n.id}
-              variant="outlined"
-              sx={{ p: 2, borderRadius: 2, opacity: n.is_deleted ? 0.6 : 1 }}
-            >
-              <Stack spacing={1}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>
-                    {n.title}
-                  </Typography>
-                  <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
-                </Stack>
-
-                <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
-                  {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
-                </Typography>
-
-                {showSender && (
-                  <Typography variant="caption" color="text.secondary">
-                    فرستنده: {n.sender_name}
-                  </Typography>
-                )}
-
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                >
-                  {n.body}
-                </Typography>
-
-                {renderTargets(n)}
-
-                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
-                  <Typography variant="caption" sx={monoFontSx}>
-                    مخاطبان: {n.audience_count}
-                  </Typography>
-                  <Typography variant="caption" sx={monoFontSx}>
-                    دیده‌شده: {n.read_count}/{n.audience_count}
-                  </Typography>
-                  {n.is_deleted ? (
-                    <Chip size="small" color="error" variant="outlined" label="حذف شده" />
-                  ) : (
-                    <Chip size="small" color="success" variant="outlined" label="فعال" />
-                  )}
-                </Stack>
-
-                <Divider />
-
-                <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
-                  <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => setReadersNoticeId(n.id)}>
-                    چه کسانی دیدند
-                  </Button>
-                  {allowDelete && !n.is_deleted && (
-                    <Tooltip title="حذف اطلاعیه">
-                      <span>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          disabled={deletingId === n.id}
-                          onClick={() => handleDelete(n)}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  )}
-                </Stack>
-              </Stack>
-            </Card>
+              notice={n}
+              showSender={showSender}
+              allowDelete={allowDelete}
+              onShowReaders={setReadersNoticeId}
+              onDelete={handleDelete}
+              isDeleting={deletingId === n.id}
+              renderTargets={renderTargets}
+            />
           ))}
         </Stack>
 

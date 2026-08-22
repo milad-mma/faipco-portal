@@ -8,6 +8,7 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}/read             (POST)  ثبت این‌که کاربر جاری این اطلاعیه را باز/مشاهده کرد
 /notices/sent-by-me            (GET)   گزارش «چه چیزهایی به چه کسانی فرستادم» برای فرستنده
 /notices/admin-report          (GET)   گزارش کامل همه اطلاعیه‌ها با فرستنده و آمار بازدید — Admin
+/notices/site-report           (GET)   گزارش اطلاعیه‌های رسیده به سایت(های) تحت مدیریت کاربر — site_manager
 /notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
 /notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
@@ -20,6 +21,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import Response
 
 from app.core.rate_limit import MESSAGE_RATE_LIMIT_SECONDS, check_message_rate_limit, record_message_sent
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import json
@@ -28,6 +30,7 @@ from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority
+from app.repositories.user_repository import UserRepository
 from app.models.user import User
 from app.schemas.notice import (
     AttendanceCardResultOut,
@@ -147,6 +150,43 @@ async def admin_report(
     page_size = min(max(page_size, 1), 100)
     items, total = await NoticeService(db).get_detailed_notices(
         sender_id=None, limit=page_size, offset=(page - 1) * page_size
+    )
+    return NoticeDetailPageOut(items=items, total=total)
+
+
+@router.get("/site-report", response_model=NoticeDetailPageOut)
+async def site_report(
+    page: int = 1,
+    page_size: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    گزارش «اطلاعیه‌های سایت من» — برای site_manager: همه اطلاعیه‌هایی که به
+    سایت(های) تحت مدیریت او می‌رسند، از هر فرستنده‌ای (نه فقط خودِ او)، برخلاف
+    /sent-by-me که فقط اطلاعیه‌های خودِ کاربر را نشان می‌دهد. برخلاف
+    /admin-report، نیازمند notices.view سراسری نیست — به‌جایش، خودِ Endpoint
+    بررسی می‌کند کاربر واقعاً برای کدام سایت‌ها نقش site_manager دارد (اگر
+    هیچ‌کدام، ۴۰۳). Admin هم می‌تواند صدا بزند (همه سایت‌ها).
+    """
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+
+    if current_user.is_superuser:
+        from app.models.site import Site
+
+        site_result = await db.execute(select(Site.id))
+        site_ids = [row[0] for row in site_result.all()]
+    else:
+        site_ids = await UserRepository(db).get_managed_site_ids(current_user.id, "site_manager")
+        if not site_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="شما مدیر هیچ سایتی نیستید",
+            )
+
+    items, total = await NoticeService(db).get_detailed_notices_for_sites(
+        site_ids, limit=page_size, offset=(page - 1) * page_size
     )
     return NoticeDetailPageOut(items=items, total=total)
 

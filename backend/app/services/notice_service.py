@@ -704,6 +704,59 @@ class NoticeService:
         base_stmt = select(Notice)
         if sender_id is not None:
             base_stmt = base_stmt.where(Notice.sender_id == sender_id)
+        return await self._build_detailed_notices_page(base_stmt, limit, offset)
+
+    async def get_detailed_notices_for_sites(
+        self, site_ids: list[int], limit: int = 10, offset: int = 0
+    ) -> tuple[list[NoticeDetailOut], int]:
+        """
+        مثل get_detailed_notices، ولی به‌جای فیلتر بر اساس فرستنده، بر اساس
+        این‌که آیا اطلاعیه به یکی از این Site ها می‌رسد فیلتر می‌کند — برای
+        «گزارش اطلاعیه‌های سایت من» که site_manager می‌بیند (اطلاعیه‌هایی که
+        هر فرستنده‌ای، نه فقط خودش، به سایتش فرستاده). شامل ۴ حالت هدف‌گیری:
+        Broadcast کامل (all)، مستقیم همان Site، یک واحد داخل همان Site، یا
+        یک پرسنل داخل همان Site. هدف‌گیری بر اساس نقش (role) عمداً پوشش داده
+        نمی‌شود — چون تشخیص «آیا دارندگان این نقش شامل پرسنل این Site هم
+        می‌شوند» نیازمند Join پیچیده‌تری است، و site_manager خودش اصلاً مجوز
+        هدف‌گیری بر اساس نقش را ندارد.
+        """
+        if not site_ids:
+            return [], 0
+
+        dept_result = await self.db.execute(select(Department.id).where(Department.site_id.in_(site_ids)))
+        department_ids = [row[0] for row in dept_result.all()]
+
+        emp_result = await self.db.execute(select(Employee.id).where(Employee.site_id.in_(site_ids)))
+        employee_ids = [row[0] for row in emp_result.all()]
+
+        target_conditions = [NoticeTarget.target_type == NoticeTargetType.all]
+        target_conditions.append(
+            and_(NoticeTarget.target_type == NoticeTargetType.site, NoticeTarget.target_id.in_(site_ids))
+        )
+        if department_ids:
+            target_conditions.append(
+                and_(
+                    NoticeTarget.target_type == NoticeTargetType.department,
+                    NoticeTarget.target_id.in_(department_ids),
+                )
+            )
+        if employee_ids:
+            target_conditions.append(
+                and_(
+                    NoticeTarget.target_type == NoticeTargetType.employee,
+                    NoticeTarget.target_id.in_(employee_ids),
+                )
+            )
+
+        base_stmt = (
+            select(Notice)
+            .where(Notice.id.in_(select(NoticeTarget.notice_id).where(or_(*target_conditions))))
+        )
+        return await self._build_detailed_notices_page(base_stmt, limit, offset)
+
+    async def _build_detailed_notices_page(self, base_stmt, limit: int, offset: int) -> tuple[list[NoticeDetailOut], int]:
+        """بخش مشترک get_detailed_notices و get_detailed_notices_for_sites —
+        صفحه‌بندی، پردازش دسته‌ای (نه N+1)، و ساخت خروجی نهایی."""
 
         total = (
             await self.db.execute(select(func.count()).select_from(base_stmt.subquery()))
