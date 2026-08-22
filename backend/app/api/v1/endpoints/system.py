@@ -27,6 +27,7 @@ from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.system_settings_service import SystemSettingsService
 from app.services.usage_stats_service import get_usage_stats
+from app.services.server_stats_service import get_server_stats
 from app.services.update_service import (
     UPDATE_CONFIRMATION_PHRASE,
     UpdateError,
@@ -75,6 +76,32 @@ async def usage_stats(
     stats = await get_usage_stats(db)
     return [
         {"date": s.date.isoformat(), "hour": s.hour, "request_count": s.request_count} for s in stats
+    ]
+
+
+@router.get("/server-stats")
+async def server_stats(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    داده خام مصرف CPU/RAM/دیسک خودِ سرور (آخرین ۷ روز، هر ۱۰ دقیقه یک
+    نمونه) — برای نمودار «مصرف سرور» در پنل Admin. تجمیع/محاسبه اوج مصرف
+    عمداً در فرانت‌اند انجام می‌شود.
+    """
+    stats = await get_server_stats(db)
+    return [
+        {
+            "recorded_at": s.recorded_at.isoformat(),
+            "cpu_percent": s.cpu_percent,
+            "ram_percent": s.ram_percent,
+            "ram_used_mb": s.ram_used_mb,
+            "ram_total_mb": s.ram_total_mb,
+            "disk_percent": s.disk_percent,
+            "disk_used_gb": s.disk_used_gb,
+            "disk_total_gb": s.disk_total_gb,
+        }
+        for s in stats
     ]
 
 

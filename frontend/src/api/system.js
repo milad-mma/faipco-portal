@@ -10,6 +10,11 @@ export async function fetchUsageStats() {
   return data; // [{ date, hour, request_count }]
 }
 
+export async function fetchServerStats() {
+  const { data } = await apiClient.get("/system/server-stats");
+  return data; // [{ recorded_at, cpu_percent, ram_percent, ram_used_mb, ram_total_mb, disk_percent, disk_used_gb, disk_total_gb }]
+}
+
 export async function checkForUpdate() {
   const { data } = await apiClient.get("/system/check-update", { timeout: 15000 });
   return data; // { checked, current_version, latest_version, has_update, release_url }

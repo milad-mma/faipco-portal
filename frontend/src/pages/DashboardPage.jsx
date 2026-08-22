@@ -15,6 +15,7 @@ import { fetchNoticeStatsSummary } from "../api/notices";
 import { fetchSyncStatusSummary } from "../api/sync";
 import { useAuth } from "../context/AuthContext";
 import UsageStatsCard from "../components/UsageStatsCard";
+import ServerStatsCard from "../components/ServerStatsCard";
 
 function StatCard({ icon, label, value, color, helperText, helperColor }) {
   return (
@@ -191,7 +192,12 @@ export default function DashboardPage() {
       </Card>
 
       {/* فقط Admin — چون خودِ Endpoint هم فقط با مجوز system.backup پاسخ می‌دهد */}
-      {user?.is_superuser && <UsageStatsCard />}
+      {user?.is_superuser && (
+        <Stack spacing={3}>
+          <UsageStatsCard />
+          <ServerStatsCard />
+        </Stack>
+      )}
     </Box>
   );
 }

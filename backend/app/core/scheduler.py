@@ -31,8 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
+from app.models.server_stat import ServerStat
 from app.models.site import Site, SiteConnection
 from app.services.birthday_greetings_service import BirthdayGreetingsService
+from app.services.server_stats_service import record_server_stats
 from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncService
 
@@ -41,6 +43,7 @@ settings = get_settings()
 
 JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
+SERVER_STATS_JOB_ID = "record_server_stats"
 # فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
 # فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
 # که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
@@ -61,6 +64,13 @@ scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Tehran"))
 # واقعاً Job را اجرا می‌کند؛ Worker دیگر می‌بیند قفل گرفته شده و بی‌صدا رد می‌شود.
 _SYNC_LOCK_KEY = 875312001
 _BIRTHDAY_LOCK_KEY = 875312002
+_SERVER_STATS_LOCK_KEY = 875312003
+# نمونه‌برداری واقعی مصرف سرور هر ۱۰ دقیقه یک‌بار — ولی مثل Sync، خودِ Job
+# با تیک مکرر کوتاه‌تر (هر ۲ دقیقه) چک می‌کند «طبق آخرین نمونه ثبت‌شده در
+# دیتابیس، وقتش رسیده یا نه» — همان دلیل بالا (هماهنگی بین چند Worker
+# مستقل، بدون تکیه بر تایمر جداگانه هرکدام).
+SERVER_STATS_CHECK_INTERVAL_MINUTES = 2
+SERVER_STATS_SAMPLE_INTERVAL_MINUTES = 10
 
 
 async def _try_advisory_lock(db: AsyncSession, lock_key: int) -> bool:
@@ -126,6 +136,26 @@ async def _send_birthday_greetings() -> None:
             await _advisory_unlock(db, _BIRTHDAY_LOCK_KEY)
 
 
+async def _record_server_stats_job() -> None:
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _SERVER_STATS_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            result = await db.execute(
+                select(ServerStat.recorded_at).order_by(ServerStat.recorded_at.desc()).limit(1)
+            )
+            last_recorded = result.scalar_one_or_none()
+            now = datetime.now(timezone.utc)
+            if last_recorded is not None:
+                elapsed_minutes = (now - last_recorded).total_seconds() / 60
+                if elapsed_minutes < SERVER_STATS_SAMPLE_INTERVAL_MINUTES:
+                    return  # هنوز وقتش نشده
+            await record_server_stats(db)
+        finally:
+            await _advisory_unlock(db, _SERVER_STATS_LOCK_KEY)
+
+
 async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
@@ -155,6 +185,18 @@ async def start_scheduler() -> None:
         replace_existing=True,
     )
     logger.info("Scheduler پیام تبریک تولد هر روز ساعت %02d:%02d اجرا خواهد شد", birthday_hour, birthday_minute)
+
+    scheduler.add_job(
+        _record_server_stats_job,
+        trigger="interval",
+        minutes=SERVER_STATS_CHECK_INTERVAL_MINUTES,
+        id=SERVER_STATS_JOB_ID,
+        replace_existing=True,
+    )
+    logger.info(
+        "Scheduler هر %s دقیقه یک‌بار مصرف CPU/RAM/دیسک سرور را نمونه‌برداری می‌کند",
+        SERVER_STATS_SAMPLE_INTERVAL_MINUTES,
+    )
 
     scheduler.start()
 
