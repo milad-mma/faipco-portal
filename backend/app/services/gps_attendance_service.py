@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
 from app.core.persian_date import jalali_month_range_utc
+from app.models.employee import Employee
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
@@ -251,12 +252,17 @@ class GpsAttendanceService:
         log_type: GpsLogType | None = None,
         year: int,
         month: int,
+        site_ids: set[int] | None = None,
     ) -> tuple[list[GpsActivityLog], int]:
         """
         گزارش کامل Admin/hr-manager — همه لاگ‌ها (حضور دوره‌ای + ورود/خروج)
         برای همه پرسنل، همیشه محدود به یک ماه شمسی مشخص. چون «حضور دوره‌ای»
         هر ۱۰ دقیقه به‌ازای هر پرسنل آزمایش ثبت می‌شود، این جدول می‌تواند
         خیلی سریع بزرگ شود — همیشه هم به یک ماه محدود است هم Paginated.
+
+        site_ids (اختیاری): اگر داده شود، فقط لاگ‌های پرسنل همین سایت‌ها —
+        برای ایزوله‌سازی چندسایتی (مثلاً hr-manager سایت‌محور نباید گزارش
+        حضور سایت دیگری را ببیند). None یعنی بدون محدودیت.
         """
         start, end = jalali_month_range_utc(year, month)
         filters = [GpsActivityLog.created_at >= start, GpsActivityLog.created_at < end]
@@ -264,6 +270,10 @@ class GpsAttendanceService:
             filters.append(GpsActivityLog.employee_id == employee_id)
         if log_type is not None:
             filters.append(GpsActivityLog.log_type == log_type)
+        if site_ids is not None:
+            filters.append(
+                GpsActivityLog.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
+            )
 
         count_stmt = select(func.count()).select_from(GpsActivityLog).where(*filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
@@ -279,15 +289,27 @@ class GpsAttendanceService:
         return list(result.scalars().all()), total
 
     async def get_presence_sessions_page(
-        self, *, page: int = 1, page_size: int = 50, employee_id: int | None = None, only_online: bool = False
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        employee_id: int | None = None,
+        only_online: bool = False,
+        site_ids: set[int] | None = None,
     ) -> tuple[list[PresenceSession], int]:
         """گزارش «آنلاین/آفلاین» زنده مبتنی بر WebSocket — هر ردیف یک Session
-        واقعی با شروع/پایان دقیق است، نه یک لاگ نقطه‌ای."""
+        واقعی با شروع/پایان دقیق است، نه یک لاگ نقطه‌ای.
+
+        site_ids: مثل get_all_logs_page — برای ایزوله‌سازی چندسایتی."""
         filters = []
         if employee_id is not None:
             filters.append(PresenceSession.employee_id == employee_id)
         if only_online:
             filters.append(PresenceSession.disconnected_at.is_(None))
+        if site_ids is not None:
+            filters.append(
+                PresenceSession.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
+            )
 
         count_stmt = select(func.count()).select_from(PresenceSession).where(*filters)
         total = (await self.db.execute(count_stmt)).scalar_one()

@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.site_access import get_sites_with_permission
 from app.core.persian_date import get_current_jalali_year_month
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal, get_db
@@ -169,17 +170,31 @@ async def list_all_logs(
     year: int | None = None,
     month: int | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.view_clock_records")),
+    current_user: User = Depends(get_current_user),
 ):
     """
     گزارش کامل Admin/hr-manager — همان چیزی که «حضور دوره‌ای» هر ۱۰ دقیقه برای
     پرسنل آزمایش ثبت می‌کند، به‌همراه ثبت‌های ورود/خروج، همه‌جا یک‌جا. همیشه
     محدود به یک ماه شمسی مشخص (پیش‌فرض: ماه جاری) و Paginated است.
+
+    ⚠️ ایزوله‌سازی چندسایتی: عمداً از get_current_user استفاده می‌شود، نه
+    require_permission — چون این Endpoint هیچ site_id در Path/Query ندارد
+    که require_permission(site_scoped=True) بتواند از آن بخواند؛ استفاده
+    از حالت پیش‌فرض (site_scoped=False) یا کاملاً رد می‌کرد (hr-manager
+    سایت‌محور، چون get_permission_codes بدون site_id فقط نقش‌های سراسری را
+    می‌بیند) یا کاملاً باز می‌گذاشت (اگر سراسری انتصاب شود، همه سایت‌ها).
+    get_sites_with_permission پایین دقیقاً همان سایت‌هایی که کاربر واقعاً
+    این Permission را برایشان دارد برمی‌گرداند، و اگر هیچ‌کدام، ۴۰۳ می‌دهد.
     """
+    site_ids = await get_sites_with_permission(db, current_user, "attendance.view_clock_records")
+    if site_ids is not None and not site_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
+
     if year is None or month is None:
         year, month = get_current_jalali_year_month()
     logs, total = await GpsAttendanceService(db).get_all_logs_page(
-        page=page, page_size=page_size, employee_id=employee_id, log_type=log_type, year=year, month=month
+        page=page, page_size=page_size, employee_id=employee_id, log_type=log_type, year=year, month=month,
+        site_ids=site_ids,
     )
     if not logs:
         return GpsActivityLogPageOut(items=[], total=total, year=year, month=month)
@@ -457,11 +472,23 @@ async def list_presence_sessions(
     employee_id: int | None = None,
     only_online: bool = False,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("attendance.view_logs")),
+    current_user: User = Depends(get_current_user),
 ):
-    """گزارش Admin از Session های آنلاین/آفلاین — با duration دقیق برای هرکدام."""
+    """
+    گزارش Admin از Session های آنلاین/آفلاین — با duration دقیق برای هرکدام.
+
+    ⚠️ ایزوله‌سازی چندسایتی: عمداً از get_current_user استفاده می‌شود، نه
+    require_permission — همان دلیل list_all_logs (این Endpoint هم site_id
+    در Path/Query ندارد). accessible_site_ids دقیقاً همان سایت‌هایی که
+    کاربر واقعاً این Permission را برایشان دارد برمی‌گرداند.
+    """
+    accessible_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_logs")
+    if accessible_site_ids is not None and not accessible_site_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
+
     sessions, total = await GpsAttendanceService(db).get_presence_sessions_page(
-        page=page, page_size=page_size, employee_id=employee_id, only_online=only_online
+        page=page, page_size=page_size, employee_id=employee_id, only_online=only_online,
+        site_ids=accessible_site_ids,
     )
     if not sessions:
         return PresenceSessionPageOut(items=[], total=total)

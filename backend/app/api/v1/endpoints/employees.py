@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.site_access import get_accessible_site_ids
 from app.core.persian_date import get_current_jalali_date
 from app.core.security import WeakPasswordError
 from app.db.session import get_db
@@ -89,6 +90,14 @@ async def list_employees(
     # مدیریت کند و هم در صورت نیاز پرسنل غیرفعال از منبع را ببیند.
     _current_user: User = Depends(get_current_user),
 ):
+    # ایزوله‌سازی چندسایتی: کاربری که فقط برای یک/چند سایت خاص نقش دارد
+    # (یا اصلاً نقشی ندارد و فقط پرسنل عادی است)، نباید بتواند با تغییر
+    # site_id در URL، پرسنل سایت دیگری را جست‌وجو/ببیند — این جست‌وجو قبلاً
+    # کاملاً باز بود (فقط لاگین بودن کافی بود)، که یعنی کد ملی/موبایل پرسنل
+    # هر سایتی برای هر کاربر لاگین‌شده‌ای قابل‌دیدن بود. accessible_site_ids
+    # None یعنی بدون محدودیت (Admin واقعی یا حداقل یک نقش سراسری).
+    accessible_site_ids = await get_accessible_site_ids(db, _current_user)
+
     def apply_filters(stmt):
         if not include_inactive:
             stmt = stmt.where(Employee.is_active.is_(True))
@@ -96,6 +105,8 @@ async def list_employees(
             stmt = stmt.where(Employee.is_enabled.is_(True))
         if site_id is not None:
             stmt = stmt.where(Employee.site_id == site_id)
+        if accessible_site_ids is not None:
+            stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
         if department_id:
             stmt = stmt.where(Employee.department_id.in_(department_id))
         if search:
@@ -175,11 +186,14 @@ async def count_portal_disabled_employees(
     """
     تعداد پرسنلِ فعال (از منبع Sync) که دسترسی پرتالشان دستی غیرفعال شده —
     برای کارت آمار داشبورد Admin (نشان می‌دهد چند نفر با وجود فعال بودن، به
-    پرتال دسترسی ندارند).
+    پرتال دسترسی ندارند). ایزوله‌سازی چندسایتی مثل GET /employees.
     """
+    accessible_site_ids = await get_accessible_site_ids(db, _current_user)
     stmt = select(func.count()).select_from(Employee).where(
         Employee.is_active.is_(True), Employee.is_enabled.is_(False)
     )
+    if accessible_site_ids is not None:
+        stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
     result = await db.execute(stmt)
     return {"count": result.scalar_one()}
 
@@ -187,14 +201,19 @@ async def count_portal_disabled_employees(
 @router.get("/birthdays-today", response_model=list[BirthdayEmployeeOut])
 async def list_birthdays_today(
     db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     پرسنل فعالی که امروز (تقویم شمسی) روز تولدشان است — برای کارت «متولدین
     روز جاری» در داشبورد Admin. تاریخ امروز بر اساس منطقه زمانی ایران محاسبه
     می‌شود (نه ساعت خام سرور که معمولاً UTC است) تا با birth_month/birth_day
     مقایسه شود (که خودشان از قبل شمسی ذخیره شده‌اند — نگاه کنید به سرویس Sync).
+
+    ⚠️ این Endpoint نام/واحد/سایت پرسنل را برمی‌گرداند — ایزوله‌سازی
+    چندسایتی مثل GET /employees اعمال می‌شود.
     """
+    accessible_site_ids = await get_accessible_site_ids(db, current_user)
+
     today_year, today_month, today_day = get_current_jalali_date()
 
     stmt = (
@@ -207,6 +226,8 @@ async def list_birthdays_today(
             Employee.birth_day == today_day,
         )
     )
+    if accessible_site_ids is not None:
+        stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
     result = await db.execute(stmt)
     return [
         BirthdayEmployeeOut(
@@ -251,13 +272,18 @@ async def count_employees(
     """
     شمارش دقیق پرسنل فعال — برخلاف GET /employees که برای کارایی سقف ۲۰۰ رکورد
     دارد، این Endpoint تعداد واقعی را مستقیماً با COUNT از دیتابیس می‌خواند
-    (برای کارت آمار در داشبورد استفاده می‌شود).
+    (برای کارت آمار در داشبورد استفاده می‌شود). حساسیت داده اینجا کم است
+    (فقط یک عدد، نه جزئیات پرسنل) ولی برای هم‌خوانی کامل با GET /employees،
+    همان ایزوله‌سازی چندسایتی اینجا هم اعمال می‌شود.
     """
+    accessible_site_ids = await get_accessible_site_ids(db, _current_user)
     stmt = select(func.count()).select_from(Employee).where(
         Employee.is_active.is_(True), Employee.is_enabled.is_(True)
     )
     if site_id is not None:
         stmt = stmt.where(Employee.site_id == site_id)
+    if accessible_site_ids is not None:
+        stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
     result = await db.execute(stmt)
     return {"count": result.scalar_one()}
 
