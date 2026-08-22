@@ -15,7 +15,10 @@ import {
 } from "@mui/material";
 import GetAppOutlinedIcon from "@mui/icons-material/GetAppOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import WifiOffOutlinedIcon from "@mui/icons-material/WifiOffOutlined";
+import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import { useAuth } from "../context/AuthContext";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 import { fetchAppVersion } from "../api/system";
@@ -24,6 +27,7 @@ import faipcoLogo from "../assets/faipco-logo.png";
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { isOnline, isChecking, recheck } = useOnlineStatus();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -117,51 +121,75 @@ export default function LoginPage() {
           </Typography>
         </Box>
 
-        {canInstall && (
-          <Button
-            fullWidth
-            variant="outlined"
-            startIcon={<GetAppOutlinedIcon />}
-            onClick={handleInstallClick}
-            sx={{ mb: 2 }}
-          >
-            نصب اپلیکیشن روی این دستگاه
-          </Button>
-        )}
-        {showIosHint && (
-          <Alert severity="info" sx={{ mb: 2, fontSize: 13 }}>
-            برای نصب روی آیفون: دکمه Share را بزنید و «Add to Home Screen» را انتخاب کنید.
-          </Alert>
-        )}
+        {isOnline ? (
+          <>
+            {canInstall && (
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<GetAppOutlinedIcon />}
+                onClick={handleInstallClick}
+                sx={{ mb: 2 }}
+              >
+                نصب اپلیکیشن روی این دستگاه
+              </Button>
+            )}
+            {showIosHint && (
+              <Alert severity="info" sx={{ mb: 2, fontSize: 13 }}>
+                برای نصب روی آیفون: دکمه Share را بزنید و «Add to Home Screen» را انتخاب کنید.
+              </Alert>
+            )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+
+            <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <TextField
+                label="نام کاربری"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+                fullWidth
+              />
+              <TextField
+                label="رمز عبور"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                fullWidth
+              />
+
+              <Button type="submit" variant="contained" size="large" disabled={isSubmitting} sx={{ mt: 1 }}>
+                {isSubmitting ? "در حال ورود..." : "ورود"}
+              </Button>
+            </Box>
+          </>
+        ) : (
+          <Stack spacing={2} alignItems="center" sx={{ textAlign: "center", py: 2 }}>
+            <WifiOffOutlinedIcon sx={{ fontSize: 56 }} color="error" />
+            <Typography variant="subtitle1" fontWeight={700}>
+              اتصال به اینترنت برقرار نیست
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              برای ورود به پرتال، ابتدا اتصال اینترنت خود را بررسی کنید — بعد از وصل‌شدن، این صفحه
+              خودکار به‌روز می‌شود.
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<RefreshOutlinedIcon />}
+              onClick={recheck}
+              disabled={isChecking}
+              sx={{ mt: 1 }}
+            >
+              {isChecking ? "در حال بررسی..." : "تلاش مجدد"}
+            </Button>
+          </Stack>
         )}
-
-        <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <TextField
-            label="نام کاربری"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            autoFocus
-            fullWidth
-          />
-          <TextField
-            label="رمز عبور"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            fullWidth
-          />
-
-          <Button type="submit" variant="contained" size="large" disabled={isSubmitting} sx={{ mt: 1 }}>
-            {isSubmitting ? "در حال ورود..." : "ورود"}
-          </Button>
-        </Box>
       </Paper>
 
       {appVersion && (
