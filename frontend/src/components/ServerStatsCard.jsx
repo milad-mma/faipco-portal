@@ -4,7 +4,7 @@ import MemoryOutlinedIcon from "@mui/icons-material/MemoryOutlined";
 import DnsOutlinedIcon from "@mui/icons-material/DnsOutlined";
 import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
 import { fetchServerStats } from "../api/system";
-import UsageBarChart from "./UsageBarChart";
+import UsageLineChart from "./UsageLineChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 
 function formatDateTimeFa(isoString) {
@@ -194,19 +194,19 @@ export default function ServerStatsCard() {
               <Typography variant="caption" color="text.secondary" gutterBottom display="block">
                 روند CPU (٪)
               </Typography>
-              <UsageBarChart data={chartFor("cpu_percent")} color="#3A6EA5" />
+              <UsageLineChart data={chartFor("cpu_percent")} color="#3A6EA5" />
             </Grid>
             <Grid item xs={12} md={4}>
               <Typography variant="caption" color="text.secondary" gutterBottom display="block">
                 روند RAM (٪)
               </Typography>
-              <UsageBarChart data={chartFor("ram_percent")} color="#2F855A" />
+              <UsageLineChart data={chartFor("ram_percent")} color="#2F855A" />
             </Grid>
             <Grid item xs={12} md={4}>
               <Typography variant="caption" color="text.secondary" gutterBottom display="block">
                 روند دیسک (٪)
               </Typography>
-              <UsageBarChart data={chartFor("disk_percent")} color="#C97A2B" />
+              <UsageLineChart data={chartFor("disk_percent")} color="#C97A2B" />
             </Grid>
           </Grid>
         </>

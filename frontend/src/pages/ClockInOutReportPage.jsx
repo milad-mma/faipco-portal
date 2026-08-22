@@ -103,7 +103,11 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
 
   async function handleSave() {
     setError("");
-    if (!employee) {
+    // اعتبارسنجی «پرسنل انتخاب شود» فقط برای create/createForSlot معنا دارد
+    // — در حالت edit، عمداً employee همیشه null است (چون ویرایش نیازی به
+    // انتخاب دوباره پرسنل ندارد؛ پرسنل رکورد از قبل مشخص است). این چک قبلاً
+    // بدون توجه به mode اجرا می‌شد و همیشه جلوی ذخیره در حالت ویرایش را می‌گرفت.
+    if (mode !== "edit" && !employee) {
       setError("پرسنل را انتخاب کنید.");
       return;
     }

@@ -54,7 +54,16 @@ export function jalaliToGregorian(jy, jm, jd, hour = 0, minute = 0) {
 
 /** شیء Date میلادی → {jy, jm, jd} شمسی */
 export function gregorianToJalali(date) {
-  const gy = date.getFullYear();
+  // ⚠️ رفع یک باگ واقعی و جدی: قبلاً «date» با ساعت/دقیقه دست‌نخورده مستقیم
+  // در محاسبه فاصله روز استفاده می‌شد — یعنی فاصله زمانی یک عدد کسری بود
+  // (نه یک عدد صحیح روز)، و Math.round() هر ساعتی بعد از ظهر (۱۲:۰۰ به بعد)
+  // را به اشتباه به روز بعد گرد می‌کرد. نتیجه: از ظهر هر روز به بعد، تاریخ
+  // شمسی نمایش‌داده‌شده همیشه یک روز جلوتر از واقعیت بود (مثلاً ۳۱ مرداد
+  // بعدازظهر به‌جای خودش، ۱ شهریور نشان داده می‌شد). رفع شد: قبل از هر
+  // محاسبه‌ای، ساعت را کامل پاک می‌کنیم — این تابع فقط با «کدام روز
+  // تقویمی» کار دارد، نه ساعت دقیق درون آن روز.
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const gy = dateOnly.getFullYear();
   // برای پیداکردن سال شمسی، از سال میلادی فعلی و قبلی هردو march را حساب و مقایسه می‌کنیم
   for (const candidateJy of [gy - 622, gy - 621, gy - 620]) {
     const r = jalCal(candidateJy);
@@ -62,8 +71,8 @@ export function gregorianToJalali(date) {
     const marchDate = new Date(r.gy, 2, march);
     const nextR = jalCal(candidateJy + 1);
     const nextMarchDate = new Date(nextR.gy, 2, nextR.march);
-    if (date >= marchDate && date < nextMarchDate) {
-      const diffDays = Math.round((date - marchDate) / 86400000);
+    if (dateOnly >= marchDate && dateOnly < nextMarchDate) {
+      const diffDays = Math.round((dateOnly - marchDate) / 86400000);
       let jm;
       let jd;
       if (diffDays < 186) {

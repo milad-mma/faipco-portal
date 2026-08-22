@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CircularProgress, Stack, Tab, Tabs, Typography } from "@mui/material";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import { fetchUsageStats } from "../api/system";
-import UsageBarChart from "./UsageBarChart";
+import UsageLineChart from "./UsageLineChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 
 function toJalaliDayLabel(isoDate) {
@@ -12,12 +12,15 @@ function toJalaliDayLabel(isoDate) {
 }
 
 // شماره هفته شمسی تقریبی (برای گروه‌بندی، نه یک استاندارد رسمی) — بر
-// اساس تعداد روزهای سپری‌شده از ابتدای سال شمسی، تقسیم بر ۷
+// اساس تعداد روزهای سپری‌شده از ابتدای سال شمسی، تقسیم بر ۷. فرمول عمداً
+// دقیقاً با فرمول jdays در jalaliDate.js هماهنگ نگه داشته شده (jd - 1، نه
+// jd) — قبلاً این‌جا یک نسخه جدا و کمی متفاوت نوشته شده بود که می‌توانست
+// نتیجه‌اش با بقیه محاسبات این پروژه یک روز فرق کند.
 function toJalaliWeekKey(isoDate) {
   const [y, m, d] = isoDate.split("-").map(Number);
   const { jy, jm, jd } = gregorianToJalali(new Date(y, m - 1, d));
-  const dayOfYear = jm <= 6 ? (jm - 1) * 31 + jd : 186 + (jm - 7) * 30 + jd;
-  const weekNumber = Math.ceil(dayOfYear / 7);
+  const dayOfYear = jm <= 6 ? (jm - 1) * 31 + (jd - 1) : 186 + (jm - 7) * 30 + (jd - 1);
+  const weekNumber = Math.ceil((dayOfYear + 1) / 7);
   return { key: `${jy}-W${weekNumber}`, label: `هفته ${weekNumber} (${jy})` };
 }
 
@@ -146,7 +149,7 @@ export default function UsageStatsCard() {
           <CircularProgress size={28} />
         </Stack>
       ) : (
-        <UsageBarChart data={chartData} emptyMessage="هنوز داده‌ای برای این بازه ثبت نشده" />
+        <UsageLineChart data={chartData} emptyMessage="هنوز داده‌ای برای این بازه ثبت نشده" />
       )}
     </Card>
   );
