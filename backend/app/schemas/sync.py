@@ -27,6 +27,7 @@ class SyncLogOut(BaseModel):
 
 class SyncSettingsOut(BaseModel):
     interval_minutes: int
+    last_auto_sync_at: datetime | None = None
 
 
 class SyncSettingsUpdate(BaseModel):

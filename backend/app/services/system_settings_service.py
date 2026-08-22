@@ -1,6 +1,8 @@
 """
 سرویس تنظیمات سراسری قابل‌تغییر از پنل (بدون نیاز به ویرایش .env یا Restart سرور).
 """
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +10,7 @@ from app.core.config import get_settings
 from app.models.system_setting import SystemSetting
 
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
+LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"  # ISO-format UTC — برای تشخیص «الان وقتشه یا نه» مستقل از هر Worker
 IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
 IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
 BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
@@ -56,6 +59,15 @@ class SystemSettingsService:
             raise ValueError("فاصله زمانی Sync باید حداقل ۱ دقیقه باشد")
         await self._set_raw(SYNC_INTERVAL_KEY, str(minutes))
         return minutes
+
+    async def get_last_auto_sync_at(self) -> datetime | None:
+        raw = await self._get_raw(LAST_AUTO_SYNC_AT_KEY)
+        if raw is None:
+            return None
+        return datetime.fromisoformat(raw)
+
+    async def set_last_auto_sync_at(self, when: datetime) -> None:
+        await self._set_raw(LAST_AUTO_SYNC_AT_KEY, when.isoformat())
 
     # ---------- پیام نمایش‌داده‌شده وقتی IP کاربر مجاز نیست ----------
 

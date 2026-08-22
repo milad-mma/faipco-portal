@@ -3,14 +3,25 @@
 فقط سایت‌هایی که هم خودشان فعال‌اند و هم SiteConnection.is_active روشن است
 (یعنی Sync خودکار برایشان خاموش نشده) وارد این چرخه دوره‌ای می‌شوند. اجرای
 دستی از پنل Admin مستقل از این پرچم است و همیشه کار می‌کند (به SyncService
-مراجعه کنید). فاصله زمانی ابتدا از دیتابیس (system_settings) خوانده می‌شود —
-اگر هنوز از پنل تغییر داده نشده باشد، از SYNC_INTERVAL_MINUTES در .env
-استفاده می‌شود (سازگار با نصب‌های قبلی). با reschedule_sync_interval()
-می‌توان فاصله زمانی Job در حال اجرا را بدون Restart سرور تغییر داد — از
-Endpoint مدیریت Sync صدا زده می‌شود.
+مراجعه کنید).
+
+⚠️ نکته حیاتی درباره فاصله زمانی: این Job با یک تیک **ثابت و مکرر** (هر ۱
+دقیقه) اجرا می‌شود، نه مستقیم با همان فاصله‌ای که کاربر از پنل تنظیم
+می‌کند — و هر بار خودش چک می‌کند «طبق آخرین Sync موفق و فاصله زمانی فعلی
+(هر دو از دیتابیس، نه حافظه)، الان واقعاً وقتش شده یا نه». علتش یک باگ
+واقعی بود: چون این سرویس با چند Worker جدا (uvicorn --workers 2) اجرا
+می‌شود، هر Worker یک نسخه کاملاً مستقل از APScheduler دارد — وقتی کاربر
+فاصله زمانی را از پنل تغییر می‌داد، فقط همان Worker ای که درخواست HTTP را
+گرفته بود reschedule می‌شد؛ Worker دیگر همچنان با فاصله زمانی قدیمی (از
+همان لحظه Startup) کار می‌کرد، و چون هرکدام مستقل تصمیم می‌گرفت «وقتشه»،
+Sync می‌توانست خیلی زودتر از حد انتظار (یا اصلاً هیچ‌وقت با فاصله درست)
+اجرا شود. با این طرح جدید، تصمیم «الان وقتشه یا نه» همیشه از یک منبع واحد
+(دیتابیس) خوانده می‌شود — نتیجه‌اش برای هر Worker یکسان است، بدون نیاز به
+Reschedule کردن هیچ Job ای.
 اگر SYNC_ENABLED=false باشد، هیچ Job ای زمان‌بندی نمی‌شود.
 """
 import logging
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,6 +41,10 @@ settings = get_settings()
 
 JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
+# فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
+# فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
+# که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
+SYNC_CHECK_INTERVAL_MINUTES = 1
 # نکته حیاتی: بدون این، APScheduler به‌طور پیش‌فرض از منطقه زمانی سیستم‌عامل
 # سرور استفاده می‌کند — که روی اکثر VPS های تازه‌نصب UTC است، نه ایران. یعنی
 # «ساعت ۱۲» که مدیر منابع انسانی از پنل تنظیم می‌کند، بدون این خط ممکن است
@@ -64,6 +79,16 @@ async def _run_sync_for_all_active_sites() -> None:
             logger.info("Job سینک خودکار همزمان توسط Worker دیگری در حال اجراست — این نمونه رد می‌شود.")
             return
         try:
+            settings_service = SystemSettingsService(lock_db)
+            interval_minutes = await settings_service.get_sync_interval_minutes()
+            last_run = await settings_service.get_last_auto_sync_at()
+            now = datetime.now(timezone.utc)
+
+            if last_run is not None:
+                elapsed_minutes = (now - last_run).total_seconds() / 60
+                if elapsed_minutes < interval_minutes:
+                    return  # هنوز وقتش نشده — طبق فاصله زمانی فعلی (تازه از دیتابیس خوانده‌شده)
+
             # فقط سایت‌هایی که هم خودشان فعال‌اند و هم Sync خودکارشان روشن است
             # (SiteConnection.is_active) وارد چرخه خودکار می‌شوند — اجرای دستی از
             # پنل Admin از این محدودیت مستقل است و همیشه در دسترس می‌ماند.
@@ -81,6 +106,8 @@ async def _run_sync_for_all_active_sites() -> None:
                         logger.info("Sync خودکار موفق برای Site '%s'", site.code)
                     except Exception:  # noqa: BLE001 - خطای هر Site نباید بقیه را متوقف کند
                         logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
+
+            await settings_service.set_last_auto_sync_at(now)
         finally:
             await _advisory_unlock(lock_db, _SYNC_LOCK_KEY)
 
@@ -103,17 +130,18 @@ async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
     else:
-        async with AsyncSessionLocal() as db:
-            interval_minutes = await SystemSettingsService(db).get_sync_interval_minutes()
-
         scheduler.add_job(
             _run_sync_for_all_active_sites,
             trigger="interval",
-            minutes=interval_minutes,
+            minutes=SYNC_CHECK_INTERVAL_MINUTES,
             id=JOB_ID,
             replace_existing=True,
         )
-        logger.info("Scheduler سینک خودکار هر %s دقیقه اجرا خواهد شد", interval_minutes)
+        logger.info(
+            "Scheduler هر %s دقیقه چک می‌کند که آیا طبق فاصله زمانی تنظیم‌شده (که از دیتابیس خوانده "
+            "می‌شود، نه حافظه) وقت Sync خودکار رسیده یا نه",
+            SYNC_CHECK_INTERVAL_MINUTES,
+        )
 
     async with AsyncSessionLocal() as db:
         birthday_hour, birthday_minute = await BirthdayGreetingsService(db).get_send_time()
@@ -133,18 +161,14 @@ async def start_scheduler() -> None:
 
 def reschedule_sync_interval(minutes: int) -> None:
     """
-    فاصله زمانی Job سینک خودکار در حال اجرا را بدون Restart سرور تغییر می‌دهد.
-    اگر SYNC_ENABLED=false بوده و اصلاً Job ای زمان‌بندی نشده، بی‌اثر است —
-    مقدار جدید همچنان در دیتابیس ذخیره شده و در Restart بعدی (اگر Sync فعال شود) اعمال می‌شود.
+    ⚠️ دیگر عملاً کاری لازم نیست انجام دهد — این تابع فقط برای سازگاری با
+    Endpoint موجود (که هنوز صدایش می‌زند) نگه داشته شده و بلافاصله بی‌اثر
+    برمی‌گردد. با طرح جدید (بالا)، تغییر فاصله زمانی همین که در دیتابیس
+    ذخیره شود، همان لحظه برای همه Worker ها در چک بعدی (حداکثر
+    SYNC_CHECK_INTERVAL_MINUTES دقیقه دیگر) اعمال می‌شود — نیازی به
+    Reschedule کردن هیچ Job APScheduler ای نیست.
     """
-    try:
-        scheduler.reschedule_job(JOB_ID, trigger="interval", minutes=minutes)
-        logger.info("فاصله زمانی Sync خودکار به %s دقیقه تغییر کرد", minutes)
-    except JobLookupError:
-        logger.info(
-            "Job سینک خودکار در حال حاضر زمان‌بندی نشده (SYNC_ENABLED=false) — "
-            "مقدار جدید فقط در دیتابیس ذخیره شد و در اجرای بعدی اعمال می‌شود."
-        )
+    logger.info("فاصله زمانی Sync خودکار به %s دقیقه تغییر کرد (در چک بعدی همه Worker ها اعمال می‌شود)", minutes)
 
 
 def reschedule_birthday_send_time(hour: int, minute: int) -> None:

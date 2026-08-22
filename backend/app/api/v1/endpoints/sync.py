@@ -19,9 +19,11 @@ async def get_sync_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sync.manage")),
 ):
-    """فاصله زمانی فعلی اجرای خودکار Sync (بر حسب دقیقه)."""
-    interval = await SystemSettingsService(db).get_sync_interval_minutes()
-    return SyncSettingsOut(interval_minutes=interval)
+    """فاصله زمانی فعلی اجرای خودکار Sync (بر حسب دقیقه) + زمان آخرین اجرای موفق آن."""
+    service = SystemSettingsService(db)
+    interval = await service.get_sync_interval_minutes()
+    last_auto_sync_at = await service.get_last_auto_sync_at()
+    return SyncSettingsOut(interval_minutes=interval, last_auto_sync_at=last_auto_sync_at)
 
 
 @router.put("/settings", response_model=SyncSettingsOut)
@@ -32,8 +34,11 @@ async def update_sync_settings(
 ):
     """
     تغییر فاصله زمانی اجرای خودکار Sync — بدون نیاز به Restart سرور یا ویرایش
-    دستی .env؛ هم در دیتابیس ذخیره می‌شود (برای ماندگاری بعد از Restart) و هم
-    بلافاصله روی Job در حال اجرای APScheduler اعمال می‌شود.
+    دستی .env. در دیتابیس ذخیره می‌شود و همه Worker های سرویس (نه فقط همان
+    Worker ای که این درخواست را گرفته) در چک بعدی‌شان (حداکثر
+    SYNC_CHECK_INTERVAL_MINUTES دقیقه دیگر، پیش‌فرض ۱ دقیقه) همین مقدار
+    جدید را می‌بینند — چون تصمیم «الان وقتشه یا نه» هر بار مستقیم از
+    دیتابیس خوانده می‌شود، نه از حافظه هر Worker.
     """
     try:
         interval = await SystemSettingsService(db).set_sync_interval_minutes(payload.interval_minutes)

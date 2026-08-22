@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Card,
+  Chip,
   FormControlLabel,
   MenuItem,
   Stack,
@@ -20,6 +21,7 @@ import {
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import PowerSettingsNewOutlinedIcon from "@mui/icons-material/PowerSettingsNewOutlined";
 import { fetchSiteConnection, fetchSites, setSiteConnectionActive } from "../api/sites";
 import { fetchSyncLogs, fetchSyncSettings, runSiteSync, testSiteConnection, updateSyncSettings } from "../api/sync";
@@ -36,6 +38,7 @@ export default function SyncPage() {
 
   const [intervalMinutes, setIntervalMinutes] = useState("");
   const [savedIntervalMinutes, setSavedIntervalMinutes] = useState(null);
+  const [lastAutoSyncAt, setLastAutoSyncAt] = useState(null);
   const [isSavingInterval, setIsSavingInterval] = useState(false);
   const [intervalMessage, setIntervalMessage] = useState(null);
 
@@ -50,6 +53,7 @@ export default function SyncPage() {
     fetchSyncSettings().then((data) => {
       setIntervalMinutes(String(data.interval_minutes));
       setSavedIntervalMinutes(data.interval_minutes);
+      setLastAutoSyncAt(data.last_auto_sync_at);
     });
   }, []);
 
@@ -111,7 +115,10 @@ export default function SyncPage() {
     try {
       const result = await updateSyncSettings(value);
       setSavedIntervalMinutes(result.interval_minutes);
-      setIntervalMessage({ severity: "success", text: "فاصله زمانی Sync خودکار ذخیره شد و بلافاصله اعمال شد." });
+      setIntervalMessage({
+        severity: "success",
+        text: "فاصله زمانی ذخیره شد — حداکثر تا ۱ دقیقه دیگر روی سیستم اعمال می‌شود.",
+      });
     } catch (err) {
       setIntervalMessage({
         severity: "error",
@@ -123,6 +130,16 @@ export default function SyncPage() {
   }
 
   const intervalChanged = savedIntervalMinutes !== null && Number(intervalMinutes) !== savedIntervalMinutes;
+
+  const intervalPresets = [
+    { label: "۱۵ دقیقه", value: 15 },
+    { label: "۳۰ دقیقه", value: 30 },
+    { label: "۱ ساعت", value: 60 },
+    { label: "۳ ساعت", value: 180 },
+    { label: "۶ ساعت", value: 360 },
+    { label: "۱۲ ساعت", value: 720 },
+    { label: "۱ شبانه‌روز", value: 1440 },
+  ];
 
   return (
     <Box>
@@ -141,13 +158,32 @@ export default function SyncPage() {
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          هر چند دقیقه یک‌بار، پرسنل همه سایت‌های فعال به‌صورت خودکار همگام‌سازی شوند.
-          تغییر این مقدار فوراً اعمال می‌شود — نیازی به Restart سرور نیست.
+          هر چند دقیقه یک‌بار، پرسنل همه سایت‌های فعال به‌صورت خودکار همگام‌سازی شوند. سیستم هر
+          دقیقه یک‌بار چک می‌کند که آیا وقتش رسیده — یعنی زمان واقعی اجرا حداکثر تا ۱ دقیقه با این
+          مقدار فاصله دارد، نه دقیقاً لحظه‌به‌لحظه.
         </Typography>
+
+        <Stack direction="row" spacing={1} flexWrap="wrap" rowGap={1} sx={{ mb: 2 }}>
+          {intervalPresets.map((preset) => (
+            <Chip
+              key={preset.value}
+              label={preset.label}
+              size="small"
+              variant={Number(intervalMinutes) === preset.value ? "filled" : "outlined"}
+              color={Number(intervalMinutes) === preset.value ? "primary" : "default"}
+              clickable
+              onClick={() => {
+                setIntervalMessage(null);
+                setIntervalMinutes(String(preset.value));
+              }}
+            />
+          ))}
+        </Stack>
+
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
           <TextField
             type="number"
-            label="فاصله زمانی (دقیقه)"
+            label="فاصله زمانی دلخواه (دقیقه)"
             value={intervalMinutes}
             onChange={(e) => {
               setIntervalMessage(null);
@@ -165,6 +201,17 @@ export default function SyncPage() {
             {isSavingInterval ? "در حال ذخیره..." : "ذخیره"}
           </Button>
         </Stack>
+
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2.5, opacity: 0.8 }}>
+          <HistoryOutlinedIcon sx={{ fontSize: 18 }} color="action" />
+          <Typography variant="caption" color="text.secondary">
+            آخرین Sync خودکار:{" "}
+            <span style={monoFontSx}>
+              {lastAutoSyncAt ? new Date(lastAutoSyncAt).toLocaleString("fa-IR") : "هنوز اجرا نشده"}
+            </span>
+          </Typography>
+        </Stack>
+
         {intervalMessage && (
           <Alert severity={intervalMessage.severity} sx={{ mt: 2 }}>
             {intervalMessage.text}
