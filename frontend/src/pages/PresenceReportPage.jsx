@@ -21,6 +21,7 @@ import {
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { fetchPresenceSessions } from "../api/attendance";
 import { fetchEmployees } from "../api/employees";
+import SiteFilterSelect from "../components/SiteFilterSelect";
 import { monoFontSx } from "../theme";
 
 const PAGE_SIZE = 50;
@@ -40,6 +41,7 @@ export default function PresenceReportPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [onlyOnline, setOnlyOnline] = useState(false);
 
   const [employeeOptions, setEmployeeOptions] = useState([]);
@@ -51,12 +53,13 @@ export default function PresenceReportPage() {
       page,
       pageSize: PAGE_SIZE,
       employeeId: selectedEmployee?.id,
+      siteId: selectedSiteId,
       onlyOnline,
     }).then((data) => {
       setSessions(data.items);
       setTotal(data.total);
     });
-  }, [page, selectedEmployee, onlyOnline]);
+  }, [page, selectedEmployee, selectedSiteId, onlyOnline]);
 
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
@@ -77,6 +80,13 @@ export default function PresenceReportPage() {
       </Alert>
 
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
+        <SiteFilterSelect
+          value={selectedSiteId}
+          onChange={(value) => {
+            setSelectedSiteId(value);
+            setPage(1);
+          }}
+        />
         <Autocomplete
           sx={{ minWidth: 260 }}
           options={employeeOptions}

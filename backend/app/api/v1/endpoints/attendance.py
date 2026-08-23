@@ -169,6 +169,7 @@ async def list_all_logs(
     log_type: GpsLogType | None = None,
     year: int | None = None,
     month: int | None = None,
+    site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -178,17 +179,27 @@ async def list_all_logs(
     محدود به یک ماه شمسی مشخص (پیش‌فرض: ماه جاری) و Paginated است.
 
     ⚠️ ایزوله‌سازی چندسایتی: عمداً از get_current_user استفاده می‌شود، نه
-    require_permission — چون این Endpoint هیچ site_id در Path/Query ندارد
+    require_permission — چون این Endpoint هیچ site_id ثابتی در Path ندارد
     که require_permission(site_scoped=True) بتواند از آن بخواند؛ استفاده
     از حالت پیش‌فرض (site_scoped=False) یا کاملاً رد می‌کرد (hr-manager
     سایت‌محور، چون get_permission_codes بدون site_id فقط نقش‌های سراسری را
     می‌بیند) یا کاملاً باز می‌گذاشت (اگر سراسری انتصاب شود، همه سایت‌ها).
     get_sites_with_permission پایین دقیقاً همان سایت‌هایی که کاربر واقعاً
     این Permission را برایشان دارد برمی‌گرداند، و اگر هیچ‌کدام، ۴۰۳ می‌دهد.
+
+    site_id (اختیاری) یک فیلتر جداست، برای نمای «سایت-محور» پنل Admin —
+    اگر داده شود، با سایت‌های مجاز بالا تقاطع (Intersect) گرفته می‌شود؛
+    یعنی Admin هرچه بخواهد فیلتر می‌کند، ولی hr-manager سایت‌محور همچنان
+    نمی‌تواند با تغییر این پارامتر به سایت دیگری دسترسی پیدا کند.
     """
-    site_ids = await get_sites_with_permission(db, current_user, "attendance.view_clock_records")
-    if site_ids is not None and not site_ids:
+    access_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_clock_records")
+    if access_site_ids is not None and not access_site_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
+
+    if site_id is not None:
+        site_ids = {site_id} if access_site_ids is None else (access_site_ids & {site_id})
+    else:
+        site_ids = access_site_ids
 
     if year is None or month is None:
         year, month = get_current_jalali_year_month()
@@ -471,6 +482,7 @@ async def list_presence_sessions(
     page_size: int = 50,
     employee_id: int | None = None,
     only_online: bool = False,
+    site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -479,12 +491,20 @@ async def list_presence_sessions(
 
     ⚠️ ایزوله‌سازی چندسایتی: عمداً از get_current_user استفاده می‌شود، نه
     require_permission — همان دلیل list_all_logs (این Endpoint هم site_id
-    در Path/Query ندارد). accessible_site_ids دقیقاً همان سایت‌هایی که
-    کاربر واقعاً این Permission را برایشان دارد برمی‌گرداند.
+    ثابتی در Path ندارد). access_site_ids دقیقاً همان سایت‌هایی که کاربر
+    واقعاً این Permission را برایشان دارد برمی‌گرداند.
+
+    site_id (اختیاری، پارامتر دیگر): فیلتر «سایت-محور» پنل Admin — با
+    سایت‌های مجاز بالا تقاطع گرفته می‌شود (همان الگوی list_all_logs).
     """
-    accessible_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_logs")
-    if accessible_site_ids is not None and not accessible_site_ids:
+    access_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_logs")
+    if access_site_ids is not None and not access_site_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
+
+    if site_id is not None:
+        accessible_site_ids = {site_id} if access_site_ids is None else (access_site_ids & {site_id})
+    else:
+        accessible_site_ids = access_site_ids
 
     sessions, total = await GpsAttendanceService(db).get_presence_sessions_page(
         page=page, page_size=page_size, employee_id=employee_id, only_online=only_online,

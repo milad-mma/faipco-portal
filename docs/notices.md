@@ -65,6 +65,20 @@ curl "http://localhost:8000/api/v1/notices/admin-report?page=1&page_size=10" -H 
   Endpoint هوشمند سوییچ می‌کند (`user.is_superuser` → `/admin-report`، وگرنه
   → `/site-report`)، پس هیچ صفحه/منوی جدایی لازم نبود.
 
+### نمای سایت-محور در پنل Admin
+
+هر سه صفحه گزارش (اطلاعیه‌ها، ورود/خروج، حضور آنلاین) یک `SiteFilterSelect`
+بالای جدول دارند — یک Dropdown ساده («همه سایت‌ها» یا یک سایت خاص) که کل
+جدول را فیلتر می‌کند. این فقط یک **راحتی UI** است، نه یک لایه امنیتی جدید:
+
+- برای Admin واقعی، این فیلتر روی `/admin-report`، `/attendance/logs`، و
+  `/attendance/presence-sessions` یک `site_id` اختیاری اضافه می‌کند.
+- برای کاربر Site-scoped (مثلاً site_manager یا hr-manager سایت‌محور)،
+  Backend همیشه با سایت‌های واقعاً مجاز آن کاربر تقاطع (Intersect) می‌گیرد
+  — یعنی حتی اگر کسی مقدار `site_id` را در URL دستکاری کند، نمی‌تواند به
+  سایتی خارج از محدوده خودش دسترسی پیدا کند (لایه امنیتی واقعی همان
+  `site_access.py` است که در [`docs/rbac.md`](rbac.md) مستند شده).
+
 ## ارسال مجدد اعلان (Push) — نه خودِ اطلاعیه
 
 از دیالوگ «چه کسانی این اطلاعیه را دیده‌اند» (`GET /notices/{id}/readers`)،

@@ -34,13 +34,17 @@ export async function fetchSentByMe(page = 1, pageSize = 10) {
   return data; // { items, total }
 }
 
-export async function fetchAdminReport(page = 1, pageSize = 10) {
-  const { data } = await apiClient.get("/notices/admin-report", { params: { page, page_size: pageSize } });
+export async function fetchAdminReport(page = 1, pageSize = 10, siteId = null) {
+  const { data } = await apiClient.get("/notices/admin-report", {
+    params: { page, page_size: pageSize, site_id: siteId ?? undefined },
+  });
   return data; // { items, total }
 }
 
-export async function fetchSiteReport(page = 1, pageSize = 10) {
-  const { data } = await apiClient.get("/notices/site-report", { params: { page, page_size: pageSize } });
+export async function fetchSiteReport(page = 1, pageSize = 10, siteId = null) {
+  const { data } = await apiClient.get("/notices/site-report", {
+    params: { page, page_size: pageSize, site_id: siteId ?? undefined },
+  });
   return data; // { items, total }
 }
 

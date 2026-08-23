@@ -37,7 +37,7 @@ export async function fetchMyAttendanceLogs({ year, month } = {}) {
   return data; // { items, year, month }
 }
 
-export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType, year, month } = {}) {
+export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType, year, month, siteId } = {}) {
   const { data } = await apiClient.get("/attendance/logs", {
     params: {
       page,
@@ -46,18 +46,20 @@ export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employee
       log_type: logType || undefined,
       year: year || undefined,
       month: month || undefined,
+      site_id: siteId ?? undefined,
     },
   });
   return data; // { items, total, year, month }
 }
 
-export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline } = {}) {
+export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline, siteId } = {}) {
   const { data } = await apiClient.get("/attendance/presence-sessions", {
     params: {
       page,
       page_size: pageSize,
       employee_id: employeeId || undefined,
       only_online: onlyOnline || undefined,
+      site_id: siteId ?? undefined,
     },
   });
   return data; // { items, total }

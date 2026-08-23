@@ -142,15 +142,27 @@ async def sent_by_me(
 async def admin_report(
     page: int = 1,
     page_size: int = 10,
+    site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("notices.view")),
 ):
-    """گزارش کامل Admin: همه اطلاعیه‌های سیستم، فرستنده هرکدام، و آمار بازدید (صفحه‌بندی‌شده)."""
+    """
+    گزارش کامل Admin: همه اطلاعیه‌های سیستم، فرستنده هرکدام، و آمار بازدید
+    (صفحه‌بندی‌شده). site_id اختیاری: اگر داده شود، فقط اطلاعیه‌هایی که به
+    همان سایت می‌رسند (از هر فرستنده‌ای) — برای نمای «سایت-محور» پنل Admin؛
+    از همان منطق /site-report استفاده می‌کند، فقط این‌جا Admin خودش سایت را
+    از یک Dropdown انتخاب می‌کند (نه این‌که به سایت‌های تحت مدیریتش محدود باشد).
+    """
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
-    items, total = await NoticeService(db).get_detailed_notices(
-        sender_id=None, limit=page_size, offset=(page - 1) * page_size
-    )
+    if site_id is not None:
+        items, total = await NoticeService(db).get_detailed_notices_for_sites(
+            [site_id], limit=page_size, offset=(page - 1) * page_size
+        )
+    else:
+        items, total = await NoticeService(db).get_detailed_notices(
+            sender_id=None, limit=page_size, offset=(page - 1) * page_size
+        )
     return NoticeDetailPageOut(items=items, total=total)
 
 
@@ -158,6 +170,7 @@ async def admin_report(
 async def site_report(
     page: int = 1,
     page_size: int = 10,
+    site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -168,6 +181,10 @@ async def site_report(
     /admin-report، نیازمند notices.view سراسری نیست — به‌جایش، خودِ Endpoint
     بررسی می‌کند کاربر واقعاً برای کدام سایت‌ها نقش site_manager دارد (اگر
     هیچ‌کدام، ۴۰۳). Admin هم می‌تواند صدا بزند (همه سایت‌ها).
+
+    site_id (اختیاری): فیلتر «سایت-محور» — برای site_manager ای که چند
+    سایت را مدیریت می‌کند، اگر بخواهد فقط یکی را ببیند. با سایت‌های تحت
+    مدیریتش تقاطع گرفته می‌شود؛ نمی‌تواند سایتی خارج از مدیریتش را انتخاب کند.
     """
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
@@ -176,14 +193,19 @@ async def site_report(
         from app.models.site import Site
 
         site_result = await db.execute(select(Site.id))
-        site_ids = [row[0] for row in site_result.all()]
+        managed_site_ids = [row[0] for row in site_result.all()]
     else:
-        site_ids = await UserRepository(db).get_managed_site_ids(current_user.id, "site_manager")
-        if not site_ids:
+        managed_site_ids = await UserRepository(db).get_managed_site_ids(current_user.id, "site_manager")
+        if not managed_site_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="شما مدیر هیچ سایتی نیستید",
             )
+
+    if site_id is not None:
+        site_ids = [site_id] if site_id in managed_site_ids else []
+    else:
+        site_ids = managed_site_ids
 
     items, total = await NoticeService(db).get_detailed_notices_for_sites(
         site_ids, limit=page_size, offset=(page - 1) * page_size

@@ -40,6 +40,7 @@ import { fetchEmployees } from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { useAuth } from "../context/AuthContext";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import SiteFilterSelect from "../components/SiteFilterSelect";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
@@ -258,6 +259,7 @@ export default function ClockInOutReportPage() {
   const [groupedRows, setGroupedRows] = useState(null);
   const [page, setPage] = useState(1);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [period, setPeriod] = useState({ year: null, month: null });
 
   const [employeeOptions, setEmployeeOptions] = useState([]);
@@ -277,6 +279,7 @@ export default function ClockInOutReportPage() {
         page: 1,
         pageSize: 1000,
         employeeId: selectedEmployee?.id,
+        siteId: selectedSiteId,
         logType: "check_in",
         year: period.year,
         month: period.month,
@@ -285,6 +288,7 @@ export default function ClockInOutReportPage() {
         page: 1,
         pageSize: 1000,
         employeeId: selectedEmployee?.id,
+        siteId: selectedSiteId,
         logType: "check_out",
         year: period.year,
         month: period.month,
@@ -294,7 +298,7 @@ export default function ClockInOutReportPage() {
       setGroupedRows(combined);
       setPeriod({ year: inData.year, month: inData.month });
     });
-  }, [page, selectedEmployee, period.year, period.month, reloadKey]);
+  }, [page, selectedEmployee, selectedSiteId, period.year, period.month, reloadKey]);
 
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
@@ -370,6 +374,13 @@ export default function ClockInOutReportPage() {
       </Alert>
 
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
+        <SiteFilterSelect
+          value={selectedSiteId}
+          onChange={(value) => {
+            setSelectedSiteId(value);
+            setPage(1);
+          }}
+        />
         <Autocomplete
           sx={{ minWidth: 260 }}
           options={employeeOptions}

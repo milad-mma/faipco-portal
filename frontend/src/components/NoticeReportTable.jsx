@@ -186,6 +186,13 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, reloadKey]);
 
+  useEffect(() => {
+    // وقتی فیلتر بیرونی (مثلاً انتخاب سایت) تغییر کند، باید به صفحه اول
+    // برگردیم — وگرنه ممکن است روی صفحه‌ای بمانیم که دیگر داده‌ای ندارد.
+    setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
+
   async function handleDelete(notice) {
     if (!window.confirm(`اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`)) {
       return;
