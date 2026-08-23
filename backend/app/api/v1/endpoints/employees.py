@@ -16,6 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
 from app.core.site_access import get_accessible_site_ids
+from app.services.employee_cleanup_service import (
+    delete_orphaned_inactive_employees,
+    find_orphaned_inactive_employees,
+)
 from app.core.persian_date import get_current_jalali_date
 from app.core.security import WeakPasswordError
 from app.db.session import get_db
@@ -261,6 +265,54 @@ async def get_employee_photo_thumbnail(
 
     # ThumbnailImg در EmployeeExtendedInfo همیشه GIF است (بر اساس نمونه واقعی داده)
     return Response(content=employee.photo_thumbnail, media_type="image/gif")
+
+
+# ---------- پاک‌سازی پرسنل غیرفعال «بدون سابقه» (داده تاریخی قبل از رفع باگ Sync) ----------
+
+
+@router.get("/cleanup-orphaned-inactive/preview")
+async def preview_orphaned_inactive_cleanup(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("users.manage")),
+):
+    """
+    فقط یک گزارش امن و بدون‌اثر — چه کسانی حذف می‌شوند اگر Execute بعدی
+    اجرا شود. برای جزئیات کامل معیار «بدون سابقه»، نگاه کنید
+    app/services/employee_cleanup_service.py.
+    """
+    employees = await find_orphaned_inactive_employees(db)
+    site_ids = {e.site_id for e in employees}
+    sites_result = await db.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
+    site_names = dict(sites_result.all())
+    return {
+        "count": len(employees),
+        "items": [
+            {
+                "id": e.id,
+                "personnel_code": e.personnel_code,
+                "first_name": e.first_name,
+                "last_name": e.last_name,
+                "site_name": site_names.get(e.site_id, "—"),
+            }
+            for e in employees
+        ],
+    }
+
+
+@router.post("/cleanup-orphaned-inactive/execute")
+async def execute_orphaned_inactive_cleanup(
+    confirm: bool = Query(default=False, description="باید صریحاً true باشد وگرنه هیچ حذفی انجام نمی‌شود"),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("users.manage")),
+):
+    """حذف واقعی — فقط بعد از دیدن Preview بالا و تأیید صریح Admin (confirm=true)."""
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="برای حذف واقعی باید confirm=true ارسال شود",
+        )
+    deleted_count = await delete_orphaned_inactive_employees(db)
+    return {"deleted_count": deleted_count}
 
 
 @router.get("/count")

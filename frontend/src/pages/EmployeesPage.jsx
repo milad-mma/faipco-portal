@@ -6,9 +6,11 @@ import {
   Card,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   FormControlLabel,
   IconButton,
@@ -30,7 +32,15 @@ import {
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
-import { fetchEmployees, resetEmployeePassword, setEmployeeEnabled, setEmployeePassword } from "../api/employees";
+import CleaningServicesOutlinedIcon from "@mui/icons-material/CleaningServicesOutlined";
+import {
+  executeOrphanedInactiveCleanup,
+  fetchEmployees,
+  previewOrphanedInactiveCleanup,
+  resetEmployeePassword,
+  setEmployeeEnabled,
+  setEmployeePassword,
+} from "../api/employees";
 import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
 
@@ -165,6 +175,11 @@ export default function EmployeesPage() {
   const [selectedSite, setSelectedSite] = useState("");
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState(null); // { count, items } | null
+  const [isCleanupLoading, setIsCleanupLoading] = useState(false);
+  const [isCleanupDeleting, setIsCleanupDeleting] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingId, setTogglingId] = useState(null);
   const [passwordEmployee, setPasswordEmployee] = useState(null);
@@ -243,6 +258,38 @@ export default function EmployeesPage() {
     }
   }
 
+  async function handleOpenCleanupDialog() {
+    setCleanupDialogOpen(true);
+    setCleanupResult(null);
+    setIsCleanupLoading(true);
+    try {
+      const data = await previewOrphanedInactiveCleanup();
+      setCleanupPreview(data);
+    } catch (err) {
+      setCleanupResult({ success: false, message: err.response?.data?.detail || "بررسی ناموفق بود." });
+    } finally {
+      setIsCleanupLoading(false);
+    }
+  }
+
+  async function handleExecuteCleanup() {
+    if (!window.confirm(`${cleanupPreview.count} پرسنل برای همیشه حذف می‌شوند. این عمل قابل‌بازگشت نیست. مطمئن هستید؟`)) {
+      return;
+    }
+    setIsCleanupDeleting(true);
+    try {
+      const { deleted_count } = await executeOrphanedInactiveCleanup();
+      setCleanupResult({ success: true, message: `${deleted_count} پرسنل بدون سابقه حذف شدند.` });
+      setCleanupPreview(null);
+      // اگر همین الان تیک «نمایش پرسنل غیرفعال» روشن است، لیست را دوباره بگیر تا حذف‌شده‌ها دیگر دیده نشوند
+      if (showInactive) loadEmployees();
+    } catch (err) {
+      setCleanupResult({ success: false, message: err.response?.data?.detail || "حذف ناموفق بود." });
+    } finally {
+      setIsCleanupDeleting(false);
+    }
+  }
+
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
@@ -293,6 +340,17 @@ export default function EmployeesPage() {
             </Tooltip>
           }
         />
+        <Tooltip title="بررسی و پاک‌سازی پرسنل غیرفعالی که هیچ سابقه‌ای در پرتال ندارند — داده تاریخی از قبل از رفع باگ Sync">
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            startIcon={<CleaningServicesOutlinedIcon />}
+            onClick={handleOpenCleanupDialog}
+          >
+            پاک‌سازی پرسنل بدون سابقه
+          </Button>
+        </Tooltip>
       </Box>
 
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
@@ -406,6 +464,75 @@ export default function EmployeesPage() {
         onClose={() => setPasswordEmployee(null)}
         onChanged={loadEmployees}
       />
+
+      <Dialog open={cleanupDialogOpen} onClose={() => setCleanupDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>پاک‌سازی پرسنل غیرفعال بدون سابقه</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            پرسنلی که <strong>هیچ سابقه‌ای</strong> در پرتال ندارند (نه فیش حقوقی، نه فیش کارکرد، نه
+            ورود/خروج، نه Session آنلاین، نه حساب کاربری با رمز اختصاصی، نه خواندن هیچ اطلاعیه‌ای) —
+            احتمالاً هرگز واقعاً فعال نبوده‌اند، فقط قبل از رفع باگ Sync اشتباهاً وارد پرتال شده بودند.
+            پرسنلی که حتی یک نشانه از فعالیت واقعی داشته باشد، هرگز حذف نمی‌شود.
+          </DialogContentText>
+
+          {isCleanupLoading && (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+              <CircularProgress size={28} />
+            </Box>
+          )}
+
+          {cleanupResult && (
+            <Alert severity={cleanupResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+              {cleanupResult.message}
+            </Alert>
+          )}
+
+          {!isCleanupLoading && cleanupPreview && (
+            <>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                {cleanupPreview.count} پرسنل برای حذف پیدا شد
+              </Typography>
+              {cleanupPreview.count > 0 && (
+                <TableContainer sx={{ maxHeight: 300 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>کد پرسنلی</TableCell>
+                        <TableCell>نام</TableCell>
+                        <TableCell>سایت</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {cleanupPreview.items.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.personnel_code}</TableCell>
+                          <TableCell>
+                            {item.first_name} {item.last_name}
+                          </TableCell>
+                          <TableCell>{item.site_name}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCleanupDialogOpen(false)}>بستن</Button>
+          {cleanupPreview && cleanupPreview.count > 0 && !cleanupResult?.success && (
+            <Button
+              color="error"
+              variant="contained"
+              disabled={isCleanupDeleting}
+              onClick={handleExecuteCleanup}
+            >
+              {isCleanupDeleting ? "در حال حذف..." : `حذف قطعی ${cleanupPreview.count} پرسنل`}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -86,3 +86,15 @@ export async function setEmployeePassword(employeeId, newPassword) {
 export async function resetEmployeePassword(employeeId) {
   await apiClient.delete(`/employees/${employeeId}/password`);
 }
+
+export async function previewOrphanedInactiveCleanup() {
+  const { data } = await apiClient.get("/employees/cleanup-orphaned-inactive/preview");
+  return data; // { count, items }
+}
+
+export async function executeOrphanedInactiveCleanup() {
+  const { data } = await apiClient.post("/employees/cleanup-orphaned-inactive/execute", null, {
+    params: { confirm: true },
+  });
+  return data; // { deleted_count }
+}
