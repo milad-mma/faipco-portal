@@ -36,6 +36,9 @@ class SyncLog(Base):
     inserted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     updated_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     deactivated_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # پرسنلی که در همین اجرا اصلاً Import نشدند چون در منبع از قبل غیرفعال/کات
+    # بودند (نه پرسنلی که قبلاً فعال بوده و حالا کات شده — آن‌ها در deactivated_count هستند)
+    skipped_inactive_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

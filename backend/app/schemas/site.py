@@ -82,6 +82,7 @@ class EmployeeMappingIn(BaseModel):
     birth_date_column: str | None = None
     is_active_column: str | None = None
     is_active_inverted: bool = False
+    is_cut_column: str | None = None
     department_column: str | None = None
     # اگر جدولی مثل dbo.Sections کد واحد را به نام واقعی‌اش ترجمه می‌کند:
     department_lookup_table: str | None = None

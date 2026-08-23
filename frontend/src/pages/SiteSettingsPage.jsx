@@ -54,6 +54,7 @@ const EMPTY_MAPPING = {
   birth_date_column: "",
   is_active_column: "",
   is_active_inverted: false,
+  is_cut_column: "",
   department_column: "",
   department_lookup_table: "",
   department_lookup_id_column: "",
@@ -125,6 +126,7 @@ export default function SiteSettingsPage() {
           birth_date_column: mapping.birth_date_column || "",
           is_active_column: mapping.is_active_column || "",
           is_active_inverted: mapping.is_active_inverted || false,
+          is_cut_column: mapping.is_cut_column || "",
           department_column: mapping.department_column || "",
           department_lookup_table: mapping.department_lookup_table || "",
           department_lookup_id_column: mapping.department_lookup_id_column || "",
@@ -425,7 +427,7 @@ export default function SiteSettingsPage() {
               label="ستون وضعیت فعال/غیرفعال (اختیاری)"
               value={mappingForm.is_active_column}
               onChange={(e) => setMappingForm({ ...mappingForm, is_active_column: e.target.value })}
-              helperText="اگر منبع ستونی مثل IsActive یا IsCut دارد که با ۰/۱ نشان می‌دهد"
+              helperText="اگر منبع ستونی مثل IsActive دارد که با ۰/۱ نشان می‌دهد"
               disabled={isSaving}
             />
             <FormControlLabel
@@ -436,7 +438,16 @@ export default function SiteSettingsPage() {
                   disabled={isSaving}
                 />
               }
-              label="منطق این ستون برعکس است (مثل IsCut: ۱=غیرفعال، ۰=فعال)"
+              label="منطق این ستون برعکس است (۱=غیرفعال، ۰=فعال)"
+            />
+            <TextField
+              label="ستون جدا برای «کات‌شده» (اختیاری، مثل IsCut)"
+              value={mappingForm.is_cut_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, is_cut_column: e.target.value })}
+              helperText="اگر منبع علاوه بر IsActive بالا، یک ستون کاملاً جدا هم دارد (مثلاً IsCut) — همیشه با
+                قرارداد ۱=کات‌شده خوانده می‌شود. پرسنلی که IsActive=۰ باشد یا این ستون=۱ باشد، غیرفعال
+                محسوب می‌شود؛ اگر برای اولین‌بار دیده شود، اصلاً وارد پرتال نمی‌شود (نه فقط غیرفعال ثبت شود)."
+              disabled={isSaving}
             />
 
             <Divider sx={{ my: 1 }} />

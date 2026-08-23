@@ -20,6 +20,7 @@ class SyncLogOut(BaseModel):
     inserted_count: int
     updated_count: int
     deactivated_count: int
+    skipped_inactive_count: int = 0
     error_message: str | None
 
     model_config = ConfigDict(from_attributes=True)

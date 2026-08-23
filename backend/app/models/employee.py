@@ -119,6 +119,12 @@ class EmployeeMapping(Base, TimestampMixin):
     # اگر True باشد، یعنی منطق ستون بالا برعکس است (مثل ستونی به اسم IsCut
     # که ۱=غیرفعال و ۰=فعال است، برخلاف فرض پیش‌فرض ۱=فعال و ۰=غیرفعال)
     is_active_inverted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # اختیاری و مستقل از is_active_column بالا — برای منابعی که هر دو ستون
+    # را همزمان دارند (مثلاً هم IsActive هم IsCut، جدا از هم). همیشه با
+    # قرارداد «۱=قطع‌شده/حذفی» خوانده می‌شود (بدون نیاز به Invert کردن) —
+    # نتیجه نهایی: هر پرسنلی که IsActive=۰ باشد یا این ستون=۱ باشد، غیرفعال
+    # محسوب می‌شود (و اگر برای اولین‌بار Sync شود، اصلاً وارد پرتال نمی‌شود).
+    is_cut_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری: نام ستونی در جدول پرسنل مبدأ که کد/شماره واحد سازمانی است
     # (مثلاً ستون Sec_No در جدول dbo.Employee کارخانه Kara)

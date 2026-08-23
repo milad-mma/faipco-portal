@@ -310,13 +310,14 @@ export default function SyncPage() {
                 <TableCell>افزوده‌شده</TableCell>
                 <TableCell>به‌روزشده</TableCell>
                 <TableCell>غیرفعال‌شده</TableCell>
+                <TableCell>رد‌شده (غیرفعال در منبع)</TableCell>
                 <TableCell>خطا</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {logs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       هنوز هیچ اجرایی برای این سایت ثبت نشده است.
                     </Typography>
@@ -335,6 +336,7 @@ export default function SyncPage() {
                   <TableCell sx={monoFontSx}>{log.inserted_count}</TableCell>
                   <TableCell sx={monoFontSx}>{log.updated_count}</TableCell>
                   <TableCell sx={monoFontSx}>{log.deactivated_count}</TableCell>
+                  <TableCell sx={monoFontSx}>{log.skipped_inactive_count ?? 0}</TableCell>
                   <TableCell sx={{ maxWidth: 240 }}>
                     <Typography variant="caption" color="error.main" noWrap>
                       {log.error_message || "—"}

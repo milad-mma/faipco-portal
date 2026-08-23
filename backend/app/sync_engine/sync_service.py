@@ -74,7 +74,7 @@ class SyncService:
                 mapping.position_lookup_name_column,
             )
 
-            inserted, updated, seen_codes = await self._upsert_employees(
+            inserted, updated, skipped_inactive, seen_codes = await self._upsert_employees(
                 site_id, columns, raw_rows, department_lookup, position_lookup, mapping.is_active_inverted
             )
 
@@ -93,6 +93,7 @@ class SyncService:
             log.inserted_count = inserted
             log.updated_count = updated
             log.deactivated_count = deactivated
+            log.skipped_inactive_count = skipped_inactive
 
             conn.last_sync_status = SyncStatus.success
             conn.last_sync_error = None
@@ -194,6 +195,8 @@ class SyncService:
             columns["birth_date_raw"] = mapping.birth_date_column
         if mapping.is_active_column:
             columns["is_active_raw"] = mapping.is_active_column
+        if mapping.is_cut_column:
+            columns["is_cut_raw"] = mapping.is_cut_column
         if mapping.department_column:
             columns["department_raw"] = mapping.department_column
         if mapping.position_column:
@@ -333,9 +336,10 @@ class SyncService:
         department_lookup: dict[str, str],
         position_lookup: dict[str, str],
         is_active_inverted: bool = False,
-    ) -> tuple[int, int, set[str]]:
+    ) -> tuple[int, int, int, set[str]]:
         inserted = 0
         updated = 0
+        skipped_inactive = 0
         seen_codes: set[str] = set()
         now = datetime.now(timezone.utc)
         has_department_mapping = "department_raw" in columns
@@ -386,6 +390,14 @@ class SyncService:
             else:
                 is_active = True
 
+            if "is_cut_raw" in columns:
+                # مستقل از is_active_raw بالا — برای منابعی که هم IsActive هم
+                # IsCut را همزمان دارند. همیشه با قرارداد «۱=قطع‌شده» خوانده
+                # می‌شود (بدون نیاز به is_active_inverted).
+                is_cut = self._coerce_is_active(row.get(columns["is_cut_raw"]))
+                if is_cut:
+                    is_active = False
+
             department_id = None
             if has_department_mapping:
                 raw_dept = row.get(columns["department_raw"])
@@ -397,6 +409,17 @@ class SyncService:
                     )
 
             existing = existing_by_code.get(personnel_code)
+
+            if existing is None and not is_active:
+                # ⚠️ پرسنلی که تا امروز اصلاً وارد پرتال نشده و همین الان هم در
+                # منبع IsActive=۰ یا IsCut=۱ است، اصلاً Import نمی‌شود — نه فقط
+                # is_active=False. برخلاف پرسنلی که قبلاً فعال بوده و بعداً کات
+                # شده (که رکورد و سوابقش، مثل فیش حقوقی، دست‌نخورده می‌ماند —
+                # فقط پایین همین تابع is_active=False می‌شود)، اینجا اصلاً هیچ
+                # رکوردی برایش وجود نداشته که نگهش داریم.
+                skipped_inactive += 1
+                continue
+
             if existing is None:
                 self.db.add(
                     Employee(
@@ -439,7 +462,7 @@ class SyncService:
                 updated += 1
 
         await self.db.flush()
-        return inserted, updated, seen_codes
+        return inserted, updated, skipped_inactive, seen_codes
 
     async def _sync_employee_photos(self, site_id: int, adapter, mapping: EmployeeMapping) -> None:
         """
