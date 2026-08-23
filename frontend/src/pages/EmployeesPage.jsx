@@ -288,7 +288,7 @@ export default function EmployeesPage() {
         <FormControlLabel
           control={<Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />}
           label={
-            <Tooltip title="پرسنلی که در دیتابیس مبدأ (طبق Mapping) دیگر فعال اعلام نشده‌اند — پیش‌فرض از لیست کنار گذاشته می‌شوند">
+            <Tooltip title="پرسنلی که قبلاً وارد پرتال شده بودند ولی بعداً در دیتابیس مبدأ (طبق Mapping) غیرفعال/کات اعلام شدند — سوابقشان (فیش حقوقی و...) حفظ می‌شود، پیش‌فرض از این لیست کنار گذاشته می‌شوند. پرسنلی که اصلاً هرگز فعال نبوده‌اند، از ابتدا وارد پرتال نمی‌شوند و اینجا هم دیده نمی‌شوند.">
               <span>نمایش پرسنل غیرفعال (Sync)</span>
             </Tooltip>
           }
