@@ -195,8 +195,6 @@ class SyncService:
             columns["birth_date_raw"] = mapping.birth_date_column
         if mapping.is_active_column:
             columns["is_active_raw"] = mapping.is_active_column
-        if mapping.is_cut_column:
-            columns["is_cut_raw"] = mapping.is_cut_column
         if mapping.department_column:
             columns["department_raw"] = mapping.department_column
         if mapping.position_column:
@@ -389,14 +387,6 @@ class SyncService:
                     is_active = not is_active
             else:
                 is_active = True
-
-            if "is_cut_raw" in columns:
-                # مستقل از is_active_raw بالا — برای منابعی که هم IsActive هم
-                # IsCut را همزمان دارند. همیشه با قرارداد «۱=قطع‌شده» خوانده
-                # می‌شود (بدون نیاز به is_active_inverted).
-                is_cut = self._coerce_is_active(row.get(columns["is_cut_raw"]))
-                if is_cut:
-                    is_active = False
 
             department_id = None
             if has_department_mapping:
