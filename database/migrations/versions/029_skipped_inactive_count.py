@@ -1,7 +1,7 @@
 """add skipped_inactive_count to sync_logs
 
 Revision ID: 029
-Revises: 027
+Revises: 028
 Create Date: 2026-08-23
 
 ⚠️ عمداً ۰۲۹ است، نه ۰۲۸ — نسخه اول این تغییر به‌اشتباه با شماره ۰۲۸ روی
@@ -27,7 +27,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "029"
-down_revision: Union[str, None] = "027"
+down_revision: Union[str, None] = "028"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
