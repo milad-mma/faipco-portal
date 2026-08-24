@@ -81,6 +81,13 @@ class Employee(Base, TimestampMixin):
     # است: is_active (وضعیت در منبع) AND is_enabled (تصمیم دستی Admin).
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # کاملاً خودانتخاب و شخصی — فقط از پنل «پرسنل من» توسط خودِ کاربر تغییر
+    # می‌کند (نه Admin). دقیقاً مثل is_enabled، Sync Engine هرگز این ستون
+    # را نمی‌خواند/نمی‌نویسد. فقط روی کارت «متولدین امروز» در داشبورد
+    # شخصی پرسنل اثر دارد — نه پنل Admin، نه ابزار ارسال پیام تبریک تولد
+    # (که هردو باید همچنان همه پرسنل را ببینند).
+    hide_birthday_in_dashboard: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # آخرین باری که این رکورد توسط Sync Engine از منبع دیده و به‌روزرسانی شده
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

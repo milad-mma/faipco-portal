@@ -245,4 +245,5 @@ class AuthService:
         base.department_name = department_name
         base.position_title = employee.position_title
         base.has_photo = bool(employee.photo_thumbnail)
+        base.hide_birthday_in_dashboard = employee.hide_birthday_in_dashboard
         return base

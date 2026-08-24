@@ -80,11 +80,11 @@ export default function PersonalDashboardPage() {
   const [photoUrl, setPhotoUrl] = useState(null);
 
   useEffect(() => {
-    fetchMyNotices({ page: 1, pageSize: 3 }).then((data) => {
+    fetchMyNotices({ page: 1, pageSize: 5 }).then((data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.items.filter((n) => !n.is_read).length);
     });
-    fetchTodayBirthdays()
+    fetchTodayBirthdays({ respectPrivacy: true })
       .then(setBirthdays)
       .catch(() => setBirthdays([]));
   }, []);
@@ -371,7 +371,7 @@ export default function PersonalDashboardPage() {
                       </Typography>
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontSize: 10 }}>
-                      {new Date(n.publish_at || n.created_at).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" })}
                     </Typography>
                   </Stack>
                 ))}

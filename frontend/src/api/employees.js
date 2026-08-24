@@ -44,8 +44,17 @@ export async function fetchPortalDisabledCount() {
   return data.count;
 }
 
-export async function fetchTodayBirthdays() {
-  const { data } = await apiClient.get("/employees/birthdays-today");
+export async function fetchTodayBirthdays({ respectPrivacy = false } = {}) {
+  const { data } = await apiClient.get("/employees/birthdays-today", {
+    params: { respect_privacy: respectPrivacy || undefined },
+  });
+  return data;
+}
+
+export async function updateMyBirthdayVisibility(hideBirthdayInDashboard) {
+  const { data } = await apiClient.patch("/employees/me/birthday-visibility", {
+    hide_birthday_in_dashboard: hideBirthdayInDashboard,
+  });
   return data;
 }
 

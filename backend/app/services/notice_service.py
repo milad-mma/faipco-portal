@@ -300,11 +300,18 @@ class NoticeService:
         # ایمیل). وقتی archived=True (تب «آرشیو»): برعکس، فقط همان‌ها نشان
         # داده می‌شوند. هردو حالت EXISTS/NOT EXISTS روی NoticeArchive محدود
         # به user.id — آرشیو کاملاً شخصی است، آرشیو یک نفر روی بقیه اثر ندارد.
-        archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)
-        if archived:
-            base_filters = (*base_filters, Notice.id.in_(archived_subquery))
-        else:
-            base_filters = (*base_filters, Notice.id.not_in(archived_subquery))
+        #
+        # ⚠️ استثنا: وقتی notice_type مشخص شده (نمای «فقط فیش‌های حقوقی/کارکرد
+        # من» از داشبورد)، اصلاً فیلتر آرشیو اعمال نمی‌شود — چون آنجا هدف
+        # «همه اسناد رسمی من» است، نه صندوق ورودی؛ کاربر نباید با آرشیوکردن
+        # یک اطلاعیه فیش حقوقی (برای تمیزکردن صندوق ورودی‌اش)، دسترسی به خودِ
+        # فیش‌اش را هم از دست بدهد.
+        if notice_type is None:
+            archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)
+            if archived:
+                base_filters = (*base_filters, Notice.id.in_(archived_subquery))
+            else:
+                base_filters = (*base_filters, Notice.id.not_in(archived_subquery))
 
         count_stmt = select(func.count()).select_from(Notice).where(*base_filters)
         total = (await self.db.execute(count_stmt)).scalar_one()

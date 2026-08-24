@@ -50,3 +50,8 @@ class EmployeeEnabledUpdate(BaseModel):
 class EmployeePasswordSet(BaseModel):
     """برای تعیین دستی رمز عبور ورود یک پرسنل توسط Admin (بعد از این، ورود با کد ملی دیگر کار نمی‌کند)."""
     new_password: str = Field(min_length=6, description="حداقل ۶ کاراکتر")
+
+
+class BirthdayVisibilityUpdate(BaseModel):
+    """تنظیم شخصی/خودانتخاب هر پرسنل — آیا روز تولدش در داشبورد همکاران دیده شود یا نه."""
+    hide_birthday_in_dashboard: bool

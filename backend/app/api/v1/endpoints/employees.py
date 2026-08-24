@@ -29,6 +29,7 @@ from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.employee import (
     BirthdayEmployeeOut,
+    BirthdayVisibilityUpdate,
     EmployeeEnabledUpdate,
     EmployeeOut,
     EmployeePageOut,
@@ -204,6 +205,7 @@ async def count_portal_disabled_employees(
 
 @router.get("/birthdays-today", response_model=list[BirthdayEmployeeOut])
 async def list_birthdays_today(
+    respect_privacy: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -212,6 +214,12 @@ async def list_birthdays_today(
     روز جاری» در داشبورد Admin. تاریخ امروز بر اساس منطقه زمانی ایران محاسبه
     می‌شود (نه ساعت خام سرور که معمولاً UTC است) تا با birth_month/birth_day
     مقایسه شود (که خودشان از قبل شمسی ذخیره شده‌اند — نگاه کنید به سرویس Sync).
+
+    respect_privacy (پیش‌فرض False): اگر True باشد، پرسنلی که خودشان
+    hide_birthday_in_dashboard را فعال کرده‌اند از نتیجه کنار گذاشته
+    می‌شوند. پیش‌فرض False است تا پنل Admin و ابزار ارسال پیام تبریک تولد
+    (BirthdayMessagesPage) بدون تغییر همه پرسنل را ببینند — فقط داشبورد
+    شخصی پرسنل (PersonalDashboardPage) این پارامتر را true می‌فرستد.
 
     ⚠️ این Endpoint نام/واحد/سایت پرسنل را برمی‌گرداند — ایزوله‌سازی
     چندسایتی مثل GET /employees اعمال می‌شود.
@@ -232,6 +240,8 @@ async def list_birthdays_today(
     )
     if accessible_site_ids is not None:
         stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
+    if respect_privacy:
+        stmt = stmt.where(Employee.hide_birthday_in_dashboard.is_(False))
     result = await db.execute(stmt)
     return [
         BirthdayEmployeeOut(
@@ -243,6 +253,32 @@ async def list_birthdays_today(
         )
         for e, site_name, department_name in result.all()
     ]
+
+
+@router.patch("/me/birthday-visibility", response_model=EmployeeOut)
+async def update_my_birthday_visibility(
+    payload: BirthdayVisibilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    تنظیم شخصی/خودانتخاب — هر پرسنل فقط برای خودش می‌تواند این را تغییر دهد
+    (نه برای پرسنل دیگر، نه از پنل Admin — این عمداً یک قابلیت Self-service
+    است). اگر کاربر جاری به هیچ رکورد Employee ای وصل نباشد (مثلاً یک
+    حساب مدیریتی محض مثل admin)، ۴۰۴ برمی‌گردد.
+    """
+    if current_user.employee_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="حساب شما به هیچ رکورد پرسنلی وصل نیست",
+        )
+    employee = await db.get(Employee, current_user.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    employee.hide_birthday_in_dashboard = payload.hide_birthday_in_dashboard
+    await db.commit()
+    await db.refresh(employee)
+    return employee
 
 
 @router.get("/{employee_id}/photo-thumbnail")

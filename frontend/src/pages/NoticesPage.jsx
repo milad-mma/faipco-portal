@@ -150,9 +150,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           minHeight: 70,
           p: 1.5,
           display: "grid",
-          // طبق درخواست: جای آیکون پاکت و نشان اولویت جابه‌جا شد — حالا
-          // آیکون پاکت راست (اول)، نشان اولویت چپ (آخر)
-          gridTemplateColumns: "46px 1fr 44px",
+          // آیکون پاکت راست (اول)، عنوان وسط، نشان اولویت + برچسب نوع چپ (آخر)
+          gridTemplateColumns: "46px 1fr auto",
           alignItems: "center",
           gap: 1.25,
           cursor: "pointer",
@@ -175,38 +174,37 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ mb: 0.25 }}>
-            {/* طبق درخواست: مثل تم قبلی، برچسب فیش حقوقی/کارکرد همیشه کنار
-                عنوان دیده می‌شود، نه فقط وقتی کارت باز است */}
-            {typeMeta && (
-              <Chip
-                size="small"
-                label={typeMeta.chipLabel}
-                color={typeMeta.chipColor}
-                variant="outlined"
-                sx={{ height: 18, fontSize: 10, flexShrink: 0, mt: 0.25 }}
-              />
-            )}
-            <Typography
-              fontSize={14}
-              fontWeight={isUnread ? 800 : 500}
-              color={isUnread ? "text.primary" : "text.secondary"}
-              sx={{
-                lineHeight: 1.7,
-                // طبق بازخورد: قبلاً عنوان با ... یک‌خطی بریده می‌شد — حالا
-                // کامل نمایش داده می‌شود، حتی اگر چند خط شود
-                wordBreak: "break-word",
-                minWidth: 0,
-              }}
-            >
-              {notice.title}
-            </Typography>
-          </Stack>
-          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right" }}>
+          <Typography
+            fontSize={14}
+            fontWeight={isUnread ? 800 : 500}
+            color={isUnread ? "text.primary" : "text.secondary"}
+            sx={{
+              lineHeight: 1.7,
+              // قبلاً یک‌خطی با ... بریده می‌شد — حالا کامل نمایش داده می‌شود
+              wordBreak: "break-word",
+              minWidth: 0,
+            }}
+          >
+            {notice.title}
+          </Typography>
+          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
             {new Date(notice.created_at).toLocaleString("fa-IR")}
           </Typography>
         </Box>
-        <PriorityBadge priority={notice.priority} />
+        {/* طبق درخواست: برچسب فیش حقوقی/کارکرد کنار نشان اولویت — نه کنار
+            عنوان — همیشه دیده می‌شود، نه فقط وقتی کارت باز است */}
+        <Stack spacing={0.5} alignItems="flex-end">
+          {typeMeta && (
+            <Chip
+              size="small"
+              label={typeMeta.chipLabel}
+              color={typeMeta.chipColor}
+              variant="outlined"
+              sx={{ height: 18, fontSize: 10 }}
+            />
+          )}
+          <PriorityBadge priority={notice.priority} />
+        </Stack>
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>

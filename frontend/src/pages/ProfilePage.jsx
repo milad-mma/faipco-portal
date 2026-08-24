@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Box,
   Card,
+  Checkbox,
+  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Popover,
   Radio,
   RadioGroup,
   FormControlLabel,
@@ -22,11 +25,13 @@ import BrightnessAutoOutlinedIcon from "@mui/icons-material/BrightnessAutoOutlin
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { fetchAppVersion } from "../api/system";
+import { updateMyBirthdayVisibility } from "../api/employees";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 
 // دسترسی‌های اضافه‌ای که بعضی نقش‌های غیر-Admin دارند (site_manager،
@@ -47,13 +52,28 @@ const EXTRA_ACCESS_ITEMS = [
  * تبدیل شده — همان قابلیت‌ها، فقط جای متفاوت.
  */
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refetchUser } = useAuth();
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
   const [snackbar, setSnackbar] = useState("");
   const [appVersion, setAppVersion] = useState("");
+  const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null);
+  const [birthdaySaving, setBirthdaySaving] = useState(false);
+
+  async function handleToggleBirthdayVisibility(e) {
+    const hide = e.target.checked;
+    setBirthdaySaving(true);
+    try {
+      await updateMyBirthdayVisibility(hide);
+      await refetchUser();
+    } catch {
+      setSnackbar("ذخیره تنظیمات ناموفق بود — دوباره تلاش کنید.");
+    } finally {
+      setBirthdaySaving(false);
+    }
+  }
 
   useEffect(() => {
     // بی‌صدا — مثل صفحه ورود، اگر شکست بخورد فقط شماره نسخه نشان داده نمی‌شود
@@ -160,6 +180,43 @@ export default function ProfilePage() {
           />
         </RadioGroup>
       </Card>
+
+      {user?.employee_id && (
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <FormControlLabel
+              sx={{ flex: 1, mr: 0 }}
+              control={
+                <Checkbox
+                  checked={Boolean(user?.hide_birthday_in_dashboard)}
+                  onChange={handleToggleBirthdayVisibility}
+                  disabled={birthdaySaving}
+                />
+              }
+              label="غیرفعال نمودن نمایش روز تولد در داشبورد پرسنل"
+            />
+            <IconButton
+              size="small"
+              onClick={(e) => setBirthdayInfoAnchor(e.currentTarget)}
+              aria-label="توضیحات بیشتر"
+            >
+              <InfoOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+          <Popover
+            open={Boolean(birthdayInfoAnchor)}
+            anchorEl={birthdayInfoAnchor}
+            onClose={() => setBirthdayInfoAnchor(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+            transformOrigin={{ vertical: "top", horizontal: "center" }}
+          >
+            <Typography variant="body2" sx={{ p: 2, maxWidth: 280 }}>
+              همکار گرامی، در صورتی که مایل نیستید روز تولدتان در داشبورد
+              همکاران نمایش داده شود، این گزینه را فعال نمایید.
+            </Typography>
+          </Popover>
+        </Card>
+      )}
 
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
         <List disablePadding>
