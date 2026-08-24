@@ -188,6 +188,39 @@ export const modernDarkTheme = createTheme({
         root: { fontWeight: 700, borderRadius: 999 },
       },
     },
+    // ⚠️ این سه مورد (Dialog/Popover/Autocomplete) در نسخه اول طراحی جدید
+    // فراموش شده بودند — legacyDarkTheme این‌ها را داشت (پس‌زمینه کدر
+    // مشخص، برای خوانایی روی هر محتوایی که زیرش باز می‌شوند)، ولی
+    // modernDarkTheme نداشت؛ بدون این override ها، این عناصر روی پس‌زمینه
+    // سفارشی تیره این پروژه (#0F1824) از رنگ‌های پیش‌فرض MUI استفاده
+    // می‌کردند که می‌توانست کنتراست/خوانایی پایینی داشته باشد.
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "#1E2D3F",
+          backgroundImage: "none",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "#1E2D3F",
+          backgroundImage: "none",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+        },
+      },
+    },
+    MuiAutocomplete: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: "#1E2D3F",
+          backgroundImage: "none",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+        },
+      },
+    },
   },
 });
 

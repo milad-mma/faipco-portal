@@ -2,27 +2,23 @@ import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Card,
   Chip,
   CircularProgress,
   Collapse,
-  Divider,
   Pagination,
   Stack,
-  Tab,
-  Tabs,
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
-import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
-import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
+import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import {
   fetchAvailableTargets,
   fetchMyAttendanceCardBlob,
@@ -32,18 +28,23 @@ import {
   markNoticeRead,
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
-import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
-import { fetchEmployeePhotoThumbnailBlob } from "../api/employees";
-import { useAuth } from "../context/AuthContext";
-import { monoFontSx } from "../theme";
-import { alpha } from "@mui/material/styles";
 
 const PRIORITY_LABELS = {
-  low: { label: "کم", color: "default" },
-  normal: { label: "عادی", color: "info" },
-  high: { label: "بالا", color: "warning" },
-  urgent: { label: "فوری", color: "error" },
+  // رنگ‌بندی دقیقاً طبق personnel_portal.html: «عادی»=Teal/Secondary این
+  // پروژه، «بالا»=قرمز (Danger) — «کم» و «فوری» در نمونه HTML تعریف
+  // نشده بودند (فقط ۲ نمونه داشت)، پس با همان منطق تعمیم داده شدند: کم →
+  // خاکستری خنثی، فوری → همان قرمز «بالا» (هردو یعنی نیاز به توجه فوری).
+  low: { label: "کم", bg: "action.selected", color: "text.secondary" },
+  normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
+  high: { label: "بالا", bg: "error.main", color: "error.contrastText" },
+  urgent: { label: "فوری", bg: "error.main", color: "error.contrastText" },
 };
+
+const TABS = [
+  { key: "received", label: "دریافتی", icon: <InboxOutlinedIcon fontSize="small" /> },
+  { key: "sent", label: "ارسالی", icon: <SendOutlinedIcon fontSize="small" /> },
+  { key: "archive", label: "آرشیو", icon: <ArchiveOutlinedIcon fontSize="small" /> },
+];
 
 async function downloadPayrollReceipt(noticeId, setDownloadError) {
   setDownloadError("");
@@ -77,32 +78,26 @@ async function downloadAttendanceCard(noticeId, setDownloadError) {
   }
 }
 
-function InfoField({ icon, label, value }) {
+function PriorityBadge({ priority }) {
+  const cfg = PRIORITY_LABELS[priority] || PRIORITY_LABELS.normal;
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
-      <Box
-        sx={(theme) => ({
-          width: 36,
-          height: 36,
-          borderRadius: 2,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: alpha(theme.palette.primary.main, 0.08),
-          color: "primary.main",
-          flexShrink: 0,
-        })}
-      >
-        {icon}
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {label}
-        </Typography>
-        <Typography variant="body2" fontWeight={600} noWrap>
-          {value || "—"}
-        </Typography>
-      </Box>
+    <Box
+      sx={{
+        borderRadius: 999,
+        bgcolor: cfg.bg,
+        color: cfg.color,
+        height: 28,
+        minWidth: 44,
+        px: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 12,
+        fontWeight: 800,
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
     </Box>
   );
 }
@@ -123,56 +118,61 @@ function ReceivedNoticeCard({ notice, onOpened }) {
   }
 
   return (
-    <Card
-      variant="outlined"
-      sx={(theme) => ({
-        borderRadius: 3,
-        overflow: "hidden",
-        borderInlineStart: isUnread ? "4px solid" : "4px solid transparent",
-        borderInlineStartColor: isUnread ? "secondary.main" : "transparent",
-        backgroundColor: isUnread ? alpha(theme.palette.secondary.main, 0.06) : "transparent",
-      })}
-    >
+    <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
       <Box
         onClick={handleToggle}
         sx={{
-          p: 2,
-          display: "flex",
+          minHeight: 70,
+          p: 1.5,
+          display: "grid",
+          gridTemplateColumns: "44px 1fr 46px",
           alignItems: "center",
-          justifyContent: "space-between",
+          gap: 1.25,
           cursor: "pointer",
-          gap: 2,
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          {isUnread ? <MailOutlineIcon color="secondary" /> : <DraftsOutlinedIcon color="disabled" />}
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
-              variant="body1"
-              fontWeight={isUnread ? 700 : 400}
-              color={isUnread ? "text.primary" : "text.secondary"}
-              sx={{ wordBreak: "break-word" }}
-            >
-              {notice.title}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {new Date(notice.created_at).toLocaleString("fa-IR")}
-            </Typography>
-          </Box>
-        </Stack>
-        <Stack direction="row" spacing={1} alignItems="center">
-          {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
-          {isAttendanceCard && <Chip size="small" label="فیش کارکرد" color="info" variant="outlined" />}
-          <Chip
-            size="small"
-            label={PRIORITY_LABELS[notice.priority]?.label}
-            color={PRIORITY_LABELS[notice.priority]?.color}
-          />
-        </Stack>
+        <PriorityBadge priority={notice.priority} />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            fontSize={14}
+            fontWeight={isUnread ? 800 : 500}
+            color={isUnread ? "text.primary" : "text.secondary"}
+            sx={{
+              lineHeight: 1.7,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {notice.title}
+          </Typography>
+          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
+            {new Date(notice.created_at).toLocaleString("fa-IR")}
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            bgcolor: isUnread ? "secondary.main" : "action.hover",
+            color: isUnread ? "secondary.contrastText" : "text.disabled",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
+        </Box>
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+            {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
+            {isAttendanceCard && <Chip size="small" label="فیش کارکرد" color="info" variant="outlined" />}
+          </Stack>
           {notice.body && (
             <Typography
               variant="body2"
@@ -262,7 +262,6 @@ function ReceivedNoticeCard({ notice, onOpened }) {
 }
 
 export default function NoticesPage() {
-  const { user } = useAuth();
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState(null);
   const [noticesTotal, setNoticesTotal] = useState(0);
@@ -270,7 +269,6 @@ export default function NoticesPage() {
   const NOTICES_PAGE_SIZE = 10;
   const [sentReloadKey, setSentReloadKey] = useState(0);
   const [availableTargets, setAvailableTargets] = useState(null);
-  const [photoUrl, setPhotoUrl] = useState(null);
 
   function loadNotices(page = noticesPage) {
     fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE }).then((data) => {
@@ -284,27 +282,6 @@ export default function NoticesPage() {
     setNoticesPage(1);
     fetchAvailableTargets().then(setAvailableTargets);
   }, []);
-
-  // عکس پرسنلی — فقط اگر واقعاً برای این کاربر ثبت شده باشد (has_photo از
-  // /auth/me)، تا برای اکثر افراد که هنوز عکسشان Sync نشده، یک درخواست
-  // ۴۰۴ اضافه به سرور نزنیم. Object URL موقع خروج از صفحه آزاد می‌شود تا
-  // حافظه مرورگر نشتی نداشته باشد.
-  useEffect(() => {
-    if (!user?.employee_id || !user?.has_photo) {
-      setPhotoUrl(null);
-      return;
-    }
-    let objectUrl = null;
-    fetchEmployeePhotoThumbnailBlob(user.employee_id)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        setPhotoUrl(objectUrl);
-      })
-      .catch(() => setPhotoUrl(null));
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [user?.employee_id, user?.has_photo]);
 
   // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
   // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من). چون
@@ -338,85 +315,65 @@ export default function NoticesPage() {
 
   return (
     <Box>
-      {/* باکس اطلاعات شخصی/سازمانی کاربر جاری — بالای عنوان اطلاعیه‌ها؛ فقط
-          برای پرسنلی که به یک رکورد Employee سینک‌شده وصل هستند؛ کاربران
-          مدیریتی محض (بدون employee_id، مثل admin) این باکس را نمی‌بینند
-          چون داده‌ای برایش ندارند. */}
-      {user?.employee_id && (
-        <Card
-          variant="outlined"
-          sx={(theme) => ({
-            p: 2.5,
-            borderRadius: 3,
-            mb: 3,
-            background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.04)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
-          })}
-        >
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
-            <Avatar
-              src={photoUrl || undefined}
-              sx={{
-                width: 72,
-                height: 72,
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
-                fontSize: 26,
-                fontWeight: 700,
-              }}
-            >
-              {!photoUrl && <DefaultPersonAvatar />}
-            </Avatar>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle1" fontWeight={700} noWrap>
-                {user.first_name} {user.last_name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={monoFontSx}>
-                کد پرسنلی: {user.personnel_code}
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Divider sx={{ mb: 2.5 }} />
-
-          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap rowGap={2.5}>
-            <InfoField icon={<ApartmentOutlinedIcon fontSize="small" />} label="سایت" value={user.site_name} />
-            <InfoField
-              icon={<CorporateFareOutlinedIcon fontSize="small" />}
-              label="واحد سازمانی"
-              value={user.department_name}
-            />
-            <InfoField
-              icon={<WorkOutlineOutlinedIcon fontSize="small" />}
-              label="سمت"
-              value={user.position_title}
-            />
-          </Stack>
-        </Card>
-      )}
-
+      {/* اطلاعات شخصی/سازمانی کاربر حالا در تب «داشبورد» (PersonalDashboardPage)
+          نمایش داده می‌شود — طبق personnel_portal.html، صفحه اطلاعیه‌ها فقط
+          اطلاعیه‌هاست، بدون تکرار کارت پروفایل. */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>
-            اطلاعیه‌ها
-          </Typography>
-        </Box>
+        <Typography variant="h5" fontWeight={800}>
+          اطلاعیه‌ها
+        </Typography>
         {canCreateAnything && (
           <Button
             variant="contained"
             startIcon={<AddOutlinedIcon />}
             component={RouterLink}
             to="/notices/new"
+            sx={{ borderRadius: 999 }}
           >
             اطلاعیه جدید
           </Button>
         )}
       </Box>
 
+      {/* کنترل Segmented — دقیقاً طبق personnel_portal.html: کپسول خاکستری
+          روشن با ۳ دکمه؛ فعال = پس‌زمینه سفید/Paper + متن رنگی + سایه ملایم،
+          به‌جای Tab خط‌زیرین معمول MUI. */}
       {canCreateAnything && (
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
-          <Tab value="received" label="دریافتی" />
-          <Tab value="sent" label="ارسالی" />
-        </Tabs>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            bgcolor: "action.hover",
+            borderRadius: 999,
+            p: 0.5,
+            mb: 3,
+            gap: 0.5,
+          }}
+        >
+          {TABS.map((t) => (
+            <Box
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              sx={{
+                height: 34,
+                borderRadius: 999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 0.75,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 700,
+                color: tab === t.key ? "primary.main" : "text.secondary",
+                bgcolor: tab === t.key ? "background.paper" : "transparent",
+                boxShadow: tab === t.key ? 1 : "none",
+              }}
+            >
+              {t.icon}
+              {t.label}
+            </Box>
+          ))}
+        </Box>
       )}
 
       {tab === "received" && (
@@ -463,6 +420,15 @@ export default function NoticesPage() {
             allowDelete
             reloadKey={sentReloadKey}
           />
+        </Card>
+      )}
+
+      {tab === "archive" && (
+        <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
+          <ArchiveOutlinedIcon sx={{ fontSize: 32, color: "text.disabled", mb: 1 }} />
+          <Typography variant="body2" color="text.secondary">
+            آرشیو اطلاعیه‌ها به‌زودی — این قابلیت هنوز پیاده‌سازی نشده است.
+          </Typography>
         </Card>
       )}
     </Box>
