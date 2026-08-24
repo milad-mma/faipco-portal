@@ -41,7 +41,7 @@ export default function SplashScreen({ visible }) {
         <Typography
           variant="subtitle1"
           fontWeight={700}
-          color="#16324F"
+          color="primary.main"
           sx={{ fontFamily: "Tahoma, sans-serif" }}
         >
           شرکت تولیدی صنعتی فواد الیاف

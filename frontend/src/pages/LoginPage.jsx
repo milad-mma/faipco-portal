@@ -105,15 +105,15 @@ export default function LoginPage() {
 
   return (
     <Box
-      sx={{
+      sx={(theme) => ({
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(160deg, #0E2138 0%, #16324F 55%, #1F4B75 100%)",
+        background: `linear-gradient(160deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 55%, ${theme.palette.primary.light} 100%)`,
         px: 2,
-      }}
+      })}
     >
       <Paper elevation={0} sx={{ width: "100%", maxWidth: 400, p: 4, borderRadius: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>

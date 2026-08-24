@@ -16,6 +16,8 @@ import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import NewNoticePage from "./pages/NewNoticePage";
+import PersonalDashboardPage from "./pages/PersonalDashboardPage";
+import ProfilePage from "./pages/ProfilePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
@@ -91,6 +93,8 @@ export default function App() {
           {/* برای همه کاربران لاگین‌شده: */}
           <Route path="/notices" element={<NoticesPage />} />
           <Route path="/notices/new" element={<NewNoticePage />} />
+          <Route path="/my-dashboard" element={<PersonalDashboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/notice-reports" element={<SiteNoticeReportRoute><NoticeReportsPage /></SiteNoticeReportRoute>} />
           <Route
             path="/attendance-clock"

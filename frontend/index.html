@@ -10,6 +10,15 @@
          JS کامل دانلود/Parse نمی‌شد، اصلاً درخواستش هم شروع نمی‌شد. -->
     <link rel="preload" as="image" href="/faipco-logo.png" />
 
+    <!-- فونت وزیرمتن — طراحی جدید پروژه (بر اساس personnel_portal.html). قبلاً
+         در theme.js به‌عنوان fontFamily تعریف شده بود ولی هرگز واقعاً بارگذاری
+         نمی‌شد (بدون این لینک)، پس همیشه به Tahoma بازمی‌گشت. اگر NEW_DESIGN_ENABLED
+         در theme.js به false برگردد، این لینک بی‌ضرر است (فقط یک فونت بارگذاری‌شده
+         بلااستفاده) — نیازی به حذفش نیست. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
     <!-- PWA -->
     <!-- نکته: نسخه قبلی این لینک یک ?v=2 برای Cache Busting داشت — حذف شد،
          چون باعث می‌شد Chrome روی اندروید این را «نسخه/آدرس متفاوتی» از
@@ -20,7 +29,11 @@
          همیشه قبل از استفاده از نسخه Cache شده، با سرور تأیید می‌گیرد؛
          همین برای جلوگیری از قدیمی‌ماندن Manifest کافی است. -->
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#16324F" />
+    <!-- ⚠️ باید با primary.main طراحی فعال در theme.js هماهنگ باشد — اگر
+         NEW_DESIGN_ENABLED آنجا تغییر کرد، این مقدار هم باید دستی به‌روز شود
+         (این یک Meta Tag ثابت HTML است، نه وابسته به JS). فعلاً: #1468A7
+         (طراحی جدید). مقدار قبلی (طراحی کلاسیک): #16324F -->
+    <meta name="theme-color" content="#1468A7" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />

@@ -1,21 +1,16 @@
 import { createTheme } from "@mui/material/styles";
 
 /**
- * دو زبان طراحی کاملاً متفاوت — نه فقط دو پالت رنگ:
- *
- * ۱) کلاسیک (Light) — همون ظاهر همیشگی پروژه: کارت‌های تخت با کادر نازک،
- *    گوشه‌های نسبتاً تیز، دکمه‌های مستطیلی ساده، پس‌زمینه یک‌دست.
- *
- * ۲) مدرن شیشه‌ای (Dark/Glass) — یک زبان بصری کاملاً متفاوت:
- *    - پس‌زمینه گرادیانت محو (نه رنگ یک‌دست)
- *    - کارت‌ها «شیشه‌ای» (پس‌زمینه نیمه‌شفاف + Blur + سایه نرم، بدون کادر تیز)
- *    - دکمه‌های اصلی، Pill-شکل با گرادیانت فیروزه‌ای→بنفش
- *    - نوار بالا/کناری هم شیشه‌ای و شناور (Blur)، نه یک‌دست و صاف
- *    - گوشه‌های خیلی گردتر همه‌جا
- *
- * متن‌ها، لوگو، و ساختار صفحات کاملاً دست‌نخورده می‌مونن — این‌ها فقط Theme
- * سطح MUI هستن.
+ * ⚠️ سوییچ اصلی طراحی جدید — راه برگشت امن
+ * ==========================================
+ * اگر true باشد، کل پروژه از طراحی جدید (بر اساس نمونه HTML ارسالی کاربر:
+ * personnel_portal.html) استفاده می‌کند. اگر مشکلی پیش آمد، فقط همین یک
+ * مقدار را به false تغییر دهید — بدون هیچ تغییر دیگری در کل پروژه، دقیقاً
+ * همان دو Theme قبلی (کلاسیک/شیشه‌ای) که سال‌ها استفاده می‌شدند برمی‌گردند.
+ * تم‌های قدیمی پایین (legacyLightTheme/legacyDarkTheme) کاملاً دست‌نخورده
+ * نگه داشته شده‌اند.
  */
+export const NEW_DESIGN_ENABLED = true;
 
 const FONT_FAMILY = "'Vazirmatn', 'Tahoma', sans-serif";
 
@@ -31,9 +26,192 @@ const sharedTypography = {
 };
 
 // ============================================================
+// طراحی جدید — بر اساس personnel_portal.html (نمونه ارسالی کاربر)
+// ============================================================
+// رنگ‌ها و نسبت‌ها دقیقاً از همان فایل کپی شده‌اند (نه حدسی) — کارت‌های
+// خیلی گرد (۲۰px+)، سایه نرم، دکمه/برچسب‌های Pill-شکل، آبی/فیروزه‌ای.
+const NEW_LIGHT_BLUE = "#1468A7";
+const NEW_LIGHT_TEAL = "#2F9CAC";
+const NEW_LIGHT_DANGER = "#E53347";
+
+export const modernLightTheme = createTheme({
+  direction: "rtl",
+  palette: {
+    mode: "light",
+    primary: {
+      main: NEW_LIGHT_BLUE,
+      light: "#2E84AA",
+      dark: "#0F5F9B",
+      contrastText: "#FFFFFF",
+    },
+    secondary: {
+      main: NEW_LIGHT_TEAL,
+      light: "#5DB9C6",
+      dark: "#25818F",
+      contrastText: "#FFFFFF",
+    },
+    background: {
+      default: "#F3F7FB",
+      paper: "#FFFFFF",
+    },
+    text: {
+      primary: "#08172C",
+      secondary: "#6F7C8D",
+    },
+    success: { main: "#2F9CAC" },
+    warning: { main: "#C97A2B" },
+    error: { main: NEW_LIGHT_DANGER },
+    divider: "#DCE5EC",
+  },
+  typography: sharedTypography,
+  shape: {
+    borderRadius: 16,
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: { backgroundImage: "none" },
+        outlined: {
+          border: "1px solid rgba(196, 208, 219, 0.62)",
+          boxShadow: "0 7px 16px rgba(25, 55, 85, 0.10), 0 1px 2px rgba(25, 55, 85, 0.05)",
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: { backgroundColor: "#FFFFFF", backgroundImage: "none", boxShadow: "none" },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: { backgroundColor: "#FFFFFF", backgroundImage: "none" },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: { borderRadius: 18 },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: { borderRadius: 20 },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        head: { fontWeight: 700, backgroundColor: "#F3F7FB" },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: { fontWeight: 700, borderRadius: 999 },
+      },
+    },
+  },
+});
+
+// نسخه تیره طراحی جدید — چون نمونه HTML کاربر فقط حالت روشن داشت، این
+// نسخه با همان زبان طراحی (کارت‌های گرد، آبی/فیروزه‌ای) برای پس‌زمینه
+// تیره طراحی شد — همان تناسب رنگ‌ها، روشن‌تر شده برای کنتراست کافی روی
+// زمینه تیره.
+export const modernDarkTheme = createTheme({
+  direction: "rtl",
+  palette: {
+    mode: "dark",
+    primary: {
+      main: "#4FA8DA",
+      light: "#7BC1E6",
+      dark: "#2E84AA",
+      contrastText: "#07141F",
+    },
+    secondary: {
+      main: "#4DBCCB",
+      light: "#7DD0DC",
+      dark: "#2F9CAC",
+      contrastText: "#071A1D",
+    },
+    background: {
+      default: "#0F1824",
+      paper: "#182534",
+    },
+    text: {
+      primary: "#EEF4F9",
+      secondary: "#90A0B0",
+    },
+    success: { main: "#4DBCCB" },
+    warning: { main: "#FBBF24" },
+    error: { main: "#F0798A" },
+    divider: "rgba(255, 255, 255, 0.10)",
+  },
+  typography: sharedTypography,
+  shape: {
+    borderRadius: 16,
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: { backgroundImage: "none" },
+        outlined: {
+          backgroundColor: "#182534",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          boxShadow: "0 7px 16px rgba(0, 0, 0, 0.28)",
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: { backgroundColor: "#182534", backgroundImage: "none", boxShadow: "none" },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: { backgroundColor: "#182534", backgroundImage: "none" },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: { borderRadius: 18 },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: { borderRadius: 20 },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        head: { fontWeight: 700, backgroundColor: "rgba(255, 255, 255, 0.04)" },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: { fontWeight: 700, borderRadius: 999 },
+      },
+    },
+  },
+});
+
+/**
+ * دو زبان طراحی قدیمی — دست‌نخورده، فقط برای راه برگشت (NEW_DESIGN_ENABLED=false):
+ *
+ * ۱) کلاسیک (Light) — همون ظاهر همیشگی پروژه: کارت‌های تخت با کادر نازک،
+ *    گوشه‌های نسبتاً تیز، دکمه‌های مستطیلی ساده، پس‌زمینه یک‌دست.
+ *
+ * ۲) مدرن شیشه‌ای (Dark/Glass) — یک زبان بصری کاملاً متفاوت:
+ *    - پس‌زمینه گرادیانت محو (نه رنگ یک‌دست)
+ *    - کارت‌ها «شیشه‌ای» (پس‌زمینه نیمه‌شفاف + Blur + سایه نرم، بدون کادر تیز)
+ *    - دکمه‌های اصلی، Pill-شکل با گرادیانت فیروزه‌ای→بنفش
+ *    - نوار بالا/کناری هم شیشه‌ای و شناور (Blur)، نه یک‌دست و صاف
+ *    - گوشه‌های خیلی گردتر همه‌جا
+ *
+ * متن‌ها، لوگو، و ساختار صفحات کاملاً دست‌نخورده می‌مونن — این‌ها فقط Theme
+ * سطح MUI هستن.
+ */
+
+// ============================================================
 // ۱) کلاسیک (Light)
 // ============================================================
-export const lightTheme = createTheme({
+export const legacyLightTheme = createTheme({
   direction: "rtl",
   palette: {
     mode: "light",
@@ -124,7 +302,7 @@ const GLASS_BORDER = "1px solid rgba(255, 255, 255, 0.09)";
 const GLASS_BLUR = "blur(20px)";
 const GRADIENT_ACCENT = "linear-gradient(135deg, #2DD4BF 0%, #A78BFA 100%)";
 
-export const darkTheme = createTheme({
+export const legacyDarkTheme = createTheme({
   direction: "rtl",
   palette: {
     mode: "dark",
@@ -320,6 +498,11 @@ export const darkTheme = createTheme({
     },
   },
 });
+
+// خروجی نهایی که همه‌جای پروژه import می‌کنند — نقطه واحد سوییچ. هیچ فایل
+// دیگری نیازی به تغییر ندارد؛ فقط NEW_DESIGN_ENABLED بالا را عوض کنید.
+export const lightTheme = NEW_DESIGN_ENABLED ? modernLightTheme : legacyLightTheme;
+export const darkTheme = NEW_DESIGN_ENABLED ? modernDarkTheme : legacyDarkTheme;
 
 /** کلاس CSS کمکی برای نمایش اعداد/کدها با فونت مونو‌اسپیس (خوانایی بهتر در جداول) */
 export const monoFontSx = {

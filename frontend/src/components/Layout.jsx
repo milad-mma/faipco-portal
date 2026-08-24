@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
+import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
+  BottomNavigation,
+  BottomNavigationAction,
   Box,
   Collapse,
   Divider,
@@ -108,6 +110,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -428,11 +431,45 @@ export default function Layout() {
           width: hasSingleNavItem ? "100%" : { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
           p: { xs: 2, md: 4 },
           mt: 8,
+          // وقتی نوار پایین موبایل نمایش داده می‌شود (پرسنل عادی، فقط موبایل)،
+          // فضای اضافه پایین صفحه لازم است تا آخرین محتوا زیر نوار پنهان نشود.
+          pb: hasSingleNavItem ? { xs: 12, md: 4 } : { xs: 2, md: 4 },
           overflowX: "hidden",
         }}
       >
         <Outlet />
       </Box>
+
+      {/* نوار پایین موبایل — فقط برای پرسنل عادی (بدون Drawer مدیریتی) و فقط
+          روی موبایل؛ در دسکتاپ همیشه مخفی است، چون آنجا AppBar/منوی حساب
+          کاربری کافی است. بر اساس طرح personnel_portal.html کاربر. */}
+      {hasSingleNavItem && (
+        <BottomNavigation
+          value={
+            location.pathname.startsWith("/profile")
+              ? "/profile"
+              : location.pathname.startsWith("/notices")
+                ? "/notices"
+                : "/my-dashboard"
+          }
+          onChange={(_, newValue) => navigate(newValue)}
+          showLabels
+          sx={{
+            display: { xs: "flex", md: "none" },
+            position: "fixed",
+            bottom: 0,
+            insetInline: 0,
+            zIndex: (theme) => theme.zIndex.drawer + 2,
+            borderTop: "1px solid",
+            borderColor: "divider",
+            height: 68,
+          }}
+        >
+          <BottomNavigationAction label="داشبورد" value="/my-dashboard" icon={<DashboardOutlinedIcon />} />
+          <BottomNavigationAction label="اطلاعیه‌ها" value="/notices" icon={<CampaignOutlinedIcon />} />
+          <BottomNavigationAction label="پنل کاربری" value="/profile" icon={<AccountCircleOutlinedIcon />} />
+        </BottomNavigation>
+      )}
 
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
 

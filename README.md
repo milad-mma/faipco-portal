@@ -54,6 +54,7 @@ cd frontend && npm install && npm run dev
 | [`docs/architecture.md`](docs/architecture.md) | معماری، دلایل انتخاب تکنولوژی، پشته فناوری |
 | [`docs/project-structure.md`](docs/project-structure.md) | ساختار پوشه‌ها و فایل‌های پروژه |
 | [`docs/features.md`](docs/features.md) | فهرست کامل ویژگی‌ها |
+| [`docs/design-system.md`](docs/design-system.md) | ⚠️ طراحی جدید پرتال + راه برگشت (`NEW_DESIGN_ENABLED`) |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |
