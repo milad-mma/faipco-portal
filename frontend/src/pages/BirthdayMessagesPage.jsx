@@ -31,6 +31,7 @@ import {
   updateBirthdaySendTime,
 } from "../api/hr";
 import { fetchTodayBirthdays } from "../api/employees";
+import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
@@ -162,8 +163,15 @@ export default function BirthdayMessagesPage() {
           <Stack spacing={1.5}>
             {todayBirthdays.map((e) => (
               <Stack key={e.id} direction="row" alignItems="center" spacing={1.5}>
-                <Avatar sx={{ width: 32, height: 32, bgcolor: "secondary.main", fontSize: 14 }}>
-                  {(e.first_name?.[0] || "") + (e.last_name?.[0] || "")}
+                <Avatar
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    bgcolor: "secondary.main",
+                    color: "secondary.contrastText",
+                  }}
+                >
+                  <DefaultPersonAvatar />
                 </Avatar>
                 <Box>
                   <Typography variant="body2">

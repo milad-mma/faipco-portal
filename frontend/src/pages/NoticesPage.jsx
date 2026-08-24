@@ -32,6 +32,7 @@ import {
   markNoticeRead,
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
+import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import { fetchEmployeePhotoThumbnailBlob } from "../api/employees";
 import { useAuth } from "../context/AuthContext";
 import { monoFontSx } from "../theme";
@@ -354,9 +355,16 @@ export default function NoticesPage() {
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
             <Avatar
               src={photoUrl || undefined}
-              sx={{ width: 72, height: 72, bgcolor: "primary.main", fontSize: 26, fontWeight: 700 }}
+              sx={{
+                width: 72,
+                height: 72,
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                fontSize: 26,
+                fontWeight: 700,
+              }}
             >
-              {(user.first_name?.[0] || "") + (user.last_name?.[0] || "")}
+              {!photoUrl && <DefaultPersonAvatar />}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="subtitle1" fontWeight={700} noWrap>
