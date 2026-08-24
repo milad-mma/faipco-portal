@@ -35,6 +35,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.employee import Department, Employee
 from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.notice_read import NoticeRead
+from app.models.notice_archive import NoticeArchive
 from app.models.payroll_receipt import PayrollReceipt
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
@@ -230,7 +231,14 @@ class NoticeService:
         )
         return list(result.scalars().unique().all())
 
-    async def list_for_user(self, user: User, page: int = 1, page_size: int = 10) -> tuple[list[NoticeOut], int]:
+    async def list_for_user(
+        self,
+        user: User,
+        page: int = 1,
+        page_size: int = 10,
+        notice_type: NoticeType | None = None,
+        archived: bool = False,
+    ) -> tuple[list[NoticeOut], int]:
         now = datetime.now(timezone.utc)
 
         result = await self.db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
@@ -283,6 +291,20 @@ class NoticeService:
             or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
             Notice.id.in_(matching_notice_ids),
         )
+        # فیلتر نوع (فقط فیش حقوقی / فقط فیش کارکرد) — برای صفحه اختصاصی هرکدام
+        if notice_type is not None:
+            base_filters = (*base_filters, Notice.notice_type == notice_type)
+
+        # فیلتر آرشیو — پیش‌فرض (archived=False): اطلاعیه‌های آرشیوشده توسط
+        # همین کاربر از لیست عادی کنار گذاشته می‌شوند (دقیقاً مثل صندوق ورودی
+        # ایمیل). وقتی archived=True (تب «آرشیو»): برعکس، فقط همان‌ها نشان
+        # داده می‌شوند. هردو حالت EXISTS/NOT EXISTS روی NoticeArchive محدود
+        # به user.id — آرشیو کاملاً شخصی است، آرشیو یک نفر روی بقیه اثر ندارد.
+        archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)
+        if archived:
+            base_filters = (*base_filters, Notice.id.in_(archived_subquery))
+        else:
+            base_filters = (*base_filters, Notice.id.not_in(archived_subquery))
 
         count_stmt = select(func.count()).select_from(Notice).where(*base_filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
@@ -309,6 +331,15 @@ class NoticeService:
             )
         )
         read_ids = {row[0] for row in read_result.all()}
+
+        # اطلاعیه‌هایی که همین کاربر آرشیو کرده — در تب «آرشیو» همه True
+        # هستند (چون فیلتر شد)، ولی در لیست عادی برای دکمه «آرشیو کردن» لازم است
+        archive_result = await self.db.execute(
+            select(NoticeArchive.notice_id).where(
+                NoticeArchive.notice_id.in_(notice_ids), NoticeArchive.user_id == user.id
+            )
+        )
+        archived_ids = {row[0] for row in archive_result.all()}
 
         # برای اطلاعیه‌های نوع payroll، آیا فیش خودِ همین کاربر واقعاً موجود
         # است؟ (ممکن است این کاربر Target شده باشد ولی به هر دلیلی رکورد
@@ -361,6 +392,7 @@ class NoticeService:
                     NoticeTargetOut(target_type=t.target_type, target_id=t.target_id) for t in n.targets
                 ],
                 is_read=n.id in read_ids,
+                is_archived=n.id in archived_ids,
                 has_my_payroll_receipt=n.id in payroll_receipt_notice_ids,
                 has_my_attendance_card=n.id in attendance_card_notice_ids,
             )
@@ -496,6 +528,29 @@ class NoticeService:
         if result.scalar_one_or_none() is not None:
             return  # قبلاً ثبت شده — زمان اولین مشاهده حفظ می‌شود
         self.db.add(NoticeRead(notice_id=notice_id, user_id=user_id))
+        await self.db.commit()
+
+    async def archive_notice(self, notice_id: int, user_id: int) -> None:
+        """آرشیو کردن یک اطلاعیه توسط همین کاربر (اجرای دوباره بی‌اثر است) — کاملاً
+        شخصی، روی نمایش این اطلاعیه برای بقیه گیرندگان هیچ اثری ندارد."""
+        result = await self.db.execute(
+            select(NoticeArchive).where(NoticeArchive.notice_id == notice_id, NoticeArchive.user_id == user_id)
+        )
+        if result.scalar_one_or_none() is not None:
+            return
+        self.db.add(NoticeArchive(notice_id=notice_id, user_id=user_id))
+        await self.db.commit()
+
+    async def unarchive_notice(self, notice_id: int, user_id: int) -> None:
+        """بازگرداندن یک اطلاعیه از آرشیو به صندوق عادی — فقط رکورد NoticeArchive
+        خودِ همین کاربر حذف می‌شود."""
+        result = await self.db.execute(
+            select(NoticeArchive).where(NoticeArchive.notice_id == notice_id, NoticeArchive.user_id == user_id)
+        )
+        archive_row = result.scalar_one_or_none()
+        if archive_row is None:
+            return
+        await self.db.delete(archive_row)
         await self.db.commit()
 
     # ---------- گزارش‌ها ----------

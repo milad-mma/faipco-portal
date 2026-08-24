@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -19,13 +19,16 @@ import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
+import UnarchiveOutlinedIcon from "@mui/icons-material/UnarchiveOutlined";
 import {
+  archiveNotice,
   fetchAvailableTargets,
   fetchMyAttendanceCardBlob,
   fetchMyNotices,
   fetchMyPayrollReceiptBlob,
   fetchSentByMe,
   markNoticeRead,
+  unarchiveNotice,
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
 
@@ -38,6 +41,11 @@ const PRIORITY_LABELS = {
   normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
   high: { label: "بالا", bg: "error.main", color: "error.contrastText" },
   urgent: { label: "فوری", bg: "error.main", color: "error.contrastText" },
+};
+
+const NOTICE_TYPE_META = {
+  payroll: { label: "فیش‌های حقوقی من", chipLabel: "فیش حقوقی", chipColor: "secondary" },
+  attendance_card: { label: "فیش‌های کارکرد من", chipLabel: "فیش کارکرد", chipColor: "info" },
 };
 
 const TABS = [
@@ -102,12 +110,14 @@ function PriorityBadge({ priority }) {
   );
 }
 
-function ReceivedNoticeCard({ notice, onOpened }) {
+function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }) {
   const [expanded, setExpanded] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const isUnread = !notice.is_read;
   const isPayroll = notice.notice_type === "payroll";
   const isAttendanceCard = notice.notice_type === "attendance_card";
+  const typeMeta = NOTICE_TYPE_META[notice.notice_type];
 
   function handleToggle() {
     if (!expanded && isUnread) {
@@ -117,40 +127,38 @@ function ReceivedNoticeCard({ notice, onOpened }) {
     setExpanded((v) => !v);
   }
 
+  async function handleArchiveToggle(e) {
+    e.stopPropagation();
+    setArchiveBusy(true);
+    try {
+      if (notice.is_archived) {
+        await unarchiveNotice(notice.id);
+      } else {
+        await archiveNotice(notice.id);
+      }
+      onArchiveChange?.(notice.id);
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
   return (
-    <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+    <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
       <Box
         onClick={handleToggle}
         sx={{
           minHeight: 70,
           p: 1.5,
           display: "grid",
-          gridTemplateColumns: "44px 1fr 46px",
+          // طبق درخواست: جای آیکون پاکت و نشان اولویت جابه‌جا شد — حالا
+          // آیکون پاکت راست (اول)، نشان اولویت چپ (آخر)
+          gridTemplateColumns: "46px 1fr 44px",
           alignItems: "center",
           gap: 1.25,
           cursor: "pointer",
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        <PriorityBadge priority={notice.priority} />
-        <Box sx={{ minWidth: 0 }}>
-          <Typography
-            fontSize={14}
-            fontWeight={isUnread ? 800 : 500}
-            color={isUnread ? "text.primary" : "text.secondary"}
-            sx={{
-              lineHeight: 1.7,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {notice.title}
-          </Typography>
-          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
-            {new Date(notice.created_at).toLocaleString("fa-IR")}
-          </Typography>
-        </Box>
         <Box
           sx={{
             width: 42,
@@ -166,13 +174,42 @@ function ReceivedNoticeCard({ notice, onOpened }) {
         >
           {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
         </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ mb: 0.25 }}>
+            {/* طبق درخواست: مثل تم قبلی، برچسب فیش حقوقی/کارکرد همیشه کنار
+                عنوان دیده می‌شود، نه فقط وقتی کارت باز است */}
+            {typeMeta && (
+              <Chip
+                size="small"
+                label={typeMeta.chipLabel}
+                color={typeMeta.chipColor}
+                variant="outlined"
+                sx={{ height: 18, fontSize: 10, flexShrink: 0, mt: 0.25 }}
+              />
+            )}
+            <Typography
+              fontSize={14}
+              fontWeight={isUnread ? 800 : 500}
+              color={isUnread ? "text.primary" : "text.secondary"}
+              sx={{
+                lineHeight: 1.7,
+                // طبق بازخورد: قبلاً عنوان با ... یک‌خطی بریده می‌شد — حالا
+                // کامل نمایش داده می‌شود، حتی اگر چند خط شود
+                wordBreak: "break-word",
+                minWidth: 0,
+              }}
+            >
+              {notice.title}
+            </Typography>
+          </Stack>
+          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right" }}>
+            {new Date(notice.created_at).toLocaleString("fa-IR")}
+          </Typography>
+        </Box>
+        <PriorityBadge priority={notice.priority} />
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-            {isPayroll && <Chip size="small" label="فیش حقوقی" color="secondary" variant="outlined" />}
-            {isAttendanceCard && <Chip size="small" label="فیش کارکرد" color="info" variant="outlined" />}
-          </Stack>
           {notice.body && (
             <Typography
               variant="body2"
@@ -243,17 +280,32 @@ function ReceivedNoticeCard({ notice, onOpened }) {
             spacing={1}
             flexWrap="wrap"
             useFlexGap
+            alignItems="center"
+            justifyContent="space-between"
             sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}
           >
-            <Chip size="small" variant="outlined" color="info" label={`فرستنده: ${notice.sender_name}`} />
-            {notice.sender_department_name && (
-              <Chip
-                size="small"
-                variant="outlined"
-                color="info"
-                label={`واحد: ${notice.sender_department_name}`}
-              />
-            )}
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip size="small" variant="outlined" color="info" label={`فرستنده: ${notice.sender_name}`} />
+              {notice.sender_department_name && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color="info"
+                  label={`واحد: ${notice.sender_department_name}`}
+                />
+              )}
+            </Stack>
+            <Button
+              size="small"
+              color={isArchiveView ? "primary" : "inherit"}
+              disabled={archiveBusy}
+              startIcon={
+                notice.is_archived ? <UnarchiveOutlinedIcon fontSize="small" /> : <ArchiveOutlinedIcon fontSize="small" />
+              }
+              onClick={handleArchiveToggle}
+            >
+              {notice.is_archived ? "بازگرداندن از آرشیو" : "آرشیو کردن"}
+            </Button>
           </Stack>
         </Box>
       </Collapse>
@@ -262,6 +314,14 @@ function ReceivedNoticeCard({ notice, onOpened }) {
 }
 
 export default function NoticesPage() {
+  const [searchParams] = useSearchParams();
+  // اگر با ?type=payroll یا ?type=attendance_card باز شود (از دکمه‌های
+  // «فیش حقوقی»/«فیش کارکرد» در داشبورد شخصی)، فقط همان نوع فیلتر می‌شود
+  // و تب‌های ارسالی/آرشیو مخفی می‌شوند — چون در آن حالت این یک نمای
+  // اختصاصی («فقط فیش‌های من») است، نه صفحه کامل اطلاعیه‌ها.
+  const typeFilter = searchParams.get("type");
+  const isFilteredView = typeFilter === "payroll" || typeFilter === "attendance_card";
+
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState(null);
   const [noticesTotal, setNoticesTotal] = useState(0);
@@ -269,19 +329,35 @@ export default function NoticesPage() {
   const NOTICES_PAGE_SIZE = 10;
   const [sentReloadKey, setSentReloadKey] = useState(0);
   const [availableTargets, setAvailableTargets] = useState(null);
+  const [archivedNotices, setArchivedNotices] = useState(null);
+  const [archivedTotal, setArchivedTotal] = useState(0);
+  const [archivedPage, setArchivedPage] = useState(1);
 
   function loadNotices(page = noticesPage) {
-    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE }).then((data) => {
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, noticeType: typeFilter || undefined }).then((data) => {
       setNotices(data.items);
       setNoticesTotal(data.total);
+    });
+  }
+
+  function loadArchived(page = archivedPage) {
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: true }).then((data) => {
+      setArchivedNotices(data.items);
+      setArchivedTotal(data.total);
     });
   }
 
   useEffect(() => {
     loadNotices(1);
     setNoticesPage(1);
-    fetchAvailableTargets().then(setAvailableTargets);
-  }, []);
+    if (!isFilteredView) fetchAvailableTargets().then(setAvailableTargets);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter]);
+
+  useEffect(() => {
+    if (tab === "archive" && archivedNotices === null) loadArchived(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
   // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من). چون
@@ -298,6 +374,7 @@ export default function NoticesPage() {
     }
     navigator.serviceWorker.addEventListener("message", handleMessage);
     return () => navigator.serviceWorker.removeEventListener("message", handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const canCreateAnything =
@@ -313,16 +390,27 @@ export default function NoticesPage() {
     setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));
   }
 
+  // بعد از آرشیو/بازگرداندن یک اطلاعیه، آن اطلاعیه دیگر در لیست فعلی جایی
+  // ندارد (چه در «دریافتی» چه در «آرشیو» — چون فیلتر مقابل شد) — پس فقط
+  // همان لیست را دوباره می‌خوانیم، به‌جای این‌که سعی کنیم وضعیت را محلی
+  // Patch کنیم (که پیچیده و مستعد خطا می‌شد).
+  function handleArchiveChange() {
+    if (tab === "archive") {
+      loadArchived(archivedPage);
+    } else {
+      loadNotices(noticesPage);
+    }
+  }
+
+  const pageTitle = isFilteredView ? NOTICE_TYPE_META[typeFilter].label : "اطلاعیه‌ها";
+
   return (
     <Box>
-      {/* اطلاعات شخصی/سازمانی کاربر حالا در تب «داشبورد» (PersonalDashboardPage)
-          نمایش داده می‌شود — طبق personnel_portal.html، صفحه اطلاعیه‌ها فقط
-          اطلاعیه‌هاست، بدون تکرار کارت پروفایل. */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Typography variant="h5" fontWeight={800}>
-          اطلاعیه‌ها
+          {pageTitle}
         </Typography>
-        {canCreateAnything && (
+        {canCreateAnything && !isFilteredView && (
           <Button
             variant="contained"
             startIcon={<AddOutlinedIcon />}
@@ -335,10 +423,14 @@ export default function NoticesPage() {
         )}
       </Box>
 
-      {/* کنترل Segmented — دقیقاً طبق personnel_portal.html: کپسول خاکستری
-          روشن با ۳ دکمه؛ فعال = پس‌زمینه سفید/Paper + متن رنگی + سایه ملایم،
-          به‌جای Tab خط‌زیرین معمول MUI. */}
-      {canCreateAnything && (
+      {/* در نمای فیلترشده (فیش حقوقی/کارکرد از داشبورد) اصلاً تب نشان داده
+          نمی‌شود — این یک نمای تک‌منظوره است، نه صفحه کامل اطلاعیه‌ها.
+          ⚠️ عمداً به canCreateAnything وابسته نیست: هر کاربر لاگین‌شده‌ای،
+          حتی بدون هیچ مجوز ارسالی، اطلاعیه دریافت می‌کند و باید بتواند
+          آرشیوشان کند — این تب‌ها (از جمله «آرشیو») باید همیشه دیده شوند،
+          نه فقط برای کسانی که اجازه ارسال دارند (که قبلاً یک باگ واقعی بود:
+          پرسنل بدون نقش خاص، اصلاً هیچ‌کدام از تب‌ها را نمی‌دید). */}
+      {!isFilteredView && (
         <Box
           sx={{
             display: "grid",
@@ -376,7 +468,7 @@ export default function NoticesPage() {
         </Box>
       )}
 
-      {tab === "received" && (
+      {(isFilteredView || tab === "received") && (
         <Stack spacing={1.5}>
           {notices === null ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -385,14 +477,21 @@ export default function NoticesPage() {
           ) : (
             <>
               {notices.length === 0 && (
-                <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
+                <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
                   <Typography variant="body2" color="text.secondary">
-                    در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است.
+                    {isFilteredView
+                      ? "اطلاعیه‌ای از این نوع برای شما ثبت نشده است."
+                      : "در حال حاضر اطلاعیه‌ای برای شما ثبت نشده است."}
                   </Typography>
                 </Card>
               )}
               {notices.map((notice) => (
-                <ReceivedNoticeCard key={notice.id} notice={notice} onOpened={handleMarkedRead} />
+                <ReceivedNoticeCard
+                  key={notice.id}
+                  notice={notice}
+                  onOpened={handleMarkedRead}
+                  onArchiveChange={handleArchiveChange}
+                />
               ))}
             </>
           )}
@@ -412,8 +511,8 @@ export default function NoticesPage() {
         </Stack>
       )}
 
-      {tab === "sent" && (
-        <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
+      {!isFilteredView && tab === "sent" && (
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 1 }}>
           <NoticeReportTable
             fetchPage={fetchSentByMe}
             showSender={false}
@@ -423,13 +522,47 @@ export default function NoticesPage() {
         </Card>
       )}
 
-      {tab === "archive" && (
-        <Card variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: "center" }}>
-          <ArchiveOutlinedIcon sx={{ fontSize: 32, color: "text.disabled", mb: 1 }} />
-          <Typography variant="body2" color="text.secondary">
-            آرشیو اطلاعیه‌ها به‌زودی — این قابلیت هنوز پیاده‌سازی نشده است.
-          </Typography>
-        </Card>
+      {!isFilteredView && tab === "archive" && (
+        <Stack spacing={1.5}>
+          {archivedNotices === null ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
+              {archivedNotices.length === 0 && (
+                <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
+                  <ArchiveOutlinedIcon sx={{ fontSize: 32, color: "text.disabled", mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    آرشیو اطلاعیه‌ها خالی است.
+                  </Typography>
+                </Card>
+              )}
+              {archivedNotices.map((notice) => (
+                <ReceivedNoticeCard
+                  key={notice.id}
+                  notice={notice}
+                  onOpened={() => {}}
+                  onArchiveChange={handleArchiveChange}
+                  isArchiveView
+                />
+              ))}
+            </>
+          )}
+          {archivedNotices !== null && archivedTotal > NOTICES_PAGE_SIZE && (
+            <Stack alignItems="center" sx={{ pt: 1.5 }}>
+              <Pagination
+                count={Math.ceil(archivedTotal / NOTICES_PAGE_SIZE)}
+                page={archivedPage}
+                onChange={(_, value) => {
+                  setArchivedPage(value);
+                  loadArchived(value);
+                }}
+                color="primary"
+              />
+            </Stack>
+          )}
+        </Stack>
       )}
     </Box>
   );

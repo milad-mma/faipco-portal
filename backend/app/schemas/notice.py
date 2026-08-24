@@ -68,6 +68,7 @@ class NoticeOut(BaseModel):
     created_at: datetime
     targets: list[NoticeTargetOut]
     is_read: bool = False  # فقط در /notices/me معنا دارد؛ جای دیگر همیشه False است
+    is_archived: bool = False  # همین‌طور فقط در /notices/me — آیا خودِ همین کاربر آرشیوش کرده
     has_my_payroll_receipt: bool = False  # فقط در /notices/me: آیا فیش حقوقی خودِ من برای این اطلاعیه موجود است
     has_my_attendance_card: bool = False  # همین‌طور فقط در /notices/me: آیا فیش کارکرد خودِ من موجود است
 

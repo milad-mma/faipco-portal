@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Card, Chip, Grid, Stack, Typography } from "@mui/material";
+import { Avatar, Box, Card, Chip, Grid, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import RouteOutlinedIcon from "@mui/icons-material/RouteOutlined";
@@ -18,7 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { fetchMyNotices } from "../api/notices";
 import { fetchMyAttendanceLogs } from "../api/attendance";
-import { fetchTodayBirthdays } from "../api/employees";
+import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
 /**
@@ -55,7 +55,7 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
         alignItems: "center",
         justifyContent: "center",
         gap: 0.8,
-        borderRadius: 3,
+        borderRadius: 2,
         cursor: comingSoon ? "default" : "pointer",
         opacity: comingSoon ? 0.55 : 1,
         "&:hover": comingSoon ? {} : { backgroundColor: "action.hover" },
@@ -77,6 +77,7 @@ export default function PersonalDashboardPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
   const [birthdays, setBirthdays] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(null);
 
   useEffect(() => {
     fetchMyNotices({ page: 1, pageSize: 3 }).then((data) => {
@@ -87,6 +88,26 @@ export default function PersonalDashboardPage() {
       .then(setBirthdays)
       .catch(() => setBirthdays([]));
   }, []);
+
+  // عکس پرسنلی — مثل تم قبلی، فقط اگر واقعاً برای این کاربر ثبت شده باشد
+  // (has_photo از /auth/me)، تا برای اکثر افراد که هنوز عکسشان Sync نشده،
+  // یک درخواست ۴۰۴ اضافه به سرور نزنیم.
+  useEffect(() => {
+    if (!user?.employee_id || !user?.has_photo) {
+      setPhotoUrl(null);
+      return;
+    }
+    let objectUrl = null;
+    fetchEmployeePhotoThumbnailBlob(user.employee_id)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoUrl(objectUrl);
+      })
+      .catch(() => setPhotoUrl(null));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [user?.employee_id, user?.has_photo]);
 
   useEffect(() => {
     if (!user?.can_clock_in_out) {
@@ -122,7 +143,7 @@ export default function PersonalDashboardPage() {
     <Grid container spacing={2.5}>
       <Grid item xs={12} md={8}>
         <Stack spacing={2.5}>
-          <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+          <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
             <Box
               sx={{
                 background: "linear-gradient(90deg, #185E95 0%, #2E84AA 100%)",
@@ -141,20 +162,17 @@ export default function PersonalDashboardPage() {
                   کد پرسنلی: {user?.personnel_code || "—"}
                 </Typography>
               </Box>
-              <Box
+              <Avatar
+                src={photoUrl || undefined}
                 sx={{
                   width: 50,
                   height: 50,
-                  borderRadius: "50%",
                   backgroundColor: "rgba(255,255,255,0.18)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
                   flexShrink: 0,
                 }}
               >
-                <DefaultPersonAvatar />
-              </Box>
+                {!photoUrl && <DefaultPersonAvatar />}
+              </Avatar>
             </Box>
             <Stack sx={{ px: 1.75, py: 1 }}>
               {[
@@ -184,7 +202,7 @@ export default function PersonalDashboardPage() {
           </Card>
 
           <Stack direction="row" spacing={1.5}>
-            <Card variant="outlined" sx={{ flex: 1, borderRadius: 3, p: 1.75 }}>
+            <Card variant="outlined" sx={{ flex: 1, borderRadius: 2, p: 1.75 }}>
               <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
                 <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
                 <Typography variant="caption">تردد امروز</Typography>
@@ -212,7 +230,11 @@ export default function PersonalDashboardPage() {
                 <Chip label="به‌زودی" size="small" />
               )}
             </Card>
-            <Card variant="outlined" sx={{ flex: 1, borderRadius: 3, p: 1.75 }}>
+            <Card
+              variant="outlined"
+              onClick={() => navigate("/notices")}
+              sx={{ flex: 1, borderRadius: 2, p: 1.75, cursor: "pointer", "&:hover": { backgroundColor: "action.hover" } }}
+            >
               <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
                 <NotificationsNoneOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
                 <Typography variant="caption">اطلاعیه</Typography>
@@ -248,7 +270,7 @@ export default function PersonalDashboardPage() {
               sx={{
                 position: "relative",
                 flex: 1,
-                borderRadius: 3,
+                borderRadius: 2,
                 p: 1.75,
                 cursor: user?.can_clock_in_out ? "pointer" : "default",
                 opacity: user?.can_clock_in_out ? 1 : 0.55,
@@ -274,7 +296,7 @@ export default function PersonalDashboardPage() {
                 گزارش تردد
               </Typography>
             </Card>
-            <Card variant="outlined" sx={{ position: "relative", flex: 1, borderRadius: 3, p: 1.75, opacity: 0.55 }}>
+            <Card variant="outlined" sx={{ position: "relative", flex: 1, borderRadius: 2, p: 1.75, opacity: 0.55 }}>
               <ComingSoonChip />
               <Box
                 sx={{
@@ -298,8 +320,8 @@ export default function PersonalDashboardPage() {
           </Stack>
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)" }, gap: 1.25 }}>
-            <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices")} />
-            <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices")} />
+            <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
+            <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
             <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
             <ToolCard icon={<ForumOutlinedIcon />} label="نظرسنجی و انتقادات" comingSoon />
             <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" comingSoon />
@@ -310,7 +332,7 @@ export default function PersonalDashboardPage() {
 
       <Grid item xs={12} md={4}>
         <Stack spacing={2.5}>
-          <Card variant="outlined" sx={{ borderRadius: 3, p: 1.75 }}>
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
               <Typography fontWeight={800} fontSize={14}>
                 اطلاعیه‌های اخیر
@@ -357,7 +379,7 @@ export default function PersonalDashboardPage() {
             )}
           </Card>
 
-          <Card variant="outlined" sx={{ borderRadius: 3, p: 1.75 }}>
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
             <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
               <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
               <Typography fontWeight={800} fontSize={14}>

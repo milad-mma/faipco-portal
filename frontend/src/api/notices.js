@@ -5,8 +5,10 @@ export async function fetchAllNotices() {
   return data;
 }
 
-export async function fetchMyNotices({ page = 1, pageSize = 10 } = {}) {
-  const { data } = await apiClient.get("/notices/me", { params: { page, page_size: pageSize } });
+export async function fetchMyNotices({ page = 1, pageSize = 10, noticeType, archived } = {}) {
+  const { data } = await apiClient.get("/notices/me", {
+    params: { page, page_size: pageSize, notice_type: noticeType ?? undefined, archived: archived ?? undefined },
+  });
   return data; // { items, total }
 }
 
@@ -27,6 +29,14 @@ export async function fetchAvailableTargets() {
 
 export async function markNoticeRead(noticeId) {
   await apiClient.post(`/notices/${noticeId}/read`);
+}
+
+export async function archiveNotice(noticeId) {
+  await apiClient.post(`/notices/${noticeId}/archive`);
+}
+
+export async function unarchiveNotice(noticeId) {
+  await apiClient.post(`/notices/${noticeId}/unarchive`);
 }
 
 export async function fetchSentByMe(page = 1, pageSize = 10) {

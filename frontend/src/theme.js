@@ -65,7 +65,7 @@ export const modernLightTheme = createTheme({
   },
   typography: sharedTypography,
   shape: {
-    borderRadius: 10,
+    borderRadius: 6,
   },
   components: {
     MuiPaper: {
@@ -89,12 +89,12 @@ export const modernLightTheme = createTheme({
     },
     MuiButton: {
       styleOverrides: {
-        root: { borderRadius: 10 },
+        root: { borderRadius: 6 },
       },
     },
     MuiCard: {
       styleOverrides: {
-        root: { borderRadius: 12 },
+        root: { borderRadius: 6 },
       },
     },
     MuiTableCell: {
@@ -145,7 +145,7 @@ export const modernDarkTheme = createTheme({
   },
   typography: sharedTypography,
   shape: {
-    borderRadius: 10,
+    borderRadius: 6,
   },
   components: {
     MuiPaper: {
@@ -170,12 +170,12 @@ export const modernDarkTheme = createTheme({
     },
     MuiButton: {
       styleOverrides: {
-        root: { borderRadius: 10 },
+        root: { borderRadius: 6 },
       },
     },
     MuiCard: {
       styleOverrides: {
-        root: { borderRadius: 12 },
+        root: { borderRadius: 6 },
       },
     },
     MuiTableCell: {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Card,
@@ -26,8 +26,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
+import { fetchAppVersion } from "../api/system";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
-import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
 // دسترسی‌های اضافه‌ای که بعضی نقش‌های غیر-Admin دارند (site_manager،
 // hr-manager، attendance-pilot و...) — قبلاً این‌ها یک آیتم منوی مستقل در
@@ -53,6 +53,14 @@ export default function ProfilePage() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
   const [snackbar, setSnackbar] = useState("");
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    // بی‌صدا — مثل صفحه ورود، اگر شکست بخورد فقط شماره نسخه نشان داده نمی‌شود
+    fetchAppVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   const extraAccessItems = EXTRA_ACCESS_ITEMS.filter((item) => user?.[item.flag]);
 
@@ -77,36 +85,30 @@ export default function ProfilePage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 480 } }}>
-      <Card variant="outlined" sx={{ borderRadius: 3, p: 2.5, mb: 2 }}>
-        <Stack direction="row" spacing={2} alignItems="center">
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
+        <Stack alignItems="center" spacing={1} sx={{ textAlign: "center" }}>
           <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: "50%",
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <DefaultPersonAvatar />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography fontWeight={700} noWrap>
-              {user?.first_name} {user?.last_name}
+            component="img"
+            src="/faipco-logo.png"
+            alt="FAIPCO"
+            sx={{ width: 64, height: 64, objectFit: "contain" }}
+          />
+          <Typography variant="subtitle1" fontWeight={700} color="primary.main">
+            شرکت تولیدی صنعتی فواد الیاف
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            سامانه مدیریت پرسنل فایپکو
+          </Typography>
+          {appVersion && (
+            <Typography variant="caption" color="text.disabled" sx={{ direction: "ltr" }}>
+              {appVersion}
             </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {user?.personnel_code ? `کد پرسنلی: ${user.personnel_code}` : user?.username}
-            </Typography>
-          </Box>
+          )}
         </Stack>
       </Card>
 
       {extraAccessItems.length > 0 && (
-        <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", mb: 2 }}>
+        <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
           <List disablePadding>
             {extraAccessItems.map((item) => (
               <ListItemButton key={item.path} onClick={() => navigate(item.path)}>
@@ -118,7 +120,7 @@ export default function ProfilePage() {
         </Card>
       )}
 
-      <Card variant="outlined" sx={{ borderRadius: 3, p: 2.5, mb: 2 }}>
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           حالت نمایش
         </Typography>
@@ -159,7 +161,7 @@ export default function ProfilePage() {
         </RadioGroup>
       </Card>
 
-      <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+      <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
         <List disablePadding>
           {isPushSupported() && (
             <ListItemButton onClick={handleEnableNotifications} disabled={pushPermission !== "default"}>

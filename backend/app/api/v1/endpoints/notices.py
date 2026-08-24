@@ -4,8 +4,11 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices                      (POST)  ایجاد اطلاعیه — مجوز هر Target جداگانه بررسی می‌شود
 /notices/{id}/publish          (POST)  انتشار اطلاعیه
 /notices                      (GET)   لیست کامل همه اطلاعیه‌ها — نیازمند notices.view (پنل Admin)
-/notices/me                   (GET)   اطلاعیه‌های قابل‌مشاهده برای کاربر جاری
+/notices/me                   (GET)   اطلاعیه‌های قابل‌مشاهده برای کاربر جاری — با فیلتر اختیاری
+                                        notice_type (فقط فیش حقوقی/کارکرد) و archived (تب آرشیو)
 /notices/{id}/read             (POST)  ثبت این‌که کاربر جاری این اطلاعیه را باز/مشاهده کرد
+/notices/{id}/archive          (POST)  آرشیو کردن یک اطلاعیه — فقط برای خودِ کاربر جاری
+/notices/{id}/unarchive         (POST)  بازگرداندن یک اطلاعیه از آرشیو — فقط برای خودِ کاربر جاری
 /notices/sent-by-me            (GET)   گزارش «چه چیزهایی به چه کسانی فرستادم» برای فرستنده
 /notices/admin-report          (GET)   گزارش کامل همه اطلاعیه‌ها با فرستنده و آمار بازدید — Admin
 /notices/site-report           (GET)   گزارش اطلاعیه‌های رسیده به سایت(های) تحت مدیریت کاربر — site_manager
@@ -29,7 +32,7 @@ import json
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.employee import Employee
-from app.models.notice import Notice, NoticePriority
+from app.models.notice import Notice, NoticePriority, NoticeType
 from app.repositories.user_repository import UserRepository
 from app.models.user import User
 from app.schemas.notice import (
@@ -105,10 +108,21 @@ async def list_notices(
 async def my_notices(
     page: int = 1,
     page_size: int = 10,
+    notice_type: NoticeType | None = None,
+    archived: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items, total = await NoticeService(db).list_for_user(current_user, page=page, page_size=page_size)
+    """
+    notice_type (اختیاری): فقط اطلاعیه‌های همان نوع — برای صفحه اختصاصی
+    «فقط فیش‌های حقوقی من» یا «فقط فیش‌های کارکرد من».
+    archived (پیش‌فرض False): مثل صندوق ورودی ایمیل — پیش‌فرض اطلاعیه‌های
+    آرشیوشده توسط همین کاربر کنار گذاشته می‌شوند؛ با True برعکس، فقط
+    همان‌ها (تب «آرشیو»).
+    """
+    items, total = await NoticeService(db).list_for_user(
+        current_user, page=page, page_size=page_size, notice_type=notice_type, archived=archived
+    )
     return NoticePageOut(items=items, total=total)
 
 
@@ -120,6 +134,26 @@ async def mark_notice_read(
 ):
     """وقتی کاربر یک اطلاعیه بسته/Preview‌شده را باز می‌کند، از فرانت‌اند صدا زده می‌شود."""
     await NoticeService(db).mark_as_read(notice_id, current_user.id)
+
+
+@router.post("/{notice_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_notice(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """آرشیو کردن یک اطلاعیه دریافتی — فقط برای خودِ کاربر جاری، تأثیری روی بقیه گیرندگان ندارد."""
+    await NoticeService(db).archive_notice(notice_id, current_user.id)
+
+
+@router.post("/{notice_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
+async def unarchive_notice(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """بازگرداندن یک اطلاعیه از آرشیو به صندوق عادی — فقط برای خودِ کاربر جاری."""
+    await NoticeService(db).unarchive_notice(notice_id, current_user.id)
 
 
 @router.get("/sent-by-me", response_model=NoticeDetailPageOut)
