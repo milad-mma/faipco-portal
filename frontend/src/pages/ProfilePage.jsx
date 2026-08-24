@@ -19,11 +19,27 @@ import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsAc
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import BrightnessAutoOutlinedIcon from "@mui/icons-material/BrightnessAutoOutlined";
+import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
+
+// دسترسی‌های اضافه‌ای که بعضی نقش‌های غیر-Admin دارند (site_manager،
+// hr-manager، attendance-pilot و...) — قبلاً این‌ها یک آیتم منوی مستقل در
+// Drawer/AppBar بودند؛ حالا که نوار پایین موبایل جای آن منو را گرفته
+// (Layout.jsx)، این دسترسی‌ها دیگر روی موبایل جایی نداشتند تا این‌جا
+// اضافه شدند — همان شرط‌هایی که Layout.jsx برای NAV_ITEMS چک می‌کند.
+const EXTRA_ACCESS_ITEMS = [
+  { flag: "can_clock_in_out", label: "ثبت ورود و خروج", path: "/attendance-clock", icon: <FingerprintOutlinedIcon /> },
+  { flag: "can_view_clock_records", label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon /> },
+  { flag: "can_view_site_notice_report", label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon /> },
+  { flag: "can_manage_birthday_messages", label: "پیام‌های تبریک تولد", path: "/birthday-messages", icon: <CakeOutlinedIcon /> },
+];
 
 /**
  * پنل کاربری — قبلاً محتوای این صفحه فقط داخل منوی حساب کاربری (بالای
@@ -32,10 +48,13 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
  */
 export default function ProfilePage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
   const [snackbar, setSnackbar] = useState("");
+
+  const extraAccessItems = EXTRA_ACCESS_ITEMS.filter((item) => user?.[item.flag]);
 
   async function handleEnableNotifications() {
     try {
@@ -85,6 +104,19 @@ export default function ProfilePage() {
           </Box>
         </Stack>
       </Card>
+
+      {extraAccessItems.length > 0 && (
+        <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", mb: 2 }}>
+          <List disablePadding>
+            {extraAccessItems.map((item) => (
+              <ListItemButton key={item.path} onClick={() => navigate(item.path)}>
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.label} />
+              </ListItemButton>
+            ))}
+          </List>
+        </Card>
+      )}
 
       <Card variant="outlined" sx={{ borderRadius: 3, p: 2.5, mb: 2 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
