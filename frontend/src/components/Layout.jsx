@@ -301,6 +301,10 @@ export default function Layout() {
         elevation={0}
         color="inherit"
         sx={{
+          // پرسنل عادی که نوار پایین موبایل را می‌بیند، دیگر منوی بالای صفحه
+          // را هم نمی‌بیند (طبق درخواست صریح) — چون «پنل کاربری» حالا یک
+          // تب مستقل در همان نوار پایین است، نه نیاز به منوی بالا هم.
+          display: hasSingleNavItem ? { xs: "none", md: "flex" } : "flex",
           width: hasSingleNavItem ? "100%" : { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           borderBottom: "1px solid",
           borderColor: "divider",
@@ -430,7 +434,10 @@ export default function Layout() {
           minWidth: 0,
           width: hasSingleNavItem ? "100%" : { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
           p: { xs: 2, md: 4 },
-          mt: 8,
+          // چون منوی بالای صفحه برای پرسنل عادی روی موبایل مخفی است (بالا)،
+          // دیگر آن فاصله بالای صفحه هم لازم نیست — فقط در دسکتاپ (یا برای
+          // نقش‌های مدیریتی که همیشه منو دارند) این فاصله لازم است.
+          mt: hasSingleNavItem ? { xs: 0, md: 8 } : 8,
           // وقتی نوار پایین موبایل نمایش داده می‌شود (پرسنل عادی، فقط موبایل)،
           // فضای اضافه پایین صفحه لازم است تا آخرین محتوا زیر نوار پنهان نشود.
           pb: hasSingleNavItem ? { xs: 12, md: 4 } : { xs: 2, md: 4 },

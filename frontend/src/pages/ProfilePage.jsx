@@ -57,7 +57,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 480, mx: "auto" }}>
+    <Box sx={{ maxWidth: { xs: "100%", md: 480 } }}>
       <Card variant="outlined" sx={{ borderRadius: 3, p: 2.5, mb: 2 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Box
