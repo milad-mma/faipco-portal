@@ -4,10 +4,12 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   Paper,
@@ -53,9 +55,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
-  const [username, setUsername] = useState("");
+  const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
+
+  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBERED_USERNAME_KEY) || "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // پیش‌فرض روشن (مثل نمونه HTML)
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,6 +108,14 @@ export default function LoginPage() {
       // فرم ورود یکپارچه است: همین دو فیلد هم برای مدیریت (نام کاربری/رمز عبور)
       // و هم برای پرسنل (کد پرسنلی/کد ملی) کار می‌کند — Backend خودش تشخیص می‌دهد.
       await login(username, password);
+
+      // «مرا به خاطر بسپار» — فقط نام کاربری (هرگز رمز عبور، به دلایل
+      // امنیتی) در همین دستگاه ذخیره می‌شود تا دفعه بعد از‌پیش پر شده باشد.
+      if (rememberMe) {
+        localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
+      } else {
+        localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+      }
 
       // چون این یک سیستم اطلاع‌رسانی است، همین لحظه ورود موفق از کاربر
       // اجازه ارسال اعلان می‌خواهیم — رد شدن یا عدم پشتیبانی مرورگر، به
@@ -325,6 +339,17 @@ export default function LoginPage() {
           ),
         }}
       />
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            size="small"
+          />
+        }
+        label={<Typography variant="body2">مرا به خاطر بسپار</Typography>}
+        sx={{ mr: 0 }}
+      />
       <Button
         type="submit"
         variant="contained"
@@ -342,16 +367,15 @@ export default function LoginPage() {
       sx={{
         minHeight: "100vh",
         bgcolor: "#F3F7FA",
-        display: "flex",
-        alignItems: "center",
-        // ⚠️ عمداً "center" ساده، نه "flex-end" — چون justify-content با
-        // flex-start/flex-end در حالت RTL معنای «شروع/پایان خط» دارد (نه
-        // چپ/راست فیزیکی)، و رفتار دقیقش وابسته به جزئیات ظریف Flexbox/RTL
-        // است که ریسک اشتباه دوباره (مثل باگ قبلی راست‌چین تاریخ) داشت.
-        // نیاز اصلی («فرم سمت راست») از ترتیب DOM (پنل فرم اول) به‌دست
-        // می‌آید، نه از این‌جا — همین‌جا فقط کل کارت را وسط صفحه نگه می‌دارد.
-        justifyContent: "center",
-        p: { xs: 0, md: 6 },
+        // تأکید صریح روی فونت وزیرمتن — با این‌که از theme.js هم به ارث
+        // می‌رسد، این تضمین اضافه (مستقل از هر تغییر احتمالی دیگر در تِم)
+        // اطمینان می‌دهد این صفحه همیشه با وزیرمتن نمایش داده شود.
+        fontFamily: "'Vazirmatn', 'Tahoma', sans-serif",
+        position: "relative",
+        display: { xs: "flex", md: "block" },
+        alignItems: { xs: "flex-start" },
+        justifyContent: { xs: "center" },
+        p: { xs: 0, md: 0 },
       }}
     >
       <Paper
@@ -359,10 +383,20 @@ export default function LoginPage() {
         sx={{
           width: "100%",
           maxWidth: { xs: "100%", md: 780 },
-          minHeight: { md: 575 },
+          minHeight: { xs: "100vh", md: 575 },
           display: "flex",
           flexDirection: { xs: "column", md: "row" },
           borderRadius: { xs: 0, md: 4 },
+          // دسکتاپ: کارت با موقعیت مطلق، ۲۰۰px فاصله از سمت راست صفحه، وسط
+          // ارتفاع صفحه. ⚠️ عمداً "left" نوشته شده، نه "right" — چون
+          // stylis-plugin-rtl مقادیر فیزیکی left/right را خودکار Mirror
+          // می‌کند (همان الگویی که برای راست‌چین‌کردن تاریخ اطلاعیه هم استفاده
+          // شد) — یعنی این "left: 200px" در خروجی نهایی واقعاً "right: 200px"
+          // فیزیکی می‌شود.
+          position: { md: "absolute" },
+          top: { md: "50%" },
+          left: { md: "200px" },
+          transform: { md: "translateY(-50%)" },
           boxShadow: { xs: "none", md: "0 24px 55px rgba(33,67,91,.13)" },
           overflow: "hidden",
         }}
@@ -384,7 +418,7 @@ export default function LoginPage() {
               display: { xs: "flex", md: "none" },
               alignItems: "center",
               gap: 1.5,
-              background: "linear-gradient(110deg, #185E95, #2E84AA)",
+              background: "linear-gradient(110deg, #3476ad, #2b91a5)",
               color: "#fff",
               px: 2.5,
               py: 2.25,
@@ -393,8 +427,8 @@ export default function LoginPage() {
           >
             <Box
               sx={{
-                width: 42,
-                height: 42,
+                width: 56,
+                height: 56,
                 borderRadius: "50%",
                 bgcolor: "#fff",
                 display: "flex",
@@ -403,7 +437,7 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 30, height: 30, objectFit: "contain" }} />
+              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 42, height: 42, objectFit: "contain" }} />
             </Box>
             <Box sx={{ minWidth: 0 }}>
               <Typography fontSize={15} fontWeight={800} noWrap>
@@ -459,14 +493,21 @@ export default function LoginPage() {
             gap: 3.5,
             color: "#fff",
             p: 4.5,
-            background: "linear-gradient(145deg, #185E95 0%, #2E84AA 100%)",
+            position: "relative",
+            overflow: "hidden",
+            // دقیقاً همان دو گرادیانت ترکیبی نمونه HTML کاربر: نقطه‌های
+            // شعاعی ریز (بافت) روی یک گرادیانت خطی آبی→فیروزه‌ای
+            background:
+              "radial-gradient(circle at 18% 15%, rgba(255,255,255,.10) 0 1px, transparent 1.5px), " +
+              "linear-gradient(145deg,#3476ad 0%,#2b91a5 100%)",
+            backgroundSize: "18px 18px, 100% 100%",
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Box
               sx={{
-                width: 46,
-                height: 46,
+                width: 64,
+                height: 64,
                 borderRadius: "50%",
                 bgcolor: "#fff",
                 display: "flex",
@@ -475,7 +516,7 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 32, height: 32, objectFit: "contain" }} />
+              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 48, height: 48, objectFit: "contain" }} />
             </Box>
             <Box>
               <Typography fontSize={16} fontWeight={800}>
