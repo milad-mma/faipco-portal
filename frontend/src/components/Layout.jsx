@@ -49,7 +49,6 @@ import { useThemeMode } from "../context/ThemeModeContext";
 import { usePresenceMonitor } from "../utils/presenceSocket";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
-import faipcoLogo from "../assets/faipco-logo.png";
 
 const DRAWER_WIDTH = 260;
 
@@ -201,7 +200,7 @@ export default function Layout() {
       <Toolbar sx={{ gap: 1.5, px: 3 }}>
         <Box
           component="img"
-          src={faipcoLogo}
+          src="/faipco-logo.png"
           alt="FAIPCO"
           sx={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }}
         />

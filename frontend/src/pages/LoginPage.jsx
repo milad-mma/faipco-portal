@@ -34,7 +34,6 @@ import { useOnlineStatus } from "../context/OnlineStatusContext";
 import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 import { fetchAppVersion } from "../api/system";
-import faipcoLogo from "../assets/faipco-logo.png";
 import { modernLightTheme } from "../theme";
 
 // ⚠️ سوییچ طراحی جدید صفحه ورود — راه برگشت امن (دقیقاً هم‌الگو با
@@ -231,7 +230,7 @@ export default function LoginPage() {
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>
             <Box
               component="img"
-              src={faipcoLogo}
+              src="/faipco-logo.png"
               alt="FAIPCO"
               sx={{ width: 128, height: 128, objectFit: "contain", mb: 1.5 }}
             />
@@ -460,7 +459,7 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 42, height: 42, objectFit: "contain" }} />
+              <Box component="img" src="/faipco-logo.png" alt="FAIPCO" sx={{ width: 42, height: 42, objectFit: "contain" }} />
             </Box>
             <Box sx={{ minWidth: 0 }}>
               <Typography fontSize={15} fontWeight={800} noWrap>
@@ -539,7 +538,7 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src={faipcoLogo} alt="FAIPCO" sx={{ width: 48, height: 48, objectFit: "contain" }} />
+              <Box component="img" src="/faipco-logo.png" alt="FAIPCO" sx={{ width: 48, height: 48, objectFit: "contain" }} />
             </Box>
             <Box>
               <Typography fontSize={16} fontWeight={800}>
