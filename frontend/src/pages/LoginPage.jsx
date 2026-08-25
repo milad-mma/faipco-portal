@@ -413,7 +413,12 @@ export default function LoginPage() {
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            justifyContent: "center",
+            // ⚠️ باگ واقعی همین‌جا بود: قبلاً "center" بدون شرط بود — چون
+            // این باکس در موبایل کل ارتفاع صفحه (100vh از Paper) را پر
+            // می‌کند، محتوا (هدر برند + فرم) عمودی وسط صفحه می‌افتاد، نه
+            // بالا. در دسکتاپ که کارت ارتفاع محدود و معقول دارد (نه کل
+            // صفحه)، وسط‌چین‌بودن مشکلی ندارد و حتی بهتر است.
+            justifyContent: { xs: "flex-start", md: "center" },
             bgcolor: "#fff",
             p: { xs: 0, md: 4.5 },
           }}
