@@ -165,64 +165,64 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
         sx={{
           minHeight: 70,
           p: 1.5,
-          display: "grid",
-          // آیکون پاکت راست (اول ستون)، محتوا (اولویت+برچسب، عنوان، تاریخ) کنارش
-          gridTemplateColumns: "46px 1fr",
+          display: "flex",
           alignItems: "flex-start",
+          justifyContent: "space-between",
           gap: 1.25,
           cursor: "pointer",
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        <Box
-          sx={{
-            width: 42,
-            height: 42,
-            borderRadius: "50%",
-            bgcolor: isUnread ? "secondary.main" : "action.hover",
-            color: isUnread ? "secondary.contrastText" : "text.disabled",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          {/* طبق درخواست: نشان اولویت و برچسب فیش حقوقی/کارکرد دقیقاً
-              هم‌راستا (کنار هم، همان ردیف) — همیشه دیده می‌شوند، نه فقط
-              وقتی کارت باز است */}
-          <Stack direction="row" spacing={0.75} sx={{ mb: 0.5 }}>
-            <PriorityBadge priority={notice.priority} />
-            {typeMeta && (
-              <Chip
-                size="small"
-                label={typeMeta.chipLabel}
-                color={typeMeta.chipColor}
-                variant="outlined"
-                sx={{ height: 18, fontSize: 10 }}
-              />
-            )}
-          </Stack>
-          <Typography
-            fontSize={14}
-            fontWeight={isUnread ? 800 : 500}
-            color={isUnread ? "text.primary" : "text.secondary"}
+        {/* سمت راست: آیکون پاکت، بعدش عنوان (و زیرش تاریخ/ساعت) — دقیقاً
+            مثل تم قبلی */}
+        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0 }}>
+          <Box
             sx={{
-              lineHeight: 1.7,
-              // قبلاً یک‌خطی با ... بریده می‌شد — حالا کامل نمایش داده می‌شود
-              wordBreak: "break-word",
-              minWidth: 0,
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              bgcolor: isUnread ? "secondary.main" : "action.hover",
+              color: isUnread ? "secondary.contrastText" : "text.disabled",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
             }}
           >
-            {notice.title}
-          </Typography>
-          {/* تاریخ و ساعت — سمت راست، زیر عنوان */}
-          <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
-            {new Date(notice.created_at).toLocaleString("fa-IR")}
-          </Typography>
-        </Box>
+            {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              fontSize={14}
+              fontWeight={isUnread ? 800 : 500}
+              color={isUnread ? "text.primary" : "text.secondary"}
+              sx={{
+                lineHeight: 1.7,
+                wordBreak: "break-word",
+                minWidth: 0,
+              }}
+            >
+              {notice.title}
+            </Typography>
+            {/* تاریخ و ساعت — زیر عنوان */}
+            <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
+              {new Date(notice.created_at).toLocaleString("fa-IR")}
+            </Typography>
+          </Box>
+        </Stack>
+        {/* سمت چپ: برچسب فیش حقوقی/کارکرد، و در انتها (آخرین/دورترین) اولویت */}
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+          {typeMeta && (
+            <Chip
+              size="small"
+              label={typeMeta.chipLabel}
+              color={typeMeta.chipColor}
+              variant="outlined"
+              sx={{ height: 18, fontSize: 10 }}
+            />
+          )}
+          <PriorityBadge priority={notice.priority} />
+        </Stack>
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
