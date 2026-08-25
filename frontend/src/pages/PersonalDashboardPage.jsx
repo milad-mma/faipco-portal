@@ -399,7 +399,7 @@ export default function PersonalDashboardPage() {
         <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
         <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
         <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
-        <ToolCard icon={<ForumOutlinedIcon />} label="نظرسنجی و انتقادات" comingSoon />
+        <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" comingSoon />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" comingSoon />
         <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
       </Box>

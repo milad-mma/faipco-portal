@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   Box,
+  Button,
   Card,
   Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   List,
   ListItemButton,
@@ -56,6 +61,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
   const [snackbar, setSnackbar] = useState("");
   const [appVersion, setAppVersion] = useState("");
@@ -268,7 +274,7 @@ export default function ProfilePage() {
             </ListItemIcon>
             <ListItemText primary="تغییر رمز عبور" />
           </ListItemButton>
-          <ListItemButton onClick={logout} sx={{ color: "error.main" }}>
+          <ListItemButton onClick={() => setLogoutConfirmOpen(true)} sx={{ color: "error.main" }}>
             <ListItemIcon sx={{ color: "error.main" }}>
               <LogoutOutlinedIcon />
             </ListItemIcon>
@@ -278,6 +284,21 @@ export default function ProfilePage() {
       </Card>
 
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
+
+      <Dialog open={logoutConfirmOpen} onClose={() => setLogoutConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>خروج از حساب کاربری</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            در صورت خروج از سامانه، اعلان اطلاعیه‌های شرکت برای شما ارسال نخواهد شد.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setLogoutConfirmOpen(false)}>انصراف</Button>
+          <Button variant="contained" color="error" onClick={logout}>
+            خروج از حساب کاربری
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar("")} message={snackbar} />
     </Box>
   );

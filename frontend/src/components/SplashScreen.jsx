@@ -41,8 +41,7 @@ export default function SplashScreen({ visible }) {
         <Typography
           variant="subtitle1"
           fontWeight={700}
-          color="primary.main"
-          sx={{ fontFamily: "Tahoma, sans-serif" }}
+          sx={{ fontFamily: "Tahoma, sans-serif", color: "#000000" }}
         >
           شرکت تولیدی صنعتی فواد الیاف
         </Typography>
@@ -51,7 +50,7 @@ export default function SplashScreen({ visible }) {
           color="text.secondary"
           sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
         >
-          FAIPCO Portal
+          سامانه مدیریت پرسنل
         </Typography>
       </Box>
     </Box>
