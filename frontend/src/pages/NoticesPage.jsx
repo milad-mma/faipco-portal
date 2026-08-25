@@ -175,7 +175,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
       >
         {/* سمت راست: آیکون پاکت، بعدش عنوان (و زیرش تاریخ/ساعت) — دقیقاً
             مثل تم قبلی */}
-        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, flex: 1 }}>
           <Box
             sx={{
               width: 42,
@@ -191,7 +191,10 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           >
             {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
           </Box>
-          <Box sx={{ minWidth: 0 }}>
+          {/* flex:1 اینجا لازم بود — بدون آن، این Box فقط به اندازه عرض خودِ
+              عنوان جمع می‌شد و راست‌چین‌کردن تاریخ زیرش عملاً هیچ فضایی برای
+              نمایش نداشت (چون عرض تاریخ معمولاً از عرض عنوان کمتر است). */}
+          <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography
               fontSize={14}
               fontWeight={isUnread ? 800 : 500}
@@ -204,7 +207,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
             >
               {notice.title}
             </Typography>
-            {/* تاریخ و ساعت — زیر عنوان */}
+            {/* تاریخ و ساعت — زیر عنوان، راست‌چین */}
             <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
               {new Date(notice.created_at).toLocaleString("fa-IR")}
             </Typography>
