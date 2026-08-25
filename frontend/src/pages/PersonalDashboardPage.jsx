@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Avatar, Box, Card, Chip, Grid, Stack, Typography } from "@mui/material";
+import { Avatar, Box, Card, Chip, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
@@ -30,6 +30,14 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
  * قابلیت‌هایی که در طرح هستند ولی هنوز در پروژه پیاده نشده‌اند (ارزیابی
  * عملکرد، تیکت IT، خودروهای من، نظرسنجی و انتقادات، درخواست مرخصی) با
  * برچسب «به‌زودی» غیرفعال نمایش داده می‌شوند — طبق دستور صریح کارفرما.
+ *
+ * ⚠️ چیدمان با CSS Grid + gridTemplateAreas پیاده شده (نه MUI Grid ساده) —
+ * چون طبق بازخورد، ترتیب موبایل باید با دسکتاپ فرق داشته باشد: در موبایل
+ * «اطلاعیه‌های اخیر» درست بعد از دکمه‌های «گزارش تردد»/«درخواست مرخصی»
+ * می‌آید (قبل از شبکه ابزارها)؛ در دسکتاپ همان ستون کناری قبلی (کنار
+ * پروفایل/تردد/ابزارها) باقی می‌ماند. MUI Grid ساده نمی‌تواند این را با
+ * یک ساختار DOM واحد پوشش دهد (Order فقط بین Siblingهای همان Container
+ * کار می‌کند)، ولی gridTemplateAreas دقیقاً برای همین ساخته شده.
  */
 
 function ComingSoonChip() {
@@ -80,7 +88,7 @@ export default function PersonalDashboardPage() {
   const [photoUrl, setPhotoUrl] = useState(null);
 
   useEffect(() => {
-    fetchMyNotices({ page: 1, pageSize: 5 }).then((data) => {
+    fetchMyNotices({ page: 1, pageSize: 5, archived: "all" }).then((data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.items.filter((n) => !n.is_read).length);
     });
@@ -136,294 +144,310 @@ export default function PersonalDashboardPage() {
   }
 
   return (
-    // در موبایل یک ستون (مثل نمونه HTML)؛ در دسکتاپ دو ستون — ستون اصلی
-    // (پروفایل/تردد/دسترسی سریع/ابزارها) و یک ستون کناری (اطلاعیه‌ها +
-    // متولدین) — تا فضای صفحه دسکتاپ درست استفاده شود، نه یک ستون باریک
-    // وسط‌چین که شبیه موبایل بماند.
-    <Grid container spacing={2.5}>
-      <Grid item xs={12} md={8}>
-        <Stack spacing={2.5}>
-          <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
+    <Box
+      sx={{
+        display: "grid",
+        gap: 2.5,
+        // چون دیگر Drawer/AppBar کنارش نیست (نوار پایین همه‌جا)، این صفحه
+        // ممکن است روی دسکتاپ‌های خیلی عریض تمام پهنا را بگیرد — یک
+        // maxWidth منطقی، وسط‌چین، خوانایی را روی مانیتورهای بزرگ حفظ می‌کند.
+        maxWidth: 1100,
+        mx: "auto",
+        gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
+        gridTemplateAreas: {
+          xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
+          md: `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
+        },
+      }}
+    >
+      {/* پروفایل */}
+      <Card variant="outlined" sx={{ gridArea: "profile", borderRadius: 2, overflow: "hidden" }}>
+        <Box
+          sx={{
+            background: "linear-gradient(90deg, #185E95 0%, #2E84AA 100%)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            p: 1.75,
+          }}
+        >
+          <Box>
+            <Typography fontWeight={800} fontSize={17}>
+              {user?.first_name} {user?.last_name}
+            </Typography>
+            <Typography fontSize={12} sx={{ opacity: 0.85 }}>
+              کد پرسنلی: {user?.personnel_code || "—"}
+            </Typography>
+          </Box>
+          <Avatar
+            src={photoUrl || undefined}
+            sx={{
+              width: 50,
+              height: 50,
+              backgroundColor: "rgba(255,255,255,0.18)",
+              flexShrink: 0,
+            }}
+          >
+            {!photoUrl && <DefaultPersonAvatar />}
+          </Avatar>
+        </Box>
+        <Stack sx={{ px: 1.75, py: 1 }}>
+          {[
+            { icon: <ApartmentOutlinedIcon fontSize="small" />, label: "سایت", value: user?.site_name },
+            { icon: <AccountTreeOutlinedIcon fontSize="small" />, label: "واحد سازمانی", value: user?.department_name },
+            { icon: <WorkOutlineOutlinedIcon fontSize="small" />, label: "سمت", value: user?.position_title },
+          ]
+            .filter((row) => row.value)
+            .map((row) => (
+              <Stack
+                key={row.label}
+                direction="row"
+                alignItems="center"
+                justifyContent="space-between"
+                sx={{ minHeight: 32, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: "none" } }}
+              >
+                <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary" }}>
+                  <Box sx={{ color: "primary.main", display: "flex" }}>{row.icon}</Box>
+                  <Typography variant="caption">{row.label}</Typography>
+                </Stack>
+                <Typography variant="body2" fontWeight={700}>
+                  {row.value}
+                </Typography>
+              </Stack>
+            ))}
+        </Stack>
+      </Card>
+
+      {/* تردد امروز + اطلاعیه خوانده‌نشده */}
+      <Stack direction="row" spacing={1.5} sx={{ gridArea: "stats" }}>
+        <Card variant="outlined" sx={{ flex: 1, borderRadius: 2, p: 1.75 }}>
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
+            <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
+            <Typography variant="caption">تردد امروز</Typography>
+          </Stack>
+          {user?.can_clock_in_out ? (
+            <>
+              <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
+                <Typography variant="caption" color="text.secondary">
+                  ورود:
+                </Typography>
+                <Typography variant="body2" fontWeight={700}>
+                  {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkIn) : "—"}
+                </Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
+                <Typography variant="caption" color="text.secondary">
+                  خروج:
+                </Typography>
+                <Typography variant="body2" fontWeight={700}>
+                  {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkOut) : "—"}
+                </Typography>
+              </Stack>
+            </>
+          ) : (
+            <Chip label="به‌زودی" size="small" />
+          )}
+        </Card>
+        <Card
+          variant="outlined"
+          onClick={() => navigate("/notices")}
+          sx={{ flex: 1, borderRadius: 2, p: 1.75, cursor: "pointer", "&:hover": { backgroundColor: "action.hover" } }}
+        >
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
+            <NotificationsNoneOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
+            <Typography variant="caption">اطلاعیه</Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center">
             <Box
               sx={{
-                background: "linear-gradient(90deg, #185E95 0%, #2E84AA 100%)",
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                bgcolor: "error.main",
                 color: "#fff",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                p: 1.75,
+                justifyContent: "center",
+                fontSize: 12,
+                fontWeight: 700,
               }}
             >
-              <Box>
-                <Typography fontWeight={800} fontSize={17}>
-                  {user?.first_name} {user?.last_name}
-                </Typography>
-                <Typography fontSize={12} sx={{ opacity: 0.85 }}>
-                  کد پرسنلی: {user?.personnel_code || "—"}
-                </Typography>
-              </Box>
-              <Avatar
-                src={photoUrl || undefined}
-                sx={{
-                  width: 50,
-                  height: 50,
-                  backgroundColor: "rgba(255,255,255,0.18)",
-                  flexShrink: 0,
-                }}
-              >
-                {!photoUrl && <DefaultPersonAvatar />}
-              </Avatar>
+              {unreadCount}
             </Box>
-            <Stack sx={{ px: 1.75, py: 1 }}>
-              {[
-                { icon: <ApartmentOutlinedIcon fontSize="small" />, label: "سایت", value: user?.site_name },
-                { icon: <AccountTreeOutlinedIcon fontSize="small" />, label: "واحد سازمانی", value: user?.department_name },
-                { icon: <WorkOutlineOutlinedIcon fontSize="small" />, label: "سمت", value: user?.position_title },
-              ]
-                .filter((row) => row.value)
-                .map((row) => (
-                  <Stack
-                    key={row.label}
-                    direction="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    sx={{ minHeight: 32, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: "none" } }}
-                  >
-                    <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary" }}>
-                      <Box sx={{ color: "primary.main", display: "flex" }}>{row.icon}</Box>
-                      <Typography variant="caption">{row.label}</Typography>
-                    </Stack>
-                    <Typography variant="body2" fontWeight={700}>
-                      {row.value}
-                    </Typography>
-                  </Stack>
-                ))}
-            </Stack>
-          </Card>
-
-          <Stack direction="row" spacing={1.5}>
-            <Card variant="outlined" sx={{ flex: 1, borderRadius: 2, p: 1.75 }}>
-              <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
-                <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
-                <Typography variant="caption">تردد امروز</Typography>
-              </Stack>
-              {user?.can_clock_in_out ? (
-                <>
-                  <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      ورود:
-                    </Typography>
-                    <Typography variant="body2" fontWeight={700}>
-                      {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkIn) : "—"}
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      خروج:
-                    </Typography>
-                    <Typography variant="body2" fontWeight={700}>
-                      {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkOut) : "—"}
-                    </Typography>
-                  </Stack>
-                </>
-              ) : (
-                <Chip label="به‌زودی" size="small" />
-              )}
-            </Card>
-            <Card
-              variant="outlined"
-              onClick={() => navigate("/notices")}
-              sx={{ flex: 1, borderRadius: 2, p: 1.75, cursor: "pointer", "&:hover": { backgroundColor: "action.hover" } }}
-            >
-              <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
-                <NotificationsNoneOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
-                <Typography variant="caption">اطلاعیه</Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Box
-                  sx={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    bgcolor: "error.main",
-                    color: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    fontWeight: 700,
-                  }}
-                >
-                  {unreadCount}
-                </Box>
-                <Typography variant="caption" fontWeight={700}>
-                  خوانده‌نشده
-                </Typography>
-              </Stack>
-            </Card>
+            <Typography variant="caption" fontWeight={700}>
+              خوانده‌نشده
+            </Typography>
           </Stack>
+        </Card>
+      </Stack>
 
-          <Stack direction="row" spacing={1.5}>
-            <Card
-              variant="outlined"
-              onClick={user?.can_clock_in_out ? () => navigate("/attendance-clock") : undefined}
-              sx={{
-                position: "relative",
-                flex: 1,
-                borderRadius: 2,
-                p: 1.75,
-                cursor: user?.can_clock_in_out ? "pointer" : "default",
-                opacity: user?.can_clock_in_out ? 1 : 0.55,
-              }}
-            >
-              {!user?.can_clock_in_out && <ComingSoonChip />}
-              <Box
-                sx={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: "50%",
-                  bgcolor: "secondary.main",
-                  color: "secondary.contrastText",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  mb: 2,
-                }}
-              >
-                <HistoryOutlinedIcon fontSize="small" />
-              </Box>
-              <Typography fontWeight={800} fontSize={14}>
-                گزارش تردد
-              </Typography>
-            </Card>
-            <Card variant="outlined" sx={{ position: "relative", flex: 1, borderRadius: 2, p: 1.75, opacity: 0.55 }}>
-              <ComingSoonChip />
-              <Box
-                sx={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: "50%",
-                  bgcolor: "primary.main",
-                  color: "primary.contrastText",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  mb: 2,
-                }}
-              >
-                <CalendarMonthOutlinedIcon fontSize="small" />
-              </Box>
-              <Typography fontWeight={800} fontSize={14}>
-                درخواست مرخصی
-              </Typography>
-            </Card>
-          </Stack>
-
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)" }, gap: 1.25 }}>
-            <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
-            <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
-            <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
-            <ToolCard icon={<ForumOutlinedIcon />} label="نظرسنجی و انتقادات" comingSoon />
-            <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" comingSoon />
-            <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
+      {/* دکمه‌های میانبر: گزارش تردد + درخواست مرخصی */}
+      <Stack direction="row" spacing={1.5} sx={{ gridArea: "actions" }}>
+        <Card
+          variant="outlined"
+          onClick={user?.can_clock_in_out ? () => navigate("/attendance-clock") : undefined}
+          sx={{
+            position: "relative",
+            flex: 1,
+            borderRadius: 2,
+            p: 1.75,
+            cursor: user?.can_clock_in_out ? "pointer" : "default",
+            opacity: user?.can_clock_in_out ? 1 : 0.55,
+          }}
+        >
+          {!user?.can_clock_in_out && <ComingSoonChip />}
+          <Box
+            sx={{
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              bgcolor: "secondary.main",
+              color: "secondary.contrastText",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mb: 2,
+            }}
+          >
+            <HistoryOutlinedIcon fontSize="small" />
           </Box>
-        </Stack>
-      </Grid>
+          <Typography fontWeight={800} fontSize={14}>
+            گزارش تردد
+          </Typography>
+        </Card>
+        <Card variant="outlined" sx={{ position: "relative", flex: 1, borderRadius: 2, p: 1.75, opacity: 0.55 }}>
+          <ComingSoonChip />
+          <Box
+            sx={{
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mb: 2,
+            }}
+          >
+            <CalendarMonthOutlinedIcon fontSize="small" />
+          </Box>
+          <Typography fontWeight={800} fontSize={14}>
+            درخواست مرخصی
+          </Typography>
+        </Card>
+      </Stack>
 
-      <Grid item xs={12} md={4}>
-        <Stack spacing={2.5}>
-          <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Typography fontWeight={800} fontSize={14}>
-                اطلاعیه‌های اخیر
-              </Typography>
-              <Chip
-                label="همه"
-                size="small"
+      {/* اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
+      <Card variant="outlined" sx={{ gridArea: "recent", borderRadius: 2, p: 1.75 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+          <Typography fontWeight={800} fontSize={14}>
+            اطلاعیه‌های اخیر
+          </Typography>
+          <Chip
+            label="همه"
+            size="small"
+            onClick={() => navigate("/notices")}
+            sx={{ fontSize: 10, height: 20, cursor: "pointer" }}
+          />
+        </Stack>
+        {recentNotices === null ? (
+          <Typography variant="caption" color="text.secondary">
+            در حال بارگذاری...
+          </Typography>
+        ) : recentNotices.length === 0 ? (
+          <Typography variant="caption" color="text.secondary">
+            اطلاعیه‌ای برای نمایش نیست.
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            {recentNotices.map((n) => (
+              <Stack
+                key={n.id}
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                spacing={1}
                 onClick={() => navigate("/notices")}
-                sx={{ fontSize: 10, height: 20, cursor: "pointer" }}
-              />
-            </Stack>
-            {recentNotices === null ? (
-              <Typography variant="caption" color="text.secondary">
-                در حال بارگذاری...
-              </Typography>
-            ) : recentNotices.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                اطلاعیه‌ای برای نمایش نیست.
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {recentNotices.map((n) => (
-                  <Stack
-                    key={n.id}
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    spacing={1}
-                    onClick={() => navigate("/notices")}
-                    sx={{ cursor: "pointer" }}
-                  >
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                      <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
-                      <Typography variant="caption" noWrap>
-                        {n.title}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontSize: 10 }}>
-                      {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" })}
-                    </Typography>
-                  </Stack>
-                ))}
-              </Stack>
-            )}
-          </Card>
-
-          {(birthdays === null || birthdays.length > 0) && (
-            <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
-              <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
-                <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
-                <Typography fontWeight={800} fontSize={14}>
-                  متولدین امروز
-                </Typography>
-              </Stack>
-              {birthdays === null ? (
-                <Typography variant="caption" color="text.secondary">
-                  در حال بارگذاری...
-                </Typography>
-              ) : (
-                <Stack spacing={1}>
-                  {birthdays.map((e) => (
-                    <Stack key={e.id} direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
-                      <Box
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: "50%",
-                          bgcolor: "action.hover",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                          color: "text.secondary",
-                        }}
-                      >
-                        <DefaultPersonAvatar />
-                      </Box>
-                      <Typography variant="body2" fontWeight={700} noWrap>
-                        {e.first_name} {e.last_name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {e.department_name}
-                      </Typography>
-                    </Stack>
-                  ))}
+                sx={{ cursor: "pointer" }}
+              >
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
+                  <Typography variant="caption" noWrap>
+                    {n.title}
+                  </Typography>
                 </Stack>
-              )}
-            </Card>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontSize: 10 }}>
+                  {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" })}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Card>
+
+      {/* شبکه ابزارها */}
+      <Box
+        sx={{
+          gridArea: "tools",
+          display: "grid",
+          gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)", md: "repeat(3, 1fr)" },
+          gap: 1.25,
+        }}
+      >
+        <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
+        <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
+        <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
+        <ToolCard icon={<ForumOutlinedIcon />} label="نظرسنجی و انتقادات" comingSoon />
+        <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" comingSoon />
+        <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
+      </Box>
+
+      {/* متولدین امروز */}
+      {(birthdays === null || birthdays.length > 0) && (
+        <Card variant="outlined" sx={{ gridArea: "birthdays", borderRadius: 2, p: 1.75 }}>
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
+            <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
+            <Typography fontWeight={800} fontSize={14}>
+              متولدین امروز
+            </Typography>
+          </Stack>
+          {birthdays === null ? (
+            <Typography variant="caption" color="text.secondary">
+              در حال بارگذاری...
+            </Typography>
+          ) : (
+            <Stack spacing={1}>
+              {birthdays.map((e) => (
+                <Stack key={e.id} direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
+                  <Box
+                    sx={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: "50%",
+                      bgcolor: "action.hover",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      color: "text.secondary",
+                    }}
+                  >
+                    <DefaultPersonAvatar />
+                  </Box>
+                  <Typography variant="body2" fontWeight={700} noWrap>
+                    {e.first_name} {e.last_name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {e.department_name}
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
           )}
-        </Stack>
-      </Grid>
-    </Grid>
+        </Card>
+      )}
+    </Box>
   );
 }

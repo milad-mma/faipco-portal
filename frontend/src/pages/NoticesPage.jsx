@@ -166,9 +166,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           minHeight: 70,
           p: 1.5,
           display: "grid",
-          // آیکون پاکت راست (اول)، عنوان وسط، نشان اولویت + برچسب نوع چپ (آخر)
-          gridTemplateColumns: "46px 1fr auto",
-          alignItems: "center",
+          // آیکون پاکت راست (اول ستون)، محتوا (اولویت+برچسب، عنوان، تاریخ) کنارش
+          gridTemplateColumns: "46px 1fr",
+          alignItems: "flex-start",
           gap: 1.25,
           cursor: "pointer",
           "&:hover": { backgroundColor: "action.hover" },
@@ -190,6 +190,21 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
         </Box>
         <Box sx={{ minWidth: 0 }}>
+          {/* طبق درخواست: نشان اولویت و برچسب فیش حقوقی/کارکرد دقیقاً
+              هم‌راستا (کنار هم، همان ردیف) — همیشه دیده می‌شوند، نه فقط
+              وقتی کارت باز است */}
+          <Stack direction="row" spacing={0.75} sx={{ mb: 0.5 }}>
+            <PriorityBadge priority={notice.priority} />
+            {typeMeta && (
+              <Chip
+                size="small"
+                label={typeMeta.chipLabel}
+                color={typeMeta.chipColor}
+                variant="outlined"
+                sx={{ height: 18, fontSize: 10 }}
+              />
+            )}
+          </Stack>
           <Typography
             fontSize={14}
             fontWeight={isUnread ? 800 : 500}
@@ -203,24 +218,11 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           >
             {notice.title}
           </Typography>
+          {/* تاریخ و ساعت — سمت راست، زیر عنوان */}
           <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
             {new Date(notice.created_at).toLocaleString("fa-IR")}
           </Typography>
         </Box>
-        {/* طبق درخواست: برچسب فیش حقوقی/کارکرد کنار نشان اولویت — نه کنار
-            عنوان — همیشه دیده می‌شود، نه فقط وقتی کارت باز است */}
-        <Stack spacing={0.5} alignItems="flex-end">
-          {typeMeta && (
-            <Chip
-              size="small"
-              label={typeMeta.chipLabel}
-              color={typeMeta.chipColor}
-              variant="outlined"
-              sx={{ height: 18, fontSize: 10 }}
-            />
-          )}
-          <PriorityBadge priority={notice.priority} />
-        </Stack>
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
@@ -290,12 +292,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
             </>
           )}
           <Stack
-            direction="row"
             spacing={1}
-            flexWrap="wrap"
-            useFlexGap
-            alignItems="center"
-            justifyContent="space-between"
             sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}
           >
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -309,17 +306,21 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                 />
               )}
             </Stack>
-            <Button
-              size="small"
-              color={isArchiveView ? "primary" : "inherit"}
-              disabled={archiveBusy}
-              startIcon={
-                notice.is_archived ? <UnarchiveOutlinedIcon fontSize="small" /> : <ArchiveOutlinedIcon fontSize="small" />
-              }
-              onClick={handleArchiveToggle}
-            >
-              {notice.is_archived ? "بازگرداندن از آرشیو" : "آرشیو کردن"}
-            </Button>
+            {/* دکمه آرشیو همیشه در یک ردیف مستقل و کاملاً جداست — طبق
+                بازخورد، محلش نباید بسته به طول Chip های بالا جابه‌جا شود */}
+            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button
+                size="small"
+                color={isArchiveView ? "primary" : "inherit"}
+                disabled={archiveBusy}
+                startIcon={
+                  notice.is_archived ? <UnarchiveOutlinedIcon fontSize="small" /> : <ArchiveOutlinedIcon fontSize="small" />
+                }
+                onClick={handleArchiveToggle}
+              >
+                {notice.is_archived ? "بازگرداندن از آرشیو" : "انتقال به آرشیو"}
+              </Button>
+            </Box>
           </Stack>
         </Box>
       </Collapse>
@@ -355,7 +356,7 @@ export default function NoticesPage() {
   }
 
   function loadArchived(page = archivedPage) {
-    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: true }).then((data) => {
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: "only" }).then((data) => {
       setArchivedNotices(data.items);
       setArchivedTotal(data.total);
     });
@@ -409,10 +410,18 @@ export default function NoticesPage() {
   // همان لیست را دوباره می‌خوانیم، به‌جای این‌که سعی کنیم وضعیت را محلی
   // Patch کنیم (که پیچیده و مستعد خطا می‌شد).
   function handleArchiveChange() {
+    // ⚠️ رفع یک باگ واقعی: قبلاً فقط تب فعلی رفرش می‌شد — اگر کاربر توی
+    // تب «دریافتی» یک اطلاعیه را آرشیو می‌کرد، تب «آرشیو» (اگر قبلاً یک‌بار
+    // دیده شده و در State نگه داشته شده بود) دیگر خودکار به‌روز نمی‌شد؛
+    // با سوییچ به آن تب، لیست قدیمی (بدون همین اطلاعیه‌ی تازه‌آرشیوشده)
+    // دیده می‌شد. حالا هر دو لیست همیشه با هم به‌روز می‌شوند — کاملاً
+    // Ajax، بدون هیچ Refresh صفحه‌ای.
     if (tab === "archive") {
       loadArchived(archivedPage);
+      loadNotices(noticesPage);
     } else {
       loadNotices(noticesPage);
+      loadArchived(archivedPage);
     }
   }
 

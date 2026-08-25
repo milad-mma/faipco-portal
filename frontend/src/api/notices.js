@@ -6,6 +6,8 @@ export async function fetchAllNotices() {
 }
 
 export async function fetchMyNotices({ page = 1, pageSize = 10, noticeType, archived } = {}) {
+  // archived: "exclude" (پیش‌فرض، صندوق ورودی عادی) | "only" (تب آرشیو) |
+  // "all" (بدون فیلتر آرشیو — ویجت «اطلاعیه‌های اخیر» داشبورد)
   const { data } = await apiClient.get("/notices/me", {
     params: { page, page_size: pageSize, notice_type: noticeType ?? undefined, archived: archived ?? undefined },
   });

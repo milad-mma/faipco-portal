@@ -25,6 +25,28 @@ const sharedTypography = {
   button: { fontWeight: 600, textTransform: "none" },
 };
 
+// ⚠️ فقط برای طراحی جدید (modernLightTheme/modernDarkTheme) — عمداً از
+// sharedTypography بالا جداست تا تِم قدیمی (Legacy، برای راه برگشت) دست‌نخورده
+// بماند. طبق بازخورد: اندازه فونت همه صفحه‌ها باید با داشبورد شخصی پرسنل
+// (PersonalDashboardPage.jsx که از ابتدا با اندازه‌های کوچک‌تر، مثلاً
+// fontSize={14}/{12}/{11}/{10}، طراحی شده بود) یکی شود — به‌جای اندازه‌های
+// نسبتاً بزرگ‌تر پیش‌فرض MUI (که بقیه صفحات، مثل جداول Admin، هنوز داشتند).
+const modernTypography = {
+  ...sharedTypography,
+  h1: { ...sharedTypography.h1, fontSize: "2.25rem" },
+  h2: { ...sharedTypography.h2, fontSize: "1.875rem" },
+  h3: { ...sharedTypography.h3, fontSize: "1.5rem" },
+  h4: { ...sharedTypography.h4, fontSize: "1.25rem" },
+  h5: { ...sharedTypography.h5, fontSize: "1.125rem" },
+  h6: { ...sharedTypography.h6, fontSize: "1rem" },
+  subtitle1: { fontSize: "0.9375rem" },
+  subtitle2: { fontSize: "0.8125rem" },
+  body1: { fontSize: "0.875rem" },
+  body2: { fontSize: "0.8125rem" },
+  caption: { fontSize: "0.6875rem" },
+  button: { ...sharedTypography.button, fontSize: "0.8125rem" },
+};
+
 // ============================================================
 // طراحی جدید — بر اساس personnel_portal.html (نمونه ارسالی کاربر)
 // ============================================================
@@ -63,7 +85,7 @@ export const modernLightTheme = createTheme({
     error: { main: NEW_LIGHT_DANGER },
     divider: "#DCE5EC",
   },
-  typography: sharedTypography,
+  typography: modernTypography,
   shape: {
     borderRadius: 6,
   },
@@ -143,7 +165,7 @@ export const modernDarkTheme = createTheme({
     error: { main: "#F0798A" },
     divider: "rgba(255, 255, 255, 0.10)",
   },
-  typography: sharedTypography,
+  typography: modernTypography,
   shape: {
     borderRadius: 6,
   },

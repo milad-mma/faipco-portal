@@ -105,14 +105,36 @@ export default function ProfilePage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 480 } }}>
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
-        <Stack alignItems="center" spacing={1} sx={{ textAlign: "center" }}>
+      <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
+        <Box
+          sx={{
+            background: "linear-gradient(135deg, #185E95 0%, #2E84AA 100%)",
+            display: "flex",
+            justifyContent: "center",
+            py: 3.5,
+          }}
+        >
           <Box
-            component="img"
-            src="/faipco-logo.png"
-            alt="FAIPCO"
-            sx={{ width: 64, height: 64, objectFit: "contain" }}
-          />
+            sx={{
+              width: 108,
+              height: 108,
+              borderRadius: "50%",
+              bgcolor: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: 2,
+            }}
+          >
+            <Box
+              component="img"
+              src="/faipco-logo.png"
+              alt="FAIPCO"
+              sx={{ width: 84, height: 84, objectFit: "contain" }}
+            />
+          </Box>
+        </Box>
+        <Stack alignItems="center" spacing={0.5} sx={{ textAlign: "center", px: 2.5, py: 2.5 }}>
           <Typography variant="subtitle1" fontWeight={700} color="primary.main">
             شرکت تولیدی صنعتی فواد الیاف
           </Typography>
@@ -120,7 +142,11 @@ export default function ProfilePage() {
             سامانه مدیریت پرسنل فایپکو
           </Typography>
           {appVersion && (
-            <Typography variant="caption" color="text.disabled" sx={{ direction: "ltr" }}>
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ direction: "ltr", mt: 1 }}
+            >
               {appVersion}
             </Typography>
           )}

@@ -237,7 +237,7 @@ class NoticeService:
         page: int = 1,
         page_size: int = 10,
         notice_type: NoticeType | None = None,
-        archived: bool = False,
+        archived: str = "exclude",
     ) -> tuple[list[NoticeOut], int]:
         now = datetime.now(timezone.utc)
 
@@ -295,20 +295,25 @@ class NoticeService:
         if notice_type is not None:
             base_filters = (*base_filters, Notice.notice_type == notice_type)
 
-        # فیلتر آرشیو — پیش‌فرض (archived=False): اطلاعیه‌های آرشیوشده توسط
-        # همین کاربر از لیست عادی کنار گذاشته می‌شوند (دقیقاً مثل صندوق ورودی
-        # ایمیل). وقتی archived=True (تب «آرشیو»): برعکس، فقط همان‌ها نشان
-        # داده می‌شوند. هردو حالت EXISTS/NOT EXISTS روی NoticeArchive محدود
-        # به user.id — آرشیو کاملاً شخصی است، آرشیو یک نفر روی بقیه اثر ندارد.
+        # فیلتر آرشیو — سه حالت، به‌جای bool ساده (چون bool|None توی Query
+        # String واقعی HTTP مبهم/دردسرساز است — "null" به‌عنوان رشته باید
+        # جدا Parse شود، در حالی که این‌طور رشته صریح ابهامی ندارد):
+        #   "exclude" (پیش‌فرض): مثل صندوق ورودی ایمیل — آرشیوشده‌ها کنار
+        #     گذاشته می‌شوند (تب «دریافتی»).
+        #   "only": فقط آرشیوشده‌ها (تب «آرشیو»).
+        #   "all": هیچ فیلتری — همه، چه آرشیوشده چه نه (ویجت «اطلاعیه‌های
+        #     اخیر» در داشبورد؛ آرشیوکردن نباید از آنجا محوش کند).
+        # هر سه حالت EXISTS/NOT EXISTS روی NoticeArchive محدود به user.id —
+        # آرشیو کاملاً شخصی است، آرشیو یک نفر روی بقیه اثر ندارد.
         #
         # ⚠️ استثنا: وقتی notice_type مشخص شده (نمای «فقط فیش‌های حقوقی/کارکرد
         # من» از داشبورد)، اصلاً فیلتر آرشیو اعمال نمی‌شود — چون آنجا هدف
         # «همه اسناد رسمی من» است، نه صندوق ورودی؛ کاربر نباید با آرشیوکردن
         # یک اطلاعیه فیش حقوقی (برای تمیزکردن صندوق ورودی‌اش)، دسترسی به خودِ
         # فیش‌اش را هم از دست بدهد.
-        if notice_type is None:
+        if notice_type is None and archived != "all":
             archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)
-            if archived:
+            if archived == "only":
                 base_filters = (*base_filters, Notice.id.in_(archived_subquery))
             else:
                 base_filters = (*base_filters, Notice.id.not_in(archived_subquery))

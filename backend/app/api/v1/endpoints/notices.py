@@ -109,16 +109,17 @@ async def my_notices(
     page: int = 1,
     page_size: int = 10,
     notice_type: NoticeType | None = None,
-    archived: bool = False,
+    archived: str = "exclude",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     notice_type (اختیاری): فقط اطلاعیه‌های همان نوع — برای صفحه اختصاصی
     «فقط فیش‌های حقوقی من» یا «فقط فیش‌های کارکرد من».
-    archived (پیش‌فرض False): مثل صندوق ورودی ایمیل — پیش‌فرض اطلاعیه‌های
-    آرشیوشده توسط همین کاربر کنار گذاشته می‌شوند؛ با True برعکس، فقط
-    همان‌ها (تب «آرشیو»).
+    archived (پیش‌فرض "exclude"): "exclude" مثل صندوق ورودی ایمیل — آرشیوشده‌ها
+    کنار گذاشته می‌شوند (تب «دریافتی»)؛ "only" فقط آرشیوشده‌ها (تب «آرشیو»)؛
+    "all" هیچ فیلتری — همه (ویجت «اطلاعیه‌های اخیر» در داشبورد؛ آرشیوکردن
+    نباید از آنجا محوش کند).
     """
     items, total = await NoticeService(db).list_for_user(
         current_user, page=page, page_size=page_size, notice_type=notice_type, archived=archived

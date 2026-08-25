@@ -145,13 +145,19 @@ export default function Layout() {
   // پرسنل عادی که علاوه بر «اطلاعیه‌ها» یک دسترسی دیگر هم دارد (مثلاً
   // ثبت ورود/خروج، یا site_manager با «گزارش اطلاعیه‌ها»)، طبق
   // hasSingleNavItem دیگر «تک‌مقصدی» محسوب نمی‌شد (۲+ آیتم) — یعنی نوار
-  // پایین موبایل که فقط بر همان شرط بود، برایش هرگز نمایش داده نمی‌شد و
-  // به‌جایش Drawer قدیمی می‌دید. نوار پایین موبایل باید برای **هر** کاربر
-  // غیر-Admin نمایش داده شود، صرف‌نظر از تعداد دقیق مقصدهای اضافه‌اش —
-  // مقصدهای اضافه (اگر داشته باشد) حالا از صفحه «پنل کاربری» در دسترس‌اند
-  // (پایین‌تر در ProfilePage.jsx). این فقط MOBILE را عوض می‌کند؛ در دسکتاپ،
-  // hasSingleNavItem همچنان همان منطق قبلی (Drawer کامل یا تمام‌عرض) را دارد.
-  const isMobilePersonnelNav = !user?.is_superuser;
+  // پایین که فقط بر همان شرط بود، برایش هرگز نمایش داده نمی‌شد و به‌جایش
+  // Drawer قدیمی می‌دید. نوار پایین باید برای **هر** کاربر غیر-Admin
+  // نمایش داده شود، صرف‌نظر از تعداد دقیق مقصدهای اضافه‌اش — مقصدهای
+  // اضافه (اگر داشته باشد) از صفحه «پنل کاربری» در دسترس‌اند (پایین‌تر
+  // در ProfilePage.jsx).
+  //
+  // ⚠️ به‌روزرسانی بعدی: قبلاً این فقط MOBILE را عوض می‌کرد (نوار پایین
+  // فقط زیر md، Drawer/AppBar فقط بالای md). طبق درخواست صریح، حالا در
+  // دسکتاپ هم — به‌جز پنل Admin — همین تجربهٔ «فقط نوار پایین، بدون
+  // Sidebar/AppBar» اعمال می‌شود؛ یعنی این متغیر دیگر واقعاً «فقط موبایل»
+  // نیست، اسمش هم به همین دلیل عوض شد. hasSingleNavItem برای دسکتاپِ
+  // Admin (تصمیم Drawer کامل یا تمام‌عرض) دست‌نخورده باقی مانده.
+  const isPersonnelNav = !user?.is_superuser;
 
   // نشانگر زنده «آنلاین/آفلاین» با WebSocket — دقیقاً مثل یک سیستم چت: تا
   // وقتی این کامپوننت زنده است، یک Session باز نگه داشته می‌شود؛ سرور خودش
@@ -313,13 +319,11 @@ export default function Layout() {
         elevation={0}
         color="inherit"
         sx={{
-          // پرسنل عادی که نوار پایین موبایل را می‌بیند، دیگر منوی بالای صفحه
-          // را هم نمی‌بیند (طبق درخواست صریح) — چون «پنل کاربری» حالا یک
-          // تب مستقل در همان نوار پایین است، نه نیاز به منوی بالا هم. این
-          // فقط بر اساس is_superuser است (isMobilePersonnelNav)، نه
-          // hasSingleNavItem — تا برای پرسنلی که دسترسی اضافه هم دارد
-          // (مثلاً ثبت ورود/خروج) هم درست کار کند، نه فقط تک‌مقصدی‌ها.
-          display: { xs: isMobilePersonnelNav ? "none" : "flex", md: "flex" },
+          // پرسنل غیر-Admin که نوار پایین را می‌بیند، دیگر منوی بالای صفحه
+          // را هم نمی‌بیند — نه فقط روی موبایل، طبق درخواست صریح روی
+          // دسکتاپ هم؛ چون «پنل کاربری» حالا یک تب مستقل در همان نوار
+          // پایین است، نه نیاز به منوی بالا هم.
+          display: isPersonnelNav ? "none" : "flex",
           width: hasSingleNavItem ? "100%" : { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           borderBottom: "1px solid",
           borderColor: "divider",
@@ -404,7 +408,7 @@ export default function Layout() {
         صفحه سمت چپ می‌نشیند! برای اینکه واقعاً سمت راست بنشیند، باید anchor="left"
         بدهیم تا بعد از Mirror شدن توسط پلاگین RTL، در سمت راست قرار بگیرد.
       */}
-      {!hasSingleNavItem && (
+      {!isPersonnelNav && (
         <Drawer
           variant="permanent"
           anchor="left"
@@ -426,7 +430,7 @@ export default function Layout() {
         </Drawer>
       )}
 
-      {!hasSingleNavItem && (
+      {!isPersonnelNav && (
         <Drawer
           variant="temporary"
           anchor="left"
@@ -447,26 +451,26 @@ export default function Layout() {
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          width: hasSingleNavItem ? "100%" : { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: isPersonnelNav ? "100%" : { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` },
           p: { xs: 2, md: 4 },
-          // چون منوی بالای صفحه برای پرسنل عادی روی موبایل مخفی است (بالا)،
-          // دیگر آن فاصله بالای صفحه هم لازم نیست — فقط در دسکتاپ (یا برای
-          // نقش‌های مدیریتی که همیشه منو دارند) این فاصله لازم است.
-          mt: isMobilePersonnelNav ? { xs: 0, md: 8 } : 8,
-          // وقتی نوار پایین موبایل نمایش داده می‌شود (پرسنل عادی، فقط موبایل)،
-          // فضای اضافه پایین صفحه لازم است تا آخرین محتوا زیر نوار پنهان نشود.
-          pb: isMobilePersonnelNav ? { xs: 12, md: 4 } : { xs: 2, md: 4 },
+          // چون منوی بالای صفحه برای پرسنل غیر-Admin کاملاً مخفی است (بالا)،
+          // نه فقط موبایل — دیگر هیچ فاصله بالای صفحه‌ای لازم نیست.
+          mt: isPersonnelNav ? 0 : 8,
+          // چون نوار پایین برای پرسنل غیر-Admin روی هر اندازه صفحه‌ای نمایش
+          // داده می‌شود، فضای اضافه پایین صفحه هم همیشه لازم است، نه فقط موبایل.
+          pb: isPersonnelNav ? 12 : { xs: 2, md: 4 },
           overflowX: "hidden",
         }}
       >
         <Outlet />
       </Box>
 
-      {/* نوار پایین موبایل — برای هر کاربر غیر-Admin (صرف‌نظر از تعداد دقیق
-          دسترسی‌های اضافه‌اش — همان باگی که قبلاً روی hasSingleNavItem بود)
-          و فقط روی موبایل؛ در دسکتاپ همیشه مخفی است، چون آنجا AppBar/منوی
-          حساب کاربری کافی است. بر اساس طرح personnel_portal.html کاربر. */}
-      {isMobilePersonnelNav && (
+      {/* نوار پایین — برای هر کاربر غیر-Admin (صرف‌نظر از تعداد دقیق
+          دسترسی‌های اضافه‌اش — همان باگی که قبلاً روی hasSingleNavItem بود).
+          ⚠️ طبق درخواست صریح، دیگر فقط موبایل نیست — روی دسکتاپ هم (به‌جز
+          پنل Admin) همین تجربه (بدون Sidebar/AppBar، فقط همین نوار پایین)
+          اعمال می‌شود. بر اساس طرح personnel_portal.html کاربر. */}
+      {isPersonnelNav && (
         <BottomNavigation
           value={
             location.pathname.startsWith("/profile")
@@ -478,7 +482,7 @@ export default function Layout() {
           onChange={(_, newValue) => navigate(newValue)}
           showLabels
           sx={{
-            display: { xs: "flex", md: "none" },
+            display: "flex",
             position: "fixed",
             bottom: 0,
             insetInline: 0,
