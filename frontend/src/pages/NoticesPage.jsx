@@ -54,13 +54,31 @@ const TABS = [
   { key: "archive", label: "آرشیو", icon: <ArchiveOutlinedIcon fontSize="small" /> },
 ];
 
+/**
+ * دانلود واقعی و مطمئن فایل — به‌جای window.open(url, "_blank") قبلی.
+ * ⚠️ رفع یک مشکل واقعی: توی PWA نصب‌شده (Standalone، بدون تب/نوار آدرس
+ * مرورگر)، window.open روی خیلی از گوشی‌ها یا کاری نمی‌کرد یا صفحه خالی
+ * باز می‌کرد — چون آنجا اصلاً «تب جدید»ی برای نمایش PDF وجود ندارد. این
+ * روش (لینک موقت با download=) مستقیماً فایل را در پوشه Download گوشی
+ * ذخیره می‌کند، مستقل از این‌که در مرورگر عادی باز شده یا به‌عنوان PWA
+ * نصب شده — از همان‌جا کاربر می‌تواند بازش کند، پرینت بگیرد، یا Share کند.
+ */
+function triggerBlobDownload(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+}
+
 async function downloadPayrollReceipt(noticeId, setDownloadError) {
   setDownloadError("");
   try {
     const blob = await fetchMyPayrollReceiptBlob(noticeId);
-    const url = window.URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    triggerBlobDownload(blob, `فیش-حقوقی-${noticeId}.pdf`);
   } catch (err) {
     setDownloadError(
       err.response?.status === 404
@@ -74,14 +92,12 @@ async function downloadAttendanceCard(noticeId, setDownloadError) {
   setDownloadError("");
   try {
     const blob = await fetchMyAttendanceCardBlob(noticeId);
-    const url = window.URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    triggerBlobDownload(blob, `فیش-کارکرد-${noticeId}.pdf`);
   } catch (err) {
     setDownloadError(
       err.response?.status === 404
-        ? "کارتی برای شما در این اطلاعیه یافت نشد."
-        : "دانلود کارت ناموفق بود."
+        ? "فیشی برای شما در این اطلاعیه یافت نشد."
+        : "دانلود فیش ناموفق بود."
     );
   }
 }
@@ -259,7 +275,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                     downloadAttendanceCard(notice.id, setDownloadError);
                   }}
                 >
-                  دانلود کارت کارکرد من (PDF)
+                  دانلود فیش کارکرد من (PDF)
                 </Button>
               ) : (
                 <Typography variant="caption" color="text.secondary">

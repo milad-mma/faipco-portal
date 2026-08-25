@@ -157,7 +157,7 @@ export default function BirthdayMessagesPage() {
           <CircularProgress size={20} />
         ) : todayBirthdays.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            امروز کسی تولد ندارد.
+            امروز تولد نداریم!
           </Typography>
         ) : (
           <Stack spacing={1.5}>

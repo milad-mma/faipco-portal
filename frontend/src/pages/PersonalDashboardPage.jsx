@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Avatar, Box, Card, Chip, Grid, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
-import RouteOutlinedIcon from "@mui/icons-material/RouteOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
@@ -290,7 +290,7 @@ export default function PersonalDashboardPage() {
                   mb: 2,
                 }}
               >
-                <RouteOutlinedIcon fontSize="small" />
+                <HistoryOutlinedIcon fontSize="small" />
               </Box>
               <Typography fontWeight={800} fontSize={14}>
                 گزارش تردد
@@ -379,51 +379,49 @@ export default function PersonalDashboardPage() {
             )}
           </Card>
 
-          <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
-            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
-              <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
-              <Typography fontWeight={800} fontSize={14}>
-                متولدین امروز
-              </Typography>
-            </Stack>
-            {birthdays === null ? (
-              <Typography variant="caption" color="text.secondary">
-                در حال بارگذاری...
-              </Typography>
-            ) : birthdays.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                امروز کسی تولد ندارد.
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {birthdays.map((e) => (
-                  <Stack key={e.id} direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
-                    <Box
-                      sx={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: "50%",
-                        bgcolor: "action.hover",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                        color: "text.secondary",
-                      }}
-                    >
-                      <DefaultPersonAvatar />
-                    </Box>
-                    <Typography variant="body2" fontWeight={700} noWrap>
-                      {e.first_name} {e.last_name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      {e.department_name}
-                    </Typography>
-                  </Stack>
-                ))}
+          {(birthdays === null || birthdays.length > 0) && (
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 1.75 }}>
+              <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
+                <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
+                <Typography fontWeight={800} fontSize={14}>
+                  متولدین امروز
+                </Typography>
               </Stack>
-            )}
-          </Card>
+              {birthdays === null ? (
+                <Typography variant="caption" color="text.secondary">
+                  در حال بارگذاری...
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {birthdays.map((e) => (
+                    <Stack key={e.id} direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
+                      <Box
+                        sx={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: "50%",
+                          bgcolor: "action.hover",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          color: "text.secondary",
+                        }}
+                      >
+                        <DefaultPersonAvatar />
+                      </Box>
+                      <Typography variant="body2" fontWeight={700} noWrap>
+                        {e.first_name} {e.last_name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        {e.department_name}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+          )}
         </Stack>
       </Grid>
     </Grid>
