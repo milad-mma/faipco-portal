@@ -15,6 +15,7 @@ import {
   Paper,
   Stack,
   TextField,
+  ThemeProvider,
   Typography,
 } from "@mui/material";
 import GetAppOutlinedIcon from "@mui/icons-material/GetAppOutlined";
@@ -34,6 +35,7 @@ import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 import { fetchAppVersion } from "../api/system";
 import faipcoLogo from "../assets/faipco-logo.png";
+import { modernLightTheme } from "../theme";
 
 // ⚠️ سوییچ طراحی جدید صفحه ورود — راه برگشت امن (دقیقاً هم‌الگو با
 // NEW_DESIGN_ENABLED در theme.js): اگر true باشد، طرح دوپانلی جدید (بر
@@ -364,7 +366,17 @@ export default function LoginPage() {
     </Box>
   );
 
+  // ⚠️ این طراحی (بر اساس personnel_login__1_.html) عمداً تک‌حالته/فقط
+  // روشن است — بدون نسخه تیره طراحی‌شده. اگر رنگ‌ها را از theme.palette
+  // بگیریم (مثل text.primary)، در حالت تیره سیستم/برنامه، آن رنگ‌ها به
+  // مقادیر روشن Dark Theme تبدیل می‌شدند — روی پس‌زمینه ثابت روشن این
+  // صفحه (که Hardcode است، نه از تِم)، متن/بوردر تقریباً نامرئی می‌شد
+  // (دقیقاً باگی که گزارش شد). با پیچیدن این طرح در یک ThemeProvider
+  // مستقل و همیشه‌روشن (modernLightTheme)، تمام کامپوننت‌های MUI داخلش
+  // (TextField، Typography، Button) صرف‌نظر از تنظیم روشن/تیره کاربر،
+  // همیشه رنگ‌بندی درست و خوانا می‌گیرند.
   return (
+    <ThemeProvider theme={modernLightTheme}>
     <Box
       sx={{
         minHeight: "100vh",
@@ -577,5 +589,6 @@ export default function LoginPage() {
 
       {vpnDialog}
     </Box>
+    </ThemeProvider>
   );
 }
