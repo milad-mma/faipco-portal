@@ -50,12 +50,12 @@ const PROMO_FEATURES = [
   { icon: <CampaignOutlinedIcon fontSize="small" />, label: "اطلاعیه‌ها و ابلاغیه‌های سازمانی" },
 ];
 
+const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
+
 export default function LoginPage() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
-
-  const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
 
   const [username, setUsername] = useState(() => localStorage.getItem(REMEMBERED_USERNAME_KEY) || "");
   const [password, setPassword] = useState("");
@@ -299,6 +299,7 @@ export default function LoginPage() {
         required
         autoFocus
         fullWidth
+        InputLabelProps={{ sx: { color: "text.primary", fontWeight: 600 } }}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -314,6 +315,7 @@ export default function LoginPage() {
         onChange={(e) => setPassword(e.target.value)}
         required
         fullWidth
+        InputLabelProps={{ sx: { color: "text.primary", fontWeight: 600 } }}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -372,10 +374,14 @@ export default function LoginPage() {
         // اطمینان می‌دهد این صفحه همیشه با وزیرمتن نمایش داده شود.
         fontFamily: "'Vazirmatn', 'Tahoma', sans-serif",
         position: "relative",
-        display: { xs: "flex", md: "block" },
-        alignItems: { xs: "flex-start" },
-        justifyContent: { xs: "center" },
-        p: { xs: 0, md: 0 },
+        // ⚠️ عمداً "block" ساده در موبایل، نه Flex — چیدمان Flex قبلی
+        // (alignItems/justifyContent) نظری باید کارت را به بالا می‌چسباند،
+        // ولی طبق بازخورد مستقیم هنوز فاصله‌ای بالای صفحه دیده می‌شد. با
+        // "block" ساده، کارت (تنها فرزند این Box، بدون position:absolute
+        // در موبایل) دقیقاً همان اولین محتوای صفحه است — هیچ منطق
+        // تراز/وسط‌چینی نیست که بخواهد اشتباه پیش برود.
+        display: "block",
+        p: 0,
       }}
     >
       <Paper
@@ -450,10 +456,10 @@ export default function LoginPage() {
           </Box>
 
           <Box sx={{ px: { xs: 2.5, md: 0 }, pb: { xs: 4, md: 0 }, maxWidth: 430, mx: { xs: "auto", md: 0 }, width: "100%" }}>
-            <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+            <Typography variant="h4" fontWeight={800} sx={{ mb: 1 }}>
               ورود به حساب کاربری
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, lineHeight: 1.9 }}>
+            <Typography variant="body2" fontWeight={600} color="text.primary" sx={{ mb: 3, lineHeight: 1.9 }}>
               برای دسترسی به داشبورد، کد پرسنلی و رمز عبور خود را وارد کنید.
             </Typography>
 

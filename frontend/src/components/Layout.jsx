@@ -458,7 +458,11 @@ export default function Layout() {
           mt: isPersonnelNav ? 0 : 8,
           // چون نوار پایین برای پرسنل غیر-Admin روی هر اندازه صفحه‌ای نمایش
           // داده می‌شود، فضای اضافه پایین صفحه هم همیشه لازم است، نه فقط موبایل.
-          pb: isPersonnelNav ? 12 : { xs: 2, md: 4 },
+          // ⚠️ رفع واقعی: قبلاً یک عدد ثابت (۹۶px) بود که safe-area گوشی‌های
+          // دارای Home Indicator را حساب نمی‌کرد و روی برخی صفحات/گوشی‌ها
+          // کافی نبود — حالا هم بیشتر است (۱۲۰px پایه) هم صریحاً safe-area
+          // واقعی گوشی را هم اضافه می‌کند.
+          pb: isPersonnelNav ? "calc(120px + env(safe-area-inset-bottom, 0px))" : { xs: 2, md: 4 },
           overflowX: "hidden",
         }}
       >
@@ -489,7 +493,15 @@ export default function Layout() {
             zIndex: (theme) => theme.zIndex.drawer + 2,
             borderTop: "1px solid",
             borderColor: "divider",
-            height: 68,
+            // ⚠️ رفع واقعی مشکل «المان‌ها زیر نوار پایین پنهان می‌شوند»:
+            // قبلاً هیچ فضایی برای safe-area (نوار پایین گوشی‌های دارای
+            // Home Indicator، مثل آیفون‌های بدون دکمه Home) در نظر گرفته
+            // نشده بود — روی آن گوشی‌ها ارتفاع واقعیِ ناحیه قابل‌کلیک نوار
+            // پایین بیشتر از ۶۸px می‌شد، و محاسبه pb ثابت پایین‌تر (در Box
+            // اصلی) دیگر کافی نبود. حالا height واقعی = ۶۸px + هر مقدار
+            // safe-area که مرورگر/گوشی گزارش کند.
+            height: `calc(68px + env(safe-area-inset-bottom, 0px))`,
+            pb: "env(safe-area-inset-bottom, 0px)",
           }}
         >
           <BottomNavigationAction label="داشبورد" value="/my-dashboard" icon={<DashboardOutlinedIcon />} />
