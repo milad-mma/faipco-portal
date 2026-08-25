@@ -208,7 +208,13 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               {notice.title}
             </Typography>
             {/* تاریخ و ساعت — زیر عنوان، راست‌چین */}
-            <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "right", mt: 0.25 }}>
+            {/* ⚠️ textAlign اینجا عمداً "left" است، نه "right" — چون این
+                پروژه از stylis-plugin-rtl استفاده می‌کند که مقادیر فیزیکی
+                left/right را خودکار Mirror می‌کند؛ نوشتن "right" در نتیجه
+                نهایی به چپ می‌چسبید (دقیقاً همان باگی که کاربر گزارش کرد).
+                این الگو در BackupPage.jsx/UpdatePage.jsx هم برای محتوای
+                LTR مشابه استفاده شده است. */}
+            <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "left", mt: 0.25 }}>
               {new Date(notice.created_at).toLocaleString("fa-IR")}
             </Typography>
           </Box>
