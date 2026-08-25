@@ -2,14 +2,18 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { CacheProvider } from "@emotion/react";
-// فونت وزیرمتن — قبلاً از cdn.jsdelivr.net لود می‌شد (یعنی این پروژه بدون
-// اینترنت اصلاً لود نمی‌شد). حالا با @fontsource/vazirmatn به‌عنوان یک
+// فونت وزیرمتن — کاملاً محلی/آفلاین با @fontsource/vazirmatn به‌عنوان یک
 // وابستگی معمولی npm نصب و در زمان Build (نه در زمان اجرا) دانلود می‌شود؛
 // خروجی نهایی (frontend/dist) کاملاً خودکفاست، بدون هیچ درخواست به بیرون.
+// ⚠️ وزن ۸۰۰ (Extra-Bold) هم لازم است — چند جای پروژه (مثلاً عنوان صفحه
+// ورود) صریحاً fontWeight={800} استفاده می‌کنند؛ بدون این فایل، مرورگر
+// یا از یک Bold ساختگی (Synthetic Bold با کیفیت پایین‌تر) استفاده می‌کرد،
+// یا (بدتر) دوباره وسوسه می‌شد از یک CDN بیرونی این وزن را بگیرد.
 import "@fontsource/vazirmatn/400.css";
 import "@fontsource/vazirmatn/500.css";
 import "@fontsource/vazirmatn/600.css";
 import "@fontsource/vazirmatn/700.css";
+import "@fontsource/vazirmatn/800.css";
 import { rtlCache } from "./rtlCache";
 import { ThemeModeProvider } from "./context/ThemeModeContext";
 import { AuthProvider } from "./context/AuthContext";
