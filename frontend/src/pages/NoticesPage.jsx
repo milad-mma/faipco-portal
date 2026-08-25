@@ -428,7 +428,7 @@ export default function NoticesPage() {
   const pageTitle = isFilteredView ? NOTICE_TYPE_META[typeFilter].label : "اطلاعیه‌ها";
 
   return (
-    <Box>
+    <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Typography variant="h5" fontWeight={800}>
           {pageTitle}

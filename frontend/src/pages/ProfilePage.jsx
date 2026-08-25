@@ -104,7 +104,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <Box sx={{ maxWidth: { xs: "100%", md: 480 } }}>
+    <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
         <Box
           sx={{
