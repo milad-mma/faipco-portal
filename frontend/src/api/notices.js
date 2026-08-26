@@ -71,7 +71,10 @@ export async function fetchNoticeReaders(noticeId) {
 }
 
 export async function resendNoticePush(noticeId) {
-  const { data } = await apiClient.post(`/notices/${noticeId}/resend-push`);
+  // Timeout بلندتر از پیش‌فرض کلی — حتی با ارسال موازی (سمت Backend)،
+  // برای مخاطبان خیلی زیاد (چند صد نفر) ممکن است چند ثانیه بیشتر از
+  // Timeout معمول (۲۰ ثانیه) طول بکشد؛ این یک حاشیه اطمینان اضافه است.
+  const { data } = await apiClient.post(`/notices/${noticeId}/resend-push`, null, { timeout: 60_000 });
   return data; // { sent_count }
 }
 

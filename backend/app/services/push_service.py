@@ -5,6 +5,7 @@
 scripts/generate_vapid_keys.py اجرا نشده)، ارسال Push بی‌صدا نادیده گرفته
 می‌شود — یعنی نبود این تنظیمات هرگز باعث خطا در ثبت/انتشار اطلاعیه نمی‌شود.
 """
+import asyncio
 import json
 import logging
 
@@ -86,11 +87,26 @@ class PushService:
         # high فرستاده می‌شود تا FCM حتی در حالت Doze/کم‌مصرف گوشی هم آن را
         # فوری تحویل بدهد، نه با تأخیر یا Batch شده با بقیه.
 
+        # ⚠️ رفع یک باگ واقعی («وقتی تعداد گیرندگان زیاد است، ارسال مجدد
+        # اعلان ناموفق بود»): قبلاً webpush() — که یک تابع کاملاً همزمان/
+        # مسدودکننده است، نه Async — داخل یک حلقه ساده و پشت‌سرهم صدا زده
+        # می‌شد؛ یعنی برای هر گیرنده، کل درخواست باید صبر می‌کرد تا پاسخ
+        # درخواست HTTP قبلی (به سرویس Push مرورگر/FCM) کامل برگردد. با چند
+        # صد گیرنده، این مجموع زمان به‌راحتی از مهلت Timeout درخواست HTTP
+        # (چه در خودِ مرورگر کاربر، چه Nginx) عبور می‌کرد و کل درخواست با
+        # خطای عمومی شکست می‌خورد — نه به این خاطر که واقعاً ارسال‌ها ناموفق
+        # بودند، بلکه چون کل فرآیند بیش‌ازحد طول می‌کشید. حالا با
+        # asyncio.gather + یک Semaphore (حداکثر ۲۰ ارسال هم‌زمان — برای
+        # جلوگیری از فشار بیش‌ازحد روی سرویس Push/شبکه)، ارسال‌ها موازی
+        # انجام می‌شوند؛ برای صدها گیرنده هم کل فرآیند چند ثانیه طول
+        # می‌کشد، نه دقیقه‌ها.
         sent_count = 0
         failed_count = 0
         stale_ids: list[int] = []
+        semaphore = asyncio.Semaphore(20)
 
-        for sub in subscriptions:
+        async def send_one(sub: PushSubscription) -> None:
+            nonlocal sent_count, failed_count
             recipient_name = name_by_user_id.get(sub.user_id)
             personalized_body = f"{recipient_name} عزیز،\n{body}" if recipient_name else body
             payload = json.dumps(
@@ -102,31 +118,40 @@ class PushService:
                     "notice_type": notice_type,
                 }
             )
-            try:
-                webpush(
-                    subscription_info={
-                        "endpoint": sub.endpoint,
-                        "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
-                    },
-                    data=payload,
-                    vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                    vapid_claims={"sub": f"mailto:{settings.VAPID_CLAIMS_EMAIL}"},
-                    # اگر دستگاه گیرنده لحظه ارسال آفلاین باشد، تا ۲۴ ساعت روی
-                    # سرور Push نگه داشته می‌شود و به‌محض آنلاین‌شدن تحویل داده می‌شود
-                    ttl=60 * 60 * 24,
-                    headers={"Urgency": "high"},
-                )
-                sent_count += 1
-            except WebPushException as e:
-                status_code = getattr(getattr(e, "response", None), "status_code", None)
-                if status_code in (404, 410):
-                    # اشتراک منقضی/لغوشده در مرورگر — از دیتابیس پاک می‌شود
-                    stale_ids.append(sub.id)
-                else:
-                    failed_count += 1
-                    logger.warning(
-                        "ارسال Push به کاربر %s ناموفق بود (status=%s): %s", sub.user_id, status_code, e
+            async with semaphore:
+                try:
+                    # خودِ webpush() یک تابع مسدودکننده (Blocking) است — با
+                    # asyncio.to_thread در یک Thread جدا اجرا می‌شود تا
+                    # Event Loop اصلی را برای بقیه درخواست‌های هم‌زمان سرور
+                    # مسدود نکند.
+                    await asyncio.to_thread(
+                        webpush,
+                        subscription_info={
+                            "endpoint": sub.endpoint,
+                            "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                        },
+                        data=payload,
+                        vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                        vapid_claims={"sub": f"mailto:{settings.VAPID_CLAIMS_EMAIL}"},
+                        # اگر دستگاه گیرنده لحظه ارسال آفلاین باشد، تا ۲۴ ساعت
+                        # روی سرور Push نگه داشته می‌شود و به‌محض آنلاین‌شدن
+                        # تحویل داده می‌شود
+                        ttl=60 * 60 * 24,
+                        headers={"Urgency": "high"},
                     )
+                    sent_count += 1
+                except WebPushException as e:
+                    status_code = getattr(getattr(e, "response", None), "status_code", None)
+                    if status_code in (404, 410):
+                        # اشتراک منقضی/لغوشده در مرورگر — از دیتابیس پاک می‌شود
+                        stale_ids.append(sub.id)
+                    else:
+                        failed_count += 1
+                        logger.warning(
+                            "ارسال Push به کاربر %s ناموفق بود (status=%s): %s", sub.user_id, status_code, e
+                        )
+
+        await asyncio.gather(*(send_one(sub) for sub in subscriptions))
 
         if stale_ids:
             await self.db.execute(delete(PushSubscription).where(PushSubscription.id.in_(stale_ids)))
