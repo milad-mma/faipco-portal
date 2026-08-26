@@ -24,7 +24,24 @@ function notifyUpdateReady(registration) {
 }
 
 /** از UI (دکمه «بارگذاری نسخه جدید») صدا زده می‌شود. */
-export function applyPendingUpdate() {
+export async function applyPendingUpdate() {
+  // ⚠️ رفع مشکل واقعی: بعضی کاربران بعد از زدن همین دکمه، هنوز ظاهر/کد
+  // قدیمی می‌دیدند. علتش: قبلاً فقط Service Worker جدید فعال می‌شد و صفحه
+  // Reload می‌گشت، ولی خودِ Cache Storage (جایی که Workbox فایل‌های
+  // Precache‌شده — JS/CSS/تصاویر نسخه قبلی — را نگه می‌دارد) هرگز صریحاً
+  // پاک نمی‌شد؛ در برخی مرورگرها/شرایط، این باعث می‌شد نسخه جدید هم باز
+  // بخشی از فایل‌های قدیمی را (از همان Cache قدیمی) سرو کند. حالا قبل از
+  // فعال‌کردن نسخه جدید، تمام Cache Storage (نه localStorage — کاملاً
+  // مجزا و دست‌نخورده می‌ماند، پس کاربر هرگز از حساب خارج نمی‌شود) پاک
+  // می‌شود؛ Service Worker جدید بلافاصله بعدش Cache خودش را از صفر و
+  // کاملاً تازه می‌سازد.
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map((name) => caches.delete(name)));
+  } catch (err) {
+    console.error("پاک‌سازی Cache Storage ناموفق بود (ادامه می‌دهیم):", err);
+  }
+
   if (waitingRegistration?.waiting) {
     waitingRegistration.waiting.postMessage({ type: "SKIP_WAITING" });
   }

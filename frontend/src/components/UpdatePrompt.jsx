@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Snackbar } from "@mui/material";
+import { Button, CircularProgress, Snackbar } from "@mui/material";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import { applyPendingUpdate, UPDATE_READY_EVENT } from "../utils/serviceWorker";
 
@@ -11,6 +11,7 @@ import { applyPendingUpdate, UPDATE_READY_EVENT } from "../utils/serviceWorker";
  */
 export default function UpdatePrompt() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
 
   useEffect(() => {
     function handleUpdateReady() {
@@ -20,11 +21,16 @@ export default function UpdatePrompt() {
     return () => window.removeEventListener(UPDATE_READY_EVENT, handleUpdateReady);
   }, []);
 
-  function handleReloadClick() {
-    applyPendingUpdate();
-    // خودِ Reload توسط controllerchange (در serviceWorker.js) انجام می‌شود؛
-    // این‌جا فقط پیام را می‌بندیم تا دوباره نشان داده نشود.
-    setIsOpen(false);
+  async function handleReloadClick() {
+    // «بارگذاری» بین‌بین از کاربر جلوگیری می‌کند دوباره روی دکمه بزند —
+    // پاک‌سازی Cache Storage معمولاً خیلی سریع است، ولی همین چند لحظه
+    // بازخورد بصری بهتر از یک دکمه بی‌واکنش است.
+    setIsApplying(true);
+    // خودِ Reload توسط controllerchange (در serviceWorker.js) بعد از این
+    // انجام می‌شود — این تابع صبر می‌کند تا Cache Storage کاملاً پاک شود
+    // (نه localStorage/ورود کاربر — کاملاً مجزا و دست‌نخورده می‌ماند) و
+    // بعد نسخه جدید را فعال می‌کند.
+    await applyPendingUpdate();
   }
 
   return (
@@ -36,10 +42,17 @@ export default function UpdatePrompt() {
         <Button
           color="inherit"
           size="small"
-          startIcon={<SystemUpdateAltOutlinedIcon fontSize="small" />}
+          disabled={isApplying}
+          startIcon={
+            isApplying ? (
+              <CircularProgress size={14} color="inherit" />
+            ) : (
+              <SystemUpdateAltOutlinedIcon fontSize="small" />
+            )
+          }
           onClick={handleReloadClick}
         >
-          بارگذاری
+          {isApplying ? "در حال بارگذاری..." : "بارگذاری"}
         </Button>
       }
     />
