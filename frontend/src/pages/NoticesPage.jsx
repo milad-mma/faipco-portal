@@ -410,6 +410,19 @@ export default function NoticesPage() {
       availableTargets.can_upload_payroll ||
       availableTargets.can_upload_attendance_card);
 
+  // تب «ارسالی» فقط برای کسی که واقعاً مجوز ارسال اطلاعیه دارد نشان داده
+  // می‌شود — طبق درخواست صریح؛ «دریافتی»/«آرشیو» برای همه باقی می‌مانند.
+  const visibleTabs = TABS.filter((t) => t.key !== "sent" || canCreateAnything);
+
+  // اگر کاربر همین الان روی تب «ارسالی» بود و بعداً (مثلاً بعد از تغییر
+  // نقش یا اولین بارگذاری availableTargets) این مجوز را نداشت، او را به
+  // تب «دریافتی» برمی‌گردانیم — تا هرگز روی یک تب مخفی/ناموجود گیر نکند.
+  useEffect(() => {
+    if (tab === "sent" && availableTargets && !canCreateAnything) {
+      setTab("received");
+    }
+  }, [tab, availableTargets, canCreateAnything]);
+
   function handleMarkedRead(noticeId) {
     setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));
   }
@@ -457,16 +470,18 @@ export default function NoticesPage() {
 
       {/* در نمای فیلترشده (فیش حقوقی/کارکرد از داشبورد) اصلاً تب نشان داده
           نمی‌شود — این یک نمای تک‌منظوره است، نه صفحه کامل اطلاعیه‌ها.
-          ⚠️ عمداً به canCreateAnything وابسته نیست: هر کاربر لاگین‌شده‌ای،
-          حتی بدون هیچ مجوز ارسالی، اطلاعیه دریافت می‌کند و باید بتواند
-          آرشیوشان کند — این تب‌ها (از جمله «آرشیو») باید همیشه دیده شوند،
-          نه فقط برای کسانی که اجازه ارسال دارند (که قبلاً یک باگ واقعی بود:
-          پرسنل بدون نقش خاص، اصلاً هیچ‌کدام از تب‌ها را نمی‌دید). */}
+          ⚠️ «دریافتی» و «آرشیو» عمداً به canCreateAnything وابسته نیستند:
+          هر کاربر لاگین‌شده‌ای، حتی بدون هیچ مجوز ارسالی، اطلاعیه دریافت
+          می‌کند و باید بتواند آرشیوشان کند (قبلاً یک باگ واقعی بود: پرسنل
+          بدون نقش خاص، اصلاً هیچ‌کدام از تب‌ها را نمی‌دید). ولی «ارسالی»
+          طبق درخواست صریح فقط برای کسی نشان داده می‌شود که واقعاً مجوز
+          ارسال اطلاعیه دارد — چون برای بقیه، آن تب همیشه خالی و بی‌فایده
+          است. */}
       {!isFilteredView && (
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)`,
             bgcolor: "action.hover",
             borderRadius: 999,
             p: 0.5,
@@ -474,7 +489,7 @@ export default function NoticesPage() {
             gap: 0.5,
           }}
         >
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <Box
               key={t.key}
               onClick={() => setTab(t.key)}
