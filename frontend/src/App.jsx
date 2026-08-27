@@ -22,6 +22,7 @@ import PersonalDashboardPage from "./pages/PersonalDashboardPage";
 import ProfilePage from "./pages/ProfilePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
+import RoleManagementPage from "./pages/RoleManagementPage";
 import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
 import BackupPage from "./pages/BackupPage";
 import UpdatePage from "./pages/UpdatePage";
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/sites/:siteId/settings" element={<AdminRoute><SiteSettingsPage /></AdminRoute>} />
           <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
           <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
+          <Route path="/role-management" element={<AdminRoute><RoleManagementPage /></AdminRoute>} />
           <Route path="/bulk-role-assignment" element={<AdminRoute><BulkRoleAssignmentPage /></AdminRoute>} />
           <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />

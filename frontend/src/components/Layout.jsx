@@ -30,6 +30,7 @@ import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettin
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
@@ -85,6 +86,7 @@ const NAV_ITEMS = [
       { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon /> },
       { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
       { label: "انتصاب دسته‌جمعی نقش", path: "/bulk-role-assignment", icon: <GroupAddOutlinedIcon /> },
+      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon /> },
     ],
   },
   { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },

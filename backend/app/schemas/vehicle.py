@@ -3,6 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+# طبق درخواست صریح کارفرما — فقط همین ۱۶ حرف مجاز پلاک واقعی ایران؛
+# دقیقاً هم‌الگو با PLATE_LETTERS در IranianLicensePlateInput.jsx (سمت
+# فرانت‌اند) — این‌جا تکرار شده تا اعتبارسنجی سمت Backend هم مستقل و
+# کامل باشد، نه فقط متکی به همان لیست فرانت‌اند.
+ALLOWED_PLATE_LETTERS = {"ب", "ج", "د", "س", "ص", "ط", "ق", "ل", "م", "ن", "و", "ه", "ی", "ت", "ع", "ا"}
+
 
 class VehicleIn(BaseModel):
     """ورودی ثبت/ویرایش یک خودرو — چه خودِ کاربر (self-service) چه Admin."""
@@ -31,8 +37,8 @@ class VehicleIn(BaseModel):
     @field_validator("plate_letter")
     @classmethod
     def validate_letter(cls, v: str) -> str:
-        if len(v) != 1 or not ("\u0600" <= v <= "\u06ff"):
-            raise ValueError("باید دقیقاً یک حرف فارسی باشد")
+        if v not in ALLOWED_PLATE_LETTERS:
+            raise ValueError("حرف پلاک نامعتبر است")
         return v
 
 

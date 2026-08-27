@@ -1,12 +1,13 @@
 """منطق تجاری مدیریت کاربران و انتصاب نقش (Role) — پایه سلسله‌مراتب ارسال اطلاعیه."""
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.employee import Department, Employee
 from app.models.site import Site
-from app.models.user import Role, User, UserRole
+from app.models.user import Permission, Role, RolePermission, User, UserRole
 from app.repositories.user_repository import UserRepository
-from app.schemas.user_management import AssignRoleIn
+from app.schemas.user_management import AssignRoleIn, RoleUpsertIn
 
 
 class UserManagementService:
@@ -199,3 +200,90 @@ class UserManagementService:
 
         overview.sort(key=lambda e: (e["first_name"], e["last_name"]))
         return overview
+
+    # ---------- مدیریت خودِ نقش‌ها و مجوزها (پنل مدیریت نقش/مجوز) ----------
+
+    async def list_permissions(self) -> list[Permission]:
+        """همه مجوزهای موجود در سیستم — برای چک‌باکس‌های صفحه ساخت/ویرایش نقش.
+        هر مجوز جدید همیشه فقط با یک تغییر کد (جایی که واقعاً همین Code را
+        require_permission می‌کند) معنا پیدا می‌کند — این صفحه فقط اجازه
+        می‌دهد از مجوزهای *موجود*، ترکیب‌های جدید (نقش‌های تازه) ساخته شود،
+        نه ساخت یک مجوز کاملاً بی‌ربط به هیچ کد."""
+        result = await self.db.execute(select(Permission).order_by(Permission.code))
+        return list(result.scalars().all())
+
+    async def get_role_detail(self, role_id: int) -> Role | None:
+        result = await self.db.execute(
+            select(Role)
+            .options(selectinload(Role.permissions).selectinload(RolePermission.permission))
+            .where(Role.id == role_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_role(self, payload: RoleUpsertIn) -> Role:
+        if payload.name == "superadmin":
+            raise ValueError("این نام رزرو شده است")
+        existing = await self.db.execute(select(Role).where(Role.name == payload.name))
+        if existing.scalar_one_or_none() is not None:
+            raise ValueError("نقشی با همین نام از قبل وجود دارد")
+
+        role = Role(name=payload.name, description=payload.description, is_system=False)
+        self.db.add(role)
+        await self.db.flush()  # برای گرفتن role.id، قبل از commit نهایی
+
+        if payload.permission_ids:
+            result = await self.db.execute(select(Permission.id).where(Permission.id.in_(payload.permission_ids)))
+            valid_ids = {row[0] for row in result.all()}
+            for permission_id in valid_ids:
+                self.db.add(RolePermission(role_id=role.id, permission_id=permission_id))
+
+        await self.db.commit()
+        return await self.get_role_detail(role.id)
+
+    async def update_role(self, role_id: int, payload: RoleUpsertIn) -> Role | None:
+        role = await self.db.get(Role, role_id)
+        if role is None:
+            return None
+        if role.is_system or role.name == "superadmin":
+            raise ValueError("نقش‌های سیستمی قابل ویرایش نیستند")
+        if payload.name != role.name:
+            existing = await self.db.execute(select(Role).where(Role.name == payload.name, Role.id != role_id))
+            if existing.scalar_one_or_none() is not None:
+                raise ValueError("نقشی با همین نام از قبل وجود دارد")
+
+        role.name = payload.name
+        role.description = payload.description
+
+        # جایگزینی کامل مجوزهای این نقش با فهرست جدید — ساده‌ترین و
+        # مطمئن‌ترین راه برای تطبیق با یک چک‌باکس‌لیست در فرانت‌اند (کاربر
+        # هرچه را تیک زده، دقیقاً همان باید نهایی شود؛ نه یک Diff دستی).
+        await self.db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
+        if payload.permission_ids:
+            result = await self.db.execute(select(Permission.id).where(Permission.id.in_(payload.permission_ids)))
+            valid_ids = {row[0] for row in result.all()}
+            for permission_id in valid_ids:
+                self.db.add(RolePermission(role_id=role_id, permission_id=permission_id))
+
+        await self.db.commit()
+        return await self.get_role_detail(role_id)
+
+    async def delete_role(self, role_id: int) -> bool:
+        role = await self.db.get(Role, role_id)
+        if role is None:
+            return False
+        if role.is_system or role.name == "superadmin":
+            raise ValueError("نقش‌های سیستمی قابل حذف نیستند")
+
+        # ⚠️ عمداً بررسی می‌شود که این نقش همین الان به کسی اختصاص داده
+        # نشده باشد — با این‌که خودِ ForeignKey (ondelete=CASCADE) اجازه
+        # می‌داد حذف بی‌سروصدا انجام شود، این یعنی اگر این نقش به ۲۰ نفر
+        # اختصاص داشت، همه بی‌هیچ هشداری همان لحظه دسترسی‌شان را از دست
+        # می‌دادند. به‌جای این رفتار خاموش و خطرناک، این‌جا صریحاً جلوی حذف
+        # گرفته می‌شود تا Admin اول خودش آگاهانه انتصاب‌ها را بردارد.
+        in_use = await self.db.execute(select(UserRole.id).where(UserRole.role_id == role_id).limit(1))
+        if in_use.scalar_one_or_none() is not None:
+            raise ValueError("این نقش هم‌اکنون به حداقل یک کاربر اختصاص دارد — ابتدا آن انتصاب‌ها را بردارید")
+
+        await self.db.delete(role)
+        await self.db.commit()
+        return True

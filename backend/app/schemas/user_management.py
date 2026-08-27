@@ -1,5 +1,5 @@
 """Schema های Pydantic برای مدیریت کاربران و انتصاب نقش (بخش مدیریت دسترسی)."""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RoleOut(BaseModel):
@@ -9,6 +9,28 @@ class RoleOut(BaseModel):
     is_system: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PermissionOut(BaseModel):
+    id: int
+    code: str
+    description: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleDetailOut(RoleOut):
+    """جزئیات یک نقش به‌همراه مجوزهایش — برای صفحه ویرایش نقش."""
+
+    permissions: list[PermissionOut]
+
+
+class RoleUpsertIn(BaseModel):
+    """ساخت یا ویرایش یک نقش — نام + توضیح + فهرست مجوزهایی که باید داشته باشد."""
+
+    name: str = Field(min_length=1, max_length=64)
+    description: str | None = None
+    permission_ids: list[int] = []
 
 
 class UserManagementOut(BaseModel):
