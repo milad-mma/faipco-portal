@@ -59,8 +59,20 @@ const DRAWER_WIDTH = 260;
 const NAV_ITEMS = [
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
   { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: true },
-  { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, adminOnly: true },
-  { label: "همگام‌سازی دیتابیس", path: "/sync", icon: <SyncOutlinedIcon />, adminOnly: true },
+  {
+    label: "سایت‌ها",
+    path: "/sites",
+    icon: <ApartmentOutlinedIcon />,
+    adminOnly: false,
+    requiresSitesManage: true,
+  },
+  {
+    label: "همگام‌سازی دیتابیس",
+    path: "/sync",
+    icon: <SyncOutlinedIcon />,
+    adminOnly: false,
+    requiresSyncManage: true,
+  },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
   {
     label: "ثبت ورود و خروج",
@@ -81,15 +93,32 @@ const NAV_ITEMS = [
     label: "مدیریت دسترسی",
     path: "/access",
     icon: <AdminPanelSettingsOutlinedIcon />,
-    adminOnly: true,
+    adminOnly: false,
+    // ⚠️ عمداً یک شرط OR (نه فقط requiresUsersManage): این آیتم والد باید
+    // نمایش داده شود اگر کاربر *حداقل یکی* از چهار مجوز مرتبط با
+    // زیرمنوهایش را داشته باشد — وگرنه کسی که فقط sites.manage دارد (نه
+    // users.manage)، هرگز حتی به «واحدهای سازمانی» هم نمی‌رسید، چون خودِ
+    // والد قبل از رسیدن به فیلتر فرزندان مخفی می‌شد.
+    requiresAnyAccessManagement: true,
     children: [
-      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon /> },
-      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
-      { label: "انتصاب دسته‌جمعی نقش", path: "/bulk-role-assignment", icon: <GroupAddOutlinedIcon /> },
-      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon /> },
+      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, requiresSitesManage: true },
+      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, requiresIpAllowlist: true },
+      {
+        label: "انتصاب دسته‌جمعی نقش",
+        path: "/bulk-role-assignment",
+        icon: <GroupAddOutlinedIcon />,
+        requiresUsersManage: true,
+      },
+      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, requiresRolesManage: true },
     ],
   },
-  { label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon />, adminOnly: true },
+  {
+    label: "پشتیبان‌گیری",
+    path: "/backup",
+    icon: <CloudDownloadOutlinedIcon />,
+    adminOnly: false,
+    requiresBackupManage: true,
+  },
   { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
   { label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
   {
@@ -134,12 +163,47 @@ export default function Layout() {
         if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
         if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
         if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
+        if (item.requiresSitesManage && !user?.can_manage_sites) return false;
+        if (item.requiresSyncManage && !user?.can_manage_sync) return false;
+        if (item.requiresUsersManage && !user?.can_manage_users) return false;
+        if (item.requiresRolesManage && !user?.can_manage_roles) return false;
+        if (item.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
+        if (item.requiresBackupManage && !user?.can_manage_backup) return false;
+        if (
+          item.requiresAnyAccessManagement &&
+          !(user?.can_manage_users || user?.can_manage_sites || user?.can_manage_roles || user?.can_manage_ip_allowlist)
+        )
+          return false;
         if (item.hiddenForAdmin && user?.is_superuser) return false;
         return true;
-      }).map((item) => ({
-        ...item,
-        children: item.children?.filter((child) => !child.adminOnly || user?.is_superuser),
-      })),
+      }).map((item) => {
+        // فرزندان هم مستقل از والد فیلتر می‌شوند — طبق درخواست صریح، هر
+        // مجوزی که به یک نقش داده شود، منوی متناظرش (چه در سطح والد چه
+        // فرزند) باید نمایش داده شود؛ ممکن است کاربری فقط یکی از این چهار
+        // زیرمنو را ببیند، نه لزوماً همه را.
+        const filteredChildren = item.children?.filter((child) => {
+          if (child.adminOnly && !user?.is_superuser) return false;
+          if (child.requiresSitesManage && !user?.can_manage_sites) return false;
+          if (child.requiresUsersManage && !user?.can_manage_users) return false;
+          if (child.requiresRolesManage && !user?.can_manage_roles) return false;
+          if (child.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
+          return true;
+        });
+
+        // ⚠️ رفع یک مشکل واقعی: خودِ آیتم والد («مدیریت دسترسی») با کلیک
+        // مستقیماً به path خودش (/access) می‌رود؛ ولی /access فقط با
+        // can_manage_users باز می‌شود. کاربری که فقط can_manage_sites دارد
+        // (نه users)، با کلیک روی والد بلافاصله به بیرون هدایت می‌شد، با
+        // اینکه باید می‌توانست حداقل «واحدهای سازمانی» را ببیند. اگر خودِ
+        // والد در دسترس نیست ولی حداقل یک فرزند هست، مسیر والد را به
+        // همان اولین فرزند در‌دسترس تغییر می‌دهیم.
+        let effectivePath = item.path;
+        if (item.requiresAnyAccessManagement && !user?.can_manage_users && filteredChildren?.length) {
+          effectivePath = filteredChildren[0].path;
+        }
+
+        return { ...item, path: effectivePath, children: filteredChildren };
+      }),
     [user]
   );
 

@@ -63,20 +63,51 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          {/* فقط Admin: */}
+          {/* فقط Admin واقعی — این‌ها مفهوم «تفویض به یک نقش دیگر» ندارند: */}
           <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
           <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
-          <Route path="/departments" element={<AdminRoute><DepartmentsPage /></AdminRoute>} />
-          <Route path="/sites" element={<AdminRoute><SitesPage /></AdminRoute>} />
-          <Route path="/sites/:siteId/settings" element={<AdminRoute><SiteSettingsPage /></AdminRoute>} />
-          <Route path="/sync" element={<AdminRoute><SyncPage /></AdminRoute>} />
-          <Route path="/access" element={<AdminRoute><AccessManagementPage /></AdminRoute>} />
-          <Route path="/role-management" element={<AdminRoute><RoleManagementPage /></AdminRoute>} />
-          <Route path="/bulk-role-assignment" element={<AdminRoute><BulkRoleAssignmentPage /></AdminRoute>} />
-          <Route path="/backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
-          <Route path="/ip-allowlist" element={<AdminRoute><IpAllowlistPage /></AdminRoute>} />
           <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
+
+          {/* Admin یا هر نقشی با مجوز متناظر — طبق درخواست صریح، اگر یک
+              مجوز به یک نقش داده شود، صفحه/منوی متناظرش هم واقعاً برای آن
+              نقش باز می‌شود، نه فقط برای Admin: */}
+          <Route
+            path="/departments"
+            element={<PermissionRoute check={(u) => u?.can_manage_sites}><DepartmentsPage /></PermissionRoute>}
+          />
+          <Route
+            path="/sites"
+            element={<PermissionRoute check={(u) => u?.can_manage_sites}><SitesPage /></PermissionRoute>}
+          />
+          <Route
+            path="/sites/:siteId/settings"
+            element={<PermissionRoute check={(u) => u?.can_manage_sites}><SiteSettingsPage /></PermissionRoute>}
+          />
+          <Route
+            path="/sync"
+            element={<PermissionRoute check={(u) => u?.can_manage_sync}><SyncPage /></PermissionRoute>}
+          />
+          <Route
+            path="/access"
+            element={<PermissionRoute check={(u) => u?.can_manage_users}><AccessManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="/role-management"
+            element={<PermissionRoute check={(u) => u?.can_manage_roles}><RoleManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="/bulk-role-assignment"
+            element={<PermissionRoute check={(u) => u?.can_manage_users}><BulkRoleAssignmentPage /></PermissionRoute>}
+          />
+          <Route
+            path="/backup"
+            element={<PermissionRoute check={(u) => u?.can_manage_backup}><BackupPage /></PermissionRoute>}
+          />
+          <Route
+            path="/ip-allowlist"
+            element={<PermissionRoute check={(u) => u?.can_manage_ip_allowlist}><IpAllowlistPage /></PermissionRoute>}
+          />
           <Route
             path="/clock-in-out-report"
             element={

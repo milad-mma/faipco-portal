@@ -210,6 +210,12 @@ class AuthService:
         base.can_manage_clock_records = user.is_superuser or "attendance.manage_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
+        base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
+        base.can_manage_sync = user.is_superuser or "sync.manage" in permission_codes
+        base.can_manage_users = user.is_superuser or "users.manage" in permission_codes
+        base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes
+        base.can_manage_ip_allowlist = user.is_superuser or "system.ip_allowlist" in permission_codes
+        base.can_manage_backup = user.is_superuser or "system.backup" in permission_codes
         base.can_view_site_notice_report = user.is_superuser or bool(
             await self.repo.get_managed_site_ids(user.id, "site_manager")
         )

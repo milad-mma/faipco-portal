@@ -31,6 +31,17 @@ class UserOut(BaseModel):
     can_manage_clock_records: bool = False  # آیا مجوز افزودن/ویرایش/حذف دستی رکورد ورود/خروج را دارد
     can_view_site_notice_report: bool = False  # آیا site_manager سایتی است (برای «گزارش اطلاعیه‌های سایت من»)
     can_view_vehicles_report: bool = False  # آیا Admin یا نقش «حراست» است (برای «گزارش خودروهای پرسنل»)
+    # ⚠️ طبق درخواست صریح: هر مجوزی که به یک نقش داده شود، منوی متناظرش هم
+    # باید در پنل کاربری اضافه شود — نه فقط برای Admin واقعی کار کند.
+    # صفحات زیر قبلاً فقط با is_superuser محافظت می‌شدند (AdminRoute)؛
+    # حالا اگر یک نقش غیر-Admin هم مجوز متناظر را داشته باشد، منویشان
+    # نمایش داده می‌شود.
+    can_manage_sites: bool = False  # sites.manage — «سایت‌ها» و «واحدهای سازمانی»
+    can_manage_sync: bool = False  # sync.manage — «همگام‌سازی دیتابیس»
+    can_manage_users: bool = False  # users.manage — «مدیریت دسترسی» و «انتصاب دسته‌جمعی نقش»
+    can_manage_roles: bool = False  # roles.manage — «مدیریت نقش/مجوز»
+    can_manage_ip_allowlist: bool = False  # system.ip_allowlist — «رنج‌های IP مجاز»
+    can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
 
     model_config = ConfigDict(from_attributes=True)

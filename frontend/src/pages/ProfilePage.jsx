@@ -31,6 +31,12 @@ import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
+import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
+import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
+import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -51,6 +57,17 @@ const EXTRA_ACCESS_ITEMS = [
   { flag: "can_view_site_notice_report", label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon /> },
   { flag: "can_manage_birthday_messages", label: "پیام‌های تبریک تولد", path: "/birthday-messages", icon: <CakeOutlinedIcon /> },
   { flag: "can_view_vehicles_report", label: "خودروهای پرسنل", path: "/vehicle-report", icon: <DirectionsCarFilledOutlinedIcon /> },
+  // ⚠️ این پنج مورد جدید — طبق درخواست صریح: هر مجوزی که به یک نقش داده
+  // شود، منوی متناظرش باید در پنل کاربری هم اضافه شود. چون پرسنل غیر-Admin
+  // اصلاً منوی کناری Admin (Layout.jsx) را نمی‌بینند (فقط نوار پایین)، این
+  // بخش («دسترسی‌های ویژه») تنها جایی است که این پنج صفحه — اگر نقششان
+  // مجوز متناظر را داشته باشد — واقعاً در دسترسشان قرار می‌گیرد.
+  { flag: "can_manage_sites", label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon /> },
+  { flag: "can_manage_sync", label: "همگام‌سازی دیتابیس", path: "/sync", icon: <SyncOutlinedIcon /> },
+  { flag: "can_manage_users", label: "مدیریت دسترسی", path: "/access", icon: <AdminPanelSettingsOutlinedIcon /> },
+  { flag: "can_manage_roles", label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon /> },
+  { flag: "can_manage_ip_allowlist", label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
+  { flag: "can_manage_backup", label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon /> },
 ];
 
 /**
