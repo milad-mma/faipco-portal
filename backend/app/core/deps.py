@@ -72,13 +72,23 @@ def require_permission(permission_code: str, site_scoped: bool = False):
         if current_user.is_superuser:
             return current_user
 
-        site_id: int | None = None
         if site_scoped:
             raw_site_id = request.path_params.get("site_id") or request.query_params.get("site_id")
-            if raw_site_id is not None:
-                site_id = int(raw_site_id)
+            site_id = int(raw_site_id) if raw_site_id is not None else None
+            codes = await UserRepository(db).get_permission_codes(current_user.id, site_id=site_id)
+        else:
+            # ⚠️ رفع یک باگ حیاتی: قبلاً اینجا هم get_permission_codes با
+            # site_id=None صدا زده می‌شد — که طبق مستندات خودِ آن تابع، فقط
+            # نقش‌های *سراسری* را می‌بیند، نه هر نقش سایت‌محوری. از وقتی
+            # site_id برای انتصاب نقش اجباری شد، این یعنی همه Endpoint های
+            # site_scoped=False (اکثریت قریب‌به‌اتفاق — مثل roles.manage،
+            # sync.manage، vehicles.manage، system.backup) همیشه ۴۰۳
+            # می‌دادند، حتی برای کاربری که واقعاً همان مجوز را (فقط سایت‌محور)
+            # داشت. site_scoped=False یعنی «این Endpoint اصلاً به سایت خاصی
+            # کاری ندارد»، پس باید هر انتصاب نقشی (سراسری یا هر سایتی) را
+            # بپذیرد — نه فقط سراسری.
+            codes = await UserRepository(db).get_all_permission_codes(current_user.id)
 
-        codes = await UserRepository(db).get_permission_codes(current_user.id, site_id=site_id)
         if permission_code not in codes:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

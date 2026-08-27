@@ -32,6 +32,14 @@ class UserRepository:
         نقش‌های سراسری (UserRole.site_id IS NULL) همیشه لحاظ می‌شوند.
         اگر site_id پاس داده شود، نقش‌های مخصوص همان Site هم اضافه می‌شوند
         (مثلاً کاربری که فقط نقش "HR سایت ۲" را دارد، فقط وقتی site_id=2 چک شود این مجوز را دارد).
+
+        ⚠️ اگر site_id داده نشود، فقط نقش‌های سراسری دیده می‌شوند — نقش‌های
+        سایت‌محور این کاربر (که بعد از اجباری‌شدن site_id در انتصاب نقش،
+        امروز اکثریت قریب‌به‌اتفاق انتصاب‌ها همین‌طورند) اصلاً لحاظ نمی‌شوند.
+        برای «آیا این کاربر اصلاً این قابلیت را دارد؟» (مثلاً برای فلگ‌های
+        get_me که تعیین می‌کنند کدام منو نمایش داده شود، نه محدودسازی داده
+        به یک سایت خاص) به‌جای این تابع از get_all_permission_codes پایین
+        استفاده کنید.
         """
         stmt = (
             select(Permission.code)
@@ -45,6 +53,26 @@ class UserRepository:
         else:
             stmt = stmt.where(UserRole.site_id.is_(None))
 
+        result = await self.db.execute(stmt)
+        return {row[0] for row in result.all()}
+
+    async def get_all_permission_codes(self, user_id: int) -> set[str]:
+        """
+        همه کدهای Permission این کاربر — از هر انتصاب نقشی، چه سراسری چه
+        محدود به یک سایت خاص، بدون هیچ فیلتر سایتی. ⚠️ فقط برای تصمیمات
+        سطح «آیا این قابلیت اصلاً برای این کاربر فعال است» (مثل فلگ‌های
+        get_me که منوها را کنترل می‌کنند) مناسب است — هرگز برای محدودسازی
+        داده به یک سایت مشخص استفاده نشود؛ برای آن منظور همیشه
+        get_sites_with_permission (که خودِ سایت‌های مجاز را برمی‌گرداند،
+        نه فقط بله/خیر) درست‌تر است.
+        """
+        stmt = (
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
+        )
         result = await self.db.execute(stmt)
         return {row[0] for row in result.all()}
 

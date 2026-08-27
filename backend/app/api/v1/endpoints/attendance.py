@@ -355,8 +355,11 @@ async def _authenticate_websocket_user(token: str) -> User | None:
         user = await UserRepository(db).get_by_id(int(user_id))
         if user is None or user.employee_id is None:
             return None
+        # ⚠️ همان رفع باگ get_me: این یک چک «آیا این قابلیت اصلاً برای این
+        # کاربر فعال است» است (نه محدودسازی به یک سایت خاص) — باید همه
+        # انتصاب‌های نقش (سراسری + سایت‌محور) را ببیند.
         has_permission = user.is_superuser or "attendance.clock_in_out" in (
-            await UserRepository(db).get_permission_codes(user.id)
+            await UserRepository(db).get_all_permission_codes(user.id)
         )
         return user if has_permission else None
 

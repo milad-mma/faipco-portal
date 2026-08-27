@@ -203,7 +203,16 @@ class AuthService:
         employee_id، مثل admin) فقط فیلدهای پایه را دارند.
         """
         base = UserOut.model_validate(user)
-        permission_codes = await self.repo.get_permission_codes(user.id)
+        # ⚠️ رفع یک باگ حیاتی: قبلاً اینجا get_permission_codes بدون site_id
+        # صدا زده می‌شد — که طبق مستندات خودِ آن تابع، فقط نقش‌های *سراسری*
+        # را می‌بیند. از وقتی site_id برای انتصاب نقش اجباری شد (دیگر هیچ
+        # انتصاب جدیدی سراسری نیست)، این یعنی همه فلگ‌های can_X پایین
+        # همیشه False می‌ماندند — حتی برای کاربری که همین الان یک نقش با
+        # همه مجوزها گرفته بود، چون آن انتصاب حتماً site-scoped بود. اینجا
+        # باید get_all_permission_codes (بدون فیلتر سایت) استفاده شود — چون
+        # این فلگ‌ها فقط برای «کدام منو دیده شود» هستند، نه محدودسازی داده
+        # به یک سایت خاص.
+        permission_codes = await self.repo.get_all_permission_codes(user.id)
         base.can_clock_in_out = user.is_superuser or "attendance.clock_in_out" in permission_codes
         base.can_view_attendance_logs = user.is_superuser or "attendance.view_logs" in permission_codes
         base.can_view_clock_records = user.is_superuser or "attendance.view_clock_records" in permission_codes
