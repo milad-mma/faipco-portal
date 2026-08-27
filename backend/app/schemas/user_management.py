@@ -55,9 +55,10 @@ class UserRoleOut(BaseModel):
 
 class AssignRoleIn(BaseModel):
     role_id: int
-    # اگر site_id داده شود، این نقش فقط برای همان Site معتبر است (مثلاً «مدیر سایت ۲»)؛
-    # اگر خالی باشد، نقش سراسری است (مثلاً «مدیرعامل» یا «مدیر منابع انسانی»)
-    site_id: int | None = None
+    # ⚠️ طبق درخواست صریح، دیگر اختیاری نیست — هر انتصاب نقش باید حتماً
+    # به یک سایت مشخص محدود باشد؛ دیگر امکان انتصاب «سراسری» (site_id=None)
+    # از این مسیر وجود ندارد.
+    site_id: int
 
 
 class BulkAssignRoleIn(BaseModel):

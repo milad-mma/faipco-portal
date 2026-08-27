@@ -33,7 +33,9 @@ import {
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import CleaningServicesOutlinedIcon from "@mui/icons-material/CleaningServicesOutlined";
+import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
 import {
+  createEmployee,
   executeOrphanedInactiveCleanup,
   fetchEmployees,
   previewOrphanedInactiveCleanup,
@@ -41,8 +43,10 @@ import {
   setEmployeeEnabled,
   setEmployeePassword,
 } from "../api/employees";
+import { fetchDepartments } from "../api/departments";
 import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
+import { useAuth } from "../context/AuthContext";
 
 // ستون‌های جدول پرسنل — key همان چیزی است که به سرور به‌عنوان sort_by فرستاده
 // می‌شود (مطابق با نگاشت _SORT_COLUMNS در بک‌اند). Sort کاملاً سمت سرور انجام
@@ -169,6 +173,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 }
 
 export default function EmployeesPage() {
+  const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [total, setTotal] = useState(0);
   const [sites, setSites] = useState([]);
@@ -187,6 +192,7 @@ export default function EmployeesPage() {
   const [sortDir, setSortDir] = useState("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE_OPTIONS[0]);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSites().then(setSites);
@@ -292,15 +298,22 @@ export default function EmployeesPage() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>
-          پرسنل
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها (از طریق Mapping تعریف‌شده در صفحه «سایت‌ها»).
-          برای دادن دسترسی به کسی، از صفحه «مدیریت دسترسی» استفاده کنید.
-        </Typography>
-      </Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>
+            پرسنل
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها (از طریق Mapping تعریف‌شده در صفحه «سایت‌ها»).
+            برای دادن دسترسی به کسی، از صفحه «مدیریت دسترسی» استفاده کنید.
+          </Typography>
+        </Box>
+        {user?.can_create_employees && (
+          <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ flexShrink: 0 }}>
+            افزودن دستی پرسنل
+          </Button>
+        )}
+      </Stack>
 
       <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         <TextField
@@ -533,6 +546,145 @@ export default function EmployeesPage() {
           )}
         </DialogActions>
       </Dialog>
+
+      <AddEmployeeDialog
+        open={addDialogOpen}
+        onClose={() => setAddDialogOpen(false)}
+        sites={sites}
+        onCreated={() => {
+          setAddDialogOpen(false);
+          loadEmployees();
+        }}
+      />
     </Box>
+  );
+}
+
+/**
+ * دیالوگ «افزودن دستی پرسنل» — طبق قابلیت مجوز employees.create. فقط
+ * برای مواردی که واقعاً در هیچ منبع Sync موجود نیست؛ نتیجه با یک نشانگر
+ * (is_manually_created) از رکوردهای معمولی Sync متمایز می‌شود.
+ */
+function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
+  const [personnelCode, setPersonnelCode] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [siteId, setSiteId] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [nationalCode, setNationalCode] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [positionTitle, setPositionTitle] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // با هر بار باز شدن Dialog، فرم را از نو خالی می‌کنیم — نه این‌که
+  // مقادیر دفعه قبل باقی بماند.
+  useEffect(() => {
+    if (open) {
+      setPersonnelCode("");
+      setFirstName("");
+      setLastName("");
+      setSiteId("");
+      setDepartmentId("");
+      setDepartments([]);
+      setNationalCode("");
+      setMobile("");
+      setPositionTitle("");
+      setError("");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!siteId) {
+      setDepartments([]);
+      return;
+    }
+    setDepartmentId("");
+    fetchDepartments(siteId).then(setDepartments);
+  }, [siteId]);
+
+  const canSave = personnelCode.trim() && firstName.trim() && lastName.trim() && siteId && !isSaving;
+
+  async function handleSave() {
+    if (!canSave) return;
+    setError("");
+    setIsSaving(true);
+    try {
+      await createEmployee({
+        personnel_code: personnelCode.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        site_id: siteId,
+        department_id: departmentId || null,
+        national_code: nationalCode.trim() || null,
+        mobile: mobile.trim() || null,
+        position_title: positionTitle.trim() || null,
+      });
+      onCreated();
+    } catch (err) {
+      setError(err.response?.data?.detail || "افزودن پرسنل ناموفق بود.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>افزودن دستی پرسنل</DialogTitle>
+      <DialogContent>
+        <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+          فقط برای پرسنلی استفاده کنید که واقعاً در دیتابیس مبدأ سایت (Sync) وجود ندارد. اگر بعداً
+          همین کد پرسنلی در همان سایت از طریق Sync هم دیده شود، اطلاعاتش به‌طور خودکار به‌روزرسانی می‌شود.
+        </Alert>
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={2}>
+            <TextField label="نام" value={firstName} onChange={(e) => setFirstName(e.target.value)} fullWidth />
+            <TextField label="نام خانوادگی" value={lastName} onChange={(e) => setLastName(e.target.value)} fullWidth />
+          </Stack>
+          <TextField
+            label="کد پرسنلی"
+            value={personnelCode}
+            onChange={(e) => setPersonnelCode(e.target.value)}
+            fullWidth
+            helperText="باید در همان سایت منحصربه‌فرد باشد"
+          />
+          <TextField select label="سایت" value={siteId} onChange={(e) => setSiteId(e.target.value)} fullWidth>
+            {sites.map((site) => (
+              <MenuItem key={site.id} value={site.id}>
+                {site.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            label="واحد سازمانی (اختیاری)"
+            value={departmentId}
+            onChange={(e) => setDepartmentId(e.target.value)}
+            fullWidth
+            disabled={!siteId}
+          >
+            <MenuItem value="">بدون واحد</MenuItem>
+            {departments.map((dept) => (
+              <MenuItem key={dept.id} value={dept.id}>
+                {dept.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField label="سمت (اختیاری)" value={positionTitle} onChange={(e) => setPositionTitle(e.target.value)} fullWidth />
+          <Stack direction="row" spacing={2}>
+            <TextField label="کد ملی (اختیاری)" value={nationalCode} onChange={(e) => setNationalCode(e.target.value)} fullWidth />
+            <TextField label="موبایل (اختیاری)" value={mobile} onChange={(e) => setMobile(e.target.value)} fullWidth />
+          </Stack>
+          {error && <Alert severity="error">{error}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ p: 2.5 }}>
+        <Button onClick={onClose}>انصراف</Button>
+        <Button variant="contained" disabled={!canSave} onClick={handleSave}>
+          {isSaving ? "در حال ثبت..." : "افزودن"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

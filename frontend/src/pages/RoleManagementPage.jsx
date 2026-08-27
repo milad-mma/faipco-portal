@@ -7,6 +7,7 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -22,6 +23,8 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import {
   createRole,
   deleteRole,
@@ -61,6 +64,7 @@ export default function RoleManagementPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [roleToDelete, setRoleToDelete] = useState(null);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -117,6 +121,23 @@ export default function RoleManagementPage() {
         ? prev.permissionIds.filter((id) => id !== permissionId)
         : [...prev.permissionIds, permissionId],
     }));
+  }
+
+  // انتخاب/لغوِ‌انتخاب یک‌جای کل یک گروه (شاخه درخت) — اگر همه فرزندان
+  // انتخاب‌شده باشند، همه را لغو می‌کند؛ وگرنه همه را انتخاب می‌کند.
+  function toggleGroup(items) {
+    const ids = items.map((p) => p.id);
+    const allSelected = ids.every((id) => form.permissionIds.includes(id));
+    setForm((prev) => ({
+      ...prev,
+      permissionIds: allSelected
+        ? prev.permissionIds.filter((id) => !ids.includes(id))
+        : [...new Set([...prev.permissionIds, ...ids])],
+    }));
+  }
+
+  function toggleGroupExpanded(group) {
+    setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
   }
 
   const canSave = form.name.trim().length > 0 && !isSaving;
@@ -260,49 +281,80 @@ export default function RoleManagementPage() {
               {permissions === null ? (
                 <CircularProgress size={20} />
               ) : (
-                <Stack spacing={1.5} sx={{ maxHeight: 340, overflowY: "auto", pr: 1 }}>
-                  {groupedPermissions.map(([group, items]) => (
-                    <Box key={group}>
-                      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                        {group}
-                      </Typography>
-                      <FormGroup>
-                        {items.map((p) => (
-                          <FormControlLabel
-                            key={p.id}
-                            control={
-                              <Checkbox
-                                size="small"
-                                checked={form.permissionIds.includes(p.id)}
-                                onChange={() => togglePermission(p.id)}
-                              />
-                            }
-                            label={
-                              <Box>
-                                <Stack direction="row" spacing={0.75} alignItems="center">
-                                  <Typography variant="body2">{p.code}</Typography>
-                                  {isAdminLevelPermission(p.code) && (
-                                    <Chip
-                                      size="small"
-                                      color="warning"
-                                      variant="outlined"
-                                      label="دسترسی ادمین"
-                                      sx={{ height: 18, fontSize: 10 }}
-                                    />
-                                  )}
-                                </Stack>
-                                {p.description && (
-                                  <Typography variant="caption" color="text.secondary">
-                                    {p.description}
-                                  </Typography>
-                                )}
-                              </Box>
-                            }
+                <Stack spacing={0.5} sx={{ maxHeight: 380, overflowY: "auto", pr: 1 }}>
+                  {groupedPermissions.map(([group, items]) => {
+                    const selectedCount = items.filter((p) => form.permissionIds.includes(p.id)).length;
+                    const allSelected = selectedCount === items.length;
+                    const isExpanded = expandedGroups[group] !== false;
+                    return (
+                      <Box key={group} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                        {/* گره والد — یک شاخه از درخت مجوزها (مثلاً «vehicles») */}
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          spacing={0.5}
+                          sx={{ px: 1, py: 0.5, cursor: "pointer" }}
+                          onClick={() => toggleGroupExpanded(group)}
+                        >
+                          <IconButton size="small" sx={{ p: 0.25 }}>
+                            {isExpanded ? <ExpandMoreOutlinedIcon fontSize="small" /> : <ChevronLeftOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                          <Checkbox
+                            size="small"
+                            checked={allSelected}
+                            indeterminate={selectedCount > 0 && !allSelected}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleGroup(items)}
                           />
-                        ))}
-                      </FormGroup>
-                    </Box>
-                  ))}
+                          <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
+                            {group}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {selectedCount}/{items.length}
+                          </Typography>
+                        </Stack>
+                        {/* گره‌های فرزند — تک‌تک مجوزهای همین شاخه */}
+                        <Collapse in={isExpanded}>
+                          <FormGroup sx={{ pb: 0.5 }}>
+                            {items.map((p) => (
+                              <FormControlLabel
+                                key={p.id}
+                                sx={{ mr: 0, pr: 4.5 }}
+                                control={
+                                  <Checkbox
+                                    size="small"
+                                    checked={form.permissionIds.includes(p.id)}
+                                    onChange={() => togglePermission(p.id)}
+                                  />
+                                }
+                                label={
+                                  <Box>
+                                    <Stack direction="row" spacing={0.75} alignItems="center">
+                                      <Typography variant="body2">{p.code}</Typography>
+                                      {isAdminLevelPermission(p.code) && (
+                                        <Chip
+                                          size="small"
+                                          color="warning"
+                                          variant="outlined"
+                                          label="دسترسی ادمین"
+                                          sx={{ height: 18, fontSize: 10 }}
+                                        />
+                                      )}
+                                    </Stack>
+                                    {p.description && (
+                                      <Typography variant="caption" color="text.secondary">
+                                        {p.description}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                }
+                              />
+                            ))}
+                          </FormGroup>
+                        </Collapse>
+                      </Box>
+                    );
+                  })}
                 </Stack>
               )}
             </Box>

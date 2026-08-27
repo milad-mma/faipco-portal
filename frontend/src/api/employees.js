@@ -32,6 +32,11 @@ export async function fetchEmployees({
   return data; // { items, total }
 }
 
+export async function createEmployee(payload) {
+  const { data } = await apiClient.post("/employees", payload);
+  return data;
+}
+
 export async function fetchEmployeeCount(siteId) {
   const { data } = await apiClient.get("/employees/count", {
     params: siteId ? { site_id: siteId } : {},

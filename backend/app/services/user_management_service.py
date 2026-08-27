@@ -65,6 +65,17 @@ class UserManagementService:
         ساخته می‌شود (همان منطق get_or_create_employee_user که هنگام اولین
         ورود موفق هم استفاده می‌شود) — پرسنلی که هنوز هیچ‌وقت وارد پرتال
         نشده هم می‌تواند این‌طور نقش بگیرد.
+
+        ⚠️ رفع یک باگ واقعی: قبلاً این تابع همیشه UserRole را با
+        site_id=None (سراسری) می‌ساخت — صرف‌نظر از این‌که site_id فقط
+        برای فیلترکردن «کدام پرسنل» استفاده شده بود، نه برای خودِ انتصاب!
+        یعنی حتی اگر Admin با فیلتر «فقط پرسنل سایت X» یک نقش را دسته‌جمعی
+        اختصاص می‌داد، نتیجه واقعی یک انتصاب *سراسری* بود، نه محدود به
+        همان سایت — دقیقاً برخلاف انتظار. حالا: اگر فیلتر site_id داده شده
+        باشد، همان site_id روی خودِ انتصاب هم ذخیره می‌شود؛ اگر فهرست
+        employee_id مستقیم داده شده (بدون فیلتر سایت مشخص)، سایت خودِ هر
+        پرسنل به‌طور جداگانه برای انتصابش استفاده می‌شود — چون هر پرسنل
+        ذاتاً متعلق به یک سایت است، انتصاب سراسری دیگر معنا ندارد.
         """
         role = await self.db.get(Role, role_id)
         if role is None:
@@ -95,18 +106,22 @@ class UserManagementService:
         assigned_count = 0
         already_had_count = 0
         for employee in employees:
+            # اگر Admin یک site_id مشخص برای فیلتر داده، همان برای انتصاب هم
+            # استفاده می‌شود؛ وگرنه (فهرست مستقیم employee_id) سایت خودِ
+            # همین پرسنل — هرگز سراسری/None نیست.
+            effective_site_id = site_id if site_id is not None else employee.site_id
             user = await user_repo.get_or_create_employee_user(employee)
             existing = await self.db.execute(
                 select(UserRole).where(
                     UserRole.user_id == user.id,
                     UserRole.role_id == role_id,
-                    UserRole.site_id.is_(None),
+                    UserRole.site_id == effective_site_id,
                 )
             )
             if existing.scalar_one_or_none() is not None:
                 already_had_count += 1
                 continue
-            self.db.add(UserRole(user_id=user.id, role_id=role_id, site_id=None))
+            self.db.add(UserRole(user_id=user.id, role_id=role_id, site_id=effective_site_id))
             assigned_count += 1
 
         await self.db.commit()

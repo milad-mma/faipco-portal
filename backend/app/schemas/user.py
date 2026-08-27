@@ -42,6 +42,18 @@ class UserOut(BaseModel):
     can_manage_roles: bool = False  # roles.manage — «مدیریت نقش/مجوز»
     can_manage_ip_allowlist: bool = False  # system.ip_allowlist — «رنج‌های IP مجاز»
     can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
+    # ⚠️ فلگ‌های تازه‌کشف‌شده: این مجوزها از قبل در Backend واقعاً چک
+    # می‌شدند (require_permission/get_sites_with_permission)، ولی هیچ
+    # فلگ متناظری اینجا نداشتند — یعنی حتی اگر یک نقش این مجوز را داشت،
+    # هیچ منو/مسیری در Frontend برایش باز نمی‌شد. طبق بازخورد صریح («هر
+    # مجوزی که به یک نقش بدهم باید منویش هم اضافه شود»).
+    can_view_employees: bool = False  # employees.view — «پرسنل»
+    can_update_employees: bool = False  # employees.update — ویرایش اطلاعات پرسنل
+    can_create_employees: bool = False  # employees.create — افزودن دستی پرسنل
+    can_manage_vehicles: bool = False  # vehicles.manage — ویرایش/حذف خودروی هر پرسنلی
+    can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
+    can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت
+    can_bust_cache: bool = False  # system.cache_bust — پاک‌سازی Cache سرور
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
 
     model_config = ConfigDict(from_attributes=True)

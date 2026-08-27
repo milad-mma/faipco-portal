@@ -88,6 +88,14 @@ class Employee(Base, TimestampMixin):
     # (که هردو باید همچنان همه پرسنل را ببینند).
     hide_birthday_in_dashboard: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # ⚠️ استثنای عمدی روی قاعده «همه رکوردها فقط از Sync می‌آیند» بالا —
+    # طبق قابلیت «افزودن دستی پرسنل» (مجوز employees.create)، این فقط
+    # برای شفافیت/گزارش‌گیری است تا Admin بداند این رکورد از کجا آمده. اگر
+    # بعداً همان personnel_code در منبع Sync واقعی هم ظاهر شود، طبق منطق
+    # موجود Sync Engine (Upsert بر اساس personnel_code+site_id) به‌طور
+    # طبیعی به‌روزرسانی/ادغام می‌شود، نه خطا یا رکورد تکراری.
+    is_manually_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # آخرین باری که این رکورد توسط Sync Engine از منبع دیده و به‌روزرسانی شده
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

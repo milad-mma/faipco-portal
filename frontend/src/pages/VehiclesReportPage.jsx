@@ -240,7 +240,7 @@ export default function VehiclesReportPage() {
                     {v.department_name || "—"}
                   </Typography>
                 </Box>
-                {user?.is_superuser && (
+                {user?.can_manage_vehicles && (
                   <Stack direction="row" sx={{ flexShrink: 0 }}>
                     <IconButton size="small" onClick={() => setEditingVehicle(v)} aria-label="ویرایش">
                       <EditOutlinedIcon fontSize="small" />
@@ -292,7 +292,7 @@ export default function VehiclesReportPage() {
                       </TableSortLabel>
                     </TableCell>
                   ))}
-                  {user?.is_superuser && <TableCell align="left">عملیات</TableCell>}
+                  {user?.can_manage_vehicles && <TableCell align="left">عملیات</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -310,7 +310,7 @@ export default function VehiclesReportPage() {
                         iranCode={v.plate_iran_code}
                       />
                     </TableCell>
-                    {user?.is_superuser && (
+                    {user?.can_manage_vehicles && (
                       <TableCell align="left">
                         <IconButton size="small" onClick={() => setEditingVehicle(v)} aria-label="ویرایش">
                           <EditOutlinedIcon fontSize="small" />

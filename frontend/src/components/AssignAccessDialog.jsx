@@ -50,13 +50,12 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
     const found = roles.find((r) => r.id === id);
     return found ? roleDisplayName(found.name) : id;
   };
-  const selectedRoleIsSiteScoped = roles.find((r) => r.id === roleToAssign)?.name === "site_manager";
 
   async function handleAssignRole() {
     setError("");
     setSuccess("");
     try {
-      await assignRoleToEmployee(employee.id, roleToAssign, siteForRole || null);
+      await assignRoleToEmployee(employee.id, roleToAssign, siteForRole);
       setEmployeeRoles(await fetchEmployeeRoles(employee.id));
       setRoleToAssign("");
       setSiteForRole("");
@@ -113,7 +112,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
             >
               <Chip
                 size="small"
-                label={`${roleLabel(ur.role_id)}${ur.site_id ? ` — ${siteLabel(ur.site_id)}` : " (سراسری)"}`}
+                label={`${roleLabel(ur.role_id)}${ur.site_id ? ` — ${siteLabel(ur.site_id)}` : " (سراسری — قدیمی)"}`}
               />
               <Button size="small" color="error" onClick={() => handleRemoveRole(ur.id)}>
                 <DeleteOutlineIcon fontSize="small" />
@@ -139,13 +138,20 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           ))}
         </TextField>
 
-        {selectedRoleIsSiteScoped && (
+        {/* ⚠️ رفع یک باگ واقعی: قبلاً این فیلد فقط برای نقش «site_manager»
+            نمایش داده می‌شد؛ برای هر نقش دیگری (مثل «حراست»)، هرگز امکان
+            انتخاب سایت نبود و در نتیجه انتصاب همیشه بی‌صدا سراسری
+            (site_id=null) می‌شد — حتی وقتی این ابداً قصد Admin نبود. طبق
+            درخواست صریح، هر انتصاب نقشی حتماً باید به یک سایت مشخص محدود
+            باشد؛ این فیلد برای همه نقش‌ها نمایش داده می‌شود. */}
+        {roleToAssign && (
           <TextField
             select
             size="small"
             label="این نقش برای کدام سایت است؟"
             value={siteForRole}
             onChange={(e) => setSiteForRole(e.target.value)}
+            required
           >
             {sites.map((s) => (
               <MenuItem key={s.id} value={s.id}>
@@ -158,7 +164,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
         <Button
           variant="outlined"
           size="small"
-          disabled={!roleToAssign || (selectedRoleIsSiteScoped && !siteForRole)}
+          disabled={!roleToAssign || !siteForRole}
           onClick={handleAssignRole}
         >
           اختصاص این نقش

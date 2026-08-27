@@ -58,7 +58,7 @@ const DRAWER_WIDTH = 260;
 // سرپرست واحد یک تصمیم دسترسی/مسئولیت سازمانی است، نه صرفاً داده پرسنلی.
 const NAV_ITEMS = [
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
-  { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: true },
+  { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: false, requiresAnyEmployeesAccess: true },
   {
     label: "سایت‌ها",
     path: "/sites",
@@ -71,7 +71,7 @@ const NAV_ITEMS = [
     path: "/sync",
     icon: <SyncOutlinedIcon />,
     adminOnly: false,
-    requiresSyncManage: true,
+    requiresAnySyncAccess: true,
   },
   { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
   {
@@ -164,11 +164,16 @@ export default function Layout() {
         if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
         if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
         if (item.requiresSitesManage && !user?.can_manage_sites) return false;
-        if (item.requiresSyncManage && !user?.can_manage_sync) return false;
+        if (item.requiresAnySyncAccess && !(user?.can_manage_sync || user?.can_view_sync || user?.can_run_sync)) return false;
         if (item.requiresUsersManage && !user?.can_manage_users) return false;
         if (item.requiresRolesManage && !user?.can_manage_roles) return false;
         if (item.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
-        if (item.requiresBackupManage && !user?.can_manage_backup) return false;
+        if (item.requiresBackupManage && !(user?.can_manage_backup || user?.can_bust_cache)) return false;
+        if (
+          item.requiresAnyEmployeesAccess &&
+          !(user?.can_view_employees || user?.can_update_employees || user?.can_create_employees)
+        )
+          return false;
         if (
           item.requiresAnyAccessManagement &&
           !(user?.can_manage_users || user?.can_manage_sites || user?.can_manage_roles || user?.can_manage_ip_allowlist)

@@ -1,4 +1,4 @@
-"""Schema خروجی Employee (فقط برای خواندن — Sync Engine مسئول ساخت/به‌روزرسانی است)."""
+"""Schema های Employee — خروجی (فقط از طریق Sync Engine ساخته می‌شود) + ورودی «افزودن دستی پرسنل»."""
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -20,8 +20,22 @@ class EmployeeOut(BaseModel):
     # در آن حالت‌ها از roی lookup محلی خودش (نام سایت/واحد از فهرست جداگانه) استفاده می‌کند.
     site_name: str | None = None
     department_name: str | None = None
+    is_manually_created: bool = False  # آیا از طریق «افزودن دستی پرسنل» ثبت شده (نه Sync)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EmployeeCreateIn(BaseModel):
+    """ورودی «افزودن دستی پرسنل» — فقط زمانی که یک نفر واقعاً در هیچ منبع Sync موجود نیست."""
+
+    personnel_code: str = Field(min_length=1, max_length=64)
+    first_name: str = Field(min_length=1, max_length=128)
+    last_name: str = Field(min_length=1, max_length=128)
+    site_id: int
+    national_code: str | None = Field(default=None, max_length=32)
+    mobile: str | None = Field(default=None, max_length=32)
+    department_id: int | None = None
+    position_title: str | None = Field(default=None, max_length=128)
 
 
 class EmployeePageOut(BaseModel):

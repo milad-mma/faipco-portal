@@ -15,7 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
-from app.core.site_access import get_accessible_site_ids
+from app.core.site_access import get_accessible_site_ids, get_sites_with_permission
 from app.services.employee_cleanup_service import (
     delete_orphaned_inactive_employees,
     find_orphaned_inactive_employees,
@@ -30,6 +30,7 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.employee import (
     BirthdayEmployeeOut,
     BirthdayVisibilityUpdate,
+    EmployeeCreateIn,
     EmployeeEnabledUpdate,
     EmployeeOut,
     EmployeePageOut,
@@ -177,10 +178,91 @@ async def list_employees(
             has_custom_password=custom_password_by_employee.get(e.id, False),
             site_name=site_name,
             department_name=department_name,
+            is_manually_created=e.is_manually_created,
         )
         for e, site_name, department_name in rows
     ]
     return EmployeePageOut(items=items, total=total)
+
+
+@router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
+async def create_employee_manually(
+    payload: EmployeeCreateIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("employees.create")),
+):
+    """
+    افزودن دستی یک پرسنل — فقط برای مواردی که واقعاً در هیچ منبع Sync
+    موجود نیست (مثلاً هنوز به دیتابیس مبدأ اضافه نشده). این رکورد را
+    Sync Engine نمی‌سازد، پس با یک نشانگر (is_manually_created) از رکوردهای
+    عادی متمایز می‌شود — اگر بعداً همان personnel_code در منبع Sync واقعی
+    هم ظاهر شود، طبق منطق موجود Sync Engine (Upsert بر اساس
+    personnel_code+site_id) به‌طور طبیعی به‌روزرسانی/ادغام می‌شود.
+
+    ⚠️ ایزوله‌سازی چندسایتی: Admin واقعی می‌تواند برای هر سایتی پرسنل
+    اضافه کند؛ کاربر غیر-Admin با این مجوز فقط برای سایت‌هایی که خودش هم
+    برایشان همین مجوز را دارد.
+    """
+    if not current_user.is_superuser:
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "employees.create")
+        if accessible_site_ids is not None and payload.site_id not in accessible_site_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="اجازه افزودن پرسنل برای این سایت را ندارید",
+            )
+
+    site = await db.get(Site, payload.site_id)
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
+
+    if payload.department_id is not None:
+        department = await db.get(Department, payload.department_id)
+        if department is None or department.site_id != payload.site_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="واحد سازمانی نامعتبر است")
+
+    existing = await db.execute(
+        select(Employee).where(Employee.site_id == payload.site_id, Employee.personnel_code == payload.personnel_code)
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="پرسنلی با همین کد پرسنلی در این سایت از قبل وجود دارد",
+        )
+
+    employee = Employee(
+        personnel_code=payload.personnel_code,
+        national_code=payload.national_code,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        mobile=payload.mobile,
+        site_id=payload.site_id,
+        department_id=payload.department_id,
+        position_title=payload.position_title,
+        is_active=True,
+        is_enabled=True,
+        is_manually_created=True,
+    )
+    db.add(employee)
+    await db.commit()
+    await db.refresh(employee)
+
+    return EmployeeOut(
+        id=employee.id,
+        personnel_code=employee.personnel_code,
+        national_code=employee.national_code,
+        first_name=employee.first_name,
+        last_name=employee.last_name,
+        mobile=employee.mobile,
+        site_id=employee.site_id,
+        department_id=employee.department_id,
+        position_title=employee.position_title,
+        is_active=employee.is_active,
+        is_enabled=employee.is_enabled,
+        has_custom_password=False,
+        site_name=site.name,
+        department_name=None,
+        is_manually_created=True,
+    )
 
 
 @router.get("/portal-disabled-count")

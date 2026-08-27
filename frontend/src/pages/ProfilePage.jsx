@@ -32,6 +32,7 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
+import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -62,12 +63,28 @@ const EXTRA_ACCESS_ITEMS = [
   // اصلاً منوی کناری Admin (Layout.jsx) را نمی‌بینند (فقط نوار پایین)، این
   // بخش («دسترسی‌های ویژه») تنها جایی است که این پنج صفحه — اگر نقششان
   // مجوز متناظر را داشته باشد — واقعاً در دسترسشان قرار می‌گیرد.
+  {
+    check: (u) => u?.can_view_employees || u?.can_update_employees || u?.can_create_employees,
+    label: "پرسنل",
+    path: "/employees",
+    icon: <GroupOutlinedIcon />,
+  },
   { flag: "can_manage_sites", label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon /> },
-  { flag: "can_manage_sync", label: "همگام‌سازی دیتابیس", path: "/sync", icon: <SyncOutlinedIcon /> },
+  {
+    check: (u) => u?.can_manage_sync || u?.can_view_sync || u?.can_run_sync,
+    label: "همگام‌سازی دیتابیس",
+    path: "/sync",
+    icon: <SyncOutlinedIcon />,
+  },
   { flag: "can_manage_users", label: "مدیریت دسترسی", path: "/access", icon: <AdminPanelSettingsOutlinedIcon /> },
   { flag: "can_manage_roles", label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon /> },
   { flag: "can_manage_ip_allowlist", label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
-  { flag: "can_manage_backup", label: "پشتیبان‌گیری", path: "/backup", icon: <CloudDownloadOutlinedIcon /> },
+  {
+    check: (u) => u?.can_manage_backup || u?.can_bust_cache,
+    label: "پشتیبان‌گیری",
+    path: "/backup",
+    icon: <CloudDownloadOutlinedIcon />,
+  },
 ];
 
 /**
@@ -107,7 +124,7 @@ export default function ProfilePage() {
       .catch(() => {});
   }, []);
 
-  const extraAccessItems = EXTRA_ACCESS_ITEMS.filter((item) => user?.[item.flag]);
+  const extraAccessItems = EXTRA_ACCESS_ITEMS.filter((item) => (item.check ? item.check(user) : user?.[item.flag]));
 
   async function handleEnableNotifications() {
     try {

@@ -65,9 +65,17 @@ export default function App() {
         >
           {/* فقط Admin واقعی — این‌ها مفهوم «تفویض به یک نقش دیگر» ندارند: */}
           <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
-          <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
           <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
+
+          <Route
+            path="/employees"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_employees || u?.can_update_employees || u?.can_create_employees}>
+                <EmployeesPage />
+              </PermissionRoute>
+            }
+          />
 
           {/* Admin یا هر نقشی با مجوز متناظر — طبق درخواست صریح، اگر یک
               مجوز به یک نقش داده شود، صفحه/منوی متناظرش هم واقعاً برای آن
@@ -86,7 +94,11 @@ export default function App() {
           />
           <Route
             path="/sync"
-            element={<PermissionRoute check={(u) => u?.can_manage_sync}><SyncPage /></PermissionRoute>}
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_sync || u?.can_view_sync || u?.can_run_sync}>
+                <SyncPage />
+              </PermissionRoute>
+            }
           />
           <Route
             path="/access"
@@ -102,7 +114,11 @@ export default function App() {
           />
           <Route
             path="/backup"
-            element={<PermissionRoute check={(u) => u?.can_manage_backup}><BackupPage /></PermissionRoute>}
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_backup || u?.can_bust_cache}>
+                <BackupPage />
+              </PermissionRoute>
+            }
           />
           <Route
             path="/ip-allowlist"
