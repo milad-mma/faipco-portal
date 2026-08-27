@@ -99,7 +99,24 @@ class NoticeService:
     async def _has_permission(self, user: User, code: str, site_id: int | None = None) -> bool:
         if user.is_superuser:
             return True
-        codes = await self.user_repo.get_permission_codes(user.id, site_id=site_id)
+        # ⚠️ رفع همان باگ حیاتی که در require_permission/get_me هم بود:
+        # وقتی site_id اینجا داده نشود (مثل notices.payroll،
+        # notices.attendance_card، notices.target.all، notices.target.role
+        # — که همه «آیا این قابلیت را اصلاً دارم» هستند، نه بررسی یک هدف
+        # سایت‌محور مشخص)، get_permission_codes(site_id=None) فقط
+        # انتصاب‌های *سراسری* را می‌دید. از وقتی site_id برای انتصاب نقش
+        # اجباری شد، هیچ انتصاب جدیدی سراسری نیست — یعنی این بررسی همیشه
+        # False برمی‌گشت، حتی برای کاربری که همان مجوز را (فقط سایت‌محور)
+        # واقعاً داشت (دقیقاً همان چیزی که کاربر گزارش کرد: از‌دست‌رفتن
+        # notices.payroll بعد از انتصاب دوباره با سایت مشخص).
+        # وقتی site_id صراحتاً داده شود (برای notices.target.site/
+        # department/employee — که واقعاً می‌خواهند بدانند «آیا این مجوز
+        # برای همین سایت مشخص را دارد»)، همان رفتار دقیق و سایت‌محور قبلی
+        # حفظ می‌شود.
+        if site_id is not None:
+            codes = await self.user_repo.get_permission_codes(user.id, site_id=site_id)
+        else:
+            codes = await self.user_repo.get_all_permission_codes(user.id)
         return code in codes
 
     async def _can_target(self, user: User, target_type: NoticeTargetType, target_id: int | None) -> bool:
