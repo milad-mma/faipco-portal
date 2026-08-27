@@ -30,6 +30,7 @@ class UserOut(BaseModel):
     can_view_clock_records: bool = False  # آیا مجوز مشاهده گزارش ورود/خروج آزمایشی همه پرسنل را دارد
     can_manage_clock_records: bool = False  # آیا مجوز افزودن/ویرایش/حذف دستی رکورد ورود/خروج را دارد
     can_view_site_notice_report: bool = False  # آیا site_manager سایتی است (برای «گزارش اطلاعیه‌های سایت من»)
+    can_view_vehicles_report: bool = False  # آیا Admin یا نقش «حراست» است (برای «گزارش خودروهای پرسنل»)
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
 
     model_config = ConfigDict(from_attributes=True)

@@ -55,6 +55,7 @@ cd frontend && npm install && npm run dev
 | [`docs/project-structure.md`](docs/project-structure.md) | ساختار پوشه‌ها و فایل‌های پروژه |
 | [`docs/features.md`](docs/features.md) | فهرست کامل ویژگی‌ها |
 | [`docs/design-system.md`](docs/design-system.md) | ⚠️ طراحی جدید پرتال + راه برگشت (`NEW_DESIGN_ENABLED`) |
+| [`docs/vehicles.md`](docs/vehicles.md) | قابلیت «خودروهای من» + نقش «حراست» |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

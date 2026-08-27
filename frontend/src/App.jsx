@@ -15,6 +15,8 @@ import SitesPage from "./pages/SitesPage";
 import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
+import MyVehiclesPage from "./pages/MyVehiclesPage";
+import VehiclesReportPage from "./pages/VehiclesReportPage";
 import NewNoticePage from "./pages/NewNoticePage";
 import PersonalDashboardPage from "./pages/PersonalDashboardPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -95,6 +97,15 @@ export default function App() {
           <Route path="/notices/new" element={<NewNoticePage />} />
           <Route path="/my-dashboard" element={<PersonalDashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/my-vehicles" element={<MyVehiclesPage />} />
+          <Route
+            path="/vehicle-report"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_vehicles_report}>
+                <VehiclesReportPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/notice-reports" element={<SiteNoticeReportRoute><NoticeReportsPage /></SiteNoticeReportRoute>} />
           <Route
             path="/attendance-clock"

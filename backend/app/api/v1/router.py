@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     sync,
     system,
     users,
+    vehicles,
 )
 
 api_router = APIRouter()
@@ -32,3 +33,4 @@ api_router.include_router(backup.router, prefix="/backup", tags=["backup"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 api_router.include_router(hr.router, prefix="/hr", tags=["hr"])
+api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])

@@ -33,6 +33,7 @@ import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -103,6 +104,13 @@ const NAV_ITEMS = [
     adminOnly: false,
     requiresBirthdayMessages: true,
   },
+  {
+    label: "گزارش خودروها",
+    path: "/vehicle-report",
+    icon: <DirectionsCarFilledOutlinedIcon />,
+    adminOnly: false,
+    requiresVehiclesReport: true,
+  },
 ];
 
 export default function Layout() {
@@ -123,6 +131,7 @@ export default function Layout() {
         if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
         if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
         if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
+        if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
         if (item.hiddenForAdmin && user?.is_superuser) return false;
         return true;
       }).map((item) => ({

@@ -209,6 +209,7 @@ class AuthService:
         base.can_view_clock_records = user.is_superuser or "attendance.view_clock_records" in permission_codes
         base.can_manage_clock_records = user.is_superuser or "attendance.manage_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
+        base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_view_site_notice_report = user.is_superuser or bool(
             await self.repo.get_managed_site_ids(user.id, "site_manager")
         )

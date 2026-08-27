@@ -30,6 +30,7 @@ import BrightnessAutoOutlinedIcon from "@mui/icons-material/BrightnessAutoOutlin
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -49,6 +50,7 @@ const EXTRA_ACCESS_ITEMS = [
   { flag: "can_view_clock_records", label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon /> },
   { flag: "can_view_site_notice_report", label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon /> },
   { flag: "can_manage_birthday_messages", label: "پیام‌های تبریک تولد", path: "/birthday-messages", icon: <CakeOutlinedIcon /> },
+  { flag: "can_view_vehicles_report", label: "گزارش خودروها", path: "/vehicle-report", icon: <DirectionsCarFilledOutlinedIcon /> },
 ];
 
 /**

@@ -18,6 +18,7 @@ from app.models.sync_log import SyncLog, SyncRunStatus  # noqa: F401
 from app.models.push_subscription import PushSubscription  # noqa: F401
 from app.models.notice_read import NoticeRead  # noqa: F401
 from app.models.notice_archive import NoticeArchive  # noqa: F401
+from app.models.vehicle import Vehicle  # noqa: F401
 from app.models.system_setting import SystemSetting  # noqa: F401
 from app.models.payroll_receipt import PayrollReceipt  # noqa: F401
 from app.models.attendance_card_receipt import AttendanceCardReceipt  # noqa: F401

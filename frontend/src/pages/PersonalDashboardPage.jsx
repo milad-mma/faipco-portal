@@ -28,8 +28,9 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
  * و دسترسی سریع به قابلیت‌های مختلف.
  *
  * قابلیت‌هایی که در طرح هستند ولی هنوز در پروژه پیاده نشده‌اند (ارزیابی
- * عملکرد، تیکت IT، خودروهای من، نظرسنجی و انتقادات، درخواست مرخصی) با
- * برچسب «به‌زودی» غیرفعال نمایش داده می‌شوند — طبق دستور صریح کارفرما.
+ * عملکرد، تیکت IT، نظرسنجی و انتقادات، درخواست مرخصی) با برچسب «به‌زودی»
+ * غیرفعال نمایش داده می‌شوند — طبق دستور صریح کارفرما. «خودروهای من» از
+ * این لیست خارج شد چون واقعاً پیاده‌سازی و به /my-vehicles وصل شد.
  *
  * ⚠️ چیدمان با CSS Grid + gridTemplateAreas پیاده شده (نه MUI Grid ساده) —
  * چون طبق بازخورد، ترتیب موبایل باید با دسکتاپ فرق داشته باشد: در موبایل
@@ -400,7 +401,7 @@ export default function PersonalDashboardPage() {
         <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
         <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
         <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" comingSoon />
-        <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" comingSoon />
+        <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
         <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
       </Box>
 
