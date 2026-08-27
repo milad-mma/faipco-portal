@@ -13,7 +13,7 @@ import re
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -258,3 +258,54 @@ async def update_ip_blocked_message(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return IpBlockedMessageOut(message=message)
+
+
+# ---------- عکس پس‌زمینه صفحه ورود («تنظیمات سامانه») ----------
+
+ALLOWED_LOGIN_BACKGROUND_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_LOGIN_BACKGROUND_SIZE = 8 * 1024 * 1024  # ۸ مگابایت — کافی برای یک عکس پس‌زمینه با کیفیت خوب
+
+
+@router.get("/login-background")
+async def get_login_background(db: AsyncSession = Depends(get_db)):
+    """
+    ⚠️ عمداً بدون هیچ احراز هویتی — صفحه ورود قبل از Login نمایش داده
+    می‌شود، پس این تصویر باید همان‌جا هم قابل‌دریافت باشد. اگر هنوز چیزی
+    آپلود نشده، ۴۰۴ برمی‌گرداند (فرانت‌اند این حالت را با پس‌زمینه پیش‌فرض
+    فعلی جایگزین می‌کند).
+    """
+    result = await SystemSettingsService(db).get_login_background()
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکس پس‌زمینه‌ای تنظیم نشده")
+    content, content_type = result
+    return Response(content=content, media_type=content_type)
+
+
+@router.post("/login-background")
+async def upload_login_background(
+    file: UploadFile = File(..., description="عکس پس‌زمینه صفحه ورود (jpg/png/webp)"),
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    if file.content_type not in ALLOWED_LOGIN_BACKGROUND_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="فقط فایل تصویری (jpg/png/webp) پذیرفته می‌شود",
+        )
+    content = await file.read()
+    if len(content) > MAX_LOGIN_BACKGROUND_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="حجم فایل نباید بیشتر از ۸ مگابایت باشد",
+        )
+    await SystemSettingsService(db).set_login_background(content, file.content_type)
+    return {"success": True}
+
+
+@router.delete("/login-background")
+async def delete_login_background(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    await SystemSettingsService(db).delete_login_background()
+    return {"success": True}

@@ -35,6 +35,7 @@ import { enablePushNotifications, isPushSupported } from "../utils/push";
 import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "../utils/pwaInstall";
 import { fetchAppVersion } from "../api/system";
 import { modernLightTheme } from "../theme";
+import { LOGIN_BACKGROUND_URL } from "../api/system";
 
 // ⚠️ سوییچ طراحی جدید صفحه ورود — راه برگشت امن (دقیقاً هم‌الگو با
 // NEW_DESIGN_ENABLED در theme.js): اگر true باشد، طرح دوپانلی جدید (بر
@@ -380,6 +381,16 @@ export default function LoginPage() {
       sx={{
         minHeight: "100vh",
         bgcolor: "#F3F7FA",
+        // عکس پس‌زمینه صفحه ورود — قابل تنظیم از پنل Admin («تنظیمات
+        // سامانه»). عمداً مستقیماً همین URL به‌عنوان CSS background-image
+        // استفاده می‌شود، نه یک بررسی جداگانه با JS — اگر Admin هنوز
+        // عکسی تنظیم نکرده باشد، Backend به این آدرس ۴۰۴ می‌دهد، که
+        // مرورگر آن را کاملاً بی‌صدا نادیده می‌گیرد و همان bgcolor ثابت
+        // بالا (به‌جای پس‌زمینه) دیده می‌شود — بدون هیچ خطا/چشمک‌زدن.
+        backgroundImage: `url(${LOGIN_BACKGROUND_URL})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
         // تأکید صریح روی فونت وزیرمتن — با این‌که از theme.js هم به ارث
         // می‌رسد، این تضمین اضافه (مستقل از هر تغییر احتمالی دیگر در تِم)
         // اطمینان می‌دهد این صفحه همیشه با وزیرمتن نمایش داده شود.

@@ -23,6 +23,7 @@ import ProfilePage from "./pages/ProfilePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import RoleManagementPage from "./pages/RoleManagementPage";
+import SystemSettingsPage from "./pages/SystemSettingsPage";
 import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
 import BackupPage from "./pages/BackupPage";
 import UpdatePage from "./pages/UpdatePage";
@@ -107,6 +108,10 @@ export default function App() {
           <Route
             path="/role-management"
             element={<PermissionRoute check={(u) => u?.can_manage_roles}><RoleManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="/system-settings"
+            element={<PermissionRoute check={(u) => u?.can_manage_system_settings}><SystemSettingsPage /></PermissionRoute>}
           />
           <Route
             path="/bulk-role-assignment"

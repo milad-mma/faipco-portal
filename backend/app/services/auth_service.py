@@ -232,6 +232,7 @@ class AuthService:
         base.can_view_sync = user.is_superuser or "sync.view" in permission_codes
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes
+        base.can_manage_system_settings = user.is_superuser or "system.settings" in permission_codes
         base.can_view_site_notice_report = user.is_superuser or bool(
             await self.repo.get_managed_site_ids(user.id, "site_manager")
         )

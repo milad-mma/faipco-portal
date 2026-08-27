@@ -1,6 +1,7 @@
 """
 سرویس تنظیمات سراسری قابل‌تغییر از پنل (بدون نیاز به ویرایش .env یا Restart سرور).
 """
+import base64
 from datetime import datetime
 
 from sqlalchemy import select
@@ -16,6 +17,8 @@ IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
 BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
+LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
+LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
@@ -127,3 +130,33 @@ class SystemSettingsService:
     async def set_birthday_greetings_enabled(self, enabled: bool) -> bool:
         await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
         return enabled
+
+    # ---------- عکس پس‌زمینه صفحه ورود (قابلیت «تنظیمات سامانه») ----------
+    # ⚠️ صفحه ورود قبل از احراز هویت نمایش داده می‌شود، پس Endpoint دریافت
+    # این عکس باید کاملاً بدون نیاز به ورود در دسترس باشد — برخلاف عکس
+    # پرسنلی (که همیشه پشت احراز هویت است). به همین دلیل این‌جا محتوا را
+    # مستقیماً Base64 در همان جدول SystemSetting (نوع Text، بدون محدودیت
+    # طول عملی در PostgreSQL) ذخیره می‌کنیم — بدون نیاز به یک Migration یا
+    # مسیر ذخیره‌سازی فایل جداگانه.
+
+    async def get_login_background(self) -> tuple[bytes, str] | None:
+        """(محتوای باینری، content_type) یا None اگر هنوز چیزی آپلود نشده."""
+        raw = await self._get_raw(LOGIN_BACKGROUND_DATA_KEY)
+        if raw is None:
+            return None
+        content_type = await self._get_raw(LOGIN_BACKGROUND_CONTENT_TYPE_KEY) or "image/jpeg"
+        return base64.b64decode(raw), content_type
+
+    async def set_login_background(self, content: bytes, content_type: str) -> None:
+        await self._set_raw(LOGIN_BACKGROUND_DATA_KEY, base64.b64encode(content).decode("ascii"))
+        await self._set_raw(LOGIN_BACKGROUND_CONTENT_TYPE_KEY, content_type)
+
+    async def delete_login_background(self) -> None:
+        result = await self.db.execute(
+            select(SystemSetting).where(
+                SystemSetting.key.in_([LOGIN_BACKGROUND_DATA_KEY, LOGIN_BACKGROUND_CONTENT_TYPE_KEY])
+            )
+        )
+        for row in result.scalars().all():
+            await self.db.delete(row)
+        await self.db.commit()

@@ -54,6 +54,7 @@ class UserOut(BaseModel):
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت
     can_bust_cache: bool = False  # system.cache_bust — پاک‌سازی Cache سرور
+    can_manage_system_settings: bool = False  # system.settings — «تنظیمات سامانه» (مثل عکس پس‌زمینه ورود)
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
 
     model_config = ConfigDict(from_attributes=True)

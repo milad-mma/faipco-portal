@@ -36,6 +36,7 @@ import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
@@ -78,6 +79,7 @@ const EXTRA_ACCESS_ITEMS = [
   },
   { flag: "can_manage_users", label: "مدیریت دسترسی", path: "/access", icon: <AdminPanelSettingsOutlinedIcon /> },
   { flag: "can_manage_roles", label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon /> },
+  { flag: "can_manage_system_settings", label: "تنظیمات سامانه", path: "/system-settings", icon: <SettingsOutlinedIcon /> },
   { flag: "can_manage_ip_allowlist", label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon /> },
   {
     check: (u) => u?.can_manage_backup || u?.can_bust_cache,

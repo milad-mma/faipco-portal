@@ -31,6 +31,7 @@ import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
@@ -110,6 +111,12 @@ const NAV_ITEMS = [
         requiresUsersManage: true,
       },
       { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, requiresRolesManage: true },
+      {
+        label: "تنظیمات سامانه",
+        path: "/system-settings",
+        icon: <SettingsOutlinedIcon />,
+        requiresSystemSettings: true,
+      },
     ],
   },
   {
@@ -176,7 +183,13 @@ export default function Layout() {
           return false;
         if (
           item.requiresAnyAccessManagement &&
-          !(user?.can_manage_users || user?.can_manage_sites || user?.can_manage_roles || user?.can_manage_ip_allowlist)
+          !(
+            user?.can_manage_users ||
+            user?.can_manage_sites ||
+            user?.can_manage_roles ||
+            user?.can_manage_ip_allowlist ||
+            user?.can_manage_system_settings
+          )
         )
           return false;
         if (item.hiddenForAdmin && user?.is_superuser) return false;
@@ -192,6 +205,7 @@ export default function Layout() {
           if (child.requiresUsersManage && !user?.can_manage_users) return false;
           if (child.requiresRolesManage && !user?.can_manage_roles) return false;
           if (child.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
+          if (child.requiresSystemSettings && !user?.can_manage_system_settings) return false;
           return true;
         });
 

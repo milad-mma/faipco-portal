@@ -58,7 +58,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           inputProps={{
             inputMode: "numeric",
             maxLength: 2,
-            style: { textAlign: "center", fontSize: 26, fontWeight: 800, padding: "4px 0", width: 46 },
+            style: { textAlign: "center", fontSize: 26, fontWeight: 800, padding: "4px 0", width: 46, color: "#16324F" },
           }}
           variant="standard"
           InputProps={{ disableUnderline: true }}
@@ -70,7 +70,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           displayEmpty
           variant="standard"
           disableUnderline
-          sx={{ fontSize: 26, fontWeight: 800, minWidth: 46 }}
+          sx={{ fontSize: 26, fontWeight: 800, minWidth: 46, color: "#16324F" }}
           MenuProps={{ PaperProps: { sx: { maxHeight: 320 } } }}
         >
           <MenuItem value="" disabled>
@@ -90,7 +90,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           inputProps={{
             inputMode: "numeric",
             maxLength: 3,
-            style: { textAlign: "center", fontSize: 26, fontWeight: 800, padding: "4px 0", width: 62 },
+            style: { textAlign: "center", fontSize: 26, fontWeight: 800, padding: "4px 0", width: 62, color: "#16324F" },
           }}
           variant="standard"
           InputProps={{ disableUnderline: true }}
@@ -120,7 +120,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           inputProps={{
             inputMode: "numeric",
             maxLength: 2,
-            style: { textAlign: "center", fontSize: 20, fontWeight: 800, padding: 0, width: 36 },
+            style: { textAlign: "center", fontSize: 20, fontWeight: 800, padding: 0, width: 36, color: "#16324F" },
           }}
           variant="standard"
           InputProps={{ disableUnderline: true }}

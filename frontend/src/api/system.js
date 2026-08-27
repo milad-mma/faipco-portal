@@ -1,5 +1,23 @@
 import { apiClient } from "./client";
 
+// ⚠️ برای <img src=...> در صفحه ورود، نمی‌توان مستقیم از apiClient (که Interceptor
+// افزودن Authorization Header دارد) استفاده کرد؛ این آدرس مستقیم و بدون
+// احراز هویت است — دقیقاً همان چیزی که Backend هم برایش طراحی شده.
+export const LOGIN_BACKGROUND_URL = `${apiClient.defaults.baseURL}/system/login-background`;
+
+export async function uploadLoginBackground(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post("/system/login-background", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function deleteLoginBackground() {
+  await apiClient.delete("/system/login-background");
+}
+
 export async function fetchAppVersion() {
   const { data } = await apiClient.get("/system/version", { timeout: 5000 });
   return data.version;

@@ -86,7 +86,7 @@ export default function MyVehiclesPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: { xs: "100%", md: 600 } }}>
+    <Box sx={{ maxWidth: { xs: "100%", md: 600 }, mx: "auto" }}>
       <Typography variant="h5" fontWeight={800} sx={{ mb: 2 }}>
         خودروهای من
       </Typography>
