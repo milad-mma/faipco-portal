@@ -244,8 +244,15 @@ class UserManagementService:
         role = await self.db.get(Role, role_id)
         if role is None:
             return None
-        if role.is_system or role.name == "superadmin":
-            raise ValueError("نقش‌های سیستمی قابل ویرایش نیستند")
+        # ⚠️ طبق درخواست صریح، is_system دیگر مانع ویرایش نمی‌شود — چون
+        # نقش‌هایی که پیش از این پنل (مستقیماً از دیتابیس) ساخته شده‌اند
+        # (مثل site_manager، hr-manager) با is_system=True ذخیره شده بودند،
+        # و کارفرما نیاز داشت همان‌ها را هم بتواند ویرایش کند. فقط خودِ
+        # «superadmin» همچنان مستثناست — چون این یک نام خاص است که جای
+        # دیگری از کد (منطق مسدودسازی تخصیص نقش) دقیقاً همین رشته را چک
+        # می‌کند؛ تغییرش می‌تواند آن منطق را به‌هم بریزد.
+        if role.name == "superadmin":
+            raise ValueError("نقش superadmin قابل ویرایش نیست")
         if payload.name != role.name:
             existing = await self.db.execute(select(Role).where(Role.name == payload.name, Role.id != role_id))
             if existing.scalar_one_or_none() is not None:

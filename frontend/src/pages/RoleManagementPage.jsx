@@ -33,6 +33,15 @@ import {
 
 const EMPTY_FORM = { name: "", description: "", permissionIds: [] };
 
+// طبق قرارداد نام‌گذاری استفاده‌شده در کدِ Backend، مجوزهایی که با
+// «.manage» تمام می‌شوند یا با «system.» شروع می‌شوند، همیشه سطح
+// دسترسی گسترده/ادمینی دارند (مثل sites.manage، vehicles.manage،
+// system.backup) — این فقط برای نمایش یک برچسب هشدار است، تصمیم واقعی
+// (آیا این مجوز به این نقش داده شود یا نه) کاملاً دست خودِ Admin است.
+function isAdminLevelPermission(code) {
+  return code.endsWith(".manage") || code.startsWith("system.");
+}
+
 /**
  * پنل مدیریت نقش/مجوز — ساخت نقش‌های جدید از ترکیب مجوزهای *موجود*
  * (بدون نیاز به هیچ تغییر کد یا Migration، برای ترکیب‌های تازه از همان
@@ -176,13 +185,20 @@ export default function RoleManagementPage() {
                     <Typography variant="body1" fontWeight={700}>
                       {role.name}
                     </Typography>
-                    {role.is_system && (
+                    {/* ⚠️ طبق درخواست صریح، is_system دیگر مانع ویرایش نیست —
+                        فقط مانع حذف. فقط خودِ «superadmin» کاملاً غیرقابل‌تغییر
+                        است (چون جای دیگری از کد دقیقاً همین نام را چک می‌کند). */}
+                    {role.name === "superadmin" ? (
                       <Chip
                         size="small"
                         icon={<LockOutlinedIcon fontSize="small" />}
-                        label="سیستمی — غیرقابل‌تغییر"
+                        label="سیستمی — کاملاً غیرقابل‌تغییر"
                         variant="outlined"
                       />
+                    ) : (
+                      role.is_system && (
+                        <Chip size="small" label="سیستمی — غیرقابل‌حذف" variant="outlined" />
+                      )
                     )}
                   </Stack>
                   {role.description && (
@@ -191,11 +207,13 @@ export default function RoleManagementPage() {
                     </Typography>
                   )}
                 </Box>
-                {!role.is_system && (
-                  <Stack direction="row" sx={{ flexShrink: 0 }}>
+                <Stack direction="row" sx={{ flexShrink: 0 }}>
+                  {role.name !== "superadmin" && (
                     <IconButton size="small" onClick={() => openEditDialog(role)} aria-label="ویرایش">
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
+                  )}
+                  {!role.is_system && (
                     <IconButton
                       size="small"
                       color="error"
@@ -207,8 +225,8 @@ export default function RoleManagementPage() {
                     >
                       <DeleteOutlineOutlinedIcon fontSize="small" />
                     </IconButton>
-                  </Stack>
-                )}
+                  )}
+                </Stack>
               </Stack>
             </Card>
           ))}
@@ -261,7 +279,18 @@ export default function RoleManagementPage() {
                             }
                             label={
                               <Box>
-                                <Typography variant="body2">{p.code}</Typography>
+                                <Stack direction="row" spacing={0.75} alignItems="center">
+                                  <Typography variant="body2">{p.code}</Typography>
+                                  {isAdminLevelPermission(p.code) && (
+                                    <Chip
+                                      size="small"
+                                      color="warning"
+                                      variant="outlined"
+                                      label="دسترسی ادمین"
+                                      sx={{ height: 18, fontSize: 10 }}
+                                    />
+                                  )}
+                                </Stack>
                                 {p.description && (
                                   <Typography variant="caption" color="text.secondary">
                                     {p.description}
