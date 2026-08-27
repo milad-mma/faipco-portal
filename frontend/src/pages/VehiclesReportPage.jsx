@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  InputAdornment,
   Stack,
   Table,
   TableBody,
@@ -17,9 +18,12 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { useAuth } from "../context/AuthContext";
@@ -28,21 +32,44 @@ import { deleteVehicleAdmin, fetchAllVehicles, updateVehicleAdmin } from "../api
 
 const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };
 
+const COLUMNS = [
+  { key: "employee_name", label: "پرسنل" },
+  { key: "department_name", label: "واحد سازمانی" },
+  { key: "vehicle_type", label: "نوع خودرو" },
+  { key: "color", label: "رنگ" },
+  { key: "plate", label: "پلاک" },
+];
+
+function plateAsString(v) {
+  return `${v.plate_digits1}${v.plate_letter}${v.plate_digits2}${v.plate_iran_code}`;
+}
+
 function EditVehicleDialog({ vehicle, onClose, onSaved }) {
-  const [vehicleType, setVehicleType] = useState(vehicle?.vehicle_type || "");
-  const [color, setColor] = useState(vehicle?.color || "");
-  const [plate, setPlate] = useState(
-    vehicle
-      ? {
-          digits1: vehicle.plate_digits1,
-          letter: vehicle.plate_letter,
-          digits2: vehicle.plate_digits2,
-          iranCode: vehicle.plate_iran_code,
-        }
-      : EMPTY_PLATE
-  );
+  // ⚠️ رفع یک باگ واقعی: قبلاً مقدار اولیه این چهار state فقط یک‌بار (در
+  // اولین Render خودِ کامپوننت) خوانده می‌شد؛ چون همین یک نمونه از این
+  // Dialog برای ویرایش همه ردیف‌ها استفاده می‌شود (نه یک Dialog جداگانه
+  // per-row)، با زدن «ویرایش» روی یک ردیف دیگر، این مقادیر دیگر به‌روز
+  // نمی‌شدند — همیشه مقادیر خودروی اولی که ویرایش شده بود می‌ماند. رفع شد
+  // با یک useEffect که هر بار vehicle عوض شود (یعنی کاربر ردیف دیگری را
+  // برای ویرایش انتخاب کرده)، همه فیلدها را از نو با مقادیر همان خودرو پر می‌کند.
+  const [vehicleType, setVehicleType] = useState("");
+  const [color, setColor] = useState("");
+  const [plate, setPlate] = useState(EMPTY_PLATE);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!vehicle) return;
+    setVehicleType(vehicle.vehicle_type);
+    setColor(vehicle.color);
+    setPlate({
+      digits1: vehicle.plate_digits1,
+      letter: vehicle.plate_letter,
+      digits2: vehicle.plate_digits2,
+      iranCode: vehicle.plate_iran_code,
+    });
+    setError("");
+  }, [vehicle]);
 
   const canSave = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSaving;
 
@@ -94,16 +121,21 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
 }
 
 /**
- * گزارش خودروهای همه پرسنل — برای Admin کامل (ویرایش/حذف)، برای نقش
- * «حراست» فقط‌خواندنی (بدون دکمه ویرایش/حذف) — دقیقاً همان تصمیمی که
- * Backend هم با require_permission("vehicles.manage") فقط برای Admin
- * واقعی اعمال می‌کند؛ این‌جا هم برای تجربه کاربری، همان دکمه‌ها اصلاً
- * برای غیر-Admin نمایش داده نمی‌شوند.
+ * گزارش خودروهای پرسنل — برای Admin کامل (ویرایش/حذف)، برای نقش «حراست»
+ * فقط‌خواندنی (بدون دکمه ویرایش/حذف) — دقیقاً همان تصمیمی که Backend هم
+ * با require_permission("vehicles.manage") فقط برای Admin واقعی اعمال
+ * می‌کند؛ این‌جا هم برای تجربه کاربری، همان دکمه‌ها اصلاً برای غیر-Admin
+ * نمایش داده نمی‌شوند.
  */
 export default function VehiclesReportPage() {
   const { user } = useAuth();
+  const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [vehicles, setVehicles] = useState(null);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("employee_name");
+  const [sortDir, setSortDir] = useState("asc");
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [vehicleToDelete, setVehicleToDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
   function loadVehicles() {
@@ -114,61 +146,159 @@ export default function VehiclesReportPage() {
     loadVehicles();
   }, []);
 
-  async function handleDelete(vehicleId) {
-    setDeletingId(vehicleId);
+  async function handleConfirmDelete() {
+    if (!vehicleToDelete) return;
+    setDeletingId(vehicleToDelete.id);
     try {
-      await deleteVehicleAdmin(vehicleId);
-      setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+      await deleteVehicleAdmin(vehicleToDelete.id);
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicleToDelete.id));
+      setVehicleToDelete(null);
     } finally {
       setDeletingId(null);
     }
   }
 
   function handleSaved(updated) {
-    setVehicles((prev) =>
-      prev.map((v) => (v.id === updated.id ? { ...v, ...updated } : v))
-    );
+    setVehicles((prev) => prev.map((v) => (v.id === updated.id ? { ...v, ...updated } : v)));
     setEditingVehicle(null);
   }
 
+  function handleSort(key) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // جست‌وجو + مرتب‌سازی — کاملاً سمت فرانت‌اند (تعداد خودروهای کل پروژه
+  // معمولاً به‌اندازه‌ای نیست که نیاز به صفحه‌بندی/جست‌وجوی سمت سرور باشد).
+  const displayedVehicles = useMemo(() => {
+    if (vehicles === null) return null;
+    const term = search.trim().toLowerCase();
+    const filtered = term
+      ? vehicles.filter((v) =>
+          [v.employee_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)]
+            .filter(Boolean)
+            .some((field) => field.toLowerCase().includes(term))
+        )
+      : vehicles;
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aVal = sortKey === "plate" ? plateAsString(a) : a[sortKey] || "";
+      const bVal = sortKey === "plate" ? plateAsString(b) : b[sortKey] || "";
+      const cmp = aVal.localeCompare(bVal, "fa");
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [vehicles, search, sortKey, sortDir]);
+
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-        گزارش خودروهای پرسنل
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
+        خودروهای پرسنل
       </Typography>
 
-      <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
-        {vehicles === null ? (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-            <CircularProgress />
-          </Box>
-        ) : vehicles.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: "center" }}>
-            <Typography variant="body2" color="text.secondary">
-              هیچ خودرویی ثبت نشده است.
-            </Typography>
-          </Box>
-        ) : (
+      <TextField
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="جست‌وجو بر اساس نام، واحد، نوع خودرو، رنگ یا شماره پلاک..."
+        size="small"
+        fullWidth
+        sx={{ mb: 2, maxWidth: 480 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchOutlinedIcon fontSize="small" />
+            </InputAdornment>
+          ),
+        }}
+      />
+
+      {displayedVehicles === null ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : displayedVehicles.length === 0 ? (
+        <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary">
+            {search ? "چیزی با این مشخصات پیدا نشد." : "هیچ خودرویی ثبت نشده است."}
+          </Typography>
+        </Card>
+      ) : isMobile ? (
+        // نمایش کارتی — موبایل
+        <Stack spacing={1.5}>
+          {displayedVehicles.map((v) => (
+            <Card key={v.id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={700} noWrap>
+                    {v.employee_name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {v.department_name || "—"}
+                  </Typography>
+                </Box>
+                {user?.is_superuser && (
+                  <Stack direction="row" sx={{ flexShrink: 0 }}>
+                    <IconButton size="small" onClick={() => setEditingVehicle(v)} aria-label="ویرایش">
+                      <EditOutlinedIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      disabled={deletingId === v.id}
+                      onClick={() => setVehicleToDelete(v)}
+                      aria-label="حذف"
+                    >
+                      <DeleteOutlineOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                )}
+              </Stack>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Box>
+                  <Typography variant="body2">{v.vehicle_type}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {v.color}
+                  </Typography>
+                </Box>
+                <PlateDisplay
+                  digits1={v.plate_digits1}
+                  letter={v.plate_letter}
+                  digits2={v.plate_digits2}
+                  iranCode={v.plate_iran_code}
+                />
+              </Stack>
+            </Card>
+          ))}
+        </Stack>
+      ) : (
+        // نمایش جدولی — دسکتاپ
+        <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>پرسنل</TableCell>
-                  <TableCell>کد پرسنلی</TableCell>
-                  <TableCell>سایت</TableCell>
-                  <TableCell>واحد سازمانی</TableCell>
-                  <TableCell>نوع خودرو</TableCell>
-                  <TableCell>رنگ</TableCell>
-                  <TableCell>پلاک</TableCell>
+                  {COLUMNS.map((col) => (
+                    <TableCell key={col.key}>
+                      <TableSortLabel
+                        active={sortKey === col.key}
+                        direction={sortKey === col.key ? sortDir : "asc"}
+                        onClick={() => handleSort(col.key)}
+                      >
+                        {col.label}
+                      </TableSortLabel>
+                    </TableCell>
+                  ))}
                   {user?.is_superuser && <TableCell align="left">عملیات</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {vehicles.map((v) => (
+                {displayedVehicles.map((v) => (
                   <TableRow key={v.id} hover>
                     <TableCell>{v.employee_name}</TableCell>
-                    <TableCell>{v.personnel_code}</TableCell>
-                    <TableCell>{v.site_name || "—"}</TableCell>
                     <TableCell>{v.department_name || "—"}</TableCell>
                     <TableCell>{v.vehicle_type}</TableCell>
                     <TableCell>{v.color}</TableCell>
@@ -189,7 +319,7 @@ export default function VehiclesReportPage() {
                           size="small"
                           color="error"
                           disabled={deletingId === v.id}
-                          onClick={() => handleDelete(v.id)}
+                          onClick={() => setVehicleToDelete(v)}
                           aria-label="حذف"
                         >
                           <DeleteOutlineOutlinedIcon fontSize="small" />
@@ -201,10 +331,26 @@ export default function VehiclesReportPage() {
               </TableBody>
             </Table>
           </TableContainer>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <EditVehicleDialog vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} onSaved={handleSaved} />
+
+      <Dialog open={Boolean(vehicleToDelete)} onClose={() => setVehicleToDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>حذف خودرو</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            آیا از حذف خودروی {vehicleToDelete?.vehicle_type} متعلق به {vehicleToDelete?.employee_name} مطمئن هستید؟
+            این عمل قابل‌بازگشت نیست.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setVehicleToDelete(null)}>انصراف</Button>
+          <Button variant="contained" color="error" disabled={deletingId !== null} onClick={handleConfirmDelete}>
+            حذف
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

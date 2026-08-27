@@ -105,7 +105,7 @@ const NAV_ITEMS = [
     requiresBirthdayMessages: true,
   },
   {
-    label: "گزارش خودروها",
+    label: "خودروهای پرسنل",
     path: "/vehicle-report",
     icon: <DirectionsCarFilledOutlinedIcon />,
     adminOnly: false,

@@ -4,6 +4,10 @@ import {
   Box,
   Button,
   Card,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Stack,
   TextField,
@@ -67,11 +71,15 @@ export default function MyVehiclesPage() {
     }
   }
 
-  async function handleDelete(vehicleId) {
-    setDeletingId(vehicleId);
+  const [vehicleToDelete, setVehicleToDelete] = useState(null);
+
+  async function handleConfirmDelete() {
+    if (!vehicleToDelete) return;
+    setDeletingId(vehicleToDelete.id);
     try {
-      await deleteMyVehicle(vehicleId);
-      setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+      await deleteMyVehicle(vehicleToDelete.id);
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicleToDelete.id));
+      setVehicleToDelete(null);
     } finally {
       setDeletingId(null);
     }
@@ -170,7 +178,7 @@ export default function MyVehiclesPage() {
                 size="small"
                 color="error"
                 disabled={deletingId === v.id}
-                onClick={() => handleDelete(v.id)}
+                onClick={() => setVehicleToDelete(v)}
                 aria-label="حذف خودرو"
               >
                 <DeleteOutlineOutlinedIcon fontSize="small" />
@@ -179,6 +187,21 @@ export default function MyVehiclesPage() {
           ))}
         </Stack>
       )}
+
+      <Dialog open={Boolean(vehicleToDelete)} onClose={() => setVehicleToDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>حذف خودرو</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            آیا از حذف این خودرو مطمئن هستید؟ این عمل قابل‌بازگشت نیست.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setVehicleToDelete(null)}>انصراف</Button>
+          <Button variant="contained" color="error" disabled={deletingId !== null} onClick={handleConfirmDelete}>
+            حذف
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
