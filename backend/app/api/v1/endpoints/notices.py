@@ -11,7 +11,7 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}/unarchive         (POST)  بازگرداندن یک اطلاعیه از آرشیو — فقط برای خودِ کاربر جاری
 /notices/sent-by-me            (GET)   گزارش «چه چیزهایی به چه کسانی فرستادم» برای فرستنده
 /notices/admin-report          (GET)   گزارش کامل همه اطلاعیه‌ها با فرستنده و آمار بازدید — Admin
-/notices/site-report           (GET)   گزارش اطلاعیه‌های رسیده به سایت(های) تحت مدیریت کاربر — site_manager
+/notices/site-report           (GET)   گزارش اطلاعیه‌های رسیده به سایت(های) تحت پوشش — فقط notices.site_report
 /notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
 /notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
@@ -33,7 +33,7 @@ from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority, NoticeType
-from app.repositories.user_repository import UserRepository
+from app.core.site_access import get_sites_with_permission
 from app.models.user import User
 from app.schemas.notice import (
     AttendanceCardResultOut,
@@ -210,16 +210,20 @@ async def site_report(
     current_user: User = Depends(get_current_user),
 ):
     """
-    گزارش «اطلاعیه‌های سایت من» — برای site_manager: همه اطلاعیه‌هایی که به
-    سایت(های) تحت مدیریت او می‌رسند، از هر فرستنده‌ای (نه فقط خودِ او)، برخلاف
-    /sent-by-me که فقط اطلاعیه‌های خودِ کاربر را نشان می‌دهد. برخلاف
-    /admin-report، نیازمند notices.view سراسری نیست — به‌جایش، خودِ Endpoint
-    بررسی می‌کند کاربر واقعاً برای کدام سایت‌ها نقش site_manager دارد (اگر
-    هیچ‌کدام، ۴۰۳). Admin هم می‌تواند صدا بزند (همه سایت‌ها).
+    گزارش «اطلاعیه‌های سایت من» — برای هر کسی که مجوز notices.site_report
+    را (سراسری یا برای یک/چند سایت خاص) داشته باشد: همه اطلاعیه‌هایی که
+    به سایت(های) تحت پوششش می‌رسند، از هر فرستنده‌ای (نه فقط خودِ او)،
+    برخلاف /sent-by-me که فقط اطلاعیه‌های خودِ کاربر را نشان می‌دهد.
+    برخلاف /admin-report، نیازمند notices.view سراسری نیست. Admin هم
+    می‌تواند صدا بزند (همه سایت‌ها).
 
-    site_id (اختیاری): فیلتر «سایت-محور» — برای site_manager ای که چند
-    سایت را مدیریت می‌کند، اگر بخواهد فقط یکی را ببیند. با سایت‌های تحت
-    مدیریتش تقاطع گرفته می‌شود؛ نمی‌تواند سایتی خارج از مدیریتش را انتخاب کند.
+    ⚠️ این مجوز قبلاً مستقیماً به نام نقش «site_manager» Hard-code شده
+    بود؛ حالا یک Permission Code واقعی و قابل‌تخصیص به هر نقشی است
+    (طبق Migration 035، به‌طور پیش‌فرض همچنان به site_manager هم وصل است).
+
+    site_id (اختیاری): فیلتر «سایت-محور» — برای کسی که چند سایت را
+    پوشش می‌دهد، اگر بخواهد فقط یکی را ببیند. با سایت‌های مجازش تقاطع
+    گرفته می‌شود؛ نمی‌تواند سایتی خارج از دسترسش را انتخاب کند.
     """
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
@@ -230,11 +234,19 @@ async def site_report(
         site_result = await db.execute(select(Site.id))
         managed_site_ids = [row[0] for row in site_result.all()]
     else:
-        managed_site_ids = await UserRepository(db).get_managed_site_ids(current_user.id, "site_manager")
+        accessible = await get_sites_with_permission(db, current_user, "notices.site_report")
+        if accessible is None:
+            # مجوز سراسری (یا Admin واقعی که بالا جدا مدیریت شد) — همه سایت‌ها
+            from app.models.site import Site
+
+            site_result = await db.execute(select(Site.id))
+            managed_site_ids = [row[0] for row in site_result.all()]
+        else:
+            managed_site_ids = list(accessible)
         if not managed_site_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="شما مدیر هیچ سایتی نیستید",
+                detail="شما اجازه مشاهده این گزارش را ندارید",
             )
 
     if site_id is not None:

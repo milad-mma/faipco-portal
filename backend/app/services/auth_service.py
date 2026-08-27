@@ -23,6 +23,7 @@ from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
+from app.core.site_access import get_sites_with_permission
 from app.services.system_settings_service import SystemSettingsService
 from app.schemas.user import UserOut
 
@@ -233,8 +234,16 @@ class AuthService:
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes
         base.can_manage_system_settings = user.is_superuser or "system.settings" in permission_codes
+        # ⚠️ رفع یک محدودیت واقعی: این فلگ قبلاً مستقیماً به نام نقش
+        # «site_manager» Hard-code شده بود (get_managed_site_ids با
+        # role_name="site_manager" ثابت) — یعنی هیچ نقش دیگری، هرچقدر هم
+        # از پنل «مدیریت نقش/مجوز» مجوز می‌گرفت، نمی‌توانست این گزارش را
+        # ببیند. حالا از get_sites_with_permission (مجوز notices.site_report،
+        # طبق Migration 035 به‌طور پیش‌فرض به site_manager هم وصل است) استفاده
+        # می‌شود — یعنی از این به بعد، هر نقشی با همین مجوز، دسترسی می‌گیرد.
+        site_notice_report_sites = await get_sites_with_permission(self.db, user, "notices.site_report")
         base.can_view_site_notice_report = user.is_superuser or bool(
-            await self.repo.get_managed_site_ids(user.id, "site_manager")
+            site_notice_report_sites is None or len(site_notice_report_sites) > 0
         )
         # کد ملی هم خودش یک اعتبار ضعیف است (جاهای زیادی در دسترس است، قابل
         # تغییر/چرخش نیست) — پس هر پرسنلی که هنوز رمز اختصاصی تعیین نکرده
