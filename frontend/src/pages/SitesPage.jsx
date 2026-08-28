@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import {
   Alert,
   Box,
@@ -27,6 +28,8 @@ import { createSite, deleteSite, fetchSites, setSiteActive } from "../api/sites"
 
 export default function SitesPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManage = Boolean(user?.can_manage_sites);
   const [sites, setSites] = useState(null);
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
 
@@ -124,9 +127,11 @@ export default function SitesPage() {
             هر سایت متعلق به یک کارخانه/شعبه است و یک اتصال دیتابیس + یک Mapping ستون دارد
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setSiteDialogOpen(true)}>
-          سایت جدید
-        </Button>
+        {canManage && (
+          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setSiteDialogOpen(true)}>
+            سایت جدید
+          </Button>
+        )}
       </Box>
 
       <Grid container spacing={2.5}>
@@ -156,12 +161,14 @@ export default function SitesPage() {
                     color={site.is_active ? "success" : "default"}
                     variant="outlined"
                   />
-                  <Switch
-                    size="small"
-                    checked={site.is_active}
-                    disabled={togglingId === site.id}
-                    onChange={() => handleToggleActive(site)}
-                  />
+                  {canManage && (
+                    <Switch
+                      size="small"
+                      checked={site.is_active}
+                      disabled={togglingId === site.id}
+                      onChange={() => handleToggleActive(site)}
+                    />
+                  )}
                 </Stack>
               </Stack>
 
@@ -173,33 +180,35 @@ export default function SitesPage() {
 
               <Divider sx={{ my: 2 }} />
 
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<SettingsEthernetOutlinedIcon />}
-                  onClick={() => navigate(`/sites/${site.id}/settings?tab=connection`)}
-                >
-                  اتصال دیتابیس
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<ViewColumnOutlinedIcon />}
-                  onClick={() => navigate(`/sites/${site.id}/settings?tab=mapping`)}
-                >
-                  Mapping ستون‌ها
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="error"
-                  startIcon={<DeleteOutlineIcon />}
-                  onClick={() => openDeleteDialog(site)}
-                >
-                  حذف سایت
-                </Button>
-              </Stack>
+              {canManage && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<SettingsEthernetOutlinedIcon />}
+                    onClick={() => navigate(`/sites/${site.id}/settings?tab=connection`)}
+                  >
+                    اتصال دیتابیس
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ViewColumnOutlinedIcon />}
+                    onClick={() => navigate(`/sites/${site.id}/settings?tab=mapping`)}
+                  >
+                    Mapping ستون‌ها
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteOutlineIcon />}
+                    onClick={() => openDeleteDialog(site)}
+                  >
+                    حذف سایت
+                  </Button>
+                </Stack>
+              )}
             </Card>
           </Grid>
           ))

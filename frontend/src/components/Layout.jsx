@@ -65,7 +65,7 @@ const NAV_ITEMS = [
     path: "/sites",
     icon: <ApartmentOutlinedIcon />,
     adminOnly: false,
-    requiresSitesManage: true,
+    requiresSitesView: true,
   },
   {
     label: "همگام‌سازی دیتابیس",
@@ -127,7 +127,13 @@ const NAV_ITEMS = [
     requiresBackupManage: true,
   },
   { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
-  { label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon />, adminOnly: true },
+  {
+    label: "پرسنل آنلاین",
+    path: "/presence-report",
+    icon: <ScienceOutlinedIcon />,
+    adminOnly: false,
+    requiresViewAttendanceLogs: true,
+  },
   {
     label: "گزارش ورود و خروج",
     path: "/clock-in-out-report",
@@ -167,10 +173,12 @@ export default function Layout() {
         if (item.adminOnly && !user?.is_superuser) return false;
         if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
         if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
+        if (item.requiresViewAttendanceLogs && !user?.can_view_attendance_logs) return false;
         if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
         if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
         if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
         if (item.requiresSitesManage && !user?.can_manage_sites) return false;
+        if (item.requiresSitesView && !user?.can_view_sites) return false;
         if (item.requiresAnySyncAccess && !(user?.can_manage_sync || user?.can_view_sync || user?.can_run_sync)) return false;
         if (item.requiresUsersManage && !user?.can_manage_users) return false;
         if (item.requiresRolesManage && !user?.can_manage_roles) return false;

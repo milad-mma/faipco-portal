@@ -5,9 +5,22 @@
 مرورگر یک کاربر را پاک کند. تنها راه واقعی و قانونی این است که خودِ فایل
 sw.js از نظر بایتی تغییر کند — مرورگر هر کاربر، هر بار که به سایت سر می‌زند،
 محتوای sw.js را دوباره می‌گیرد و اگر با نسخه نصب‌شده فرق داشته باشد، نسخه
-جدید را نصب می‌کند. منطق activate() داخل خودِ sw.js از قبل هر Cache قدیمی
-(با نام متفاوت از CACHE_NAME جدید) را پاک می‌کند — یعنی نتیجه دقیقاً همان
-چیزی است که خواسته شده: انگار کاربر اولین‌بار دارد اپ را باز می‌کند.
+جدید را نصب می‌کند؛ Workbox (که این پروژه با آن ساخته شده)، در فاز
+activate خودش، هر Cache قدیمی مرتبط با نسخه Precache قبلی را پاک می‌کند.
+
+⚠️ رفع یک باگ واقعی: این تابع قبلاً دنبال یک الگوی متنی خاص
+(`const CACHE_NAME = "faipco-shell-v...";`) داخل sw.js می‌گشت — که مربوط
+به یک نسخه خیلی قدیمی‌تر sw.js بود (قبل از این‌که این پروژه به Workbox
+مهاجرت کند، که خودش نسخه‌بندی Cache را از طریق `self.__WB_MANIFEST`
+مدیریت می‌کند، نه یک ثابت دستی). چون این الگو در sw.js فعلی اصلاً وجود
+ندارد، هر بار این دکمه زده می‌شد، بلافاصله با خطای «الگو پیدا نشد» شکست
+می‌خورد — یعنی این قابلیت از مدت‌ها پیش کاملاً از کار افتاده بود.
+
+رفع، با یک روش ساده‌تر و مستقل از جزئیات داخلی Workbox: به‌جای دنبال‌کردن
+یک ثابت خاص، همین‌جا یک خط Comment با یک برچسب‌زمانی تازه به انتهای sw.js
+اضافه/به‌روزرسانی می‌شود. همین تغییرِ حتی یک بایت، برای مرورگر کافی است تا
+sw.js را «تغییر‌کرده» تشخیص دهد و چرخه عادی نصب/فعال‌سازی نسخه جدید (که
+Workbox داخلش Cache قدیمی را پاک می‌کند) را شروع کند.
 """
 from __future__ import annotations
 
@@ -25,7 +38,7 @@ _FRONTEND_SW_PATH = (
     Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist" / "sw.js"
 )
 
-_CACHE_NAME_PATTERN = re.compile(r'const CACHE_NAME = "faipco-shell-v[^"]*";')
+_BUST_MARKER_PATTERN = re.compile(r"\n// cache-bust: [^\n]*\n?$")
 
 
 def bump_app_cache_version() -> str:
@@ -34,11 +47,14 @@ def bump_app_cache_version() -> str:
 
     content = _FRONTEND_SW_PATH.read_text(encoding="utf-8")
     new_version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    new_content, count = _CACHE_NAME_PATTERN.subn(
-        f'const CACHE_NAME = "faipco-shell-v{new_version}";', content
-    )
-    if count == 0:
-        raise CacheBustError("الگوی CACHE_NAME در sw.js پیدا نشد — ساختار فایل احتمالاً تغییر کرده.")
+    marker = f"\n// cache-bust: {new_version}\n"
+
+    # اگر از قبل یک برچسب cache-bust در انتهای فایل بود، جایگزینش می‌کنیم؛
+    # وگرنه یکی جدید اضافه می‌کنیم — تا فایل با هر بار کلیک بی‌نهایت بزرگ نشود.
+    if _BUST_MARKER_PATTERN.search(content):
+        new_content = _BUST_MARKER_PATTERN.sub(marker, content)
+    else:
+        new_content = content.rstrip("\n") + "\n" + marker.lstrip("\n")
 
     # نوشتن Atomic — یا فایل کاملاً جایگزین می‌شود یا اصلاً دست‌نخورده می‌ماند
     tmp_path = _FRONTEND_SW_PATH.with_suffix(".js.tmp")

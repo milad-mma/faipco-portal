@@ -27,8 +27,18 @@ import { fetchSiteConnection, fetchSites, setSiteConnectionActive } from "../api
 import { fetchSyncLogs, fetchSyncSettings, runSiteSync, testSiteConnection, updateSyncSettings } from "../api/sync";
 import SyncStatusChip from "../components/SyncStatusChip";
 import { monoFontSx } from "../theme";
+import { useAuth } from "../context/AuthContext";
 
 export default function SyncPage() {
+  const { user } = useAuth();
+  // ⚠️ برخلاف اکثر مجوزهای دیگر پروژه، sync.manage به‌طور خودکار شامل
+  // sync.view/sync.run نمی‌شود — این سه، سه Permission کاملاً مستقل‌اند
+  // (خودِ Backend هم دقیقاً همین‌طور، سه require_permission جدا دارد).
+  // پس هرکدام از دکمه‌ها/بخش‌های این صفحه دقیقاً بر همان مجوز خاص خودش
+  // نمایش داده می‌شود، نه یک فرض کلی «manage یعنی همه‌کاره».
+  const canManageSync = Boolean(user?.can_manage_sync);
+  const canViewSync = Boolean(user?.can_view_sync);
+  const canRunSync = Boolean(user?.can_run_sync);
   const [sites, setSites] = useState([]);
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [logs, setLogs] = useState([]);
@@ -50,12 +60,17 @@ export default function SyncPage() {
       setSites(data);
       if (data.length > 0) setSelectedSiteId(data[0].id);
     });
-    fetchSyncSettings().then((data) => {
-      setIntervalMinutes(String(data.interval_minutes));
-      setSavedIntervalMinutes(data.interval_minutes);
-      setLastAutoSyncAt(data.last_auto_sync_at);
-    });
-  }, []);
+    // fetchSyncSettings مستلزم sync.manage است — بدون این مجوز، این
+    // درخواست همیشه ۴۰۳ می‌گرفت (حتی اگر خودِ کارت تنظیمات فاصله زمانی
+    // پایین‌تر اصلاً برای این کاربر نمایش داده نمی‌شد).
+    if (canManageSync) {
+      fetchSyncSettings().then((data) => {
+        setIntervalMinutes(String(data.interval_minutes));
+        setSavedIntervalMinutes(data.interval_minutes);
+        setLastAutoSyncAt(data.last_auto_sync_at);
+      });
+    }
+  }, [canManageSync]);
 
   useEffect(() => {
     if (!selectedSiteId) return;
@@ -67,7 +82,7 @@ export default function SyncPage() {
   }, [selectedSiteId]);
 
   function loadLogs() {
-    if (!selectedSiteId) return;
+    if (!selectedSiteId || !canViewSync) return;
     fetchSyncLogs(selectedSiteId).then(setLogs);
   }
 
@@ -150,6 +165,7 @@ export default function SyncPage() {
         تست اتصال، اجرای دستی همگام‌سازی و مشاهده تاریخچه هر سایت
       </Typography>
 
+      {canManageSync && (
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <SettingsOutlinedIcon fontSize="small" color="action" />
@@ -218,6 +234,7 @@ export default function SyncPage() {
           </Alert>
         )}
       </Card>
+      )}
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
@@ -235,23 +252,27 @@ export default function SyncPage() {
             ))}
           </TextField>
 
-          <Button
-            variant="outlined"
-            startIcon={<WifiTetheringOutlinedIcon />}
-            onClick={handleTestConnection}
-            disabled={!selectedSiteId || isTesting}
-          >
-            {isTesting ? "در حال تست..." : "تست اتصال"}
-          </Button>
+          {canViewSync && (
+            <Button
+              variant="outlined"
+              startIcon={<WifiTetheringOutlinedIcon />}
+              onClick={handleTestConnection}
+              disabled={!selectedSiteId || isTesting}
+            >
+              {isTesting ? "در حال تست..." : "تست اتصال"}
+            </Button>
+          )}
 
-          <Button
-            variant="contained"
-            startIcon={<SyncOutlinedIcon />}
-            onClick={handleRunSync}
-            disabled={!selectedSiteId || isRunning}
-          >
-            {isRunning ? "در حال اجرا..." : "اجرای دستی Sync"}
-          </Button>
+          {canRunSync && (
+            <Button
+              variant="contained"
+              startIcon={<SyncOutlinedIcon />}
+              onClick={handleRunSync}
+              disabled={!selectedSiteId || isRunning}
+            >
+              {isRunning ? "در حال اجرا..." : "اجرای دستی Sync"}
+            </Button>
+          )}
         </Stack>
 
         {connectionStatus && (
@@ -267,7 +288,7 @@ export default function SyncPage() {
               control={
                 <Switch
                   checked={connectionStatus.is_active}
-                  disabled={isTogglingSync}
+                  disabled={isTogglingSync || !canManageSync}
                   onChange={handleToggleSyncEnabled}
                 />
               }
@@ -299,6 +320,7 @@ export default function SyncPage() {
         )}
       </Card>
 
+      {canViewSync && (
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
         <TableContainer>
           <Table>
@@ -348,6 +370,7 @@ export default function SyncPage() {
           </Table>
         </TableContainer>
       </Card>
+      )}
     </Box>
   );
 }

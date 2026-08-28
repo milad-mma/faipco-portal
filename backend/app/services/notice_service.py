@@ -19,8 +19,8 @@
     سرپرست واحدی که آن پرسنل در آن است؛ یا هرکسی که مجوز
     notices.target.employee برای همان Site را داشته باشد.
 
-- role (یک نقش خاص، مثل «همه سرپرستان»):
-    فقط با مجوز سراسری notices.target.role (معمولاً HR/مدیرعامل).
+⚠️ هدف‌گیری بر اساس نقش (role، مثل «همه سرپرستان») طبق درخواست صریح حذف
+شد — دیگر هیچ راهی برای این نوع هدف‌گیری وجود ندارد.
 
 superuser همیشه به همه چیز دسترسی دارد.
 """
@@ -101,7 +101,7 @@ class NoticeService:
             return True
         # ⚠️ رفع همان باگ حیاتی که در require_permission/get_me هم بود:
         # وقتی site_id اینجا داده نشود (مثل notices.payroll،
-        # notices.attendance_card، notices.target.all، notices.target.role
+        # notices.attendance_card، notices.target.all
         # — که همه «آیا این قابلیت را اصلاً دارم» هستند، نه بررسی یک هدف
         # سایت‌محور مشخص)، get_permission_codes(site_id=None) فقط
         # انتصاب‌های *سراسری* را می‌دید. از وقتی site_id برای انتصاب نقش
@@ -147,8 +147,12 @@ class NoticeService:
                     return True
             return await self._has_permission(user, "notices.target.employee", site_id=employee.site_id)
 
-        if target_type == NoticeTargetType.role:
-            return await self._has_permission(user, "notices.target.role")
+        # ⚠️ هدف‌گیری بر اساس نقش (role) طبق درخواست صریح حذف شد — مجوز
+        # notices.target.role دیگر در سیستم وجود ندارد؛ اگر یک NoticeTarget
+        # با target_type=role (از قبل، در داده‌های تاریخی) وجود داشته باشد،
+        # اینجا همیشه False برمی‌گردد (یعنی دیگر قابل ارسال/تکرار نیست) —
+        # NoticeTargetType.role به‌عمد از Enum سطح دیتابیس حذف نشد، فقط
+        # مسیر استفاده از آن مسدود شد.
 
         return False
 
@@ -437,7 +441,6 @@ class NoticeService:
         که کاربر واقعاً اجازه دارد به آن‌ها پیام بدهد را برمی‌گرداند.
         """
         can_all = await self._has_permission(user, "notices.target.all")
-        can_role = await self._has_permission(user, "notices.target.role")
         can_upload_payroll = await self._has_permission(user, "notices.payroll")
         can_upload_attendance_card = await self._has_permission(user, "notices.attendance_card")
 
@@ -516,7 +519,6 @@ class NoticeService:
 
         return {
             "can_target_all": can_all,
-            "can_target_role": can_role,
             "can_target_employee": can_employee,
             "employee_target_department_ids": employee_target_department_ids,
             "can_upload_payroll": can_upload_payroll,

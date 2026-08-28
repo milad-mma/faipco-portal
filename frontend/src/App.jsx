@@ -67,7 +67,10 @@ export default function App() {
           {/* فقط Admin واقعی — این‌ها مفهوم «تفویض به یک نقش دیگر» ندارند: */}
           <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
-          <Route path="/presence-report" element={<AdminRoute><PresenceReportPage /></AdminRoute>} />
+          <Route
+            path="/presence-report"
+            element={<PermissionRoute check={(u) => u?.can_view_attendance_logs}><PresenceReportPage /></PermissionRoute>}
+          />
 
           <Route
             path="/employees"
@@ -87,7 +90,7 @@ export default function App() {
           />
           <Route
             path="/sites"
-            element={<PermissionRoute check={(u) => u?.can_manage_sites}><SitesPage /></PermissionRoute>}
+            element={<PermissionRoute check={(u) => u?.can_view_sites}><SitesPage /></PermissionRoute>}
           />
           <Route
             path="/sites/:siteId/settings"

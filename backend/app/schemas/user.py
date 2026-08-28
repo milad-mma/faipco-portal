@@ -37,6 +37,7 @@ class UserOut(BaseModel):
     # حالا اگر یک نقش غیر-Admin هم مجوز متناظر را داشته باشد، منویشان
     # نمایش داده می‌شود.
     can_manage_sites: bool = False  # sites.manage — «سایت‌ها» و «واحدهای سازمانی»
+    can_view_sites: bool = False  # sites.view (یا sites.manage) — مشاهده فقط‌خواندنی «سایت‌ها»
     can_manage_sync: bool = False  # sync.manage — «همگام‌سازی دیتابیس»
     can_manage_users: bool = False  # users.manage — «مدیریت دسترسی» و «انتصاب دسته‌جمعی نقش»
     can_manage_roles: bool = False  # roles.manage — «مدیریت نقش/مجوز»

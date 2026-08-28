@@ -221,6 +221,9 @@ class AuthService:
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
+        # sites.manage خودش هم شامل مشاهده است — کسی که اجازه مدیریت سایت‌ها را دارد،
+        # طبیعتاً باید بتواند آن‌ها را ببیند هم.
+        base.can_view_sites = base.can_manage_sites or "sites.view" in permission_codes
         base.can_manage_sync = user.is_superuser or "sync.manage" in permission_codes
         base.can_manage_users = user.is_superuser or "users.manage" in permission_codes
         base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes

@@ -28,6 +28,7 @@ import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import BrightnessAutoOutlinedIcon from "@mui/icons-material/BrightnessAutoOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
+import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
@@ -56,6 +57,7 @@ import ChangePasswordDialog from "../components/ChangePasswordDialog";
 const EXTRA_ACCESS_ITEMS = [
   { flag: "can_clock_in_out", label: "ثبت ورود و خروج", path: "/attendance-clock", icon: <FingerprintOutlinedIcon /> },
   { flag: "can_view_clock_records", label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon /> },
+  { flag: "can_view_attendance_logs", label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon /> },
   { flag: "can_view_site_notice_report", label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon /> },
   { flag: "can_manage_birthday_messages", label: "پیام‌های تبریک تولد", path: "/birthday-messages", icon: <CakeOutlinedIcon /> },
   { flag: "can_view_vehicles_report", label: "خودروهای پرسنل", path: "/vehicle-report", icon: <DirectionsCarFilledOutlinedIcon /> },
@@ -70,7 +72,7 @@ const EXTRA_ACCESS_ITEMS = [
     path: "/employees",
     icon: <GroupOutlinedIcon />,
   },
-  { flag: "can_manage_sites", label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon /> },
+  { flag: "can_view_sites", label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon /> },
   {
     check: (u) => u?.can_manage_sync || u?.can_view_sync || u?.can_run_sync,
     label: "همگام‌سازی دیتابیس",
