@@ -75,12 +75,12 @@ export async function fetchEmployeeRoles(employeeId) {
   return data;
 }
 
-export async function assignRoleToEmployee(employeeId, roleId, siteId) {
+export async function assignRoleToEmployee(employeeId, roleId, siteIds) {
   const { data } = await apiClient.post(`/employees/${employeeId}/roles`, {
     role_id: roleId,
-    site_id: siteId || null,
+    site_ids: siteIds,
   });
-  return data;
+  return data; // فهرست انتصاب‌های واقعاً تازه‌ساخته‌شده (سایت‌هایی که از قبل داشت، نادیده گرفته می‌شوند)
 }
 
 export async function fetchSupervisedDepartments(employeeId) {

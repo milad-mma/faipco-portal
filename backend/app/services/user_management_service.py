@@ -29,18 +29,37 @@ class UserManagementService:
         result = await self.db.execute(select(UserRole).where(UserRole.user_id == user_id))
         return list(result.scalars().all())
 
-    async def assign_role(self, user_id: int, payload: AssignRoleIn) -> UserRole:
+    async def assign_role(self, user_id: int, payload: AssignRoleIn) -> list[UserRole]:
         role = await self.db.get(Role, payload.role_id)
         if role is not None and role.name == "superadmin":
             # نقش superadmin هرگز از طریق UI/API قابل انتصاب نیست — فقط کاربر
             # «admin» که هنگام نصب ساخته می‌شود این دسترسی را دارد.
             raise ValueError("نقش superadmin را نمی‌توان از این طریق اختصاص داد")
 
-        user_role = UserRole(user_id=user_id, role_id=payload.role_id, site_id=payload.site_id)
-        self.db.add(user_role)
+        # کدام سایت‌ها از این فهرست از قبل انتصاب دارند؟ (بی‌صدا نادیده
+        # گرفته می‌شوند، نه خطای Unique Constraint) — تا کاربر بتواند
+        # هرچند‌بار خواست، فهرست سایت‌ها را ویرایش/دوباره ارسال کند.
+        existing_result = await self.db.execute(
+            select(UserRole.site_id).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id == payload.role_id,
+                UserRole.site_id.in_(payload.site_ids),
+            )
+        )
+        already_assigned = {row[0] for row in existing_result.all()}
+
+        created: list[UserRole] = []
+        for site_id in payload.site_ids:
+            if site_id in already_assigned:
+                continue
+            user_role = UserRole(user_id=user_id, role_id=payload.role_id, site_id=site_id)
+            self.db.add(user_role)
+            created.append(user_role)
+
         await self.db.commit()
-        await self.db.refresh(user_role)
-        return user_role
+        for user_role in created:
+            await self.db.refresh(user_role)
+        return created
 
     async def remove_role_assignment(self, user_role_id: int) -> bool:
         user_role = await self.db.get(UserRole, user_role_id)

@@ -55,10 +55,12 @@ class UserRoleOut(BaseModel):
 
 class AssignRoleIn(BaseModel):
     role_id: int
-    # ⚠️ طبق درخواست صریح، دیگر اختیاری نیست — هر انتصاب نقش باید حتماً
-    # به یک سایت مشخص محدود باشد؛ دیگر امکان انتصاب «سراسری» (site_id=None)
-    # از این مسیر وجود ندارد.
-    site_id: int
+    # ⚠️ فهرست، نه یک site_id تکی — طبق درخواست صریح، هر انتصاب نقش
+    # می‌تواند هم‌زمان چند سایت را پوشش دهد (هرکدام یک ردیف جدا در جدول
+    # user_roles می‌شود؛ Unique Constraint موجود روی
+    # user_id+role_id+site_id از قبل این را پشتیبانی می‌کرد، فقط UI قبلاً
+    # یک‌بار یک سایت اجازه می‌داد).
+    site_ids: list[int] = Field(min_length=1)
 
 
 class BulkAssignRoleIn(BaseModel):

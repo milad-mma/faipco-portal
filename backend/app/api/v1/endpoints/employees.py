@@ -477,7 +477,7 @@ async def list_employee_roles(
     return await UserManagementService(db).list_user_roles(user.id)
 
 
-@router.post("/{employee_id}/roles", response_model=UserRoleOut)
+@router.post("/{employee_id}/roles", response_model=list[UserRoleOut])
 async def assign_role_to_employee(
     employee_id: int,
     payload: AssignRoleIn,

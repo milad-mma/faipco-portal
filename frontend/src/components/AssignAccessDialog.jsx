@@ -28,7 +28,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
   const [supervisedDeptIds, setSupervisedDeptIds] = useState([]);
 
   const [roleToAssign, setRoleToAssign] = useState("");
-  const [siteForRole, setSiteForRole] = useState("");
+  const [sitesForRole, setSitesForRole] = useState([]); // چند سایت هم‌زمان — طبق درخواست صریح
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -55,11 +55,16 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
     setError("");
     setSuccess("");
     try {
-      await assignRoleToEmployee(employee.id, roleToAssign, siteForRole);
+      const created = await assignRoleToEmployee(employee.id, roleToAssign, sitesForRole);
       setEmployeeRoles(await fetchEmployeeRoles(employee.id));
       setRoleToAssign("");
-      setSiteForRole("");
-      setSuccess("نقش با موفقیت اختصاص یافت.");
+      setSitesForRole([]);
+      const skipped = sitesForRole.length - created.length;
+      setSuccess(
+        skipped > 0
+          ? `نقش برای ${created.length} سایت اختصاص یافت (${skipped} مورد از قبل داشت).`
+          : "نقش با موفقیت اختصاص یافت."
+      );
     } catch (err) {
       setError(err.response?.data?.detail || "انتصاب نقش ناموفق بود");
     }
@@ -128,7 +133,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           value={roleToAssign}
           onChange={(e) => {
             setRoleToAssign(e.target.value);
-            setSiteForRole("");
+            setSitesForRole([]);
           }}
         >
           {roles.map((r) => (
@@ -143,18 +148,29 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
             انتخاب سایت نبود و در نتیجه انتصاب همیشه بی‌صدا سراسری
             (site_id=null) می‌شد — حتی وقتی این ابداً قصد Admin نبود. طبق
             درخواست صریح، هر انتصاب نقشی حتماً باید به یک سایت مشخص محدود
-            باشد؛ این فیلد برای همه نقش‌ها نمایش داده می‌شود. */}
+            باشد؛ این فیلد برای همه نقش‌ها نمایش داده می‌شود.
+            ⚠️ به‌روزرسانی بعدی: طبق درخواست صریح، حالا چندانتخابی است —
+            یک نقش می‌تواند هم‌زمان برای چند سایت اختصاص یابد (هرکدام یک
+            ردیف جدا در پس‌زمینه، ولی همه در یک اقدام). */}
         {roleToAssign && (
           <TextField
             select
             size="small"
-            label="این نقش برای کدام سایت است؟"
-            value={siteForRole}
-            onChange={(e) => setSiteForRole(e.target.value)}
+            label="این نقش برای کدام سایت‌هاست؟"
+            value={sitesForRole}
+            onChange={(e) => {
+              const { value } = e.target;
+              setSitesForRole(typeof value === "string" ? value.split(",") : value);
+            }}
             required
+            SelectProps={{
+              multiple: true,
+              renderValue: (selected) => selected.map((id) => siteLabel(id)).join("، "),
+            }}
           >
             {sites.map((s) => (
               <MenuItem key={s.id} value={s.id}>
+                <Checkbox size="small" checked={sitesForRole.includes(s.id)} />
                 {s.name}
               </MenuItem>
             ))}
@@ -164,7 +180,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
         <Button
           variant="outlined"
           size="small"
-          disabled={!roleToAssign || !siteForRole}
+          disabled={!roleToAssign || sitesForRole.length === 0}
           onClick={handleAssignRole}
         >
           اختصاص این نقش
