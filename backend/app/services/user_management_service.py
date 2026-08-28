@@ -293,8 +293,14 @@ class UserManagementService:
         role = await self.db.get(Role, role_id)
         if role is None:
             return False
-        if role.is_system or role.name == "superadmin":
-            raise ValueError("نقش‌های سیستمی قابل حذف نیستند")
+        # ⚠️ طبق درخواست صریح، is_system دیگر مانع حذف نیست — نقش‌های
+        # سیستمی/پیش‌فرض (که با Migration ساخته شده‌اند) فقط از نظر «چطور
+        # به وجود آمدند» متفاوت‌اند، نه اینکه ذاتاً غیرقابل‌حذف باشند. فقط
+        # خودِ «superadmin» همچنان کاملاً مستثناست — چون این یک نام خاص
+        # است که جای دیگری از کد (منطق مسدودسازی تخصیص نقش) دقیقاً همین
+        # رشته را چک می‌کند؛ حذفش می‌تواند آن منطق را به‌هم بریزد.
+        if role.name == "superadmin":
+            raise ValueError("نقش superadmin قابل حذف نیست")
 
         # ⚠️ عمداً بررسی می‌شود که این نقش همین الان به کسی اختصاص داده
         # نشده باشد — با این‌که خودِ ForeignKey (ondelete=CASCADE) اجازه

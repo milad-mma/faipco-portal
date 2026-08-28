@@ -206,9 +206,12 @@ export default function RoleManagementPage() {
                     <Typography variant="body1" fontWeight={700}>
                       {role.name}
                     </Typography>
-                    {/* ⚠️ طبق درخواست صریح، is_system دیگر مانع ویرایش نیست —
-                        فقط مانع حذف. فقط خودِ «superadmin» کاملاً غیرقابل‌تغییر
-                        است (چون جای دیگری از کد دقیقاً همین نام را چک می‌کند). */}
+                    {/* ⚠️ طبق درخواست صریح، is_system دیگر مانع ویرایش یا
+                        حذف نیست — فقط برای این‌که Admin بداند این نقش یکی
+                        از نقش‌های پیش‌فرض (ساخته‌شده هنگام نصب) بوده، نه
+                        اینکه ذاتاً غیرقابل‌تغییر/حذف باشد. فقط خودِ
+                        «superadmin» کاملاً مستثناست (چون جای دیگری از کد
+                        دقیقاً همین نام را چک می‌کند). */}
                     {role.name === "superadmin" ? (
                       <Chip
                         size="small"
@@ -217,9 +220,7 @@ export default function RoleManagementPage() {
                         variant="outlined"
                       />
                     ) : (
-                      role.is_system && (
-                        <Chip size="small" label="سیستمی — غیرقابل‌حذف" variant="outlined" />
-                      )
+                      role.is_system && <Chip size="small" label="پیش‌فرض" variant="outlined" />
                     )}
                   </Stack>
                   {role.description && (
@@ -234,7 +235,7 @@ export default function RoleManagementPage() {
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
                   )}
-                  {!role.is_system && (
+                  {role.name !== "superadmin" && (
                     <IconButton
                       size="small"
                       color="error"
