@@ -37,15 +37,6 @@ import { fetchAppVersion } from "../api/system";
 import { modernLightTheme } from "../theme";
 import { LOGIN_BACKGROUND_URL } from "../api/system";
 
-// ⚠️ سوییچ طراحی جدید صفحه ورود — راه برگشت امن (دقیقاً هم‌الگو با
-// NEW_DESIGN_ENABLED در theme.js): اگر true باشد، طرح دوپانلی جدید (بر
-// اساس personnel_login__1_.html ارسالی کاربر) نمایش داده می‌شود. اگر
-// مشکلی پیش آمد، فقط همین یک مقدار را به false تغییر دهید — بدون هیچ
-// تغییر دیگری، طرح قدیمی (تک‌کارت وسط‌چین) که سال‌ها استفاده می‌شد
-// برمی‌گردد. کل منطق ورود (handleSubmit، PWA، VPN، آفلاین) بین هر دو طرح
-// کاملاً مشترک است — فقط JSX نمایشی فرق دارد.
-const NEW_LOGIN_DESIGN_ENABLED = true;
-
 const PROMO_FEATURES = [
   { icon: <EventNoteOutlinedIcon fontSize="small" />, label: "درخواست مرخصی" },
   { icon: <DescriptionOutlinedIcon fontSize="small" />, label: "فیش حقوق و کارکرد" },
@@ -210,84 +201,6 @@ export default function LoginPage() {
       </DialogActions>
     </Dialog>
   );
-
-  if (!NEW_LOGIN_DESIGN_ENABLED) {
-    // =====================================================================
-    // طرح قدیمی — کاملاً دست‌نخورده، فقط برای راه برگشت
-    // =====================================================================
-    return (
-      <Box
-        sx={(theme) => ({
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          background: `linear-gradient(160deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 55%, ${theme.palette.primary.light} 100%)`,
-          px: 2,
-        })}
-      >
-        <Paper elevation={0} sx={{ width: "100%", maxWidth: 400, p: 4, borderRadius: 3 }}>
-          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>
-            <Box
-              component="img"
-              src="/faipco-logo.png"
-              alt="FAIPCO"
-              sx={{ width: 128, height: 128, objectFit: "contain", mb: 1.5 }}
-            />
-            <Typography variant="h6" fontWeight={700}>
-              پرتال سازمانی پرسنل
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              شرکت تولیدی صنعتی فوادالیاف
-            </Typography>
-          </Box>
-
-          {isOnline ? (
-            <>
-              {installPrompt}
-              {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
-              <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <TextField
-                  label="نام کاربری"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                  autoFocus
-                  fullWidth
-                />
-                <TextField
-                  label="رمز عبور"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  fullWidth
-                />
-                <Button type="submit" variant="contained" size="large" disabled={isSubmitting} sx={{ mt: 1 }}>
-                  {isSubmitting ? "در حال ورود..." : "ورود"}
-                </Button>
-              </Box>
-            </>
-          ) : (
-            offlineState
-          )}
-        </Paper>
-
-        {appVersion && (
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, opacity: 0.6, direction: "ltr" }}>
-            {appVersion}
-          </Typography>
-        )}
-
-        {vpnDialog}
-      </Box>
-    );
-  }
 
   // =========================================================================
   // طرح جدید — دوپانلی، بر اساس personnel_login__1_.html ارسالی کاربر

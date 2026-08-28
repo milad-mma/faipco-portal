@@ -33,17 +33,6 @@ class RoleUpsertIn(BaseModel):
     permission_ids: list[int] = []
 
 
-class UserManagementOut(BaseModel):
-    id: int
-    username: str
-    email: str | None
-    is_active: bool
-    is_superuser: bool
-    employee_id: int | None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class UserRoleOut(BaseModel):
     id: int
     user_id: int

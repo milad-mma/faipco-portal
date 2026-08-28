@@ -44,7 +44,6 @@ from app.schemas.gps_attendance import (
     GpsActivityLogAdminOut,
     GpsActivityLogOut,
     GpsActivityLogPageOut,
-    GpsCheckResultOut,
     GpsLogUpdateIn,
     GpsManualLogIn,
     GpsPositionIn,
@@ -77,34 +76,6 @@ def _require_employee(current_user: User) -> int:
             detail="این قابلیت فقط برای کاربرانی است که به یک رکورد پرسنلی متصل‌اند.",
         )
     return current_user.employee_id
-
-
-@router.post("/presence", response_model=GpsCheckResultOut)
-async def log_presence(
-    payload: GpsPositionIn,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    employee_id = _require_employee(current_user)
-    log = await GpsAttendanceService(db).log_presence(
-        employee_id=employee_id,
-        latitude=payload.latitude,
-        longitude=payload.longitude,
-        accuracy_meters=payload.accuracy_meters,
-        site_id=payload.site_id,
-    )
-    matched_site_name = None
-    if log.matched_site_id is not None:
-        from app.models.site import Site
-
-        site = await db.get(Site, log.matched_site_id)
-        matched_site_name = site.name if site else None
-
-    return GpsCheckResultOut(
-        is_within_geofence=log.is_within_geofence,
-        matched_site_name=matched_site_name,
-        distance_meters=log.distance_meters,
-    )
 
 
 async def _clock(

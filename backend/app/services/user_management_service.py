@@ -14,10 +14,6 @@ class UserManagementService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_users(self) -> list[User]:
-        result = await self.db.execute(select(User))
-        return list(result.scalars().all())
-
     async def list_roles(self, exclude_superadmin: bool = True) -> list[Role]:
         stmt = select(Role)
         if exclude_superadmin:

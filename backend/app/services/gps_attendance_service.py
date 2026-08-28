@@ -99,19 +99,6 @@ class GpsAttendanceService:
         await self.db.refresh(log)
         return log
 
-    async def log_presence(
-        self, *, employee_id: int, latitude: float, longitude: float, accuracy_meters: float | None, site_id: int | None
-    ) -> GpsActivityLog:
-        """حضور دوره‌ای — همیشه لاگ می‌شود، چه داخل محدوده باشد چه نه (برای گزارش‌گیری بعدی مفید است)."""
-        return await self._record(
-            employee_id=employee_id,
-            log_type=GpsLogType.presence,
-            latitude=latitude,
-            longitude=longitude,
-            accuracy_meters=accuracy_meters,
-            site_id=site_id,
-        )
-
     async def clock_in_out(
         self,
         *,

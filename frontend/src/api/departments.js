@@ -7,11 +7,6 @@ export async function fetchDepartments(siteId) {
   return data;
 }
 
-export async function createDepartment(payload) {
-  const { data } = await apiClient.post("/departments", payload);
-  return data;
-}
-
 export async function assignDepartmentSupervisor(departmentId, employeeId) {
   const { data } = await apiClient.put(`/departments/${departmentId}/supervisor`, {
     employee_id: employeeId,

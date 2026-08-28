@@ -16,7 +16,6 @@ IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
 IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
 BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
-BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
 LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
 

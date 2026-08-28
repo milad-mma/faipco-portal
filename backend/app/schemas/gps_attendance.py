@@ -13,12 +13,6 @@ class GpsPositionIn(BaseModel):
     site_id: int | None = None  # اگر مشخص نشود، نزدیک‌ترین سایت دارای موقعیت GPS در نظر گرفته می‌شود
 
 
-class GpsCheckResultOut(BaseModel):
-    is_within_geofence: bool
-    matched_site_name: str | None
-    distance_meters: float | None
-
-
 class GpsActivityLogOut(BaseModel):
     id: int
     log_type: str

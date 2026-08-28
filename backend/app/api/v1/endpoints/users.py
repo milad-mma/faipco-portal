@@ -20,7 +20,6 @@ from app.schemas.user_management import (
     RoleDetailOut,
     RoleOut,
     RoleUpsertIn,
-    UserManagementOut,
     UserRoleOut,
 )
 from app.services.user_management_service import UserManagementService
@@ -41,14 +40,6 @@ def _role_to_detail_out(role: Role) -> RoleDetailOut:
         is_system=role.is_system,
         permissions=[PermissionOut.model_validate(rp.permission) for rp in role.permissions],
     )
-
-
-@router.get("", response_model=list[UserManagementOut])
-async def list_users(
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
-):
-    return await UserManagementService(db).list_users()
 
 
 @router.get("/access-overview", response_model=list[AccessOverviewEntry])

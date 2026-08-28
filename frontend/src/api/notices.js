@@ -1,10 +1,5 @@
 import { apiClient } from "./client";
 
-export async function fetchAllNotices() {
-  const { data } = await apiClient.get("/notices");
-  return data;
-}
-
 export async function fetchMyNotices({ page = 1, pageSize = 10, noticeType, archived } = {}) {
   // archived: "exclude" (پیش‌فرض، صندوق ورودی عادی) | "only" (تب آرشیو) |
   // "all" (بدون فیلتر آرشیو — ویجت «اطلاعیه‌های اخیر» داشبورد)
