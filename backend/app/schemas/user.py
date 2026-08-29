@@ -26,6 +26,7 @@ class UserOut(BaseModel):
     has_photo: bool = False
     hide_birthday_in_dashboard: bool = False
     can_clock_in_out: bool = False  # آیا مجوز آزمایشی «ثبت ورود/خروج مبتنی بر GPS» را دارد
+    has_kara_workflow: bool = False  # آیا سایت خودِ این پرسنل به «کاراوب» وصل است (گزارش تردد ماهانه)
     can_view_attendance_logs: bool = False  # آیا مجوز مشاهده گزارش «پرسنل آنلاین» (Session زنده) را دارد
     can_view_clock_records: bool = False  # آیا مجوز مشاهده گزارش ورود/خروج آزمایشی همه پرسنل را دارد
     can_manage_clock_records: bool = False  # آیا مجوز افزودن/ویرایش/حذف دستی رکورد ورود/خروج را دارد

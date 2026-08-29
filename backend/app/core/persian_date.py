@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import jdatetime
@@ -40,3 +40,32 @@ def jalali_month_range_utc(year: int, month: int) -> tuple[datetime, datetime]:
     end_local = datetime(end_gregorian.year, end_gregorian.month, end_gregorian.day, tzinfo=_IRAN_TZ)
 
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def jalali_days_in_month(year: int, month: int) -> int:
+    """
+    تعداد واقعی روزهای یک ماه شمسی — ۳۱ روز برای ماه‌های ۱ تا ۶، ۳۰ روز
+    برای ۷ تا ۱۱، و ۲۹ یا ۳۰ روز برای اسفند بسته به کبیسه بودن سال. به‌جای
+    هاردکدکردن این ارقام، از خودِ jdatetime (که این محاسبه، شامل تشخیص
+    سال کبیسه شمسی، را به‌درستی انجام می‌دهد) استفاده می‌شود — با پیداکردن
+    اولین روز ماه بعد، تبدیل به میلادی، کم‌کردن یک روز (با timedelta
+    استاندارد پایتون، نه jdatetime، برای اطمینان کامل از صحت محاسبه)، و
+    تبدیل دوباره به شمسی.
+    """
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    first_day_next_month_gregorian = jdatetime.date(next_year, next_month, 1).togregorian()
+    last_day_this_month_gregorian = first_day_next_month_gregorian - timedelta(days=1)
+    last_day_this_month_jalali = jdatetime.date.fromgregorian(date=last_day_this_month_gregorian)
+    return last_day_this_month_jalali.day
+
+
+def jalali_year_month_to_yyyymmdd_range(year: int, month: int) -> tuple[int, int]:
+    """
+    (FromDate, ToDate) به فرمت عددی فشرده YYYYMMDD (مثلاً 14050501) — دقیقاً
+    همان فرمتی که ستون Date در جدول DataFile نرم‌افزار «کاراوب» استفاده
+    می‌کند. برای «گزارش تردد ماهانه».
+    """
+    days_in_month = jalali_days_in_month(year, month)
+    from_date = year * 10000 + month * 100 + 1
+    to_date = year * 10000 + month * 100 + days_in_month
+    return from_date, to_date

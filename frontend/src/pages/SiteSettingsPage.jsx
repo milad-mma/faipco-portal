@@ -11,6 +11,7 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -26,6 +27,7 @@ import {
   fetchSiteMapping,
   fetchSites,
   updateSiteGpsLocation,
+  updateSiteKaraWorkflow,
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
@@ -71,9 +73,13 @@ export default function SiteSettingsPage() {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = ["mapping", "gps"].includes(searchParams.get("tab")) ? searchParams.get("tab") : "connection";
+  const initialTab = ["mapping", "gps", "kara-workflow"].includes(searchParams.get("tab"))
+    ? searchParams.get("tab")
+    : "connection";
 
   const [site, setSite] = useState(null);
+  const [isSavingKaraWorkflow, setIsSavingKaraWorkflow] = useState(false);
+  const [karaWorkflowResult, setKaraWorkflowResult] = useState(null); // { success, message } | null
   const [tab, setTab] = useState(initialTab);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -259,6 +265,23 @@ export default function SiteSettingsPage() {
     }
   }
 
+  async function handleToggleKaraWorkflow(enabled) {
+    setKaraWorkflowResult(null);
+    setIsSavingKaraWorkflow(true);
+    try {
+      const updated = await updateSiteKaraWorkflow(siteId, enabled);
+      setSite(updated);
+      setKaraWorkflowResult({
+        success: true,
+        message: enabled ? "گزارش تردد ماهانه برای این سایت فعال شد." : "گزارش تردد ماهانه برای این سایت غیرفعال شد.",
+      });
+    } catch (err) {
+      setKaraWorkflowResult({ success: false, message: err.response?.data?.detail || "تغییر ناموفق بود." });
+    } finally {
+      setIsSavingKaraWorkflow(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -294,6 +317,7 @@ export default function SiteSettingsPage() {
           <Tab value="connection" label="اتصال دیتابیس" disabled={isSaving} />
           <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
           <Tab value="gps" label="موقعیت GPS" disabled={isSaving} />
+          <Tab value="kara-workflow" label="گزارش تردد ماهانه" disabled={isSaving} />
         </Tabs>
 
         {tab === "connection" && (
@@ -636,6 +660,39 @@ export default function SiteSettingsPage() {
                 {isSavingGps ? "در حال ذخیره..." : "ذخیره"}
               </Button>
             </Stack>
+          </Stack>
+        )}
+
+        {tab === "kara-workflow" && (
+          <Stack spacing={2.5}>
+            <Alert severity="info">
+              اگر روشن باشد، پرسنل این سایت می‌توانند تردد ماهانه واقعی خودشان (از دستگاه‌های حضور و
+              غیاب کارخانه، نرم‌افزار «کاراوب») را در پنل کاربری خودشان ببینند — از جدول DataFile
+              همین اتصال دیتابیس بالا (تب «اتصال دیتابیس») خوانده می‌شود.
+            </Alert>
+            {connectionForm.db_type !== "mssql" && (
+              <Alert severity="warning">
+                این قابلیت فقط برای اتصال از نوع SQL Server در دسترس است — نوع اتصال فعلی این سایت{" "}
+                «{connectionForm.db_type}» است.
+              </Alert>
+            )}
+
+            {karaWorkflowResult && (
+              <Alert severity={karaWorkflowResult.success ? "success" : "error"}>
+                {karaWorkflowResult.message}
+              </Alert>
+            )}
+
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={Boolean(site?.kara_workflow_enabled)}
+                  disabled={isSavingKaraWorkflow || connectionForm.db_type !== "mssql"}
+                  onChange={(e) => handleToggleKaraWorkflow(e.target.checked)}
+                />
+              }
+              label="گزارش تردد ماهانه برای پرسنل این سایت فعال باشد"
+            />
           </Stack>
         )}
       </Card>

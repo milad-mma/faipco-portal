@@ -15,6 +15,7 @@ from app.schemas.site import (
     SiteConnectionOut,
     SiteCreate,
     SiteGpsLocationIn,
+    SiteKaraWorkflowUpdate,
     SiteOut,
 )
 from app.services.site_service import SiteService
@@ -101,6 +102,23 @@ async def update_site_gps_location(
     site = await SiteService(db).set_gps_location(
         site_id, payload.gps_latitude, payload.gps_longitude, payload.gps_radius_meters
     )
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
+    return site
+
+
+@router.put("/{site_id}/kara-workflow", response_model=SiteOut)
+async def update_site_kara_workflow(
+    site_id: int,
+    payload: SiteKaraWorkflowUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """روشن/خاموش‌کردن «گزارش تردد ماهانه» (کاراوب) برای این Site."""
+    try:
+        site = await SiteService(db).set_kara_workflow_enabled(site_id, payload.kara_workflow_enabled)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
     return site

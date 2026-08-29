@@ -40,6 +40,13 @@ export async function updateSiteGpsLocation(siteId, { gps_latitude, gps_longitud
   return data;
 }
 
+export async function updateSiteKaraWorkflow(siteId, enabled) {
+  const { data } = await apiClient.put(`/sites/${siteId}/kara-workflow`, {
+    kara_workflow_enabled: enabled,
+  });
+  return data;
+}
+
 export async function fetchSiteConnection(siteId) {
   const { data } = await apiClient.get(`/sites/${siteId}/connection`);
   return data; // null اگر تعریف نشده باشد

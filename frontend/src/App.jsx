@@ -30,6 +30,7 @@ import BackupPage from "./pages/BackupPage";
 import UpdatePage from "./pages/UpdatePage";
 import IpAllowlistPage from "./pages/IpAllowlistPage";
 import AttendanceClockPage from "./pages/AttendanceClockPage";
+import MonthlyAttendanceReportPage from "./pages/MonthlyAttendanceReportPage";
 import PresenceReportPage from "./pages/PresenceReportPage";
 import ClockInOutReportPage from "./pages/ClockInOutReportPage";
 import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
@@ -175,6 +176,14 @@ export default function App() {
             element={
               <PermissionRoute check={(u) => u?.can_clock_in_out && !u?.is_superuser}>
                 <AttendanceClockPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/monthly-attendance"
+            element={
+              <PermissionRoute check={(u) => u?.has_kara_workflow}>
+                <MonthlyAttendanceReportPage />
               </PermissionRoute>
             }
           />

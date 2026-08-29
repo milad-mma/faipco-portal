@@ -46,6 +46,13 @@ class Site(Base, TimestampMixin):
     gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     gps_radius_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # آیا این سایت از نرم‌افزار «کاراوب» (Kara WorkFlow) برای ثبت تردد دستگاهی
+    # استفاده می‌کند — یعنی جدول DataFile در همین SiteConnection موجود است.
+    # پیش‌فرض False چون همه سایت‌ها الزاماً از این سیستم استفاده نمی‌کنند؛
+    # اگر خاموش باشد، «گزارش تردد ماهانه» برای پرسنل همان سایت اصلاً نمایش
+    # داده نمی‌شود (نه این‌که با خطای اتصال مواجه شوند).
+    kara_workflow_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     connection: Mapped["SiteConnection"] = relationship(
         back_populates="site", cascade="all, delete-orphan", uselist=False
     )

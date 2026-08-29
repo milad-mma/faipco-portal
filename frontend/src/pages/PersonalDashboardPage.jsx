@@ -17,7 +17,8 @@ import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { fetchMyNotices } from "../api/notices";
-import { fetchMyAttendanceLogs } from "../api/attendance";
+import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
+import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
@@ -119,29 +120,35 @@ export default function PersonalDashboardPage() {
   }, [user?.employee_id, user?.has_photo]);
 
   useEffect(() => {
-    if (!user?.can_clock_in_out) {
+    // ⚠️ طبق درخواست صریح: این کارت دیگر به سیستم آزمایشی GPS وصل نیست —
+    // کاملاً با «گزارش تردد ماهانه» (از دستگاه حضور و غیاب واقعی کارخانه،
+    // نرم‌افزار کاراوب) جایگزین شده. اگر سایت این پرسنل به کاراوب وصل
+    // نباشد (has_kara_workflow=false)، این کارت حالت «به‌زودی» نشان می‌دهد.
+    if (!user?.has_kara_workflow) {
       setTodayAttendance("unavailable");
       return;
     }
-    const now = new Date();
-    fetchMyAttendanceLogs({ year: undefined, month: undefined })
-      .then((data) => {
-        const todayStr = now.toLocaleDateString("en-CA"); // YYYY-MM-DD مستقل از تایم‌زون نمایش
-        const todayLogs = data.items.filter(
-          (log) => new Date(log.created_at).toLocaleDateString("en-CA") === todayStr
-        );
-        const checkIn = todayLogs.find((l) => l.log_type === "check_in");
-        const checkOut = [...todayLogs].reverse().find((l) => l.log_type === "check_out");
+    const { jd: todayJalaliDay } = gregorianToJalali(new Date());
+    fetchMonthlyAttendanceReport({})
+      .then((report) => {
+        const todayEntry = report.days.find((d) => d.day === todayJalaliDay);
+        const pairs = todayEntry?.pairs || [];
+        if (pairs.length === 0) {
+          setTodayAttendance({ checkIn: null, checkOut: null });
+          return;
+        }
         setTodayAttendance({
-          checkIn: checkIn ? new Date(checkIn.created_at) : null,
-          checkOut: checkOut ? new Date(checkOut.created_at) : null,
+          checkIn: pairs[0]?.entry || null,
+          checkOut: [...pairs].reverse().find((p) => p.exit)?.exit || null,
         });
       })
       .catch(() => setTodayAttendance("unavailable"));
-  }, [user?.can_clock_in_out]);
+  }, [user?.has_kara_workflow]);
 
-  function formatTime(date) {
-    return date ? date.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }) : "—";
+  function formatTime(value) {
+    // ⚠️ منبع جدید (کاراوب) خودش رشته HH:MM آماده برمی‌گرداند — نه یک
+    // شیء Date مثل سیستم قدیمی GPS — پس دیگر نیازی به toLocaleTimeString نیست.
+    return value || "—";
   }
 
   return (
@@ -227,7 +234,7 @@ export default function PersonalDashboardPage() {
             <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
             <Typography variant="caption">تردد امروز</Typography>
           </Stack>
-          {user?.can_clock_in_out ? (
+          {user?.has_kara_workflow ? (
             <>
               <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
                 <Typography variant="caption" color="text.secondary">
@@ -287,17 +294,17 @@ export default function PersonalDashboardPage() {
       <Stack direction="row" spacing={1.5} sx={{ gridArea: "actions" }}>
         <Card
           variant="outlined"
-          onClick={user?.can_clock_in_out ? () => navigate("/attendance-clock") : undefined}
+          onClick={user?.has_kara_workflow ? () => navigate("/monthly-attendance") : undefined}
           sx={{
             position: "relative",
             flex: 1,
             borderRadius: 2,
             p: 1.75,
-            cursor: user?.can_clock_in_out ? "pointer" : "default",
-            opacity: user?.can_clock_in_out ? 1 : 0.55,
+            cursor: user?.has_kara_workflow ? "pointer" : "default",
+            opacity: user?.has_kara_workflow ? 1 : 0.55,
           }}
         >
-          {!user?.can_clock_in_out && <ComingSoonChip />}
+          {!user?.has_kara_workflow && <ComingSoonChip />}
           <Box
             sx={{
               width: 38,

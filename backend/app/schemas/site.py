@@ -19,6 +19,7 @@ class SiteOut(BaseModel):
     gps_latitude: float | None = None
     gps_longitude: float | None = None
     gps_radius_meters: int | None = None
+    kara_workflow_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,6 +38,16 @@ class SiteActiveUpdate(BaseModel):
     غیرفعال (مثلاً هنگام تعطیلی موقت) بدون نیاز به حذف کامل آن."""
 
     is_active: bool
+
+
+class SiteKaraWorkflowUpdate(BaseModel):
+    """
+    روشن/خاموش‌کردن «گزارش تردد ماهانه» (از جدول DataFile نرم‌افزار
+    کاراوب) برای این Site — فقط برای Siteهایی معنا دارد که اتصالشان از
+    نوع SQL Server است؛ در غیر این صورت Endpoint خطا می‌دهد.
+    """
+
+    kara_workflow_enabled: bool
 
 
 class SiteConnectionIn(BaseModel):

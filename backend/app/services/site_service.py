@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import encrypt_secret
 from app.models.employee import EmployeeMapping
-from app.models.site import Site, SiteConnection
+from app.models.site import DbType, Site, SiteConnection
 from app.schemas.site import EmployeeMappingIn, SiteConnectionIn, SiteCreate
 
 
@@ -52,6 +52,28 @@ class SiteService:
         site.gps_latitude = latitude
         site.gps_longitude = longitude
         site.gps_radius_meters = radius_meters
+        await self.db.commit()
+        await self.db.refresh(site)
+        return site
+
+    async def set_kara_workflow_enabled(self, site_id: int, enabled: bool) -> Site | None:
+        """
+        روشن/خاموش‌کردن «گزارش تردد ماهانه» (کاراوب) برای یک Site — چون این
+        قابلیت مستقیماً از همان SiteConnection می‌خواند (جدول DataFile)، فقط
+        برای اتصال‌های SQL Server معنا دارد؛ اگر اتصال هنوز تعریف نشده یا
+        نوعش SQL Server نیست، روشن‌کردن رد می‌شود (نه اینکه بی‌صدا ذخیره
+        شود و بعداً کاربران با خطای اتصال مواجه شوند).
+        """
+        site = await self.db.get(Site, site_id)
+        if site is None:
+            return None
+        if enabled:
+            conn = await self.get_connection(site_id)
+            if conn is None or conn.db_type != DbType.mssql:
+                raise ValueError(
+                    "گزارش تردد ماهانه فقط برای سایتی با اتصال از نوع SQL Server قابل‌فعال‌سازی است"
+                )
+        site.kara_workflow_enabled = enabled
         await self.db.commit()
         await self.db.refresh(site)
         return site
