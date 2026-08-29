@@ -34,6 +34,7 @@ from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority, NoticeType
 from app.core.site_access import get_sites_with_permission
+from app.repositories.user_repository import UserRepository
 from app.models.user import User
 from app.schemas.notice import (
     AttendanceCardResultOut,
@@ -267,15 +268,33 @@ async def notice_readers(
     current_user: User = Depends(get_current_user),
 ):
     """
-    چه کسانی این اطلاعیه را دیده‌اند — فقط خودِ فرستنده یا Admin (notices.view) اجازه دارد.
+    چه کسانی این اطلاعیه را دیده‌اند — فرستنده، Admin واقعی، هرکسی با
+    notices.view سراسری، یا هرکسی با notices.site_report برای حداقل یکی
+    از سایت‌هایی که این اطلاعیه واقعاً به آن‌ها می‌رسد.
+
+    ⚠️ رفع یک باگ واقعی: قبلاً این Endpoint فقط فرستنده/is_superuser را
+    اجازه می‌داد — با اینکه توضیحش ادعا می‌کرد notices.view هم مجاز است؛
+    در عمل، کسی با notices.site_report (که دقیقاً برای دیدن اطلاعیه‌های
+    فرستاده‌شده توسط *دیگران* به سایتش طراحی شده) همیشه ۴۰۳ می‌گرفت. چون
+    Frontend این خطا را می‌بلعید (بدون .catch)، به‌جای پیام خطا، یک لیست
+    خالی نشان می‌داد — دقیقاً همان چیزی که به‌اشتباه «هنوز کسی نخوانده»
+    تعبیر می‌شد.
     """
     notice = await db.get(Notice, notice_id)
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
 
     if notice.sender_id != current_user.id and not current_user.is_superuser:
-        # بررسی مجوز notices.view برای Adminهای غیر superuser (در حال حاضر فقط superuser دارد)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده این گزارش را ندارید")
+        has_global_view = "notices.view" in await UserRepository(db).get_all_permission_codes(current_user.id)
+        allowed = has_global_view
+        if not allowed:
+            site_report_sites = await get_sites_with_permission(db, current_user, "notices.site_report")
+            if site_report_sites is None:
+                allowed = True  # مجوز سراسری notices.site_report
+            elif site_report_sites:
+                allowed = await NoticeService(db).notice_reaches_any_site(notice_id, site_report_sites)
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده این گزارش را ندارید")
 
     return await NoticeService(db).get_notice_readers(notice_id)
 

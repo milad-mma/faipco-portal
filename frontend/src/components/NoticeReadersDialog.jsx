@@ -22,12 +22,21 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
   const [readers, setReaders] = useState([]);
   const [isResending, setIsResending] = useState(false);
   const [resendResult, setResendResult] = useState(null); // { success, message } | null
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (noticeId) {
       setReaders([]);
       setResendResult(null);
-      fetchNoticeReaders(noticeId).then(setReaders);
+      setLoadError("");
+      // ⚠️ رفع یک باگ واقعی: قبلاً بدون .catch بود — اگر Backend خطای ۴۰۳
+      // می‌داد (مثلاً برای کسی با notices.site_report نه notices.view)،
+      // این خطا بی‌صدا بلعیده می‌شد و readers همچنان [] (مقدار اولیه)
+      // می‌ماند — دقیقاً همان چیزی که به‌اشتباه «هنوز کسی نخوانده» تعبیر
+      // می‌شد، در حالی که واقعاً یعنی «اجازه مشاهده نداری».
+      fetchNoticeReaders(noticeId)
+        .then(setReaders)
+        .catch((err) => setLoadError(err.response?.data?.detail || "دریافت اطلاعات ناموفق بود."));
     }
   }, [noticeId]);
 
@@ -64,7 +73,9 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
             {resendResult.message}
           </Alert>
         )}
-        {readers.length === 0 ? (
+        {loadError ? (
+          <Alert severity="error">{loadError}</Alert>
+        ) : readers.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
             هنوز کسی این اطلاعیه را باز نکرده است.
           </Typography>

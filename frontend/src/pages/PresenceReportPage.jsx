@@ -82,6 +82,7 @@ export default function PresenceReportPage() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
+          permission="attendance.view_logs"
           onChange={(value) => {
             setSelectedSiteId(value);
             setPage(1);

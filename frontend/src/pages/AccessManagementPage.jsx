@@ -20,7 +20,7 @@ import {
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import { fetchEmployees } from "../api/employees";
-import { fetchSites } from "../api/sites";
+import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
 import { fetchAccessOverview } from "../api/users";
 import { monoFontSx } from "../theme";
 import { roleDisplayName } from "../utils/roleLabels";
@@ -29,6 +29,7 @@ import AssignAccessDialog from "../components/AssignAccessDialog";
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
   const [overview, setOverview] = useState(null);
+  const [mySiteIds, setMySiteIds] = useState(undefined); // undefined = هنوز لود نشده، null = نامحدود
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
@@ -37,6 +38,14 @@ export default function AccessManagementPage() {
   useEffect(() => {
     fetchSites().then(setSites);
     loadOverview();
+    // ⚠️ رفع یک نقص واقعی امنیتی/UX: قبلاً جست‌وجوی پرسنل اینجا هیچ
+    // محدودیت سایتی نداشت — کسی با users.manage فقط برای یک سایت،
+    // می‌توانست پرسنل *همه* سایت‌های دیگر را هم جست‌وجو/پیدا کند (که
+    // البته حالا Backend اختصاص نقش برایشان را رد می‌کند، ولی همچنان
+    // گیج‌کننده بود که اصلاً در نتایج جست‌وجو ظاهر شوند).
+    fetchMyAccessibleSites("users.manage").then(({ unrestricted, sites: accessibleSites }) => {
+      setMySiteIds(unrestricted ? null : accessibleSites.map((s) => s.id));
+    });
   }, []);
 
   function loadOverview() {
@@ -44,15 +53,24 @@ export default function AccessManagementPage() {
   }
 
   useEffect(() => {
-    if (!search) {
+    if (!search || mySiteIds === undefined) {
       setResults([]);
       return;
     }
-    const timer = setTimeout(() => {
-      fetchEmployees({ search }).then((data) => setResults(data.items));
+    const timer = setTimeout(async () => {
+      if (mySiteIds === null) {
+        // نامحدود — یک جست‌وجوی ساده کافی است
+        const data = await fetchEmployees({ search });
+        setResults(data.items);
+      } else {
+        // محدود به چند سایت خاص — چون fetchEmployees فقط یک siteId
+        // می‌گیرد، برای هر سایت مجاز جدا جست‌وجو و نتایج را با هم ادغام می‌کنیم
+        const pages = await Promise.all(mySiteIds.map((siteId) => fetchEmployees({ search, siteId })));
+        setResults(pages.flatMap((p) => p.items));
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, mySiteIds]);
 
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
 
@@ -217,7 +235,11 @@ export default function AccessManagementPage() {
         </TableContainer>
       </Card>
 
-      <AssignAccessDialog employee={accessEmployee} sites={sites} onClose={closeAccessDialog} />
+      <AssignAccessDialog
+        employee={accessEmployee}
+        sites={mySiteIds === null || mySiteIds === undefined ? sites : sites.filter((s) => mySiteIds.includes(s.id))}
+        onClose={closeAccessDialog}
+      />
     </Box>
   );
 }

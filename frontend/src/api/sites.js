@@ -5,6 +5,18 @@ export async function fetchSites() {
   return data;
 }
 
+/**
+ * برای فیلترهای «سایت» در صفحات گزارش‌گیری — به‌جای fetchSites (که همه
+ * سایت‌های سیستم را برمی‌گرداند، صرف‌نظر از دسترسی واقعی کاربر)، فقط
+ * سایت‌هایی که کاربر جاری واقعاً برای این Permission Code دسترسی دارد.
+ * { unrestricted, sites } — اگر unrestricted بود، یعنی Admin/انتصاب
+ * سراسری است؛ در آن حالت باید از fetchSites معمولی (همه سایت‌ها) استفاده کرد.
+ */
+export async function fetchMyAccessibleSites(permission) {
+  const { data } = await apiClient.get("/sites/my-accessible", { params: { permission } });
+  return data;
+}
+
 export async function createSite(payload) {
   const { data } = await apiClient.post("/sites", payload);
   return data;

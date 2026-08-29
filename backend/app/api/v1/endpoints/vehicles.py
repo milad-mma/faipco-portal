@@ -67,6 +67,7 @@ async def delete_my_vehicle(
 
 @router.get("", response_model=list[VehicleAdminOut])
 async def list_all_vehicles(
+    site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -75,11 +76,21 @@ async def list_all_vehicles(
     (یا هر نقش دیگری با مجوز vehicles.view_all) فقط خواندنی و محدود به
     سایت‌هایی که آن نقش برایشان تعریف شده (ایزوله‌سازی چندسایتی، دقیقاً
     مثل GET /employees).
+
+    site_id (اختیاری): فیلتر «سایت-محور» برای Admin/کاربر چندسایته که
+    می‌خواهد فقط یک سایت را ببیند — با سایت‌های مجاز بالا تقاطع گرفته
+    می‌شود؛ نمی‌تواند سایتی خارج از دسترسش را انتخاب کند.
     """
     accessible_site_ids = await get_sites_with_permission(db, current_user, "vehicles.view_all")
     if accessible_site_ids is not None and len(accessible_site_ids) == 0:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده این گزارش را ندارید")
-    return await VehicleService(db).list_all(accessible_site_ids)
+
+    if site_id is not None:
+        effective_site_ids = {site_id} if accessible_site_ids is None else (accessible_site_ids & {site_id})
+    else:
+        effective_site_ids = accessible_site_ids
+
+    return await VehicleService(db).list_all(effective_site_ids)
 
 
 @router.patch("/{vehicle_id}", response_model=VehicleOut)

@@ -14,8 +14,8 @@ export async function deleteMyVehicle(vehicleId) {
   await apiClient.delete(`/vehicles/me/${vehicleId}`);
 }
 
-export async function fetchAllVehicles() {
-  const { data } = await apiClient.get("/vehicles");
+export async function fetchAllVehicles(siteId) {
+  const { data } = await apiClient.get("/vehicles", { params: siteId ? { site_id: siteId } : {} });
   return data;
 }
 

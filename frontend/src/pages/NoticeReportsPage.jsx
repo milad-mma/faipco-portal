@@ -25,7 +25,7 @@ export default function NoticeReportsPage() {
       </Typography>
 
       <Stack direction="row" sx={{ mb: 2 }}>
-        <SiteFilterSelect value={siteId} onChange={setSiteId} />
+        <SiteFilterSelect value={siteId} permission="notices.site_report" onChange={setSiteId} />
       </Stack>
 
       <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>

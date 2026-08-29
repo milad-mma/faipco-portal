@@ -6,11 +6,15 @@ Endpoint های مدیریت کاربران و انتصاب نقش.
 اجازه ارسال اطلاعیه به چه کسانی را دارد (به سرویس notice_service.py مراجعه کنید).
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_permission
 from app.db.session import get_db
-from app.models.user import Role
+from app.core.site_access import get_sites_with_permission
+from app.models.employee import Department, Employee
+from app.repositories.user_repository import UserRepository
+from app.models.user import Role, User
 from app.schemas.user_management import (
     AccessOverviewEntry,
     AssignRoleIn,
@@ -45,10 +49,13 @@ def _role_to_detail_out(role: Role) -> RoleDetailOut:
 @router.get("/access-overview", response_model=list[AccessOverviewEntry])
 async def access_overview(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
     """جدول کامل همه کسانی که نقش سازمانی یا سرپرستی واحد دارند — برای پنل مدیریت دسترسی."""
-    return await UserManagementService(db).get_access_overview()
+    accessible_site_ids = None
+    if not current_user.is_superuser:
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
+    return await UserManagementService(db).get_access_overview(accessible_site_ids)
 
 
 @router.get("/roles", response_model=list[RoleOut])
@@ -73,8 +80,32 @@ async def assign_role(
     user_id: int,
     payload: AssignRoleIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
+    # ⚠️ همان ایزوله‌سازی چندسایتی که در /employees/{id}/roles اعمال شد —
+    # این مسیر جایگزین (بر پایه User، نه Employee) هم باید همان محدودیت
+    # را داشته باشد، وگرنه کسی می‌توانست از همین مسیر دور بزند.
+    if not current_user.is_superuser:
+        target_user = await UserRepository(db).get_by_id(user_id)
+        if target_user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کاربر یافت نشد")
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
+        if accessible_site_ids is not None:
+            target_site_id = None
+            if target_user.employee_id is not None:
+                employee = await db.get(Employee, target_user.employee_id)
+                target_site_id = employee.site_id if employee else None
+            if target_site_id not in accessible_site_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="اجازه مدیریت دسترسی این کاربر را ندارید (خارج از سایت‌های تحت اختیار شما)",
+                )
+            if any(sid not in accessible_site_ids for sid in payload.site_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="اجازه اختصاص نقش برای این سایت(ها) را ندارید",
+                )
+
     try:
         return await UserManagementService(db).assign_role(user_id, payload)
     except ValueError as e:
@@ -85,14 +116,43 @@ async def assign_role(
 async def bulk_assign_role(
     payload: BulkAssignRoleIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
     """
     یک نقش را هم‌زمان به فهرستی از پرسنل (employee_ids) یا همه پرسنل یک
     سایت/واحد (site_id/department_id) اختصاص می‌دهد — برای مواردی مثل
     فعال‌کردن یک قابلیت آزمایشی برای صدها نفر یک‌جا، بدون نیاز به انتصاب
     دستی یکی‌یکی.
+
+    ⚠️ همان ایزوله‌سازی چندسایتی که در انتصاب تکی اعمال شد — چون این
+    مسیر می‌تواند هم‌زمان صدها پرسنل را تحت تأثیر قرار دهد، نبودِ این
+    بررسی حتی مهم‌تر از انتصاب تکی بود.
     """
+    if not current_user.is_superuser:
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
+        if accessible_site_ids is not None:
+            if payload.site_id is not None and payload.site_id not in accessible_site_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مدیریت دسترسی این سایت را ندارید"
+                )
+            if payload.department_id is not None:
+                department = await db.get(Department, payload.department_id)
+                if department is None or department.site_id not in accessible_site_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مدیریت دسترسی این واحد را ندارید"
+                    )
+            if payload.employee_ids:
+                result = await db.execute(
+                    select(func.count()).select_from(Employee).where(
+                        Employee.id.in_(payload.employee_ids), Employee.site_id.not_in(accessible_site_ids)
+                    )
+                )
+                if result.scalar_one() > 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="بعضی از این پرسنل خارج از سایت‌های تحت اختیار شما هستند",
+                    )
+
     try:
         result = await UserManagementService(db).bulk_assign_role(
             role_id=payload.role_id,

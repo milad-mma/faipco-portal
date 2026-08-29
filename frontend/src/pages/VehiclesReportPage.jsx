@@ -28,12 +28,14 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { useAuth } from "../context/AuthContext";
 import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../components/IranianLicensePlateInput";
+import SiteFilterSelect from "../components/SiteFilterSelect";
 import { deleteVehicleAdmin, fetchAllVehicles, updateVehicleAdmin } from "../api/vehicles";
 
 const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };
 
 const COLUMNS = [
   { key: "employee_name", label: "پرسنل" },
+  { key: "site_name", label: "سایت" },
   { key: "department_name", label: "واحد سازمانی" },
   { key: "vehicle_type", label: "نوع خودرو" },
   { key: "color", label: "رنگ" },
@@ -132,6 +134,7 @@ export default function VehiclesReportPage() {
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [vehicles, setVehicles] = useState(null);
   const [search, setSearch] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [sortKey, setSortKey] = useState("employee_name");
   const [sortDir, setSortDir] = useState("asc");
   const [editingVehicle, setEditingVehicle] = useState(null);
@@ -139,12 +142,12 @@ export default function VehiclesReportPage() {
   const [deletingId, setDeletingId] = useState(null);
 
   function loadVehicles() {
-    fetchAllVehicles().then(setVehicles);
+    fetchAllVehicles(selectedSiteId).then(setVehicles);
   }
 
   useEffect(() => {
     loadVehicles();
-  }, []);
+  }, [selectedSiteId]);
 
   async function handleConfirmDelete() {
     if (!vehicleToDelete) return;
@@ -179,7 +182,7 @@ export default function VehiclesReportPage() {
     const term = search.trim().toLowerCase();
     const filtered = term
       ? vehicles.filter((v) =>
-          [v.employee_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)]
+          [v.employee_name, v.site_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)]
             .filter(Boolean)
             .some((field) => field.toLowerCase().includes(term))
         )
@@ -200,21 +203,25 @@ export default function VehiclesReportPage() {
         خودروهای پرسنل
       </Typography>
 
-      <TextField
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="جست‌وجو بر اساس نام، واحد، نوع خودرو، رنگ یا شماره پلاک..."
-        size="small"
-        fullWidth
-        sx={{ mb: 2, maxWidth: 480 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchOutlinedIcon fontSize="small" />
-            </InputAdornment>
-          ),
-        }}
-      />
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }} flexWrap="wrap" rowGap={2}>
+        <TextField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="جست‌وجو بر اساس نام، واحد، نوع خودرو، رنگ یا شماره پلاک..."
+          size="small"
+          sx={{ flex: 1, minWidth: 240, maxWidth: 480 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchOutlinedIcon fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
+        {/* فقط برای Admin/کاربر چندسایته معنا دارد — کسی که فقط یک سایت
+            دارد، همان یک گزینه را می‌بیند که چیزی برایش تغییر نمی‌دهد */}
+        <SiteFilterSelect value={selectedSiteId} permission="vehicles.view_all" onChange={setSelectedSiteId} />
+      </Stack>
 
       {displayedVehicles === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -237,7 +244,7 @@ export default function VehiclesReportPage() {
                     {v.employee_name}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" noWrap>
-                    {v.department_name || "—"}
+                    {[v.site_name, v.department_name].filter(Boolean).join(" — ") || "—"}
                   </Typography>
                 </Box>
                 {user?.can_manage_vehicles && (
@@ -299,6 +306,7 @@ export default function VehiclesReportPage() {
                 {displayedVehicles.map((v) => (
                   <TableRow key={v.id} hover>
                     <TableCell>{v.employee_name}</TableCell>
+                    <TableCell>{v.site_name || "—"}</TableCell>
                     <TableCell>{v.department_name || "—"}</TableCell>
                     <TableCell>{v.vehicle_type}</TableCell>
                     <TableCell>{v.color}</TableCell>

@@ -900,6 +900,33 @@ class NoticeService:
             )
         return detailed, total
 
+    async def notice_reaches_any_site(self, notice_id: int, site_ids: set[int]) -> bool:
+        """
+        آیا این اطلاعیه مشخص به حداقل یکی از این سایت‌ها می‌رسد — برای اجازه
+        «چه کسانی دیده‌اند» به کسی که notices.site_report دارد (نه فقط
+        فرستنده/Admin واقعی)، همان منطق get_detailed_notices_for_sites ولی
+        محدود به یک اطلاعیه مشخص.
+        """
+        targets_result = await self.db.execute(
+            select(NoticeTarget.target_type, NoticeTarget.target_id).where(NoticeTarget.notice_id == notice_id)
+        )
+        targets = targets_result.all()
+
+        for target_type, target_id in targets:
+            if target_type == NoticeTargetType.all:
+                return True
+            if target_type == NoticeTargetType.site and target_id in site_ids:
+                return True
+            if target_type == NoticeTargetType.department:
+                dept = await self.db.get(Department, target_id)
+                if dept is not None and dept.site_id in site_ids:
+                    return True
+            if target_type == NoticeTargetType.employee:
+                employee = await self.db.get(Employee, target_id)
+                if employee is not None and employee.site_id in site_ids:
+                    return True
+        return False
+
     async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
         """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down."""
         result = await self.db.execute(

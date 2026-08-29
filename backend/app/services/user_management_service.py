@@ -149,11 +149,16 @@ class UserManagementService:
 
     # ---------- نمای کلی دسترسی‌ها ----------
 
-    async def get_access_overview(self) -> list[dict]:
+    async def get_access_overview(self, accessible_site_ids: set[int] | None = None) -> list[dict]:
         """
         فهرست کامل همه پرسنلی که هر نوع دسترسی خاصی دارند: نقش سازمانی
         (مدیر سایت / مدیر میانی) و/یا سرپرستی یک یا چند واحد سازمانی.
         برای جدول «نمای کلی دسترسی‌ها» در پنل مدیریت دسترسی استفاده می‌شود.
+
+        accessible_site_ids: اگر داده شود (کاربر جاری Admin واقعی/انتصاب
+        سراسری users.manage نباشد)، فقط پرسنلی که سایت خودشان جزو این
+        مجموعه است نشان داده می‌شوند — وگرنه یک users.manage سایت‌محور
+        می‌توانست کل فهرست دسترسی‌های *همه* سازمان را ببیند.
         """
         # ۱. همه نقش‌های اختصاص‌یافته (به‌جز superadmin)
         result = await self.db.execute(
@@ -208,6 +213,8 @@ class UserManagementService:
 
         overview: list[dict] = []
         for user_id, employee_id, first_name, last_name, personnel_code, emp_site_id in rows:
+            if accessible_site_ids is not None and emp_site_id not in accessible_site_ids:
+                continue
             role_entries = [
                 {"role_name": name, "site_name": site_name_by_id.get(sid) if sid else None}
                 for sid, name in roles_by_user.get(user_id, [])

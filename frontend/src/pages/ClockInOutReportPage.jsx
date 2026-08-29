@@ -37,7 +37,7 @@ import {
   updateAttendanceLog,
 } from "../api/attendance";
 import { fetchEmployees } from "../api/employees";
-import { fetchSites } from "../api/sites";
+import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
 import { useAuth } from "../context/AuthContext";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import SiteFilterSelect from "../components/SiteFilterSelect";
@@ -306,7 +306,18 @@ export default function ClockInOutReportPage() {
 
   useEffect(() => {
     if (canManage) {
-      fetchSites().then((data) => setSiteOptions(data || []));
+      // ⚠️ رفع یک نقص واقعی: قبلاً از fetchSites (همه سایت‌های سیستم)
+      // استفاده می‌شد — یعنی کسی با attendance.manage_clock_records فقط
+      // برای یک سایت، در این دراپ‌داون همه سایت‌های دیگر را هم می‌دید
+      // (که انتخابشان فقط نتیجه خالی می‌داد، بدون هیچ توضیحی) — به‌اشتباه
+      // به‌نظر می‌رسید فیلتر سایتی اصلاً کار نمی‌کند.
+      fetchMyAccessibleSites("attendance.manage_clock_records").then(({ unrestricted, sites }) => {
+        if (unrestricted) {
+          fetchSites().then((data) => setSiteOptions(data || []));
+        } else {
+          setSiteOptions(sites);
+        }
+      });
     }
   }, [canManage]);
 
@@ -376,6 +387,7 @@ export default function ClockInOutReportPage() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
+          permission="attendance.view_clock_records"
           onChange={(value) => {
             setSelectedSiteId(value);
             setPage(1);

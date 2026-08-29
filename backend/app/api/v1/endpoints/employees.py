@@ -482,11 +482,35 @@ async def assign_role_to_employee(
     employee_id: int,
     payload: AssignRoleIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+
+    # ⚠️ رفع یک نقص واقعی: require_permission("users.manage") فقط بررسی
+    # می‌کرد که کاربر جاری *یک‌جایی* این مجوز را دارد — نه اینکه خودِ این
+    # پرسنل مشخص (employee_id) در محدوده همان سایتی باشد که این مجوز
+    # برایش داده شده. یعنی کسی با users.manage فقط برای «سایت A»، عملاً
+    # می‌توانست برای پرسنل «سایت B» هم نقش اختصاص دهد — دقیقاً چیزی که
+    # ایزوله‌سازی چندسایتی باید جلویش را بگیرد.
+    if not current_user.is_superuser:
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
+        if accessible_site_ids is not None:
+            if employee.site_id not in accessible_site_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="اجازه مدیریت دسترسی این پرسنل را ندارید (خارج از سایت‌های تحت اختیار شما)",
+                )
+            # همچنین نمی‌تواند نقشی را برای سایتی که خودش مدیریتش را ندارد
+            # اختصاص دهد — وگرنه یک راه دور زدن ساده بود: کافی بود پرسنل
+            # سایت خودش را انتخاب کند، ولی site_ids نقش را به سایت‌های
+            # دیگر هم گسترش دهد.
+            if any(sid not in accessible_site_ids for sid in payload.site_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="اجازه اختصاص نقش برای این سایت(ها) را ندارید",
+                )
 
     # اگر این پرسنل هنوز حساب کاربری نداشته باشد، همین‌جا ساخته می‌شود
     # (دقیقاً همان User که بعداً با ورود کد پرسنلی/کد ملی خودش هم استفاده خواهد شد)

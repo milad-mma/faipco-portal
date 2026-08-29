@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.site import (
@@ -30,6 +31,36 @@ async def list_sites(
     # فرم ارسال اطلاعیه (نمایش نام سایت خودش) به آن نیاز دارد. اطلاعات حساس
     # (اتصال دیتابیس، پسورد) در Endpoint های جداگانه و همچنان محافظت‌شده هستند.
     return await SiteService(db).list_sites()
+
+
+@router.get("/my-accessible")
+async def my_accessible_sites(
+    permission: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    برای فیلترهای «سایت» در صفحات گزارش‌گیری (ورود/خروج، پرسنل آنلاین،
+    گزارش اطلاعیه‌ها، مدیریت دسترسی، ...) — نه فهرست همه سایت‌های سیستم
+    (که GET /sites بدون فیلتر برمی‌گرداند)، بلکه دقیقاً همان سایت‌هایی
+    که کاربر جاری برای این Permission Code مشخص واقعاً دسترسی دارد.
+
+    ⚠️ رفع یک نقص واقعی UX (نه خطای امنیتی — خودِ Endpoint های داده،
+    مثل GET /attendance/clock-logs، از قبل درست فیلتر می‌کردند): چند
+    صفحه فیلتر «سایت» را از GET /sites (همه سایت‌های سیستم) پر می‌کردند
+    — یعنی کاربری با دسترسی فقط به یک سایت، در دراپ‌داون همه سایت‌های
+    دیگر را هم می‌دید (که انتخابشان فقط یک نتیجه خالی می‌داد، نه خطای
+    روشن) — به‌اشتباه به‌نظر می‌رسید «فیلتر سایتی اصلاً کار نمی‌کند».
+
+    unrestricted=True یعنی Admin واقعی یا انتصاب سراسری این مجوز — همه
+    سایت‌ها را ببیند (site_ids در این حالت خالی است؛ Frontend باید در
+    این حالت خودش GET /sites معمولی را برای «همه سایت‌ها» صدا بزند).
+    """
+    accessible = await get_sites_with_permission(db, current_user, permission)
+    if accessible is None:
+        return {"unrestricted": True, "sites": []}
+    sites = await SiteService(db).list_sites()
+    return {"unrestricted": False, "sites": [SiteOut.model_validate(s) for s in sites if s.id in accessible]}
 
 
 @router.post("", response_model=SiteOut)
