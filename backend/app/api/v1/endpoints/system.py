@@ -13,6 +13,7 @@ import logging
 import re
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import delete, select
@@ -324,11 +325,13 @@ async def delete_login_background(
 ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml"}
 MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً خیلی کوچک‌تر از یک عکس پس‌زمینه است
 
-# سه لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش:
-#   app_logo  → درون‌برنامه‌ای (اسپلش، صفحه ورود، نوار بالا، پنل کاربری) — هر اندازه‌ای
-#   pwa_icon  → آیکون Manifest/صفحه اصلی گوشی بعد از نصب — ترجیحاً ۵۱۲×۵۱۲ مربعی
-#   favicon   → آیکون تب مرورگر — ترجیحاً ۳۲×۳۲ یا ۱۹۲×۱۹۲ مربعی
-_VALID_LOGO_SLUGS = {"app-logo", "pwa-icon", "favicon"}
+# چهار لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش:
+#   app_logo        → درون‌برنامه‌ای، اندازه‌های بزرگ (اسپلش، پنل کاربری) — هر اندازه‌ای
+#   app_logo_small  → درون‌برنامه‌ای، اندازه‌های کوچک (نوار بالا، صفحه ورود) — اگر
+#                      تنظیم نشود، همان app_logo (با Scale کوچک‌تر) استفاده می‌شود
+#   pwa_icon        → آیکون Manifest/صفحه اصلی گوشی بعد از نصب — ترجیحاً ۵۱۲×۵۱۲ مربعی
+#   favicon         → آیکون تب مرورگر — ترجیحاً ۳۲×۳۲ یا ۱۹۲×۱۹۲ مربعی
+_VALID_LOGO_SLUGS = {"app-logo", "app-logo-small", "pwa-icon", "favicon"}
 
 
 def _logo_slug_to_key(slug: str) -> str:
@@ -455,3 +458,37 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
         "icons": icons,
     }
     return Response(content=json.dumps(manifest, ensure_ascii=False), media_type="application/manifest+json")
+
+
+# ---------- index.html پویا — رفع «FAIPCO Portal» ثابت در تب مرورگر قبل از اجرای JS ----------
+
+_FRONTEND_INDEX_HTML_PATH = (
+    Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "frontend" / "dist" / "index.html"
+)
+_TITLE_TAG_PATTERN = re.compile(r"<title>.*?</title>", re.DOTALL)
+
+
+@router.get("/index.html", response_class=Response)
+async def get_dynamic_index_html(db: AsyncSession = Depends(get_db)):
+    """
+    نسخه پویای index.html — جایگزین فایل ثابت frontend/dist/index.html
+    برای Fallback مسیرهای SPA (به install.sh مراجعه کنید: location @index_html_dynamic).
+
+    ⚠️ رفع یک محدودیت واقعی که کاربر گزارش داد: چون index.html یک فایل
+    ثابت Build-شده است، تگ <title> آن (که مرورگر تا قبل از اجرای کامل
+    جاوااسکریپت React نشان می‌دهد) همیشه همان مقدار ثابت زمان Build را
+    داشت (مثلاً "FAIPCO Portal") — حتی وقتی Admin اسم را از پنل عوض کرده
+    بود. اینجا، همان فایل HTML بدون تغییر خوانده می‌شود، فقط محتوای همان
+    یک تگ <title> با عنوان واقعی از تنظیمات جایگزین می‌شود — همه‌چیز
+    دیگر (اسکریپت‌ها، لینک‌ها، Manifest) دقیقاً همان خروجی Build اصلی است.
+    """
+    if not _FRONTEND_INDEX_HTML_PATH.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فایل index.html پیدا نشد")
+
+    html = _FRONTEND_INDEX_HTML_PATH.read_text(encoding="utf-8")
+    branding = await SystemSettingsService(db).get_branding()
+    # escape ساده برای جلوگیری از شکستن HTML اگر عنوان شامل < یا & باشد
+    safe_title = branding["browser_title"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    html = _TITLE_TAG_PATTERN.sub(f"<title>{safe_title}</title>", html, count=1)
+
+    return Response(content=html, media_type="text/html")

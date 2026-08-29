@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { APP_LOGO_URL, FAVICON_URL, fetchBranding } from "../api/system";
+import { APP_LOGO_SMALL_URL, APP_LOGO_URL, FAVICON_URL, fetchBranding } from "../api/system";
 
 const BrandingContext = createContext(null);
 
@@ -19,6 +19,7 @@ const DEFAULT_BRANDING = {
   profileTitle: "شرکت تولیدی صنعتی فواد الیاف",
   profileSubtitle: "سامانه مدیریت پرسنل فایپکو",
   appLogoUrl: "/faipco-logo.png",
+  appLogoSmallUrl: "/faipco-logo.png",
 };
 
 /**
@@ -54,6 +55,15 @@ export function BrandingProvider({ children }) {
           profileTitle: data.profile_title,
           profileSubtitle: data.profile_subtitle,
           appLogoUrl: data.has_custom_app_logo ? APP_LOGO_URL : DEFAULT_BRANDING.appLogoUrl,
+          // ⚠️ اگر لوگوی کوچک اختصاصی تنظیم نشده باشد، از همان لوگوی
+          // بزرگ (نه فایل پیش‌فرض جدا) استفاده می‌شود — چون یک لوگوی
+          // سفارشی بزرگ که هنوز نسخه کوچک ندارد، باز هم بهتر از فایل
+          // پیش‌فرض کلی است.
+          appLogoSmallUrl: data.has_custom_app_logo_small
+            ? APP_LOGO_SMALL_URL
+            : data.has_custom_app_logo
+              ? APP_LOGO_URL
+              : DEFAULT_BRANDING.appLogoSmallUrl,
         });
 
         document.title = data.browser_title;

@@ -160,7 +160,7 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { appLogoUrl, sidebarTitle } = useBranding();
+  const { appLogoSmallUrl, sidebarTitle } = useBranding();
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
@@ -323,7 +323,7 @@ export default function Layout() {
       <Toolbar sx={{ gap: 1.5, px: 3 }}>
         <Box
           component="img"
-          src={appLogoUrl}
+          src={appLogoSmallUrl}
           alt={sidebarTitle}
           onError={(e) => {
             e.currentTarget.onerror = null;

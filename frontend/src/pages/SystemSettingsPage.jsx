@@ -5,6 +5,7 @@ import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import {
+  APP_LOGO_SMALL_URL,
   APP_LOGO_URL,
   deleteLoginBackground,
   deleteLogo,
@@ -346,11 +347,20 @@ export default function SystemSettingsPage() {
           </Typography>
           <Stack spacing={3}>
             <ImageUploadCard
-              title="لوگوی درون‌برنامه‌ای"
-              helperText="اسپلش‌اسکرین، صفحه ورود، نوار بالای پنل، پنل کاربری. هر اندازه‌ای — jpg/png/webp/svg، حداکثر ۴ مگابایت."
+              title="لوگوی درون‌برنامه‌ای (بزرگ)"
+              helperText="اسپلش‌اسکرین، پنل کاربری. هر اندازه‌ای — jpg/png/webp/svg، حداکثر ۴ مگابایت."
               currentImageUrl={APP_LOGO_URL}
               uploadFn={(file) => uploadLogo("app-logo", file)}
               deleteFn={() => deleteLogo("app-logo")}
+              reloadOnChange
+            />
+            <Divider />
+            <ImageUploadCard
+              title="لوگوی درون‌برنامه‌ای (کوچک)"
+              helperText="نوار بالای پنل، صفحه ورود. اگر آپلود نشود، همان لوگوی بزرگ (با اندازه کوچک‌تر) استفاده می‌شود — برای بهترین نتیجه در اندازه‌های خیلی کوچک، یک نسخه ساده‌شده/نمادین جداگانه آپلود کنید."
+              currentImageUrl={APP_LOGO_SMALL_URL}
+              uploadFn={(file) => uploadLogo("app-logo-small", file)}
+              deleteFn={() => deleteLogo("app-logo-small")}
               reloadOnChange
             />
             <Divider />

@@ -596,7 +596,29 @@ server {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Content-Security-Policy "${csp_header}" always;
         add_header Permissions-Policy "${permissions_policy_header}" always;
-        try_files \$uri \$uri/ /index.html;
+        try_files \$uri \$uri/ @index_html_dynamic;
+    }
+
+    # ⚠️ رفع «FAIPCO Portal» ثابت در تب مرورگر قبل از اجرای کامل React:
+    # به‌جای سرو مستقیم فایل ثابت frontend/dist/index.html، این Fallback
+    # (وقتی مسیر درخواستی هیچ فایل استاتیکی نبود — یعنی همه مسیرهای واقعی
+    # اپ مثل /notices، /employees، یا خودِ / ریشه) به Backend هدایت
+    # می‌شود، که همان فایل را می‌خواند و فقط تگ <title> را با عنوان واقعی
+    # از «تنظیمات سامانه» جایگزین می‌کند — بقیه فایل دقیقاً همان خروجی
+    # Build اصلی است.
+    location @index_html_dynamic {
+        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/v1/system/index.html;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header Cache-Control "no-cache, must-revalidate";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Permissions-Policy "${permissions_policy_header}" always;
     }
 }
 EOF

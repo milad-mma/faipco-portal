@@ -6,6 +6,7 @@ import { apiClient } from "./client";
 export const LOGIN_BACKGROUND_URL = `${apiClient.defaults.baseURL}/system/login-background`;
 // سه لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت
 export const APP_LOGO_URL = `${apiClient.defaults.baseURL}/system/logo/app-logo`;
+export const APP_LOGO_SMALL_URL = `${apiClient.defaults.baseURL}/system/logo/app-logo-small`;
 export const PWA_ICON_URL = `${apiClient.defaults.baseURL}/system/logo/pwa-icon`;
 export const FAVICON_URL = `${apiClient.defaults.baseURL}/system/logo/favicon`;
 

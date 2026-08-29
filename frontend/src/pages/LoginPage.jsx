@@ -48,7 +48,7 @@ const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
 
 export default function LoginPage() {
   const { login, user } = useAuth();
-  const { appLogoUrl, manifestShortName, loginTitle, loginSubtitle } = useBranding();
+  const { appLogoSmallUrl, manifestShortName, loginTitle, loginSubtitle } = useBranding();
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
@@ -387,7 +387,7 @@ export default function LoginPage() {
             >
               <Box
                 component="img"
-                src={appLogoUrl}
+                src={appLogoSmallUrl}
                 alt={manifestShortName}
                 onError={(e) => {
                   e.currentTarget.onerror = null;
@@ -475,7 +475,7 @@ export default function LoginPage() {
             >
               <Box
                 component="img"
-                src={appLogoUrl}
+                src={appLogoSmallUrl}
                 alt={manifestShortName}
                 onError={(e) => {
                   e.currentTarget.onerror = null;

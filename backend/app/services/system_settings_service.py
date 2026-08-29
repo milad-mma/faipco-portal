@@ -21,6 +21,8 @@ LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
 LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
 APP_LOGO_DATA_KEY = "app_logo_data"  # Base64 — لوگوی درون‌برنامه‌ای عمومی (اسپلش، صفحه ورود، نوار بالا، پنل کاربری)
 APP_LOGO_CONTENT_TYPE_KEY = "app_logo_content_type"
+APP_LOGO_SMALL_DATA_KEY = "app_logo_small_data"  # Base64 — نسخه اختصاصی برای اندازه‌های کوچک (نوار بالا، صفحه ورود)
+APP_LOGO_SMALL_CONTENT_TYPE_KEY = "app_logo_small_content_type"
 PWA_ICON_DATA_KEY = "pwa_icon_data"  # Base64 — آیکون اختصاصی Manifest/صفحه اصلی گوشی
 PWA_ICON_CONTENT_TYPE_KEY = "pwa_icon_content_type"
 FAVICON_DATA_KEY = "favicon_data"  # Base64 — آیکون اختصاصی تب مرورگر
@@ -227,6 +229,7 @@ class SystemSettingsService:
     # کلید‌های سه لوگوی مجزا — هرکدام برای یک مصرف کاملاً متفاوت
     _LOGO_FIELDS = {
         "app_logo": (APP_LOGO_DATA_KEY, APP_LOGO_CONTENT_TYPE_KEY),
+        "app_logo_small": (APP_LOGO_SMALL_DATA_KEY, APP_LOGO_SMALL_CONTENT_TYPE_KEY),
         "pwa_icon": (PWA_ICON_DATA_KEY, PWA_ICON_CONTENT_TYPE_KEY),
         "favicon": (FAVICON_DATA_KEY, FAVICON_CONTENT_TYPE_KEY),
     }

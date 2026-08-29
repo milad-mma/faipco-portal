@@ -41,6 +41,7 @@ class BrandingOut(BaseModel):
     profile_title: str
     profile_subtitle: str
     has_custom_app_logo: bool
+    has_custom_app_logo_small: bool
     has_custom_pwa_icon: bool
     has_custom_favicon: bool
 
