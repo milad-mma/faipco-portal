@@ -7,6 +7,7 @@ import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
 import SplashScreen from "./components/SplashScreen";
 import { useAuth } from "./context/AuthContext";
+import { useBranding } from "./context/BrandingContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
@@ -42,7 +43,12 @@ export default function App() {
   // جدید» اگر کاربر رویش Refresh می‌زد — با یک تأخیر ثابت و بی‌دلیل باز
   // شود)، اسپلش دقیقاً تا وقتی isLoading واقعی احراز هویت (چک اولیه
   // Session) تمام شود نمایش داده می‌شود — نه بیشتر، نه کمتر.
-  const { isLoading } = useAuth();
+  const { isLoading: authIsLoading } = useAuth();
+  const { isLoading: brandingIsLoading } = useBranding();
+  // ⚠️ طبق درخواست صریح: اسپلش تا وقتی *هم* احراز هویت *هم* برندینگ واقعاً
+  // آماده نشده‌اند، کنار نمی‌رود — وگرنه صفحه ورود/داشبورد یک لحظه با
+  // مقادیر پیش‌فرض ظاهر می‌شد و بعد با مقادیر واقعی جایگزین می‌شد.
+  const isLoading = authIsLoading || brandingIsLoading;
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {

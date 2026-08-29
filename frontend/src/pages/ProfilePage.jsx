@@ -99,7 +99,7 @@ const EXTRA_ACCESS_ITEMS = [
  */
 export default function ProfilePage() {
   const { user, logout, refetchUser } = useAuth();
-  const { appLogoUrl, manifestShortName, splashTitle, splashSubtitle } = useBranding();
+  const { appLogoUrl, profileTitle, profileSubtitle } = useBranding();
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -177,7 +177,7 @@ export default function ProfilePage() {
             <Box
               component="img"
               src={appLogoUrl}
-              alt={manifestShortName}
+              alt={profileTitle}
               onError={(e) => {
                 e.currentTarget.onerror = null;
                 e.currentTarget.src = "/faipco-logo.png";
@@ -188,10 +188,10 @@ export default function ProfilePage() {
         </Box>
         <Stack alignItems="center" spacing={0.5} sx={{ textAlign: "center", px: 2.5, py: 2.5 }}>
           <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-            {splashTitle}
+            {profileTitle}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {splashSubtitle}
+            {profileSubtitle}
           </Typography>
           {appVersion && (
             <Typography

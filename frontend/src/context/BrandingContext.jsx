@@ -3,18 +3,21 @@ import { APP_LOGO_URL, FAVICON_URL, fetchBranding } from "../api/system";
 
 const BrandingContext = createContext(null);
 
-// مقادیر پیش‌فرض — دقیقاً همان چیزی که قبلاً همه‌جای پروژه Hard-code بود؛
-// همین‌ها تا قبل از رسیدن پاسخ Backend (و هروقت لوگوی سفارشی تنظیم نشده
-// باشد) نمایش داده می‌شوند — یعنی هیچ صفحه‌ای هرگز خالی/بی‌نام/بی‌لوگو
-// دیده نمی‌شود.
+// مقادیر پیش‌فرض — فقط برای زمانی که Backend اصلاً در دسترس نباشد (مثلاً
+// بارگذاری اولیه در حالت آفلاین) استفاده می‌شوند؛ در حالت عادی، تا وقتی
+// مقادیر واقعی از سرور نرسیده باشند، isLoading=true است و هیچ‌جای پروژه
+// نباید بر اساس این پیش‌فرض‌ها چیزی رندر کند — دقیقاً برای جلوگیری از
+// «اول متن پیش‌فرض دیده شود، بعد با متن واقعی جایگزین شود».
 const DEFAULT_BRANDING = {
   browserTitle: "پرتال سازمانی پرسنل فایپکو",
   manifestShortName: "فایپکو",
-  manifestDescription: "پرتال سازمانی مدیریت پرسنل و اطلاع‌رسانی",
   splashTitle: "شرکت تولیدی صنعتی فواد الیاف",
   splashSubtitle: "سامانه مدیریت پرسنل",
   loginTitle: "سامانه مدیریت پرسنل فایپکو",
   loginSubtitle: "شرکت تولیدی صنعتی فواد الیاف",
+  sidebarTitle: "فایپکو",
+  profileTitle: "شرکت تولیدی صنعتی فواد الیاف",
+  profileSubtitle: "سامانه مدیریت پرسنل فایپکو",
   appLogoUrl: "/faipco-logo.png",
 };
 
@@ -23,19 +26,18 @@ const DEFAULT_BRANDING = {
  * قابلیت‌های عمومی، مستقل از احراز هویت (اسپلش‌اسکرین و صفحه ورود هم به
  * این نیاز دارند)، پس این Provider بیرون از AuthProvider نصب می‌شود.
  *
- * ⚠️ appLogoUrl همیشه به Endpoint پویای Backend اشاره می‌کند (نه مستقیم به
- * فایل پیش‌فرض) — اگر Admin هنوز لوگویی آپلود نکرده باشد، آن Endpoint
- * ۴۰۴ می‌دهد و کامپوننت‌های مصرف‌کننده (که همگی یک onError دارند) به‌طور
- * خودکار به همان فایل پیش‌فرض ثابت (`/faipco-logo.png`) برمی‌گردند.
- *
- * ⚠️ آیکون Manifest (PWA، برای صفحه اصلی گوشی) و Favicon (تب مرورگر) در
- * این Context نیستند — چون مصرف‌شان مستقیماً HTML استاتیک (Manifest از
- * طریق Backend، Favicon از طریق <link> در index.html) است، نه یک
- * Component React؛ فقط همین‌جا (پایین) به‌صورت مستقیم DOM را به‌روز
- * می‌کنیم.
+ * ⚠️ طبق درخواست صریح: قبلاً این Provider بلافاصله مقادیر پیش‌فرض
+ * Hard-code شده را نشان می‌داد و بعد از رسیدن پاسخ Backend، آن‌ها را با
+ * مقادیر واقعی *جایگزین* می‌کرد — یعنی کاربر یک لحظه متن/عنوان اشتباه
+ * (پیش‌فرض) می‌دید و بعد می‌دید عوض شد. این رفتار عمداً حذف شد: حالا
+ * isLoading هم در اختیار مصرف‌کننده‌ها قرار می‌گیرد؛ App.jsx تا وقتی این
+ * isLoading هم تمام نشود، اسپلش‌اسکرین را کنار نمی‌زند — یعنی وقتی صفحه
+ * ورود/داشبورد/اسپلش واقعاً روی صفحه دیده می‌شوند، مقادیر برندینگ از
+ * قبل واقعی و نهایی‌اند، نه پیش‌فرض در حال جایگزینی.
  */
 export function BrandingProvider({ children }) {
   const [branding, setBranding] = useState(DEFAULT_BRANDING);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchBranding()
@@ -48,6 +50,9 @@ export function BrandingProvider({ children }) {
           splashSubtitle: data.splash_subtitle,
           loginTitle: data.login_title,
           loginSubtitle: data.login_subtitle,
+          sidebarTitle: data.sidebar_title,
+          profileTitle: data.profile_title,
+          profileSubtitle: data.profile_subtitle,
           appLogoUrl: data.has_custom_app_logo ? APP_LOGO_URL : DEFAULT_BRANDING.appLogoUrl,
         });
 
@@ -68,14 +73,16 @@ export function BrandingProvider({ children }) {
         }
       })
       .catch(() => {
-        // اگر Backend در دسترس نبود (مثلاً همان لحظه اول بارگذاری آفلاین)،
-        // همان مقادیر پیش‌فرض کاملاً کافی‌اند — نیازی به نمایش خطا نیست.
-      });
+        // Backend در دسترس نبود (مثلاً بارگذاری اولیه آفلاین) — همان
+        // مقادیر پیش‌فرض از ابتدا در state هست؛ فقط isLoading را می‌بندیم
+        // تا اپ گیر نکند (بهتر از نمایش پیش‌فرض، نمایش هیچ‌چیز تا ابد است).
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
-  return <BrandingContext.Provider value={branding}>{children}</BrandingContext.Provider>;
+  return <BrandingContext.Provider value={{ ...branding, isLoading }}>{children}</BrandingContext.Provider>;
 }
 
 export function useBranding() {
-  return useContext(BrandingContext) || DEFAULT_BRANDING;
+  return useContext(BrandingContext) || { ...DEFAULT_BRANDING, isLoading: true };
 }

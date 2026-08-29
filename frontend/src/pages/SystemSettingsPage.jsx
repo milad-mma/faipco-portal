@@ -247,6 +247,21 @@ const FIELD_GROUPS = [
       { key: "login_subtitle", label: "زیرعنوان", maxLength: 100 },
     ],
   },
+  {
+    key: "sidebar",
+    title: "نوار بالای پنل",
+    helperText: "متن کنار لوگو، در نوار بالای همه صفحات داخل پنل.",
+    fields: [{ key: "sidebar_title", label: "عنوان", maxLength: 50 }],
+  },
+  {
+    key: "profile",
+    title: "پنل کاربری",
+    helperText: "زیر لوگو، در صفحه پروفایل هر کاربر.",
+    fields: [
+      { key: "profile_title", label: "عنوان", maxLength: 100 },
+      { key: "profile_subtitle", label: "زیرعنوان", maxLength: 100 },
+    ],
+  },
 ];
 
 /**
@@ -268,6 +283,9 @@ export default function SystemSettingsPage() {
         splash_subtitle: data.splash_subtitle,
         login_title: data.login_title,
         login_subtitle: data.login_subtitle,
+        sidebar_title: data.sidebar_title,
+        profile_title: data.profile_title,
+        profile_subtitle: data.profile_subtitle,
       });
     });
   }, []);

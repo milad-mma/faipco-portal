@@ -33,6 +33,9 @@ SPLASH_TITLE_KEY = "splash_title"
 SPLASH_SUBTITLE_KEY = "splash_subtitle"
 LOGIN_TITLE_KEY = "login_title"
 LOGIN_SUBTITLE_KEY = "login_subtitle"
+SIDEBAR_TITLE_KEY = "sidebar_title"  # نوار بالای پنل، کنار لوگو
+PROFILE_TITLE_KEY = "profile_title"  # پنل کاربری، زیر لوگو
+PROFILE_SUBTITLE_KEY = "profile_subtitle"
 
 # مقادیر پیش‌فرض — همان چیزی که قبلاً همه‌جای پروژه Hard-code بود
 DEFAULT_BROWSER_TITLE = "پرتال سازمانی پرسنل فایپکو"
@@ -42,6 +45,9 @@ DEFAULT_SPLASH_TITLE = "شرکت تولیدی صنعتی فواد الیاف"
 DEFAULT_SPLASH_SUBTITLE = "سامانه مدیریت پرسنل"
 DEFAULT_LOGIN_TITLE = "سامانه مدیریت پرسنل فایپکو"
 DEFAULT_LOGIN_SUBTITLE = "شرکت تولیدی صنعتی فواد الیاف"
+DEFAULT_SIDEBAR_TITLE = "فایپکو"
+DEFAULT_PROFILE_TITLE = "شرکت تولیدی صنعتی فواد الیاف"
+DEFAULT_PROFILE_SUBTITLE = "سامانه مدیریت پرسنل فایپکو"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
@@ -213,6 +219,9 @@ class SystemSettingsService:
         "splash_subtitle": (SPLASH_SUBTITLE_KEY, DEFAULT_SPLASH_SUBTITLE),
         "login_title": (LOGIN_TITLE_KEY, DEFAULT_LOGIN_TITLE),
         "login_subtitle": (LOGIN_SUBTITLE_KEY, DEFAULT_LOGIN_SUBTITLE),
+        "sidebar_title": (SIDEBAR_TITLE_KEY, DEFAULT_SIDEBAR_TITLE),
+        "profile_title": (PROFILE_TITLE_KEY, DEFAULT_PROFILE_TITLE),
+        "profile_subtitle": (PROFILE_SUBTITLE_KEY, DEFAULT_PROFILE_SUBTITLE),
     }
 
     # کلید‌های سه لوگوی مجزا — هرکدام برای یک مصرف کاملاً متفاوت

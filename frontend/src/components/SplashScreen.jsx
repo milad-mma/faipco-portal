@@ -11,13 +11,15 @@ import { useBranding } from "../context/BrandingContext";
  *     سفارشی که باید دانلود شود) — چون این متن فقط چند ثانیه دیده می‌شود،
  *     نمایش فوری با فونت سیستم بهتر از یک تعویض فونت محسوس وسط اسپلش است.
  *
- * ⚠️ لوگو/نام از BrandingContext می‌آید — قابل‌تغییر از پنل «تنظیمات
- * سامانه». مقدار پیش‌فرض همان Context (`/faipco-logo.png` + نام پیش‌فرض)
- * دقیقاً همان چیزی است که تا قبل از برگشتن پاسخ Backend نمایش داده
- * می‌شود، پس هیچ تأخیر/چشمک‌زدن اضافه‌ای نسبت به قبل ایجاد نمی‌شود.
+ * ⚠️ طبق درخواست صریح: تا وقتی برندینگ واقعی از سرور نرسیده (isLoading)،
+ * این کامپوننت عمداً هیچ لوگو/متنی نشان نمی‌دهد (فقط پس‌زمینه سفید خالی)
+ * — نه مقدار پیش‌فرض. این‌طور هرگز «اول لوگو/متن پیش‌فرض دیده شود، بعد
+ * با مقدار واقعی جایگزین شود» اتفاق نمی‌افتد. App.jsx هم اسپلش را تا
+ * وقتی همین isLoading تمام نشود کنار نمی‌زند، پس در عمل این حالت خالی
+ * فقط یک لحظه کوتاه (مدت خودِ درخواست شبکه) دیده می‌شود.
  */
 export default function SplashScreen({ visible }) {
-  const { appLogoUrl, splashTitle, splashSubtitle } = useBranding();
+  const { appLogoUrl, splashTitle, splashSubtitle, isLoading } = useBranding();
   return (
     <Box
       sx={{
@@ -35,32 +37,36 @@ export default function SplashScreen({ visible }) {
         transition: "opacity 0.4s ease",
       }}
     >
-      <Box
-        component="img"
-        src={appLogoUrl}
-        alt={splashTitle}
-        onError={(e) => {
-          e.currentTarget.onerror = null;
-          e.currentTarget.src = "/faipco-logo.png";
-        }}
-        sx={{ width: { xs: 120, sm: 150 }, height: { xs: 120, sm: 150 }, objectFit: "contain" }}
-      />
-      <Box sx={{ textAlign: "center" }}>
-        <Typography
-          variant="subtitle1"
-          fontWeight={700}
-          sx={{ fontFamily: "Tahoma, sans-serif", color: "#000000" }}
-        >
-          {splashTitle}
-        </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
-        >
-          {splashSubtitle}
-        </Typography>
-      </Box>
+      {!isLoading && (
+        <>
+          <Box
+            component="img"
+            src={appLogoUrl}
+            alt={splashTitle}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = "/faipco-logo.png";
+            }}
+            sx={{ width: { xs: 120, sm: 150 }, height: { xs: 120, sm: 150 }, objectFit: "contain" }}
+          />
+          <Box sx={{ textAlign: "center" }}>
+            <Typography
+              variant="subtitle1"
+              fontWeight={700}
+              sx={{ fontFamily: "Tahoma, sans-serif", color: "#000000" }}
+            >
+              {splashTitle}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
+            >
+              {splashSubtitle}
+            </Typography>
+          </Box>
+        </>
+      )}
     </Box>
   );
 }

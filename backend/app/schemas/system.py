@@ -37,6 +37,9 @@ class BrandingOut(BaseModel):
     splash_subtitle: str
     login_title: str
     login_subtitle: str
+    sidebar_title: str
+    profile_title: str
+    profile_subtitle: str
     has_custom_app_logo: bool
     has_custom_pwa_icon: bool
     has_custom_favicon: bool
@@ -54,3 +57,6 @@ class BrandingIn(BaseModel):
     splash_subtitle: str | None = Field(default=None, max_length=100)
     login_title: str | None = Field(default=None, max_length=100)
     login_subtitle: str | None = Field(default=None, max_length=100)
+    sidebar_title: str | None = Field(default=None, max_length=50)
+    profile_title: str | None = Field(default=None, max_length=100)
+    profile_subtitle: str | None = Field(default=None, max_length=100)
