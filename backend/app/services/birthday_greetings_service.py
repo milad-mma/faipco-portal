@@ -82,26 +82,13 @@ class BirthdayGreetingsService:
             logger.info("ارسال خودکار پیام تبریک تولد غیرفعال است — امروز چیزی فرستاده نشد.")
             return 0
 
-        today_year, today_month, today_day = get_current_jalali_date()
-        today_str = f"{today_year:04d}-{today_month:02d}-{today_day:02d}"
-
-        # ⚠️ رفع خطر تکرار: با اضافه‌شدن misfire_grace_time به این Job
-        # (برای رفع باگ «بعضی روزها اصلاً ارسال نمی‌شود» — وقتی سرور دقیقاً
-        # سر ساعت ارسال Restart می‌شود)، ممکن است این تابع در یک روز چند
-        # بار صدا زده شود (مثلاً چند Restart پی‌درپی طی توسعه فعال). این
-        # بررسی تضمین می‌کند حتی در آن حالت هم، هر پرسنل حداکثر یک‌بار در
-        # روز پیام تبریک بگیرد.
-        already_sent_today = await SystemSettingsService(self.db).get_last_birthday_greetings_date()
-        if already_sent_today == today_str:
-            logger.info("پیام تبریک تولد امروز (%s) قبلاً ارسال شده — دوباره ارسال نمی‌شود.", today_str)
-            return 0
-
         templates_result = await self.db.execute(select(BirthdayMessageTemplate))
         templates = list(templates_result.scalars().all())
         if not templates:
             logger.info("پول پیام تبریک تولد خالی است — امروز چیزی فرستاده نشد.")
             return 0
 
+        today_year, today_month, today_day = get_current_jalali_date()
         employees_result = await self.db.execute(
             select(Employee).where(
                 Employee.is_active.is_(True),
@@ -111,7 +98,6 @@ class BirthdayGreetingsService:
         )
         birthday_employees = list(employees_result.scalars().all())
         if not birthday_employees:
-            await SystemSettingsService(self.db).set_last_birthday_greetings_date(today_str)
             return 0
 
         sender_result = await self.db.execute(select(User).where(User.is_superuser.is_(True)).limit(1))
@@ -146,5 +132,4 @@ class BirthdayGreetingsService:
                 logger.exception("ارسال Push تبریک تولد برای پرسنل %s ناموفق بود", employee.id)
 
         logger.info("پیام تبریک تولد برای %s پرسنل فرستاده شد.", sent_count)
-        await SystemSettingsService(self.db).set_last_birthday_greetings_date(today_str)
         return sent_count

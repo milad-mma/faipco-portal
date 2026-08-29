@@ -16,7 +16,6 @@ IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
 IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
 BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
-LAST_BIRTHDAY_GREETINGS_DATE_KEY = "last_birthday_greetings_date"  # فرمت شمسی "YYYY-MM-DD"
 LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
 LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
 APP_LOGO_DATA_KEY = "app_logo_data"  # Base64 — لوگوی درون‌برنامه‌ای عمومی (اسپلش، صفحه ورود، نوار بالا، پنل کاربری)
@@ -141,16 +140,6 @@ class SystemSettingsService:
 
     # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
 
-    # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
-    # ⚠️ رفع یک باگ حیاتی: این متد قبلاً دوبار در همین کلاس تعریف شده بود
-    # — پایتون بی‌صدا فقط تعریف دومی را نگه می‌داشت (اولی کاملاً بی‌اثر و
-    # مرده بود)، که رفتارش دقیقاً برعکس چیزی بود که کامنتش ادعا می‌کرد:
-    # به‌جای «پیش‌فرض فعال، مگر صراحتاً خاموش شود» (raw != "false")، عملاً
-    # «پیش‌فرض غیرفعال، مگر صراحتاً روشن شود» (raw == "true") اجرا می‌شد.
-    # یعنی برای هر نصبی که Admin هرگز این کلید را صراحتاً «روشن» نکرده بود
-    # (چون اصلاً انتظار نداشت نیاز به این کار باشد)، کل قابلیت تبریک تولد
-    # همیشه، هر روز، بی‌صدا غیرفعال می‌ماند.
-
     async def get_birthday_greetings_enabled(self) -> bool:
         raw = await self._get_raw(BIRTHDAY_GREETINGS_ENABLED_KEY)
         # پیش‌فرض True است (برخلاف IP Allowlist) چون خودِ «پول خالی = ارسال نشدن»
@@ -161,12 +150,15 @@ class SystemSettingsService:
         await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
         return enabled
 
-    async def get_last_birthday_greetings_date(self) -> str | None:
-        """آخرین تاریخ شمسی (YYYY-MM-DD) که پیام تبریک تولد واقعاً ارسال شد — برای جلوگیری از ارسال تکراری."""
-        return await self._get_raw(LAST_BIRTHDAY_GREETINGS_DATE_KEY)
+    # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
 
-    async def set_last_birthday_greetings_date(self, jalali_date: str) -> None:
-        await self._set_raw(LAST_BIRTHDAY_GREETINGS_DATE_KEY, jalali_date)
+    async def get_birthday_greetings_enabled(self) -> bool:
+        raw = await self._get_raw(BIRTHDAY_GREETINGS_ENABLED_KEY)
+        return raw == "true"
+
+    async def set_birthday_greetings_enabled(self, enabled: bool) -> bool:
+        await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
+        return enabled
 
     # ---------- عکس پس‌زمینه صفحه ورود (قابلیت «تنظیمات سامانه») ----------
     # ⚠️ صفحه ورود قبل از احراز هویت نمایش داده می‌شود، پس Endpoint دریافت
