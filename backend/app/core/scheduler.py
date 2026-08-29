@@ -183,6 +183,16 @@ async def start_scheduler() -> None:
         minute=birthday_minute,
         id=BIRTHDAY_JOB_ID,
         replace_existing=True,
+        # ⚠️ رفع یک باگ واقعی («بعضی روزها پیام تبریک تولد خودکار ارسال
+        # نمی‌شود»): بدون misfire_grace_time، پیش‌فرض خودِ APScheduler
+        # عملاً حدود ۱ ثانیه است — یعنی اگر Backend درست همان لحظه (مثلاً
+        # هر بار که install.sh اجرا و سرویس Restart می‌شود) در حال
+        # بالا‌آمدن باشد، حتی چند ثانیه تأخیر کافی بود که کل اجرای امروز
+        # را کاملاً از دست بدهد، بدون هیچ تلاش دوباره تا فردا. حالا با
+        # یک بازه اطمینان ۶ ساعته، اگر سرور دقیقاً سر ساعت ارسال Restart
+        # شود، همین که دوباره بالا بیاید (تا ۶ ساعت بعد)، همان اجرای
+        # امروز را انجام می‌دهد — نه اینکه کامل نادیده گرفته شود.
+        misfire_grace_time=6 * 60 * 60,
     )
     logger.info("Scheduler پیام تبریک تولد هر روز ساعت %02d:%02d اجرا خواهد شد", birthday_hour, birthday_minute)
 
@@ -216,7 +226,13 @@ def reschedule_sync_interval(minutes: int) -> None:
 def reschedule_birthday_send_time(hour: int, minute: int) -> None:
     """ساعت ارسال روزانه پیام تبریک تولد را بدون Restart سرور تغییر می‌دهد."""
     try:
+        # ⚠️ reschedule_job فقط Trigger را عوض می‌کند؛ برای اطمینان کامل
+        # (مستقل از این‌که خودِ APScheduler سایر تنظیمات Job مثل
+        # misfire_grace_time را حین Reschedule دست‌نخورده نگه می‌دارد یا
+        # نه)، آن را هم صریحاً دوباره تنظیم می‌کنیم — همان بازه اطمینان
+        # ۶ ساعته‌ای که هنگام تعریف اولیه Job در start_scheduler ست شده.
         scheduler.reschedule_job(BIRTHDAY_JOB_ID, trigger="cron", hour=hour, minute=minute)
+        scheduler.modify_job(BIRTHDAY_JOB_ID, misfire_grace_time=6 * 60 * 60)
         logger.info("ساعت ارسال پیام تبریک تولد به %02d:%02d تغییر کرد", hour, minute)
     except JobLookupError:
         logger.warning("Job پیام تبریک تولد پیدا نشد — این نباید اتفاق بیفتد چون همیشه زمان‌بندی می‌شود.")
