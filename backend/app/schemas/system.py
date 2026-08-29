@@ -30,10 +30,16 @@ class IpBlockedMessageOut(BaseModel):
 
 
 class BrandingOut(BaseModel):
-    name: str
-    short_name: str
-    description: str
-    has_custom_logo: bool
+    browser_title: str
+    manifest_short_name: str
+    manifest_description: str
+    splash_title: str
+    splash_subtitle: str
+    login_title: str
+    login_subtitle: str
+    has_custom_app_logo: bool
+    has_custom_pwa_icon: bool
+    has_custom_favicon: bool
 
 
 class BrandingIn(BaseModel):
@@ -41,6 +47,10 @@ class BrandingIn(BaseModel):
     فیلد خالی/None یعنی «به مقدار پیش‌فرض برگرد» — نه اینکه خالی ذخیره شود.
     """
 
-    name: str | None = Field(default=None, max_length=100)
-    short_name: str | None = Field(default=None, max_length=30)  # محدودیت PWA برای short_name
-    description: str | None = Field(default=None, max_length=200)
+    browser_title: str | None = Field(default=None, max_length=100)
+    manifest_short_name: str | None = Field(default=None, max_length=30)  # محدودیت PWA برای short_name
+    manifest_description: str | None = Field(default=None, max_length=200)
+    splash_title: str | None = Field(default=None, max_length=100)
+    splash_subtitle: str | None = Field(default=None, max_length=100)
+    login_title: str | None = Field(default=None, max_length=100)
+    login_subtitle: str | None = Field(default=None, max_length=100)

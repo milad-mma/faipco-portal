@@ -17,7 +17,7 @@ import { useBranding } from "../context/BrandingContext";
  * می‌شود، پس هیچ تأخیر/چشمک‌زدن اضافه‌ای نسبت به قبل ایجاد نمی‌شود.
  */
 export default function SplashScreen({ visible }) {
-  const { logoUrl, shortName, description } = useBranding();
+  const { appLogoUrl, splashTitle, splashSubtitle } = useBranding();
   return (
     <Box
       sx={{
@@ -37,8 +37,8 @@ export default function SplashScreen({ visible }) {
     >
       <Box
         component="img"
-        src={logoUrl}
-        alt={shortName}
+        src={appLogoUrl}
+        alt={splashTitle}
         onError={(e) => {
           e.currentTarget.onerror = null;
           e.currentTarget.src = "/faipco-logo.png";
@@ -51,14 +51,14 @@ export default function SplashScreen({ visible }) {
           fontWeight={700}
           sx={{ fontFamily: "Tahoma, sans-serif", color: "#000000" }}
         >
-          {shortName}
+          {splashTitle}
         </Typography>
         <Typography
           variant="body2"
           color="text.secondary"
           sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
         >
-          {description}
+          {splashSubtitle}
         </Typography>
       </Box>
     </Box>

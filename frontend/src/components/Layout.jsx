@@ -160,7 +160,7 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { logoUrl, shortName } = useBranding();
+  const { appLogoUrl, manifestShortName } = useBranding();
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
@@ -304,8 +304,8 @@ export default function Layout() {
       <Toolbar sx={{ gap: 1.5, px: 3 }}>
         <Box
           component="img"
-          src={logoUrl}
-          alt={shortName}
+          src={appLogoUrl}
+          alt={manifestShortName}
           onError={(e) => {
             e.currentTarget.onerror = null;
             e.currentTarget.src = "/faipco-logo.png";
@@ -313,7 +313,7 @@ export default function Layout() {
           sx={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }}
         />
         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-          {shortName}
+          {manifestShortName}
         </Typography>
       </Toolbar>
       <Divider />

@@ -319,10 +319,22 @@ async def delete_login_background(
     return {"success": True}
 
 
-# ---------- برندینگ (نام + لوگو اپ) — «تنظیمات سامانه» ----------
+# ---------- برندینگ (لوگوها + متن‌های مجزا) — «تنظیمات سامانه» ----------
 
 ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml"}
 MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً خیلی کوچک‌تر از یک عکس پس‌زمینه است
+
+# سه لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش:
+#   app_logo  → درون‌برنامه‌ای (اسپلش، صفحه ورود، نوار بالا، پنل کاربری) — هر اندازه‌ای
+#   pwa_icon  → آیکون Manifest/صفحه اصلی گوشی بعد از نصب — ترجیحاً ۵۱۲×۵۱۲ مربعی
+#   favicon   → آیکون تب مرورگر — ترجیحاً ۳۲×۳۲ یا ۱۹۲×۱۹۲ مربعی
+_VALID_LOGO_SLUGS = {"app-logo", "pwa-icon", "favicon"}
+
+
+def _logo_slug_to_key(slug: str) -> str:
+    if slug not in _VALID_LOGO_SLUGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع لوگو نامعتبر است")
+    return slug.replace("-", "_")
 
 
 @router.get("/branding", response_model=BrandingOut)
@@ -337,27 +349,39 @@ async def update_branding(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    return await SystemSettingsService(db).set_branding(
-        name=payload.name, short_name=payload.short_name, description=payload.description
-    )
+    # ⚠️ عمداً exclude_unset=True: صفحه «تنظیمات سامانه» هر گروه از فیلدها
+    # (Manifest، اسپلش‌اسکرین، صفحه ورود، ...) را کاملاً مستقل و جداگانه
+    # ذخیره می‌کند — یعنی هر درخواست فقط شامل همان چند فیلد یک گروه است.
+    # با model_dump() ساده، فیلدهای گروه‌های دیگر (که اصلاً در بدنه
+    # درخواست نبودند) هم به‌عنوان None در نظر گرفته می‌شدند و set_branding
+    # آن‌ها را بی‌صدا به پیش‌فرض برمی‌گرداند — یعنی ذخیره‌کردن یک گروه،
+    # مقادیر گروه‌های دیگر را پاک می‌کرد. exclude_unset فقط همان فیلدهایی
+    # که واقعاً در درخواست حاضر بودند را نگه می‌دارد.
+    return await SystemSettingsService(db).set_branding(**payload.model_dump(exclude_unset=True))
 
 
-@router.get("/logo")
-async def get_app_logo(db: AsyncSession = Depends(get_db)):
-    """⚠️ بدون احراز هویت — دقیقاً هم‌الگو با /system/login-background."""
-    result = await SystemSettingsService(db).get_app_logo()
+@router.get("/logo/{slug}")
+async def get_logo(slug: str, db: AsyncSession = Depends(get_db)):
+    """
+    ⚠️ بدون احراز هویت — دقیقاً هم‌الگو با /system/login-background.
+    slug یکی از: app-logo، pwa-icon، favicon.
+    """
+    key = _logo_slug_to_key(slug)
+    result = await SystemSettingsService(db).get_logo(key)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="لوگوی سفارشی تنظیم نشده")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این لوگو هنوز تنظیم نشده")
     content, content_type = result
     return Response(content=content, media_type=content_type)
 
 
-@router.post("/logo")
-async def upload_app_logo(
-    file: UploadFile = File(..., description="لوگوی اپ (jpg/png/webp/svg)"),
+@router.post("/logo/{slug}")
+async def upload_logo(
+    slug: str,
+    file: UploadFile = File(..., description="لوگو (jpg/png/webp/svg)"),
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
+    key = _logo_slug_to_key(slug)
     if file.content_type not in ALLOWED_LOGO_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -366,16 +390,18 @@ async def upload_app_logo(
     content = await file.read()
     if len(content) > MAX_LOGO_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حجم فایل نباید بیشتر از ۴ مگابایت باشد")
-    await SystemSettingsService(db).set_app_logo(content, file.content_type)
+    await SystemSettingsService(db).set_logo(key, content, file.content_type)
     return {"success": True}
 
 
-@router.delete("/logo")
-async def delete_app_logo(
+@router.delete("/logo/{slug}")
+async def delete_logo(
+    slug: str,
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    await SystemSettingsService(db).delete_app_logo()
+    key = _logo_slug_to_key(slug)
+    await SystemSettingsService(db).delete_logo(key)
     return {"success": True}
 
 
@@ -394,15 +420,15 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
     """
     branding = await SystemSettingsService(db).get_branding()
 
-    if branding["has_custom_logo"]:
-        # ⚠️ یک محدودیت واقعی: چون فقط یک عکس لوگو (نه سه اندازه جداگانه)
-        # ذخیره می‌شود، همان یک آدرس برای هر سه اندازه/نوع آیکون استفاده
-        # می‌شود — مرورگر/سیستم‌عامل خودش آن را Scale می‌کند. برای بهترین
-        # نتیجه، بهتر است لوگوی آپلودی حداقل ۵۱۲×۵۱۲ و تقریباً مربعی باشد.
+    if branding["has_custom_pwa_icon"]:
+        # ⚠️ یک محدودیت واقعی: چون فقط یک عکس (نه سه اندازه جداگانه) برای
+        # آیکون PWA ذخیره می‌شود، همان یک آدرس برای هر سه اندازه/نوع آیکون
+        # استفاده می‌شود — مرورگر/سیستم‌عامل خودش آن را Scale می‌کند. برای
+        # بهترین نتیجه، بهتر است این آیکون حداقل ۵۱۲×۵۱۲ و مربعی باشد.
         icons = [
-            {"src": "/api/v1/system/logo", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": "/api/v1/system/logo", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-            {"src": "/api/v1/system/logo", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ]
     else:
         icons = [
@@ -413,9 +439,9 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
 
     manifest = {
         "id": "/",
-        "name": branding["name"],
-        "short_name": branding["short_name"],
-        "description": branding["description"],
+        "name": branding["browser_title"],
+        "short_name": branding["manifest_short_name"],
+        "description": branding["manifest_description"],
         "start_url": "/",
         "scope": "/",
         "display": "standalone",

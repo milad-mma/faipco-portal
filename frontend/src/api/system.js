@@ -4,11 +4,14 @@ import { apiClient } from "./client";
 // افزودن Authorization Header دارد) استفاده کرد؛ این آدرس مستقیم و بدون
 // احراز هویت است — دقیقاً همان چیزی که Backend هم برایش طراحی شده.
 export const LOGIN_BACKGROUND_URL = `${apiClient.defaults.baseURL}/system/login-background`;
-export const APP_LOGO_URL = `${apiClient.defaults.baseURL}/system/logo`;
+// سه لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت
+export const APP_LOGO_URL = `${apiClient.defaults.baseURL}/system/logo/app-logo`;
+export const PWA_ICON_URL = `${apiClient.defaults.baseURL}/system/logo/pwa-icon`;
+export const FAVICON_URL = `${apiClient.defaults.baseURL}/system/logo/favicon`;
 
 export async function fetchBranding() {
   const { data } = await apiClient.get("/system/branding");
-  return data; // { name, short_name, description, has_custom_logo }
+  return data;
 }
 
 export async function updateBranding(payload) {
@@ -16,17 +19,18 @@ export async function updateBranding(payload) {
   return data;
 }
 
-export async function uploadAppLogo(file) {
+// slug یکی از: "app-logo"، "pwa-icon"، "favicon"
+export async function uploadLogo(slug, file) {
   const formData = new FormData();
   formData.append("file", file);
-  const { data } = await apiClient.post("/system/logo", formData, {
+  const { data } = await apiClient.post(`/system/logo/${slug}`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
 
-export async function deleteAppLogo() {
-  await apiClient.delete("/system/logo");
+export async function deleteLogo(slug) {
+  await apiClient.delete(`/system/logo/${slug}`);
 }
 
 export async function uploadLoginBackground(file) {

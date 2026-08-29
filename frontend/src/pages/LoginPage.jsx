@@ -48,7 +48,7 @@ const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
 
 export default function LoginPage() {
   const { login, user } = useAuth();
-  const { logoUrl, shortName, name, description } = useBranding();
+  const { appLogoUrl, manifestShortName, loginTitle, loginSubtitle } = useBranding();
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
@@ -387,8 +387,8 @@ export default function LoginPage() {
             >
               <Box
                 component="img"
-                src={logoUrl}
-                alt={shortName}
+                src={appLogoUrl}
+                alt={manifestShortName}
                 onError={(e) => {
                   e.currentTarget.onerror = null;
                   e.currentTarget.src = "/faipco-logo.png";
@@ -398,10 +398,10 @@ export default function LoginPage() {
             </Box>
             <Box sx={{ minWidth: 0 }}>
               <Typography fontSize={15} fontWeight={800} noWrap>
-                {name}
+                {loginTitle}
               </Typography>
               <Typography fontSize={11} sx={{ opacity: 0.85 }} noWrap>
-                {description}
+                {loginSubtitle}
               </Typography>
             </Box>
           </Box>
@@ -475,8 +475,8 @@ export default function LoginPage() {
             >
               <Box
                 component="img"
-                src={logoUrl}
-                alt={shortName}
+                src={appLogoUrl}
+                alt={manifestShortName}
                 onError={(e) => {
                   e.currentTarget.onerror = null;
                   e.currentTarget.src = "/faipco-logo.png";
@@ -486,10 +486,10 @@ export default function LoginPage() {
             </Box>
             <Box>
               <Typography fontSize={16} fontWeight={800}>
-                {name}
+                {loginTitle}
               </Typography>
               <Typography fontSize={11} sx={{ opacity: 0.85, mt: 0.25 }}>
-                {description}
+                {loginSubtitle}
               </Typography>
             </Box>
           </Stack>

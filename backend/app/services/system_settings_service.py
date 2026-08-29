@@ -18,16 +18,29 @@ BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
 LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
-APP_LOGO_DATA_KEY = "app_logo_data"  # Base64
+APP_LOGO_DATA_KEY = "app_logo_data"  # Base64 — لوگوی درون‌برنامه‌ای عمومی (اسپلش، صفحه ورود، نوار بالا، پنل کاربری)
 APP_LOGO_CONTENT_TYPE_KEY = "app_logo_content_type"
-APP_NAME_KEY = "app_name"
-APP_SHORT_NAME_KEY = "app_short_name"
-APP_DESCRIPTION_KEY = "app_description"
+PWA_ICON_DATA_KEY = "pwa_icon_data"  # Base64 — آیکون اختصاصی Manifest/صفحه اصلی گوشی
+PWA_ICON_CONTENT_TYPE_KEY = "pwa_icon_content_type"
+FAVICON_DATA_KEY = "favicon_data"  # Base64 — آیکون اختصاصی تب مرورگر
+FAVICON_CONTENT_TYPE_KEY = "favicon_content_type"
+
+BROWSER_TITLE_KEY = "browser_title"  # عنوان تب مرورگر (document.title) — سراسر پروژه
+MANIFEST_SHORT_NAME_KEY = "manifest_short_name"  # زیر آیکون، روی صفحه اصلی گوشی بعد از نصب PWA
+MANIFEST_DESCRIPTION_KEY = "manifest_description"  # توضیح داخل خودِ Manifest (فروشگاه/دیالوگ نصب)
+SPLASH_TITLE_KEY = "splash_title"
+SPLASH_SUBTITLE_KEY = "splash_subtitle"
+LOGIN_TITLE_KEY = "login_title"
+LOGIN_SUBTITLE_KEY = "login_subtitle"
 
 # مقادیر پیش‌فرض — همان چیزی که قبلاً همه‌جای پروژه Hard-code بود
-DEFAULT_APP_NAME = "پرتال سازمانی پرسنل فایپکو"
-DEFAULT_APP_SHORT_NAME = "فایپکو"
-DEFAULT_APP_DESCRIPTION = "پرتال سازمانی مدیریت پرسنل و اطلاع‌رسانی"
+DEFAULT_BROWSER_TITLE = "پرتال سازمانی پرسنل فایپکو"
+DEFAULT_MANIFEST_SHORT_NAME = "فایپکو"
+DEFAULT_MANIFEST_DESCRIPTION = "پرتال سازمانی مدیریت پرسنل و اطلاع‌رسانی"
+DEFAULT_SPLASH_TITLE = "شرکت تولیدی صنعتی فواد الیاف"
+DEFAULT_SPLASH_SUBTITLE = "سامانه مدیریت پرسنل"
+DEFAULT_LOGIN_TITLE = "سامانه مدیریت پرسنل فایپکو"
+DEFAULT_LOGIN_SUBTITLE = "شرکت تولیدی صنعتی فواد الیاف"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
@@ -177,52 +190,68 @@ class SystemSettingsService:
             await self.db.delete(row)
         await self.db.commit()
 
-    # ---------- برندینگ (لوگو + نام اپ) — قابلیت «تنظیمات سامانه» ----------
-    # ⚠️ همه این‌ها باید بدون احراز هویت هم در دسترس باشند — لوگو و اسم اپ
+    # ---------- برندینگ (لوگوها + متن‌های مجزای هر بخش) — «تنظیمات سامانه» ----------
+    # ⚠️ همه این‌ها باید بدون احراز هویت هم در دسترس باشند — لوگو/متن‌ها
     # باید در اسپلش‌اسکرین/صفحه ورود (قبل از Login) و در خودِ Manifest PWA
     # (که مرورگر بدون هیچ Header ای می‌گیرد) هم درست نمایش داده شوند.
 
-    async def get_branding(self) -> dict:
-        name = await self._get_raw(APP_NAME_KEY)
-        short_name = await self._get_raw(APP_SHORT_NAME_KEY)
-        description = await self._get_raw(APP_DESCRIPTION_KEY)
-        has_custom_logo = await self._get_raw(APP_LOGO_DATA_KEY) is not None
-        return {
-            "name": name or DEFAULT_APP_NAME,
-            "short_name": short_name or DEFAULT_APP_SHORT_NAME,
-            "description": description or DEFAULT_APP_DESCRIPTION,
-            "has_custom_logo": has_custom_logo,
-        }
+    # کلید‌های متنی + پیش‌فرض هرکدام — یک ساختار Generic برای جلوگیری از
+    # تکرار ۷ متد تقریباً یکسان.
+    _TEXT_FIELDS = {
+        "browser_title": (BROWSER_TITLE_KEY, DEFAULT_BROWSER_TITLE),
+        "manifest_short_name": (MANIFEST_SHORT_NAME_KEY, DEFAULT_MANIFEST_SHORT_NAME),
+        "manifest_description": (MANIFEST_DESCRIPTION_KEY, DEFAULT_MANIFEST_DESCRIPTION),
+        "splash_title": (SPLASH_TITLE_KEY, DEFAULT_SPLASH_TITLE),
+        "splash_subtitle": (SPLASH_SUBTITLE_KEY, DEFAULT_SPLASH_SUBTITLE),
+        "login_title": (LOGIN_TITLE_KEY, DEFAULT_LOGIN_TITLE),
+        "login_subtitle": (LOGIN_SUBTITLE_KEY, DEFAULT_LOGIN_SUBTITLE),
+    }
 
-    async def set_branding(
-        self, *, name: str | None, short_name: str | None, description: str | None
-    ) -> dict:
-        # رشته خالی یعنی «به پیش‌فرض برگرد» — پس هرکدام که خالی/None بود، ردیفش پاک می‌شود
-        if name:
-            await self._set_raw(APP_NAME_KEY, name)
-        else:
-            await self._delete_raw(APP_NAME_KEY)
-        if short_name:
-            await self._set_raw(APP_SHORT_NAME_KEY, short_name)
-        else:
-            await self._delete_raw(APP_SHORT_NAME_KEY)
-        if description:
-            await self._set_raw(APP_DESCRIPTION_KEY, description)
-        else:
-            await self._delete_raw(APP_DESCRIPTION_KEY)
+    # کلید‌های سه لوگوی مجزا — هرکدام برای یک مصرف کاملاً متفاوت
+    _LOGO_FIELDS = {
+        "app_logo": (APP_LOGO_DATA_KEY, APP_LOGO_CONTENT_TYPE_KEY),
+        "pwa_icon": (PWA_ICON_DATA_KEY, PWA_ICON_CONTENT_TYPE_KEY),
+        "favicon": (FAVICON_DATA_KEY, FAVICON_CONTENT_TYPE_KEY),
+    }
+
+    async def get_branding(self) -> dict:
+        texts = {}
+        for field_name, (key, default) in self._TEXT_FIELDS.items():
+            texts[field_name] = await self._get_raw(key) or default
+        logos = {}
+        for field_name, (data_key, _content_type_key) in self._LOGO_FIELDS.items():
+            logos[f"has_custom_{field_name}"] = await self._get_raw(data_key) is not None
+        return {**texts, **logos}
+
+    async def set_branding(self, **fields: str | None) -> dict:
+        """
+        هر کلید باید یکی از _TEXT_FIELDS باشد؛ مقدار خالی/None یعنی «به
+        پیش‌فرض برگرد» (ردیفش پاک می‌شود، نه این‌که رشته خالی ذخیره شود).
+        """
+        for field_name, value in fields.items():
+            if field_name not in self._TEXT_FIELDS:
+                continue
+            key, _default = self._TEXT_FIELDS[field_name]
+            if value:
+                await self._set_raw(key, value)
+            else:
+                await self._delete_raw(key)
         return await self.get_branding()
 
-    async def get_app_logo(self) -> tuple[bytes, str] | None:
-        raw = await self._get_raw(APP_LOGO_DATA_KEY)
+    async def get_logo(self, which: str) -> tuple[bytes, str] | None:
+        data_key, content_type_key = self._LOGO_FIELDS[which]
+        raw = await self._get_raw(data_key)
         if raw is None:
             return None
-        content_type = await self._get_raw(APP_LOGO_CONTENT_TYPE_KEY) or "image/png"
+        content_type = await self._get_raw(content_type_key) or "image/png"
         return base64.b64decode(raw), content_type
 
-    async def set_app_logo(self, content: bytes, content_type: str) -> None:
-        await self._set_raw(APP_LOGO_DATA_KEY, base64.b64encode(content).decode("ascii"))
-        await self._set_raw(APP_LOGO_CONTENT_TYPE_KEY, content_type)
+    async def set_logo(self, which: str, content: bytes, content_type: str) -> None:
+        data_key, content_type_key = self._LOGO_FIELDS[which]
+        await self._set_raw(data_key, base64.b64encode(content).decode("ascii"))
+        await self._set_raw(content_type_key, content_type)
 
-    async def delete_app_logo(self) -> None:
-        await self._delete_raw(APP_LOGO_DATA_KEY)
-        await self._delete_raw(APP_LOGO_CONTENT_TYPE_KEY)
+    async def delete_logo(self, which: str) -> None:
+        data_key, content_type_key = self._LOGO_FIELDS[which]
+        await self._delete_raw(data_key)
+        await self._delete_raw(content_type_key)
