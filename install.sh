@@ -607,7 +607,17 @@ server {
     # از «تنظیمات سامانه» جایگزین می‌کند — بقیه فایل دقیقاً همان خروجی
     # Build اصلی است.
     location @index_html_dynamic {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/v1/system/index.html;
+        # ⚠️ رفع خطای واقعی Nginx («proxy_pass cannot have URI part ... inside
+        # named location»): در یک Named Location (@...)، Nginx نمی‌تواند
+        # تشخیص دهد چه بخشی از URI اصلی باید با مسیر داده‌شده در proxy_pass
+        # جایگزین شود (بر خلاف location های معمولی/exact-match مثل
+        # =/manifest.json که این مشکل را ندارند) — پس اینجا اول با rewrite
+        # مسیر داخلی را صریحاً به مسیر ثابت Backend تغییر می‌دهیم، بعد
+        # proxy_pass را بدون هیچ بخش مسیری (فقط scheme+host+port) صدا
+        # می‌زنیم؛ یعنی همیشه دقیقاً همان مسیر Backend هدف می‌رود، صرف‌نظر
+        # از این‌که کاربر اصلاً کدام مسیر SPA را درخواست کرده بود.
+        rewrite ^ /api/v1/system/index.html break;
+        proxy_pass http://127.0.0.1:${BACKEND_PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
