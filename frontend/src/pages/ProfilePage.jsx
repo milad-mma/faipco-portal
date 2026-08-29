@@ -43,6 +43,7 @@ import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { fetchAppVersion } from "../api/system";
@@ -98,6 +99,7 @@ const EXTRA_ACCESS_ITEMS = [
  */
 export default function ProfilePage() {
   const { user, logout, refetchUser } = useAuth();
+  const { logoUrl, shortName, name, description } = useBranding();
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -174,18 +176,22 @@ export default function ProfilePage() {
           >
             <Box
               component="img"
-              src="/faipco-logo.png"
-              alt="FAIPCO"
+              src={logoUrl}
+              alt={shortName}
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = "/faipco-logo.png";
+              }}
               sx={{ width: 84, height: 84, objectFit: "contain" }}
             />
           </Box>
         </Box>
         <Stack alignItems="center" spacing={0.5} sx={{ textAlign: "center", px: 2.5, py: 2.5 }}>
           <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-            شرکت تولیدی صنعتی فواد الیاف
+            {name}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            سامانه مدیریت پرسنل فایپکو
+            {description}
           </Typography>
           {appVersion && (
             <Typography

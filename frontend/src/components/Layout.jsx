@@ -48,6 +48,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
+import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { usePresenceMonitor } from "../utils/presenceSocket";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -159,6 +160,7 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { logoUrl, shortName } = useBranding();
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
@@ -302,12 +304,16 @@ export default function Layout() {
       <Toolbar sx={{ gap: 1.5, px: 3 }}>
         <Box
           component="img"
-          src="/faipco-logo.png"
-          alt="FAIPCO"
+          src={logoUrl}
+          alt={shortName}
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = "/faipco-logo.png";
+          }}
           sx={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }}
         />
         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-          FAIPCO Portal
+          {shortName}
         </Typography>
       </Toolbar>
       <Divider />

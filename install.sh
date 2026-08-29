@@ -548,12 +548,16 @@ server {
     }
 
     location = /manifest.json {
-        # نکته مهم برای نصب PWA در اندروید: mime.types پیش‌فرض Nginx شامل
-        # پسوند json نیست، پس بدون این خط، manifest.json با Content-Type
-        # اشتباه (معمولاً text/plain یا application/octet-stream) فرستاده
-        # می‌شود. کروم در این حالت گاهی هنگام "Install" به‌جای ساخت WebAPK
-        # واقعی، فقط یک میان‌بر معمولی (با نشان خودِ کروم روی آیکون) می‌سازد.
-        default_type application/manifest+json;
+        # ⚠️ دیگر یک فایل ثابت نیست — به Endpoint پویای Backend هدایت می‌شود
+        # (GET /api/v1/system/manifest.json)، تا نام/آیکون اپ از پنل «تنظیمات
+        # سامانه» واقعاً روی Manifest واقعی PWA هم اثر بگذارد. باقی این بخش
+        # (Header های امنیتی، Cache-Control) دقیقاً همان چیزی است که قبلاً
+        # روی نسخه فایل ثابت اعمال می‌شد.
+        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/v1/system/manifest.json;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         add_header Cache-Control "no-cache, must-revalidate";
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options "nosniff" always;
@@ -561,7 +565,6 @@ server {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Content-Security-Policy "${csp_header}" always;
         add_header Permissions-Policy "${permissions_policy_header}" always;
-        try_files \$uri =404;
     }
 
     location = /.well-known/assetlinks.json {

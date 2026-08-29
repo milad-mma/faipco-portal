@@ -8,6 +8,7 @@
 /system/ip-blocked-message (GET/PUT) پیامی که به کاربر مسدودشده نمایش داده می‌شود.
 """
 import ipaddress
+import json
 import logging
 import re
 
@@ -22,7 +23,14 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.ip_allowlist_entry import IpAllowlistEntry
 from app.models.user import User
-from app.schemas.system import IpAllowlistStateIn, IpAllowlistStateOut, IpBlockedMessageIn, IpBlockedMessageOut
+from app.schemas.system import (
+    BrandingIn,
+    BrandingOut,
+    IpAllowlistStateIn,
+    IpAllowlistStateOut,
+    IpBlockedMessageIn,
+    IpBlockedMessageOut,
+)
 from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.system_settings_service import SystemSettingsService
@@ -309,3 +317,115 @@ async def delete_login_background(
 ):
     await SystemSettingsService(db).delete_login_background()
     return {"success": True}
+
+
+# ---------- برندینگ (نام + لوگو اپ) — «تنظیمات سامانه» ----------
+
+ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml"}
+MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً خیلی کوچک‌تر از یک عکس پس‌زمینه است
+
+
+@router.get("/branding", response_model=BrandingOut)
+async def get_branding(db: AsyncSession = Depends(get_db)):
+    """⚠️ عمداً بدون احراز هویت — اسپلش‌اسکرین و صفحه ورود قبل از Login این را نیاز دارند."""
+    return await SystemSettingsService(db).get_branding()
+
+
+@router.put("/branding", response_model=BrandingOut)
+async def update_branding(
+    payload: BrandingIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    return await SystemSettingsService(db).set_branding(
+        name=payload.name, short_name=payload.short_name, description=payload.description
+    )
+
+
+@router.get("/logo")
+async def get_app_logo(db: AsyncSession = Depends(get_db)):
+    """⚠️ بدون احراز هویت — دقیقاً هم‌الگو با /system/login-background."""
+    result = await SystemSettingsService(db).get_app_logo()
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="لوگوی سفارشی تنظیم نشده")
+    content, content_type = result
+    return Response(content=content, media_type=content_type)
+
+
+@router.post("/logo")
+async def upload_app_logo(
+    file: UploadFile = File(..., description="لوگوی اپ (jpg/png/webp/svg)"),
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    if file.content_type not in ALLOWED_LOGO_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="فقط فایل تصویری (jpg/png/webp/svg) پذیرفته می‌شود",
+        )
+    content = await file.read()
+    if len(content) > MAX_LOGO_SIZE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حجم فایل نباید بیشتر از ۴ مگابایت باشد")
+    await SystemSettingsService(db).set_app_logo(content, file.content_type)
+    return {"success": True}
+
+
+@router.delete("/logo")
+async def delete_app_logo(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    await SystemSettingsService(db).delete_app_logo()
+    return {"success": True}
+
+
+@router.get("/manifest.json")
+async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
+    """
+    نسخه پویای PWA Manifest — جایگزین فایل ثابت frontend/public/manifest.json
+    (که هرگز نمی‌توانست نام/آیکون سفارشی کارفرما را نشان بدهد). Nginx باید
+    مسیر /manifest.json را به همین Endpoint هدایت کند (به install.sh مراجعه
+    کنید) — نه به فایل ثابت قدیمی.
+
+    ⚠️ محدودیت واقعی پلتفرم (نه یک نقص این پیاده‌سازی): مرورگرها/سیستم‌عامل‌ها
+    معمولاً Manifest را فقط هنگام نصب اولیه PWA می‌خوانند؛ برای کسانی که از
+    قبل پرتال را روی صفحه اصلی نصب کرده‌اند، تغییر لوگو/اسم اینجا معمولاً
+    فقط با حذف‌وبازنصب آن اپ روی گوشی‌شان اعمال می‌شود — نه خودکار.
+    """
+    branding = await SystemSettingsService(db).get_branding()
+
+    if branding["has_custom_logo"]:
+        # ⚠️ یک محدودیت واقعی: چون فقط یک عکس لوگو (نه سه اندازه جداگانه)
+        # ذخیره می‌شود، همان یک آدرس برای هر سه اندازه/نوع آیکون استفاده
+        # می‌شود — مرورگر/سیستم‌عامل خودش آن را Scale می‌کند. برای بهترین
+        # نتیجه، بهتر است لوگوی آپلودی حداقل ۵۱۲×۵۱۲ و تقریباً مربعی باشد.
+        icons = [
+            {"src": "/api/v1/system/logo", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/api/v1/system/logo", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/api/v1/system/logo", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ]
+    else:
+        icons = [
+            {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ]
+
+    manifest = {
+        "id": "/",
+        "name": branding["name"],
+        "short_name": branding["short_name"],
+        "description": branding["description"],
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["standalone", "minimal-ui"],
+        "orientation": "portrait-primary",
+        "dir": "rtl",
+        "lang": "fa",
+        "background_color": "#FFFFFF",
+        "theme_color": "#1468A7",
+        "prefer_related_applications": False,
+        "icons": icons,
+    }
+    return Response(content=json.dumps(manifest, ensure_ascii=False), media_type="application/manifest+json")

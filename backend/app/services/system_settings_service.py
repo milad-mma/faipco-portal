@@ -18,6 +18,16 @@ BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 LOGIN_BACKGROUND_DATA_KEY = "login_background_data"  # Base64
 LOGIN_BACKGROUND_CONTENT_TYPE_KEY = "login_background_content_type"
+APP_LOGO_DATA_KEY = "app_logo_data"  # Base64
+APP_LOGO_CONTENT_TYPE_KEY = "app_logo_content_type"
+APP_NAME_KEY = "app_name"
+APP_SHORT_NAME_KEY = "app_short_name"
+APP_DESCRIPTION_KEY = "app_description"
+
+# مقادیر پیش‌فرض — همان چیزی که قبلاً همه‌جای پروژه Hard-code بود
+DEFAULT_APP_NAME = "پرتال سازمانی پرسنل فایپکو"
+DEFAULT_APP_SHORT_NAME = "فایپکو"
+DEFAULT_APP_DESCRIPTION = "پرتال سازمانی مدیریت پرسنل و اطلاع‌رسانی"
 
 DEFAULT_IP_BLOCKED_MESSAGE = (
     "دسترسی به پرتال فقط از شبکه مجاز (دفتر شرکت) امکان‌پذیر است. "
@@ -43,6 +53,13 @@ class SystemSettingsService:
         else:
             row.value = value
         await self.db.commit()
+
+    async def _delete_raw(self, key: str) -> None:
+        result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        row = result.scalar_one_or_none()
+        if row is not None:
+            await self.db.delete(row)
+            await self.db.commit()
 
     # ---------- فاصله زمانی Sync خودکار ----------
 
@@ -159,3 +176,53 @@ class SystemSettingsService:
         for row in result.scalars().all():
             await self.db.delete(row)
         await self.db.commit()
+
+    # ---------- برندینگ (لوگو + نام اپ) — قابلیت «تنظیمات سامانه» ----------
+    # ⚠️ همه این‌ها باید بدون احراز هویت هم در دسترس باشند — لوگو و اسم اپ
+    # باید در اسپلش‌اسکرین/صفحه ورود (قبل از Login) و در خودِ Manifest PWA
+    # (که مرورگر بدون هیچ Header ای می‌گیرد) هم درست نمایش داده شوند.
+
+    async def get_branding(self) -> dict:
+        name = await self._get_raw(APP_NAME_KEY)
+        short_name = await self._get_raw(APP_SHORT_NAME_KEY)
+        description = await self._get_raw(APP_DESCRIPTION_KEY)
+        has_custom_logo = await self._get_raw(APP_LOGO_DATA_KEY) is not None
+        return {
+            "name": name or DEFAULT_APP_NAME,
+            "short_name": short_name or DEFAULT_APP_SHORT_NAME,
+            "description": description or DEFAULT_APP_DESCRIPTION,
+            "has_custom_logo": has_custom_logo,
+        }
+
+    async def set_branding(
+        self, *, name: str | None, short_name: str | None, description: str | None
+    ) -> dict:
+        # رشته خالی یعنی «به پیش‌فرض برگرد» — پس هرکدام که خالی/None بود، ردیفش پاک می‌شود
+        if name:
+            await self._set_raw(APP_NAME_KEY, name)
+        else:
+            await self._delete_raw(APP_NAME_KEY)
+        if short_name:
+            await self._set_raw(APP_SHORT_NAME_KEY, short_name)
+        else:
+            await self._delete_raw(APP_SHORT_NAME_KEY)
+        if description:
+            await self._set_raw(APP_DESCRIPTION_KEY, description)
+        else:
+            await self._delete_raw(APP_DESCRIPTION_KEY)
+        return await self.get_branding()
+
+    async def get_app_logo(self) -> tuple[bytes, str] | None:
+        raw = await self._get_raw(APP_LOGO_DATA_KEY)
+        if raw is None:
+            return None
+        content_type = await self._get_raw(APP_LOGO_CONTENT_TYPE_KEY) or "image/png"
+        return base64.b64decode(raw), content_type
+
+    async def set_app_logo(self, content: bytes, content_type: str) -> None:
+        await self._set_raw(APP_LOGO_DATA_KEY, base64.b64encode(content).decode("ascii"))
+        await self._set_raw(APP_LOGO_CONTENT_TYPE_KEY, content_type)
+
+    async def delete_app_logo(self) -> None:
+        await self._delete_raw(APP_LOGO_DATA_KEY)
+        await self._delete_raw(APP_LOGO_CONTENT_TYPE_KEY)

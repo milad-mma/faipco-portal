@@ -36,6 +36,7 @@ import { getIsInstallable, isIos, isRunningStandalone, promptPwaInstall } from "
 import { fetchAppVersion } from "../api/system";
 import { modernLightTheme } from "../theme";
 import { LOGIN_BACKGROUND_URL } from "../api/system";
+import { useBranding } from "../context/BrandingContext";
 
 const PROMO_FEATURES = [
   { icon: <EventNoteOutlinedIcon fontSize="small" />, label: "درخواست مرخصی" },
@@ -47,6 +48,7 @@ const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
 
 export default function LoginPage() {
   const { login, user } = useAuth();
+  const { logoUrl, shortName, name, description } = useBranding();
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
@@ -383,14 +385,23 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src="/faipco-logo.png" alt="FAIPCO" sx={{ width: 42, height: 42, objectFit: "contain" }} />
+              <Box
+                component="img"
+                src={logoUrl}
+                alt={shortName}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "/faipco-logo.png";
+                }}
+                sx={{ width: 42, height: 42, objectFit: "contain" }}
+              />
             </Box>
             <Box sx={{ minWidth: 0 }}>
               <Typography fontSize={15} fontWeight={800} noWrap>
-                سامانه مدیریت پرسنل فایپکو
+                {name}
               </Typography>
               <Typography fontSize={11} sx={{ opacity: 0.85 }} noWrap>
-                شرکت تولیدی صنعتی فواد الیاف
+                {description}
               </Typography>
             </Box>
           </Box>
@@ -462,14 +473,23 @@ export default function LoginPage() {
                 flexShrink: 0,
               }}
             >
-              <Box component="img" src="/faipco-logo.png" alt="FAIPCO" sx={{ width: 48, height: 48, objectFit: "contain" }} />
+              <Box
+                component="img"
+                src={logoUrl}
+                alt={shortName}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "/faipco-logo.png";
+                }}
+                sx={{ width: 48, height: 48, objectFit: "contain" }}
+              />
             </Box>
             <Box>
               <Typography fontSize={16} fontWeight={800}>
-                سامانه مدیریت پرسنل فایپکو
+                {name}
               </Typography>
               <Typography fontSize={11} sx={{ opacity: 0.85, mt: 0.25 }}>
-                شرکت تولیدی صنعتی فواد الیاف
+                {description}
               </Typography>
             </Box>
           </Stack>

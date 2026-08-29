@@ -61,8 +61,13 @@ self.addEventListener("activate", (event) => {
 // دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی — طبق
 // درخواست، صرف‌نظر از اولویت اطلاعیه، همیشه با صدا + ویبره محسوس (مثل
 // یک آلارم واقعی) نمایش داده می‌شود، نه فقط برای اولویت‌های بالا.
+// ⚠️ عنوان پیش‌فرض زیر عمداً کلی/بدون نام شرکت است — Service Worker (بر
+// خلاف بقیه پروژه) نمی‌تواند به BrandingContext یا نام قابل‌تغییر از پنل
+// «تنظیمات سامانه» دسترسی داشته باشد؛ این فقط یک شبکه ایمنی برای حالتی
+// است که سرور اصلاً عنوانی نفرستد (در عمل تقریباً هرگز رخ نمی‌دهد، چون
+// Backend همیشه یک عنوان واقعی در Payload می‌گذارد).
 self.addEventListener("push", (event) => {
-  let payload = { title: "FAIPCO Portal", body: "اطلاعیه جدید", url: "/notices", priority: "normal" };
+  let payload = { title: "اطلاعیه جدید", body: "یک اطلاعیه جدید دریافت شد", url: "/notices", priority: "normal" };
   try {
     if (event.data) {
       payload = { ...payload, ...event.data.json() };

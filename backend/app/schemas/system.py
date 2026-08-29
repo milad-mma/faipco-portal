@@ -1,7 +1,7 @@
 """Schema های مربوط به تنظیمات کلی سیستم (پنل Admin → System)."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class IpAllowlistStateOut(BaseModel):
@@ -27,3 +27,20 @@ class IpBlockedMessageIn(BaseModel):
 
 class IpBlockedMessageOut(BaseModel):
     message: str
+
+
+class BrandingOut(BaseModel):
+    name: str
+    short_name: str
+    description: str
+    has_custom_logo: bool
+
+
+class BrandingIn(BaseModel):
+    """
+    فیلد خالی/None یعنی «به مقدار پیش‌فرض برگرد» — نه اینکه خالی ذخیره شود.
+    """
+
+    name: str | None = Field(default=None, max_length=100)
+    short_name: str | None = Field(default=None, max_length=30)  # محدودیت PWA برای short_name
+    description: str | None = Field(default=None, max_length=200)

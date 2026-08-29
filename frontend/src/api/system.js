@@ -4,6 +4,30 @@ import { apiClient } from "./client";
 // افزودن Authorization Header دارد) استفاده کرد؛ این آدرس مستقیم و بدون
 // احراز هویت است — دقیقاً همان چیزی که Backend هم برایش طراحی شده.
 export const LOGIN_BACKGROUND_URL = `${apiClient.defaults.baseURL}/system/login-background`;
+export const APP_LOGO_URL = `${apiClient.defaults.baseURL}/system/logo`;
+
+export async function fetchBranding() {
+  const { data } = await apiClient.get("/system/branding");
+  return data; // { name, short_name, description, has_custom_logo }
+}
+
+export async function updateBranding(payload) {
+  const { data } = await apiClient.put("/system/branding", payload);
+  return data;
+}
+
+export async function uploadAppLogo(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post("/system/logo", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function deleteAppLogo() {
+  await apiClient.delete("/system/logo");
+}
 
 export async function uploadLoginBackground(file) {
   const formData = new FormData();
