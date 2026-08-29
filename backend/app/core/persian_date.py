@@ -61,9 +61,9 @@ def jalali_days_in_month(year: int, month: int) -> int:
 
 def jalali_year_month_to_yyyymmdd_range(year: int, month: int) -> tuple[int, int]:
     """
-    (FromDate, ToDate) به فرمت عددی فشرده YYYYMMDD (مثلاً 14050501) — دقیقاً
-    همان فرمتی که ستون Date در جدول DataFile نرم‌افزار «کاراوب» استفاده
-    می‌کند. برای «گزارش تردد ماهانه».
+    (FromDate, ToDate) به فرمت عددی فشرده YYYYMMDD (مثلاً 14050501) — برای
+    «گزارش تردد ماهانه» (فرمت رایج ستون تاریخ در نرم‌افزارهای حضور و غیاب
+    دستگاهی، طبق AttendanceMapping هر Site).
     """
     days_in_month = jalali_days_in_month(year, month)
     from_date = year * 10000 + month * 100 + 1

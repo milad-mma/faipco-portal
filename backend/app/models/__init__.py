@@ -4,7 +4,7 @@
 2. رفرنس‌های رشته‌ای بین مدل‌ها (مثل Mapped["Site"]) در زمان اجرا درست resolve شوند
 """
 from app.models.user import User, Role, Permission, RolePermission, UserRole  # noqa: F401
-from app.models.site import Site, SiteConnection, DbType, SyncStatus  # noqa: F401
+from app.models.site import AttendanceMapping, Site, SiteConnection, DbType, SyncStatus  # noqa: F401
 from app.models.employee import Department, Employee, EmployeeMapping  # noqa: F401
 from app.models.notice import (  # noqa: F401
     Notice,

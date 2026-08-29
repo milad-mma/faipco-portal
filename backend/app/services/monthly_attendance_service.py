@@ -1,18 +1,23 @@
 """
-سرویس «گزارش تردد ماهانه» — می‌خواند از جدول DataFile نرم‌افزار «کاراوب»
-(Kara WorkFlow)، دقیقاً در همان SQL Server هر Site که برای Sync پرسنل هم
-استفاده می‌شود (SiteConnection). فقط برای Siteهایی که kara_workflow_enabled
-روشن است معنا دارد.
+سرویس «گزارش تردد ماهانه» — از دستگاه‌های حضور و غیاب واقعی هر Site
+می‌خواند، از همان SQL Server که برای Sync پرسنل هم استفاده می‌شود
+(SiteConnection). نام جدول/ستون‌ها هاردکد نیستند — چون نرم‌افزارهای
+مختلف حضور و غیاب دستگاهی، نام جدول/ستون‌های متفاوتی دارند، از یک
+AttendanceMapping (دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل)
+خوانده می‌شوند که از پنل «تنظیمات سایت» قابل‌تنظیم است.
 
 ⚠️ رفتار ورود/خروج کاملاً بر اساس ترتیب زمانی است، نه یک ستون مشخص:
 رکورد اول هر روز = ورود، دوم = خروج، سوم = ورود، و به همین ترتیب
-(تناوب فرد/زوج) — چون ستون Direction در داده واقعی همیشه ثابت (۰) است
-و معنای ورود/خروج را مشخص نمی‌کند.
+(تناوب فرد/زوج) — چون در داده‌های واقعی، ستونی که جهت تردد را مشخص کند
+همیشه معنای قابل‌اعتمادی ندارد.
 
-⚠️ امنیتی: Emp_No همیشه از خودِ Employee کاربر لاگین‌شده خوانده می‌شود
-(هرگز از ورودی درخواست) — به عهده‌ی Endpoint (نه این سرویس) است که این
-را تضمین کند؛ این سرویس فقط personnel_code‌ای را که به آن داده شده
-پرس‌وجو می‌کند.
+⚠️ امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
+می‌شود (هرگز از ورودی درخواست) — به عهده‌ی Endpoint (نه این سرویس) است
+که این را تضمین کند. مقادیر (نه نام جدول/ستون) همیشه Parameterized
+هستند. نام جدول/ستون فقط از AttendanceMapping (تنظیم‌شده توسط Admin با
+مجوز sites.manage) می‌آیند و با [براکت] کوته می‌شوند — دقیقاً همان الگوی
+استفاده‌شده در Sync Engine (app/sync_engine/adapters/mssql_adapter.py)
+برای همین نوع نیاز.
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ import pymssql
 
 from app.core.persian_date import jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
-from app.models.site import DbType, SiteConnection
+from app.models.site import AttendanceMapping, DbType, SiteConnection
 
 logger = logging.getLogger("faipco.monthly_attendance")
 
@@ -61,9 +66,7 @@ def _format_jalali_date(yyyymmdd: int) -> str:
 
 def _connect(conn: SiteConnection) -> "pymssql.Connection":
     if conn.db_type != DbType.mssql:
-        raise MonthlyAttendanceError(
-            "گزارش تردد ماهانه فقط برای اتصال از نوع SQL Server (کاراوب) پشتیبانی می‌شود"
-        )
+        raise MonthlyAttendanceError("گزارش تردد ماهانه فقط برای اتصال از نوع SQL Server پشتیبانی می‌شود")
     return pymssql.connect(
         server=conn.host,
         port=str(conn.port),
@@ -75,24 +78,31 @@ def _connect(conn: SiteConnection) -> "pymssql.Connection":
     )
 
 
-def _fetch_raw_rows_sync(conn: SiteConnection, emp_no: int, from_date: int, to_date: int) -> list[dict]:
+def _fetch_raw_rows_sync(
+    conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
+) -> list[dict]:
     """
-    Parameterized Query - emp_no/from_date/to_date همیشه به‌صورت پارامتر
-    (نه رشته‌سازی مستقیم در متن SQL) فرستاده می‌شوند، دقیقاً برای
-    جلوگیری از SQL Injection.
+    ⚠️ نام جدول/ستون‌ها (که فقط از AttendanceMapping تنظیم‌شده توسط Admin
+    می‌آیند، نه از ورودی کاربر عادی) با [براکت] در متن Query قرار
+    می‌گیرند — SQL Server اجازه Parameterized-کردن نام جدول/ستون را
+    نمی‌دهد (فقط مقادیر). مقادیر واقعی (emp_no/from_date/to_date) همیشه
+    Parameterized هستند — همان چیزی که واقعاً جلوی SQL Injection را
+    می‌گیرد.
     """
     connection = _connect(conn)
     try:
-        query = """
+        query = f"""
             SELECT
-                [Date],
-                [Time],
-                ROW_NUMBER() OVER (PARTITION BY [Date] ORDER BY [Time]) AS Seq
-            FROM [DataFile]
-            WHERE [Emp_No] = %(emp_no)s
-              AND [Date] BETWEEN %(from_date)s AND %(to_date)s
-            ORDER BY [Date] ASC, [Time] ASC
-        """
+                [{mapping.date_column}] AS AttendanceDate,
+                [{mapping.time_column}] AS AttendanceTime,
+                ROW_NUMBER() OVER (
+                    PARTITION BY [{mapping.date_column}] ORDER BY [{mapping.time_column}]
+                ) AS Seq
+            FROM [{mapping.table_name}]
+            WHERE [{mapping.personnel_code_column}] = %(emp_no)s
+              AND [{mapping.date_column}] BETWEEN %(from_date)s AND %(to_date)s
+            ORDER BY [{mapping.date_column}] ASC, [{mapping.time_column}] ASC
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید، نه ورودی کاربر
         with connection.cursor(as_dict=True) as cur:
             cur.execute(query, {"emp_no": emp_no, "from_date": from_date, "to_date": to_date})
             return list(cur.fetchall())
@@ -101,7 +111,12 @@ def _fetch_raw_rows_sync(conn: SiteConnection, emp_no: int, from_date: int, to_d
 
 
 async def get_monthly_attendance(
-    site_connection: SiteConnection, *, personnel_code: str, year: int, month: int
+    site_connection: SiteConnection,
+    mapping: AttendanceMapping,
+    *,
+    personnel_code: str,
+    year: int,
+    month: int,
 ) -> dict:
     """
     گزارش تردد ماهانه یک پرسنل مشخص - ساختار «روز + ستون‌های ورود/خروج
@@ -110,24 +125,22 @@ async def get_monthly_attendance(
     try:
         emp_no = int(personnel_code)
     except (TypeError, ValueError):
-        raise MonthlyAttendanceError(
-            "کد پرسنلی این کاربر عددی نیست — با فرمت Emp_No نرم‌افزار کاراوب سازگار نیست"
-        )
+        raise MonthlyAttendanceError("کد پرسنلی این کاربر عددی نیست — با فرمت مورد انتظار این گزارش سازگار نیست")
 
     from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)
 
     try:
-        raw_rows = await asyncio.to_thread(_fetch_raw_rows_sync, site_connection, emp_no, from_date, to_date)
+        raw_rows = await asyncio.to_thread(_fetch_raw_rows_sync, site_connection, mapping, emp_no, from_date, to_date)
     except MonthlyAttendanceError:
         raise
     except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند
-        logger.exception("خطا در دریافت گزارش تردد ماهانه از کاراوب (Emp_No=%s)", emp_no)
-        raise MonthlyAttendanceError("اتصال به سیستم تردد کاراوب ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
+        logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
+        raise MonthlyAttendanceError("اتصال به سیستم تردد ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
 
     # گروه‌بندی بر اساس روز، و تبدیل هر رکورد به یک عضو از یک جفت (ورود/خروج)
     rows_by_date: dict[int, list[dict]] = {}
     for row in raw_rows:
-        rows_by_date.setdefault(row["Date"], []).append(row)
+        rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
 
     days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
     max_pairs = 0
@@ -142,8 +155,8 @@ async def get_monthly_attendance(
             exit_row = day_rows[i + 1] if i + 1 < len(day_rows) else None
             pairs.append(
                 {
-                    "entry": _format_time(entry_row["Time"]),
-                    "exit": _format_time(exit_row["Time"]) if exit_row else None,
+                    "entry": _format_time(entry_row["AttendanceTime"]),
+                    "exit": _format_time(exit_row["AttendanceTime"]) if exit_row else None,
                 }
             )
         max_pairs = max(max_pairs, len(pairs))

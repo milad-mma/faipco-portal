@@ -11,7 +11,6 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
-  Switch,
   Tab,
   Tabs,
   TextField,
@@ -21,13 +20,15 @@ import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import {
+  deleteSiteAttendanceMapping,
   deleteSiteConnection,
   deleteSiteMapping,
+  fetchSiteAttendanceMapping,
   fetchSiteConnection,
   fetchSiteMapping,
   fetchSites,
   updateSiteGpsLocation,
-  updateSiteKaraWorkflow,
+  upsertSiteAttendanceMapping,
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
@@ -68,18 +69,26 @@ const EMPTY_MAPPING = {
   photo_emp_no_column: "",
   photo_thumbnail_column: "",
 };
+const EMPTY_ATTENDANCE_MAPPING = {
+  table_name: "",
+  personnel_code_column: "",
+  date_column: "",
+  time_column: "",
+};
 
 export default function SiteSettingsPage() {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = ["mapping", "gps", "kara-workflow"].includes(searchParams.get("tab"))
+  const initialTab = ["mapping", "gps", "attendance-mapping"].includes(searchParams.get("tab"))
     ? searchParams.get("tab")
     : "connection";
 
   const [site, setSite] = useState(null);
-  const [isSavingKaraWorkflow, setIsSavingKaraWorkflow] = useState(false);
-  const [karaWorkflowResult, setKaraWorkflowResult] = useState(null); // { success, message } | null
+  const [attendanceMappingForm, setAttendanceMappingForm] = useState(EMPTY_ATTENDANCE_MAPPING);
+  const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] = useState(false);
+  const [isSavingAttendanceMapping, setIsSavingAttendanceMapping] = useState(false);
+  const [attendanceMappingResult, setAttendanceMappingResult] = useState(null); // { success, message } | null
   const [tab, setTab] = useState(initialTab);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -100,7 +109,8 @@ export default function SiteSettingsPage() {
       fetchSites().then((sites) => sites.find((s) => String(s.id) === siteId)),
       fetchSiteConnection(siteId).catch(() => null),
       fetchSiteMapping(siteId).catch(() => null),
-    ]).then(([siteData, connection, mapping]) => {
+      fetchSiteAttendanceMapping(siteId).catch(() => null),
+    ]).then(([siteData, connection, mapping, attendanceMapping]) => {
       setSite(siteData || null);
       if (siteData) {
         setGpsForm({
@@ -144,6 +154,15 @@ export default function SiteSettingsPage() {
           photo_thumbnail_column: mapping.photo_thumbnail_column || "",
         });
         setHasExistingMapping(true);
+      }
+      if (attendanceMapping) {
+        setAttendanceMappingForm({
+          table_name: attendanceMapping.table_name,
+          personnel_code_column: attendanceMapping.personnel_code_column,
+          date_column: attendanceMapping.date_column,
+          time_column: attendanceMapping.time_column,
+        });
+        setHasExistingAttendanceMapping(true);
       }
       setIsLoading(false);
     });
@@ -265,20 +284,38 @@ export default function SiteSettingsPage() {
     }
   }
 
-  async function handleToggleKaraWorkflow(enabled) {
-    setKaraWorkflowResult(null);
-    setIsSavingKaraWorkflow(true);
+  async function handleSaveAttendanceMapping() {
+    setAttendanceMappingResult(null);
+    setIsSavingAttendanceMapping(true);
     try {
-      const updated = await updateSiteKaraWorkflow(siteId, enabled);
-      setSite(updated);
-      setKaraWorkflowResult({
-        success: true,
-        message: enabled ? "گزارش تردد ماهانه برای این سایت فعال شد." : "گزارش تردد ماهانه برای این سایت غیرفعال شد.",
-      });
+      await upsertSiteAttendanceMapping(siteId, attendanceMappingForm);
+      setHasExistingAttendanceMapping(true);
+      setAttendanceMappingResult({ success: true, message: "نگاشت تردد ذخیره شد." });
     } catch (err) {
-      setKaraWorkflowResult({ success: false, message: err.response?.data?.detail || "تغییر ناموفق بود." });
+      setAttendanceMappingResult({
+        success: false,
+        message: err.response?.data?.detail || "ذخیره نگاشت تردد ناموفق بود.",
+      });
     } finally {
-      setIsSavingKaraWorkflow(false);
+      setIsSavingAttendanceMapping(false);
+    }
+  }
+
+  async function handleDeleteAttendanceMapping() {
+    if (!window.confirm("نگاشت تردد این سایت حذف شود؟ گزارش تردد ماهانه برای پرسنل این سایت دیگر در دسترس نخواهد بود.")) return;
+    setIsSavingAttendanceMapping(true);
+    try {
+      await deleteSiteAttendanceMapping(siteId);
+      setAttendanceMappingForm(EMPTY_ATTENDANCE_MAPPING);
+      setHasExistingAttendanceMapping(false);
+      setAttendanceMappingResult({ success: true, message: "نگاشت تردد حذف شد." });
+    } catch (err) {
+      setAttendanceMappingResult({
+        success: false,
+        message: err.response?.data?.detail || "حذف نگاشت تردد ناموفق بود.",
+      });
+    } finally {
+      setIsSavingAttendanceMapping(false);
     }
   }
 
@@ -317,7 +354,7 @@ export default function SiteSettingsPage() {
           <Tab value="connection" label="اتصال دیتابیس" disabled={isSaving} />
           <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
           <Tab value="gps" label="موقعیت GPS" disabled={isSaving} />
-          <Tab value="kara-workflow" label="گزارش تردد ماهانه" disabled={isSaving} />
+          <Tab value="attendance-mapping" label="نگاشت تردد" disabled={isSaving} />
         </Tabs>
 
         {tab === "connection" && (
@@ -663,12 +700,13 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
 
-        {tab === "kara-workflow" && (
+        {tab === "attendance-mapping" && (
           <Stack spacing={2.5}>
             <Alert severity="info">
-              اگر روشن باشد، پرسنل این سایت می‌توانند تردد ماهانه واقعی خودشان (از دستگاه‌های حضور و
-              غیاب کارخانه، نرم‌افزار «کاراوب») را در پنل کاربری خودشان ببینند — از جدول DataFile
-              همین اتصال دیتابیس بالا (تب «اتصال دیتابیس») خوانده می‌شود.
+              اگر تنظیم شود، پرسنل این سایت می‌توانند تردد ماهانه واقعی خودشان (از دستگاه‌های حضور و
+              غیاب کارخانه) را در پنل کاربری خودشان ببینند — از همین اتصال دیتابیس بالا (تب «اتصال
+              دیتابیس») خوانده می‌شود. چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی نام جدول/ستون‌های
+              متفاوتی دارند، این‌ها را دقیقاً مطابق دیتابیس واقعی این سایت وارد کنید.
             </Alert>
             {connectionForm.db_type !== "mssql" && (
               <Alert severity="warning">
@@ -677,22 +715,63 @@ export default function SiteSettingsPage() {
               </Alert>
             )}
 
-            {karaWorkflowResult && (
-              <Alert severity={karaWorkflowResult.success ? "success" : "error"}>
-                {karaWorkflowResult.message}
+            {attendanceMappingResult && (
+              <Alert severity={attendanceMappingResult.success ? "success" : "error"}>
+                {attendanceMappingResult.message}
               </Alert>
             )}
 
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={Boolean(site?.kara_workflow_enabled)}
-                  disabled={isSavingKaraWorkflow || connectionForm.db_type !== "mssql"}
-                  onChange={(e) => handleToggleKaraWorkflow(e.target.checked)}
-                />
-              }
-              label="گزارش تردد ماهانه برای پرسنل این سایت فعال باشد"
+            <TextField
+              label="نام جدول"
+              value={attendanceMappingForm.table_name}
+              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, table_name: e.target.value })}
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText="نام جدولی که رکوردهای خام ورود/خروج دستگاه در آن ذخیره می‌شود"
             />
+            <TextField
+              label="ستون کد پرسنلی"
+              value={attendanceMappingForm.personnel_code_column}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, personnel_code_column: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+            />
+            <TextField
+              label="ستون تاریخ"
+              value={attendanceMappingForm.date_column}
+              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, date_column: e.target.value })}
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText='فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524'
+            />
+            <TextField
+              label="ستون ساعت"
+              value={attendanceMappingForm.time_column}
+              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
+            />
+
+            <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
+              <Button
+                variant="contained"
+                startIcon={isSavingAttendanceMapping ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                onClick={handleSaveAttendanceMapping}
+                disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              >
+                {isSavingAttendanceMapping ? "در حال ذخیره..." : "ذخیره"}
+              </Button>
+              {hasExistingAttendanceMapping && (
+                <Button
+                  color="error"
+                  variant="outlined"
+                  startIcon={<DeleteOutlineIcon />}
+                  onClick={handleDeleteAttendanceMapping}
+                  disabled={isSavingAttendanceMapping}
+                >
+                  حذف نگاشت
+                </Button>
+              )}
+            </Stack>
           </Stack>
         )}
       </Card>

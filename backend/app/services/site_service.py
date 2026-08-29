@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import encrypt_secret
 from app.models.employee import EmployeeMapping
-from app.models.site import DbType, Site, SiteConnection
-from app.schemas.site import EmployeeMappingIn, SiteConnectionIn, SiteCreate
+from app.models.site import AttendanceMapping, DbType, Site, SiteConnection
+from app.schemas.site import AttendanceMappingIn, EmployeeMappingIn, SiteConnectionIn, SiteCreate
 
 
 class SiteService:
@@ -56,27 +56,40 @@ class SiteService:
         await self.db.refresh(site)
         return site
 
-    async def set_kara_workflow_enabled(self, site_id: int, enabled: bool) -> Site | None:
+    async def get_attendance_mapping(self, site_id: int) -> AttendanceMapping | None:
+        result = await self.db.execute(select(AttendanceMapping).where(AttendanceMapping.site_id == site_id))
+        return result.scalar_one_or_none()
+
+    async def upsert_attendance_mapping(self, site_id: int, payload: AttendanceMappingIn) -> AttendanceMapping:
         """
-        روشن/خاموش‌کردن «گزارش تردد ماهانه» (کاراوب) برای یک Site — چون این
-        قابلیت مستقیماً از همان SiteConnection می‌خواند (جدول DataFile)، فقط
-        برای اتصال‌های SQL Server معنا دارد؛ اگر اتصال هنوز تعریف نشده یا
-        نوعش SQL Server نیست، روشن‌کردن رد می‌شود (نه اینکه بی‌صدا ذخیره
-        شود و بعداً کاربران با خطای اتصال مواجه شوند).
+        نگاشت جدول/ستون‌های تردد این سایت را می‌سازد یا به‌روزرسانی می‌کند —
+        فقط برای اتصال از نوع SQL Server معنا دارد؛ اگر اتصال هنوز تعریف
+        نشده یا نوعش SQL Server نیست، رد می‌شود (نه اینکه بی‌صدا ذخیره شود
+        و بعداً کاربران با خطای اتصال مواجه شوند).
         """
-        site = await self.db.get(Site, site_id)
-        if site is None:
-            return None
-        if enabled:
-            conn = await self.get_connection(site_id)
-            if conn is None or conn.db_type != DbType.mssql:
-                raise ValueError(
-                    "گزارش تردد ماهانه فقط برای سایتی با اتصال از نوع SQL Server قابل‌فعال‌سازی است"
-                )
-        site.kara_workflow_enabled = enabled
+        conn = await self.get_connection(site_id)
+        if conn is None or conn.db_type != DbType.mssql:
+            raise ValueError("گزارش تردد ماهانه فقط برای سایتی با اتصال از نوع SQL Server قابل‌تنظیم است")
+
+        mapping = await self.get_attendance_mapping(site_id)
+        if mapping is None:
+            mapping = AttendanceMapping(site_id=site_id, **payload.model_dump())
+            self.db.add(mapping)
+        else:
+            for field, value in payload.model_dump().items():
+                setattr(mapping, field, value)
+
         await self.db.commit()
-        await self.db.refresh(site)
-        return site
+        await self.db.refresh(mapping)
+        return mapping
+
+    async def delete_attendance_mapping(self, site_id: int) -> bool:
+        mapping = await self.get_attendance_mapping(site_id)
+        if mapping is None:
+            return False
+        await self.db.delete(mapping)
+        await self.db.commit()
+        return True
 
     async def set_connection_active(self, site_id: int, is_active: bool) -> SiteConnection | None:
         """روشن/خاموش‌کردن همگام‌سازی خودکار این Site — بدون دست‌زدن به اطلاعات اتصال."""

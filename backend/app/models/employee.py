@@ -136,7 +136,7 @@ class EmployeeMapping(Base, TimestampMixin):
     is_active_inverted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # اختیاری: نام ستونی در جدول پرسنل مبدأ که کد/شماره واحد سازمانی است
-    # (مثلاً ستون Sec_No در جدول dbo.Employee کارخانه Kara)
+    # (مثلاً ستون Sec_No در جدول dbo.Employee)
     department_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری: مشخصات جدول Lookup که آن کد را به نام واقعی واحد ترجمه می‌کند

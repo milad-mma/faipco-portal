@@ -19,7 +19,6 @@ class SiteOut(BaseModel):
     gps_latitude: float | None = None
     gps_longitude: float | None = None
     gps_radius_meters: int | None = None
-    kara_workflow_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,15 +38,6 @@ class SiteActiveUpdate(BaseModel):
 
     is_active: bool
 
-
-class SiteKaraWorkflowUpdate(BaseModel):
-    """
-    روشن/خاموش‌کردن «گزارش تردد ماهانه» (از جدول DataFile نرم‌افزار
-    کاراوب) برای این Site — فقط برای Siteهایی معنا دارد که اتصالشان از
-    نوع SQL Server است؛ در غیر این صورت Endpoint خطا می‌دهد.
-    """
-
-    kara_workflow_enabled: bool
 
 
 class SiteConnectionIn(BaseModel):
@@ -110,6 +100,25 @@ class EmployeeMappingIn(BaseModel):
 
 
 class EmployeeMappingOut(EmployeeMappingIn):
+    id: int
+    site_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AttendanceMappingIn(BaseModel):
+    """
+    نگاشت جدول/ستون‌های تردد دستگاهی این سایت — دقیقاً همان الگوی
+    EmployeeMappingIn بالا، فقط برای «گزارش تردد ماهانه».
+    """
+
+    table_name: str
+    personnel_code_column: str
+    date_column: str
+    time_column: str
+
+
+class AttendanceMappingOut(AttendanceMappingIn):
     id: int
     site_id: int
 

@@ -182,7 +182,7 @@ export default function App() {
           <Route
             path="/monthly-attendance"
             element={
-              <PermissionRoute check={(u) => u?.has_kara_workflow}>
+              <PermissionRoute check={(u) => u?.has_monthly_attendance}>
                 <MonthlyAttendanceReportPage />
               </PermissionRoute>
             }

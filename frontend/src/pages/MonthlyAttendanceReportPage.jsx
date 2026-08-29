@@ -16,8 +16,8 @@ import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 
 /**
- * گزارش تردد ماهانه شخصی — از جدول DataFile نرم‌افزار «کاراوب»، در همان
- * SQL Server سایت خودِ کاربر (فقط اگر kara_workflow_enabled آن سایت روشن
+ * گزارش تردد ماهانه شخصی — از دستگاه‌های حضور و غیاب واقعی، در همان SQL
+ * Server سایت خودِ کاربر (فقط اگر برای آن سایت یک نگاشت تردد تنظیم شده
  * باشد). ستون‌های ورود/خروج کاملاً پویا هستند — بر اساس بیشترین تعداد
  * جفت ورود/خروج در بین همه روزهای همان ماه.
  *

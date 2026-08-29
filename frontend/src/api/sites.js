@@ -40,13 +40,6 @@ export async function updateSiteGpsLocation(siteId, { gps_latitude, gps_longitud
   return data;
 }
 
-export async function updateSiteKaraWorkflow(siteId, enabled) {
-  const { data } = await apiClient.put(`/sites/${siteId}/kara-workflow`, {
-    kara_workflow_enabled: enabled,
-  });
-  return data;
-}
-
 export async function fetchSiteConnection(siteId) {
   const { data } = await apiClient.get(`/sites/${siteId}/connection`);
   return data; // null اگر تعریف نشده باشد
@@ -78,4 +71,18 @@ export async function upsertSiteMapping(siteId, payload) {
 
 export async function deleteSiteMapping(siteId) {
   await apiClient.delete(`/sites/${siteId}/mapping`);
+}
+
+export async function fetchSiteAttendanceMapping(siteId) {
+  const { data } = await apiClient.get(`/sites/${siteId}/attendance-mapping`);
+  return data; // null اگر تعریف نشده باشد
+}
+
+export async function upsertSiteAttendanceMapping(siteId, payload) {
+  const { data } = await apiClient.put(`/sites/${siteId}/attendance-mapping`, payload);
+  return data;
+}
+
+export async function deleteSiteAttendanceMapping(siteId) {
+  await apiClient.delete(`/sites/${siteId}/attendance-mapping`);
 }

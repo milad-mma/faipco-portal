@@ -121,10 +121,10 @@ export default function PersonalDashboardPage() {
 
   useEffect(() => {
     // ⚠️ طبق درخواست صریح: این کارت دیگر به سیستم آزمایشی GPS وصل نیست —
-    // کاملاً با «گزارش تردد ماهانه» (از دستگاه حضور و غیاب واقعی کارخانه،
-    // نرم‌افزار کاراوب) جایگزین شده. اگر سایت این پرسنل به کاراوب وصل
-    // نباشد (has_kara_workflow=false)، این کارت حالت «به‌زودی» نشان می‌دهد.
-    if (!user?.has_kara_workflow) {
+    // کاملاً با «گزارش تردد ماهانه» (از دستگاه‌های حضور و غیاب واقعی
+    // کارخانه) جایگزین شده. اگر سایت این پرسنل نگاشت تردد تنظیم‌شده
+    // نداشته باشد (has_monthly_attendance=false)، این کارت حالت «به‌زودی» نشان می‌دهد.
+    if (!user?.has_monthly_attendance) {
       setTodayAttendance("unavailable");
       return;
     }
@@ -143,11 +143,11 @@ export default function PersonalDashboardPage() {
         });
       })
       .catch(() => setTodayAttendance("unavailable"));
-  }, [user?.has_kara_workflow]);
+  }, [user?.has_monthly_attendance]);
 
   function formatTime(value) {
-    // ⚠️ منبع جدید (کاراوب) خودش رشته HH:MM آماده برمی‌گرداند — نه یک
-    // شیء Date مثل سیستم قدیمی GPS — پس دیگر نیازی به toLocaleTimeString نیست.
+    // ⚠️ منبع جدید (گزارش تردد ماهانه) خودش رشته HH:MM آماده برمی‌گرداند —
+    // نه یک شیء Date مثل سیستم قدیمی GPS — پس دیگر نیازی به toLocaleTimeString نیست.
     return value || "—";
   }
 
@@ -234,7 +234,7 @@ export default function PersonalDashboardPage() {
             <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
             <Typography variant="caption">تردد امروز</Typography>
           </Stack>
-          {user?.has_kara_workflow ? (
+          {user?.has_monthly_attendance ? (
             <>
               <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
                 <Typography variant="caption" color="text.secondary">
@@ -294,17 +294,17 @@ export default function PersonalDashboardPage() {
       <Stack direction="row" spacing={1.5} sx={{ gridArea: "actions" }}>
         <Card
           variant="outlined"
-          onClick={user?.has_kara_workflow ? () => navigate("/monthly-attendance") : undefined}
+          onClick={user?.has_monthly_attendance ? () => navigate("/monthly-attendance") : undefined}
           sx={{
             position: "relative",
             flex: 1,
             borderRadius: 2,
             p: 1.75,
-            cursor: user?.has_kara_workflow ? "pointer" : "default",
-            opacity: user?.has_kara_workflow ? 1 : 0.55,
+            cursor: user?.has_monthly_attendance ? "pointer" : "default",
+            opacity: user?.has_monthly_attendance ? 1 : 0.55,
           }}
         >
-          {!user?.has_kara_workflow && <ComingSoonChip />}
+          {!user?.has_monthly_attendance && <ComingSoonChip />}
           <Box
             sx={{
               width: 38,

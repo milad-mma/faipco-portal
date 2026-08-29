@@ -18,7 +18,7 @@ from app.core.security import (
     WeakPasswordError,
 )
 from app.models.employee import Department, Employee
-from app.models.site import Site
+from app.models.site import AttendanceMapping, Site
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
@@ -261,16 +261,17 @@ class AuthService:
             return base
 
         result = await self.db.execute(
-            select(Employee, Site.name, Department.name, Site.kara_workflow_enabled)
+            select(Employee, Site.name, Department.name, AttendanceMapping.id)
             .join(Site, Site.id == Employee.site_id)
             .outerjoin(Department, Department.id == Employee.department_id)
+            .outerjoin(AttendanceMapping, AttendanceMapping.site_id == Site.id)
             .where(Employee.id == user.employee_id)
         )
         row = result.first()
         if row is None:
             return base
 
-        employee, site_name, department_name, kara_workflow_enabled = row
+        employee, site_name, department_name, attendance_mapping_id = row
         base.employee_id = employee.id
         base.first_name = employee.first_name
         base.last_name = employee.last_name
@@ -284,8 +285,9 @@ class AuthService:
         base.hide_birthday_in_dashboard = employee.hide_birthday_in_dashboard
         # ⚠️ این یک Permission نیست (طبق درخواست صریح — دسترسی خودکار برای
         # همه پرسنل، بدون نیاز به مجوز جدا) بلکه یک قابلیت سطح Site است:
-        # فقط اگر سایت خودِ این پرسنل به «کاراوب» وصل باشد، این گزارش
-        # برایش معنا دارد؛ وگرنه کارت‌های داشبورد باید حالت «به‌زودی»
-        # نشان دهند، نه تلاش برای اتصال و شکست با خطا.
-        base.has_kara_workflow = kara_workflow_enabled
+        # فقط اگر برای سایت خودِ این پرسنل یک AttendanceMapping (نگاشت
+        # جدول/ستون تردد دستگاهی) تنظیم شده باشد، این گزارش برایش معنا
+        # دارد؛ وگرنه کارت‌های داشبورد باید حالت «به‌زودی» نشان دهند، نه
+        # تلاش برای اتصال و شکست با خطا.
+        base.has_monthly_attendance = attendance_mapping_id is not None
         return base

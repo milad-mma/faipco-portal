@@ -46,13 +46,6 @@ class Site(Base, TimestampMixin):
     gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     gps_radius_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # آیا این سایت از نرم‌افزار «کاراوب» (Kara WorkFlow) برای ثبت تردد دستگاهی
-    # استفاده می‌کند — یعنی جدول DataFile در همین SiteConnection موجود است.
-    # پیش‌فرض False چون همه سایت‌ها الزاماً از این سیستم استفاده نمی‌کنند؛
-    # اگر خاموش باشد، «گزارش تردد ماهانه» برای پرسنل همان سایت اصلاً نمایش
-    # داده نمی‌شود (نه این‌که با خطای اتصال مواجه شوند).
-    kara_workflow_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
     connection: Mapped["SiteConnection"] = relationship(
         back_populates="site", cascade="all, delete-orphan", uselist=False
     )
@@ -84,3 +77,28 @@ class SiteConnection(Base, TimestampMixin):
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     site: Mapped["Site"] = relationship(back_populates="connection")
+
+
+class AttendanceMapping(Base, TimestampMixin):
+    """
+    نگاشت ستون‌های دیتابیس خام تردد هر Site به فیلدهای استاندارد «گزارش
+    تردد ماهانه» — دقیقاً همان الگوی EmployeeMapping (app/models/employee.py):
+    چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی، نام جدول/ستون‌های متفاوتی
+    دارند، این‌ها هاردکد نیستند و از پنل «تنظیمات سایت» قابل‌تنظیم‌اند.
+
+    وجود یا نبود این رکورد برای یک Site، خودِ «آیا گزارش تردد ماهانه برای
+    این سایت فعال است؟» را هم مشخص می‌کند — یک فلگ boolean جدا لازم نیست.
+    هر Site حداکثر یک Mapping تردد دارد (site_id یکتا).
+    """
+
+    __tablename__ = "attendance_mappings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    personnel_code_column: Mapped[str] = mapped_column(String(128), nullable=False)
+    date_column: Mapped[str] = mapped_column(String(128), nullable=False)
+    time_column: Mapped[str] = mapped_column(String(128), nullable=False)

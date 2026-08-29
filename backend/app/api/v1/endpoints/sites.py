@@ -7,6 +7,8 @@ from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.site import (
+    AttendanceMappingIn,
+    AttendanceMappingOut,
     EmployeeMappingIn,
     EmployeeMappingOut,
     SiteActiveUpdate,
@@ -15,7 +17,6 @@ from app.schemas.site import (
     SiteConnectionOut,
     SiteCreate,
     SiteGpsLocationIn,
-    SiteKaraWorkflowUpdate,
     SiteOut,
 )
 from app.services.site_service import SiteService
@@ -102,23 +103,6 @@ async def update_site_gps_location(
     site = await SiteService(db).set_gps_location(
         site_id, payload.gps_latitude, payload.gps_longitude, payload.gps_radius_meters
     )
-    if site is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
-    return site
-
-
-@router.put("/{site_id}/kara-workflow", response_model=SiteOut)
-async def update_site_kara_workflow(
-    site_id: int,
-    payload: SiteKaraWorkflowUpdate,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sites.manage", site_scoped=True)),
-):
-    """روشن/خاموش‌کردن «گزارش تردد ماهانه» (کاراوب) برای این Site."""
-    try:
-        site = await SiteService(db).set_kara_workflow_enabled(site_id, payload.kara_workflow_enabled)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
     return site
@@ -215,3 +199,34 @@ async def delete_mapping(
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
     await SiteService(db).delete_mapping(site_id)
+
+
+@router.get("/{site_id}/attendance-mapping", response_model=AttendanceMappingOut | None)
+async def get_attendance_mapping(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    return await SiteService(db).get_attendance_mapping(site_id)
+
+
+@router.put("/{site_id}/attendance-mapping", response_model=AttendanceMappingOut)
+async def upsert_attendance_mapping(
+    site_id: int,
+    payload: AttendanceMappingIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    try:
+        return await SiteService(db).upsert_attendance_mapping(site_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete("/{site_id}/attendance-mapping", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_attendance_mapping(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    await SiteService(db).delete_attendance_mapping(site_id)
