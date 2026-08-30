@@ -5,32 +5,22 @@
 (دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل) خوانده می‌شوند که
 از پنل «تنظیمات سایت» قابل‌تنظیم است.
 
-به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول هر روز = ورود، دوم = خروج)،
-هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده می‌شود.
+⚠️ طبق درخواست صریح: این سرویس داده خام را دقیقاً همان‌طور که در دیتابیس
+ثبت شده، بدون هیچ پردازش/گروه‌بندی/جفت‌کردن اضافه‌ای نشان می‌دهد - فقط
+بر اساس همان ستون Date خام دستگاه گروه‌بندی می‌شود (نه یک «روز شیفت»
+محاسبه‌شده). به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول = ورود، دوم =
+خروج)، هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده
+می‌شود - همان داده خام، فقط با برچسب خنثی‌تر.
 
-چرا «ساعت مرز شبانه‌روز کاری» ثابت کار نمی‌کرد: برای شرکت‌هایی که بازه
-ورود/خروج شیفت‌های مختلف با هم همپوشانی دارند (مثلاً بازه خروج شیفت روز
-14:00-18:30 با بازه ورود شیفت شب 18:00-20:00 همپوشانی دارد، یا بازه
-خروج شیفت شب و بازه ورود شیفت روز هر دو دقیقاً 06:00-08:00 است)، هیچ
-ساعت مرز ثابتی نمی‌تواند این‌ها را درست تفکیک کند.
+⚠️ زنده - این داده هیچ‌جا Cache/ذخیره نمی‌شود؛ هر بار درخواست، مستقیماً
+از SQL Server سایت خوانده و بلافاصله نمایش داده می‌شود (کاملاً مستقل از
+Sync Engine که پرسنل را به‌صورت دوره‌ای در دیتابیس خودِ پرتال ذخیره می‌کند).
 
-راه‌حل واقعی: به‌جای تکیه به یک ساعت ثابت، ترددهای هر پرسنل بر اساس
-ترتیب زمانی واقعی خودشان دو‌به‌دو جفت می‌شوند (تردد 1و2 یک جفت، 3و4
-جفت بعدی، و به همین ترتیب) - مستقل از این‌که کدام ساعت از شبانه‌روز
-است. «روز نمایش» هر جفت، روز تقویمی اولین تردد آن جفت است؛ یعنی یک
-شیفت شب که از نیمه‌شب می‌گذرد (ورود امشب + خروج فردا صبح)، هر دو تردد
-آن زیر همان «امشب» نمایش داده می‌شوند - نه به دو روز جدا تقسیم می‌شوند.
-این روش کاملاً مستقل از برنامه شیفت است و برای هر الگویی (حتی اگر
-ساعت کاری تغییر کند) درست کار می‌کند - تنها فرضش این است که دستگاه
-همیشه ترددها را به تناوب (باز، بسته، باز، بسته) ثبت می‌کند.
-
-محدودیت شناخته‌شده: اگر یک پرسنل یک روز فراموش کند تردد بزند (یک
-رکورد از قلم بیفتد)، تناوب برای باقی آن بازه (تا رکورد بعدی) به‌هم
-می‌خورد. این یک محدودیت ذاتی هر روش مبتنی بر تناوب است.
-
-امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
+⚠️ امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
 می‌شود (هرگز از ورودی درخواست). مقادیر (نه نام جدول/ستون) همیشه
-Parameterized هستند.
+Parameterized هستند؛ نام جدول/ستون فقط از AttendanceMapping (تنظیم‌شده
+توسط Admin با مجوز sites.manage) می‌آیند و با [براکت] کوته می‌شوند —
+همان الگوی Sync Engine (app/sync_engine/adapters/mssql_adapter.py).
 """
 from __future__ import annotations
 
@@ -39,15 +29,11 @@ import logging
 
 import pymssql
 
-from app.core.persian_date import jalali_yyyymmdd_add_days, jalali_year_month_to_yyyymmdd_range
+from app.core.persian_date import jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 
 logger = logging.getLogger("faipco.monthly_attendance")
-
-# چند روز اضافه، هر دو طرف بازه اصلی، برای گرفتن ترددهای مرزی و محاسبه
-# صحیح تناوب (زوج/فرد) از یک نقطه معقول قبل از شروع بازه اصلی.
-_BUFFER_DAYS = 3
 
 
 class MonthlyAttendanceError(Exception):
@@ -125,8 +111,10 @@ async def get_monthly_attendance(
     month: int,
 ) -> dict:
     """
-    گزارش تردد ماهانه یک پرسنل مشخص - ساختار «روز + فهرست ترددهای پویا»،
-    شامل روزهای بدون رکورد (با transits خالی).
+    گزارش تردد ماهانه یک پرسنل مشخص - داده خام، دقیقاً همان‌طور که در
+    دیتابیس ثبت شده، فقط بر اساس ستون Date خام دستگاه گروه‌بندی شده
+    (بدون هیچ تغییر/ترکیب/جفت‌کردن) - شامل روزهای بدون رکورد (با
+    transits خالی).
     """
     try:
         emp_no = int(personnel_code)
@@ -134,30 +122,19 @@ async def get_monthly_attendance(
         raise MonthlyAttendanceError("کد پرسنلی این کاربر عددی نیست — با فرمت مورد انتظار این گزارش سازگار نیست")
 
     from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)
-    query_from_date = jalali_yyyymmdd_add_days(from_date, -_BUFFER_DAYS)
-    query_to_date = jalali_yyyymmdd_add_days(to_date, _BUFFER_DAYS)
 
     try:
-        raw_rows = await asyncio.to_thread(
-            _fetch_raw_rows_sync, site_connection, mapping, emp_no, query_from_date, query_to_date
-        )
+        raw_rows = await asyncio.to_thread(_fetch_raw_rows_sync, site_connection, mapping, emp_no, from_date, to_date)
     except MonthlyAttendanceError:
         raise
     except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند
         logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
         raise MonthlyAttendanceError("اتصال به سیستم تردد ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
 
-    # مرتب‌سازی زمانی کامل (نه فقط بر اساس Time، چون بازه شامل چند روز
-    # تقویمی است) - این ترتیب واقعی است که تناوب زوج/فرد بر اساس آن حساب می‌شود.
-    raw_rows.sort(key=lambda r: (r["AttendanceDate"], r["AttendanceTime"]))
-
-    # جفت‌کردن دوبه‌دو بر اساس ترتیب (نه ساعت ثابت) - عضو اول هر جفت،
-    # «روز نمایش» کل آن جفت را تعیین می‌کند.
-    rows_by_display_date: dict[int, list[dict]] = {}
-    for i in range(0, len(raw_rows), 2):
-        pair = raw_rows[i : i + 2]
-        display_date = pair[0]["AttendanceDate"]
-        rows_by_display_date.setdefault(display_date, []).extend(pair)
+    # گروه‌بندی دقیقاً بر اساس همان ستون Date خام دستگاه - بدون هیچ تغییر
+    rows_by_date: dict[int, list[dict]] = {}
+    for row in raw_rows:
+        rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
 
     days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
     max_transits = 0
@@ -165,7 +142,7 @@ async def get_monthly_attendance(
 
     for day in range(1, days_in_month + 1):
         date_int = year * 10000 + month * 100 + day
-        day_rows = rows_by_display_date.get(date_int, [])
+        day_rows = rows_by_date.get(date_int, [])
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
         days_out.append({"date": _format_jalali_date(date_int), "day": day, "transits": transits})
