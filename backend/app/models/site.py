@@ -102,3 +102,15 @@ class AttendanceMapping(Base, TimestampMixin):
     personnel_code_column: Mapped[str] = mapped_column(String(128), nullable=False)
     date_column: Mapped[str] = mapped_column(String(128), nullable=False)
     time_column: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    # نگاشت اختیاری جدول تقویم/تعطیلات — کاملاً مستقل از جدول تردد بالا.
+    # اگر calendar_table_name خالی باشد، این قابلیت برای این سایت غیرفعال
+    # است (گزارش تردد بدون رنگ‌آمیزی تعطیلات، دقیقاً مثل قبل کار می‌کند).
+    # ساختار مورد انتظار: یک ردیف به‌ازای هر (سال، ماه شمسی)، با ستون‌های
+    # روز شماره‌گذاری‌شده (مثلاً D1 تا D31) که هرکدام یا صفر (روز عادی)
+    # یا یک عدد غیرصفر (تعطیل) هستند.
+    calendar_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    calendar_year_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    calendar_month_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # پیشوند ستون‌های روز — مثلاً "D" یعنی ستون‌ها D1، D2، ...، D31 هستند
+    calendar_day_column_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)

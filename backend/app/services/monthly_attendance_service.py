@@ -102,6 +102,46 @@ def _fetch_raw_rows_sync(
         connection.close()
 
 
+def _fetch_holidays_sync(conn: SiteConnection, mapping: AttendanceMapping, year: int, month: int) -> set[int]:
+    """
+    فهرست شماره روزهای تعطیل این ماه شمسی را از جدول تقویم برمی‌گرداند —
+    یک ستون غیرصفر (طبق داده واقعی: 500 یا 501) یعنی آن روز تعطیل است؛
+    فقط اگر همه فیلدهای نگاشت تقویم برای این سایت تنظیم شده باشند، وگرنه
+    مجموعه خالی (بدون رنگ‌آمیزی تعطیلات — نه خطا).
+    """
+    if not (
+        mapping.calendar_table_name
+        and mapping.calendar_year_column
+        and mapping.calendar_month_column
+        and mapping.calendar_day_column_prefix
+    ):
+        return set()
+
+    day_columns_sql = ", ".join(f"[{mapping.calendar_day_column_prefix}{i}]" for i in range(1, 32))
+    connection = _connect(conn)
+    try:
+        query = f"""
+            SELECT {day_columns_sql}
+            FROM [{mapping.calendar_table_name}]
+            WHERE [{mapping.calendar_year_column}] = %(year)s AND [{mapping.calendar_month_column}] = %(month)s
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+        with connection.cursor(as_dict=True) as cur:
+            cur.execute(query, {"year": year, "month": month})
+            row = cur.fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        return set()
+
+    holidays = set()
+    for i in range(1, 32):
+        value = row.get(f"{mapping.calendar_day_column_prefix}{i}")
+        if value is not None and value != 0:
+            holidays.add(i)
+    return holidays
+
+
 async def get_monthly_attendance(
     site_connection: SiteConnection,
     mapping: AttendanceMapping,
@@ -131,6 +171,14 @@ async def get_monthly_attendance(
         logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
         raise MonthlyAttendanceError("اتصال به سیستم تردد ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
 
+    # ⚠️ شکست در خواندن تقویم/تعطیلات نباید کل گزارش تردد را خراب کند —
+    # این یک قابلیت مکمل/اختیاری است، نه بخش اصلی گزارش.
+    try:
+        holidays = await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month)
+    except Exception:  # noqa: BLE001
+        logger.exception("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id)
+        holidays = set()
+
     # گروه‌بندی دقیقاً بر اساس همان ستون Date خام دستگاه - بدون هیچ تغییر
     rows_by_date: dict[int, list[dict]] = {}
     for row in raw_rows:
@@ -145,6 +193,8 @@ async def get_monthly_attendance(
         day_rows = rows_by_date.get(date_int, [])
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
-        days_out.append({"date": _format_jalali_date(date_int), "day": day, "transits": transits})
+        days_out.append(
+            {"date": _format_jalali_date(date_int), "day": day, "transits": transits, "is_holiday": day in holidays}
+        )
 
     return {"year": year, "month": month, "max_transits_in_month": max_transits, "days": days_out}

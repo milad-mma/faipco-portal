@@ -117,6 +117,13 @@ class AttendanceMappingIn(BaseModel):
     date_column: str
     time_column: str
 
+    # نگاشت اختیاری جدول تقویم/تعطیلات — برای رنگ‌آمیزی روزهای تعطیل.
+    # اگر calendar_table_name خالی/None باشد، این قابلیت غیرفعال می‌ماند.
+    calendar_table_name: str | None = None
+    calendar_year_column: str | None = None
+    calendar_month_column: str | None = None
+    calendar_day_column_prefix: str | None = None
+
 
 class AttendanceMappingOut(AttendanceMappingIn):
     id: int

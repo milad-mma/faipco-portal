@@ -21,12 +21,15 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
  * باشد). ستون‌های تردد کاملاً پویا هستند — بر اساس بیشترین تعداد تردد در
  * بین همه روزهای همان ماه.
  *
- * ⚠️ به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول = ورود، دوم = خروج)،
- * هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده
- * می‌شود — چون برای پرسنل شب‌کار/گردشی، تشخیص قطعی «کدام ورود و کدام
- * خروج است» ممکن نیست. Backend ترددهای نزدیک نیمه‌شب را طبق «ساعت مرز
- * شبانه‌روز کاری» (تنظیم‌شده در پنل سایت) به روز درست نسبت می‌دهد — تا
- * شیفتی که از نیمه‌شب می‌گذرد، یک واحد باقی بماند.
+ * ⚠️ طبق درخواست صریح: داده خام را دقیقاً همان‌طور که در دیتابیس ثبت
+ * شده نشان می‌دهد — گروه‌بندی فقط بر اساس همان ستون تاریخ خام دستگاه
+ * است، بدون هیچ پردازش/ترکیب اضافه‌ای. به‌جای «ورود/خروج» (که فرض
+ * می‌کرد رکورد اول = ورود، دوم = خروج)، هر تردد فقط با شماره ترتیبی
+ * («تردد ۱»، «تردد ۲»، ...) نمایش داده می‌شود.
+ *
+ * روزهای تعطیل (طبق نگاشت تقویم اختیاری هر سایت) با رنگ قرمز مشخص
+ * می‌شوند — اگر آن سایت نگاشت تقویم نداشته باشد، is_holiday همیشه false
+ * است و هیچ روزی رنگی نمی‌شود.
  *
  * ⚠️ کاملاً مستقل از صفحه «گزارش ورود و خروج» (ClockInOutReportPage —
  * سیستم آزمایشی GPS) — این یک منبع داده متفاوت (دستگاه حضور و غیاب واقعی
@@ -96,10 +99,22 @@ export default function MonthlyAttendanceReportPage() {
             </TableHead>
             <TableBody>
               {report.days.map((day) => (
-                <TableRow key={day.date} hover>
-                  <TableCell sx={{ fontFamily: "monospace" }}>{day.date}</TableCell>
+                <TableRow key={day.date} hover sx={day.is_holiday ? { bgcolor: "rgba(211, 47, 47, 0.08)" } : undefined}>
+                  <TableCell
+                    sx={{
+                      fontFamily: "monospace",
+                      color: day.is_holiday ? "error.main" : undefined,
+                      fontWeight: day.is_holiday ? 700 : undefined,
+                    }}
+                  >
+                    {day.date}
+                  </TableCell>
                   {Array.from({ length: transitColumnCount }, (_, i) => (
-                    <TableCell key={i} align="center" sx={{ fontFamily: "monospace" }}>
+                    <TableCell
+                      key={i}
+                      align="center"
+                      sx={{ fontFamily: "monospace", color: day.is_holiday ? "error.main" : undefined }}
+                    >
                       {day.transits[i] || "—"}
                     </TableCell>
                   ))}

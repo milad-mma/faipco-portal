@@ -74,6 +74,10 @@ const EMPTY_ATTENDANCE_MAPPING = {
   personnel_code_column: "",
   date_column: "",
   time_column: "",
+  calendar_table_name: "",
+  calendar_year_column: "",
+  calendar_month_column: "",
+  calendar_day_column_prefix: "",
 };
 
 export default function SiteSettingsPage() {
@@ -161,6 +165,10 @@ export default function SiteSettingsPage() {
           personnel_code_column: attendanceMapping.personnel_code_column,
           date_column: attendanceMapping.date_column,
           time_column: attendanceMapping.time_column,
+          calendar_table_name: attendanceMapping.calendar_table_name || "",
+          calendar_year_column: attendanceMapping.calendar_year_column || "",
+          calendar_month_column: attendanceMapping.calendar_month_column || "",
+          calendar_day_column_prefix: attendanceMapping.calendar_day_column_prefix || "",
         });
         setHasExistingAttendanceMapping(true);
       }
@@ -749,6 +757,51 @@ export default function SiteSettingsPage() {
               onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
               disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
               helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
+            />
+
+            <Divider sx={{ my: 1 }} />
+            <Typography variant="subtitle2" fontWeight={700}>
+              تقویم و تعطیلات (اختیاری)
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+              اگر پر شود، روزهای تعطیل در گزارش تردد با رنگ قرمز مشخص می‌شوند. یک جدول با یک ردیف
+              به‌ازای هر (سال، ماه شمسی) و ستون‌های روز شماره‌گذاری‌شده (مثلاً D1 تا D31) — هر ستون
+              روز، صفر یعنی روز عادی و هر عدد غیرصفر یعنی آن روز تعطیل است.
+            </Typography>
+            <TextField
+              label="نام جدول تقویم"
+              value={attendanceMappingForm.calendar_table_name}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_table_name: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+            />
+            <TextField
+              label="ستون سال"
+              value={attendanceMappingForm.calendar_year_column}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_year_column: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText="ستونی که سال شمسی را دارد (مثلاً 1405)"
+            />
+            <TextField
+              label="ستون ماه"
+              value={attendanceMappingForm.calendar_month_column}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_month_column: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText="ستونی که شماره ماه شمسی را دارد (۱ تا ۱۲)"
+            />
+            <TextField
+              label="پیشوند ستون‌های روز"
+              value={attendanceMappingForm.calendar_day_column_prefix}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_day_column_prefix: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              helperText='مثلاً "D" اگر ستون‌ها D1، D2، ... D31 نامگذاری شده‌اند'
             />
 
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
