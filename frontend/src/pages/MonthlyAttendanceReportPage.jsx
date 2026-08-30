@@ -31,6 +31,11 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
  * می‌شوند — اگر آن سایت نگاشت تقویم نداشته باشد، is_holiday همیشه false
  * است و هیچ روزی رنگی نمی‌شود.
  *
+ * ⚠️ نام روز هفته (weekday، شنبه تا جمعه) یک محاسبه خالص تقویمی از خودِ
+ * تاریخ است (Backend: jalali_weekday_name) — نه داده‌ای که از جدول
+ * تقویم/تعطیلات خوانده شود؛ پس همیشه در دسترس است، حتی برای سایتی که
+ * اصلاً نگاشت تقویم ندارد.
+ *
  * ⚠️ کاملاً مستقل از صفحه «گزارش ورود و خروج» (ClockInOutReportPage —
  * سیستم آزمایشی GPS) — این یک منبع داده متفاوت (دستگاه حضور و غیاب واقعی
  * کارخانه) و یک صفحه کاملاً جدا است.
@@ -90,6 +95,7 @@ export default function MonthlyAttendanceReportPage() {
             <TableHead>
               <TableRow>
                 <TableCell>روز</TableCell>
+                <TableCell>روز هفته</TableCell>
                 {Array.from({ length: transitColumnCount }, (_, i) => (
                   <TableCell key={i} align="center">
                     {`تردد ${i + 1}`}
@@ -108,6 +114,9 @@ export default function MonthlyAttendanceReportPage() {
                     }}
                   >
                     {day.date}
+                  </TableCell>
+                  <TableCell sx={{ color: day.is_holiday ? "error.main" : undefined, fontWeight: day.is_holiday ? 700 : undefined }}>
+                    {day.weekday}
                   </TableCell>
                   {Array.from({ length: transitColumnCount }, (_, i) => (
                     <TableCell

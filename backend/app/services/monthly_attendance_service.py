@@ -29,7 +29,7 @@ import logging
 
 import pymssql
 
-from app.core.persian_date import jalali_year_month_to_yyyymmdd_range
+from app.core.persian_date import jalali_weekday_name, jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 
@@ -194,7 +194,13 @@ async def get_monthly_attendance(
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
         days_out.append(
-            {"date": _format_jalali_date(date_int), "day": day, "transits": transits, "is_holiday": day in holidays}
+            {
+                "date": _format_jalali_date(date_int),
+                "day": day,
+                "weekday": jalali_weekday_name(year, month, day),
+                "transits": transits,
+                "is_holiday": day in holidays,
+            }
         )
 
     return {"year": year, "month": month, "max_transits_in_month": max_transits, "days": days_out}

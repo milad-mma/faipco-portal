@@ -69,3 +69,28 @@ def jalali_year_month_to_yyyymmdd_range(year: int, month: int) -> tuple[int, int
     from_date = year * 10000 + month * 100 + 1
     to_date = year * 10000 + month * 100 + days_in_month
     return from_date, to_date
+
+
+# نام روزهای هفته شمسی، از شنبه تا جمعه — کلید، همان مقدار weekday()
+# استاندارد پایتون روی معادل میلادی است (دوشنبه=۰ ... یکشنبه=۶)، نه یک
+# قرارداد اختصاصی jdatetime؛ این‌طور از هرگونه ابهام در قرارداد شماره‌گذاری
+# روز هفته خودِ jdatetime پرهیز می‌شود.
+_PERSIAN_WEEKDAY_NAMES = {
+    0: "دوشنبه",
+    1: "سه‌شنبه",
+    2: "چهارشنبه",
+    3: "پنجشنبه",
+    4: "جمعه",
+    5: "شنبه",
+    6: "یکشنبه",
+}
+
+
+def jalali_weekday_name(year: int, month: int, day: int) -> str:
+    """
+    نام روز هفته شمسی (شنبه تا جمعه) برای یک تاریخ شمسی مشخص — یک واقعیت
+    تقویمی محاسبه‌شده (نه داده‌ای که از دیتابیس خوانده شود)، پس همیشه
+    درست است، حتی برای سایتی که اصلاً نگاشت تقویم/تعطیلات ندارد.
+    """
+    gregorian_date = jdatetime.date(year, month, day).togregorian()
+    return _PERSIAN_WEEKDAY_NAMES[gregorian_date.weekday()]
