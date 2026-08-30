@@ -94,8 +94,8 @@ export default function MonthlyAttendanceReportPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>روز</TableCell>
                 <TableCell>روز هفته</TableCell>
+                <TableCell>تاریخ</TableCell>
                 {Array.from({ length: transitColumnCount }, (_, i) => (
                   <TableCell key={i} align="center">
                     {`تردد ${i + 1}`}
@@ -106,6 +106,9 @@ export default function MonthlyAttendanceReportPage() {
             <TableBody>
               {report.days.map((day) => (
                 <TableRow key={day.date} hover sx={day.is_holiday ? { bgcolor: "rgba(211, 47, 47, 0.08)" } : undefined}>
+                  <TableCell sx={{ color: day.is_holiday ? "error.main" : undefined, fontWeight: day.is_holiday ? 700 : undefined }}>
+                    {day.weekday}
+                  </TableCell>
                   <TableCell
                     sx={{
                       fontFamily: "monospace",
@@ -114,9 +117,6 @@ export default function MonthlyAttendanceReportPage() {
                     }}
                   >
                     {day.date}
-                  </TableCell>
-                  <TableCell sx={{ color: day.is_holiday ? "error.main" : undefined, fontWeight: day.is_holiday ? 700 : undefined }}>
-                    {day.weekday}
                   </TableCell>
                   {Array.from({ length: transitColumnCount }, (_, i) => (
                     <TableCell
