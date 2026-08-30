@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Box,
@@ -18,8 +18,15 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 /**
  * گزارش تردد ماهانه شخصی — از دستگاه‌های حضور و غیاب واقعی، در همان SQL
  * Server سایت خودِ کاربر (فقط اگر برای آن سایت یک نگاشت تردد تنظیم شده
- * باشد). ستون‌های ورود/خروج کاملاً پویا هستند — بر اساس بیشترین تعداد
- * جفت ورود/خروج در بین همه روزهای همان ماه.
+ * باشد). ستون‌های تردد کاملاً پویا هستند — بر اساس بیشترین تعداد تردد در
+ * بین همه روزهای همان ماه.
+ *
+ * ⚠️ به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول = ورود، دوم = خروج)،
+ * هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده
+ * می‌شود — چون برای پرسنل شب‌کار/گردشی، تشخیص قطعی «کدام ورود و کدام
+ * خروج است» ممکن نیست. Backend ترددهای نزدیک نیمه‌شب را طبق «ساعت مرز
+ * شبانه‌روز کاری» (تنظیم‌شده در پنل سایت) به روز درست نسبت می‌دهد — تا
+ * شیفتی که از نیمه‌شب می‌گذرد، یک واحد باقی بماند.
  *
  * ⚠️ کاملاً مستقل از صفحه «گزارش ورود و خروج» (ClockInOutReportPage —
  * سیستم آزمایشی GPS) — این یک منبع داده متفاوت (دستگاه حضور و غیاب واقعی
@@ -44,7 +51,7 @@ export default function MonthlyAttendanceReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period.year, period.month]);
 
-  const pairCount = report?.max_pairs_in_month || 1; // حداقل یک ستون ورود/خروج، حتی اگر ماه کلاً خالی باشد
+  const transitColumnCount = report?.max_transits_in_month || 1; // حداقل یک ستون، حتی اگر ماه کلاً خالی باشد
 
   return (
     <Box>
@@ -79,19 +86,11 @@ export default function MonthlyAttendanceReportPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell rowSpan={2}>روز</TableCell>
-                {Array.from({ length: pairCount }, (_, i) => (
-                  <TableCell key={i} colSpan={2} align="center">
-                    {pairCount > 1 ? `تردد ${i + 1}` : "تردد"}
+                <TableCell>روز</TableCell>
+                {Array.from({ length: transitColumnCount }, (_, i) => (
+                  <TableCell key={i} align="center">
+                    {`تردد ${i + 1}`}
                   </TableCell>
-                ))}
-              </TableRow>
-              <TableRow>
-                {Array.from({ length: pairCount }, (_, i) => (
-                  <Fragment key={i}>
-                    <TableCell align="center">ورود</TableCell>
-                    <TableCell align="center">خروج</TableCell>
-                  </Fragment>
                 ))}
               </TableRow>
             </TableHead>
@@ -99,19 +98,11 @@ export default function MonthlyAttendanceReportPage() {
               {report.days.map((day) => (
                 <TableRow key={day.date} hover>
                   <TableCell sx={{ fontFamily: "monospace" }}>{day.date}</TableCell>
-                  {Array.from({ length: pairCount }, (_, i) => {
-                    const pair = day.pairs[i];
-                    return (
-                      <Fragment key={i}>
-                        <TableCell align="center" sx={{ fontFamily: "monospace" }}>
-                          {pair?.entry || "—"}
-                        </TableCell>
-                        <TableCell align="center" sx={{ fontFamily: "monospace" }}>
-                          {pair?.exit || "—"}
-                        </TableCell>
-                      </Fragment>
-                    );
-                  })}
+                  {Array.from({ length: transitColumnCount }, (_, i) => (
+                    <TableCell key={i} align="center" sx={{ fontFamily: "monospace" }}>
+                      {day.transits[i] || "—"}
+                    </TableCell>
+                  ))}
                 </TableRow>
               ))}
             </TableBody>

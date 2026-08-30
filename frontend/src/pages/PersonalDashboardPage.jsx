@@ -132,14 +132,17 @@ export default function PersonalDashboardPage() {
     fetchMonthlyAttendanceReport({})
       .then((report) => {
         const todayEntry = report.days.find((d) => d.day === todayJalaliDay);
-        const pairs = todayEntry?.pairs || [];
-        if (pairs.length === 0) {
-          setTodayAttendance({ checkIn: null, checkOut: null });
+        const transits = todayEntry?.transits || [];
+        if (transits.length === 0) {
+          setTodayAttendance({ firstTransit: null, lastTransit: null });
           return;
         }
+        // ⚠️ عمداً «اولین/آخرین تردد» نه «ورود/خروج» — برای پرسنل شب‌کار/
+        // گردشی، تشخیص قطعی این‌که کدام تردد واقعاً ورود و کدام خروج بوده
+        // بدون دانستن برنامه دقیق شیفت هر نفر ممکن نیست.
         setTodayAttendance({
-          checkIn: pairs[0]?.entry || null,
-          checkOut: [...pairs].reverse().find((p) => p.exit)?.exit || null,
+          firstTransit: transits[0],
+          lastTransit: transits.length > 1 ? transits[transits.length - 1] : null,
         });
       })
       .catch(() => setTodayAttendance("unavailable"));
@@ -238,18 +241,22 @@ export default function PersonalDashboardPage() {
             <>
               <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
                 <Typography variant="caption" color="text.secondary">
-                  ورود:
+                  اولین تردد:
                 </Typography>
                 <Typography variant="body2" fontWeight={700}>
-                  {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkIn) : "—"}
+                  {todayAttendance && todayAttendance !== "unavailable"
+                    ? formatTime(todayAttendance.firstTransit)
+                    : "—"}
                 </Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
                 <Typography variant="caption" color="text.secondary">
-                  خروج:
+                  آخرین تردد:
                 </Typography>
                 <Typography variant="body2" fontWeight={700}>
-                  {todayAttendance && todayAttendance !== "unavailable" ? formatTime(todayAttendance.checkOut) : "—"}
+                  {todayAttendance && todayAttendance !== "unavailable"
+                    ? formatTime(todayAttendance.lastTransit)
+                    : "—"}
                 </Typography>
               </Stack>
             </>

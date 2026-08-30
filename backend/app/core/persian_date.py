@@ -69,3 +69,18 @@ def jalali_year_month_to_yyyymmdd_range(year: int, month: int) -> tuple[int, int
     from_date = year * 10000 + month * 100 + 1
     to_date = year * 10000 + month * 100 + days_in_month
     return from_date, to_date
+
+
+def jalali_yyyymmdd_add_days(yyyymmdd: int, delta_days: int) -> int:
+    """
+    یک تاریخ شمسی به فرمت YYYYMMDD (مثلاً 14050524) را delta_days روز
+    جابه‌جا می‌کند (مثبت = جلو، منفی = عقب) و همان فرمت را برمی‌گرداند —
+    با عبور صحیح از مرز ماه/سال (مثلاً آخرین روز اسفند + ۱ روز = اول
+    فروردین سال بعد). دقیقاً همان الگوی امن jalali_days_in_month: تبدیل
+    به میلادی، جمع/تفریق با timedelta استاندارد پایتون (نه محاسبه شمسی
+    دستی)، و تبدیل دوباره به شمسی.
+    """
+    year, month, day = yyyymmdd // 10000, (yyyymmdd // 100) % 100, yyyymmdd % 100
+    gregorian = jdatetime.date(year, month, day).togregorian() + timedelta(days=delta_days)
+    shifted_jalali = jdatetime.date.fromgregorian(date=gregorian)
+    return shifted_jalali.year * 10000 + shifted_jalali.month * 100 + shifted_jalali.day

@@ -1,23 +1,36 @@
 """
 سرویس «گزارش تردد ماهانه» — از دستگاه‌های حضور و غیاب واقعی هر Site
 می‌خواند، از همان SQL Server که برای Sync پرسنل هم استفاده می‌شود
-(SiteConnection). نام جدول/ستون‌ها هاردکد نیستند — چون نرم‌افزارهای
-مختلف حضور و غیاب دستگاهی، نام جدول/ستون‌های متفاوتی دارند، از یک
-AttendanceMapping (دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل)
-خوانده می‌شوند که از پنل «تنظیمات سایت» قابل‌تنظیم است.
+(SiteConnection). نام جدول/ستون‌ها هاردکد نیستند - از یک AttendanceMapping
+(دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل) خوانده می‌شوند که
+از پنل «تنظیمات سایت» قابل‌تنظیم است.
 
-⚠️ رفتار ورود/خروج کاملاً بر اساس ترتیب زمانی است، نه یک ستون مشخص:
-رکورد اول هر روز = ورود، دوم = خروج، سوم = ورود، و به همین ترتیب
-(تناوب فرد/زوج) — چون در داده‌های واقعی، ستونی که جهت تردد را مشخص کند
-همیشه معنای قابل‌اعتمادی ندارد.
+به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول هر روز = ورود، دوم = خروج)،
+هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده می‌شود.
 
-⚠️ امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
-می‌شود (هرگز از ورودی درخواست) — به عهده‌ی Endpoint (نه این سرویس) است
-که این را تضمین کند. مقادیر (نه نام جدول/ستون) همیشه Parameterized
-هستند. نام جدول/ستون فقط از AttendanceMapping (تنظیم‌شده توسط Admin با
-مجوز sites.manage) می‌آیند و با [براکت] کوته می‌شوند — دقیقاً همان الگوی
-استفاده‌شده در Sync Engine (app/sync_engine/adapters/mssql_adapter.py)
-برای همین نوع نیاز.
+چرا «ساعت مرز شبانه‌روز کاری» ثابت کار نمی‌کرد: برای شرکت‌هایی که بازه
+ورود/خروج شیفت‌های مختلف با هم همپوشانی دارند (مثلاً بازه خروج شیفت روز
+14:00-18:30 با بازه ورود شیفت شب 18:00-20:00 همپوشانی دارد، یا بازه
+خروج شیفت شب و بازه ورود شیفت روز هر دو دقیقاً 06:00-08:00 است)، هیچ
+ساعت مرز ثابتی نمی‌تواند این‌ها را درست تفکیک کند.
+
+راه‌حل واقعی: به‌جای تکیه به یک ساعت ثابت، ترددهای هر پرسنل بر اساس
+ترتیب زمانی واقعی خودشان دو‌به‌دو جفت می‌شوند (تردد 1و2 یک جفت، 3و4
+جفت بعدی، و به همین ترتیب) - مستقل از این‌که کدام ساعت از شبانه‌روز
+است. «روز نمایش» هر جفت، روز تقویمی اولین تردد آن جفت است؛ یعنی یک
+شیفت شب که از نیمه‌شب می‌گذرد (ورود امشب + خروج فردا صبح)، هر دو تردد
+آن زیر همان «امشب» نمایش داده می‌شوند - نه به دو روز جدا تقسیم می‌شوند.
+این روش کاملاً مستقل از برنامه شیفت است و برای هر الگویی (حتی اگر
+ساعت کاری تغییر کند) درست کار می‌کند - تنها فرضش این است که دستگاه
+همیشه ترددها را به تناوب (باز، بسته، باز، بسته) ثبت می‌کند.
+
+محدودیت شناخته‌شده: اگر یک پرسنل یک روز فراموش کند تردد بزند (یک
+رکورد از قلم بیفتد)، تناوب برای باقی آن بازه (تا رکورد بعدی) به‌هم
+می‌خورد. این یک محدودیت ذاتی هر روش مبتنی بر تناوب است.
+
+امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
+می‌شود (هرگز از ورودی درخواست). مقادیر (نه نام جدول/ستون) همیشه
+Parameterized هستند.
 """
 from __future__ import annotations
 
@@ -26,11 +39,15 @@ import logging
 
 import pymssql
 
-from app.core.persian_date import jalali_year_month_to_yyyymmdd_range
+from app.core.persian_date import jalali_yyyymmdd_add_days, jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 
 logger = logging.getLogger("faipco.monthly_attendance")
+
+# چند روز اضافه، هر دو طرف بازه اصلی، برای گرفتن ترددهای مرزی و محاسبه
+# صحیح تناوب (زوج/فرد) از یک نقطه معقول قبل از شروع بازه اصلی.
+_BUFFER_DAYS = 3
 
 
 class MonthlyAttendanceError(Exception):
@@ -39,10 +56,8 @@ class MonthlyAttendanceError(Exception):
 
 def _format_time(raw_time: int) -> str:
     """
-    عدد فشرده ساعت (بدون جداکننده، بدون صفر ابتدایی) را به HH:MM تبدیل
-    می‌کند. اگر ۳ رقمی بود (مثلاً 618)، رقم اول ساعت و دو رقم بعد دقیقه
-    است (06:18)؛ اگر ۴ رقمی بود (مثلاً 1401)، دو رقم اول ساعت و دو رقم
-    بعد دقیقه است (14:01).
+    عدد فشرده ساعت (بدون جداکننده) را به HH:MM تبدیل می‌کند. 3 رقمی
+    (مثلاً 618) -> 06:18؛ 4 رقمی (مثلاً 1401) -> 14:01.
     """
     s = str(raw_time)
     if len(s) == 3:
@@ -50,10 +65,8 @@ def _format_time(raw_time: int) -> str:
     elif len(s) == 4:
         hour, minute = s[0:2], s[2:4]
     elif len(s) <= 2:
-        # حالت لبه‌ای: فقط دقیقه (کمتر از ساعت ۱، مثلاً ساعت ۰۰:۰۵ → عدد 5)
         hour, minute = "0", s.zfill(2)
     else:
-        # مقدار غیرمنتظره — به‌جای شکستن کل گزارش، همان رشته خام برگردانده می‌شود
         return s
     return f"{int(hour):02d}:{minute}"
 
@@ -82,27 +95,20 @@ def _fetch_raw_rows_sync(
     conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
 ) -> list[dict]:
     """
-    ⚠️ نام جدول/ستون‌ها (که فقط از AttendanceMapping تنظیم‌شده توسط Admin
-    می‌آیند، نه از ورودی کاربر عادی) با [براکت] در متن Query قرار
-    می‌گیرند — SQL Server اجازه Parameterized-کردن نام جدول/ستون را
-    نمی‌دهد (فقط مقادیر). مقادیر واقعی (emp_no/from_date/to_date) همیشه
-    Parameterized هستند — همان چیزی که واقعاً جلوی SQL Injection را
-    می‌گیرد.
+    نام جدول/ستون‌ها (فقط از AttendanceMapping تنظیم‌شده توسط Admin) با
+    [براکت] در متن Query قرار می‌گیرند - SQL Server اجازه
+    Parameterized-کردن نام جدول/ستون را نمی‌دهد. مقادیر واقعی
+    (emp_no/from_date/to_date) همیشه Parameterized هستند.
     """
     connection = _connect(conn)
     try:
         query = f"""
-            SELECT
-                [{mapping.date_column}] AS AttendanceDate,
-                [{mapping.time_column}] AS AttendanceTime,
-                ROW_NUMBER() OVER (
-                    PARTITION BY [{mapping.date_column}] ORDER BY [{mapping.time_column}]
-                ) AS Seq
+            SELECT [{mapping.date_column}] AS AttendanceDate, [{mapping.time_column}] AS AttendanceTime
             FROM [{mapping.table_name}]
             WHERE [{mapping.personnel_code_column}] = %(emp_no)s
               AND [{mapping.date_column}] BETWEEN %(from_date)s AND %(to_date)s
             ORDER BY [{mapping.date_column}] ASC, [{mapping.time_column}] ASC
-        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید، نه ورودی کاربر
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
         with connection.cursor(as_dict=True) as cur:
             cur.execute(query, {"emp_no": emp_no, "from_date": from_date, "to_date": to_date})
             return list(cur.fetchall())
@@ -119,8 +125,8 @@ async def get_monthly_attendance(
     month: int,
 ) -> dict:
     """
-    گزارش تردد ماهانه یک پرسنل مشخص - ساختار «روز + ستون‌های ورود/خروج
-    پویا»، شامل روزهای بدون رکورد (با Pairs خالی).
+    گزارش تردد ماهانه یک پرسنل مشخص - ساختار «روز + فهرست ترددهای پویا»،
+    شامل روزهای بدون رکورد (با transits خالی).
     """
     try:
         emp_no = int(personnel_code)
@@ -128,38 +134,40 @@ async def get_monthly_attendance(
         raise MonthlyAttendanceError("کد پرسنلی این کاربر عددی نیست — با فرمت مورد انتظار این گزارش سازگار نیست")
 
     from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)
+    query_from_date = jalali_yyyymmdd_add_days(from_date, -_BUFFER_DAYS)
+    query_to_date = jalali_yyyymmdd_add_days(to_date, _BUFFER_DAYS)
 
     try:
-        raw_rows = await asyncio.to_thread(_fetch_raw_rows_sync, site_connection, mapping, emp_no, from_date, to_date)
+        raw_rows = await asyncio.to_thread(
+            _fetch_raw_rows_sync, site_connection, mapping, emp_no, query_from_date, query_to_date
+        )
     except MonthlyAttendanceError:
         raise
     except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند
         logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
         raise MonthlyAttendanceError("اتصال به سیستم تردد ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
 
-    # گروه‌بندی بر اساس روز، و تبدیل هر رکورد به یک عضو از یک جفت (ورود/خروج)
-    rows_by_date: dict[int, list[dict]] = {}
-    for row in raw_rows:
-        rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
+    # مرتب‌سازی زمانی کامل (نه فقط بر اساس Time، چون بازه شامل چند روز
+    # تقویمی است) - این ترتیب واقعی است که تناوب زوج/فرد بر اساس آن حساب می‌شود.
+    raw_rows.sort(key=lambda r: (r["AttendanceDate"], r["AttendanceTime"]))
+
+    # جفت‌کردن دوبه‌دو بر اساس ترتیب (نه ساعت ثابت) - عضو اول هر جفت،
+    # «روز نمایش» کل آن جفت را تعیین می‌کند.
+    rows_by_display_date: dict[int, list[dict]] = {}
+    for i in range(0, len(raw_rows), 2):
+        pair = raw_rows[i : i + 2]
+        display_date = pair[0]["AttendanceDate"]
+        rows_by_display_date.setdefault(display_date, []).extend(pair)
 
     days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
-    max_pairs = 0
+    max_transits = 0
     days_out = []
 
     for day in range(1, days_in_month + 1):
         date_int = year * 10000 + month * 100 + day
-        day_rows = rows_by_date.get(date_int, [])
-        pairs = []
-        for i in range(0, len(day_rows), 2):
-            entry_row = day_rows[i]
-            exit_row = day_rows[i + 1] if i + 1 < len(day_rows) else None
-            pairs.append(
-                {
-                    "entry": _format_time(entry_row["AttendanceTime"]),
-                    "exit": _format_time(exit_row["AttendanceTime"]) if exit_row else None,
-                }
-            )
-        max_pairs = max(max_pairs, len(pairs))
-        days_out.append({"date": _format_jalali_date(date_int), "day": day, "pairs": pairs})
+        day_rows = rows_by_display_date.get(date_int, [])
+        transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
+        max_transits = max(max_transits, len(transits))
+        days_out.append({"date": _format_jalali_date(date_int), "day": day, "transits": transits})
 
-    return {"year": year, "month": month, "max_pairs_in_month": max_pairs, "days": days_out}
+    return {"year": year, "month": month, "max_transits_in_month": max_transits, "days": days_out}
