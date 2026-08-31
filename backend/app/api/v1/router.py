@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     backup,
     departments,
     employees,
+    feedback,
     hr,
     monthly_attendance,
     notices,
@@ -36,3 +37,4 @@ api_router.include_router(attendance.router, prefix="/attendance", tags=["attend
 api_router.include_router(monthly_attendance.router, prefix="/monthly-attendance", tags=["monthly-attendance"])
 api_router.include_router(hr.router, prefix="/hr", tags=["hr"])
 api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
+api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])

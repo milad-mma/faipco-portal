@@ -38,6 +38,7 @@ import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
@@ -90,6 +91,13 @@ const NAV_ITEMS = [
     icon: <AssessmentOutlinedIcon />,
     adminOnly: false,
     requiresSiteNoticeReport: true,
+  },
+  {
+    label: "انتقادات و پیشنهادات",
+    path: "/feedback-report",
+    icon: <ForumOutlinedIcon />,
+    adminOnly: false,
+    requiresFeedbackView: true,
   },
   {
     label: "مدیریت دسترسی",
@@ -178,6 +186,7 @@ export default function Layout() {
         if (item.requiresViewAttendanceLogs && !user?.can_view_attendance_logs) return false;
         if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
         if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
+        if (item.requiresFeedbackView && !user?.can_view_feedback) return false;
         if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
         if (item.requiresSitesManage && !user?.can_manage_sites) return false;
         if (item.requiresSitesView && !user?.can_view_sites) return false;

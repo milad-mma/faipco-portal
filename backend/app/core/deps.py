@@ -97,3 +97,16 @@ def require_permission(permission_code: str, site_scoped: bool = False):
         return current_user
 
     return checker
+
+
+async def require_superuser(current_user: User = Depends(get_current_user)) -> User:
+    """
+    ⚠️ برخلاف require_permission، این Dependency هیچ Permission Code ای
+    قبول نمی‌کند — فقط و فقط Admin واقعی (is_superuser=True). برای
+    تنظیماتی که عمداً نباید حتی از طریق RBAC به نقش‌های دیگر قابل‌اعطا
+    باشند (مثلاً فهرست کلمات نامناسب گزارش انتقادات — چون خودِ همان
+    دارنده مجوز مشاهده گزارش نباید بتواند این فهرست را ویرایش کند).
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="این عملیات فقط برای مدیر سیستم مجاز است")
+    return current_user

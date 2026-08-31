@@ -60,6 +60,7 @@ cd frontend && npm install && npm run dev
 | [`docs/removed-code-archive.md`](docs/removed-code-archive.md) | بایگانی کد حذف‌شده (کد کامل + دلیل حذف، برای بازسازی احتمالی) |
 | [`docs/branding.md`](docs/branding.md) | برندینگ قابل‌تغییر (نام + لوگوی سامانه، از پنل «تنظیمات سامانه») |
 | [`docs/monthly-attendance.md`](docs/monthly-attendance.md) | گزارش تردد ماهانه (از دستگاه‌های حضور و غیاب، با نگاشت قابل‌تنظیم) |
+| [`docs/feedback.md`](docs/feedback.md) | انتقادات و پیشنهادات (با امکان ناشناس‌بودن) |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

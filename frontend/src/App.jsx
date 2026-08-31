@@ -22,6 +22,7 @@ import NewNoticePage from "./pages/NewNoticePage";
 import PersonalDashboardPage from "./pages/PersonalDashboardPage";
 import ProfilePage from "./pages/ProfilePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
+import FeedbackReportPage from "./pages/FeedbackReportPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import RoleManagementPage from "./pages/RoleManagementPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
@@ -171,6 +172,14 @@ export default function App() {
             }
           />
           <Route path="/notice-reports" element={<SiteNoticeReportRoute><NoticeReportsPage /></SiteNoticeReportRoute>} />
+          <Route
+            path="/feedback-report"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_feedback}>
+                <FeedbackReportPage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="/attendance-clock"
             element={

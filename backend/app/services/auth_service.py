@@ -228,6 +228,9 @@ class AuthService:
         base.can_manage_users = user.is_superuser or "users.manage" in permission_codes
         base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes
         base.can_manage_ip_allowlist = user.is_superuser or "system.ip_allowlist" in permission_codes
+        base.can_view_feedback = (
+            user.is_superuser or "feedback.view" in permission_codes or "feedback.view_all" in permission_codes
+        )
         base.can_manage_backup = user.is_superuser or "system.backup" in permission_codes
         base.can_view_employees = user.is_superuser or "employees.view" in permission_codes
         base.can_update_employees = user.is_superuser or "employees.update" in permission_codes

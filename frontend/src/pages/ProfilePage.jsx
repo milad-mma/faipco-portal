@@ -30,6 +30,7 @@ import BrightnessAutoOutlinedIcon from "@mui/icons-material/BrightnessAutoOutlin
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
@@ -60,6 +61,7 @@ const EXTRA_ACCESS_ITEMS = [
   { flag: "can_view_clock_records", label: "گزارش ورود و خروج", path: "/clock-in-out-report", icon: <FingerprintOutlinedIcon /> },
   { flag: "can_view_attendance_logs", label: "پرسنل آنلاین", path: "/presence-report", icon: <ScienceOutlinedIcon /> },
   { flag: "can_view_site_notice_report", label: "گزارش اطلاعیه‌ها", path: "/notice-reports", icon: <AssessmentOutlinedIcon /> },
+  { flag: "can_view_feedback", label: "انتقادات و پیشنهادات", path: "/feedback-report", icon: <ForumOutlinedIcon /> },
   { flag: "can_manage_birthday_messages", label: "پیام‌های تبریک تولد", path: "/birthday-messages", icon: <CakeOutlinedIcon /> },
   { flag: "can_view_vehicles_report", label: "خودروهای پرسنل", path: "/vehicle-report", icon: <DirectionsCarFilledOutlinedIcon /> },
   // ⚠️ این پنج مورد جدید — طبق درخواست صریح: هر مجوزی که به یک نقش داده

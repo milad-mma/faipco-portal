@@ -29,3 +29,4 @@ from app.models.birthday_message_template import BirthdayMessageTemplate  # noqa
 from app.models.rate_limit import LoginAttempt, MessageRateLimit  # noqa: F401
 from app.models.usage_stat import UsageStat  # noqa: F401
 from app.models.server_stat import ServerStat  # noqa: F401
+from app.models.feedback import FeedbackMessage, ProhibitedPhrase  # noqa: F401
