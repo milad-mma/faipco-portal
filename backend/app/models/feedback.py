@@ -14,7 +14,7 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -29,6 +29,7 @@ class FeedbackMessage(Base, TimestampMixin):
     # واقعی همیشه باید بتواند ببیند، و اگر پیام حاوی الفاظ نامناسب باشد،
     # باید بتوان هویت را برای دارنده مجوز هم آشکار کرد.
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     is_anonymous_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # در لحظه ارسال، بر اساس فهرست ProhibitedPhrase همان لحظه محاسبه و

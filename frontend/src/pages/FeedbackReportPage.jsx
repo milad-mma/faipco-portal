@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -7,6 +7,7 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  MenuItem,
   Stack,
   Tab,
   Table,
@@ -23,6 +24,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useAuth } from "../context/AuthContext";
 import {
   addProhibitedPhrase,
+  deleteFeedback,
   deleteProhibitedPhrase,
   fetchFeedback,
   fetchProhibitedPhrases,
@@ -34,12 +36,15 @@ import {
  *
  * منطق محرمانگی کاملاً در Backend پیاده شده - این صفحه فقط هرچه API
  * برگرداند را نمایش می‌دهد. Admin واقعی همیشه sender_name واقعی را در
- * پاسخ می‌بیند (به‌همراه is_anonymous_requested که نشان می‌دهد کاربر
- * خودش خواستار ناشناس‌ماندن بوده)؛ دارنده مجوز (غیر Admin)، برای پیام‌های
- * ناشناسِ بدون الفاظ نامناسب، sender_name را null دریافت می‌کند.
+ * پاسخ می‌بیند؛ دارنده مجوز (غیر Admin)، برای پیام‌های ناشناسِ بدون
+ * الفاظ نامناسب، sender_name را null دریافت می‌کند - در این حالت فقط
+ * «ناشناس» نمایش داده می‌شود (بدون برچسب اضافه «درخواست ناشناس‌ماندن»،
+ * طبق بازخورد صریح).
  *
- * تب «مدیریت کلمات نامناسب» فقط برای Admin واقعی نمایش داده می‌شود - طبق
- * درخواست صریح، حتی دارنده مجوز مشاهده هم نباید این فهرست را ویرایش کند.
+ * فیلترها (فرستنده/سایت/بازه تاریخ) به Backend فرستاده می‌شوند - فیلتر
+ * واقعی سمت سرور، نه فقط مخفی‌کردن ردیف‌ها در Frontend.
+ *
+ * تب «مدیریت کلمات نامناسب» فقط برای Admin واقعی نمایش داده می‌شود.
  */
 export default function FeedbackReportPage() {
   const { user } = useAuth();
@@ -63,74 +68,187 @@ export default function FeedbackReportPage() {
         </Tabs>
       )}
 
-      {tab === "messages" && <FeedbackMessagesList />}
+      {tab === "messages" && <FeedbackMessagesList canDelete={Boolean(user?.is_superuser)} />}
       {tab === "prohibited-words" && user?.is_superuser && <ProhibitedWordsManager />}
     </Box>
   );
 }
 
-function FeedbackMessagesList() {
+function FeedbackMessagesList({ canDelete }) {
+  const [allMessages, setAllMessages] = useState(null); // بدون فیلتر - فقط برای ساخت گزینه‌های فیلتر
   const [messages, setMessages] = useState(null);
   const [error, setError] = useState("");
+  const [senderFilter, setSenderFilter] = useState("");
+  const [siteFilter, setSiteFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     fetchFeedback()
-      .then(setMessages)
+      .then(setAllMessages)
       .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها ناموفق بود."));
   }, []);
 
-  if (error) return <Alert severity="error">{error}</Alert>;
+  useEffect(() => {
+    setError("");
+    fetchFeedback({
+      senderId: senderFilter || undefined,
+      siteId: siteFilter || undefined,
+      dateFrom: dateFrom ? new Date(dateFrom).toISOString() : undefined,
+      dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : undefined,
+    })
+      .then(setMessages)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها ناموفق بود."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [senderFilter, siteFilter, dateFrom, dateTo]);
 
-  if (messages === null) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const senderOptions = useMemo(() => {
+    if (!allMessages) return [];
+    const map = new Map();
+    for (const m of allMessages) {
+      if (m.sender_id) map.set(m.sender_id, m.sender_name);
+    }
+    return Array.from(map.entries());
+  }, [allMessages]);
 
-  if (messages.length === 0) {
-    return (
-      <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
-        <Typography variant="body2" color="text.secondary">
-          هنوز پیامی ثبت نشده است.
-        </Typography>
-      </Card>
-    );
+  const siteOptions = useMemo(() => {
+    if (!allMessages) return [];
+    const map = new Map();
+    for (const m of allMessages) {
+      if (m.site_id) map.set(m.site_id, m.site_name);
+    }
+    return Array.from(map.entries());
+  }, [allMessages]);
+
+  async function handleDelete(id) {
+    if (!window.confirm("این پیام برای همیشه حذف شود؟")) return;
+    try {
+      await deleteFeedback(id);
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setAllMessages((prev) => prev?.filter((m) => m.id !== id) ?? prev);
+    } catch (err) {
+      setError(err.response?.data?.detail || "حذف ناموفق بود.");
+    }
   }
 
   return (
-    <Stack spacing={1.5}>
-      {messages.map((m) => (
-        <Card key={m.id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="flex-start"
-            sx={{ mb: 1 }}
-            flexWrap="wrap"
-            rowGap={1}
+    <Box>
+      <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mb: 2.5 }}>
+        {senderOptions.length > 0 && (
+          <TextField
+            select
+            size="small"
+            label="فرستنده"
+            value={senderFilter}
+            onChange={(e) => setSenderFilter(e.target.value)}
+            sx={{ minWidth: 160 }}
           >
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography variant="body2" fontWeight={700}>
-                {m.sender_name || "ناشناس"}
-                {m.site_name ? ` — ${m.site_name}` : ""}
-              </Typography>
-              {m.is_anonymous_requested && <Chip size="small" label="درخواست ناشناس‌ماندن" color="default" />}
-              {m.contains_profanity && (
-                <Chip size="small" label="حاوی الفاظ نامناسب — هویت آشکار شد" color="warning" />
-              )}
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              {new Date(m.created_at).toLocaleString("fa-IR")}
-            </Typography>
-          </Stack>
-          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-            {m.message}
+            <MenuItem value="">همه</MenuItem>
+            {senderOptions.map(([id, name]) => (
+              <MenuItem key={id} value={id}>
+                {name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {siteOptions.length > 0 && (
+          <TextField
+            select
+            size="small"
+            label="سایت"
+            value={siteFilter}
+            onChange={(e) => setSiteFilter(e.target.value)}
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="">همه</MenuItem>
+            {siteOptions.map(([id, name]) => (
+              <MenuItem key={id} value={id}>
+                {name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        <TextField
+          size="small"
+          type="date"
+          label="از تاریخ"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          size="small"
+          type="date"
+          label="تا تاریخ"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+        />
+      </Stack>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {messages === null ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : messages.length === 0 ? (
+        <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary">
+            پیامی یافت نشد.
           </Typography>
         </Card>
-      ))}
-    </Stack>
+      ) : (
+        <Stack spacing={1.5}>
+          {messages.map((m) => (
+            <Card key={m.id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              {/* ردیف اول: نام فرستنده (سمت راست) + تاریخ (سمت چپ، مکان همیشه ثابت،
+                  مستقل از طول نام فرستنده یا تعداد برچسب‌ها) */}
+              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                <Typography
+                  variant="body2"
+                  fontWeight={700}
+                  sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {m.sender_name || "ناشناس"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {new Date(m.created_at).toLocaleString("fa-IR")}
+                </Typography>
+              </Stack>
+
+              {/* ردیف دوم: برچسب‌های وضعیت (فقط اگر لازم باشد) + دکمه حذف */}
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5, mb: 1 }}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  {m.site_name && <Chip size="small" label={m.site_name} variant="outlined" />}
+                  {m.contains_profanity && (
+                    <Chip size="small" label="حاوی الفاظ نامناسب — هویت آشکار شد" color="warning" />
+                  )}
+                </Stack>
+                {canDelete && (
+                  <IconButton size="small" color="error" onClick={() => handleDelete(m.id)} aria-label="حذف پیام">
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Stack>
+
+              {m.title && (
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                  {m.title}
+                </Typography>
+              )}
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                {m.message}
+              </Typography>
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Box>
   );
 }
 

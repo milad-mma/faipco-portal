@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FeedbackSubmitIn(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
     message: str = Field(min_length=1, max_length=5000)
     is_anonymous: bool = False
 
@@ -17,12 +18,14 @@ class FeedbackMessageOut(BaseModel):
     """
 
     id: int
+    title: str | None = None
     message: str
     is_anonymous_requested: bool
     contains_profanity: bool
     created_at: datetime
     sender_id: int | None = None
     sender_name: str | None = None
+    site_id: int | None = None
     site_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

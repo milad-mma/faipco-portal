@@ -19,7 +19,6 @@ import { useAuth } from "../context/AuthContext";
 import { fetchMyNotices } from "../api/notices";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
-import FeedbackSubmitDialog from "../components/FeedbackSubmitDialog";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
@@ -33,7 +32,7 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
  * عملکرد، تیکت IT، نظرسنجی، درخواست مرخصی) با برچسب «به‌زودی» غیرفعال
  * نمایش داده می‌شوند — طبق دستور صریح کارفرما. «خودروهای من» از این
  * لیست خارج شد چون واقعاً پیاده‌سازی و به /my-vehicles وصل شد؛ «انتقادات
- * و پیشنهادات» هم همین‌طور — به FeedbackSubmitDialog.jsx وصل شد.
+ * و پیشنهادات» هم همین‌طور — به FeedbackSubmitPage.jsx (مسیر /feedback) وصل شد.
  *
  * ⚠️ چیدمان با CSS Grid + gridTemplateAreas پیاده شده (نه MUI Grid ساده) —
  * چون طبق بازخورد، ترتیب موبایل باید با دسکتاپ فرق داشته باشد: در موبایل
@@ -88,7 +87,6 @@ export default function PersonalDashboardPage() {
   const [recentNotices, setRecentNotices] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
-  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [birthdays, setBirthdays] = useState(null);
   const [photoUrl, setPhotoUrl] = useState(null);
 
@@ -417,7 +415,7 @@ export default function PersonalDashboardPage() {
         <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
         <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
         <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
-        <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => setFeedbackDialogOpen(true)} />
+        <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
         <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
       </Box>
@@ -466,8 +464,6 @@ export default function PersonalDashboardPage() {
           )}
         </Card>
       )}
-
-      <FeedbackSubmitDialog open={feedbackDialogOpen} onClose={() => setFeedbackDialogOpen(false)} />
     </Box>
   );
 }

@@ -23,6 +23,7 @@ import PersonalDashboardPage from "./pages/PersonalDashboardPage";
 import ProfilePage from "./pages/ProfilePage";
 import NoticeReportsPage from "./pages/NoticeReportsPage";
 import FeedbackReportPage from "./pages/FeedbackReportPage";
+import FeedbackSubmitPage from "./pages/FeedbackSubmitPage";
 import AccessManagementPage from "./pages/AccessManagementPage";
 import RoleManagementPage from "./pages/RoleManagementPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
@@ -162,6 +163,7 @@ export default function App() {
           <Route path="/notices/new" element={<NewNoticePage />} />
           <Route path="/my-dashboard" element={<PersonalDashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
           <Route
             path="/vehicle-report"
