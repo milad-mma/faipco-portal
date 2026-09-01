@@ -75,8 +75,6 @@ async def send_publish_notifications(notice_id: int) -> None:
             audience = await service._resolve_audience_user_ids(notice)
             await PushService(db).notify_users(
                 audience,
-                title=notice.title,
-                body=notice.body,
                 url="/notices",
                 priority=notice.priority.value,
                 notice_type=notice.notice_type.value,
@@ -991,8 +989,6 @@ class NoticeService:
 
         await PushService(self.db).notify_users(
             unread_user_ids,
-            title=notice.title,
-            body=notice.body,
             url="/notices",
             priority=notice.priority.value,
             notice_type=notice.notice_type.value,

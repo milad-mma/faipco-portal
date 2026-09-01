@@ -55,8 +55,6 @@ class PushService:
     async def notify_users(
         self,
         user_ids: set[int],
-        title: str,
-        body: str,
         url: str = "/notices",
         priority: str = "normal",
         notice_type: str = "normal",
@@ -108,11 +106,18 @@ class PushService:
         async def send_one(sub: PushSubscription) -> None:
             nonlocal sent_count, failed_count
             recipient_name = name_by_user_id.get(sub.user_id)
-            personalized_body = f"{recipient_name} عزیز،\n{body}" if recipient_name else body
+            # ⚠️ طبق درخواست صریح: دیگر عنوان/متن واقعی اطلاعیه در اعلان
+            # نمایش داده نمی‌شود - یک پیام استاندارد و ثابت، فقط با نام
+            # مخاطب شخصی‌سازی می‌شود.
+            notification_title = f"{recipient_name} عزیز،" if recipient_name else "اطلاعیه جدید"
+            notification_body = (
+                "یک اطلاعیه جدید برای شما ارسال شده است.\n"
+                "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+            )
             payload = json.dumps(
                 {
-                    "title": title,
-                    "body": personalized_body,
+                    "title": notification_title,
+                    "body": notification_body,
                     "url": url,
                     "priority": priority,
                     "notice_type": notice_type,

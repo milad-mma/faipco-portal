@@ -33,13 +33,14 @@ import {
 import NoticeReportTable from "../components/NoticeReportTable";
 
 const PRIORITY_LABELS = {
-  // رنگ‌بندی دقیقاً طبق personnel_portal.html: «عادی»=Teal/Secondary این
-  // پروژه، «بالا»=قرمز (Danger) — «کم» و «فوری» در نمونه HTML تعریف
-  // نشده بودند (فقط ۲ نمونه داشت)، پس با همان منطق تعمیم داده شدند: کم →
-  // خاکستری خنثی، فوری → همان قرمز «بالا» (هردو یعنی نیاز به توجه فوری).
+  // رنگ‌بندی طبق personnel_portal.html: «عادی»=Teal/Secondary این پروژه،
+  // «بالا»=قرمز کم‌رنگ. «کم» در نمونه HTML تعریف نشده بود، پس با همان
+  // منطق تعمیم داده شد: کم → خاکستری خنثی. طبق بازخورد صریح، «بالا» و
+  // «فوری» دیگر رنگ یکسان ندارند — «بالا» قرمز کم‌رنگ‌تر، «فوری» قرمز
+  // کامل (پررنگ‌ترین سطح اولویت) است، تا این دو از هم قابل‌تشخیص باشند.
   low: { label: "کم", bg: "action.selected", color: "text.secondary" },
   normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
-  high: { label: "بالا", bg: "error.main", color: "error.contrastText" },
+  high: { label: "بالا", bg: "error.light", color: "error.dark" },
   urgent: { label: "فوری", bg: "error.main", color: "error.contrastText" },
 };
 
