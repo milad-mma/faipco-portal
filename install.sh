@@ -142,7 +142,10 @@ install_prerequisites() {
     curl git build-essential software-properties-common \
     python3 python3-venv python3-pip python3-dev \
     libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
-    nginx ufw openssl ca-certificates unzip
+    nginx ufw openssl ca-certificates unzip \
+    smbclient
+  # smbclient: برای قابلیت «بکاپ خودکار به سرور SMB راه‌دور» — بدون نیاز
+  # به mount/دسترسی root، فقط آپلود مستقیم فایل.
 }
 
 install_nodejs() {

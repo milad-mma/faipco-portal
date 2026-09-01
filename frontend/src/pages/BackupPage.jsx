@@ -17,6 +17,7 @@ import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
 import { downloadBackupArchive, fetchRestoreStatus, restoreBackupArchive } from "../api/backup";
 import { bustAppCache } from "../api/system";
 import { monoFontSx } from "../theme";
+import BackupScheduleSettings from "../components/BackupScheduleSettings";
 
 const CONFIRM_PHRASE = "RESTORE";
 const POLL_INTERVAL_MS = 3000;
@@ -292,6 +293,10 @@ export default function BackupPage() {
         >
           {isBustingCache ? "در حال اعمال..." : "پاک‌کردن کش برای همه کاربران"}
         </Button>
+      </Card>
+
+      <Card variant="outlined" sx={{ p: 3, mt: 3 }}>
+        <BackupScheduleSettings />
       </Card>
     </Box>
   );

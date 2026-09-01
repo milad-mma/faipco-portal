@@ -30,3 +30,4 @@ from app.models.rate_limit import LoginAttempt, MessageRateLimit  # noqa: F401
 from app.models.usage_stat import UsageStat  # noqa: F401
 from app.models.server_stat import ServerStat  # noqa: F401
 from app.models.feedback import FeedbackMessage, ProhibitedPhrase  # noqa: F401
+from app.models.backup_settings import BackupRetentionMode, BackupScheduleType, BackupSettings  # noqa: F401

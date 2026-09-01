@@ -26,3 +26,30 @@ export async function fetchRestoreStatus() {
   const { data } = await apiClient.get("/backup/restore-status", { timeout: 5000 });
   return data; // { log, is_running, is_finished, is_failed }
 }
+
+export async function fetchBackupSettings() {
+  const { data } = await apiClient.get("/backup/settings");
+  return data;
+}
+
+export async function updateBackupSettings(payload) {
+  const { data } = await apiClient.put("/backup/settings", payload);
+  return data;
+}
+
+export async function testSmbConnection(payload) {
+  const { data } = await apiClient.post("/backup/test-smb", payload, { timeout: 30000 });
+  return data;
+}
+
+export async function testFtpConnection(payload) {
+  const { data } = await apiClient.post("/backup/test-ftp", payload, { timeout: 30000 });
+  return data;
+}
+
+export async function runBackupNow() {
+  // شامل ساخت بکاپ + آپلود به هدف(های) راه‌دور فعال - می‌تواند برای
+  // دیتابیس‌های بزرگ چند دقیقه طول بکشد.
+  const { data } = await apiClient.post("/backup/run-now", null, { timeout: 5 * 60 * 1000 });
+  return data;
+}

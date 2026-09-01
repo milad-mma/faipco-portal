@@ -29,10 +29,12 @@ from apscheduler.jobstores.base import JobLookupError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.backup_schedule_logic import is_backup_due
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models.server_stat import ServerStat
 from app.models.site import Site, SiteConnection
+from app.services.backup_settings_service import BackupSettingsService, run_scheduled_backup
 from app.services.birthday_greetings_service import BirthdayGreetingsService
 from app.services.server_stats_service import record_server_stats
 from app.services.system_settings_service import SystemSettingsService
@@ -44,6 +46,7 @@ settings = get_settings()
 JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
 SERVER_STATS_JOB_ID = "record_server_stats"
+BACKUP_JOB_ID = "run_scheduled_backup"
 # فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
 # فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
 # که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
@@ -65,12 +68,17 @@ scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Tehran"))
 _SYNC_LOCK_KEY = 875312001
 _BIRTHDAY_LOCK_KEY = 875312002
 _SERVER_STATS_LOCK_KEY = 875312003
+_BACKUP_LOCK_KEY = 875312004
 # نمونه‌برداری واقعی مصرف سرور هر ۱۰ دقیقه یک‌بار — ولی مثل Sync، خودِ Job
 # با تیک مکرر کوتاه‌تر (هر ۲ دقیقه) چک می‌کند «طبق آخرین نمونه ثبت‌شده در
 # دیتابیس، وقتش رسیده یا نه» — همان دلیل بالا (هماهنگی بین چند Worker
 # مستقل، بدون تکیه بر تایمر جداگانه هرکدام).
 SERVER_STATS_CHECK_INTERVAL_MINUTES = 2
 SERVER_STATS_SAMPLE_INTERVAL_MINUTES = 10
+# مثل Sync/آمار سرور: یک تیک ثابت و کوتاه که هر بار از دیتابیس می‌پرسد
+# «طبق زمان‌بندی فعلی بکاپ (روزانه/هفتگی/چندساعتی)، وقتش رسیده یا نه» -
+# نگاه کنید به توضیح کامل در app/core/backup_schedule_logic.py
+BACKUP_CHECK_INTERVAL_MINUTES = 5
 
 
 async def _try_advisory_lock(db: AsyncSession, lock_key: int) -> bool:
@@ -156,6 +164,32 @@ async def _record_server_stats_job() -> None:
             await _advisory_unlock(db, _SERVER_STATS_LOCK_KEY)
 
 
+async def _run_scheduled_backup_check() -> None:
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _BACKUP_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            settings = await BackupSettingsService(db).get_settings()
+            due = is_backup_due(
+                schedule_enabled=settings.schedule_enabled,
+                schedule_type=settings.schedule_type.value,
+                schedule_hour=settings.schedule_hour,
+                schedule_minute=settings.schedule_minute,
+                schedule_weekday=settings.schedule_weekday,
+                schedule_interval_hours=settings.schedule_interval_hours,
+                last_run_at=settings.last_run_at,
+            )
+            if not due:
+                return
+            logger.info("زمان بکاپ خودکار طبق زمان‌بندی رسیده — شروع می‌شود")
+            await run_scheduled_backup(db)
+        except Exception:  # noqa: BLE001 - نباید کل Scheduler را متوقف کند
+            logger.exception("خطا در بررسی/اجرای بکاپ زمان‌بندی‌شده")
+        finally:
+            await _advisory_unlock(db, _BACKUP_LOCK_KEY)
+
+
 async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
@@ -206,6 +240,18 @@ async def start_scheduler() -> None:
     logger.info(
         "Scheduler هر %s دقیقه یک‌بار مصرف CPU/RAM/دیسک سرور را نمونه‌برداری می‌کند",
         SERVER_STATS_SAMPLE_INTERVAL_MINUTES,
+    )
+
+    scheduler.add_job(
+        _run_scheduled_backup_check,
+        trigger="interval",
+        minutes=BACKUP_CHECK_INTERVAL_MINUTES,
+        id=BACKUP_JOB_ID,
+        replace_existing=True,
+    )
+    logger.info(
+        "Scheduler هر %s دقیقه چک می‌کند که آیا طبق زمان‌بندی بکاپ (که از دیتابیس خوانده می‌شود) وقتش رسیده یا نه",
+        BACKUP_CHECK_INTERVAL_MINUTES,
     )
 
     scheduler.start()
