@@ -40,7 +40,7 @@ const PRIORITY_LABELS = {
   // کامل (پررنگ‌ترین سطح اولویت) است، تا این دو از هم قابل‌تشخیص باشند.
   low: { label: "کم", bg: "action.selected", color: "text.secondary" },
   normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
-  high: { label: "بالا", bg: "error.light", color: "error.dark" },
+  high: { label: "بالا", bg: "error.light", color: "common.white" },
   urgent: { label: "فوری", bg: "error.main", color: "error.contrastText" },
 };
 
