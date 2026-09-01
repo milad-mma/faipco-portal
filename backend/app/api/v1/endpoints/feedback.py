@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_superuser
 from app.db.session import get_db
+from app.models.feedback import FeedbackCategory
 from app.models.user import User
 from app.schemas.feedback import FeedbackMessageOut, FeedbackSubmitIn, ProhibitedPhraseIn, ProhibitedPhraseOut
 from app.services.feedback_service import FeedbackAccessDenied, FeedbackRateLimitExceeded, FeedbackService
@@ -31,7 +32,9 @@ async def submit_feedback(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        await FeedbackService(db).submit_feedback(current_user, payload.title, payload.message, payload.is_anonymous)
+        await FeedbackService(db).submit_feedback(
+            current_user, payload.category, payload.title, payload.message, payload.is_anonymous
+        )
     except FeedbackRateLimitExceeded as e:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
     return {"success": True}
@@ -41,6 +44,8 @@ async def submit_feedback(
 async def list_feedback(
     sender_id: int | None = Query(default=None),
     site_id: int | None = Query(default=None),
+    category: FeedbackCategory | None = Query(default=None),
+    is_anonymous: bool | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
@@ -48,7 +53,13 @@ async def list_feedback(
 ):
     try:
         return await FeedbackService(db).get_feedback_list(
-            current_user, sender_id=sender_id, site_id=site_id, date_from=date_from, date_to=date_to
+            current_user,
+            sender_id=sender_id,
+            site_id=site_id,
+            category=category,
+            is_anonymous=is_anonymous,
+            date_from=date_from,
+            date_to=date_to,
         )
     except FeedbackAccessDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))

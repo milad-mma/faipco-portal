@@ -14,11 +14,19 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+import enum
+
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
 from app.models.base import TimestampMixin
+
+
+class FeedbackCategory(str, enum.Enum):
+    complaint = "complaint"  # انتقاد
+    suggestion = "suggestion"  # پیشنهاد
+    comment = "comment"  # نظر
 
 
 class FeedbackMessage(Base, TimestampMixin):
@@ -29,6 +37,9 @@ class FeedbackMessage(Base, TimestampMixin):
     # واقعی همیشه باید بتواند ببیند، و اگر پیام حاوی الفاظ نامناسب باشد،
     # باید بتوان هویت را برای دارنده مجوز هم آشکار کرد.
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category: Mapped[FeedbackCategory] = mapped_column(
+        Enum(FeedbackCategory, name="feedback_category"), nullable=False
+    )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     is_anonymous_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

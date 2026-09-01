@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.profanity_filter import contains_prohibited_phrase
 from app.core.site_access import get_sites_with_permission
 from app.models.employee import Employee
-from app.models.feedback import FeedbackMessage, ProhibitedPhrase
+from app.models.feedback import FeedbackCategory, FeedbackMessage, ProhibitedPhrase
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.feedback import FeedbackMessageOut
@@ -59,7 +59,9 @@ class FeedbackService:
                 "برای جلوگیری از ارسال مکرر، حداکثر هر یک دقیقه یک پیام می‌توانید بفرستید — لطفاً کمی صبر کنید."
             )
 
-    async def submit_feedback(self, sender: User, title: str, message: str, is_anonymous: bool) -> FeedbackMessage:
+    async def submit_feedback(
+        self, sender: User, category: FeedbackCategory, title: str, message: str, is_anonymous: bool
+    ) -> FeedbackMessage:
         await self._check_rate_limit(sender.id)
 
         prohibited_phrases = await self._get_prohibited_phrases()
@@ -69,6 +71,7 @@ class FeedbackService:
 
         feedback = FeedbackMessage(
             sender_id=sender.id,
+            category=category,
             title=title.strip(),
             message=message.strip(),
             is_anonymous_requested=is_anonymous,
@@ -105,6 +108,8 @@ class FeedbackService:
         *,
         sender_id: int | None = None,
         site_id: int | None = None,
+        category: FeedbackCategory | None = None,
+        is_anonymous: bool | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
     ) -> list[FeedbackMessageOut]:
@@ -127,6 +132,10 @@ class FeedbackService:
             conditions.append(FeedbackMessage.sender_id == sender_id)
         if site_id is not None:
             conditions.append(Employee.site_id == site_id)
+        if category is not None:
+            conditions.append(FeedbackMessage.category == category)
+        if is_anonymous is not None:
+            conditions.append(FeedbackMessage.is_anonymous_requested == is_anonymous)
         if date_from is not None:
             conditions.append(FeedbackMessage.created_at >= date_from)
         if date_to is not None:
@@ -149,6 +158,7 @@ class FeedbackService:
             out.append(
                 FeedbackMessageOut(
                     id=feedback.id,
+                    category=feedback.category,
                     title=feedback.title,
                     message=feedback.message,
                     is_anonymous_requested=feedback.is_anonymous_requested,

@@ -2,8 +2,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.feedback import FeedbackCategory
+
 
 class FeedbackSubmitIn(BaseModel):
+    category: FeedbackCategory
     title: str = Field(min_length=1, max_length=255)
     message: str = Field(min_length=1, max_length=5000)
     is_anonymous: bool = False
@@ -18,6 +21,7 @@ class FeedbackMessageOut(BaseModel):
     """
 
     id: int
+    category: FeedbackCategory
     title: str | None = None
     message: str
     is_anonymous_requested: bool

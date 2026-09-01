@@ -12,12 +12,19 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import { submitFeedback } from "../api/feedback";
+
+const CATEGORY_LABELS = {
+  complaint: "انتقاد",
+  suggestion: "پیشنهاد",
+  comment: "نظر",
+};
 
 const ANONYMITY_NOTICE_TEXT =
   "همکار گرامی، اطمینان خاطر داشته باشید که انتقادات، پیشنهادات و نظرات شما به‌صورت کاملاً محرمانه و ناشناس ثبت شده و صرفاً در اختیار مدیر این واحد قرار خواهد گرفت. بدیهی است حفظ محرمانگی و ناشناس بودن پیام‌ها، مشروط به رعایت شئونات و ادبیات مناسب در بیان نظرات است. در صورت استفاده از الفاظ رکیک، توهین‌آمیز یا ناسزا، پیام به صورت خودکار توسط سامانه بررسی شده و از حالت محرمانه و ناشناس خارج شده و هویت ارسال‌کننده قابل شناسایی خواهد بود. در این صورت، مسئولیت و عواقب ناشی از محتوای پیام بر عهده ارسال‌کننده خواهد بود.";
@@ -37,6 +44,7 @@ const ANONYMITY_NOTICE_TEXT =
  */
 export default function FeedbackSubmitPage() {
   const navigate = useNavigate();
+  const [category, setCategory] = useState("");
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -62,8 +70,9 @@ export default function FeedbackSubmitPage() {
     setError("");
     setIsSubmitting(true);
     try {
-      await submitFeedback({ title: title.trim(), message: message.trim(), isAnonymous });
+      await submitFeedback({ category, title: title.trim(), message: message.trim(), isAnonymous });
       setSuccess(true);
+      setCategory("");
       setTitle("");
       setMessage("");
       setIsAnonymous(false);
@@ -96,6 +105,21 @@ export default function FeedbackSubmitPage() {
         ) : (
           <Stack spacing={2.5}>
             <TextField
+              select
+              label="موضوع"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              fullWidth
+              required
+              disabled={isSubmitting}
+            >
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                <MenuItem key={value} value={value}>
+                  {label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
               label="عنوان پیام"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -126,7 +150,7 @@ export default function FeedbackSubmitPage() {
               <Button
                 variant="contained"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !title.trim() || !message.trim()}
+                disabled={isSubmitting || !category || !title.trim() || !message.trim()}
                 startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
               >
                 {isSubmitting ? "در حال ارسال..." : "ارسال"}
