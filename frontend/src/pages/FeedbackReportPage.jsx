@@ -282,6 +282,16 @@ function FeedbackMessagesList({ canDelete }) {
                   sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {m.sender_name || "ناشناس"}
+                  {/* وقتی نام واقعی نمایش داده می‌شود (Admin واقعی، یا پیام حاوی الفاظ
+                      نامناسب) ولی خودِ فرستنده درخواست ناشناس‌ماندن داشته، این برچسب
+                      نشان می‌دهد که او خواستار محرمانه‌ماندن بوده - حتی اگر الان نامش
+                      قابل‌مشاهده است. */}
+                  {m.sender_name && m.is_anonymous_requested && (
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                      {" "}
+                      (ناشناس)
+                    </Typography>
+                  )}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                   {new Date(m.created_at).toLocaleString("fa-IR")}
