@@ -42,6 +42,9 @@ class BackupSettingsIn(BaseModel):
     retention_count: int = Field(default=30, ge=1, le=1000)
     retention_days: int = Field(default=30, ge=1, le=3650)
 
+    email_enabled: bool = False
+    email_recipients: str | None = Field(default=None, description="هر آدرس ایمیل در یک خط")
+
     @model_validator(mode="after")
     def _validate_schedule_fields(self) -> "BackupSettingsIn":
         if self.schedule_enabled:
@@ -53,6 +56,8 @@ class BackupSettingsIn(BaseModel):
             raise ValueError("برای فعال‌کردن هدف SMB، نام سرور، Share و نام کاربری الزامی‌اند")
         if self.ftp_enabled and not (self.ftp_host and self.ftp_username):
             raise ValueError("برای فعال‌کردن هدف FTP، نام سرور و نام کاربری الزامی‌اند")
+        if self.email_enabled and not self.email_recipients:
+            raise ValueError("برای فعال‌کردن ارسال به ایمیل، حداقل یک گیرنده لازم است")
         return self
 
 
@@ -83,6 +88,9 @@ class BackupSettingsOut(BaseModel):
     retention_mode: BackupRetentionMode
     retention_count: int
     retention_days: int
+
+    email_enabled: bool
+    email_recipients: str | None
 
     last_run_at: datetime | None
     last_run_success: bool | None

@@ -50,6 +50,7 @@ class Employee(Base, TimestampMixin):
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # فقط روز/ماه تولد (شمسی) — بدون سال، چون فقط برای کارت «متولدین روز
     # جاری» در داشبورد استفاده می‌شود، نه محاسبه سن. مقدار خام از دیتابیس
@@ -122,6 +123,7 @@ class EmployeeMapping(Base, TimestampMixin):
     first_name_column: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name_column: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    email_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری: نام ستون تاریخ تولد شمسی خام در دیتابیس مبدأ (فرمت رایج
     # «۱۳۷۰/۰۵/۲۱» یا مشابه) — Sync Engine فقط روز/ماه را از آن استخراج

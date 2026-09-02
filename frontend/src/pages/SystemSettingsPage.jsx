@@ -17,6 +17,7 @@ import {
   uploadLoginBackground,
   uploadLogo,
 } from "../api/system";
+import SmtpSettings from "../components/SmtpSettings";
 
 /**
  * یک کارت آپلود عکس با پیش‌نمایش + دکمه‌های انتخاب/آپلود/حذف — الگوی
@@ -408,6 +409,10 @@ export default function SystemSettingsPage() {
             uploadFn={uploadLoginBackground}
             deleteFn={deleteLoginBackground}
           />
+        </Card>
+
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+          <SmtpSettings />
         </Card>
       </Stack>
     </Box>

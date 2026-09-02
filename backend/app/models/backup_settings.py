@@ -70,6 +70,14 @@ class BackupSettings(Base):
     retention_count: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     retention_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
 
+    # --- هدف ایمیل (از طریق تنظیمات SMTP سراسری - app/models/smtp_settings.py) ---
+    # ⚠️ برخلاف SMB/FTP، ایمیل «Retention» ندارد - چون آرشیو در صندوق ورودی
+    # گیرنده باقی می‌ماند، نه روی سروری که این پرتال بتواند به آن دسترسی
+    # پاک‌سازی داشته باشد.
+    email_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # چند آدرس، هرکدام در یک خط - برای پشتیبانی از چند گیرنده هم‌زمان
+    email_recipients: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # --- آخرین اجرا (برای نمایش وضعیت در پنل) ---
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

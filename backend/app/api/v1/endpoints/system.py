@@ -32,8 +32,11 @@ from app.schemas.system import (
     IpBlockedMessageIn,
     IpBlockedMessageOut,
 )
+from app.schemas.smtp import SmtpSettingsIn, SmtpSettingsOut, SmtpTestEmailIn
 from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
+from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
+from app.core.security import decrypt_secret, encrypt_secret
 from app.services.system_settings_service import SystemSettingsService
 from app.services.usage_stats_service import get_usage_stats
 from app.services.server_stats_service import get_server_stats
@@ -492,3 +495,72 @@ async def get_dynamic_index_html(db: AsyncSession = Depends(get_db)):
     html = _TITLE_TAG_PATTERN.sub(f"<title>{safe_title}</title>", html, count=1)
 
     return Response(content=html, media_type="text/html")
+
+
+@router.get("/smtp-settings", response_model=SmtpSettingsOut)
+async def get_smtp_settings_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """رمز عبور هرگز در پاسخ برنمی‌گردد — فقط has_password (بولی)."""
+    settings = await get_smtp_settings(db)
+    return SmtpSettingsOut(
+        enabled=settings.enabled,
+        host=settings.host,
+        port=settings.port,
+        username=settings.username,
+        has_password=bool(settings.password_encrypted),
+        from_address=settings.from_address,
+        from_name=settings.from_name,
+        encryption_mode=settings.encryption_mode,
+    )
+
+
+@router.put("/smtp-settings", response_model=SmtpSettingsOut)
+async def update_smtp_settings(
+    payload: SmtpSettingsIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """برای رمز عبور: اگر خالی فرستاده شود، رمز قبلاً ذخیره‌شده دست‌نخورده می‌ماند."""
+    settings = await get_smtp_settings(db)
+    settings.enabled = payload.enabled
+    settings.host = payload.host
+    settings.port = payload.port
+    settings.username = payload.username
+    if payload.password:
+        settings.password_encrypted = encrypt_secret(payload.password)
+    settings.from_address = payload.from_address
+    settings.from_name = payload.from_name
+    settings.encryption_mode = payload.encryption_mode
+    await db.commit()
+    await db.refresh(settings)
+    return SmtpSettingsOut(
+        enabled=settings.enabled,
+        host=settings.host,
+        port=settings.port,
+        username=settings.username,
+        has_password=bool(settings.password_encrypted),
+        from_address=settings.from_address,
+        from_name=settings.from_name,
+        encryption_mode=settings.encryption_mode,
+    )
+
+
+@router.post("/smtp-settings/test")
+async def test_smtp_settings(
+    payload: SmtpTestEmailIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """یک ایمیل آزمایشی با تنظیمات فعلاً *ذخیره‌شده* SMTP می‌فرستد (نه یک تنظیم موقت وارد‌شده در فرم)."""
+    try:
+        await send_email(
+            db,
+            to_address=payload.to_address,
+            subject="تست تنظیمات SMTP - پرتال سازمانی",
+            body_text="این یک ایمیل آزمایشی است. اگر این پیام را دریافت کرده‌اید، تنظیمات SMTP درست کار می‌کند.",
+        )
+    except (EmailNotConfiguredError, EmailError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"success": True, "message": "ایمیل آزمایشی با موفقیت ارسال شد."}

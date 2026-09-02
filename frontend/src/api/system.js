@@ -112,3 +112,22 @@ export async function updateIpBlockedMessage(message) {
   const { data } = await apiClient.put("/system/ip-blocked-message", { message });
   return data.message;
 }
+
+export async function fetchSmtpSettings() {
+  const { data } = await apiClient.get("/system/smtp-settings");
+  return data;
+}
+
+export async function updateSmtpSettings(payload) {
+  const { data } = await apiClient.put("/system/smtp-settings", payload);
+  return data;
+}
+
+export async function testSmtpSettings(toAddress) {
+  const { data } = await apiClient.post(
+    "/system/smtp-settings/test",
+    { to_address: toAddress },
+    { timeout: 30000 }
+  );
+  return data;
+}

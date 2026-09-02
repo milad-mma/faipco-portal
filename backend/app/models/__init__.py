@@ -31,3 +31,5 @@ from app.models.usage_stat import UsageStat  # noqa: F401
 from app.models.server_stat import ServerStat  # noqa: F401
 from app.models.feedback import FeedbackMessage, ProhibitedPhrase  # noqa: F401
 from app.models.backup_settings import BackupRetentionMode, BackupScheduleType, BackupSettings  # noqa: F401
+from app.models.smtp_settings import SmtpEncryptionMode, SmtpSettings  # noqa: F401
+from app.models.password_reset_token import PasswordResetToken  # noqa: F401

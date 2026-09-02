@@ -16,6 +16,15 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class ForgotPasswordRequest(BaseModel):
+    identifier: str = Field(min_length=1)  # نام‌کاربری یا کد پرسنلی - همان دو روش ورود
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

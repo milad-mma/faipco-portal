@@ -62,6 +62,7 @@ cd frontend && npm install && npm run dev
 | [`docs/monthly-attendance.md`](docs/monthly-attendance.md) | گزارش تردد ماهانه (از دستگاه‌های حضور و غیاب، با نگاشت قابل‌تنظیم) |
 | [`docs/feedback.md`](docs/feedback.md) | انتقادات و پیشنهادات (با امکان ناشناس‌بودن) |
 | [`docs/backup-scheduling.md`](docs/backup-scheduling.md) | زمان‌بندی بکاپ + ارسال خودکار به سرور SMB/FTP |
+| [`docs/smtp-and-password-reset.md`](docs/smtp-and-password-reset.md) | تنظیمات SMTP، فراموشی رمز عبور، ارسال بکاپ به ایمیل |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

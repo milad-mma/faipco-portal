@@ -191,6 +191,8 @@ class SyncService:
             columns["national_code"] = mapping.national_code_column
         if mapping.mobile_column:
             columns["mobile"] = mapping.mobile_column
+        if mapping.email_column:
+            columns["email"] = mapping.email_column
         if mapping.birth_date_column:
             columns["birth_date_raw"] = mapping.birth_date_column
         if mapping.is_active_column:
@@ -367,6 +369,14 @@ class SyncService:
                 raw_mobile = row.get(columns["mobile"])
                 mobile = self._normalize_fixed_length_digits(raw_mobile, 11)
 
+            email = None
+            if "email" in columns:
+                raw_email = row.get(columns["email"])
+                # فقط Trim و خالی→None - برخلاف موبایل/کدملی، ایمیل طول ثابت ندارد
+                email = str(raw_email).strip() if raw_email not in (None, "") else None
+                if not email:
+                    email = None
+
             birth_month = birth_day = None
             if "birth_date_raw" in columns:
                 parsed_birth = self._parse_birth_month_day(row.get(columns["birth_date_raw"]))
@@ -418,6 +428,7 @@ class SyncService:
                         first_name=first_name,
                         last_name=last_name,
                         mobile=mobile,
+                        email=email,
                         site_id=site_id,
                         department_id=department_id,
                         is_active=is_active,
@@ -437,6 +448,8 @@ class SyncService:
                     existing.national_code = national_code
                 if mobile is not None:
                     existing.mobile = mobile
+                if email is not None:
+                    existing.email = email
                 if "birth_date_raw" in columns:
                     existing.birth_month = birth_month
                     existing.birth_day = birth_day

@@ -17,6 +17,7 @@ from app.core.security import decrypt_secret, encrypt_secret
 from app.models.backup_settings import BackupSettings
 from app.schemas.backup import BackupSettingsIn
 from app.services.backup_service import create_backup_archive
+from app.services.email_service import EmailError, EmailNotConfiguredError, send_email
 from app.services.remote_backup_service import (
     RemoteBackupError,
     apply_ftp_retention,
@@ -77,6 +78,9 @@ class BackupSettingsService:
         settings.retention_count = payload.retention_count
         settings.retention_days = payload.retention_days
 
+        settings.email_enabled = payload.email_enabled
+        settings.email_recipients = payload.email_recipients
+
         await self.db.commit()
         await self.db.refresh(settings)
         return settings
@@ -96,7 +100,7 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
     service = BackupSettingsService(db)
     settings = await service.get_settings()
 
-    if not (settings.smb_enabled or settings.ftp_enabled):
+    if not (settings.smb_enabled or settings.ftp_enabled or settings.email_enabled):
         logger.info("بکاپ زمان‌بندی‌شده اجرا شد ولی هیچ هدف راه‌دوری فعال نیست - رد شد")
         return
 
@@ -175,6 +179,41 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
                 any_failure = True
                 messages.append(f"FTP: {e}")
                 logger.error("آپلود بکاپ زمان‌بندی‌شده به FTP ناموفق بود: %s", e)
+
+        if settings.email_enabled:
+            # ⚠️ محدودیت اندازه پیوست ایمیل - اکثر سرورهای SMTP رایج (Gmail،
+            # Outlook، ...) پیوست‌های بزرگ‌تر از ۲۰-۲۵ مگابایت را رد می‌کنند؛
+            # به‌جای یک خطای مبهم SMTP، همین‌جا با پیام روشن رد می‌شود.
+            max_email_size_bytes = 20 * 1024 * 1024
+            if len(archive_bytes) > max_email_size_bytes:
+                any_failure = True
+                size_mb = len(archive_bytes) / (1024 * 1024)
+                messages.append(
+                    f"ایمیل: حجم بکاپ ({size_mb:.1f} مگابایت) بیش از حد مجاز پیوست ایمیل (۲۰ مگابایت) است — ارسال نشد"
+                )
+            else:
+                recipients = [r.strip() for r in (settings.email_recipients or "").splitlines() if r.strip()]
+                email_failures = []
+                email_successes = 0
+                for recipient in recipients:
+                    try:
+                        await send_email(
+                            db,
+                            to_address=recipient,
+                            subject=f"بکاپ خودکار پرتال سازمانی — {filename}",
+                            body_text="بکاپ زمان‌بندی‌شده به‌صورت خودکار تهیه و به این ایمیل پیوست شده است.",
+                            attachment=(filename, archive_bytes),
+                        )
+                        email_successes += 1
+                    except (EmailNotConfiguredError, EmailError) as e:
+                        email_failures.append(f"{recipient}: {e}")
+                        logger.error("ارسال بکاپ زمان‌بندی‌شده به ایمیل %s ناموفق بود: %s", recipient, e)
+
+                if email_failures:
+                    any_failure = True
+                    messages.append(f"ایمیل: {email_successes} موفق، ناموفق‌ها: {'; '.join(email_failures)}")
+                else:
+                    messages.append(f"ایمیل: با موفقیت به {email_successes} گیرنده ارسال شد")
 
     settings.last_run_at = datetime.now(timezone.utc)
     settings.last_run_success = not any_failure

@@ -80,6 +80,7 @@ class EmployeeMappingIn(BaseModel):
     first_name_column: str
     last_name_column: str
     mobile_column: str | None = None
+    email_column: str | None = None
     birth_date_column: str | None = None
     is_active_column: str | None = None
     is_active_inverted: bool = False

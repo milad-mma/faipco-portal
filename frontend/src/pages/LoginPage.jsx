@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link as RouterLink } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -12,6 +12,7 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  Link,
   Paper,
   Stack,
   TextField,
@@ -258,17 +259,22 @@ export default function LoginPage() {
           ),
         }}
       />
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={rememberMe}
-            onChange={(e) => setRememberMe(e.target.checked)}
-            size="small"
-          />
-        }
-        label={<Typography variant="body2">مرا به خاطر بسپار</Typography>}
-        sx={{ mr: 0 }}
-      />
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              size="small"
+            />
+          }
+          label={<Typography variant="body2">مرا به خاطر بسپار</Typography>}
+          sx={{ mr: 0 }}
+        />
+        <Link component={RouterLink} to="/forgot-password" variant="body2">
+          فراموشی رمز عبور
+        </Link>
+      </Stack>
       <Button
         type="submit"
         variant="contained"

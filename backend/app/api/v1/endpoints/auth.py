@@ -2,13 +2,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.deps import get_current_user
 from app.core.ip_allowlist import get_client_ip
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    LoginRequest,
+    RefreshRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+)
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
+from app.services.email_service import EmailError, EmailNotConfiguredError
+from app.services.password_reset_service import PasswordResetError, request_reset, reset_password
 
 router = APIRouter()
 
@@ -67,3 +77,32 @@ async def change_password(
         await service.change_password(current_user, payload.current_password, payload.new_password)
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """
+    ⚠️ امنیتی: همیشه یک پیام یکسان برمی‌گرداند - چه شناسه واردشده وجود
+    داشته باشد چه نه، و چه ایمیلی برایش ثبت شده باشد چه نه - تا این
+    Endpoint نتواند برای حدس‌زدن نام‌کاربری/کدپرسنلی معتبر استفاده شود.
+    فقط اگر خودِ سرویس ایمیل قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده
+    می‌شود (چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی درباره این کاربر).
+    """
+    settings = get_settings()
+    reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
+    try:
+        await request_reset(db, payload.identifier, reset_link_base)
+    except (EmailNotConfiguredError, EmailError) as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    return {
+        "message": "اگر این شناسه در سامانه ثبت شده و ایمیلی برایش موجود باشد، لینک بازنشانی رمز عبور ارسال شد."
+    }
+
+
+@router.post("/reset-password")
+async def reset_password_endpoint(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        await reset_password(db, payload.token, payload.new_password)
+    except PasswordResetError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"message": "رمز عبور با موفقیت تغییر کرد. اکنون می‌توانید وارد شوید."}

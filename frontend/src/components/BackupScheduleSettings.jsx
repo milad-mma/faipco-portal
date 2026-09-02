@@ -437,6 +437,38 @@ export default function BackupScheduleSettings() {
         </Stack>
       </Stack>
 
+      <Divider />
+
+      <Stack spacing={2}>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={form.email_enabled}
+              onChange={(e) => updateForm({ email_enabled: e.target.checked })}
+            />
+          }
+          label="ارسال بکاپ به ایمیل"
+        />
+        {form.email_enabled && (
+          <Stack spacing={1} sx={{ pr: 3 }}>
+            <TextField
+              size="small"
+              multiline
+              minRows={3}
+              label="گیرندگان (هر آدرس ایمیل در یک خط)"
+              value={form.email_recipients || ""}
+              onChange={(e) => updateForm({ email_recipients: e.target.value })}
+              placeholder={"admin@example.com\nmanager@example.com"}
+              sx={{ maxWidth: 320 }}
+            />
+            <Typography variant="caption" color="text.secondary">
+              نیازمند تنظیم و فعال‌بودن SMTP در «تنظیمات سامانه». حجم بکاپ نباید بیش از ۲۰ مگابایت باشد
+              (محدودیت رایج پیوست ایمیل).
+            </Typography>
+          </Stack>
+        )}
+      </Stack>
+
       {saveResult && <Alert severity={saveResult.success ? "success" : "error"}>{saveResult.message}</Alert>}
 
       <Stack direction="row" spacing={1.5}>
@@ -451,7 +483,7 @@ export default function BackupScheduleSettings() {
         <Button
           variant="outlined"
           onClick={handleRunNow}
-          disabled={isRunningNow || !(form.smb_enabled || form.ftp_enabled)}
+          disabled={isRunningNow || !(form.smb_enabled || form.ftp_enabled || form.email_enabled)}
           startIcon={isRunningNow ? <CircularProgress size={16} /> : null}
         >
           {isRunningNow ? "در حال اجرا..." : "اجرای فوری بکاپ الان"}

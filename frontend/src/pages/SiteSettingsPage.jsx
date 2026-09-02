@@ -54,6 +54,7 @@ const EMPTY_MAPPING = {
   first_name_column: "",
   last_name_column: "",
   mobile_column: "",
+  email_column: "",
   birth_date_column: "",
   is_active_column: "",
   is_active_inverted: false,
@@ -142,6 +143,7 @@ export default function SiteSettingsPage() {
           first_name_column: mapping.first_name_column,
           last_name_column: mapping.last_name_column,
           mobile_column: mapping.mobile_column || "",
+          email_column: mapping.email_column || "",
           birth_date_column: mapping.birth_date_column || "",
           is_active_column: mapping.is_active_column || "",
           is_active_inverted: mapping.is_active_inverted || false,
@@ -482,6 +484,13 @@ export default function SiteSettingsPage() {
               value={mappingForm.mobile_column}
               onChange={(e) => setMappingForm({ ...mappingForm, mobile_column: e.target.value })}
               disabled={isSaving}
+            />
+            <TextField
+              label="ستون ایمیل (اختیاری)"
+              value={mappingForm.email_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, email_column: e.target.value })}
+              disabled={isSaving}
+              helperText="برای «فراموشی رمز عبور» و ارسال بکاپ به ایمیل استفاده می‌شود"
             />
             <TextField
               label="ستون تاریخ تولد شمسی (اختیاری — برای کارت «متولدین روز جاری» در داشبورد)"

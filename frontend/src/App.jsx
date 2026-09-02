@@ -9,6 +9,8 @@ import SplashScreen from "./components/SplashScreen";
 import { useAuth } from "./context/AuthContext";
 import { useBranding } from "./context/BrandingContext";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
@@ -65,6 +67,8 @@ export default function App() {
       {showSplash && <SplashScreen visible={isLoading} />}
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         <Route
           element={

@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    # --- آدرس Frontend (برای ساخت لینک‌های ایمیل، مثل بازنشانی رمز عبور) ---
+    # ⚠️ هرگز از یک URL ای که خودِ کلاینت در درخواست فرستاده استفاده نشود
+    # (ریسک فیشینگ) - همیشه از همین مقدار سرور-محور خوانده می‌شود.
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # --- Sync Engine ---
     SYNC_ENABLED: bool = True
     SYNC_INTERVAL_MINUTES: int = 30
