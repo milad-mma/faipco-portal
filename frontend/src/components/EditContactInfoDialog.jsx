@@ -34,7 +34,12 @@ export default function EditContactInfoDialog({ open, onClose }) {
       setError("");
       setSuccessMessage("");
     }
-  }, [open, user]);
+    // ⚠️ عمداً فقط به open وابسته است، نه به user - چون در انتهای ذخیره
+    // موفق، refetchUser() مقدار user را در Context تازه می‌کند؛ اگر user
+    // هم اینجا Dependency بود، همین افکت دوباره اجرا و پیام موفقیت را
+    // بلافاصله بعد از نمایش پاک می‌کرد (باگ اصلی «واکنشی نشان نمی‌دهد»).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function handleClose() {
     if (isSubmitting) return;
@@ -42,6 +47,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
   }
 
   async function handleSubmit() {
+    if (isSubmitting) return; // محافظت اضافی در برابر چند کلیک سریع، جدا از غیرفعال‌شدن دکمه
     setError("");
     setSuccessMessage("");
     setIsSubmitting(true);
