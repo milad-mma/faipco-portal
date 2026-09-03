@@ -64,6 +64,7 @@ cd frontend && npm install && npm run dev
 | [`docs/backup-scheduling.md`](docs/backup-scheduling.md) | زمان‌بندی بکاپ + ارسال خودکار به سرور SMB/FTP |
 | [`docs/smtp-and-password-reset.md`](docs/smtp-and-password-reset.md) | تنظیمات SMTP، فراموشی رمز عبور، ارسال بکاپ به ایمیل |
 | [`docs/self-service-contact-info.md`](docs/self-service-contact-info.md) | ویرایش ایمیل/موبایل شخصی با Write-back به دیتابیس اصلی سایت |
+| [`docs/sms-password-reset.md`](docs/sms-password-reset.md) | فراموشی رمز عبور از طریق پیامک (ippanel) |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

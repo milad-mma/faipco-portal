@@ -18,6 +18,7 @@ import {
   uploadLogo,
 } from "../api/system";
 import SmtpSettings from "../components/SmtpSettings";
+import SmsSettings from "../components/SmsSettings";
 
 /**
  * یک کارت آپلود عکس با پیش‌نمایش + دکمه‌های انتخاب/آپلود/حذف — الگوی
@@ -413,6 +414,10 @@ export default function SystemSettingsPage() {
 
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <SmtpSettings />
+        </Card>
+
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+          <SmsSettings />
         </Card>
       </Stack>
     </Box>

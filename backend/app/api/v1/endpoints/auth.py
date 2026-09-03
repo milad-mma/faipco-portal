@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.deps import get_current_user
 from app.core.ip_allowlist import get_client_ip
+from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -21,6 +22,7 @@ from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedE
 from app.services.email_service import EmailError, EmailNotConfiguredError
 from app.services.employee_contact_service import ContactInfoUpdateError, update_my_contact_info
 from app.services.password_reset_service import PasswordResetError, request_reset, reset_password
+from app.services.sms_service import SmsError, SmsNotConfiguredError
 
 router = APIRouter()
 
@@ -102,28 +104,54 @@ async def update_my_contact_info_endpoint(
 
 
 @router.post("/forgot-password")
-async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password(
+    payload: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
     """
     ⚠️ امنیتی: همیشه یک پیام یکسان برمی‌گرداند - چه شناسه واردشده وجود
-    داشته باشد چه نه، چه ایمیلی برایش ثبت شده باشد چه نه، و چه یک درخواست
-    قبلی هنوز منقضی نشده باشد چه نه - تا این Endpoint نتواند برای حدس‌زدن
-    نام‌کاربری/کدپرسنلی معتبر استفاده شود. فقط اگر خودِ سرویس ایمیل
-    قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده می‌شود (چون آن یک مشکل
-    پیکربندی سیستم است، نه اطلاعاتی درباره این کاربر).
+    داشته باشد چه نه، چه ایمیل/موبایلی برایش ثبت شده باشد چه نه، و چه یک
+    درخواست قبلی هنوز منقضی نشده باشد چه نه - تا این Endpoint نتواند
+    برای حدس‌زدن نام‌کاربری/کدپرسنلی معتبر استفاده شود. فقط اگر خودِ
+    سرویس ایمیل/پیامک قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده می‌شود
+    (چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی درباره این کاربر).
     """
     settings = get_settings()
     reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
     try:
-        await request_reset(db, payload.identifier, reset_link_base)
-    except (EmailNotConfiguredError, EmailError) as e:
+        await request_reset(db, payload.identifier, payload.channel, reset_link_base)
+    except (EmailNotConfiguredError, EmailError, SmsNotConfiguredError, SmsError) as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+    if payload.channel == "sms":
+        return {"message": "کد تأیید بازنشانی رمز عبور به شماره موبایل شما پیامک شد."}
     return {"message": "لینک بازنشانی رمز عبور ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."}
 
 
 @router.post("/reset-password")
-async def reset_password_endpoint(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def reset_password_endpoint(
+    payload: ResetPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """
+    ⚠️ محافظت در برابر Brute-force: مهم‌ترین کاربرد این محافظت، کد ۶ رقمی
+    پیامکی است (فقط یک‌میلیون حالت ممکن، برخلاف توکن ایمیل که یک رشته
+    تصادفی طولانی و عملاً غیرقابل‌حدس است) - از همان زیرساخت قفل موقت
+    ورود (app/core/rate_limit.py، امن در برابر چند Worker) استفاده
+    می‌شود، این‌بار کلید‌شده بر اساس IP کلاینت به‌جای نام‌کاربری.
+    """
+    client_ip = get_client_ip(request)
+    lockout_key = f"reset-password:{client_ip}"
+    locked_remaining = await check_login_lockout(db, lockout_key)
+    if locked_remaining is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"تعداد تلاش‌های ناموفق زیاد بوده — لطفاً {int(locked_remaining) + 1} ثانیه دیگر دوباره تلاش کنید.",
+        )
+
     try:
         await reset_password(db, payload.token, payload.new_password)
     except PasswordResetError as e:
+        await record_failed_login(db, lockout_key)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    await reset_login_attempts(db, lockout_key)
     return {"message": "رمز عبور با موفقیت تغییر کرد. اکنون می‌توانید وارد شوید."}

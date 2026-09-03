@@ -33,9 +33,11 @@ from app.schemas.system import (
     IpBlockedMessageOut,
 )
 from app.schemas.smtp import SmtpSettingsIn, SmtpSettingsOut, SmtpTestEmailIn
+from app.schemas.sms import SmsSettingsIn, SmsSettingsOut, SmsTestSendIn
 from app.services.auth_service import AuthError, AuthService
 from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
+from app.services.sms_service import SmsError, SmsNotConfiguredError, get_sms_settings, send_sms_code
 from app.core.security import decrypt_secret, encrypt_secret
 from app.services.system_settings_service import SystemSettingsService
 from app.services.usage_stats_service import get_usage_stats
@@ -570,3 +572,61 @@ async def test_smtp_settings(
     except (EmailNotConfiguredError, EmailError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"success": True, "message": "ایمیل آزمایشی با موفقیت ارسال شد."}
+
+
+@router.get("/sms-settings", response_model=SmsSettingsOut)
+async def get_sms_settings_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """API Key هرگز در پاسخ برنمی‌گردد — فقط has_api_key (بولی)."""
+    settings = await get_sms_settings(db)
+    return SmsSettingsOut(
+        enabled=settings.enabled,
+        has_api_key=bool(settings.api_key_encrypted),
+        from_number=settings.from_number,
+        sending_type=settings.sending_type,
+        pattern_code=settings.pattern_code,
+        webservice_message_template=settings.webservice_message_template,
+    )
+
+
+@router.put("/sms-settings", response_model=SmsSettingsOut)
+async def update_sms_settings(
+    payload: SmsSettingsIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """برای API Key: اگر خالی فرستاده شود، مقدار قبلاً ذخیره‌شده دست‌نخورده می‌ماند."""
+    settings = await get_sms_settings(db)
+    settings.enabled = payload.enabled
+    if payload.api_key:
+        settings.api_key_encrypted = encrypt_secret(payload.api_key)
+    settings.from_number = payload.from_number
+    settings.sending_type = payload.sending_type
+    settings.pattern_code = payload.pattern_code
+    settings.webservice_message_template = payload.webservice_message_template
+    await db.commit()
+    await db.refresh(settings)
+    return SmsSettingsOut(
+        enabled=settings.enabled,
+        has_api_key=bool(settings.api_key_encrypted),
+        from_number=settings.from_number,
+        sending_type=settings.sending_type,
+        pattern_code=settings.pattern_code,
+        webservice_message_template=settings.webservice_message_template,
+    )
+
+
+@router.post("/sms-settings/test")
+async def test_sms_settings(
+    payload: SmsTestSendIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """یک پیامک آزمایشی با تنظیمات فعلاً ذخیره‌شده می‌فرستد (کد تست: 000000)."""
+    try:
+        await send_sms_code(db, to_mobile=payload.to_mobile, code="000000")
+    except (SmsNotConfiguredError, SmsError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"success": True, "message": "پیامک آزمایشی با موفقیت ارسال شد."}

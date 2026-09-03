@@ -1,31 +1,76 @@
 import { useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
-import { Alert, Box, Button, Link, Paper, Stack, TextField, ThemeProvider, Typography } from "@mui/material";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
+import {
+  Alert,
+  Box,
+  Button,
+  Link,
+  Paper,
+  Stack,
+  TextField,
+  ThemeProvider,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from "@mui/material";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
-import { forgotPasswordRequest } from "../api/auth";
+import { forgotPasswordRequest, resetPasswordRequest } from "../api/auth";
 import { modernLightTheme } from "../theme";
 
 /**
  * درخواست بازنشانی رمز عبور - همان شناسه‌ای که برای ورود استفاده می‌شود
- * (نام‌کاربری یا کد پرسنلی) را می‌گیرد. طبق طراحی امنیتی Backend، همیشه
- * یک پیام موفقیت یکسان نشان می‌دهد (چه شناسه معتبر باشد چه نه) - برای
- * جلوگیری از افشای این‌که کدام شناسه‌ها در سامانه ثبت شده‌اند.
+ * (نام‌کاربری یا کد پرسنلی) را می‌گیرد، با انتخاب کانال (ایمیل یا پیامک).
+ * طبق طراحی امنیتی Backend، همیشه یک پیام موفقیت یکسان نشان می‌دهد (چه
+ * شناسه معتبر باشد چه نه) - برای جلوگیری از افشای این‌که کدام شناسه‌ها
+ * در سامانه ثبت شده‌اند.
+ *
+ * ⚠️ کانال پیامک، برخلاف ایمیل (که یک لینک قابل‌کلیک می‌فرستد)، یک کد
+ * تأیید ۶ رقمی می‌فرستد که کاربر باید دستی وارد کند - پس بعد از درخواست
+ * موفق پیامکی، همین صفحه یک فرم «کد + رمز جدید» نمایش می‌دهد (به‌جای
+ * فقط یک پیام «ایمیل خود را بررسی کنید»).
  */
 export default function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const [channel, setChannel] = useState("email");
   const [identifier, setIdentifier] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [step, setStep] = useState("request"); // "request" | "sms-verify" | "done"
 
-  async function handleSubmit(e) {
+  const [smsCode, setSmsCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  async function handleRequestSubmit(e) {
     e.preventDefault();
     setError("");
     setIsSubmitting(true);
     try {
-      const result = await forgotPasswordRequest(identifier.trim());
+      const result = await forgotPasswordRequest(identifier.trim(), channel);
       setSuccessMessage(result.message);
+      setStep(channel === "sms" ? "sms-verify" : "done");
     } catch (err) {
       setError(err.response?.data?.detail || "ارسال درخواست ناموفق بود.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleSmsVerifySubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("رمز عبور و تکرار آن یکسان نیستند.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await resetPasswordRequest(smsCode.trim(), newPassword);
+      setStep("done");
+      setSuccessMessage("رمز عبور با موفقیت تغییر کرد.");
+    } catch (err) {
+      setError(err.response?.data?.detail || "بازنشانی رمز عبور ناموفق بود.");
     } finally {
       setIsSubmitting(false);
     }
@@ -53,17 +98,27 @@ export default function ForgotPasswordPage() {
               <Typography variant="h5" fontWeight={800}>
                 فراموشی رمز عبور
               </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                کد پرسنلی یا نام‌کاربری خود را وارد کنید — اگر ایمیلی برایتان ثبت شده باشد، لینک بازنشانی
-                رمز عبور برایتان ارسال می‌شود.
-              </Typography>
+              {step === "request" && (
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                  کد پرسنلی یا نام‌کاربری خود را وارد کنید — اگر ایمیل/موبایلی برایتان ثبت شده باشد،
+                  اطلاعات بازنشانی رمز عبور برایتان ارسال می‌شود.
+                </Typography>
+              )}
             </Stack>
 
-            {successMessage ? (
-              <Alert severity="success">{successMessage}</Alert>
-            ) : (
-              <Box component="form" onSubmit={handleSubmit}>
+            {step === "request" && (
+              <Box component="form" onSubmit={handleRequestSubmit}>
                 <Stack spacing={2}>
+                  <ToggleButtonGroup
+                    value={channel}
+                    exclusive
+                    onChange={(_, value) => value && setChannel(value)}
+                    fullWidth
+                    size="small"
+                  >
+                    <ToggleButton value="email">ایمیل</ToggleButton>
+                    <ToggleButton value="sms">پیامک</ToggleButton>
+                  </ToggleButtonGroup>
                   <TextField
                     label="کد پرسنلی / نام کاربری"
                     value={identifier}
@@ -80,10 +135,69 @@ export default function ForgotPasswordPage() {
                     disabled={isSubmitting || !identifier.trim()}
                     sx={{ borderRadius: 999, height: 48 }}
                   >
-                    {isSubmitting ? "در حال ارسال..." : "ارسال لینک بازنشانی"}
+                    {isSubmitting ? "در حال ارسال..." : channel === "sms" ? "ارسال کد تأیید" : "ارسال لینک بازنشانی"}
                   </Button>
                 </Stack>
               </Box>
+            )}
+
+            {step === "sms-verify" && (
+              <Box component="form" onSubmit={handleSmsVerifySubmit}>
+                <Stack spacing={2}>
+                  {successMessage && <Alert severity="success">{successMessage}</Alert>}
+                  <TextField
+                    label="کد تأیید پیامک‌شده"
+                    value={smsCode}
+                    onChange={(e) => setSmsCode(e.target.value)}
+                    required
+                    autoFocus
+                    fullWidth
+                    inputProps={{ inputMode: "numeric" }}
+                  />
+                  <TextField
+                    label="رمز عبور جدید"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    fullWidth
+                    inputProps={{ minLength: 6 }}
+                  />
+                  <TextField
+                    label="تکرار رمز عبور جدید"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    fullWidth
+                    inputProps={{ minLength: 6 }}
+                  />
+                  {error && <Alert severity="error">{error}</Alert>}
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="large"
+                    disabled={isSubmitting || !smsCode.trim() || !newPassword || !confirmPassword}
+                    sx={{ borderRadius: 999, height: 48 }}
+                  >
+                    {isSubmitting ? "در حال ثبت..." : "تغییر رمز عبور"}
+                  </Button>
+                </Stack>
+              </Box>
+            )}
+
+            {step === "done" && (
+              <Stack spacing={2}>
+                <Alert severity="success">{successMessage}</Alert>
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={() => navigate("/login")}
+                  sx={{ borderRadius: 999, height: 48 }}
+                >
+                  ورود به پرتال
+                </Button>
+              </Stack>
             )}
 
             <Typography variant="body2" textAlign="center">

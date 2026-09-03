@@ -1,11 +1,11 @@
 """
 سرویس «فراموشی رمز عبور» - تولید/اعتبارسنجی/مصرف توکن یک‌بارمصرف، و
-ارسال ایمیل حاوی لینک بازنشانی.
+ارسال از طریق ایمیل (لینک) یا پیامک (کد ۶ رقمی).
 
 امنیتی: خروجی request_reset همیشه یکسان است، چه شناسه واردشده معتبر
-باشد چه نه، چه ایمیلی برای آن ثبت شده باشد چه نه، و چه یک درخواست قبلی
-هنوز منقضی نشده باشد چه نه - تا این Endpoint نتواند برای حدس‌زدن «آیا
-این نام‌کاربری/کدپرسنلی وجود دارد» استفاده شود (User Enumeration) -
+باشد چه نه، چه ایمیل/موبایلی برای آن ثبت شده باشد چه نه، و چه یک درخواست
+قبلی هنوز منقضی نشده باشد چه نه - تا این Endpoint نتواند برای حدس‌زدن
+«آیا این نام‌کاربری/کدپرسنلی وجود دارد» استفاده شود (User Enumeration) -
 نگاه کنید به Endpoint در app/api/v1/endpoints/auth.py.
 """
 from __future__ import annotations
@@ -18,9 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import WeakPasswordError, hash_password, validate_password_strength
 from app.models.employee import Employee
-from app.models.password_reset_token import PasswordResetToken
+from app.models.password_reset_token import PasswordResetChannel, PasswordResetToken
 from app.models.user import User
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
+from app.services.sms_service import SmsError, SmsNotConfiguredError, send_sms_code
 
 RESET_TOKEN_TTL_MINUTES = 20
 
@@ -53,45 +54,88 @@ async def _get_user_email(db: AsyncSession, user: User) -> str | None:
     return user.email
 
 
-async def request_reset(db: AsyncSession, identifier: str, reset_link_base: str) -> None:
+async def _get_user_mobile(db: AsyncSession, user: User) -> str | None:
+    """موبایل فقط روی Employee است - User مدل فیلد موبایل ندارد."""
+    if user.employee_id is None:
+        return None
+    employee = await db.get(Employee, user.employee_id)
+    return employee.mobile if employee else None
+
+
+async def _has_pending_token(db: AsyncSession, user_id: int, now: datetime) -> bool:
+    result = await db.execute(
+        select(PasswordResetToken.id).where(
+            PasswordResetToken.user_id == user_id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+    )
+    return result.first() is not None
+
+
+async def request_reset(
+    db: AsyncSession, identifier: str, channel: str, reset_link_base: str
+) -> None:
     """
-    reset_link_base مثلاً "https://portal.example.com/reset-password" -
-    توکن به‌عنوان querystring اضافه می‌شود. عمداً هیچ استثنایی برای
-    «شناسه یافت نشد»، «ایمیلی ثبت نشده»، یا «یک درخواست قبلی هنوز منقضی
-    نشده» پرتاب/افشا نمی‌شود - خروجی این تابع همیشه بی‌صدا کامل می‌شود،
-    تا Endpoint همیشه یک پیام یکسان نشان دهد (جز وقتی خودِ سرویس ایمیل
-    قطع/تنظیم‌نشده باشد که آن خطا بالا می‌رود - چون آن یک مشکل پیکربندی
-    سیستم است، نه اطلاعاتی درباره یک کاربر خاص).
+    channel: "email" یا "sms". reset_link_base فقط برای channel="email"
+    استفاده می‌شود (مثلاً "https://portal.example.com/reset-password").
+
+    عمداً هیچ استثنایی برای «شناسه یافت نشد»، «ایمیل/موبایلی ثبت نشده»،
+    یا «یک درخواست قبلی هنوز منقضی نشده» پرتاب/افشا نمی‌شود - خروجی این
+    تابع همیشه بی‌صدا کامل می‌شود، تا Endpoint همیشه یک پیام یکسان نشان
+    دهد (جز وقتی خودِ سرویس ایمیل/پیامک قطع/تنظیم‌نشده باشد که آن خطا بالا
+    می‌رود - چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی درباره یک
+    کاربر خاص).
     """
     user = await _find_user_by_identifier(db, identifier)
     if user is None:
         return
 
+    now = datetime.now(timezone.utc)
+
+    if channel == "sms":
+        mobile = await _get_user_mobile(db, user)
+        if not mobile:
+            return
+        if await _has_pending_token(db, user.id, now):
+            return
+
+        # ⚠️ عمداً بدون صفر ابتدایی (بازه ۱۰۰۰۰۰ تا ۹۹۹۹۹۹، نه ۰۰۰۰۰۰ تا
+        # ۹۹۹۹۹۹) - چون در قالب‌های Pattern سرویس پیامک، پارامتر کد معمولاً
+        # از نوع عددی (Integer) تعریف می‌شود؛ یک رشته با صفر ابتدایی (مثل
+        # "003456") در تبدیل به عدد صفرهای ابتدایی‌اش را از دست می‌داد و
+        # کد واقعی به کاربر نادرست نمایش داده می‌شد.
+        code = str(secrets.randbelow(900_000) + 100_000)
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token=code,
+            channel=PasswordResetChannel.sms,
+            created_at=now,
+            expires_at=now + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
+        )
+        db.add(reset_token)
+        await db.commit()
+
+        try:
+            await send_sms_code(db, to_mobile=mobile, code=code)
+        except (SmsNotConfiguredError, SmsError):
+            await db.delete(reset_token)
+            await db.commit()
+            raise
+        return
+
+    # channel == "email"
     email = await _get_user_email(db, user)
     if not email:
         return
-
-    # ⚠️ محدودیت نرخ: تا وقتی یک توکن معتبر (نه منقضی، نه مصرف‌شده) برای
-    # همین کاربر وجود دارد، ایمیل جدیدی فرستاده نمی‌شود - چه برای جلوگیری
-    # از اسپم‌کردن صندوق ورودی کاربر، چه برای جلوگیری از سوءاستفاده
-    # (درخواست مکرر). این وضعیت کاملاً بی‌صدا است - Endpoint همیشه همان
-    # پیام یکسان را نشان می‌دهد (حتی این حالت هم نباید افشا شود، وگرنه
-    # می‌شد فهمید شناسه واردشده معتبر است یا نه).
-    now = datetime.now(timezone.utc)
-    result = await db.execute(
-        select(PasswordResetToken.id).where(
-            PasswordResetToken.user_id == user.id,
-            PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > now,
-        )
-    )
-    if result.first() is not None:
+    if await _has_pending_token(db, user.id, now):
         return
 
     token = secrets.token_urlsafe(32)
     reset_token = PasswordResetToken(
         user_id=user.id,
         token=token,
+        channel=PasswordResetChannel.email,
         created_at=now,
         expires_at=now + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
     )
@@ -132,11 +176,11 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == token))
     reset_token = result.scalar_one_or_none()
     if reset_token is None:
-        raise PasswordResetError("لینک بازنشانی نامعتبر است")
+        raise PasswordResetError("کد/لینک بازنشانی نامعتبر است")
     if reset_token.used_at is not None:
-        raise PasswordResetError("این لینک قبلاً استفاده شده است")
+        raise PasswordResetError("این کد/لینک قبلاً استفاده شده است")
     if reset_token.expires_at < datetime.now(timezone.utc):
-        raise PasswordResetError("این لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
+        raise PasswordResetError("این کد/لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
 
     try:
         validate_password_strength(new_password)

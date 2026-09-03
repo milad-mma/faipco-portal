@@ -17,8 +17,8 @@ export async function changePasswordRequest(currentPassword, newPassword) {
   });
 }
 
-export async function forgotPasswordRequest(identifier) {
-  const { data } = await apiClient.post("/auth/forgot-password", { identifier });
+export async function forgotPasswordRequest(identifier, channel = "email") {
+  const { data } = await apiClient.post("/auth/forgot-password", { identifier, channel });
   return data;
 }
 

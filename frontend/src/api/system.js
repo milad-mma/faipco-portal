@@ -131,3 +131,22 @@ export async function testSmtpSettings(toAddress) {
   );
   return data;
 }
+
+export async function fetchSmsSettings() {
+  const { data } = await apiClient.get("/system/sms-settings");
+  return data;
+}
+
+export async function updateSmsSettings(payload) {
+  const { data } = await apiClient.put("/system/sms-settings", payload);
+  return data;
+}
+
+export async function testSmsSettings(toMobile) {
+  const { data } = await apiClient.post(
+    "/system/sms-settings/test",
+    { to_mobile: toMobile },
+    { timeout: 30000 }
+  );
+  return data;
+}
