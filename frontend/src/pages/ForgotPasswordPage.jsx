@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -17,17 +17,23 @@ import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import { forgotPasswordRequest, resetPasswordRequest } from "../api/auth";
 import { modernLightTheme } from "../theme";
 
+function formatCountdown(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 /**
  * درخواست بازنشانی رمز عبور - همان شناسه‌ای که برای ورود استفاده می‌شود
  * (نام‌کاربری یا کد پرسنلی) را می‌گیرد، با انتخاب کانال (ایمیل یا پیامک).
- * طبق طراحی امنیتی Backend، همیشه یک پیام موفقیت یکسان نشان می‌دهد (چه
- * شناسه معتبر باشد چه نه) - برای جلوگیری از افشای این‌که کدام شناسه‌ها
- * در سامانه ثبت شده‌اند.
  *
- * ⚠️ کانال پیامک، برخلاف ایمیل (که یک لینک قابل‌کلیک می‌فرستد)، یک کد
+ * کانال پیامک، برخلاف ایمیل (که یک لینک قابل‌کلیک می‌فرستد)، یک کد
  * تأیید ۶ رقمی می‌فرستد که کاربر باید دستی وارد کند - پس بعد از درخواست
- * موفق پیامکی، همین صفحه یک فرم «کد + رمز جدید» نمایش می‌دهد (به‌جای
- * فقط یک پیام «ایمیل خود را بررسی کنید»).
+ * موفق پیامکی، همین صفحه یک فرم «کد + رمز جدید» نمایش می‌دهد.
+ *
+ * آدرس/شماره ناقص (masked_contact) و شمارش‌معکوس (expires_in_seconds)
+ * از پاسخ Backend می‌آیند - نه اینجا محاسبه می‌شوند - چون منبع درستی
+ * («آیا واقعاً پیامی ارسال شد یا نه») فقط سمت سرور مشخص است.
  */
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -37,10 +43,26 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [step, setStep] = useState("request"); // "request" | "sms-verify" | "done"
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
 
   const [smsCode, setSmsCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  useEffect(() => {
+    if (remainingSeconds === null || remainingSeconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingSeconds !== null]);
 
   async function handleRequestSubmit(e) {
     e.preventDefault();
@@ -49,6 +71,7 @@ export default function ForgotPasswordPage() {
     try {
       const result = await forgotPasswordRequest(identifier.trim(), channel);
       setSuccessMessage(result.message);
+      setRemainingSeconds(result.expires_in_seconds ?? null);
       setStep(channel === "sms" ? "sms-verify" : "done");
     } catch (err) {
       setError(err.response?.data?.detail || "ارسال درخواست ناموفق بود.");
@@ -68,12 +91,20 @@ export default function ForgotPasswordPage() {
     try {
       await resetPasswordRequest(smsCode.trim(), newPassword);
       setStep("done");
+      setRemainingSeconds(null);
       setSuccessMessage("رمز عبور با موفقیت تغییر کرد.");
     } catch (err) {
       setError(err.response?.data?.detail || "بازنشانی رمز عبور ناموفق بود.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function handleRequestAgain() {
+    setStep("request");
+    setRemainingSeconds(null);
+    setSmsCode("");
+    setError("");
   }
 
   return (
@@ -145,6 +176,17 @@ export default function ForgotPasswordPage() {
               <Box component="form" onSubmit={handleSmsVerifySubmit}>
                 <Stack spacing={2}>
                   {successMessage && <Alert severity="success">{successMessage}</Alert>}
+                  {remainingSeconds !== null && (
+                    <Typography
+                      variant="body2"
+                      color={remainingSeconds > 0 ? "text.secondary" : "error"}
+                      textAlign="center"
+                    >
+                      {remainingSeconds > 0
+                        ? `کد تا ${formatCountdown(remainingSeconds)} دیگر معتبر است`
+                        : "کد منقضی شد — برای دریافت کد جدید دوباره درخواست دهید"}
+                    </Typography>
+                  )}
                   <TextField
                     label="کد تأیید پیامک‌شده"
                     value={smsCode}
@@ -152,6 +194,7 @@ export default function ForgotPasswordPage() {
                     required
                     autoFocus
                     fullWidth
+                    disabled={remainingSeconds === 0}
                     inputProps={{ inputMode: "numeric" }}
                   />
                   <TextField
@@ -161,6 +204,7 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                     fullWidth
+                    disabled={remainingSeconds === 0}
                     inputProps={{ minLength: 6 }}
                   />
                   <TextField
@@ -170,18 +214,30 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     fullWidth
+                    disabled={remainingSeconds === 0}
                     inputProps={{ minLength: 6 }}
                   />
                   {error && <Alert severity="error">{error}</Alert>}
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    size="large"
-                    disabled={isSubmitting || !smsCode.trim() || !newPassword || !confirmPassword}
-                    sx={{ borderRadius: 999, height: 48 }}
-                  >
-                    {isSubmitting ? "در حال ثبت..." : "تغییر رمز عبور"}
-                  </Button>
+                  {remainingSeconds === 0 ? (
+                    <Button
+                      variant="contained"
+                      size="large"
+                      onClick={handleRequestAgain}
+                      sx={{ borderRadius: 999, height: 48 }}
+                    >
+                      درخواست کد جدید
+                    </Button>
+                  ) : (
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      size="large"
+                      disabled={isSubmitting || !smsCode.trim() || !newPassword || !confirmPassword}
+                      sx={{ borderRadius: 999, height: 48 }}
+                    >
+                      {isSubmitting ? "در حال ثبت..." : "تغییر رمز عبور"}
+                    </Button>
+                  )}
                 </Stack>
               </Box>
             )}
@@ -189,6 +245,11 @@ export default function ForgotPasswordPage() {
             {step === "done" && (
               <Stack spacing={2}>
                 <Alert severity="success">{successMessage}</Alert>
+                {remainingSeconds !== null && remainingSeconds > 0 && (
+                  <Typography variant="body2" color="text.secondary" textAlign="center">
+                    این لینک تا {formatCountdown(remainingSeconds)} دیگر معتبر است
+                  </Typography>
+                )}
                 <Button
                   variant="contained"
                   size="large"

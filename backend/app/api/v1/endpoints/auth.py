@@ -108,23 +108,33 @@ async def forgot_password(
     payload: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """
-    ⚠️ امنیتی: همیشه یک پیام یکسان برمی‌گرداند - چه شناسه واردشده وجود
-    داشته باشد چه نه، چه ایمیل/موبایلی برایش ثبت شده باشد چه نه، و چه یک
-    درخواست قبلی هنوز منقضی نشده باشد چه نه - تا این Endpoint نتواند
-    برای حدس‌زدن نام‌کاربری/کدپرسنلی معتبر استفاده شود. فقط اگر خودِ
-    سرویس ایمیل/پیامک قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده می‌شود
-    (چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی درباره این کاربر).
+    ⚠️ امنیتی: طبق درخواست صریح، همیشه یک نسخه ناقص از مخاطب
+    (masked_contact) و زمان انقضا (expires_in_seconds) برگردانده
+    می‌شود - چه شناسه معتبر باشد چه نه (برای شناسه نامعتبر، یک ماسک
+    قلابی ولی باورپذیر تولید می‌شود) - نگاه کنید به توضیح کامل در
+    docstring بالای app/services/password_reset_service.py. فقط اگر
+    خودِ سرویس ایمیل/پیامک قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده
+    می‌شود.
     """
     settings = get_settings()
     reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
     try:
-        await request_reset(db, payload.identifier, payload.channel, reset_link_base)
+        result = await request_reset(db, payload.identifier, payload.channel, reset_link_base)
     except (EmailNotConfiguredError, EmailError, SmsNotConfiguredError, SmsError) as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
 
     if payload.channel == "sms":
-        return {"message": "کد تأیید بازنشانی رمز عبور به شماره موبایل شما پیامک شد."}
-    return {"message": "لینک بازنشانی رمز عبور ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."}
+        message = f"کد تأیید بازنشانی رمز عبور به شماره {result.masked_contact} پیامک شد."
+    else:
+        message = (
+            f"لینک بازنشانی رمز عبور به آدرس {result.masked_contact} ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."
+        )
+
+    return {
+        "message": message,
+        "masked_contact": result.masked_contact,
+        "expires_in_seconds": result.expires_in_seconds,
+    }
 
 
 @router.post("/reset-password")
