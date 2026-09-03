@@ -94,9 +94,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
         await request_reset(db, payload.identifier, reset_link_base)
     except (EmailNotConfiguredError, EmailError) as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    return {
-        "message": "اگر این شناسه در سامانه ثبت شده و ایمیلی برایش موجود باشد، لینک بازنشانی رمز عبور ارسال شد."
-    }
+    return {"message": "لینک بازنشانی رمز عبور ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."}
 
 
 @router.post("/reset-password")

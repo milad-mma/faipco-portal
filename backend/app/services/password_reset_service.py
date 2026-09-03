@@ -21,7 +21,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
 
-RESET_TOKEN_TTL_MINUTES = 30
+RESET_TOKEN_TTL_MINUTES = 20
 
 
 class PasswordResetError(Exception):
@@ -68,8 +68,23 @@ async def request_reset(db: AsyncSession, identifier: str, reset_link_base: str)
     if not email:
         return
 
-    token = secrets.token_urlsafe(32)
+    # ⚠️ محدودیت نرخ: تا وقتی یک توکن معتبر (نه منقضی، نه مصرف‌شده) برای
+    # همین کاربر وجود دارد، ایمیل جدیدی فرستاده نمی‌شود - چه برای جلوگیری
+    # از اسپم‌کردن صندوق ورودی کاربر، چه برای جلوگیری از سوءاستفاده
+    # (درخواست مکرر). طبق همان الگوی امنیتی این تابع، این هم کاملاً بی‌صدا
+    # است - Endpoint همیشه همان پیام یکسان را نشان می‌دهد.
     now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(PasswordResetToken.id).where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+    )
+    if result.first() is not None:
+        return
+
+    token = secrets.token_urlsafe(32)
     reset_token = PasswordResetToken(
         user_id=user.id,
         token=token,

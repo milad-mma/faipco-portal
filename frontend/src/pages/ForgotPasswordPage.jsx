@@ -15,15 +15,15 @@ export default function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setIsSubmitting(true);
     try {
-      await forgotPasswordRequest(identifier.trim());
-      setSuccess(true);
+      const result = await forgotPasswordRequest(identifier.trim());
+      setSuccessMessage(result.message);
     } catch (err) {
       setError(err.response?.data?.detail || "ارسال درخواست ناموفق بود.");
     } finally {
@@ -59,11 +59,8 @@ export default function ForgotPasswordPage() {
               </Typography>
             </Stack>
 
-            {success ? (
-              <Alert severity="success">
-                اگر این شناسه در سامانه ثبت شده و ایمیلی برایش موجود باشد، لینک بازنشانی رمز عبور ارسال
-                شد. لطفاً صندوق ایمیل خود را بررسی کنید.
-              </Alert>
+            {successMessage ? (
+              <Alert severity="success">{successMessage}</Alert>
             ) : (
               <Box component="form" onSubmit={handleSubmit}>
                 <Stack spacing={2}>
