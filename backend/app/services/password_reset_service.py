@@ -19,7 +19,7 @@ from app.core.security import WeakPasswordError, hash_password, validate_passwor
 from app.models.employee import Employee
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
-from app.services.email_service import EmailError, EmailNotConfiguredError, send_email
+from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
 
 RESET_TOKEN_TTL_MINUTES = 30
 
@@ -80,14 +80,29 @@ async def request_reset(db: AsyncSession, identifier: str, reset_link_base: str)
     await db.commit()
 
     reset_link = f"{reset_link_base}?token={token}"
-    body = (
-        f"برای بازنشانی رمز عبور خود روی لینک زیر کلیک کنید "
+
+    smtp_settings = await get_smtp_settings(db)
+    subject = smtp_settings.password_reset_email_subject or "بازنشانی رمز عبور - پرتال سازمانی"
+    body_template = smtp_settings.password_reset_email_body or (
+        "برای بازنشانی رمز عبور خود روی لینک زیر کلیک کنید "
         f"(تا {RESET_TOKEN_TTL_MINUTES} دقیقه معتبر است):\n\n"
-        f"{reset_link}\n\n"
+        "{reset_link}\n\n"
         "اگر شما این درخواست را نداده‌اید، این ایمیل را نادیده بگیرید."
     )
+    # ⚠️ اگر قالب سفارشی Admin عمداً/سهواً جای‌گذار {reset_link} را نداشته
+    # باشد، خودِ لینک هم به انتهای پیام اضافه می‌شود - وگرنه ایمیل بدون
+    # هیچ لینک قابل‌کلیکی می‌رفت و کاربر هیچ راهی برای بازنشانی نداشت.
+    if "{reset_link}" in body_template:
+        # ⚠️ عمداً replace ساده به‌جای .format() - اگر Admin در قالب سفارشی
+        # به‌اشتباه یک آکولاد دیگر هم بگذارد (مثلاً "{نام}")، format()
+        # با KeyError کل ارسال ایمیل را می‌شکست؛ replace با هر متن دیگری
+        # کاملاً بی‌خطر کار می‌کند.
+        body = body_template.replace("{reset_link}", reset_link)
+    else:
+        body = f"{body_template}\n\n{reset_link}"
+
     try:
-        await send_email(db, to_address=email, subject="بازنشانی رمز عبور - پرتال سازمانی", body_text=body)
+        await send_email(db, to_address=email, subject=subject, body_text=body)
     except (EmailNotConfiguredError, EmailError):
         await db.delete(reset_token)
         await db.commit()

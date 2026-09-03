@@ -19,6 +19,12 @@ class SmtpSettingsIn(BaseModel):
     from_address: EmailStr | None = None
     from_name: str | None = None
     encryption_mode: SmtpEncryptionMode = SmtpEncryptionMode.starttls
+    password_reset_email_subject: str | None = Field(default=None, max_length=255)
+    password_reset_email_body: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="می‌تواند شامل {reset_link} باشد که با لینک واقعی جایگزین می‌شود",
+    )
 
     @model_validator(mode="after")
     def _validate_required_when_enabled(self) -> "SmtpSettingsIn":
@@ -36,6 +42,8 @@ class SmtpSettingsOut(BaseModel):
     from_address: str | None
     from_name: str | None
     encryption_mode: SmtpEncryptionMode
+    password_reset_email_subject: str | None
+    password_reset_email_body: str | None
 
 
 class SmtpTestEmailIn(BaseModel):

@@ -145,6 +145,8 @@ def _to_settings_out(settings) -> BackupSettingsOut:
         retention_mode=settings.retention_mode,
         retention_count=settings.retention_count,
         retention_days=settings.retention_days,
+        email_enabled=settings.email_enabled,
+        email_recipients=settings.email_recipients,
         last_run_at=settings.last_run_at,
         last_run_success=settings.last_run_success,
         last_run_message=settings.last_run_message,

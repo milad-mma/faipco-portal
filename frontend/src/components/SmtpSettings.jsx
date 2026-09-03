@@ -167,6 +167,36 @@ export default function SmtpSettings() {
               sx={{ minWidth: 200 }}
             />
           </Stack>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mt: 1 }}>
+            متن ایمیل «فراموشی رمز عبور»
+          </Typography>
+          <TextField
+            size="small"
+            label="عنوان ایمیل (اختیاری)"
+            value={form.password_reset_email_subject || ""}
+            onChange={(e) => updateForm({ password_reset_email_subject: e.target.value })}
+            placeholder="بازنشانی رمز عبور - پرتال سازمانی"
+            sx={{ maxWidth: 400 }}
+          />
+          <TextField
+            size="small"
+            multiline
+            minRows={4}
+            label="متن ایمیل (اختیاری)"
+            value={form.password_reset_email_body || ""}
+            onChange={(e) => updateForm({ password_reset_email_body: e.target.value })}
+            placeholder={"همکار گرامی،\nبرای بازنشانی رمز عبور خود روی لینک زیر کلیک کنید:\n{reset_link}"}
+            sx={{ maxWidth: 500 }}
+          />
+          <Typography variant="caption" color="text.secondary">
+            اگر خالی بگذارید، یک متن پیش‌فرض استفاده می‌شود. عبارت{" "}
+            <Box component="span" sx={{ fontFamily: "monospace" }}>
+              {"{reset_link}"}
+            </Box>{" "}
+            در متن، با لینک واقعی بازنشانی جایگزین می‌شود — اگر آن را در متن خودتان قرار ندهید، لینک
+            خودکار به انتهای پیام اضافه خواهد شد.
+          </Typography>
         </Stack>
       )}
 

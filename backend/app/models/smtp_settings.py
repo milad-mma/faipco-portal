@@ -37,3 +37,9 @@ class SmtpSettings(Base):
     encryption_mode: Mapped[SmtpEncryptionMode] = mapped_column(
         Enum(SmtpEncryptionMode, name="smtp_encryption_mode"), default=SmtpEncryptionMode.starttls, nullable=False
     )
+
+    # قالب‌های قابل‌شخصی‌سازی ایمیل «فراموشی رمز عبور» - {reset_link} در متن
+    # با لینک واقعی (حاوی توکن) جایگزین می‌شود؛ اگر خالی باشند، یک قالب
+    # پیش‌فرض معقول در password_reset_service.py استفاده می‌شود.
+    password_reset_email_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_reset_email_body: Mapped[str | None] = mapped_column(String(4000), nullable=True)

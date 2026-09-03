@@ -513,6 +513,8 @@ async def get_smtp_settings_endpoint(
         from_address=settings.from_address,
         from_name=settings.from_name,
         encryption_mode=settings.encryption_mode,
+        password_reset_email_subject=settings.password_reset_email_subject,
+        password_reset_email_body=settings.password_reset_email_body,
     )
 
 
@@ -533,6 +535,8 @@ async def update_smtp_settings(
     settings.from_address = payload.from_address
     settings.from_name = payload.from_name
     settings.encryption_mode = payload.encryption_mode
+    settings.password_reset_email_subject = payload.password_reset_email_subject
+    settings.password_reset_email_body = payload.password_reset_email_body
     await db.commit()
     await db.refresh(settings)
     return SmtpSettingsOut(
@@ -544,6 +548,8 @@ async def update_smtp_settings(
         from_address=settings.from_address,
         from_name=settings.from_name,
         encryption_mode=settings.encryption_mode,
+        password_reset_email_subject=settings.password_reset_email_subject,
+        password_reset_email_body=settings.password_reset_email_body,
     )
 
 
