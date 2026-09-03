@@ -284,6 +284,11 @@ class AuthService:
         base.department_id = employee.department_id
         base.department_name = department_name
         base.position_title = employee.position_title
+        # اولویت با ایمیل خودِ Employee (همان الگوی password_reset_service.py) -
+        # چون User.email معمولاً هرگز مستقیماً ست نمی‌شود، مگر برای کاربری
+        # که اصلاً به هیچ Employee ای متصل نیست.
+        base.email = employee.email or user.email
+        base.mobile = employee.mobile
         base.has_photo = bool(employee.photo_thumbnail)
         base.hide_birthday_in_dashboard = employee.hide_birthday_in_dashboard
         # ⚠️ این یک Permission نیست (طبق درخواست صریح — دسترسی خودکار برای

@@ -6,6 +6,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     email: str | None
+    mobile: str | None = None
     is_active: bool
     is_superuser: bool
     has_custom_password: bool

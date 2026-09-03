@@ -1,0 +1,104 @@
+import { useEffect, useState } from "react";
+import {
+  Alert,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { updateMyContactInfo } from "../api/auth";
+import { useAuth } from "../context/AuthContext";
+
+/**
+ * ویرایش ایمیل/موبایل شخصی از پنل کاربری. اگر برای سایت خودِ کاربر،
+ * ستون ایمیل/موبایل در نگاشت ستون‌ها (تنظیمات سایت) مشخص شده باشد، مقدار
+ * جدید در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌شود (Write-back)، نه
+ * فقط دیتابیس داخلی پرتال - پیام موفقیت این را به کاربر اطلاع می‌دهد.
+ */
+export default function EditContactInfoDialog({ open, onClose }) {
+  const { user, refetchUser } = useAuth();
+  const [email, setEmail] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setEmail(user?.email || "");
+      setMobile(user?.mobile || "");
+      setError("");
+      setSuccessMessage("");
+    }
+  }, [open, user]);
+
+  function handleClose() {
+    if (isSubmitting) return;
+    onClose();
+  }
+
+  async function handleSubmit() {
+    setError("");
+    setSuccessMessage("");
+    setIsSubmitting(true);
+    try {
+      const result = await updateMyContactInfo({ email: email.trim(), mobile: mobile.trim() });
+      const notes = [];
+      if (result.email_synced_to_source === true) notes.push("ایمیل در دیتابیس اصلی سایت هم به‌روزرسانی شد.");
+      if (result.mobile_synced_to_source === true) notes.push("موبایل در دیتابیس اصلی سایت هم به‌روزرسانی شد.");
+      setSuccessMessage(["اطلاعات تماس با موفقیت ذخیره شد.", ...notes].join(" "));
+      await refetchUser();
+    } catch (err) {
+      setError(err.response?.data?.detail || "ذخیره اطلاعات ناموفق بود.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs">
+      <DialogTitle>ویرایش ایمیل و موبایل</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            این اطلاعات برای «فراموشی رمز عبور» استفاده می‌شود.
+          </Typography>
+          <TextField
+            label="ایمیل"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            fullWidth
+            disabled={isSubmitting}
+          />
+          <TextField
+            label="موبایل"
+            value={mobile}
+            onChange={(e) => setMobile(e.target.value)}
+            placeholder="09123456789"
+            fullWidth
+            disabled={isSubmitting}
+          />
+          {error && <Alert severity="error">{error}</Alert>}
+          {successMessage && <Alert severity="success">{successMessage}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose} disabled={isSubmitting}>
+          بستن
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={isSubmitting || (!email.trim() && !mobile.trim())}
+        >
+          {isSubmitting ? "در حال ذخیره..." : "ذخیره"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

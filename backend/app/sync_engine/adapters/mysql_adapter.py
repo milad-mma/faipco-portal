@@ -43,3 +43,20 @@ class MySQLAdapter(BaseSiteAdapter):
                 return list(cur.fetchall())
         finally:
             conn.close()
+
+    async def update_field(
+        self, table_name: str, id_column: str, id_value: str, field_column: str, field_value: str
+    ) -> None:
+        await asyncio.to_thread(self._update_field_sync, table_name, id_column, id_value, field_column, field_value)
+
+    def _update_field_sync(
+        self, table_name: str, id_column: str, id_value: str, field_column: str, field_value: str
+    ) -> None:
+        conn = self._connect()
+        try:
+            query = f"UPDATE `{table_name}` SET `{field_column}` = %s WHERE `{id_column}` = %s"  # noqa: S608
+            with conn.cursor() as cur:
+                cur.execute(query, (field_value, id_value))
+            conn.commit()
+        finally:
+            conn.close()

@@ -22,6 +22,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
@@ -50,6 +51,7 @@ import { enablePushNotifications, getNotificationPermission, isPushSupported } f
 import { fetchAppVersion } from "../api/system";
 import { updateMyBirthdayVisibility } from "../api/employees";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
+import EditContactInfoDialog from "../components/EditContactInfoDialog";
 
 // دسترسی‌های اضافه‌ای که بعضی نقش‌های غیر-Admin دارند (site_manager،
 // hr-manager، attendance-pilot و...) — قبلاً این‌ها یک آیتم منوی مستقل در
@@ -105,6 +107,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [contactInfoDialogOpen, setContactInfoDialogOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
   const [snackbar, setSnackbar] = useState("");
@@ -316,6 +319,12 @@ export default function ProfilePage() {
               />
             </ListItemButton>
           )}
+          <ListItemButton onClick={() => setContactInfoDialogOpen(true)}>
+            <ListItemIcon>
+              <EmailOutlinedIcon />
+            </ListItemIcon>
+            <ListItemText primary="ویرایش ایمیل و موبایل" />
+          </ListItemButton>
           <ListItemButton onClick={() => setPasswordDialogOpen(true)}>
             <ListItemIcon>
               <LockResetOutlinedIcon />
@@ -332,6 +341,7 @@ export default function ProfilePage() {
       </Card>
 
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
+      <EditContactInfoDialog open={contactInfoDialogOpen} onClose={() => setContactInfoDialogOpen(false)} />
 
       <Dialog open={logoutConfirmOpen} onClose={() => setLogoutConfirmOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>خروج از حساب کاربری</DialogTitle>

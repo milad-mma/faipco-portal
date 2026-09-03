@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    ContactInfoUpdateRequest,
     ForgotPasswordRequest,
     LoginRequest,
     RefreshRequest,
@@ -18,6 +19,7 @@ from app.schemas.auth import (
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 from app.services.email_service import EmailError, EmailNotConfiguredError
+from app.services.employee_contact_service import ContactInfoUpdateError, update_my_contact_info
 from app.services.password_reset_service import PasswordResetError, request_reset, reset_password
 
 router = APIRouter()
@@ -77,6 +79,26 @@ async def change_password(
         await service.change_password(current_user, payload.current_password, payload.new_password)
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/me/contact-info")
+async def update_my_contact_info_endpoint(
+    payload: ContactInfoUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    اگر برای سایت این پرسنل، ستون ایمیل/موبایل در نگاشت ستون‌ها تنظیم شده
+    باشد، مقدار جدید در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌شود
+    (Write-back)؛ وگرنه فقط در دیتابیس داخلی پرتال ذخیره می‌شود.
+    """
+    if payload.email is None and payload.mobile is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حداقل یکی از ایمیل یا موبایل باید وارد شود")
+    try:
+        result = await update_my_contact_info(db, current_user, email=payload.email, mobile=payload.mobile)
+    except ContactInfoUpdateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return result
 
 
 @router.post("/forgot-password")

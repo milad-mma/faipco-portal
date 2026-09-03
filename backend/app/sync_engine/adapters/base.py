@@ -29,3 +29,13 @@ class BaseSiteAdapter(ABC):
         خواندن تمام ردیف‌های جدول مشخص‌شده، فقط با ستون‌های داده‌شده.
         خروجی: لیستی از dict که کلیدهای آن دقیقاً همان نام ستون‌های خام دیتابیس مبدأ است.
         """
+
+    @abstractmethod
+    async def update_field(
+        self, table_name: str, id_column: str, id_value: str, field_column: str, field_value: str
+    ) -> None:
+        """
+        به‌روزرسانی یک ستون برای دقیقاً یک ردیف (شناسایی‌شده با id_column=id_value)
+        - برای «ویرایش ایمیل/موبایل خودم» توسط خودِ پرسنل (Write-back به دیتابیس
+        اصلی همان Site، نه فقط دیتابیس داخلی پرتال).
+        """

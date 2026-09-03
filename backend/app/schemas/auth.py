@@ -1,5 +1,5 @@
 """Schema های Pydantic برای Login/Refresh/Token."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -23,6 +23,16 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+
+class ContactInfoUpdateRequest(BaseModel):
+    """
+    هر دو فیلد اختیاری‌اند (کاربر می‌تواند فقط یکی را تغییر دهد) - ولی
+    باید حداقل یکی از آن‌ها مقدار داشته باشد (اعتبارسنجی نهایی در Backend).
+    """
+
+    email: EmailStr | None = None
+    mobile: str | None = Field(default=None, min_length=1)
 
 
 class TokenResponse(BaseModel):
