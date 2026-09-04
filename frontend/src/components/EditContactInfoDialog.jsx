@@ -8,7 +8,6 @@ import {
   DialogTitle,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import { updateMyContactInfo } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
@@ -67,9 +66,6 @@ export default function EditContactInfoDialog({ open, onClose }) {
       <DialogTitle>مشخصات کاربری</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            این اطلاعات برای «فراموشی رمز عبور» استفاده می‌شود.
-          </Typography>
           <TextField
             label="ایمیل"
             type="email"
@@ -83,6 +79,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
             value={mobile}
             onChange={(e) => setMobile(e.target.value)}
             placeholder="09123456789"
+            required
             fullWidth
             disabled={isSubmitting}
           />
@@ -94,11 +91,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
         <Button onClick={handleClose} disabled={isSubmitting}>
           بستن
         </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={isSubmitting || (!email.trim() && !mobile.trim())}
-        >
+        <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting || !mobile.trim()}>
           {isSubmitting ? "در حال ذخیره..." : "ذخیره"}
         </Button>
       </DialogActions>

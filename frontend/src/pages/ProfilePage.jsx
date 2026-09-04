@@ -22,7 +22,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
-import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
@@ -321,7 +321,7 @@ export default function ProfilePage() {
           )}
           <ListItemButton onClick={() => setContactInfoDialogOpen(true)}>
             <ListItemIcon>
-              <EmailOutlinedIcon />
+              <BadgeOutlinedIcon />
             </ListItemIcon>
             <ListItemText primary="مشخصات کاربری" />
           </ListItemButton>

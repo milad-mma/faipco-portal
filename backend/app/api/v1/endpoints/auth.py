@@ -100,8 +100,6 @@ async def update_my_contact_info_endpoint(
     باشد، مقدار جدید در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌شود
     (Write-back)؛ وگرنه فقط در دیتابیس داخلی پرتال ذخیره می‌شود.
     """
-    if payload.email is None and payload.mobile is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حداقل یکی از ایمیل یا موبایل باید وارد شود")
     try:
         result = await update_my_contact_info(db, current_user, email=payload.email, mobile=payload.mobile)
     except ContactInfoUpdateError as e:

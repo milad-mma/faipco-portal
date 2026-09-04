@@ -32,12 +32,12 @@ class ResetPasswordRequest(BaseModel):
 
 class ContactInfoUpdateRequest(BaseModel):
     """
-    هر دو فیلد اختیاری‌اند (کاربر می‌تواند فقط یکی را تغییر دهد) - ولی
-    باید حداقل یکی از آن‌ها مقدار داشته باشد (اعتبارسنجی نهایی در Backend).
+    موبایل اجباری است (منبع اصلی اطلاع‌رسانی/بازیابی حساب)؛ ایمیل
+    اختیاری باقی می‌ماند.
     """
 
     email: EmailStr | None = None
-    mobile: str | None = Field(default=None, min_length=1)
+    mobile: str = Field(min_length=1)
 
 
 class TokenResponse(BaseModel):
