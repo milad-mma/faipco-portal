@@ -51,7 +51,7 @@ export default function BackupPage() {
       a.remove();
       setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
     } catch (err) {
-      setDownloadError(err.response?.data?.detail || "ساخت بکاپ ناموفق بود.");
+      setDownloadError(err.response?.data?.detail || "ساخت بکاپ با خطا مواجه شد.");
     } finally {
       setIsDownloading(false);
     }
@@ -76,7 +76,7 @@ export default function BackupPage() {
         return;
       }
       if (status.is_failed) {
-        setRestoreResult({ success: false, message: "بازیابی ناموفق بود — جزئیات کامل در لاگ زیر است." });
+        setRestoreResult({ success: false, message: "بازیابی با خطا مواجه شد — جزئیات کامل در لاگ زیر است." });
         setIsRestoring(false);
         return;
       }
@@ -109,7 +109,7 @@ export default function BackupPage() {
       // می‌دیم — نه یه شمارش‌معکوس کور.
       pollRestoreStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
-      setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی ناموفق بود." });
+      setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی با خطا مواجه شد." });
       setIsRestoring(false);
     }
   }
@@ -123,7 +123,7 @@ export default function BackupPage() {
     } catch (err) {
       setCacheBustResult({
         success: false,
-        message: err.response?.data?.detail || "پاک‌کردن کش ناموفق بود.",
+        message: err.response?.data?.detail || "پاک‌کردن کش با خطا مواجه شد.",
       });
     } finally {
       setIsBustingCache(false);
@@ -140,11 +140,6 @@ export default function BackupPage() {
       </Typography>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
-        {downloadError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {downloadError}
-          </Alert>
-        )}
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           چه چیزی داخل بکاپ است؟
         </Typography>
@@ -158,6 +153,11 @@ export default function BackupPage() {
 
         <Divider sx={{ my: 2.5 }} />
 
+        {downloadError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {downloadError}
+          </Alert>
+        )}
         <Button
           variant="contained"
           size="large"
@@ -177,10 +177,9 @@ export default function BackupPage() {
           </Typography>
         </Stack>
 
-        {restoreResult && (
-          <Alert severity={restoreResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-            {restoreResult.message}
-            {restoreResult.success && " — الان صفحه Refresh می‌شود."}
+        {restoreResult?.success && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {restoreResult.message} — اکنون صفحه به‌طور خودکار بازخوانی می‌شود.
           </Alert>
         )}
 
@@ -244,6 +243,11 @@ export default function BackupPage() {
               />
 
               <Box>
+                {restoreResult && !restoreResult.success && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {restoreResult.message}
+                  </Alert>
+                )}
                 <Button
                   variant="contained"
                   color="error"

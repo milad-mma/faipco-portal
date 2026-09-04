@@ -43,7 +43,7 @@ export default function AttendanceClockPage() {
     } catch (err) {
       setResult({
         success: false,
-        message: err.response?.data?.detail || err.message || "ثبت ناموفق بود.",
+        message: err.response?.data?.detail || err.message || "ثبت با خطا مواجه شد.",
       });
     } finally {
       setIsWorking(false);
@@ -62,17 +62,16 @@ export default function AttendanceClockPage() {
         و جایگزین سامانه رسمی حضور و غیاب نیست.
       </Alert>
 
-      {result && (
-        <Alert severity={result.success ? "success" : "error"} sx={{ mb: 3 }}>
-          {result.message}
-        </Alert>
-      )}
-
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           با زدن هرکدام از دکمه‌های زیر، موقعیت فعلی گوشی شما گرفته و بررسی می‌شود که داخل محدوده
           مجاز کارخانه باشد. اگر خارج از محدوده باشید، ثبت انجام نمی‌شود.
         </Typography>
+        {result && (
+          <Alert severity={result.success ? "success" : "error"} sx={{ mb: 2 }}>
+            {result.message}
+          </Alert>
+        )}
         <Stack direction="row" spacing={2}>
           <Button
             fullWidth
