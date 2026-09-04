@@ -17,8 +17,14 @@ function formatCountdown(totalSeconds) {
  * می‌تواند ترتیب نمایشی آن را جابه‌جا کند (باگ گزارش‌شده).
  */
 function MaskedContact({ value }) {
+  // ⚠️ عمداً از خصیصه HTML واقعی dir استفاده شده، نه فقط CSS direction -
+  // چون این پروژه از stylis-plugin-rtl برای تبدیل خودکار همه استایل‌های
+  // CSS-in-JS به راست‌به‌چپ استفاده می‌کند؛ این افزونه فقط روی CSS اثر
+  // می‌گذارد، نه خصیصه‌های HTML - پس dir="ltr" مستقل از هر تبدیل احتمالی
+  // این افزونه، مستقیماً به الگوریتم دوجهته بومی مرورگر می‌رسد و تضمین
+  // می‌کند این رشته همیشه به ترتیب واقعی‌اش (نه معکوس) نمایش داده شود.
   return (
-    <Box component="span" sx={{ direction: "ltr", unicodeBidi: "isolate", display: "inline-block" }}>
+    <Box component="bdi" dir="ltr" sx={{ unicodeBidi: "isolate" }}>
       {value}
     </Box>
   );
