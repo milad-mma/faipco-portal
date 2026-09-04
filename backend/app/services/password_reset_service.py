@@ -66,19 +66,39 @@ def _fake_masked_email(identifier: str) -> str:
     برای شناسه نامعتبر یا بدون ایمیل ثبت‌شده - یک نسخه ناقص «قابل‌قبول»
     و به‌طور قطعی وابسته به identifier (نه تصادفی در هر بار) تولید
     می‌کند، تا پاسخ از نظر ظاهری از حالت واقعی قابل‌تشخیص نباشد (نه
-    خالی/None که خودش یک نشانه افشاکننده بود).
+    خالی/None که خودش یک نشانه افشاکننده بود). طبق درخواست صریح، همیشه
+    از دامنه gmail.com استفاده می‌شود (رایج‌ترین سرویس ایمیل بین کاربران
+    ایرانی، پس ظاهر باورپذیرتری دارد).
+
+    ⚠️ این آدرس صرفاً یک رشته نمایشی است - هرگز به‌عنوان مقصد ارسال واقعی
+    استفاده نمی‌شود (نگاه کنید به request_reset: تنها جایی که این تابع
+    صدا زده می‌شود، مسیرهایی هستند که پیش از رسیدن به send_email واقعی،
+    از تابع خارج می‌شوند).
     """
     digest = hashlib.sha256(f"email:{identifier}".encode()).hexdigest()
     local_len = 4 + (int(digest[0:2], 16) % 5)  # طول محلی بین ۴ تا ۸
     fake_local = digest[2 : 2 + local_len]
-    domains = ["example.com", "mail.com", "company.com"]
-    fake_domain = domains[int(digest[10:12], 16) % len(domains)]
-    return _mask_email(f"{fake_local}@{fake_domain}")
+    return _mask_email(f"{fake_local}@gmail.com")
+
+
+# چند پیش‌شماره واقعی و رایج اپراتورهای موبایل ایران (همراه اول، ایرانسل،
+# رایتل) - فقط برای ظاهر باورپذیرتر شماره قلابی، نه اتصال به اپراتور واقعی.
+_IRAN_MOBILE_PREFIXES = [
+    "0912", "0913", "0914", "0915", "0916", "0917", "0918", "0919",
+    "0901", "0902", "0903", "0905",
+    "0930", "0933", "0935", "0936", "0937", "0938", "0939",
+    "0990", "0991",
+]
 
 
 def _fake_masked_mobile(identifier: str) -> str:
+    """
+    ⚠️ این شماره صرفاً یک رشته نمایشی است - هرگز به‌عنوان مقصد ارسال
+    واقعی پیامک استفاده نمی‌شود (نگاه کنید به توضیح _fake_masked_email).
+    """
     digest = hashlib.sha256(f"mobile:{identifier}".encode()).hexdigest()
-    fake_number = "09" + "".join(str(int(ch, 16) % 10) for ch in digest[:9])
+    prefix = _IRAN_MOBILE_PREFIXES[int(digest[0:2], 16) % len(_IRAN_MOBILE_PREFIXES)]
+    fake_number = prefix + "".join(str(int(ch, 16) % 10) for ch in digest[2:9])
     return _mask_mobile(fake_number)
 
 
