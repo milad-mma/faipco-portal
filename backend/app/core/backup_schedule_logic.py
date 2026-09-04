@@ -47,6 +47,25 @@ def _most_recent_weekly_occurrence(now_tehran: datetime, weekday: int, hour: int
     return candidate
 
 
+def _most_recent_interval_occurrence(now_tehran: datetime, interval_hours: int) -> datetime:
+    """
+    ⚠️ رفع باگ گزارش‌شده (بکاپ‌های نامنظم به‌جای دقیقاً هر N ساعت):
+    نسخه قبلی این تابع فاصله را از لحظه *تکمیل* اجرای قبلی (last_run_at)
+    می‌سنجید؛ چون هر اجرا (ساخت بکاپ + آپلود SMB/FTP/ایمیل) مدت متغیری
+    طول می‌کشد، فاصله واقعی بین اجراها به‌جای «هر N ساعت»، به «N ساعت +
+    مدت اجرای قبلی» تبدیل می‌شد و به‌مرور کاملاً نامنظم می‌شد.
+
+    راه‌حل: یک شبکه زمانی ثابت (نیمه‌شب امروز به وقت تهران، دقیقاً همان
+    الگوی daily/weekly) - برای interval_hours=1 یعنی همیشه دقیقاً در
+    ابتدای هر ساعت (۰۰:۰۰، ۰۱:۰۰، ...) به وقت تهران، کاملاً مستقل از
+    این‌که اجرای قبلی چقدر طول کشیده بود.
+    """
+    midnight = now_tehran.replace(hour=0, minute=0, second=0, microsecond=0)
+    hours_since_midnight = (now_tehran - midnight).total_seconds() / 3600
+    slots_passed = int(hours_since_midnight // interval_hours)
+    return midnight + timedelta(hours=slots_passed * interval_hours)
+
+
 def is_backup_due(
     *,
     schedule_enabled: bool,
@@ -66,18 +85,13 @@ def is_backup_due(
         return False
 
     now_utc = now_utc or datetime.now(timezone.utc)
+    now_tehran = now_utc.astimezone(_TEHRAN_TZ)
 
     if schedule_type == "interval":
         if not schedule_interval_hours:
             return False
-        if last_run_at is None:
-            return True
-        elapsed_hours = (now_utc - last_run_at).total_seconds() / 3600
-        return elapsed_hours >= schedule_interval_hours
-
-    now_tehran = now_utc.astimezone(_TEHRAN_TZ)
-
-    if schedule_type == "daily":
+        due_at_tehran = _most_recent_interval_occurrence(now_tehran, schedule_interval_hours)
+    elif schedule_type == "daily":
         due_at_tehran = _most_recent_daily_occurrence(now_tehran, schedule_hour, schedule_minute)
     elif schedule_type == "weekly":
         if schedule_weekday is None:

@@ -66,7 +66,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           : "نقش با موفقیت اختصاص یافت."
       );
     } catch (err) {
-      setError(err.response?.data?.detail || "انتصاب نقش ناموفق بود");
+      setError(err.response?.data?.detail || "انتصاب نقش با خطا مواجه شد.");
     }
   }
 
@@ -81,7 +81,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
       await assignDepartmentSupervisor(departmentId, isChecked ? employee.id : null);
       setSupervisedDeptIds(await fetchSupervisedDepartments(employee.id));
     } catch (err) {
-      setError(err.response?.data?.detail || "به‌روزرسانی سرپرستی ناموفق بود");
+      setError(err.response?.data?.detail || "به‌روزرسانی سرپرستی با خطا مواجه شد.");
     }
   }
 
@@ -94,9 +94,6 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-        {error && <Alert severity="error">{error}</Alert>}
-        {success && <Alert severity="success">{success}</Alert>}
-
         {/* نقش‌های سازمانی فعلی */}
         <Stack spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>
@@ -177,6 +174,8 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           </TextField>
         )}
 
+        {error && <Alert severity="error">{error}</Alert>}
+        {success && <Alert severity="success">{success}</Alert>}
         <Button
           variant="outlined"
           size="small"

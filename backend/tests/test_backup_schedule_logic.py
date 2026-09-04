@@ -193,3 +193,53 @@ def test_weekly_missing_weekday_never_due():
         )
         is False
     )
+
+
+def test_interval_anchored_to_fixed_grid_not_completion_time():
+    """
+    رفع باگ گزارش‌شده: بکاپ‌های «هر ۱ ساعت» با فاصله‌های نامنظم (مثلاً
+    ۱۲:۰۹، ۱۳:۳۹، ...) اجرا می‌شدند - چون نسخه قبلی این تابع فاصله را از
+    لحظه *تکمیل* اجرای قبلی می‌سنجید، نه از یک شبکه ثابت. این تست تأیید
+    می‌کند که صرف‌نظر از این‌که اجرای قبلی چه لحظه‌ای از یک ساعت تکمیل
+    شده باشد (۱۲:۰۹ یا ۱۲:۴۷)، اجرای بعدی همیشه دقیقاً در همان اسلات
+    ثابت بعدی (۱۳:۰۰ به وقت تهران) رخ می‌دهد - نه در «تکمیل + ۱ ساعت».
+    """
+    # ۱۲:۰۹ تهران = ۰۸:۳۹ UTC
+    last_run_early_completion = datetime(2026, 9, 1, 8, 39, tzinfo=timezone.utc)
+    # ۱۲:۴۷ تهران = ۰۹:۱۷ UTC - همان بازه ساعتی، لحظه تکمیل متفاوت
+    last_run_late_completion = datetime(2026, 9, 1, 9, 17, tzinfo=timezone.utc)
+
+    # قبل از رسیدن به ۱۳:۰۰ تهران (۰۹:۳۰ UTC) - هیچ‌کدام نباید due باشند
+    check_before_boundary = datetime(2026, 9, 1, 9, 25, tzinfo=timezone.utc)  # = ۱۲:۵۵ تهران
+    for last_run in (last_run_early_completion, last_run_late_completion):
+        assert (
+            is_backup_due(
+                schedule_enabled=True,
+                schedule_type="interval",
+                schedule_hour=0,
+                schedule_minute=0,
+                schedule_weekday=None,
+                schedule_interval_hours=1,
+                last_run_at=last_run,
+                now_utc=check_before_boundary,
+            )
+            is False
+        )
+
+    # بعد از رسیدن به ۱۳:۰۰ تهران - هر دو باید هم‌زمان due شوند (نه هرکدام
+    # جدا بر اساس لحظه تکمیل خودش - این دقیقاً همان باگ اصلی بود)
+    check_after_boundary = datetime(2026, 9, 1, 9, 35, tzinfo=timezone.utc)  # = ۱۳:۰۵ تهران
+    for last_run in (last_run_early_completion, last_run_late_completion):
+        assert (
+            is_backup_due(
+                schedule_enabled=True,
+                schedule_type="interval",
+                schedule_hour=0,
+                schedule_minute=0,
+                schedule_weekday=None,
+                schedule_interval_hours=1,
+                last_run_at=last_run,
+                now_utc=check_after_boundary,
+            )
+            is True
+        )

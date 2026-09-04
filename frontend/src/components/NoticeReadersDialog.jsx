@@ -6,6 +6,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -68,11 +69,6 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
     <Dialog open={Boolean(noticeId)} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>چه کسانی این اطلاعیه را دیده‌اند</DialogTitle>
       <DialogContent>
-        {resendResult && (
-          <Alert severity={resendResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-            {resendResult.message}
-          </Alert>
-        )}
         {loadError ? (
           <Alert severity="error">{loadError}</Alert>
         ) : readers.length === 0 ? (
@@ -104,15 +100,20 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
           </TableContainer>
         )}
       </DialogContent>
-      <DialogActions sx={{ p: 2.5 }}>
-        <Button
-          startIcon={<NotificationsActiveOutlinedIcon />}
-          onClick={handleResendClick}
-          disabled={isResending}
-        >
-          {isResending ? "در حال ارسال..." : "ارسال مجدد اعلان"}
-        </Button>
-        <Button onClick={onClose}>بستن</Button>
+      <DialogActions sx={{ p: 2.5, flexDirection: "column", alignItems: "stretch", gap: 1 }}>
+        {resendResult && (
+          <Alert severity={resendResult.success ? "success" : "error"}>{resendResult.message}</Alert>
+        )}
+        <Stack direction="row" spacing={1}>
+          <Button
+            startIcon={<NotificationsActiveOutlinedIcon />}
+            onClick={handleResendClick}
+            disabled={isResending}
+          >
+            {isResending ? "در حال ارسال..." : "ارسال مجدد اعلان"}
+          </Button>
+          <Button onClick={onClose}>بستن</Button>
+        </Stack>
       </DialogActions>
     </Dialog>
   );

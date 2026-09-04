@@ -195,8 +195,8 @@ export default function AuthPageShell({ title, subtitle, children }) {
                 در یک نگاه
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9, lineHeight: 2.1, mb: 3 }}>
-                با ورود به پرتال، تردد، مرخصی، فیش حقوقی و اطلاعیه‌های سازمانی همواره در دسترس شما
-                خواهد بود.
+                با وارد شدن به پرتال، تردد، مرخصی، فیش حقوقی و اطلاعیه‌های سازمانی همیشه در دسترس
+                شماست.
               </Typography>
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                 {PROMO_FEATURES.map((f) => (
