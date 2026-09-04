@@ -16,12 +16,18 @@ from app.schemas.auth import (
     RefreshRequest,
     ResetPasswordRequest,
     TokenResponse,
+    VerifyResetCodeRequest,
 )
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 from app.services.email_service import EmailError, EmailNotConfiguredError
 from app.services.employee_contact_service import ContactInfoUpdateError, update_my_contact_info
-from app.services.password_reset_service import PasswordResetError, request_reset, reset_password
+from app.services.password_reset_service import (
+    PasswordResetError,
+    request_reset,
+    reset_password,
+    verify_reset_token,
+)
 from app.services.sms_service import SmsError, SmsNotConfiguredError
 
 router = APIRouter()
@@ -123,18 +129,50 @@ async def forgot_password(
     except (EmailNotConfiguredError, EmailError, SmsNotConfiguredError, SmsError) as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
 
+    # ⚠️ عمداً masked_contact داخل متن message جای‌گذاری نمی‌شود - چون
+    # ترکیب اعداد لاتین (شماره/ایمیل ماسک‌شده) وسط یک جمله فارسی راست‌به‌چپ
+    # می‌تواند باعث جابه‌جایی نمایشی این بخش (طبق الگوریتم دوجهته یونیکد)
+    # شود. به‌جای آن، متن عمومی و masked_contact جدا برگردانده می‌شوند تا
+    # Frontend بتواند masked_contact را با جهت صریح LTR نمایش دهد.
     if payload.channel == "sms":
-        message = f"کد تأیید بازنشانی رمز عبور به شماره {result.masked_contact} پیامک شد."
+        message = "کد تأیید بازنشانی رمز عبور به شماره زیر پیامک شد."
     else:
-        message = (
-            f"لینک بازنشانی رمز عبور به آدرس {result.masked_contact} ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."
-        )
+        message = "لینک بازنشانی رمز عبور به آدرس زیر ارسال شد. لطفاً صندوق ایمیل خود را بررسی کنید."
 
     return {
         "message": message,
         "masked_contact": result.masked_contact,
         "expires_in_seconds": result.expires_in_seconds,
     }
+
+
+@router.post("/verify-reset-code")
+async def verify_reset_code_endpoint(
+    payload: VerifyResetCodeRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """
+    فقط اعتبار کد/توکن را بررسی می‌کند - بدون مصرف‌کردن آن. کاربرد: در
+    جریان پیامکی، پیش از نمایش فرم رمز عبور جدید، کد وارد‌شده تأیید
+    می‌شود. همان محافظت IP-محور برابر Brute-force توکن reset-password
+    اینجا هم اعمال می‌شود.
+    """
+    client_ip = get_client_ip(request)
+    lockout_key = f"reset-password:{client_ip}"
+    locked_remaining = await check_login_lockout(db, lockout_key)
+    if locked_remaining is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
+        )
+
+    try:
+        await verify_reset_token(db, payload.token)
+    except PasswordResetError as e:
+        await record_failed_login(db, lockout_key)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    await reset_login_attempts(db, lockout_key)
+    return {"message": "کد تأیید معتبر است."}
 
 
 @router.post("/reset-password")
@@ -154,7 +192,7 @@ async def reset_password_endpoint(
     if locked_remaining is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"تعداد تلاش‌های ناموفق زیاد بوده — لطفاً {int(locked_remaining) + 1} ثانیه دیگر دوباره تلاش کنید.",
+            detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
         )
 
     try:

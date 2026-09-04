@@ -53,9 +53,9 @@ export default function SmsSettings() {
       const updated = await updateSmsSettings(payload);
       setSettings(updated);
       setForm({ ...updated, api_key: "" });
-      setSaveResult({ success: true, message: "تنظیمات ذخیره شد." });
+      setSaveResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
-      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -68,7 +68,7 @@ export default function SmsSettings() {
       const result = await testSmsSettings(testMobile);
       setTestResult({ success: true, message: result.message });
     } catch (err) {
-      setTestResult({ success: false, message: err.response?.data?.detail || "ارسال پیامک آزمایشی ناموفق بود." });
+      setTestResult({ success: false, message: err.response?.data?.detail || "ارسال پیامک آزمایشی با خطا مواجه شد." });
     } finally {
       setIsTesting(false);
     }

@@ -53,9 +53,9 @@ export default function SmtpSettings() {
       const updated = await updateSmtpSettings(payload);
       setSettings(updated);
       setForm({ ...updated, password: "" });
-      setSaveResult({ success: true, message: "تنظیمات ذخیره شد." });
+      setSaveResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
-      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -68,7 +68,7 @@ export default function SmtpSettings() {
       const result = await testSmtpSettings(testAddress);
       setTestResult({ success: true, message: result.message });
     } catch (err) {
-      setTestResult({ success: false, message: err.response?.data?.detail || "ارسال ایمیل آزمایشی ناموفق بود." });
+      setTestResult({ success: false, message: err.response?.data?.detail || "ارسال ایمیل آزمایشی با خطا مواجه شد." });
     } finally {
       setIsTesting(false);
     }
@@ -218,6 +218,7 @@ export default function SmtpSettings() {
           <Typography variant="body2" fontWeight={700}>
             ارسال ایمیل آزمایشی (با تنظیمات فعلاً ذخیره‌شده)
           </Typography>
+          {testResult && <Alert severity={testResult.success ? "success" : "error"}>{testResult.message}</Alert>}
           <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center">
             <TextField
               size="small"
@@ -236,7 +237,6 @@ export default function SmtpSettings() {
               ارسال ایمیل آزمایشی
             </Button>
           </Stack>
-          {testResult && <Alert severity={testResult.success ? "success" : "error"}>{testResult.message}</Alert>}
         </Stack>
       )}
     </Stack>

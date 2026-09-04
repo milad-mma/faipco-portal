@@ -18,7 +18,11 @@ class ChangePasswordRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     identifier: str = Field(min_length=1)  # نام‌کاربری یا کد پرسنلی - همان دو روش ورود
-    channel: str = Field(default="email", pattern="^(email|sms)$")
+    channel: str = Field(default="sms", pattern="^(email|sms)$")
+
+
+class VerifyResetCodeRequest(BaseModel):
+    token: str = Field(min_length=1)
 
 
 class ResetPasswordRequest(BaseModel):

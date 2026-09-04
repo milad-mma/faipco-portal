@@ -52,14 +52,11 @@ export default function EditContactInfoDialog({ open, onClose }) {
     setSuccessMessage("");
     setIsSubmitting(true);
     try {
-      const result = await updateMyContactInfo({ email: email.trim(), mobile: mobile.trim() });
-      const notes = [];
-      if (result.email_synced_to_source === true) notes.push("ایمیل در دیتابیس اصلی سایت هم به‌روزرسانی شد.");
-      if (result.mobile_synced_to_source === true) notes.push("موبایل در دیتابیس اصلی سایت هم به‌روزرسانی شد.");
-      setSuccessMessage(["اطلاعات تماس با موفقیت ذخیره شد.", ...notes].join(" "));
+      await updateMyContactInfo({ email: email.trim(), mobile: mobile.trim() });
+      setSuccessMessage("اطلاعات با موفقیت ذخیره شد.");
       await refetchUser();
     } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره اطلاعات ناموفق بود.");
+      setError(err.response?.data?.detail || "ذخیره اطلاعات با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
@@ -67,7 +64,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs">
-      <DialogTitle>ویرایش ایمیل و موبایل</DialogTitle>
+      <DialogTitle>مشخصات کاربری</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <Typography variant="body2" color="text.secondary">

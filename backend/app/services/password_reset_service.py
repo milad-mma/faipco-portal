@@ -262,6 +262,24 @@ async def request_reset(db: AsyncSession, identifier: str, channel: str, reset_l
     return RequestResetResult(masked_contact=_mask_email(email), expires_in_seconds=EMAIL_TOKEN_TTL_MINUTES * 60)
 
 
+async def verify_reset_token(db: AsyncSession, token: str) -> None:
+    """
+    فقط اعتبار توکن/کد را بررسی می‌کند - بدون مصرف‌کردن آن (used_at را
+    تغییر نمی‌دهد). کاربرد: در جریان پیامکی، پیش از نمایش فرم «رمز عبور
+    جدید»، کد وارد‌شده را همین‌جا تأیید می‌کنیم - تا کاربر ابتدا از صحت
+    کد مطمئن شود، سپس رمز جدید را وارد کند (نه این‌که کد و رمز را یک‌جا
+    بفرستد و فقط در پایان بفهمد کد اشتباه بوده است).
+    """
+    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == token))
+    reset_token = result.scalar_one_or_none()
+    if reset_token is None:
+        raise PasswordResetError("کد/لینک بازنشانی نامعتبر است")
+    if reset_token.used_at is not None:
+        raise PasswordResetError("این کد/لینک قبلاً استفاده شده است")
+    if reset_token.expires_at < datetime.now(timezone.utc):
+        raise PasswordResetError("این کد/لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
+
+
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
     result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == token))
     reset_token = result.scalar_one_or_none()

@@ -323,7 +323,7 @@ export default function ProfilePage() {
             <ListItemIcon>
               <EmailOutlinedIcon />
             </ListItemIcon>
-            <ListItemText primary="ویرایش ایمیل و موبایل" />
+            <ListItemText primary="مشخصات کاربری" />
           </ListItemButton>
           <ListItemButton onClick={() => setPasswordDialogOpen(true)}>
             <ListItemIcon>

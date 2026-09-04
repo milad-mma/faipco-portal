@@ -1,27 +1,15 @@
 import { useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  Alert,
-  Box,
-  Button,
-  IconButton,
-  InputAdornment,
-  Link,
-  Paper,
-  Stack,
-  TextField,
-  ThemeProvider,
-  Typography,
-} from "@mui/material";
-import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
+import { Alert, Box, Button, IconButton, InputAdornment, Link, TextField, Typography } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { resetPasswordRequest } from "../api/auth";
-import { modernLightTheme } from "../theme";
+import AuthPageShell from "../components/AuthPageShell";
 
 /**
- * بازنشانی رمز عبور - توکن از querystring لینک ایمیل خوانده می‌شود
- * (?token=...، همان قالبی که Backend در password_reset_service.py می‌سازد).
+ * بازنشانی رمز عبور از طریق لینک ایمیل - توکن از querystring خوانده
+ * می‌شود (?token=...، همان قالبی که Backend در password_reset_service.py
+ * می‌سازد).
  */
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -40,7 +28,7 @@ export default function ResetPasswordPage() {
     setError("");
 
     if (newPassword !== confirmPassword) {
-      setError("رمز عبور و تکرار آن یکسان نیستند.");
+      setError("رمز عبور و تکرار آن با یکدیگر مطابقت ندارند.");
       return;
     }
 
@@ -49,109 +37,88 @@ export default function ResetPasswordPage() {
       await resetPasswordRequest(token, newPassword);
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.detail || "بازنشانی رمز عبور ناموفق بود.");
+      setError(err.response?.data?.detail || "بازنشانی رمز عبور با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <ThemeProvider theme={modernLightTheme}>
-      <Box
-        sx={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          bgcolor: "#F3F7FA",
-          p: 2,
-        }}
-      >
-        <Paper
-          elevation={0}
-          sx={{ width: "100%", maxWidth: 420, p: 4, borderRadius: 3, boxShadow: "0 24px 55px rgba(33,67,91,.10)" }}
-        >
-          <Stack spacing={2.5}>
-            <Stack alignItems="center" spacing={1}>
-              <LockResetOutlinedIcon color="primary" sx={{ fontSize: 40 }} />
-              <Typography variant="h5" fontWeight={800}>
-                بازنشانی رمز عبور
-              </Typography>
-            </Stack>
-
-            {!token ? (
-              <Alert severity="error">
-                لینک نامعتبر است — لطفاً از طریق لینک ارسال‌شده به ایمیل خود وارد این صفحه شوید.
-              </Alert>
-            ) : success ? (
-              <Stack spacing={2}>
-                <Alert severity="success">رمز عبور با موفقیت تغییر کرد.</Alert>
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={() => navigate("/login")}
-                  sx={{ borderRadius: 999, height: 48 }}
-                >
-                  ورود به پرتال
-                </Button>
-              </Stack>
-            ) : (
-              <Box component="form" onSubmit={handleSubmit}>
-                <Stack spacing={2}>
-                  <TextField
-                    label="رمز عبور جدید"
-                    type={showPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    autoFocus
-                    fullWidth
-                    inputProps={{ minLength: 6 }}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton size="small" onClick={() => setShowPassword((v) => !v)} tabIndex={-1}>
-                            {showPassword ? (
-                              <VisibilityOffOutlinedIcon fontSize="small" />
-                            ) : (
-                              <VisibilityOutlinedIcon fontSize="small" />
-                            )}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                  <TextField
-                    label="تکرار رمز عبور جدید"
-                    type={showPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    fullWidth
-                    inputProps={{ minLength: 6 }}
-                  />
-                  {error && <Alert severity="error">{error}</Alert>}
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    size="large"
-                    disabled={isSubmitting || !newPassword || !confirmPassword}
-                    sx={{ borderRadius: 999, height: 48 }}
+    <AuthPageShell title="بازنشانی رمز عبور">
+      {!token ? (
+        <Alert severity="error">
+          لینک نامعتبر است. لطفاً از طریق لینک ارسال‌شده به ایمیل خود وارد این صفحه شوید.
+        </Alert>
+      ) : success ? (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Alert severity="success">رمز عبور با موفقیت تغییر یافت.</Alert>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => navigate("/login")}
+            sx={{ mt: 1, borderRadius: 999, height: 48 }}
+          >
+            ورود به پرتال
+          </Button>
+        </Box>
+      ) : (
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <TextField
+            label="رمز عبور جدید"
+            type={showPassword ? "text" : "password"}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            autoFocus
+            fullWidth
+            inputProps={{ minLength: 6 }}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    edge="end"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label="نمایش رمز عبور"
+                    tabIndex={-1}
                   >
-                    {isSubmitting ? "در حال ثبت..." : "تغییر رمز عبور"}
-                  </Button>
-                </Stack>
-              </Box>
-            )}
+                    {showPassword ? (
+                      <VisibilityOffOutlinedIcon fontSize="small" />
+                    ) : (
+                      <VisibilityOutlinedIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+          />
+          <TextField
+            label="تکرار رمز عبور جدید"
+            type={showPassword ? "text" : "password"}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            fullWidth
+            inputProps={{ minLength: 6 }}
+          />
+          {error && <Alert severity="error">{error}</Alert>}
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            disabled={isSubmitting || !newPassword || !confirmPassword}
+            sx={{ mt: 1, borderRadius: 999, height: 48 }}
+          >
+            {isSubmitting ? "در حال ثبت..." : "تغییر رمز عبور"}
+          </Button>
+        </Box>
+      )}
 
-            <Typography variant="body2" textAlign="center">
-              <Link component={RouterLink} to="/login">
-                بازگشت به صفحه ورود
-              </Link>
-            </Typography>
-          </Stack>
-        </Paper>
-      </Box>
-    </ThemeProvider>
+      <Typography variant="body2" textAlign="center" sx={{ mt: 3 }}>
+        <Link component={RouterLink} to="/login">
+          بازگشت به صفحه ورود
+        </Link>
+      </Typography>
+    </AuthPageShell>
   );
 }

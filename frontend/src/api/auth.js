@@ -17,8 +17,13 @@ export async function changePasswordRequest(currentPassword, newPassword) {
   });
 }
 
-export async function forgotPasswordRequest(identifier, channel = "email") {
+export async function forgotPasswordRequest(identifier, channel = "sms") {
   const { data } = await apiClient.post("/auth/forgot-password", { identifier, channel });
+  return data;
+}
+
+export async function verifyResetCodeRequest(token) {
+  const { data } = await apiClient.post("/auth/verify-reset-code", { token });
   return data;
 }
 

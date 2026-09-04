@@ -64,11 +64,11 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
   async function handleSubmit() {
     setError("");
     if (newPassword !== confirmPassword) {
-      setError("رمز عبور جدید و تکرار آن یکسان نیستند");
+      setError("رمز عبور جدید و تکرار آن با یکدیگر مطابقت ندارند.");
       return;
     }
     if (!isStrongEnough) {
-      setError("رمز عبور جدید باید همه موارد فهرست‌شده زیر را رعایت کند");
+      setError("رمز عبور جدید باید تمامی موارد فهرست‌شده زیر را رعایت کند.");
       return;
     }
     setIsSubmitting(true);
@@ -82,7 +82,7 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
         await refetchUser(); // must_change_password را false می‌کند و Dialog خودکار جمع می‌شود
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "تغییر رمز عبور ناموفق بود");
+      setError(err.response?.data?.detail || "تغییر رمز عبور با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
@@ -104,11 +104,10 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
             رمز عبور قوی‌تر تعیین کنید.
           </Alert>
         )}
-        {error && <Alert severity="error">{error}</Alert>}
         {success && (
           <Alert severity="success">
-            رمز عبور با موفقیت تغییر کرد. از این پس فقط با همین رمز عبور جدید وارد شوید — روش قبلی
-            دیگر کار نمی‌کند.
+            رمز عبور با موفقیت تغییر یافت. از این پس فقط با همین رمز عبور جدید وارد شوید — روش قبلی
+            دیگر معتبر نیست.
           </Alert>
         )}
         {!success && (
@@ -163,6 +162,9 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
             </List>
           </>
         )}
+        {/* پیام خطا عمداً درست بالای دکمه‌های عملیات (نه بالای فرم) قرار
+            می‌گیرد - چون طبیعی‌ترین محل برای واکنش به کلیک روی دکمه است. */}
+        {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ p: 2.5 }}>
         {!mandatory && <Button onClick={handleClose}>{success ? "بستن" : "انصراف"}</Button>}

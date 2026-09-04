@@ -71,9 +71,9 @@ export default function BackupScheduleSettings() {
       const updated = await updateBackupSettings(payload);
       setSettings(updated);
       setForm({ ...updated, smb_password: "", ftp_password: "" });
-      setSaveResult({ success: true, message: "تنظیمات ذخیره شد." });
+      setSaveResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
-      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -93,7 +93,7 @@ export default function BackupScheduleSettings() {
       });
       setSmbTestResult({ success: true, message: result.message });
     } catch (err) {
-      setSmbTestResult({ success: false, message: err.response?.data?.detail || "تست اتصال ناموفق بود." });
+      setSmbTestResult({ success: false, message: err.response?.data?.detail || "تست اتصال SMB با خطا مواجه شد." });
     } finally {
       setIsTestingSmb(false);
     }
@@ -113,7 +113,7 @@ export default function BackupScheduleSettings() {
       });
       setFtpTestResult({ success: true, message: result.message });
     } catch (err) {
-      setFtpTestResult({ success: false, message: err.response?.data?.detail || "تست اتصال ناموفق بود." });
+      setFtpTestResult({ success: false, message: err.response?.data?.detail || "تست اتصال FTP با خطا مواجه شد." });
     } finally {
       setIsTestingFtp(false);
     }
@@ -127,7 +127,7 @@ export default function BackupScheduleSettings() {
       setRunNowResult({ success: true, message: result.message });
       loadSettings();
     } catch (err) {
-      setRunNowResult({ success: false, message: err.response?.data?.detail || "اجرای بکاپ ناموفق بود." });
+      setRunNowResult({ success: false, message: err.response?.data?.detail || "اجرای بکاپ با خطا مواجه شد." });
     } finally {
       setIsRunningNow(false);
     }
@@ -470,6 +470,7 @@ export default function BackupScheduleSettings() {
       </Stack>
 
       {saveResult && <Alert severity={saveResult.success ? "success" : "error"}>{saveResult.message}</Alert>}
+      {runNowResult && <Alert severity={runNowResult.success ? "success" : "error"}>{runNowResult.message}</Alert>}
 
       <Stack direction="row" spacing={1.5}>
         <Button
@@ -489,7 +490,6 @@ export default function BackupScheduleSettings() {
           {isRunningNow ? "در حال اجرا..." : "اجرای فوری بکاپ الان"}
         </Button>
       </Stack>
-      {runNowResult && <Alert severity={runNowResult.success ? "success" : "error"}>{runNowResult.message}</Alert>}
     </Stack>
   );
 }
