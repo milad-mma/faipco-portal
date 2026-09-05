@@ -79,6 +79,21 @@ class SiteConnection(Base, TimestampMixin):
     site: Mapped["Site"] = relationship(back_populates="connection")
 
 
+class AttendanceMappingMode(str, enum.Enum):
+    """
+    دو الگوی رایج داده خام تردد دستگاه‌های حضور و غیاب:
+    - single_column: یک ردیف = یک تردد منفرد (ورود یا خروج، فرقی نمی‌کند)؛
+      چند ردیف در یک روز با date_column/time_column یکسان یعنی چند تردد.
+      این الگوی اصلی/پیش‌فرض این پروژه بوده است.
+    - enter_exit_columns: یک ردیف = یک نشست کامل (ورود+خروج با هم)؛ هر
+      ردیف چهار ستون جدا دارد (تاریخ/ساعت ورود، تاریخ/ساعت خروج) - رایج
+      در برخی نرم‌افزارهای حضور و غیاب دیگر.
+    """
+
+    single_column = "single_column"
+    enter_exit_columns = "enter_exit_columns"
+
+
 class AttendanceMapping(Base, TimestampMixin):
     """
     نگاشت ستون‌های دیتابیس خام تردد هر Site به فیلدهای استاندارد «گزارش
@@ -100,8 +115,23 @@ class AttendanceMapping(Base, TimestampMixin):
 
     table_name: Mapped[str] = mapped_column(String(128), nullable=False)
     personnel_code_column: Mapped[str] = mapped_column(String(128), nullable=False)
-    date_column: Mapped[str] = mapped_column(String(128), nullable=False)
-    time_column: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    mapping_mode: Mapped[AttendanceMappingMode] = mapped_column(
+        Enum(AttendanceMappingMode, name="attendance_mapping_mode"),
+        default=AttendanceMappingMode.single_column,
+        nullable=False,
+    )
+
+    # فقط برای mapping_mode=single_column
+    date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    time_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # فقط برای mapping_mode=enter_exit_columns - exit_* می‌تواند در دیتابیس
+    # مبدأ NULL باشد (نشست هنوز باز است/کاربر هنوز خروج نزده)
+    enter_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    enter_time_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    exit_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    exit_time_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # نگاشت اختیاری جدول تقویم/تعطیلات — کاملاً مستقل از جدول تردد بالا.
     # اگر calendar_table_name خالی باشد، این قابلیت برای این سایت غیرفعال

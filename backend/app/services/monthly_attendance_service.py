@@ -38,7 +38,7 @@ import psycopg2.extras
 
 from app.core.persian_date import jalali_weekday_name, jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
-from app.models.site import AttendanceMapping, DbType, SiteConnection
+from app.models.site import AttendanceMapping, AttendanceMappingMode, DbType, SiteConnection
 
 logger = logging.getLogger("faipco.monthly_attendance")
 
@@ -132,18 +132,20 @@ def _dict_cursor(connection, db_type: DbType):
     return connection.cursor()  # mysql - cursorclass از قبل روی خودِ Connection تنظیم شده
 
 
-def _fetch_raw_rows_sync(
+def _fetch_raw_rows_single_column_sync(
     conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
 ) -> list[dict]:
     """
-    نام جدول/ستون‌ها (فقط از AttendanceMapping تنظیم‌شده توسط Admin) با
-    علامت کوته مخصوص نوع دیتابیس این سایت (_quote) در متن Query قرار
-    می‌گیرند - Parameterized-کردن نام جدول/ستون در هیچ‌کدام از درایورها
-    ممکن نیست. مقادیر واقعی (emp_no/from_date/to_date) همیشه
-    Parameterized هستند. نام مستعار ستون‌ها (AS ...) هم عمداً کوته
-    می‌شوند - وگرنه PostgreSQL آن‌ها را خودکار کوچک می‌کرد و کلید دیکشنری
-    خروجی با آنچه کد زیر انتظار دارد ("AttendanceDate"/"AttendanceTime")
-    مطابقت نمی‌داشت.
+    فقط برای mapping_mode=single_column. نام جدول/ستون‌ها (فقط از
+    AttendanceMapping تنظیم‌شده توسط Admin) با علامت کوته مخصوص نوع
+    دیتابیس این سایت (_quote) در متن Query قرار می‌گیرند -
+    Parameterized-کردن نام جدول/ستون در هیچ‌کدام از درایورها ممکن نیست.
+    مقادیر واقعی (emp_no/from_date/to_date) همیشه Parameterized هستند.
+    نام مستعار ستون‌ها (AS ...) هم عمداً کوته می‌شوند - وگرنه PostgreSQL
+    آن‌ها را خودکار کوچک می‌کرد و کلید دیکشنری خروجی با آنچه کد زیر
+    انتظار دارد ("AttendanceDate"/"AttendanceTime") مطابقت نمی‌داشت.
+
+    خروجی: [{"AttendanceDate": int, "AttendanceTime": int}, ...]
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     connection = _connect(conn)
@@ -160,6 +162,57 @@ def _fetch_raw_rows_sync(
             return list(cur.fetchall())
     finally:
         connection.close()
+
+
+def _fetch_raw_rows_enter_exit_sync(
+    conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
+) -> list[dict]:
+    """
+    فقط برای mapping_mode=enter_exit_columns - هر ردیف یک نشست کامل است
+    (نه یک تردد منفرد)، با چهار ستون جدا. یک نشست اگر یا تاریخ ورودش یا
+    تاریخ خروجش داخل بازه ماه درخواستی باشد لحاظ می‌شود (نشستی که از یک
+    روزِ خارج از بازه شروع شده ولی همین ماه پایان یافته، یا برعکس، هم
+    باید دیده شود). exit_date/exit_time می‌توانند NULL باشند (نشست هنوز
+    باز است).
+
+    خروجی: [{"EnterDate": int, "EnterTime": int, "ExitDate": int|None, "ExitTime": int|None}, ...]
+    """
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        query = f"""
+            SELECT {q(mapping.enter_date_column)} AS {q("EnterDate")}, {q(mapping.enter_time_column)} AS {q("EnterTime")},
+                   {q(mapping.exit_date_column)} AS {q("ExitDate")}, {q(mapping.exit_time_column)} AS {q("ExitTime")}
+            FROM {q(mapping.table_name)}
+            WHERE {q(mapping.personnel_code_column)} = %(emp_no)s
+              AND (
+                    {q(mapping.enter_date_column)} BETWEEN %(from_date)s AND %(to_date)s
+                    OR {q(mapping.exit_date_column)} BETWEEN %(from_date)s AND %(to_date)s
+                  )
+            ORDER BY {q(mapping.enter_date_column)} ASC, {q(mapping.enter_time_column)} ASC
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+        with _dict_cursor(connection, conn.db_type) as cur:
+            cur.execute(query, {"emp_no": emp_no, "from_date": from_date, "to_date": to_date})
+            return list(cur.fetchall())
+    finally:
+        connection.close()
+
+
+def _normalize_enter_exit_sessions(sessions: list[dict]) -> list[dict]:
+    """
+    هر نشست (ورود+خروج) را به یک یا دو «تردد منفرد» تبدیل می‌کند - یکی
+    برای لحظه ورود، و اگر خروج ثبت شده باشد (NULL نباشد)، یکی هم برای
+    لحظه خروج؛ خروجی دقیقاً هم‌شکل با حالت single_column می‌شود
+    (["AttendanceDate", "AttendanceTime"])، تا بقیه خط لوله (گروه‌بندی
+    بر اساس روز، ساخت days_out) بدون هیچ تغییری برای هر دو حالت کار کند.
+    """
+    transits: list[dict] = []
+    for session in sessions:
+        if session.get("EnterDate") is not None and session.get("EnterTime") is not None:
+            transits.append({"AttendanceDate": session["EnterDate"], "AttendanceTime": session["EnterTime"]})
+        if session.get("ExitDate") is not None and session.get("ExitTime") is not None:
+            transits.append({"AttendanceDate": session["ExitDate"], "AttendanceTime": session["ExitTime"]})
+    return transits
 
 
 def _fetch_holidays_sync(conn: SiteConnection, mapping: AttendanceMapping, year: int, month: int) -> set[int]:
@@ -225,7 +278,15 @@ async def get_monthly_attendance(
     from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)
 
     try:
-        raw_rows = await asyncio.to_thread(_fetch_raw_rows_sync, site_connection, mapping, emp_no, from_date, to_date)
+        if mapping.mapping_mode == AttendanceMappingMode.enter_exit_columns:
+            sessions = await asyncio.to_thread(
+                _fetch_raw_rows_enter_exit_sync, site_connection, mapping, emp_no, from_date, to_date
+            )
+            raw_rows = _normalize_enter_exit_sessions(sessions)
+        else:
+            raw_rows = await asyncio.to_thread(
+                _fetch_raw_rows_single_column_sync, site_connection, mapping, emp_no, from_date, to_date
+            )
     except MonthlyAttendanceError:
         raise
     except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند

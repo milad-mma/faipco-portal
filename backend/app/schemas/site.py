@@ -1,7 +1,7 @@
 """Schema های Pydantic برای مدیریت Site، اتصال دیتابیس و Mapping ستون‌ها."""
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.site import DbType, SyncStatus
+from app.models.site import AttendanceMappingMode, DbType, SyncStatus
 
 
 class SiteCreate(BaseModel):
@@ -111,12 +111,27 @@ class AttendanceMappingIn(BaseModel):
     """
     نگاشت جدول/ستون‌های تردد دستگاهی این سایت — دقیقاً همان الگوی
     EmployeeMappingIn بالا، فقط برای «گزارش تردد ماهانه».
+
+    دو روش نگاشت پشتیبانی می‌شوند (mapping_mode):
+    - single_column: یک ردیف = یک تردد منفرد؛ date_column/time_column
+      الزامی‌اند (enter_*/exit_* باید خالی بمانند).
+    - enter_exit_columns: یک ردیف = یک نشست کامل (ورود+خروج)؛ هر چهار
+      ستون enter_date_column/enter_time_column/exit_date_column/
+      exit_time_column الزامی‌اند (date_column/time_column باید خالی
+      بمانند).
     """
 
     table_name: str
     personnel_code_column: str
-    date_column: str
-    time_column: str
+    mapping_mode: AttendanceMappingMode = AttendanceMappingMode.single_column
+
+    date_column: str | None = None
+    time_column: str | None = None
+
+    enter_date_column: str | None = None
+    enter_time_column: str | None = None
+    exit_date_column: str | None = None
+    exit_time_column: str | None = None
 
     # نگاشت اختیاری جدول تقویم/تعطیلات — برای رنگ‌آمیزی روزهای تعطیل.
     # اگر calendar_table_name خالی/None باشد، این قابلیت غیرفعال می‌ماند.
@@ -124,6 +139,18 @@ class AttendanceMappingIn(BaseModel):
     calendar_year_column: str | None = None
     calendar_month_column: str | None = None
     calendar_day_column_prefix: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_columns_for_mode(self) -> "AttendanceMappingIn":
+        if self.mapping_mode == AttendanceMappingMode.single_column:
+            if not (self.date_column and self.time_column):
+                raise ValueError("برای روش «یک ستون تاریخ + یک ستون ساعت»، هر دو فیلد الزامی هستند")
+        else:
+            if not (
+                self.enter_date_column and self.enter_time_column and self.exit_date_column and self.exit_time_column
+            ):
+                raise ValueError("برای روش «ستون‌های جدای ورود/خروج»، هر چهار فیلد الزامی هستند")
+        return self
 
 
 class AttendanceMappingOut(AttendanceMappingIn):

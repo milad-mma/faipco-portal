@@ -73,8 +73,13 @@ const EMPTY_MAPPING = {
 const EMPTY_ATTENDANCE_MAPPING = {
   table_name: "",
   personnel_code_column: "",
+  mapping_mode: "single_column",
   date_column: "",
   time_column: "",
+  enter_date_column: "",
+  enter_time_column: "",
+  exit_date_column: "",
+  exit_time_column: "",
   calendar_table_name: "",
   calendar_year_column: "",
   calendar_month_column: "",
@@ -165,8 +170,13 @@ export default function SiteSettingsPage() {
         setAttendanceMappingForm({
           table_name: attendanceMapping.table_name,
           personnel_code_column: attendanceMapping.personnel_code_column,
-          date_column: attendanceMapping.date_column,
-          time_column: attendanceMapping.time_column,
+          mapping_mode: attendanceMapping.mapping_mode || "single_column",
+          date_column: attendanceMapping.date_column || "",
+          time_column: attendanceMapping.time_column || "",
+          enter_date_column: attendanceMapping.enter_date_column || "",
+          enter_time_column: attendanceMapping.enter_time_column || "",
+          exit_date_column: attendanceMapping.exit_date_column || "",
+          exit_time_column: attendanceMapping.exit_time_column || "",
           calendar_table_name: attendanceMapping.calendar_table_name || "",
           calendar_year_column: attendanceMapping.calendar_year_column || "",
           calendar_month_column: attendanceMapping.calendar_month_column || "",
@@ -736,19 +746,85 @@ export default function SiteSettingsPage() {
               disabled={isSavingAttendanceMapping}
             />
             <TextField
-              label="ستون تاریخ"
-              value={attendanceMappingForm.date_column}
-              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, date_column: e.target.value })}
+              select
+              label="روش نگاشت تردد"
+              value={attendanceMappingForm.mapping_mode}
+              onChange={(e) =>
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  mapping_mode: e.target.value,
+                  date_column: "",
+                  time_column: "",
+                  enter_date_column: "",
+                  enter_time_column: "",
+                  exit_date_column: "",
+                  exit_time_column: "",
+                })
+              }
               disabled={isSavingAttendanceMapping}
-              helperText='فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524'
-            />
-            <TextField
-              label="ستون ساعت"
-              value={attendanceMappingForm.time_column}
-              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
-              disabled={isSavingAttendanceMapping}
-              helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
-            />
+              helperText="بر اساس ساختار جدول واقعی نرم‌افزار حضور و غیاب این سایت انتخاب کنید"
+            >
+              <MenuItem value="single_column">یک ستون تاریخ + یک ستون ساعت (هر ردیف = یک تردد منفرد)</MenuItem>
+              <MenuItem value="enter_exit_columns">ستون‌های جدای ورود و خروج (هر ردیف = یک نشست کامل)</MenuItem>
+            </TextField>
+
+            {attendanceMappingForm.mapping_mode === "single_column" ? (
+              <>
+                <TextField
+                  label="ستون تاریخ"
+                  value={attendanceMappingForm.date_column}
+                  onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, date_column: e.target.value })}
+                  disabled={isSavingAttendanceMapping}
+                  helperText='فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524'
+                />
+                <TextField
+                  label="ستون ساعت"
+                  value={attendanceMappingForm.time_column}
+                  onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
+                  disabled={isSavingAttendanceMapping}
+                  helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
+                />
+              </>
+            ) : (
+              <>
+                <TextField
+                  label="ستون تاریخ ورود"
+                  value={attendanceMappingForm.enter_date_column}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({ ...attendanceMappingForm, enter_date_column: e.target.value })
+                  }
+                  disabled={isSavingAttendanceMapping}
+                  helperText='مثلاً enterdate — فرمت: عدد شمسی فشرده، مثل 14050524'
+                />
+                <TextField
+                  label="ستون ساعت ورود"
+                  value={attendanceMappingForm.enter_time_column}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({ ...attendanceMappingForm, enter_time_column: e.target.value })
+                  }
+                  disabled={isSavingAttendanceMapping}
+                  helperText='مثلاً entertime — فرمت: عدد فشرده، مثل 618 یا 1401'
+                />
+                <TextField
+                  label="ستون تاریخ خروج"
+                  value={attendanceMappingForm.exit_date_column}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({ ...attendanceMappingForm, exit_date_column: e.target.value })
+                  }
+                  disabled={isSavingAttendanceMapping}
+                  helperText='مثلاً exitdate'
+                />
+                <TextField
+                  label="ستون ساعت خروج"
+                  value={attendanceMappingForm.exit_time_column}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({ ...attendanceMappingForm, exit_time_column: e.target.value })
+                  }
+                  disabled={isSavingAttendanceMapping}
+                  helperText='مثلاً exittime — اگر کاربری هنوز خروج نزده باشد، این ستون‌ها می‌توانند خالی (NULL) باشند'
+                />
+              </>
+            )}
 
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2" fontWeight={700}>
