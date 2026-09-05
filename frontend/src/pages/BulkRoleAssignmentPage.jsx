@@ -83,7 +83,7 @@ export default function BulkRoleAssignmentPage() {
         message: `${data.assigned_count} نفر تازه این نقش را گرفتند. ${data.already_had_count} نفر از قبل داشتند (نادیده گرفته شد). مجموع پرسنل مطابق فیلتر: ${data.total_matched} نفر.`,
       });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "انتصاب دسته‌جمعی ناموفق بود." });
+      setResult({ success: false, message: err.response?.data?.detail || "انتصاب دسته‌جمعی با خطا مواجه شد." });
     } finally {
       setIsAssigning(false);
     }
@@ -101,12 +101,6 @@ export default function BulkRoleAssignmentPage() {
       </Typography>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-        {result && (
-          <Alert severity={result.success ? "success" : "error"} sx={{ mb: 2 }}>
-            {result.message}
-          </Alert>
-        )}
-
         {roles === null || sites === null ? (
           <CircularProgress size={20} />
         ) : (
@@ -155,6 +149,11 @@ export default function BulkRoleAssignmentPage() {
             )}
 
             <Box>
+              {result && (
+                <Alert severity={result.success ? "success" : "error"} sx={{ mb: 2 }}>
+                  {result.message}
+                </Alert>
+              )}
               <Button
                 variant="contained"
                 startIcon={isAssigning ? <CircularProgress size={18} color="inherit" /> : <GroupAddOutlinedIcon />}

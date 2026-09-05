@@ -77,7 +77,7 @@ export default function FeedbackSubmitPage() {
       setMessage("");
       setIsAnonymous(false);
     } catch (err) {
-      setError(err.response?.data?.detail || "ارسال پیام ناموفق بود.");
+      setError(err.response?.data?.detail || "ارسال پیام با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }

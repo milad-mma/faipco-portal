@@ -97,7 +97,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
       );
       onChanged?.();
     } catch (err) {
-      setError(err.response?.data?.detail || "تعیین رمز عبور ناموفق بود.");
+      setError(err.response?.data?.detail || "تعیین رمز عبور با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }
@@ -112,7 +112,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
       setSuccess("بازگردانده شد — این پرسنل از این پس دوباره با روش ورود پیش‌فرض وارد می‌شود.");
       onChanged?.();
     } catch (err) {
-      setError(err.response?.data?.detail || "بازگرداندن ناموفق بود.");
+      setError(err.response?.data?.detail || "بازگرداندن با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }
@@ -128,8 +128,6 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-        {error && <Alert severity="error">{error}</Alert>}
-        {success && <Alert severity="success">{success}</Alert>}
         {!success && (
           <>
             <TextField
@@ -150,6 +148,8 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
             />
           </>
         )}
+        {error && <Alert severity="error">{error}</Alert>}
+        {success && <Alert severity="success">{success}</Alert>}
       </DialogContent>
       <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
         <Box>
@@ -272,7 +272,7 @@ export default function EmployeesPage() {
       const data = await previewOrphanedInactiveCleanup();
       setCleanupPreview(data);
     } catch (err) {
-      setCleanupResult({ success: false, message: err.response?.data?.detail || "بررسی ناموفق بود." });
+      setCleanupResult({ success: false, message: err.response?.data?.detail || "بررسی با خطا مواجه شد." });
     } finally {
       setIsCleanupLoading(false);
     }
@@ -290,7 +290,7 @@ export default function EmployeesPage() {
       // اگر همین الان تیک «نمایش پرسنل غیرفعال» روشن است، لیست را دوباره بگیر تا حذف‌شده‌ها دیگر دیده نشوند
       if (showInactive) loadEmployees();
     } catch (err) {
-      setCleanupResult({ success: false, message: err.response?.data?.detail || "حذف ناموفق بود." });
+      setCleanupResult({ success: false, message: err.response?.data?.detail || "حذف با خطا مواجه شد." });
     } finally {
       setIsCleanupDeleting(false);
     }
@@ -494,12 +494,6 @@ export default function EmployeesPage() {
             </Box>
           )}
 
-          {cleanupResult && (
-            <Alert severity={cleanupResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-              {cleanupResult.message}
-            </Alert>
-          )}
-
           {!isCleanupLoading && cleanupPreview && (
             <>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
@@ -530,6 +524,11 @@ export default function EmployeesPage() {
                 </TableContainer>
               )}
             </>
+          )}
+          {cleanupResult && (
+            <Alert severity={cleanupResult.success ? "success" : "error"} sx={{ mt: 2 }}>
+              {cleanupResult.message}
+            </Alert>
           )}
         </DialogContent>
         <DialogActions>
@@ -623,7 +622,7 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
       });
       onCreated();
     } catch (err) {
-      setError(err.response?.data?.detail || "افزودن پرسنل ناموفق بود.");
+      setError(err.response?.data?.detail || "افزودن پرسنل با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }

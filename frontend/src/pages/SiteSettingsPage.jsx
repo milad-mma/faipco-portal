@@ -195,7 +195,7 @@ export default function SiteSettingsPage() {
       setHasExistingConnection(true);
       setResult({ success: true, message: "اطلاعات اتصال دیتابیس ذخیره شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "ذخیره اتصال ناموفق بود." });
+      setResult({ success: false, message: err.response?.data?.detail || "ذخیره اتصال با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -210,7 +210,7 @@ export default function SiteSettingsPage() {
       setHasExistingConnection(false);
       setResult({ success: true, message: "اتصال دیتابیس حذف شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "حذف اتصال ناموفق بود." });
+      setResult({ success: false, message: err.response?.data?.detail || "حذف اتصال با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -225,7 +225,7 @@ export default function SiteSettingsPage() {
       setHasExistingMapping(true);
       setResult({ success: true, message: "Mapping ستون‌ها ذخیره شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "ذخیره Mapping ناموفق بود." });
+      setResult({ success: false, message: err.response?.data?.detail || "ذخیره Mapping با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -240,7 +240,7 @@ export default function SiteSettingsPage() {
       setHasExistingMapping(false);
       setResult({ success: true, message: "Mapping ستون‌ها حذف شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "حذف Mapping ناموفق بود." });
+      setResult({ success: false, message: err.response?.data?.detail || "حذف Mapping با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -260,7 +260,7 @@ export default function SiteSettingsPage() {
         }));
       },
       () => {
-        setGpsResult({ success: false, message: "دریافت موقعیت فعلی ناموفق بود — دسترسی مکان را بررسی کنید." });
+        setGpsResult({ success: false, message: "دریافت موقعیت فعلی با خطا مواجه شد — دسترسی مکان را بررسی کنید." });
       },
       { enableHighAccuracy: true, timeout: 15000 }
     );
@@ -288,7 +288,7 @@ export default function SiteSettingsPage() {
       });
       setGpsResult({ success: true, message: hasAll ? "موقعیت GPS ذخیره شد." : "محدودیت مکانی این سایت غیرفعال شد." });
     } catch (err) {
-      setGpsResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setGpsResult({ success: false, message: err.response?.data?.detail || "ذخیره با خطا مواجه شد." });
     } finally {
       setIsSavingGps(false);
     }
@@ -304,7 +304,7 @@ export default function SiteSettingsPage() {
     } catch (err) {
       setAttendanceMappingResult({
         success: false,
-        message: err.response?.data?.detail || "ذخیره نگاشت تردد ناموفق بود.",
+        message: err.response?.data?.detail || "ذخیره نگاشت تردد با خطا مواجه شد.",
       });
     } finally {
       setIsSavingAttendanceMapping(false);
@@ -322,7 +322,7 @@ export default function SiteSettingsPage() {
     } catch (err) {
       setAttendanceMappingResult({
         success: false,
-        message: err.response?.data?.detail || "حذف نگاشت تردد ناموفق بود.",
+        message: err.response?.data?.detail || "حذف نگاشت تردد با خطا مواجه شد.",
       });
     } finally {
       setIsSavingAttendanceMapping(false);
@@ -349,17 +349,6 @@ export default function SiteSettingsPage() {
       </Stack>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-        {result && (
-          <Alert severity={result.success ? "success" : "error"} sx={{ mb: 3 }}>
-            {result.message}
-          </Alert>
-        )}
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error}
-          </Alert>
-        )}
-
         <Tabs value={tab} onChange={handleTabChange} sx={{ mb: 3 }}>
           <Tab value="connection" label="اتصال دیتابیس" disabled={isSaving} />
           <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
@@ -420,6 +409,9 @@ export default function SiteSettingsPage() {
               }
             />
 
+            {(result || error) && (
+              <Alert severity={error || !result?.success ? "error" : "success"}>{error || result.message}</Alert>
+            )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
@@ -628,6 +620,9 @@ export default function SiteSettingsPage() {
               disabled={isSaving}
             />
 
+            {(result || error) && (
+              <Alert severity={error || !result?.success ? "error" : "success"}>{error || result.message}</Alert>
+            )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
@@ -663,10 +658,6 @@ export default function SiteSettingsPage() {
               دقت GPS داخل ساختمان‌های صنعتی معمولاً ضعیف می‌شود (گاهی ۵۰ تا ۱۰۰+ متر خطا). حداقل
               ۱۰۰ تا ۱۵۰ متر شعاع پیشنهاد می‌شود تا پرسنلی که واقعاً حاضرند به‌اشتباه رد نشوند.
             </Alert>
-
-            {gpsResult && (
-              <Alert severity={gpsResult.success ? "success" : "error"}>{gpsResult.message}</Alert>
-            )}
 
             <Stack direction="row" spacing={2}>
               <TextField
@@ -704,6 +695,9 @@ export default function SiteSettingsPage() {
               </Button>
             </Box>
 
+            {gpsResult && (
+              <Alert severity={gpsResult.success ? "success" : "error"}>{gpsResult.message}</Alert>
+            )}
             <Stack direction="row" spacing={1.5}>
               <Button
                 variant="contained"
@@ -729,12 +723,6 @@ export default function SiteSettingsPage() {
               <Alert severity="warning">
                 این قابلیت فقط برای اتصال از نوع SQL Server در دسترس است — نوع اتصال فعلی این سایت{" "}
                 «{connectionForm.db_type}» است.
-              </Alert>
-            )}
-
-            {attendanceMappingResult && (
-              <Alert severity={attendanceMappingResult.success ? "success" : "error"}>
-                {attendanceMappingResult.message}
               </Alert>
             )}
 
@@ -813,6 +801,11 @@ export default function SiteSettingsPage() {
               helperText='مثلاً "D" اگر ستون‌ها D1، D2، ... D31 نامگذاری شده‌اند'
             />
 
+            {attendanceMappingResult && (
+              <Alert severity={attendanceMappingResult.success ? "success" : "error"}>
+                {attendanceMappingResult.message}
+              </Alert>
+            )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"

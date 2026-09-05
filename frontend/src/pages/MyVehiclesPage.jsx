@@ -65,7 +65,7 @@ export default function MyVehiclesPage() {
       setPlate(EMPTY_PLATE);
       loadVehicles();
     } catch (err) {
-      setError(err.response?.data?.detail || "ثبت خودرو ناموفق بود.");
+      setError(err.response?.data?.detail || "ثبت خودرو با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }

@@ -84,7 +84,7 @@ async function downloadPayrollReceipt(noticeId, setDownloadError) {
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
-        : "دانلود فیش ناموفق بود."
+        : "دانلود فیش با خطا مواجه شد."
     );
   }
 }
@@ -98,7 +98,7 @@ async function downloadAttendanceCard(noticeId, setDownloadError) {
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
-        : "دانلود فیش ناموفق بود."
+        : "دانلود فیش با خطا مواجه شد."
     );
   }
 }

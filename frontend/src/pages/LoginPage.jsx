@@ -131,7 +131,7 @@ export default function LoginPage() {
             "دسترسی به پرتال فقط از شبکه مجاز امکان‌پذیر است. لطفاً اتصال VPN خود را قطع کنید."
         );
       } else {
-        setError(err.response?.data?.detail || "ورود ناموفق بود. اطلاعات وارد‌شده را بررسی کنید.");
+        setError(err.response?.data?.detail || "ورود با خطا مواجه شد. اطلاعات وارد‌شده را بررسی کنید.");
       }
     } finally {
       setIsSubmitting(false);
@@ -275,6 +275,7 @@ export default function LoginPage() {
           فراموشی رمز عبور
         </Link>
       </Stack>
+      {error && <Alert severity="error">{error}</Alert>}
       <Button
         type="submit"
         variant="contained"
@@ -423,11 +424,6 @@ export default function LoginPage() {
             {isOnline ? (
               <>
                 {installPrompt}
-                {error && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                  </Alert>
-                )}
                 {formFields}
               </>
             ) : (

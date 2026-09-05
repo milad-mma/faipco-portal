@@ -127,7 +127,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
       }
       onSaved();
     } catch (err) {
-      setError(err.response?.data?.detail || "ثبت ناموفق بود.");
+      setError(err.response?.data?.detail || "ثبت با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }
@@ -143,8 +143,6 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
         {mode === "edit" && "ویرایش رکورد"}
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-        {error && <Alert severity="error">{error}</Alert>}
-
         {employeeIsLocked ? (
           <TextField
             label="پرسنل"
@@ -192,6 +190,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           renderInput={(params) => <TextField {...params} label="سایت (اختیاری)" />}
           isOptionEqualToValue={(o, v) => o.id === v.id}
         />
+        {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ p: 2.5 }}>
         <Button onClick={onClose}>انصراف</Button>

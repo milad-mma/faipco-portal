@@ -259,7 +259,7 @@ export default function NewNoticePage() {
       setForm(EMPTY_FORM);
     } catch (err) {
       const message =
-        err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه ناموفق بود.";
+        err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه با خطا مواجه شد.";
       setResult({ success: false, message });
     } finally {
       setIsSubmitting(false);
@@ -295,7 +295,7 @@ export default function NewNoticePage() {
     } catch (err) {
       setResult({
         success: false,
-        message: err.response?.data?.detail || "آپلود فیش حقوقی ناموفق بود.",
+        message: err.response?.data?.detail || "آپلود فیش حقوقی با خطا مواجه شد.",
       });
     } finally {
       setIsSubmitting(false);
@@ -336,7 +336,7 @@ export default function NewNoticePage() {
     } catch (err) {
       setResult({
         success: false,
-        message: err.response?.data?.detail || "آپلود فیش کارکرد ناموفق بود.",
+        message: err.response?.data?.detail || "آپلود فیش کارکرد با خطا مواجه شد.",
       });
     } finally {
       setIsSubmitting(false);
@@ -413,8 +413,6 @@ export default function NewNoticePage() {
           </Stack>
         ) : (
           <Stack spacing={2}>
-            {error && <Alert severity="error">{error}</Alert>}
-
             {((canAnyNormalTarget ? 1 : 0) +
               (availableTargets?.can_upload_payroll ? 1 : 0) +
               (availableTargets?.can_upload_attendance_card ? 1 : 0)) > 1 && (
@@ -625,6 +623,7 @@ export default function NewNoticePage() {
                 )}
 
                 <Box>
+                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                   <Button
                     variant="contained"
                     startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
@@ -690,6 +689,7 @@ export default function NewNoticePage() {
                 </Button>
 
                 <Box>
+                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                   <Button
                     variant="contained"
                     startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
@@ -768,6 +768,7 @@ export default function NewNoticePage() {
                 </Button>
 
                 <Box>
+                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                   <Button
                     variant="contained"
                     startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}

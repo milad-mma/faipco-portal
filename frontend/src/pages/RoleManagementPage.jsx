@@ -160,7 +160,7 @@ export default function RoleManagementPage() {
       setDialogOpen(false);
       loadRoles();
     } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره نقش ناموفق بود.");
+      setError(err.response?.data?.detail || "ذخیره نقش با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }
@@ -175,7 +175,7 @@ export default function RoleManagementPage() {
       setRoles((prev) => prev.filter((r) => r.id !== roleToDelete.id));
       setRoleToDelete(null);
     } catch (err) {
-      setDeleteError(err.response?.data?.detail || "حذف نقش ناموفق بود.");
+      setDeleteError(err.response?.data?.detail || "حذف نقش با خطا مواجه شد.");
     } finally {
       setIsDeleting(false);
     }

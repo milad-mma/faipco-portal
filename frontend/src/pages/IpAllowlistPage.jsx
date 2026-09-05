@@ -68,7 +68,7 @@ export default function IpAllowlistPage() {
       setEnabled(state.enabled);
       setSaveResult({ success: true, message: `ذخیره شد — ${state.count} رنج ثبت‌شده.` });
     } catch (err) {
-      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -82,7 +82,7 @@ export default function IpAllowlistPage() {
       setMessage(saved);
       setMessageResult({ success: true, text: "ذخیره شد." });
     } catch (err) {
-      setMessageResult({ success: false, text: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setMessageResult({ success: false, text: err.response?.data?.detail || "ذخیره با خطا مواجه شد." });
     } finally {
       setIsSavingMessage(false);
     }
@@ -122,12 +122,6 @@ export default function IpAllowlistPage() {
               </Alert>
             )}
 
-            {saveResult && (
-              <Alert severity={saveResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-                {saveResult.message}
-              </Alert>
-            )}
-
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               فهرست رنج‌ها (هر IP یا رنج در یک خط)
             </Typography>
@@ -152,7 +146,12 @@ export default function IpAllowlistPage() {
               }}
             />
 
-            <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
+            {saveResult && (
+              <Alert severity={saveResult.success ? "success" : "error"} sx={{ mt: 2, mb: 2 }}>
+                {saveResult.message}
+              </Alert>
+            )}
+            <Stack direction="row" spacing={1.5}>
               <Button
                 variant="outlined"
                 startIcon={<AutoFixHighOutlinedIcon />}
@@ -180,11 +179,6 @@ export default function IpAllowlistPage() {
               این متن دقیقاً همان چیزی است که در Dialog صفحه ورود، به کاربری که از یک IP غیرمجاز وارد
               می‌شود، نمایش داده می‌شود.
             </Typography>
-            {messageResult && (
-              <Alert severity={messageResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-                {messageResult.text}
-              </Alert>
-            )}
             {message === null ? (
               <CircularProgress size={20} />
             ) : (
@@ -196,6 +190,9 @@ export default function IpAllowlistPage() {
                   minRows={3}
                   disabled={isSavingMessage}
                 />
+                {messageResult && (
+                  <Alert severity={messageResult.success ? "success" : "error"}>{messageResult.text}</Alert>
+                )}
                 <Box>
                   <Button
                     variant="contained"

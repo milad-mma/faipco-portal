@@ -99,7 +99,7 @@ function FeedbackMessagesList({ canDelete }) {
   useEffect(() => {
     fetchFeedback()
       .then(setAllMessages)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها ناموفق بود."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
   }, []);
 
   // فقط وقتی هر سه بخش (روز/ماه/سال) یک تاریخ کامل شده باشند، به ISO
@@ -129,7 +129,7 @@ function FeedbackMessagesList({ canDelete }) {
       dateTo: dateToIso,
     })
       .then(setMessages)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها ناموفق بود."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso]);
 
@@ -158,7 +158,7 @@ function FeedbackMessagesList({ canDelete }) {
       setMessages((prev) => prev.filter((m) => m.id !== id));
       setAllMessages((prev) => prev?.filter((m) => m.id !== id) ?? prev);
     } catch (err) {
-      setError(err.response?.data?.detail || "حذف ناموفق بود.");
+      setError(err.response?.data?.detail || "حذف با خطا مواجه شد.");
     }
   }
 
@@ -343,7 +343,7 @@ function ProhibitedWordsManager() {
   function loadPhrases() {
     fetchProhibitedPhrases()
       .then(setPhrases)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت فهرست ناموفق بود."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."));
   }
 
   useEffect(() => {
@@ -359,7 +359,7 @@ function ProhibitedWordsManager() {
       setNewPhrase("");
       loadPhrases();
     } catch (err) {
-      setError(err.response?.data?.detail || "افزودن ناموفق بود.");
+      setError(err.response?.data?.detail || "افزودن با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }
@@ -370,7 +370,7 @@ function ProhibitedWordsManager() {
       await deleteProhibitedPhrase(id);
       loadPhrases();
     } catch (err) {
-      setError(err.response?.data?.detail || "حذف ناموفق بود.");
+      setError(err.response?.data?.detail || "حذف با خطا مواجه شد.");
     }
   }
 
@@ -380,6 +380,12 @@ function ProhibitedWordsManager() {
         اگر متن یک پیام حاوی هرکدام از این کلمات/عبارات باشد، آن پیام حتی اگر «ناشناس» ارسال شده باشد،
         هویت فرستنده‌اش برای دارنده مجوز مشاهده هم آشکار می‌شود.
       </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
       <Stack direction="row" spacing={1.5} sx={{ mb: 3 }}>
         <TextField
@@ -394,12 +400,6 @@ function ProhibitedWordsManager() {
           افزودن
         </Button>
       </Stack>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
 
       {phrases === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>

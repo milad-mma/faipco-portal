@@ -65,7 +65,7 @@ export default function MonthlyAttendanceReportPage() {
         setReport(data);
         setPeriod({ year: data.year, month: data.month });
       })
-      .catch((err) => setError(err.response?.data?.detail || "دریافت گزارش تردد ناموفق بود."))
+      .catch((err) => setError(err.response?.data?.detail || "دریافت گزارش تردد با خطا مواجه شد."))
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period.year, period.month]);

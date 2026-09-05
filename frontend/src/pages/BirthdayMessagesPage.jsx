@@ -75,7 +75,7 @@ export default function BirthdayMessagesPage() {
       setNewText("");
       loadTemplates();
     } catch (err) {
-      setTemplateError(err.response?.data?.detail || "افزودن ناموفق بود.");
+      setTemplateError(err.response?.data?.detail || "افزودن با خطا مواجه شد.");
     } finally {
       setIsAdding(false);
     }
@@ -97,9 +97,9 @@ export default function BirthdayMessagesPage() {
       ]);
       setSendTime(savedTime);
       setEnabled(savedEnabled);
-      setSettingsResult({ success: true, message: "ذخیره شد." });
+      setSettingsResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
-      setSettingsResult({ success: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+      setSettingsResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
     } finally {
       setIsSavingSettings(false);
     }
@@ -112,7 +112,7 @@ export default function BirthdayMessagesPage() {
       const result = await sendBirthdayGreetingsNow();
       setSendNowResult({ success: true, message: result.message });
     } catch (err) {
-      setSendNowResult({ success: false, message: err.response?.data?.detail || "ارسال ناموفق بود." });
+      setSendNowResult({ success: false, message: err.response?.data?.detail || "ارسال با خطا مواجه شد." });
     } finally {
       setIsSendingNow(false);
     }
@@ -149,7 +149,7 @@ export default function BirthdayMessagesPage() {
           </Button>
         </Stack>
         {sendNowResult && (
-          <Alert severity={sendNowResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+          <Alert severity={sendNowResult.success ? "success" : "error"} sx={{ mt: 2, mb: 2 }}>
             {sendNowResult.message}
           </Alert>
         )}
@@ -193,12 +193,6 @@ export default function BirthdayMessagesPage() {
           تنظیمات ارسال خودکار
         </Typography>
 
-        {settingsResult && (
-          <Alert severity={settingsResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-            {settingsResult.message}
-          </Alert>
-        )}
-
         {sendTime === null || enabled === null ? (
           <CircularProgress size={20} />
         ) : (
@@ -240,6 +234,9 @@ export default function BirthdayMessagesPage() {
                 ))}
               </TextField>
             </Stack>
+            {settingsResult && (
+              <Alert severity={settingsResult.success ? "success" : "error"}>{settingsResult.message}</Alert>
+            )}
             <Box>
               <Button
                 variant="contained"
@@ -260,12 +257,6 @@ export default function BirthdayMessagesPage() {
           فهرست متن‌های تبریک (هر بار یکی به‌صورت تصادفی انتخاب می‌شود)
         </Typography>
 
-        {templateError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {templateError}
-          </Alert>
-        )}
-
         <Stack spacing={2} sx={{ mb: 3 }}>
           <TextField
             label="متن پیام جدید"
@@ -275,6 +266,7 @@ export default function BirthdayMessagesPage() {
             minRows={2}
             disabled={isAdding}
           />
+          {templateError && <Alert severity="error">{templateError}</Alert>}
           <Box>
             <Button
               variant="outlined"
