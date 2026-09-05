@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import encrypt_secret
 from app.models.employee import EmployeeMapping
-from app.models.site import AttendanceMapping, DbType, Site, SiteConnection
+from app.models.site import AttendanceMapping, Site, SiteConnection
 from app.schemas.site import AttendanceMappingIn, EmployeeMappingIn, SiteConnectionIn, SiteCreate
 
 
@@ -63,13 +63,14 @@ class SiteService:
     async def upsert_attendance_mapping(self, site_id: int, payload: AttendanceMappingIn) -> AttendanceMapping:
         """
         نگاشت جدول/ستون‌های تردد این سایت را می‌سازد یا به‌روزرسانی می‌کند —
-        فقط برای اتصال از نوع SQL Server معنا دارد؛ اگر اتصال هنوز تعریف
-        نشده یا نوعش SQL Server نیست، رد می‌شود (نه اینکه بی‌صدا ذخیره شود
-        و بعداً کاربران با خطای اتصال مواجه شوند).
+        فقط اگر اتصال دیتابیس این سایت از قبل تعریف شده باشد معنا دارد
+        (هر سه نوع پشتیبانی‌شده این پروژه: SQL Server، MySQL، PostgreSQL)؛
+        اگر اتصال هنوز تعریف نشده، رد می‌شود (نه اینکه بی‌صدا ذخیره شود و
+        بعداً کاربران با خطای اتصال مواجه شوند).
         """
         conn = await self.get_connection(site_id)
-        if conn is None or conn.db_type != DbType.mssql:
-            raise ValueError("گزارش تردد ماهانه فقط برای سایتی با اتصال از نوع SQL Server قابل‌تنظیم است")
+        if conn is None:
+            raise ValueError("گزارش تردد ماهانه فقط برای سایتی با اتصال دیتابیس تعریف‌شده قابل‌تنظیم است")
 
         mapping = await self.get_attendance_mapping(site_id)
         if mapping is None:

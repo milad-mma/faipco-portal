@@ -1,7 +1,8 @@
 """
 سرویس «گزارش تردد ماهانه» — از دستگاه‌های حضور و غیاب واقعی هر Site
-می‌خواند، از همان SQL Server که برای Sync پرسنل هم استفاده می‌شود
-(SiteConnection). نام جدول/ستون‌ها هاردکد نیستند - از یک AttendanceMapping
+می‌خواند، از همان دیتابیس که برای Sync پرسنل هم استفاده می‌شود
+(SiteConnection - از هر سه نوع پشتیبانی‌شده در این پروژه: SQL Server،
+MySQL، PostgreSQL). نام جدول/ستون‌ها هاردکد نیستند - از یک AttendanceMapping
 (دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل) خوانده می‌شوند که
 از پنل «تنظیمات سایت» قابل‌تنظیم است.
 
@@ -13,14 +14,16 @@
 می‌شود - همان داده خام، فقط با برچسب خنثی‌تر.
 
 ⚠️ زنده - این داده هیچ‌جا Cache/ذخیره نمی‌شود؛ هر بار درخواست، مستقیماً
-از SQL Server سایت خوانده و بلافاصله نمایش داده می‌شود (کاملاً مستقل از
-Sync Engine که پرسنل را به‌صورت دوره‌ای در دیتابیس خودِ پرتال ذخیره می‌کند).
+از دیتابیس اصلی سایت خوانده و بلافاصله نمایش داده می‌شود (کاملاً مستقل
+از Sync Engine که پرسنل را به‌صورت دوره‌ای در دیتابیس خودِ پرتال ذخیره
+می‌کند).
 
 ⚠️ امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
 می‌شود (هرگز از ورودی درخواست). مقادیر (نه نام جدول/ستون) همیشه
 Parameterized هستند؛ نام جدول/ستون فقط از AttendanceMapping (تنظیم‌شده
-توسط Admin با مجوز sites.manage) می‌آیند و با [براکت] کوته می‌شوند —
-همان الگوی Sync Engine (app/sync_engine/adapters/mssql_adapter.py).
+توسط Admin با مجوز sites.manage) می‌آیند و با علامت کوته مخصوص همان نوع
+دیتابیس (تابع _quote) احاطه می‌شوند — همان الگوی امنیتی Sync Engine
+(app/sync_engine/adapters/).
 """
 from __future__ import annotations
 
@@ -28,6 +31,10 @@ import asyncio
 import logging
 
 import pymssql
+import pymysql
+import pymysql.cursors
+import psycopg2
+import psycopg2.extras
 
 from app.core.persian_date import jalali_weekday_name, jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
@@ -63,18 +70,66 @@ def _format_jalali_date(yyyymmdd: int) -> str:
     return f"{s[0:4]}/{s[4:6]}/{s[6:8]}"
 
 
-def _connect(conn: SiteConnection) -> "pymssql.Connection":
-    if conn.db_type != DbType.mssql:
-        raise MonthlyAttendanceError("گزارش تردد ماهانه فقط برای اتصال از نوع SQL Server پشتیبانی می‌شود")
-    return pymssql.connect(
-        server=conn.host,
-        port=str(conn.port),
-        database=conn.database_name,
-        user=conn.username,
-        password=decrypt_secret(conn.password_encrypted),
-        timeout=10,
-        login_timeout=10,
-    )
+def _quote(db_type: DbType, name: str) -> str:
+    """
+    نام جدول/ستون (فقط از AttendanceMapping تنظیم‌شده توسط Admin، هرگز از
+    ورودی کاربر نهایی) را با علامت کوته مخصوص همان نوع دیتابیس احاطه
+    می‌کند - SQL Server از [براکت]، MySQL از بک‌تیک، PostgreSQL از
+    گیومه دوتایی استفاده می‌کند؛ Parameterized-کردن نام جدول/ستون در
+    هیچ‌کدام از این درایورها ممکن نیست (فقط مقادیر Parameterized می‌شوند).
+    """
+    if db_type == DbType.mysql:
+        return f"`{name}`"
+    if db_type == DbType.postgresql:
+        return f'"{name}"'
+    return f"[{name}]"  # mssql
+
+
+def _connect(conn: SiteConnection):
+    password = decrypt_secret(conn.password_encrypted)
+    if conn.db_type == DbType.mssql:
+        return pymssql.connect(
+            server=conn.host,
+            port=str(conn.port),
+            database=conn.database_name,
+            user=conn.username,
+            password=password,
+            timeout=10,
+            login_timeout=10,
+        )
+    if conn.db_type == DbType.mysql:
+        return pymysql.connect(
+            host=conn.host,
+            port=conn.port,
+            database=conn.database_name,
+            user=conn.username,
+            password=password,
+            connect_timeout=10,
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+    if conn.db_type == DbType.postgresql:
+        return psycopg2.connect(
+            host=conn.host,
+            port=conn.port,
+            dbname=conn.database_name,
+            user=conn.username,
+            password=password,
+            connect_timeout=10,
+        )
+    raise MonthlyAttendanceError(f"نوع اتصال «{conn.db_type.value}» برای گزارش تردد ماهانه پشتیبانی نمی‌شود")
+
+
+def _dict_cursor(connection, db_type: DbType):
+    """
+    ⚠️ فقط MSSQL/MySQL از پارامتر اختصاصی خودشان برای Cursor دیکشنری‌مانند
+    استفاده می‌کنند (as_dict/cursorclass، که در _connect یا همین‌جا تنظیم
+    شده)؛ PostgreSQL نیاز به cursor_factory جداگانه در لحظه ساخت Cursor دارد.
+    """
+    if db_type == DbType.mssql:
+        return connection.cursor(as_dict=True)
+    if db_type == DbType.postgresql:
+        return connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    return connection.cursor()  # mysql - cursorclass از قبل روی خودِ Connection تنظیم شده
 
 
 def _fetch_raw_rows_sync(
@@ -82,20 +137,25 @@ def _fetch_raw_rows_sync(
 ) -> list[dict]:
     """
     نام جدول/ستون‌ها (فقط از AttendanceMapping تنظیم‌شده توسط Admin) با
-    [براکت] در متن Query قرار می‌گیرند - SQL Server اجازه
-    Parameterized-کردن نام جدول/ستون را نمی‌دهد. مقادیر واقعی
-    (emp_no/from_date/to_date) همیشه Parameterized هستند.
+    علامت کوته مخصوص نوع دیتابیس این سایت (_quote) در متن Query قرار
+    می‌گیرند - Parameterized-کردن نام جدول/ستون در هیچ‌کدام از درایورها
+    ممکن نیست. مقادیر واقعی (emp_no/from_date/to_date) همیشه
+    Parameterized هستند. نام مستعار ستون‌ها (AS ...) هم عمداً کوته
+    می‌شوند - وگرنه PostgreSQL آن‌ها را خودکار کوچک می‌کرد و کلید دیکشنری
+    خروجی با آنچه کد زیر انتظار دارد ("AttendanceDate"/"AttendanceTime")
+    مطابقت نمی‌داشت.
     """
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     connection = _connect(conn)
     try:
         query = f"""
-            SELECT [{mapping.date_column}] AS AttendanceDate, [{mapping.time_column}] AS AttendanceTime
-            FROM [{mapping.table_name}]
-            WHERE [{mapping.personnel_code_column}] = %(emp_no)s
-              AND [{mapping.date_column}] BETWEEN %(from_date)s AND %(to_date)s
-            ORDER BY [{mapping.date_column}] ASC, [{mapping.time_column}] ASC
+            SELECT {q(mapping.date_column)} AS {q("AttendanceDate")}, {q(mapping.time_column)} AS {q("AttendanceTime")}
+            FROM {q(mapping.table_name)}
+            WHERE {q(mapping.personnel_code_column)} = %(emp_no)s
+              AND {q(mapping.date_column)} BETWEEN %(from_date)s AND %(to_date)s
+            ORDER BY {q(mapping.date_column)} ASC, {q(mapping.time_column)} ASC
         """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
-        with connection.cursor(as_dict=True) as cur:
+        with _dict_cursor(connection, conn.db_type) as cur:
             cur.execute(query, {"emp_no": emp_no, "from_date": from_date, "to_date": to_date})
             return list(cur.fetchall())
     finally:
@@ -117,15 +177,16 @@ def _fetch_holidays_sync(conn: SiteConnection, mapping: AttendanceMapping, year:
     ):
         return set()
 
-    day_columns_sql = ", ".join(f"[{mapping.calendar_day_column_prefix}{i}]" for i in range(1, 32))
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    day_columns_sql = ", ".join(q(f"{mapping.calendar_day_column_prefix}{i}") for i in range(1, 32))
     connection = _connect(conn)
     try:
         query = f"""
             SELECT {day_columns_sql}
-            FROM [{mapping.calendar_table_name}]
-            WHERE [{mapping.calendar_year_column}] = %(year)s AND [{mapping.calendar_month_column}] = %(month)s
+            FROM {q(mapping.calendar_table_name)}
+            WHERE {q(mapping.calendar_year_column)} = %(year)s AND {q(mapping.calendar_month_column)} = %(month)s
         """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
-        with connection.cursor(as_dict=True) as cur:
+        with _dict_cursor(connection, conn.db_type) as cur:
             cur.execute(query, {"year": year, "month": month})
             row = cur.fetchone()
     finally:
@@ -169,7 +230,7 @@ async def get_monthly_attendance(
         raise
     except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند
         logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
-        raise MonthlyAttendanceError("اتصال به سیستم تردد ناموفق بود — لطفاً بعداً دوباره تلاش کنید") from e
+        raise MonthlyAttendanceError("اتصال به سیستم تردد با خطا مواجه شد — لطفاً بعداً دوباره تلاش کنید") from e
 
     # ⚠️ شکست در خواندن تقویم/تعطیلات نباید کل گزارش تردد را خراب کند —
     # این یک قابلیت مکمل/اختیاری است، نه بخش اصلی گزارش.

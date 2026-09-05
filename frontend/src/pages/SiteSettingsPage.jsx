@@ -719,18 +719,12 @@ export default function SiteSettingsPage() {
               دیتابیس») خوانده می‌شود. چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی نام جدول/ستون‌های
               متفاوتی دارند، این‌ها را دقیقاً مطابق دیتابیس واقعی این سایت وارد کنید.
             </Alert>
-            {connectionForm.db_type !== "mssql" && (
-              <Alert severity="warning">
-                این قابلیت فقط برای اتصال از نوع SQL Server در دسترس است — نوع اتصال فعلی این سایت{" "}
-                «{connectionForm.db_type}» است.
-              </Alert>
-            )}
 
             <TextField
               label="نام جدول"
               value={attendanceMappingForm.table_name}
               onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, table_name: e.target.value })}
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText="نام جدولی که رکوردهای خام ورود/خروج دستگاه در آن ذخیره می‌شود"
             />
             <TextField
@@ -739,20 +733,20 @@ export default function SiteSettingsPage() {
               onChange={(e) =>
                 setAttendanceMappingForm({ ...attendanceMappingForm, personnel_code_column: e.target.value })
               }
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
             />
             <TextField
               label="ستون تاریخ"
               value={attendanceMappingForm.date_column}
               onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, date_column: e.target.value })}
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText='فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524'
             />
             <TextField
               label="ستون ساعت"
               value={attendanceMappingForm.time_column}
               onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
             />
 
@@ -771,7 +765,7 @@ export default function SiteSettingsPage() {
               onChange={(e) =>
                 setAttendanceMappingForm({ ...attendanceMappingForm, calendar_table_name: e.target.value })
               }
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
             />
             <TextField
               label="ستون سال"
@@ -779,7 +773,7 @@ export default function SiteSettingsPage() {
               onChange={(e) =>
                 setAttendanceMappingForm({ ...attendanceMappingForm, calendar_year_column: e.target.value })
               }
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText="ستونی که سال شمسی را دارد (مثلاً 1405)"
             />
             <TextField
@@ -788,7 +782,7 @@ export default function SiteSettingsPage() {
               onChange={(e) =>
                 setAttendanceMappingForm({ ...attendanceMappingForm, calendar_month_column: e.target.value })
               }
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText="ستونی که شماره ماه شمسی را دارد (۱ تا ۱۲)"
             />
             <TextField
@@ -797,7 +791,7 @@ export default function SiteSettingsPage() {
               onChange={(e) =>
                 setAttendanceMappingForm({ ...attendanceMappingForm, calendar_day_column_prefix: e.target.value })
               }
-              disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+              disabled={isSavingAttendanceMapping}
               helperText='مثلاً "D" اگر ستون‌ها D1، D2، ... D31 نامگذاری شده‌اند'
             />
 
@@ -811,7 +805,7 @@ export default function SiteSettingsPage() {
                 variant="contained"
                 startIcon={isSavingAttendanceMapping ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
                 onClick={handleSaveAttendanceMapping}
-                disabled={isSavingAttendanceMapping || connectionForm.db_type !== "mssql"}
+                disabled={isSavingAttendanceMapping}
               >
                 {isSavingAttendanceMapping ? "در حال ذخیره..." : "ذخیره"}
               </Button>
