@@ -60,7 +60,7 @@ export default function UpdatePage() {
         return;
       }
       if (status.is_failed) {
-        setUpdateResult({ success: false, message: "آپدیت ناموفق بود — جزئیات کامل در لاگ زیر است." });
+        setUpdateResult({ success: false, message: "آپدیت با خطا مواجه شد — جزئیات کامل در لاگ زیر است." });
         setIsUpdating(false);
         return;
       }
@@ -88,7 +88,7 @@ export default function UpdatePage() {
       await applyUpdate(confirmText, password);
       pollUpdateStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
-      setUpdateResult({ success: false, message: err.response?.data?.detail || "آپدیت ناموفق بود." });
+      setUpdateResult({ success: false, message: err.response?.data?.detail || "آپدیت با خطا مواجه شد." });
       setIsUpdating(false);
     } finally {
       setPassword("");
@@ -151,10 +151,9 @@ export default function UpdatePage() {
 
       {checkResult?.has_update && (
         <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-          {updateResult && (
-            <Alert severity={updateResult.success ? "success" : "error"} sx={{ mb: 2 }}>
-              {updateResult.message}
-              {updateResult.success && " — الان صفحه Refresh می‌شود."}
+          {updateResult?.success && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              {updateResult.message} — اکنون صفحه به‌طور خودکار بازخوانی می‌شود.
             </Alert>
           )}
 
@@ -212,6 +211,11 @@ export default function UpdatePage() {
                   disabled={isUpdating}
                 />
                 <Box>
+                  {updateResult && !updateResult.success && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {updateResult.message}
+                    </Alert>
+                  )}
                   <Button
                     variant="contained"
                     color="warning"

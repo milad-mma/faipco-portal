@@ -90,7 +90,7 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
       });
       onSaved(updated);
     } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره تغییرات ناموفق بود.");
+      setError(err.response?.data?.detail || "ذخیره تغییرات با خطا مواجه شد.");
     } finally {
       setIsSaving(false);
     }

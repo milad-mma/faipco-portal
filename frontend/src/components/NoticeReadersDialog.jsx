@@ -37,7 +37,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
       // می‌شد، در حالی که واقعاً یعنی «اجازه مشاهده نداری».
       fetchNoticeReaders(noticeId)
         .then(setReaders)
-        .catch((err) => setLoadError(err.response?.data?.detail || "دریافت اطلاعات ناموفق بود."));
+        .catch((err) => setLoadError(err.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
     }
   }, [noticeId]);
 
@@ -59,7 +59,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
             : "همه مخاطبان این اطلاعیه را قبلاً دیده‌اند — چیزی برای ارسال مجدد نبود.",
       });
     } catch (err) {
-      setResendResult({ success: false, message: err.response?.data?.detail || "ارسال مجدد اعلان ناموفق بود." });
+      setResendResult({ success: false, message: err.response?.data?.detail || "ارسال مجدد اعلان با خطا مواجه شد." });
     } finally {
       setIsResending(false);
     }

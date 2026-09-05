@@ -323,7 +323,7 @@ export default function Layout() {
       setSnackbar("اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید");
     } catch (err) {
       setPushPermission(getNotificationPermission());
-      setSnackbar(err.message || "فعال‌سازی اعلان ناموفق بود");
+      setSnackbar(err.message || "فعال‌سازی اعلان با خطا مواجه شد");
     }
   }
 

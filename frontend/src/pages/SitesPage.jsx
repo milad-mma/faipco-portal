@@ -61,7 +61,7 @@ export default function SitesPage() {
           : `سایت «${site.name}» و همگام‌سازی خودکار آن غیرفعال شد.`
       );
     } catch (err) {
-      setSnackbar(err.response?.data?.detail || "تغییر وضعیت سایت ناموفق بود.");
+      setSnackbar(err.response?.data?.detail || "تغییر وضعیت سایت با خطا مواجه شد.");
     } finally {
       setTogglingId(null);
     }
@@ -98,7 +98,7 @@ export default function SitesPage() {
       setDeleteDialogSite(null);
       loadSites();
     } catch (err) {
-      setSnackbar(err.response?.data?.detail || "حذف سایت ناموفق بود.");
+      setSnackbar(err.response?.data?.detail || "حذف سایت با خطا مواجه شد.");
     } finally {
       setIsDeleting(false);
     }
@@ -112,7 +112,7 @@ export default function SitesPage() {
       setNewSite({ name: "", code: "", description: "" });
       loadSites();
     } catch (err) {
-      setError(err.response?.data?.detail || "ساخت سایت ناموفق بود");
+      setError(err.response?.data?.detail || "ساخت سایت با خطا مواجه شد.");
     }
   }
 
@@ -219,7 +219,6 @@ export default function SitesPage() {
       <Dialog open={siteDialogOpen} onClose={() => setSiteDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>سایت جدید</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
           <TextField
             label="نام سایت"
             fullWidth
@@ -240,6 +239,7 @@ export default function SitesPage() {
             value={newSite.description}
             onChange={(e) => setNewSite({ ...newSite, description: e.target.value })}
           />
+          {error && <Alert severity="error">{error}</Alert>}
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setSiteDialogOpen(false)}>انصراف</Button>

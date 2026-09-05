@@ -62,7 +62,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
       // بعدی همچنان عکس قبلی را نشان می‌دادند.
       if (reloadOnChange) window.location.reload();
     } catch (err) {
-      setError(err.response?.data?.detail || "آپلود عکس ناموفق بود.");
+      setError(err.response?.data?.detail || "آپلود عکس با خطا مواجه شد.");
     } finally {
       setIsUploading(false);
     }
@@ -78,7 +78,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
       setSuccess("عکس حذف شد — به پیش‌فرض برمی‌گردد.");
       if (reloadOnChange) window.location.reload();
     } catch (err) {
-      setError(err.response?.data?.detail || "حذف عکس ناموفق بود.");
+      setError(err.response?.data?.detail || "حذف عکس با خطا مواجه شد.");
     } finally {
       setIsDeleting(false);
     }
@@ -313,7 +313,7 @@ export default function SystemSettingsPage() {
     } catch (err) {
       setGroupMessages((prev) => ({
         ...prev,
-        [group.key]: { error: err.response?.data?.detail || "ذخیره ناموفق بود." },
+        [group.key]: { error: err.response?.data?.detail || "ذخیره با خطا مواجه شد." },
       }));
     } finally {
       setSavingGroup(null);

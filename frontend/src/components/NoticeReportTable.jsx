@@ -208,7 +208,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         await loadPage(page);
       }
     } catch (err) {
-      alert(err.response?.data?.detail || "حذف اطلاعیه ناموفق بود");
+      alert(err.response?.data?.detail || "حذف اطلاعیه با خطا مواجه شد");
     } finally {
       setDeletingId(null);
     }

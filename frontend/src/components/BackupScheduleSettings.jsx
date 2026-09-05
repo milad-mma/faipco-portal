@@ -54,7 +54,7 @@ export default function BackupScheduleSettings() {
         setSettings(data);
         setForm({ ...data, smb_password: "", ftp_password: "" });
       })
-      .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات ناموفق بود."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }
 
   function updateForm(patch) {

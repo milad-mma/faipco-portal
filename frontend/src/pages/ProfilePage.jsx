@@ -122,7 +122,7 @@ export default function ProfilePage() {
       await updateMyBirthdayVisibility(hide);
       await refetchUser();
     } catch {
-      setSnackbar("ذخیره تنظیمات ناموفق بود — دوباره تلاش کنید.");
+      setSnackbar("ذخیره تنظیمات با خطا مواجه شد — دوباره تلاش کنید.");
     } finally {
       setBirthdaySaving(false);
     }
@@ -144,7 +144,7 @@ export default function ProfilePage() {
       setSnackbar("اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید");
     } catch (err) {
       setPushPermission(getNotificationPermission());
-      setSnackbar(err.message || "فعال‌سازی اعلان ناموفق بود");
+      setSnackbar(err.message || "فعال‌سازی اعلان با خطا مواجه شد");
     }
   }
 

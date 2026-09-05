@@ -37,7 +37,7 @@ export default function SmtpSettings() {
         setSettings(data);
         setForm({ ...data, password: "" });
       })
-      .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات ناموفق بود."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }, []);
 
   function updateForm(patch) {

@@ -137,7 +137,7 @@ export default function SyncPage() {
     } catch (err) {
       setIntervalMessage({
         severity: "error",
-        text: err.response?.data?.detail || "ذخیره فاصله زمانی ناموفق بود.",
+        text: err.response?.data?.detail || "ذخیره فاصله زمانی با خطا مواجه شد.",
       });
     } finally {
       setIsSavingInterval(false);
@@ -196,6 +196,12 @@ export default function SyncPage() {
           ))}
         </Stack>
 
+        {intervalMessage && (
+          <Alert severity={intervalMessage.severity} sx={{ mb: 2 }}>
+            {intervalMessage.text}
+          </Alert>
+        )}
+
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
           <TextField
             type="number"
@@ -227,12 +233,6 @@ export default function SyncPage() {
             </span>
           </Typography>
         </Stack>
-
-        {intervalMessage && (
-          <Alert severity={intervalMessage.severity} sx={{ mt: 2 }}>
-            {intervalMessage.text}
-          </Alert>
-        )}
       </Card>
       )}
 
@@ -275,6 +275,12 @@ export default function SyncPage() {
           )}
         </Stack>
 
+        {testResult && (
+          <Alert severity={testResult.success ? "success" : "error"} sx={{ mt: 2 }}>
+            {testResult.success ? "اتصال با موفقیت برقرار شد." : testResult.message}
+          </Alert>
+        )}
+
         {connectionStatus && (
           <Stack
             direction="row"
@@ -310,12 +316,6 @@ export default function SyncPage() {
         {!connectionStatus && selectedSiteId && (
           <Alert severity="info" sx={{ mt: 2.5 }}>
             برای این سایت هنوز اتصال دیتابیسی از صفحه «سایت‌ها» تعریف نشده است.
-          </Alert>
-        )}
-
-        {testResult && (
-          <Alert severity={testResult.success ? "success" : "error"} sx={{ mt: 2 }}>
-            {testResult.success ? "اتصال با موفقیت برقرار شد." : testResult.message}
           </Alert>
         )}
       </Card>
