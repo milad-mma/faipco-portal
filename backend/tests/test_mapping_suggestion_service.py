@@ -135,3 +135,51 @@ def test_personnel_code_never_guessed_from_samples():
     """
     columns_with_samples = {"SomeNumericColumn": [101, 102, 103, 104, 105]}
     assert suggest_column_from_samples(columns_with_samples, "personnel_code") is None
+
+
+# ==============================================================================
+# پوشش کامل مفاهیم - طبق بازخورد صریح، فقط ایمیل/موبایل/تردد قبلاً
+# پوشش داده می‌شد؛ این تست‌ها همه فیلدهای EmployeeMapping و جدول‌های
+# جدا (مرجع، عکس، تقویم) را هم تأیید می‌کنند.
+# ==============================================================================
+
+
+def test_full_employee_mapping_all_fields():
+    columns = [
+        "Emp_No", "NationalCode", "FirstName", "LastName", "Mobile", "Email",
+        "BirthDate", "IsActive", "DeptCode", "PositionCode",
+    ]
+    concepts = [
+        "personnel_code", "national_code", "first_name", "last_name", "mobile", "email",
+        "birth_date", "is_active", "department", "position",
+    ]
+    result = suggest_mapping(columns, concepts)
+    assert result["national_code"]["column"] == "NationalCode"
+    assert result["first_name"]["column"] == "FirstName"
+    assert result["last_name"]["column"] == "LastName"
+    assert result["birth_date"]["column"] == "BirthDate"
+    assert result["is_active"]["column"] == "IsActive"
+    assert result["department"]["column"] == "DeptCode"
+    assert result["position"]["column"] == "PositionCode"
+
+
+def test_lookup_table_id_and_name():
+    """جدول مرجع (دپارتمان/سمت و مشابه) - مفاهیم عمومی lookup_id/lookup_name."""
+    columns = ["ID", "Name", "ExtraField"]
+    result = suggest_mapping(columns, ["lookup_id", "lookup_name"])
+    assert result["lookup_id"]["column"] == "ID"
+    assert result["lookup_name"]["column"] == "Name"
+
+
+def test_calendar_table_year_and_month():
+    columns = ["Year", "Month", "D1", "D2", "D3"]
+    result = suggest_mapping(columns, ["calendar_year", "calendar_month"])
+    assert result["calendar_year"]["column"] == "Year"
+    assert result["calendar_month"]["column"] == "Month"
+
+
+def test_photo_table_emp_no_and_thumbnail():
+    columns = ["Emp_No", "Thumbnail", "FullPhoto"]
+    result = suggest_mapping(columns, ["photo_emp_no", "photo_thumbnail"])
+    assert result["photo_emp_no"]["column"] == "Emp_No"
+    assert result["photo_thumbnail"]["column"] == "Thumbnail"

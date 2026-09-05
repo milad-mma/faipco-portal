@@ -59,6 +59,75 @@ FIELD_KEYWORDS: dict[str, dict[str, list[str]]] = {
         _HIGH: ["exit_time", "exittime", "out_time", "outtime", "ساعت_خروج", "ساعتخروج"],
         _MEDIUM: ["leave_time", "leavetime"],
     },
+    "national_code": {
+        _HIGH: [
+            "national_code", "nationalcode", "melli_code", "mellicode", "code_melli", "codemelli",
+            "کد_ملی", "کدملی",
+        ],
+        _MEDIUM: ["national", "melli", "ملی"],
+    },
+    "first_name": {
+        _HIGH: ["first_name", "firstname", "fname", "نام_کوچک", "نامکوچک"],
+        _MEDIUM: ["نام"],
+    },
+    "last_name": {
+        _HIGH: [
+            "last_name", "lastname", "lname", "family_name", "familyname", "surname",
+            "نام_خانوادگی", "نامخانوادگی", "فامیل",
+        ],
+        _MEDIUM: [],
+    },
+    "birth_date": {
+        _HIGH: ["birth_date", "birthdate", "date_of_birth", "dateofbirth", "تاریخ_تولد", "تاریختولد"],
+        _MEDIUM: ["dob", "birth", "تولد"],
+    },
+    "is_active": {
+        _HIGH: ["is_active", "isactive", "active_status", "activestatus", "فعال_غیرفعال"],
+        _MEDIUM: ["active", "enabled", "status", "فعال", "وضعیت"],
+    },
+    "department": {
+        _HIGH: [
+            "department_code", "departmentcode", "dept_code", "deptcode", "کد_واحد", "کدواحد",
+            "کد_دپارتمان",
+        ],
+        _MEDIUM: ["department", "dept", "واحد", "دپارتمان", "بخش"],
+    },
+    "position": {
+        _HIGH: ["position_code", "positioncode", "job_title", "jobtitle", "کد_سمت", "کدسمت"],
+        _MEDIUM: ["position", "title", "سمت", "پست", "شغل"],
+    },
+    "photo_emp_no": {
+        # همان کلیدواژه‌های personnel_code - ستون کد پرسنلی داخل جدول عکس معمولاً همان نام‌ها را دارد
+        _HIGH: [
+            "emp_no", "empno", "emp_code", "empcode", "personnel_code", "personnelcode",
+            "prs_code", "prscode", "کد_پرسنلی", "کدپرسنلی",
+        ],
+        _MEDIUM: ["emp", "personnel", "prs", "پرسنل", "کد"],
+    },
+    "photo_thumbnail": {
+        _HIGH: ["thumbnail", "photo_thumb", "photothumb", "عکس_پرسنلی", "عکسپرسنلی"],
+        _MEDIUM: ["photo", "image", "picture", "pic", "عکس", "تصویر"],
+    },
+    # ⚠️ این دو مفهوم عمداً «عمومی» تعریف شده‌اند - چون هم برای جدول مرجع
+    # دپارتمان و هم جدول مرجع سمت شغلی (و هر جدول مرجع مشابه دیگری در
+    # آینده) به‌طور یکسان قابل‌استفاده‌اند؛ نیازی به یک مفهوم جداگانه
+    # به‌ازای هر جدول مرجع نیست.
+    "lookup_id": {
+        _HIGH: ["id", "code", "pk", "شناسه", "کد"],
+        _MEDIUM: [],
+    },
+    "lookup_name": {
+        _HIGH: ["name", "title", "نام", "عنوان"],
+        _MEDIUM: [],
+    },
+    "calendar_year": {
+        _HIGH: ["year", "shamsi_year", "jalali_year", "سال"],
+        _MEDIUM: [],
+    },
+    "calendar_month": {
+        _HIGH: ["month", "shamsi_month", "jalali_month", "ماه"],
+        _MEDIUM: [],
+    },
 }
 
 

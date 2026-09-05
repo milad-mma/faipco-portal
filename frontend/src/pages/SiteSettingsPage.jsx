@@ -335,8 +335,15 @@ export default function SiteSettingsPage() {
         ...mappingForm,
         table_name: tableName,
         personnel_code_column: suggestions.personnel_code?.column || mappingForm.personnel_code_column,
+        national_code_column: suggestions.national_code?.column || mappingForm.national_code_column,
+        first_name_column: suggestions.first_name?.column || mappingForm.first_name_column,
+        last_name_column: suggestions.last_name?.column || mappingForm.last_name_column,
         email_column: suggestions.email?.column || mappingForm.email_column,
         mobile_column: suggestions.mobile?.column || mappingForm.mobile_column,
+        birth_date_column: suggestions.birth_date?.column || mappingForm.birth_date_column,
+        is_active_column: suggestions.is_active?.column || mappingForm.is_active_column,
+        department_column: suggestions.department?.column || mappingForm.department_column,
+        position_column: suggestions.position?.column || mappingForm.position_column,
       });
       setTab("mapping");
     } else if (mappingType === "attendance_single") {
@@ -367,6 +374,39 @@ export default function SiteSettingsPage() {
         enter_time_column: suggestions.enter_time?.column || "",
         exit_date_column: suggestions.exit_date?.column || "",
         exit_time_column: suggestions.exit_time?.column || "",
+      });
+      setTab("attendance-mapping");
+    } else if (mappingType === "department_lookup") {
+      setMappingForm({
+        ...mappingForm,
+        department_lookup_table: tableName,
+        department_lookup_id_column: suggestions.lookup_id?.column || mappingForm.department_lookup_id_column,
+        department_lookup_name_column:
+          suggestions.lookup_name?.column || mappingForm.department_lookup_name_column,
+      });
+      setTab("mapping");
+    } else if (mappingType === "position_lookup") {
+      setMappingForm({
+        ...mappingForm,
+        position_lookup_table: tableName,
+        position_lookup_id_column: suggestions.lookup_id?.column || mappingForm.position_lookup_id_column,
+        position_lookup_name_column: suggestions.lookup_name?.column || mappingForm.position_lookup_name_column,
+      });
+      setTab("mapping");
+    } else if (mappingType === "photo") {
+      setMappingForm({
+        ...mappingForm,
+        photo_table: tableName,
+        photo_emp_no_column: suggestions.photo_emp_no?.column || mappingForm.photo_emp_no_column,
+        photo_thumbnail_column: suggestions.photo_thumbnail?.column || mappingForm.photo_thumbnail_column,
+      });
+      setTab("mapping");
+    } else if (mappingType === "calendar") {
+      setAttendanceMappingForm({
+        ...attendanceMappingForm,
+        calendar_table_name: tableName,
+        calendar_year_column: suggestions.calendar_year?.column || attendanceMappingForm.calendar_year_column,
+        calendar_month_column: suggestions.calendar_month?.column || attendanceMappingForm.calendar_month_column,
       });
       setTab("attendance-mapping");
     }

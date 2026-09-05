@@ -29,12 +29,25 @@ import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import { discoverSiteSchema, suggestMappingForSite } from "../api/sites";
 
 /**
- * مفاهیم موردنیاز هر نوع Mapping - برای مرحله دوم («پیشنهاد بر اساس
- * نام ستون»). این‌ها دقیقاً همان فیلدهای موجود در فرم‌های
- * EmployeeMapping/AttendanceMapping (SiteSettingsPage.jsx) هستند.
+ * مفاهیم موردنیاز هر نوع Mapping - برای مرحله دوم/سوم (پیشنهاد بر اساس
+ * نام ستون/نمونه داده). این‌ها دقیقاً همان فیلدهای موجود در فرم‌های
+ * EmployeeMapping/AttendanceMapping (SiteSettingsPage.jsx) هستند -
+ * شامل فیلدهای همان‌جدول (اکثریت) و فیلدهای جدول مرجع/عکس/تقویم که
+ * روی یک جدول کاملاً جدا (نه جدول اصلی پرسنل/تردد) اعمال می‌شوند.
+ *
+ * ⚠️ برای افزودن یک نوع نگاشت جدید در آینده: فقط کافی است یک ورودی
+ * جدید اینجا اضافه شود (+ کلیدواژه‌های مربوطه در
+ * app/services/mapping_suggestion_service.py اگر مفهوم کاملاً تازه‌ای
+ * باشد) - هیچ تغییر دیگری لازم نیست.
  */
 const MAPPING_TYPES = {
-  employee: { label: "نگاشت پرسنل (ایمیل/موبایل)", concepts: ["personnel_code", "email", "mobile"] },
+  employee: {
+    label: "نگاشت پرسنل (فیلدهای اصلی همان جدول)",
+    concepts: [
+      "personnel_code", "national_code", "first_name", "last_name", "mobile", "email",
+      "birth_date", "is_active", "department", "position",
+    ],
+  },
   attendance_single: {
     label: "نگاشت تردد - یک ستون تاریخ + یک ستون ساعت",
     concepts: ["personnel_code", "date", "time"],
@@ -43,10 +56,39 @@ const MAPPING_TYPES = {
     label: "نگاشت تردد - ستون‌های جدای ورود/خروج",
     concepts: ["personnel_code", "enter_date", "enter_time", "exit_date", "exit_time"],
   },
+  department_lookup: {
+    label: "جدول مرجع دپارتمان/واحد سازمانی (جدول جدا)",
+    concepts: ["lookup_id", "lookup_name"],
+  },
+  position_lookup: {
+    label: "جدول مرجع سمت شغلی (جدول جدا)",
+    concepts: ["lookup_id", "lookup_name"],
+  },
+  photo: {
+    label: "جدول عکس پرسنلی (جدول جدا)",
+    concepts: ["photo_emp_no", "photo_thumbnail"],
+  },
+  calendar: {
+    label: "جدول تقویم/تعطیلات - برای گزارش تردد (جدول جدا)",
+    concepts: ["calendar_year", "calendar_month"],
+  },
 };
 
 const CONCEPT_LABELS = {
   personnel_code: "کد پرسنلی",
+  national_code: "کد ملی",
+  first_name: "نام",
+  last_name: "نام خانوادگی",
+  birth_date: "تاریخ تولد",
+  is_active: "وضعیت فعال/غیرفعال",
+  department: "واحد سازمانی (کد در جدول اصلی)",
+  position: "سمت شغلی (کد در جدول اصلی)",
+  lookup_id: "شناسه (در جدول مرجع)",
+  lookup_name: "نام (در جدول مرجع)",
+  photo_emp_no: "کد پرسنلی (در جدول عکس)",
+  photo_thumbnail: "تصویر بندانگشتی",
+  calendar_year: "سال شمسی",
+  calendar_month: "ماه شمسی",
   email: "ایمیل",
   mobile: "موبایل",
   date: "تاریخ",
