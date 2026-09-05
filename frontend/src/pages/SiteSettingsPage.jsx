@@ -323,6 +323,55 @@ export default function SiteSettingsPage() {
     }
   }
 
+  /**
+   * پیشنهاد مرحله دوم (بر اساس نام ستون) را که کاربر در
+   * SchemaDiscoveryDialog تأیید کرده، روی فرم Mapping مربوطه اعمال
+   * می‌کند و به تب مربوطه سوییچ می‌کند - این فقط فرم را پر می‌کند،
+   * ذخیره واقعی همچنان نیازمند کلیک صریح روی دکمه «ذخیره» است.
+   */
+  function handleApplySuggestion(mappingType, tableName, suggestions) {
+    if (mappingType === "employee") {
+      setMappingForm({
+        ...mappingForm,
+        table_name: tableName,
+        personnel_code_column: suggestions.personnel_code?.column || mappingForm.personnel_code_column,
+        email_column: suggestions.email?.column || mappingForm.email_column,
+        mobile_column: suggestions.mobile?.column || mappingForm.mobile_column,
+      });
+      setTab("mapping");
+    } else if (mappingType === "attendance_single") {
+      setAttendanceMappingForm({
+        ...attendanceMappingForm,
+        table_name: tableName,
+        mapping_mode: "single_column",
+        personnel_code_column:
+          suggestions.personnel_code?.column || attendanceMappingForm.personnel_code_column,
+        date_column: suggestions.date?.column || "",
+        time_column: suggestions.time?.column || "",
+        enter_date_column: "",
+        enter_time_column: "",
+        exit_date_column: "",
+        exit_time_column: "",
+      });
+      setTab("attendance-mapping");
+    } else if (mappingType === "attendance_enter_exit") {
+      setAttendanceMappingForm({
+        ...attendanceMappingForm,
+        table_name: tableName,
+        mapping_mode: "enter_exit_columns",
+        personnel_code_column:
+          suggestions.personnel_code?.column || attendanceMappingForm.personnel_code_column,
+        date_column: "",
+        time_column: "",
+        enter_date_column: suggestions.enter_date?.column || "",
+        enter_time_column: suggestions.enter_time?.column || "",
+        exit_date_column: suggestions.exit_date?.column || "",
+        exit_time_column: suggestions.exit_time?.column || "",
+      });
+      setTab("attendance-mapping");
+    }
+  }
+
   async function handleDeleteAttendanceMapping() {
     if (!window.confirm("نگاشت تردد این سایت حذف شود؟ گزارش تردد ماهانه برای پرسنل این سایت دیگر در دسترس نخواهد بود.")) return;
     setIsSavingAttendanceMapping(true);
@@ -912,6 +961,7 @@ export default function SiteSettingsPage() {
         open={schemaDiscoveryOpen}
         onClose={() => setSchemaDiscoveryOpen(false)}
         siteId={siteId}
+        onApplySuggestion={handleApplySuggestion}
       />
     </Box>
   );

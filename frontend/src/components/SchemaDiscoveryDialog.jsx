@@ -12,6 +12,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -23,15 +25,155 @@ import {
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import { discoverSiteSchema } from "../api/sites";
+import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import { discoverSiteSchema, suggestColumnMapping } from "../api/sites";
+
+/**
+ * مفاهیم موردنیاز هر نوع Mapping - برای مرحله دوم («پیشنهاد بر اساس
+ * نام ستون»). این‌ها دقیقاً همان فیلدهای موجود در فرم‌های
+ * EmployeeMapping/AttendanceMapping (SiteSettingsPage.jsx) هستند.
+ */
+const MAPPING_TYPES = {
+  employee: { label: "نگاشت پرسنل (ایمیل/موبایل)", concepts: ["personnel_code", "email", "mobile"] },
+  attendance_single: {
+    label: "نگاشت تردد - یک ستون تاریخ + یک ستون ساعت",
+    concepts: ["personnel_code", "date", "time"],
+  },
+  attendance_enter_exit: {
+    label: "نگاشت تردد - ستون‌های جدای ورود/خروج",
+    concepts: ["personnel_code", "enter_date", "enter_time", "exit_date", "exit_time"],
+  },
+};
+
+const CONCEPT_LABELS = {
+  personnel_code: "کد پرسنلی",
+  email: "ایمیل",
+  mobile: "موبایل",
+  date: "تاریخ",
+  time: "ساعت",
+  enter_date: "تاریخ ورود",
+  enter_time: "ساعت ورود",
+  exit_date: "تاریخ خروج",
+  exit_time: "ساعت خروج",
+};
+
+/**
+ * پیشنهاد نگاشت برای یک جدول مشخص - مرحله دوم طرح نگاشت داینامیک.
+ * ⚠️ فقط یک پیشنهاد است؛ اعمال آن روی فرم اصلی نیازمند تأیید صریح مدیر
+ * (دکمه جداگانه) است - هیچ‌چیز خودکار ذخیره نمی‌شود.
+ */
+function TableSuggestionPanel({ table, onApplySuggestion }) {
+  const [mappingType, setMappingType] = useState("employee");
+  const [suggestions, setSuggestions] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSuggest() {
+    setError("");
+    setSuggestions(null);
+    setIsLoading(true);
+    try {
+      const columnNames = table.columns.map((c) => c.name);
+      const result = await suggestColumnMapping(columnNames, MAPPING_TYPES[mappingType].concepts);
+      setSuggestions(result);
+    } catch (err) {
+      setError(err.response?.data?.detail || "دریافت پیشنهاد با خطا مواجه شد.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const hasAnySuggestion = suggestions && Object.values(suggestions).some((s) => s !== null);
+
+  return (
+    <Box sx={{ mt: 2, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 1 }}>
+        پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها - فقط پیشنهاد، نیاز به تأیید شما)
+      </Typography>
+      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+        <TextField
+          select
+          size="small"
+          label="نوع نگاشت"
+          value={mappingType}
+          onChange={(e) => {
+            setMappingType(e.target.value);
+            setSuggestions(null);
+          }}
+          sx={{ minWidth: 280 }}
+        >
+          {Object.entries(MAPPING_TYPES).map(([value, { label }]) => (
+            <MenuItem key={value} value={value}>
+              {label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={isLoading ? <CircularProgress size={14} /> : <AutoFixHighOutlinedIcon />}
+          onClick={handleSuggest}
+          disabled={isLoading}
+        >
+          دریافت پیشنهاد
+        </Button>
+      </Stack>
+
+      {error && (
+        <Alert severity="error" sx={{ mt: 1.5 }}>
+          {error}
+        </Alert>
+      )}
+
+      {suggestions && (
+        <Box sx={{ mt: 1.5 }}>
+          <Stack spacing={0.5}>
+            {Object.entries(suggestions).map(([concept, suggestion]) => (
+              <Typography key={concept} variant="body2">
+                {CONCEPT_LABELS[concept] || concept}:{" "}
+                {suggestion ? (
+                  <>
+                    <Box component="span" sx={{ fontFamily: "monospace", fontWeight: 700 }}>
+                      {suggestion.column}
+                    </Box>{" "}
+                    <Chip
+                      size="small"
+                      label={`اطمینان ${suggestion.confidence}`}
+                      color={suggestion.confidence === "بالا" ? "success" : "warning"}
+                    />
+                  </>
+                ) : (
+                  <Typography component="span" variant="body2" color="text.secondary">
+                    پیشنهادی پیدا نشد
+                  </Typography>
+                )}
+              </Typography>
+            ))}
+          </Stack>
+          {hasAnySuggestion && (
+            <Button
+              size="small"
+              variant="contained"
+              sx={{ mt: 1.5 }}
+              onClick={() => onApplySuggestion(mappingType, table.name, suggestions)}
+            >
+              اعمال این پیشنهادها به فرم نگاشت
+            </Button>
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
 
 /**
  * نمایش کامل ساختار دیتابیس این سایت (جدول‌ها، ستون‌ها، نوع‌داده‌ها،
  * کلیدهای خارجی رسماً تعریف‌شده) - فقط خواندن فراداده، بدون هیچ داده
  * واقعی یا نوشتن. هدف: مدیر بدون باز کردن ابزار جدا (SSMS/pgAdmin/...)
- * بتواند نام دقیق جدول/ستون‌ها را برای فرم‌های Mapping پیدا کند.
+ * بتواند نام دقیق جدول/ستون‌ها را برای فرم‌های Mapping پیدا کند، و
+ * اختیاری با کمک پیشنهاد خودکار (مرحله دوم)، فرم را سریع‌تر پر کند.
  */
-export default function SchemaDiscoveryDialog({ open, onClose, siteId }) {
+export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySuggestion }) {
   const [schema, setSchema] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -58,13 +200,19 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId }) {
     );
   }, [schema, search]);
 
+  function handleApplySuggestion(mappingType, tableName, suggestions) {
+    onApplySuggestion(mappingType, tableName, suggestions);
+    onClose();
+  }
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>ساختار دیتابیس این سایت</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <Typography variant="body2" color="text.secondary">
           فهرست کامل جدول‌ها و ستون‌های این دیتابیس - فقط خواندن اطلاعات ساختاری، بدون خواندن هیچ داده
-          واقعی. از این لیست برای پیدا کردن نام دقیق جدول/ستون‌ها هنگام تنظیم Mapping استفاده کنید.
+          واقعی. از این لیست برای پیدا کردن نام دقیق جدول/ستون‌ها هنگام تنظیم Mapping استفاده کنید، یا از
+          «دریافت پیشنهاد» برای پرشدن خودکار فرم (با تأیید خودتان) کمک بگیرید.
         </Typography>
 
         {isLoading && (
@@ -141,6 +289,9 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId }) {
                       </Stack>
                     </Box>
                   )}
+
+                  <Divider sx={{ my: 1.5 }} />
+                  <TableSuggestionPanel table={table} onApplySuggestion={handleApplySuggestion} />
                 </AccordionDetails>
               </Accordion>
             ))}

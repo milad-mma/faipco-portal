@@ -91,3 +91,8 @@ export async function upsertSiteAttendanceMapping(siteId, payload) {
 export async function deleteSiteAttendanceMapping(siteId) {
   await apiClient.delete(`/sites/${siteId}/attendance-mapping`);
 }
+
+export async function suggestColumnMapping(columns, concepts) {
+  const { data } = await apiClient.post("/mapping-suggestions", { columns, concepts });
+  return data;
+}
