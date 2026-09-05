@@ -3,7 +3,7 @@ import asyncio
 
 import pymssql
 
-from app.sync_engine.adapters.base import BaseSiteAdapter
+from app.sync_engine.adapters.base import BaseSiteAdapter, build_schema_dict
 
 
 class MSSQLAdapter(BaseSiteAdapter):
@@ -59,3 +59,41 @@ class MSSQLAdapter(BaseSiteAdapter):
             conn.commit()
         finally:
             conn.close()
+
+    async def discover_schema(self) -> dict:
+        return await asyncio.to_thread(self._discover_schema_sync)
+
+    def _discover_schema_sync(self) -> dict:
+        conn = self._connect()
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                cur.execute(
+                    """
+                    SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    ORDER BY TABLE_NAME, ORDINAL_POSITION
+                    """
+                )
+                column_rows = list(cur.fetchall())
+
+                cur.execute(
+                    """
+                    SELECT
+                        tp.name AS TABLE_NAME,
+                        cp.name AS COLUMN_NAME,
+                        tr.name AS REFERENCED_TABLE_NAME,
+                        cr.name AS REFERENCED_COLUMN_NAME
+                    FROM sys.foreign_keys fk
+                    INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+                    INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
+                    INNER JOIN sys.columns cp
+                        ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
+                    INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
+                    INNER JOIN sys.columns cr
+                        ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
+                    """
+                )
+                fk_rows = list(cur.fetchall())
+        finally:
+            conn.close()
+        return build_schema_dict(column_rows, fk_rows)

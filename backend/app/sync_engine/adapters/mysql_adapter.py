@@ -4,7 +4,7 @@ import asyncio
 import pymysql
 import pymysql.cursors
 
-from app.sync_engine.adapters.base import BaseSiteAdapter
+from app.sync_engine.adapters.base import BaseSiteAdapter, build_schema_dict
 
 
 class MySQLAdapter(BaseSiteAdapter):
@@ -60,3 +60,38 @@ class MySQLAdapter(BaseSiteAdapter):
             conn.commit()
         finally:
             conn.close()
+
+    async def discover_schema(self) -> dict:
+        return await asyncio.to_thread(self._discover_schema_sync)
+
+    def _discover_schema_sync(self) -> dict:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                # ⚠️ فیلتر TABLE_SCHEMA لازم است - وگرنه INFORMATION_SCHEMA.COLUMNS
+                # ستون‌های همه دیتابیس‌های قابل‌مشاهده روی همان سرور را برمی‌گرداند،
+                # نه فقط دیتابیس این اتصال.
+                cur.execute(
+                    """
+                    SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %(database)s
+                    ORDER BY TABLE_NAME, ORDINAL_POSITION
+                    """,
+                    {"database": self.database},
+                )
+                column_rows = list(cur.fetchall())
+
+                cur.execute(
+                    """
+                    SELECT TABLE_NAME, COLUMN_NAME,
+                           REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                    WHERE TABLE_SCHEMA = %(database)s AND REFERENCED_TABLE_NAME IS NOT NULL
+                    """,
+                    {"database": self.database},
+                )
+                fk_rows = list(cur.fetchall())
+        finally:
+            conn.close()
+        return build_schema_dict(column_rows, fk_rows)

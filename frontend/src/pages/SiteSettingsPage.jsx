@@ -32,6 +32,7 @@ import {
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
+import SchemaDiscoveryDialog from "../components/SchemaDiscoveryDialog";
 
 const DB_TYPES = [
   { value: "postgresql", label: "PostgreSQL" },
@@ -104,6 +105,7 @@ export default function SiteSettingsPage() {
 
   const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
   const [hasExistingConnection, setHasExistingConnection] = useState(false);
+  const [schemaDiscoveryOpen, setSchemaDiscoveryOpen] = useState(false);
   const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [hasExistingMapping, setHasExistingMapping] = useState(false);
   const [gpsForm, setGpsForm] = useState({ gps_latitude: "", gps_longitude: "", gps_radius_meters: "" });
@@ -440,6 +442,11 @@ export default function SiteSettingsPage() {
                   disabled={isSaving}
                 >
                   حذف اتصال
+                </Button>
+              )}
+              {hasExistingConnection && (
+                <Button variant="outlined" onClick={() => setSchemaDiscoveryOpen(true)}>
+                  کشف ساختار دیتابیس
                 </Button>
               )}
             </Stack>
@@ -900,6 +907,12 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
       </Card>
+
+      <SchemaDiscoveryDialog
+        open={schemaDiscoveryOpen}
+        onClose={() => setSchemaDiscoveryOpen(false)}
+        siteId={siteId}
+      />
     </Box>
   );
 }

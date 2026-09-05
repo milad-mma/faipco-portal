@@ -45,6 +45,11 @@ export async function fetchSiteConnection(siteId) {
   return data; // null اگر تعریف نشده باشد
 }
 
+export async function discoverSiteSchema(siteId) {
+  const { data } = await apiClient.get(`/sites/${siteId}/discover-schema`, { timeout: 30000 });
+  return data;
+}
+
 export async function upsertSiteConnection(siteId, payload) {
   const { data } = await apiClient.put(`/sites/${siteId}/connection`, payload);
   return data;

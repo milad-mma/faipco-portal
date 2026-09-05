@@ -4,7 +4,7 @@ import asyncio
 import psycopg2
 import psycopg2.extras
 
-from app.sync_engine.adapters.base import BaseSiteAdapter
+from app.sync_engine.adapters.base import BaseSiteAdapter, build_schema_dict
 
 
 class PostgreSQLAdapter(BaseSiteAdapter):
@@ -59,3 +59,44 @@ class PostgreSQLAdapter(BaseSiteAdapter):
             conn.commit()
         finally:
             conn.close()
+
+    async def discover_schema(self) -> dict:
+        return await asyncio.to_thread(self._discover_schema_sync)
+
+    def _discover_schema_sync(self) -> dict:
+        # ⚠️ information_schema در PostgreSQL نام ستون‌ها را کوچک برمی‌گرداند
+        # (table_name نه TABLE_NAME)؛ با AS "..." با حروف بزرگ، خروجی این
+        # Adapter دقیقاً هم‌شکل با MSSQL/MySQL می‌شود - build_schema_dict
+        # (مشترک بین هر سه) به همین کلیدهای یکسان نیاز دارد.
+        conn = self._connect()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT table_name AS "TABLE_NAME", column_name AS "COLUMN_NAME",
+                           data_type AS "DATA_TYPE", is_nullable AS "IS_NULLABLE",
+                           character_maximum_length AS "CHARACTER_MAXIMUM_LENGTH"
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name, ordinal_position
+                    """
+                )
+                column_rows = [dict(row) for row in cur.fetchall()]
+
+                cur.execute(
+                    """
+                    SELECT
+                        tc.table_name AS "TABLE_NAME",
+                        kcu.column_name AS "COLUMN_NAME",
+                        ccu.table_name AS "REFERENCED_TABLE_NAME",
+                        ccu.column_name AS "REFERENCED_COLUMN_NAME"
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+                    JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+                    WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+                    """
+                )
+                fk_rows = [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+        return build_schema_dict(column_rows, fk_rows)

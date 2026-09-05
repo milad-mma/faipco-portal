@@ -19,6 +19,7 @@ from app.schemas.site import (
     SiteGpsLocationIn,
     SiteOut,
 )
+from app.services.schema_discovery_service import SchemaDiscoveryError, discover_site_schema
 from app.services.site_service import SiteService
 
 router = APIRouter()
@@ -133,6 +134,29 @@ async def get_connection(
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
     return await SiteService(db).get_connection(site_id)
+
+
+@router.get("/{site_id}/discover-schema")
+async def discover_schema(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """
+    کشف کامل ساختار دیتابیس این سایت (فقط خواندن فراداده - جدول‌ها،
+    ستون‌ها، نوع‌داده‌ها، کلیدهای خارجی رسماً تعریف‌شده) - برای کمک به
+    تنظیم Mapping ها بدون نیاز به ابزار جدا (SSMS/pgAdmin/...). هیچ داده
+    واقعی خوانده یا نوشته نمی‌شود.
+    """
+    conn = await SiteService(db).get_connection(site_id)
+    if conn is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="برای این سایت هنوز اتصال دیتابیسی تعریف نشده است"
+        )
+    try:
+        return await discover_site_schema(conn)
+    except SchemaDiscoveryError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{site_id}/connection", response_model=SiteConnectionOut)
