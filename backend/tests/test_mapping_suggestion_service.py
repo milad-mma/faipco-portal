@@ -72,3 +72,66 @@ def test_exact_match_preferred_over_substring_match():
     columns = ["email", "contact_email_backup"]
     result = suggest_column_for_field(columns, "email")
     assert result["column"] == "email"
+
+
+# ==============================================================================
+# مرحله سوم — پیشنهاد بر اساس نمونه داده واقعی
+# ==============================================================================
+
+from app.services.mapping_suggestion_service import (  # noqa: E402
+    suggest_column_from_samples,
+    _looks_like_persian_date,
+    _looks_like_compressed_time,
+    _looks_like_email,
+    _looks_like_mobile,
+)
+
+
+def test_persian_date_pattern_detection():
+    assert _looks_like_persian_date([14050524, 14050525, 14050526]) is True
+    assert _looks_like_persian_date([14051340]) is False  # ماه ۱۳ نامعتبر
+    assert _looks_like_persian_date([25]) is False  # سن، نه تاریخ
+
+
+def test_compressed_time_pattern_detection():
+    assert _looks_like_compressed_time([618, 1401, 2359]) is True
+    assert _looks_like_compressed_time([2500]) is False  # ساعت ۲۵ نامعتبر
+    assert _looks_like_compressed_time([25]) is True  # یعنی ۰۰:۲۵ - معتبر
+
+
+def test_email_pattern_detection():
+    assert _looks_like_email(["ali@example.com", "sara@test.ir"]) is True
+    assert _looks_like_email(["not-an-email", "12345"]) is False
+
+
+def test_mobile_pattern_detection():
+    assert _looks_like_mobile(["09123456789", "09351234567"]) is True
+    assert _looks_like_mobile(["12345"]) is False
+
+
+def test_sample_based_suggestion_finds_misleadingly_named_column():
+    """
+    مهم‌ترین سناریوی مرحله سوم: ستونی که نامش کاملاً گمراه‌کننده/مبهم
+    است (پس مرحله دوم چیزی پیدا نمی‌کند)، ولی مقادیر واقعی‌اش الگوی
+    مشخصی دارند - باید از روی همان مقادیر پیدا شود.
+    """
+    columns_with_samples = {
+        "WeirdColumnName": [14050524, 14050525, 14050526, 14050527, 14050528],
+        "AnotherOne": ["ali@company.com", "sara@company.com"],
+    }
+    result_date = suggest_column_from_samples(columns_with_samples, "date")
+    assert result_date["column"] == "WeirdColumnName"
+    assert result_date["source"] == "نمونه داده"
+
+    result_email = suggest_column_from_samples(columns_with_samples, "email")
+    assert result_email["column"] == "AnotherOne"
+
+
+def test_personnel_code_never_guessed_from_samples():
+    """
+    یک عدد صحیح ساده (کد پرسنلی) از روی مقادیرش به‌تنهایی از هر ستون
+    عددی دیگری (سن، کد واحد) قابل‌تشخیص نیست - این تابع باید همیشه
+    None برگرداند، نه یک حدس نامطمئن.
+    """
+    columns_with_samples = {"SomeNumericColumn": [101, 102, 103, 104, 105]}
+    assert suggest_column_from_samples(columns_with_samples, "personnel_code") is None

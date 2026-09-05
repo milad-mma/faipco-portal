@@ -26,7 +26,7 @@ import {
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
-import { discoverSiteSchema, suggestColumnMapping } from "../api/sites";
+import { discoverSiteSchema, suggestMappingForSite } from "../api/sites";
 
 /**
  * مفاهیم موردنیاز هر نوع Mapping - برای مرحله دوم («پیشنهاد بر اساس
@@ -62,7 +62,7 @@ const CONCEPT_LABELS = {
  * ⚠️ فقط یک پیشنهاد است؛ اعمال آن روی فرم اصلی نیازمند تأیید صریح مدیر
  * (دکمه جداگانه) است - هیچ‌چیز خودکار ذخیره نمی‌شود.
  */
-function TableSuggestionPanel({ table, onApplySuggestion }) {
+function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
   const [mappingType, setMappingType] = useState("employee");
   const [suggestions, setSuggestions] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -74,7 +74,7 @@ function TableSuggestionPanel({ table, onApplySuggestion }) {
     setIsLoading(true);
     try {
       const columnNames = table.columns.map((c) => c.name);
-      const result = await suggestColumnMapping(columnNames, MAPPING_TYPES[mappingType].concepts);
+      const result = await suggestMappingForSite(siteId, table.name, columnNames, MAPPING_TYPES[mappingType].concepts);
       setSuggestions(result);
     } catch (err) {
       setError(err.response?.data?.detail || "دریافت پیشنهاد با خطا مواجه شد.");
@@ -88,7 +88,8 @@ function TableSuggestionPanel({ table, onApplySuggestion }) {
   return (
     <Box sx={{ mt: 2, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
       <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 1 }}>
-        پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها - فقط پیشنهاد، نیاز به تأیید شما)
+        پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها؛ برای مواردی که از نام مشخص نباشد، چند مقدار
+        واقعی نمونه هم بررسی می‌شود - فقط پیشنهاد، نیاز به تأیید شما)
       </Typography>
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
@@ -141,6 +142,9 @@ function TableSuggestionPanel({ table, onApplySuggestion }) {
                       label={`اطمینان ${suggestion.confidence}`}
                       color={suggestion.confidence === "بالا" ? "success" : "warning"}
                     />
+                    {suggestion.source === "نمونه داده" && (
+                      <Chip size="small" variant="outlined" label="بر اساس نمونه داده" sx={{ mr: 0.5 }} />
+                    )}
                   </>
                 ) : (
                   <Typography component="span" variant="body2" color="text.secondary">
@@ -291,7 +295,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                   )}
 
                   <Divider sx={{ my: 1.5 }} />
-                  <TableSuggestionPanel table={table} onApplySuggestion={handleApplySuggestion} />
+                  <TableSuggestionPanel table={table} siteId={siteId} onApplySuggestion={handleApplySuggestion} />
                 </AccordionDetails>
               </Accordion>
             ))}

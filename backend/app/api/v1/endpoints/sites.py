@@ -1,5 +1,6 @@
 """Endpoint های مدیریت Site ها، اتصال دیتابیس هر Site و Mapping ستون‌های پرسنلی."""
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
@@ -19,7 +20,7 @@ from app.schemas.site import (
     SiteGpsLocationIn,
     SiteOut,
 )
-from app.services.schema_discovery_service import SchemaDiscoveryError, discover_site_schema
+from app.services.schema_discovery_service import SchemaDiscoveryError, discover_site_schema, suggest_mapping_for_table
 from app.services.site_service import SiteService
 
 router = APIRouter()
@@ -155,6 +156,36 @@ async def discover_schema(
         )
     try:
         return await discover_site_schema(conn)
+    except SchemaDiscoveryError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+class SuggestMappingRequest(BaseModel):
+    table_name: str
+    columns: list[str]
+    concepts: list[str]
+
+
+@router.post("/{site_id}/suggest-mapping")
+async def suggest_mapping_for_site(
+    site_id: int,
+    payload: SuggestMappingRequest,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """
+    پیشنهاد نگاشت برای یک جدول مشخص - ابتدا بر اساس نام ستون (بدون هیچ
+    اتصال دیتابیسی)، و فقط برای مفاهیمی که چیزی پیدا نشد، با نمونه‌گیری
+    چند مقدار واقعی از ستون‌های هنوز بلاتکلیف (نیازمند اتصال واقعی به
+    دیتابیس این سایت). فقط یک پیشنهاد است؛ تأیید نهایی همیشه دستی است.
+    """
+    conn = await SiteService(db).get_connection(site_id)
+    if conn is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="برای این سایت هنوز اتصال دیتابیسی تعریف نشده است"
+        )
+    try:
+        return await suggest_mapping_for_table(conn, payload.table_name, payload.columns, payload.concepts)
     except SchemaDiscoveryError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

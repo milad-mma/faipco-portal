@@ -96,3 +96,12 @@ export async function suggestColumnMapping(columns, concepts) {
   const { data } = await apiClient.post("/mapping-suggestions", { columns, concepts });
   return data;
 }
+
+export async function suggestMappingForSite(siteId, tableName, columns, concepts) {
+  const { data } = await apiClient.post(`/sites/${siteId}/suggest-mapping`, {
+    table_name: tableName,
+    columns,
+    concepts,
+  });
+  return data;
+}

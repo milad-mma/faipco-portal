@@ -100,3 +100,16 @@ class PostgreSQLAdapter(BaseSiteAdapter):
         finally:
             conn.close()
         return build_schema_dict(column_rows, fk_rows)
+
+    async def sample_column_values(self, table_name: str, column_name: str, limit: int = 5) -> list:
+        return await asyncio.to_thread(self._sample_column_values_sync, table_name, column_name, limit)
+
+    def _sample_column_values_sync(self, table_name: str, column_name: str, limit: int) -> list:
+        conn = self._connect()
+        try:
+            query = f'SELECT "{column_name}" FROM "{table_name}" LIMIT %s'  # noqa: S608
+            with conn.cursor() as cur:
+                cur.execute(query, (int(limit),))
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
