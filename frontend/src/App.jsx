@@ -39,6 +39,9 @@ import PresenceReportPage from "./pages/PresenceReportPage";
 import ClockInOutReportPage from "./pages/ClockInOutReportPage";
 import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
 import EvaluationStructurePage from "./pages/EvaluationStructurePage";
+import EvaluationPeriodsPage from "./pages/EvaluationPeriodsPage";
+import EvaluationFormsPage from "./pages/EvaluationFormsPage";
+import EvaluationFormBuilderPage from "./pages/EvaluationFormBuilderPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_FADE_MS = 400;
@@ -115,6 +118,30 @@ export default function App() {
             element={
               <PermissionRoute check={(u) => u?.can_manage_performance_structure}>
                 <EvaluationStructurePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/performance/periods"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_performance_periods}>
+                <EvaluationPeriodsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/performance/forms"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_performance_forms}>
+                <EvaluationFormsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/performance/forms/:formId"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_performance_forms}>
+                <EvaluationFormBuilderPage />
               </PermissionRoute>
             }
           />

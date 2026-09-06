@@ -30,6 +30,8 @@ import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettin
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import RateReviewOutlinedIcon from "@mui/icons-material/RateReviewOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -142,13 +144,28 @@ const NAV_ITEMS = [
     path: "/performance/structure",
     icon: <RateReviewOutlinedIcon />,
     adminOnly: false,
-    requiresPerformanceStructureManage: true,
+    // ⚠️ عمداً OR بین هر سه مجوز - دقیقاً همان الگوی «مدیریت دسترسی» -
+    // کسی که فقط performance.periods.manage دارد (نه structure)، هم باید
+    // حداقل زیرمنوی «دوره‌های ارزیابی» را ببیند.
+    requiresAnyPerformanceAccess: true,
     children: [
       {
         label: "ساختار ارزیابی",
         path: "/performance/structure",
         icon: <AccountTreeOutlinedIcon />,
         requiresPerformanceStructureManage: true,
+      },
+      {
+        label: "دوره‌های ارزیابی",
+        path: "/performance/periods",
+        icon: <EventOutlinedIcon />,
+        requiresPerformancePeriodsManage: true,
+      },
+      {
+        label: "فرم‌های ارزیابی",
+        path: "/performance/forms",
+        icon: <AssignmentOutlinedIcon />,
+        requiresPerformanceFormsManage: true,
       },
     ],
   },
@@ -214,6 +231,15 @@ export default function Layout() {
         if (item.requiresBackupManage && !(user?.can_manage_backup || user?.can_bust_cache)) return false;
         if (item.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
         if (
+          item.requiresAnyPerformanceAccess &&
+          !(
+            user?.can_manage_performance_structure ||
+            user?.can_manage_performance_periods ||
+            user?.can_manage_performance_forms
+          )
+        )
+          return false;
+        if (
           item.requiresAnyEmployeesAccess &&
           !(user?.can_view_employees || user?.can_update_employees || user?.can_create_employees)
         )
@@ -244,6 +270,8 @@ export default function Layout() {
           if (child.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
           if (child.requiresSystemSettings && !user?.can_manage_system_settings) return false;
           if (child.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
+          if (child.requiresPerformancePeriodsManage && !user?.can_manage_performance_periods) return false;
+          if (child.requiresPerformanceFormsManage && !user?.can_manage_performance_forms) return false;
           return true;
         });
 
@@ -256,6 +284,13 @@ export default function Layout() {
         // همان اولین فرزند در‌دسترس تغییر می‌دهیم.
         let effectivePath = item.path;
         if (item.requiresAnyAccessManagement && !user?.can_manage_users && filteredChildren?.length) {
+          effectivePath = filteredChildren[0].path;
+        }
+        if (
+          item.requiresAnyPerformanceAccess &&
+          !user?.can_manage_performance_structure &&
+          filteredChildren?.length
+        ) {
           effectivePath = filteredChildren[0].path;
         }
 
