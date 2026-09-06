@@ -1,0 +1,296 @@
+"""
+سرویس «جریان انجام ارزیابی» - شروع، ذخیره پیش‌نویس، ثبت نهایی، و
+خلاصه‌سازی برای کارت داشبورد.
+
+⚠️ امنیتی: هر عملیات روی یک Evaluation، ابتدا تأیید می‌کند که کاربر
+جاری واقعاً ارزیابِ همان Assignment است - هرگز فقط به این‌که یک
+evaluation_id معتبر داده شده اعتماد نمی‌شود.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.evaluation_rules import calculate_option_based_question_score, calculate_weighted_average
+from app.models.employee import Department, Employee
+from app.models.evaluation_content import EvaluationCategory, EvaluationForm, EvaluationQuestion
+from app.models.evaluation_process import (
+    Evaluation,
+    EvaluationAnswer,
+    EvaluationAssignment,
+    EvaluationAssignmentStatus,
+    EvaluationStatus,
+)
+from app.models.site import Site
+
+_OPTION_BASED_TYPES = {"single_choice", "multiple_choice", "rating", "yes_no"}
+
+
+class EvaluationProcessError(Exception):
+    pass
+
+
+class EvaluationProcessService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def _get_owned_assignment(self, assignment_id: int, evaluator_employee_id: int) -> EvaluationAssignment:
+        assignment = await self.db.get(EvaluationAssignment, assignment_id)
+        if assignment is None:
+            raise EvaluationProcessError("این ارزیابی یافت نشد")
+        if assignment.evaluator_employee_id != evaluator_employee_id:
+            raise EvaluationProcessError("شما مجاز به انجام این ارزیابی نیستید")
+        return assignment
+
+    async def _get_owned_evaluation(self, evaluation_id: int, evaluator_employee_id: int) -> Evaluation:
+        result = await self.db.execute(
+            select(Evaluation)
+            .options(selectinload(Evaluation.assignment), selectinload(Evaluation.answers))
+            .where(Evaluation.id == evaluation_id)
+        )
+        evaluation = result.scalar_one_or_none()
+        if evaluation is None:
+            raise EvaluationProcessError("این ارزیابی یافت نشد")
+        if evaluation.assignment.evaluator_employee_id != evaluator_employee_id:
+            raise EvaluationProcessError("شما مجاز به انجام این ارزیابی نیستید")
+        return evaluation
+
+    async def start_evaluation(self, assignment_id: int, evaluator_employee_id: int) -> Evaluation:
+        """
+        اگر Evaluation ای برای این Assignment از قبل وجود دارد (ادامه یک
+        Draft قبلی)، همان برگردانده می‌شود - وگرنه یک Evaluation جدید با
+        Historical Snapshot کامل (از وضعیت *همین لحظه* پرسنل/سایت/واحد)
+        ساخته می‌شود.
+        """
+        assignment = await self._get_owned_assignment(assignment_id, evaluator_employee_id)
+
+        existing_result = await self.db.execute(
+            select(Evaluation)
+            .options(selectinload(Evaluation.answers))
+            .where(Evaluation.assignment_id == assignment_id)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return existing
+
+        evaluator = await self.db.get(Employee, assignment.evaluator_employee_id)
+        target = await self.db.get(Employee, assignment.target_employee_id)
+        form = await self.db.get(EvaluationForm, assignment.form_id)
+        if evaluator is None or target is None or form is None:
+            raise EvaluationProcessError("اطلاعات ارزیاب/ارزیابی‌شونده/فرم یافت نشد")
+
+        site = await self.db.get(Site, target.site_id)
+        department_name = None
+        if target.department_id is not None:
+            department = await self.db.get(Department, target.department_id)
+            department_name = department.name if department else None
+
+        evaluation = Evaluation(
+            assignment_id=assignment_id,
+            status=EvaluationStatus.draft,
+            evaluator_name_snapshot=f"{evaluator.first_name} {evaluator.last_name}",
+            evaluator_personnel_code_snapshot=evaluator.personnel_code,
+            target_name_snapshot=f"{target.first_name} {target.last_name}",
+            target_personnel_code_snapshot=target.personnel_code,
+            site_name_snapshot=site.name if site else "",
+            department_name_snapshot=department_name,
+            form_title_snapshot=form.title,
+        )
+        self.db.add(evaluation)
+        await self.db.commit()
+        await self.db.refresh(evaluation)
+        evaluation.answers = []
+        return evaluation
+
+    async def save_answers(self, evaluation_id: int, evaluator_employee_id: int, answers: list[dict]) -> Evaluation:
+        evaluation = await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+        if evaluation.status != EvaluationStatus.draft:
+            raise EvaluationProcessError("این ارزیابی قبلاً ثبت نهایی شده و دیگر قابل‌ویرایش نیست")
+
+        for answer_data in answers:
+            question = await self.db.get(EvaluationQuestion, answer_data["question_id"])
+            if question is None:
+                continue  # سوال حذف شده - نادیده گرفته می‌شود
+
+            existing_result = await self.db.execute(
+                select(EvaluationAnswer).where(
+                    EvaluationAnswer.evaluation_id == evaluation_id,
+                    EvaluationAnswer.question_id == answer_data["question_id"],
+                )
+            )
+            existing_answer = existing_result.scalar_one_or_none()
+
+            fields = {
+                "question_text_snapshot": question.text,
+                "question_type_snapshot": question.question_type.value,
+                "selected_option_ids": answer_data.get("selected_option_ids"),
+                "text_value": answer_data.get("text_value"),
+                "number_value": answer_data.get("number_value"),
+                "date_value": answer_data.get("date_value"),
+                "comment": answer_data.get("comment"),
+            }
+            if existing_answer is not None:
+                for key, value in fields.items():
+                    setattr(existing_answer, key, value)
+            else:
+                self.db.add(EvaluationAnswer(evaluation_id=evaluation_id, question_id=question.id, **fields))
+
+        await self.db.commit()
+        return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+
+    async def submit_evaluation(self, evaluation_id: int, evaluator_employee_id: int) -> Evaluation:
+        evaluation = await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+        if evaluation.status != EvaluationStatus.draft:
+            raise EvaluationProcessError("این ارزیابی قبلاً ثبت نهایی شده است")
+
+        form_result = await self.db.execute(
+            select(EvaluationForm)
+            .options(
+                selectinload(EvaluationForm.categories)
+                .selectinload(EvaluationCategory.questions)
+                .selectinload(EvaluationQuestion.options)
+            )
+            .where(EvaluationForm.id == evaluation.assignment.form_id)
+        )
+        form = form_result.scalar_one()
+
+        answers_by_question = {a.question_id: a for a in evaluation.answers}
+
+        missing_required = []
+        for category in form.categories:
+            if not category.is_active:
+                continue
+            for question in category.questions:
+                if question.is_active and question.required and question.id not in answers_by_question:
+                    missing_required.append(question.text)
+        if missing_required:
+            raise EvaluationProcessError(
+                "پاسخ به سوالات اجباری زیر الزامی است: "
+                + "، ".join(missing_required[:5])
+                + ("..." if len(missing_required) > 5 else "")
+            )
+
+        category_scores = []
+        for category in form.categories:
+            if not category.is_active:
+                continue
+            question_scores = []
+            for question in category.questions:
+                if not question.is_active:
+                    continue
+                answer = answers_by_question.get(question.id)
+                score = self._score_single_answer(question, answer)
+                if answer is not None:
+                    answer.score = score
+                question_scores.append({"weight": float(question.weight), "score": score})
+            if question_scores:
+                category_scores.append(
+                    {"weight": float(category.weight), "score": calculate_weighted_average(question_scores)}
+                )
+
+        total_score = calculate_weighted_average(category_scores) if category_scores else 0.0
+
+        evaluation.status = EvaluationStatus.submitted
+        evaluation.total_score = total_score
+        evaluation.submitted_at = datetime.now(timezone.utc)
+        evaluation.assignment.status = EvaluationAssignmentStatus.completed
+
+        await self.db.commit()
+        return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+
+    def _score_single_answer(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> float:
+        """
+        ⚠️ برای انواع متن/عدد/تاریخ (که امتیازدهی مستقیم ندارند)، فقط
+        «پاسخ داده شده یا نه» سنجیده می‌شود (۱۰۰ یا ۰) - تا بتوانند در
+        همان فرمول میانگین وزنی یکسان با انواع مبتنی‌بر گزینه شرکت کنند،
+        بدون نیاز به شاخه‌بندی جداگانه در محاسبه سطح دسته‌بندی/فرم.
+        """
+        if question.question_type.value in _OPTION_BASED_TYPES:
+            if answer is None or not answer.selected_option_ids:
+                return 0.0
+            option_scores = [float(o.score) for o in question.options if o.id in answer.selected_option_ids]
+            return calculate_option_based_question_score(option_scores)
+        if answer is None:
+            return 0.0
+        has_value = answer.text_value or answer.number_value is not None or answer.date_value is not None
+        return 100.0 if has_value else 0.0
+
+    # ---------- فهرست‌ها ----------
+
+    async def get_my_evaluations(self, evaluator_employee_id: int) -> list[dict]:
+        """ارزیابی‌هایی که این پرسنل باید انجام دهد (Assignment های او) - با وضعیت فعلی هرکدام."""
+        assignments_result = await self.db.execute(
+            select(EvaluationAssignment)
+            .options(
+                selectinload(EvaluationAssignment.target_employee),
+                selectinload(EvaluationAssignment.period),
+                selectinload(EvaluationAssignment.form),
+            )
+            .where(EvaluationAssignment.evaluator_employee_id == evaluator_employee_id)
+        )
+        assignments = assignments_result.scalars().all()
+
+        evaluations_result = await self.db.execute(
+            select(Evaluation.assignment_id, Evaluation.id, Evaluation.status).where(
+                Evaluation.assignment_id.in_([a.id for a in assignments])
+            )
+        )
+        evaluation_by_assignment = {
+            row[0]: {"evaluation_id": row[1], "status": row[2].value} for row in evaluations_result.all()
+        }
+
+        items = []
+        for assignment in assignments:
+            evaluation_info = evaluation_by_assignment.get(assignment.id)
+            items.append(
+                {
+                    "assignment_id": assignment.id,
+                    "target": assignment.target_employee,
+                    "period_title": assignment.period.title,
+                    "form_title": assignment.form.title,
+                    "evaluation_id": evaluation_info["evaluation_id"] if evaluation_info else None,
+                    "status": evaluation_info["status"] if evaluation_info else "not_started",
+                }
+            )
+        return items
+
+    async def get_my_results(self, target_employee_id: int) -> list[Evaluation]:
+        """ارزیابی‌های ثبت‌نهایی‌شده‌ای که این پرسنل هدف آن‌ها بوده - نتایج خودش."""
+        result = await self.db.execute(
+            select(Evaluation)
+            .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .where(
+                EvaluationAssignment.target_employee_id == target_employee_id,
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+            .order_by(Evaluation.submitted_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_dashboard_summary(self, employee_id: int) -> dict:
+        """
+        خلاصه‌ی مخصوص کارت داشبورد - یک درخواست، همه‌چیز: امتیاز
+        (میانگین/آخرین)، و تعداد ارزیابی‌های در انتظار انجام (اگر خودش
+        هم نقش ارزیاب دارد).
+        """
+        results = await self.get_my_results(employee_id)
+        average_score = sum(r.total_score for r in results) / len(results) if results else None
+        latest_score = results[0].total_score if results else None
+
+        pending_result = await self.db.execute(
+            select(EvaluationAssignment.id).where(
+                EvaluationAssignment.evaluator_employee_id == employee_id,
+                EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+            )
+        )
+        pending_count = len(pending_result.all())
+
+        return {
+            "average_score": average_score,
+            "latest_score": latest_score,
+            "results_count": len(results),
+            "pending_to_evaluate_count": pending_count,
+        }

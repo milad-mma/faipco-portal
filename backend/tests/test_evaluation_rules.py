@@ -280,3 +280,35 @@ def test_active_category_with_no_active_questions_is_invalid():
     )
     assert len(errors) == 1
     assert "خالی" in errors[0]
+
+
+# ==============================================================================
+# محاسبه امتیاز (calculate_option_based_question_score / calculate_weighted_average)
+# ==============================================================================
+
+from app.core.evaluation_rules import (  # noqa: E402
+    calculate_option_based_question_score,
+    calculate_weighted_average,
+)
+
+
+def test_single_selected_option_score():
+    assert calculate_option_based_question_score([80]) == 80
+
+
+def test_multiple_selected_options_score_is_average():
+    assert calculate_option_based_question_score([80, 60]) == 70
+
+
+def test_no_selected_options_score_is_zero():
+    assert calculate_option_based_question_score([]) == 0.0
+
+
+def test_weighted_average_two_items():
+    result = calculate_weighted_average([{"weight": 40, "score": 80}, {"weight": 60, "score": 90}])
+    assert result == 86.0
+
+
+def test_weighted_average_single_item_full_weight():
+    result = calculate_weighted_average([{"weight": 100, "score": 75}])
+    assert result == 75.0

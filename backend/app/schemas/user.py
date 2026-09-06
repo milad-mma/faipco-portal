@@ -63,5 +63,6 @@ class UserOut(BaseModel):
     can_manage_performance_structure: bool = False  # performance.structure.manage — مدیریت ساختار ارزیابی عملکرد
     can_manage_performance_periods: bool = False  # performance.periods.manage — مدیریت دوره‌های ارزیابی عملکرد
     can_manage_performance_forms: bool = False  # performance.forms.manage — مدیریت فرم‌های ارزیابی عملکرد
+    can_manage_performance_assignments: bool = False  # performance.assignments.manage — تولید انتساب ارزیابی
 
     model_config = ConfigDict(from_attributes=True)

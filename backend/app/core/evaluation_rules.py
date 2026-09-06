@@ -91,3 +91,28 @@ def validate_form_weights(categories: list) -> list:
             errors.append(f"مجموع وزن سوالات فعال دسته‌بندی «{title}» باید ۱۰۰ باشد (الان: {question_weight_sum:g})")
 
     return errors
+
+
+def calculate_option_based_question_score(selected_option_scores: list) -> float:
+    """
+    امتیاز یک سوال از نوع مبتنی‌بر گزینه (single_choice/multiple_choice/
+    rating/yes_no) - میانگین امتیاز گزینه‌های انتخاب‌شده. برای
+    single_choice/rating/yes_no که همیشه دقیقاً یک گزینه انتخاب می‌شود،
+    این میانگین همان یک عدد است؛ برای multiple_choice که می‌تواند چند
+    گزینه هم‌زمان انتخاب شود، میانگین معنادارترین ترکیب است.
+    """
+    if not selected_option_scores:
+        return 0.0
+    return sum(selected_option_scores) / len(selected_option_scores)
+
+
+def calculate_weighted_average(weighted_items: list) -> float:
+    """
+    الگوریتم خالص مشترک برای هر دو سطح جمع‌بندی امتیاز:
+        سوال‌ها  -> امتیاز دسته‌بندی
+        دسته‌بندی‌ها -> امتیاز نهایی فرم
+    weighted_items: [{"weight": float, "score": float}, ...] - چون
+    validate_form_weights از قبل تضمین کرده مجموع weight های فعال ۱۰۰
+    است، این‌جا فقط کافی است sum(weight/100 * score) محاسبه شود.
+    """
+    return sum(item["weight"] / 100 * item["score"] for item in weighted_items)

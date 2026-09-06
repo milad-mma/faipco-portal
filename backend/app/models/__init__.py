@@ -58,3 +58,10 @@ from app.models.evaluation_content import (  # noqa: F401
     EvaluationQuestionOption,
     EvaluationQuestionType,
 )
+from app.models.evaluation_process import (  # noqa: F401
+    Evaluation,
+    EvaluationAnswer,
+    EvaluationAssignment,
+    EvaluationAssignmentStatus,
+    EvaluationStatus,
+)

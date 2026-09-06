@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     employees,
     evaluation_forms,
     evaluation_periods,
+    evaluation_process,
     evaluation_structure,
     feedback,
     hr,
@@ -46,3 +47,4 @@ api_router.include_router(mapping_suggestions.router, prefix="/mapping-suggestio
 api_router.include_router(evaluation_structure.router, prefix="/performance", tags=["performance"])
 api_router.include_router(evaluation_periods.router, prefix="/performance/periods", tags=["performance"])
 api_router.include_router(evaluation_forms.router, prefix="/performance/forms", tags=["performance"])
+api_router.include_router(evaluation_process.router, prefix="/performance", tags=["performance"])

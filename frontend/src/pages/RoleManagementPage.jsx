@@ -33,6 +33,7 @@ import {
   fetchRoles,
   updateRole,
 } from "../api/users";
+import { useAuth } from "../context/AuthContext";
 
 const EMPTY_FORM = { name: "", description: "", permissionIds: [] };
 
@@ -56,6 +57,7 @@ function isAdminLevelPermission(code) {
  * تازه بسازید یا نقش‌های موجود را ویرایش کنید — نه ساخت مجوز کاملاً جدید.
  */
 export default function RoleManagementPage() {
+  const { refetchUser } = useAuth();
   const [roles, setRoles] = useState(null);
   const [permissions, setPermissions] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -159,6 +161,12 @@ export default function RoleManagementPage() {
       }
       setDialogOpen(false);
       loadRoles();
+      // ⚠️ اگر خودِ کاربر جاری نقشش تغییر کرده باشد (مثلاً مجوز جدیدی به
+      // نقش خودش اضافه کرده)، بدون این فراخوانی، فلگ‌های can_* در Session
+      // فعلی (که فقط یک‌بار موقع ورود خوانده می‌شوند) به‌روز نمی‌شدند - و
+      // کاربر تا خروج/ورود دوباره، منوی مربوطه را نمی‌دید، با اینکه واقعاً
+      // مجوز را داشت.
+      refetchUser().catch(() => {});
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره نقش با خطا مواجه شد.");
     } finally {
