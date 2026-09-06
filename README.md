@@ -66,6 +66,7 @@ cd frontend && npm install && npm run dev
 | [`docs/self-service-contact-info.md`](docs/self-service-contact-info.md) | ویرایش ایمیل/موبایل شخصی با Write-back به دیتابیس اصلی سایت |
 | [`docs/sms-password-reset.md`](docs/sms-password-reset.md) | فراموشی رمز عبور از طریق پیامک (ippanel) |
 | [`docs/schema-discovery.md`](docs/schema-discovery.md) | کشف خودکار ساختار دیتابیس سایت‌ها |
+| [`docs/performance-evaluation-structure.md`](docs/performance-evaluation-structure.md) | ساختار سازمانی ارزیابی عملکرد (سرپرست/مدیر سایت/سرشیفت) |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

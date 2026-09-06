@@ -41,3 +41,10 @@ from app.models.backup_settings import BackupRetentionMode, BackupScheduleType, 
 from app.models.smtp_settings import SmtpEncryptionMode, SmtpSettings  # noqa: F401
 from app.models.sms_settings import SmsSendingType, SmsSettings  # noqa: F401
 from app.models.password_reset_token import PasswordResetChannel, PasswordResetToken  # noqa: F401
+from app.models.evaluation import (  # noqa: F401
+    EvaluationDepartmentSupervisor,
+    EvaluationOtherManager,
+    EvaluationShiftAssignment,
+    EvaluationShiftLead,
+    EvaluationSiteManager,
+)

@@ -60,5 +60,6 @@ class UserOut(BaseModel):
     can_bust_cache: bool = False  # system.cache_bust — پاک‌سازی Cache سرور
     can_manage_system_settings: bool = False  # system.settings — «تنظیمات سامانه» (مثل عکس پس‌زمینه ورود)
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
+    can_manage_performance_structure: bool = False  # performance.structure.manage — مدیریت ساختار ارزیابی عملکرد
 
     model_config = ConfigDict(from_attributes=True)

@@ -38,6 +38,7 @@ import MonthlyAttendanceReportPage from "./pages/MonthlyAttendanceReportPage";
 import PresenceReportPage from "./pages/PresenceReportPage";
 import ClockInOutReportPage from "./pages/ClockInOutReportPage";
 import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
+import EvaluationStructurePage from "./pages/EvaluationStructurePage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const SPLASH_FADE_MS = 400;
@@ -108,6 +109,14 @@ export default function App() {
           <Route
             path="/sites/:siteId/settings"
             element={<PermissionRoute check={(u) => u?.can_manage_sites}><SiteSettingsPage /></PermissionRoute>}
+          />
+          <Route
+            path="/performance/structure"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_performance_structure}>
+                <EvaluationStructurePage />
+              </PermissionRoute>
+            }
           />
           <Route
             path="/sync"

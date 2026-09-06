@@ -28,6 +28,8 @@ import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
+import RateReviewOutlinedIcon from "@mui/icons-material/RateReviewOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -135,6 +137,21 @@ const NAV_ITEMS = [
     adminOnly: false,
     requiresBackupManage: true,
   },
+  {
+    label: "ارزیابی عملکرد",
+    path: "/performance/structure",
+    icon: <RateReviewOutlinedIcon />,
+    adminOnly: false,
+    requiresPerformanceStructureManage: true,
+    children: [
+      {
+        label: "ساختار ارزیابی",
+        path: "/performance/structure",
+        icon: <AccountTreeOutlinedIcon />,
+        requiresPerformanceStructureManage: true,
+      },
+    ],
+  },
   { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
   {
     label: "پرسنل آنلاین",
@@ -195,6 +212,7 @@ export default function Layout() {
         if (item.requiresRolesManage && !user?.can_manage_roles) return false;
         if (item.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
         if (item.requiresBackupManage && !(user?.can_manage_backup || user?.can_bust_cache)) return false;
+        if (item.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
         if (
           item.requiresAnyEmployeesAccess &&
           !(user?.can_view_employees || user?.can_update_employees || user?.can_create_employees)
@@ -225,6 +243,7 @@ export default function Layout() {
           if (child.requiresRolesManage && !user?.can_manage_roles) return false;
           if (child.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
           if (child.requiresSystemSettings && !user?.can_manage_system_settings) return false;
+          if (child.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
           return true;
         });
 
