@@ -190,8 +190,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
             )}
             <EmployeePicker
               siteId={siteId}
-              departmentIds={[department.id]}
-              label="تعیین/تغییر سرپرست (از پرسنل همین واحد)"
+              label="تعیین/تغییر سرپرست (جست‌وجو در کل پرسنل سایت)"
               onSelect={handleSetSupervisor}
             />
           </Box>
