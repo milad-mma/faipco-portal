@@ -51,3 +51,43 @@ def resolve_evaluation_target_ids(
 
     target_ids.discard(evaluator_employee_id)  # هرگز خودش را ارزیابی نکند
     return target_ids
+
+
+_WEIGHT_TOLERANCE = 0.01  # گرد کردن اعشاری، نه اشکال واقعی در وزن‌ها
+
+
+def validate_form_weights(categories: list) -> list:
+    """
+    الگوریتم خالص اعتبارسنجی وزن یک فرم - قبل از فعال‌شدن یک فرم اجرا
+    می‌شود (نه در حالت Draft، که ممکن است هنوز ناقص باشد). categories:
+    [{"title": str, "weight": float, "is_active": bool,
+      "questions": [{"text": str, "weight": float, "is_active": bool}, ...]}, ...]
+
+    قانون: مجموع weight دسته‌بندی‌های فعال باید ۱۰۰ باشد؛ داخل هر
+    دسته‌بندی فعال، مجموع weight سوالات فعال هم باید ۱۰۰ باشد.
+
+    خروجی: لیست پیام‌های خطا (فارسی، آماده نمایش مستقیم به کاربر) - اگر
+    خالی باشد یعنی معتبر است.
+    """
+    errors: list = []
+
+    active_categories = [c for c in categories if c.get("is_active", True)]
+    if not active_categories:
+        errors.append("فرم باید حداقل یک دسته‌بندی فعال داشته باشد")
+        return errors
+
+    category_weight_sum = sum(c.get("weight", 0) for c in active_categories)
+    if abs(category_weight_sum - 100) > _WEIGHT_TOLERANCE:
+        errors.append(f"مجموع وزن دسته‌بندی‌های فعال باید ۱۰۰ باشد (الان: {category_weight_sum:g})")
+
+    for category in active_categories:
+        active_questions = [q for q in category.get("questions", []) if q.get("is_active", True)]
+        title = category.get("title", "")
+        if not active_questions:
+            errors.append(f"دسته‌بندی «{title}» باید حداقل یک سوال فعال داشته باشد")
+            continue
+        question_weight_sum = sum(q.get("weight", 0) for q in active_questions)
+        if abs(question_weight_sum - 100) > _WEIGHT_TOLERANCE:
+            errors.append(f"مجموع وزن سوالات فعال دسته‌بندی «{title}» باید ۱۰۰ باشد (الان: {question_weight_sum:g})")
+
+    return errors

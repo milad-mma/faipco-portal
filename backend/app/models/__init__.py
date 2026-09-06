@@ -48,3 +48,13 @@ from app.models.evaluation import (  # noqa: F401
     EvaluationShiftLead,
     EvaluationSiteManager,
 )
+from app.models.evaluation_content import (  # noqa: F401
+    EvaluationCategory,
+    EvaluationForm,
+    EvaluationFormStatus,
+    EvaluationPeriod,
+    EvaluationPeriodStatus,
+    EvaluationQuestion,
+    EvaluationQuestionOption,
+    EvaluationQuestionType,
+)

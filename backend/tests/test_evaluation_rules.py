@@ -181,3 +181,102 @@ def test_no_roles_means_no_targets():
         shift_assignments_by_shift_lead={},
     )
     assert targets == set()
+
+
+# ==============================================================================
+# اعتبارسنجی وزن فرم (validate_form_weights)
+# ==============================================================================
+
+from app.core.evaluation_rules import validate_form_weights  # noqa: E402
+
+
+def test_valid_weights_return_no_errors():
+    errors = validate_form_weights(
+        [
+            {
+                "title": "انضباط",
+                "weight": 40,
+                "is_active": True,
+                "questions": [
+                    {"text": "q1", "weight": 60, "is_active": True},
+                    {"text": "q2", "weight": 40, "is_active": True},
+                ],
+            },
+            {
+                "title": "کیفیت",
+                "weight": 60,
+                "is_active": True,
+                "questions": [{"text": "q3", "weight": 100, "is_active": True}],
+            },
+        ]
+    )
+    assert errors == []
+
+
+def test_category_weights_not_summing_to_100_is_invalid():
+    errors = validate_form_weights(
+        [
+            {
+                "title": "انضباط",
+                "weight": 40,
+                "is_active": True,
+                "questions": [{"text": "q1", "weight": 100, "is_active": True}],
+            },
+            {
+                "title": "کیفیت",
+                "weight": 50,
+                "is_active": True,
+                "questions": [{"text": "q2", "weight": 100, "is_active": True}],
+            },
+        ]
+    )
+    assert len(errors) == 1
+
+
+def test_question_weights_not_summing_to_100_is_invalid():
+    errors = validate_form_weights(
+        [
+            {
+                "title": "انضباط",
+                "weight": 100,
+                "is_active": True,
+                "questions": [
+                    {"text": "q1", "weight": 30, "is_active": True},
+                    {"text": "q2", "weight": 30, "is_active": True},
+                ],
+            }
+        ]
+    )
+    assert len(errors) == 1
+    assert "انضباط" in errors[0]
+
+
+def test_inactive_categories_and_questions_are_ignored():
+    errors = validate_form_weights(
+        [
+            {
+                "title": "فعال",
+                "weight": 100,
+                "is_active": True,
+                "questions": [
+                    {"text": "q1", "weight": 100, "is_active": True},
+                    {"text": "q2", "weight": 999, "is_active": False},
+                ],
+            },
+            {"title": "غیرفعال", "weight": 999, "is_active": False, "questions": []},
+        ]
+    )
+    assert errors == []
+
+
+def test_no_active_categories_is_invalid():
+    errors = validate_form_weights([{"title": "غیرفعال", "weight": 100, "is_active": False, "questions": []}])
+    assert len(errors) == 1
+
+
+def test_active_category_with_no_active_questions_is_invalid():
+    errors = validate_form_weights(
+        [{"title": "خالی", "weight": 100, "is_active": True, "questions": []}]
+    )
+    assert len(errors) == 1
+    assert "خالی" in errors[0]

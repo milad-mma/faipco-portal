@@ -61,5 +61,7 @@ class UserOut(BaseModel):
     can_manage_system_settings: bool = False  # system.settings — «تنظیمات سامانه» (مثل عکس پس‌زمینه ورود)
     can_manage_birthday_messages: bool = False  # آیا مجوز مدیریت پیام‌های تبریک تولد را دارد
     can_manage_performance_structure: bool = False  # performance.structure.manage — مدیریت ساختار ارزیابی عملکرد
+    can_manage_performance_periods: bool = False  # performance.periods.manage — مدیریت دوره‌های ارزیابی عملکرد
+    can_manage_performance_forms: bool = False  # performance.forms.manage — مدیریت فرم‌های ارزیابی عملکرد
 
     model_config = ConfigDict(from_attributes=True)
