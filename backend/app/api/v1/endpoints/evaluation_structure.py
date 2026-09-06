@@ -27,8 +27,14 @@ from app.schemas.evaluation import (
     AddOtherManagerIn,
     AddShiftLeadIn,
     AddSiteManagerIn,
+    DepartmentSupervisorOut,
+    OtherManagerOut,
     SetDepartmentSupervisorIn,
     SetShiftAssignmentIn,
+    ShiftAssignmentOut,
+    ShiftLeadOut,
+    SiteManagerOut,
+    SiteStructureOut,
 )
 from app.services.evaluation_structure_service import EvaluationStructureError, EvaluationStructureService
 
@@ -47,17 +53,20 @@ async def _require_site_permission(db: AsyncSession, user: User, site_id: int) -
         )
 
 
-@router.get("/sites/{site_id}/structure")
+@router.get("/sites/{site_id}/structure", response_model=SiteStructureOut)
 async def get_site_structure(
     site_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     await _require_site_permission(db, current_user, site_id)
-    return await EvaluationStructureService(db).get_site_structure(site_id)
+    try:
+        return await EvaluationStructureService(db).get_site_structure(site_id)
+    except EvaluationStructureError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/departments/{department_id}/supervisor")
+@router.put("/departments/{department_id}/supervisor", response_model=DepartmentSupervisorOut)
 async def set_department_supervisor(
     department_id: int,
     payload: SetDepartmentSupervisorIn,
@@ -87,7 +96,7 @@ async def remove_department_supervisor(
     await EvaluationStructureService(db).remove_department_supervisor(department_id)
 
 
-@router.post("/sites/{site_id}/managers")
+@router.post("/sites/{site_id}/managers", response_model=SiteManagerOut)
 async def add_site_manager(
     site_id: int,
     payload: AddSiteManagerIn,
@@ -114,7 +123,7 @@ async def remove_site_manager(
     await EvaluationStructureService(db).remove_site_manager(manager_id)
 
 
-@router.post("/sites/{site_id}/other-managers")
+@router.post("/sites/{site_id}/other-managers", response_model=OtherManagerOut)
 async def add_other_manager(
     site_id: int,
     payload: AddOtherManagerIn,
@@ -141,7 +150,7 @@ async def remove_other_manager(
     await EvaluationStructureService(db).remove_other_manager(manager_id)
 
 
-@router.post("/departments/{department_id}/shift-leads")
+@router.post("/departments/{department_id}/shift-leads", response_model=ShiftLeadOut)
 async def add_shift_lead(
     department_id: int,
     payload: AddShiftLeadIn,
@@ -172,7 +181,7 @@ async def remove_shift_lead(
     await EvaluationStructureService(db).remove_shift_lead(shift_lead_id)
 
 
-@router.put("/shift-assignments")
+@router.put("/shift-assignments", response_model=ShiftAssignmentOut)
 async def set_shift_assignment(
     payload: SetShiftAssignmentIn,
     db: AsyncSession = Depends(get_db),

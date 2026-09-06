@@ -194,9 +194,10 @@ class EvaluationFormService:
             raise EvaluationFormError("فقط فرم‌های در وضعیت پیش‌نویس قابل‌ویرایش هستند")
         category = EvaluationCategory(form_id=form_id, **data)
         self.db.add(category)
+        await self.db.flush()  # برای پرشدن category.id بدون Expire شدن (برخلاف commit)
+        category_id = category.id
         await self.db.commit()
-        await self.db.refresh(category)
-        return category
+        return await self._get_category_with_questions(category_id)
 
     async def update_category(self, category_id: int, data: dict) -> EvaluationCategory:
         category = await self.db.get(EvaluationCategory, category_id)
@@ -205,8 +206,22 @@ class EvaluationFormService:
         for key, value in data.items():
             setattr(category, key, value)
         await self.db.commit()
-        await self.db.refresh(category)
-        return category
+        return await self._get_category_with_questions(category_id)
+
+    async def _get_category_with_questions(self, category_id: int) -> EvaluationCategory:
+        """
+        ⚠️ EvaluationCategoryOut شامل questions تودرتو است - بدون
+        selectinload صریح، دسترسی به آن در یک Session ناهمگام خطای
+        MissingGreenlet می‌دهد (دقیقاً همان باگی که باعث صفحه سفید در
+        «ساختار ارزیابی» شده بود - همان دسته اشتباه، این‌جا هم تکرار
+        شده بود).
+        """
+        result = await self.db.execute(
+            select(EvaluationCategory)
+            .options(selectinload(EvaluationCategory.questions).selectinload(EvaluationQuestion.options))
+            .where(EvaluationCategory.id == category_id)
+        )
+        return result.scalar_one()
 
     async def delete_category(self, category_id: int) -> None:
         category = await self.db.get(EvaluationCategory, category_id)

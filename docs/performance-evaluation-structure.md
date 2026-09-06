@@ -192,3 +192,54 @@ Draft، که ممکن است ناقص باشد) اجرا می‌شود: مجمو
 | جریان انجام ارزیابی (Assignment Generation، Draft→Submit) | ⏳ باقی‌مانده |
 | محاسبه امتیاز نهایی | ⏳ باقی‌مانده |
 | گزارش‌ها و Dashboard | ⏳ باقی‌مانده |
+
+## رفع باگ حیاتی — صفحه سفید هنگام باز کردن «ساختار ارزیابی»
+
+**علامت گزارش‌شده**: باز کردن صفحه «ساختار ارزیابی» کل صفحه را سفید
+می‌کرد.
+
+**علت اصلی**: `EvaluationStructureService.get_site_structure` (و پنج
+متد دیگر همین سرویس - `set_department_supervisor`، `add_site_manager`،
+`add_other_manager`، `add_shift_lead`، `set_shift_assignment`) به
+رابطه `employee` روی `EvaluationSiteManager`/`EvaluationOtherManager`/
+`EvaluationDepartmentSupervisor`/`EvaluationShiftLead`/
+`EvaluationShiftAssignment` دسترسی پیدا می‌کردند **بدون این‌که از قبل
+با `selectinload(...)` بارگذاری شده باشد**. در یک Session ناهمگام
+(Async SQLAlchemy)، دسترسی به یک رابطه Lazy-load نشده بدون Greenlet
+فعال، خطای `MissingGreenlet` می‌دهد - یک خطای ۵۰۰ خام از Backend.
+
+مشکل دومی هم همراهش بود: خودِ Endpoint اصلاً `response_model` نداشت -
+یعنی حتی اگر رابطه درست بارگذاری می‌شد، FastAPI مجبور بود اشیای خام
+SQLAlchemy را مستقیم JSON کند (که معمولاً شکست می‌خورد یا داده داخلی
+نامربوط برمی‌گرداند). یک مشکل سوم هم پیدا شد: Schema (`SiteStructureOut`)
+یک فیلد اجباری `site_name` داشت که سرویس اصلاً برنمی‌گرداند.
+
+هر سه مشکل باعث خطای ۵۰۰ از Backend می‌شدند؛ چون هیچ Error Boundary ای
+در React برای این صفحه تعریف نشده بود، نتیجه یک صفحه کاملاً سفید بود
+(نه یک پیام خطای قابل‌فهم).
+
+**راه‌حل**:
+1. همه Query های `get_site_structure` با `selectinload(...)` رابطه
+   `employee` را از قبل بار می‌کنند.
+2. متدهای Create/Update به‌جای `db.refresh(obj)` ساده (که فقط ستون‌های
+   خودِ Object را تازه می‌کند، نه رابطه‌ها)، بعد از `commit()` دوباره با
+   `selectinload` Query می‌زنند - با یک نکته فنی مهم: چون `commit()`
+   شیء را Expire می‌کند، خواندن `obj.id` بعد از آن هم می‌توانست همین
+   خطا را بدهد؛ برای همین `id` بلافاصله بعد از `flush()` (نه `commit()`)
+   خوانده می‌شود.
+3. `site_name` به خروجی سرویس اضافه شد (با یک بررسی صریح که خودِ سایت
+   وجود دارد - وگرنه پیام خطای واضح «سایت موردنظر یافت نشد»، نه یک ۵۰۰
+   خام).
+4. `response_model` مناسب به تمام Endpoint های این ماژول اضافه شد.
+
+⚠️ همین دقیقاً همان کلاس باگ در `evaluation_form_service.py` هم پیدا و
+رفع شد (`add_category`/`update_category` به `questions` تودرتو دسترسی
+می‌کردند بدون `selectinload`).
+
+**درس کلی برای بقیه این ماژول (و آینده پروژه)**: هر متد سرویسی که یک
+Object را بعد از Create/Update برمی‌گرداند، باید صراحتاً بررسی شود که
+آیا Schema خروجی (`response_model`) به رابطه‌ای نیاز دارد که در همان
+Query نهایی `selectinload` نشده - این دقیقاً همان اصل کلی «Async ORM:
+از دسترسی به رابطه Lazy-load شده بعد از flush() خودداری کن» است که از
+قبل هم برای این پروژه شناخته‌شده بود، ولی این‌جا در یک ماژول تازه دوباره
+تکرار شده بود.

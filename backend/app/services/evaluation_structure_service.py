@@ -18,9 +18,11 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.evaluation_rules import resolve_evaluation_target_ids
 from app.models.employee import Department, Employee
+from app.models.site import Site
 from app.models.evaluation import (
     EvaluationDepartmentSupervisor,
     EvaluationOtherManager,
@@ -75,8 +77,12 @@ class EvaluationStructureService:
             existing = EvaluationDepartmentSupervisor(department_id=department_id, employee_id=employee_id)
             self.db.add(existing)
         await self.db.commit()
-        await self.db.refresh(existing)
-        return existing
+        result = await self.db.execute(
+            select(EvaluationDepartmentSupervisor)
+            .options(selectinload(EvaluationDepartmentSupervisor.employee))
+            .where(EvaluationDepartmentSupervisor.department_id == department_id)
+        )
+        return result.scalar_one()
 
     async def remove_department_supervisor(self, department_id: int) -> None:
         result = await self.db.execute(
@@ -104,9 +110,15 @@ class EvaluationStructureService:
 
         manager = EvaluationSiteManager(site_id=site_id, employee_id=employee_id)
         self.db.add(manager)
+        await self.db.flush()  # برای پرشدن manager.id بدون Expire شدن (برخلاف commit)
+        manager_id = manager.id
         await self.db.commit()
-        await self.db.refresh(manager)
-        return manager
+        result = await self.db.execute(
+            select(EvaluationSiteManager)
+            .options(selectinload(EvaluationSiteManager.employee))
+            .where(EvaluationSiteManager.id == manager_id)
+        )
+        return result.scalar_one()
 
     async def remove_site_manager(self, manager_id: int) -> None:
         manager = await self.db.get(EvaluationSiteManager, manager_id)
@@ -129,9 +141,15 @@ class EvaluationStructureService:
 
         manager = EvaluationOtherManager(site_id=site_id, employee_id=employee_id)
         self.db.add(manager)
+        await self.db.flush()
+        manager_id = manager.id
         await self.db.commit()
-        await self.db.refresh(manager)
-        return manager
+        result = await self.db.execute(
+            select(EvaluationOtherManager)
+            .options(selectinload(EvaluationOtherManager.employee))
+            .where(EvaluationOtherManager.id == manager_id)
+        )
+        return result.scalar_one()
 
     async def remove_other_manager(self, manager_id: int) -> None:
         manager = await self.db.get(EvaluationOtherManager, manager_id)
@@ -175,9 +193,15 @@ class EvaluationStructureService:
 
         shift_lead = EvaluationShiftLead(department_id=department_id, employee_id=employee_id)
         self.db.add(shift_lead)
+        await self.db.flush()
+        shift_lead_id = shift_lead.id
         await self.db.commit()
-        await self.db.refresh(shift_lead)
-        return shift_lead
+        result = await self.db.execute(
+            select(EvaluationShiftLead)
+            .options(selectinload(EvaluationShiftLead.employee))
+            .where(EvaluationShiftLead.id == shift_lead_id)
+        )
+        return result.scalar_one()
 
     async def remove_shift_lead(self, shift_lead_id: int) -> None:
         """
@@ -229,8 +253,12 @@ class EvaluationStructureService:
             existing = EvaluationShiftAssignment(employee_id=employee_id, shift_lead_id=shift_lead_id)
             self.db.add(existing)
         await self.db.commit()
-        await self.db.refresh(existing)
-        return existing
+        refreshed_result = await self.db.execute(
+            select(EvaluationShiftAssignment)
+            .options(selectinload(EvaluationShiftAssignment.employee))
+            .where(EvaluationShiftAssignment.employee_id == employee_id)
+        )
+        return refreshed_result.scalar_one()
 
     async def remove_shift_assignment(self, employee_id: int) -> None:
         result = await self.db.execute(
@@ -244,13 +272,28 @@ class EvaluationStructureService:
     # ---------- نمایش کامل ساختار یک سایت ----------
 
     async def get_site_structure(self, site_id: int) -> dict:
+        """
+        ⚠️ همه Query های این متد عمداً با selectinload(...) رابطه‌ی
+        employee (و مشابه) را از قبل بار می‌کنند - دسترسی به یک رابطه
+        Lazy-load نشده در یک Session ناهمگام (Async)، بدون Greenlet فعال،
+        خطای MissingGreenlet می‌دهد (دقیقاً همان چیزی که باعث خطای ۵۰۰ و
+        صفحه سفید در Frontend شده بود).
+        """
+        site = await self.db.get(Site, site_id)
+        if site is None:
+            raise EvaluationStructureError("سایت موردنظر یافت نشد")
+
         site_managers_result = await self.db.execute(
-            select(EvaluationSiteManager).where(EvaluationSiteManager.site_id == site_id)
+            select(EvaluationSiteManager)
+            .options(selectinload(EvaluationSiteManager.employee))
+            .where(EvaluationSiteManager.site_id == site_id)
         )
         site_managers = site_managers_result.scalars().all()
 
         other_managers_result = await self.db.execute(
-            select(EvaluationOtherManager).where(EvaluationOtherManager.site_id == site_id)
+            select(EvaluationOtherManager)
+            .options(selectinload(EvaluationOtherManager.employee))
+            .where(EvaluationOtherManager.site_id == site_id)
         )
         other_managers = other_managers_result.scalars().all()
 
@@ -260,14 +303,16 @@ class EvaluationStructureService:
         department_entries = []
         for department in departments:
             supervisor_result = await self.db.execute(
-                select(EvaluationDepartmentSupervisor).where(
-                    EvaluationDepartmentSupervisor.department_id == department.id
-                )
+                select(EvaluationDepartmentSupervisor)
+                .options(selectinload(EvaluationDepartmentSupervisor.employee))
+                .where(EvaluationDepartmentSupervisor.department_id == department.id)
             )
             supervisor = supervisor_result.scalar_one_or_none()
 
             shift_leads_result = await self.db.execute(
-                select(EvaluationShiftLead).where(EvaluationShiftLead.department_id == department.id)
+                select(EvaluationShiftLead)
+                .options(selectinload(EvaluationShiftLead.employee))
+                .where(EvaluationShiftLead.department_id == department.id)
             )
             shift_leads = shift_leads_result.scalars().all()
 
@@ -275,9 +320,9 @@ class EvaluationStructureService:
             shift_assignments = []
             if shift_lead_ids:
                 assignments_result = await self.db.execute(
-                    select(EvaluationShiftAssignment).where(
-                        EvaluationShiftAssignment.shift_lead_id.in_(shift_lead_ids)
-                    )
+                    select(EvaluationShiftAssignment)
+                    .options(selectinload(EvaluationShiftAssignment.employee))
+                    .where(EvaluationShiftAssignment.shift_lead_id.in_(shift_lead_ids))
                 )
                 shift_assignments = assignments_result.scalars().all()
 
@@ -294,6 +339,7 @@ class EvaluationStructureService:
 
         return {
             "site_id": site_id,
+            "site_name": site.name,
             "site_managers": site_managers,
             "other_managers": other_managers,
             "departments": department_entries,
