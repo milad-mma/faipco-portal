@@ -21,28 +21,7 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
-import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
-import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
-import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
-import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
-import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
-import RateReviewOutlinedIcon from "@mui/icons-material/RateReviewOutlined";
-import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
-import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
-import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
-import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
-import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
-import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
-import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
-import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
-import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
-import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
-import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
@@ -58,147 +37,10 @@ import { useThemeMode } from "../context/ThemeModeContext";
 import { usePresenceMonitor } from "../utils/presenceSocket";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
+import { NAV_ITEMS, isItemVisible } from "../config/navItems";
 
 const DRAWER_WIDTH = 260;
 
-// «واحدهای سازمانی» به‌عنوان زیرمجموعه «مدیریت دسترسی» تعریف شده — چون تعیین
-// سرپرست واحد یک تصمیم دسترسی/مسئولیت سازمانی است، نه صرفاً داده پرسنلی.
-const NAV_ITEMS = [
-  { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
-  { label: "پرسنل", path: "/employees", icon: <GroupOutlinedIcon />, adminOnly: false, requiresAnyEmployeesAccess: true },
-  {
-    label: "سایت‌ها",
-    path: "/sites",
-    icon: <ApartmentOutlinedIcon />,
-    adminOnly: false,
-    requiresSitesView: true,
-  },
-  {
-    label: "همگام‌سازی دیتابیس",
-    path: "/sync",
-    icon: <SyncOutlinedIcon />,
-    adminOnly: false,
-    requiresAnySyncAccess: true,
-  },
-  { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon />, adminOnly: false },
-  {
-    label: "ثبت ورود و خروج",
-    path: "/attendance-clock",
-    icon: <FingerprintOutlinedIcon />,
-    adminOnly: false,
-    requiresClockInOut: true,
-    hiddenForAdmin: true,
-  },
-  {
-    label: "گزارش اطلاعیه‌ها",
-    path: "/notice-reports",
-    icon: <AssessmentOutlinedIcon />,
-    adminOnly: false,
-    requiresSiteNoticeReport: true,
-  },
-  {
-    label: "انتقادات و پیشنهادات",
-    path: "/feedback-report",
-    icon: <ForumOutlinedIcon />,
-    adminOnly: false,
-    requiresFeedbackView: true,
-  },
-  {
-    label: "مدیریت دسترسی",
-    path: "/access",
-    icon: <AdminPanelSettingsOutlinedIcon />,
-    adminOnly: false,
-    // ⚠️ عمداً یک شرط OR (نه فقط requiresUsersManage): این آیتم والد باید
-    // نمایش داده شود اگر کاربر *حداقل یکی* از چهار مجوز مرتبط با
-    // زیرمنوهایش را داشته باشد — وگرنه کسی که فقط sites.manage دارد (نه
-    // users.manage)، هرگز حتی به «واحدهای سازمانی» هم نمی‌رسید، چون خودِ
-    // والد قبل از رسیدن به فیلتر فرزندان مخفی می‌شد.
-    requiresAnyAccessManagement: true,
-    children: [
-      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, requiresSitesManage: true },
-      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, requiresIpAllowlist: true },
-      {
-        label: "انتصاب دسته‌جمعی نقش",
-        path: "/bulk-role-assignment",
-        icon: <GroupAddOutlinedIcon />,
-        requiresUsersManage: true,
-      },
-      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, requiresRolesManage: true },
-      {
-        label: "تنظیمات سامانه",
-        path: "/system-settings",
-        icon: <SettingsOutlinedIcon />,
-        requiresSystemSettings: true,
-      },
-    ],
-  },
-  {
-    label: "پشتیبان‌گیری",
-    path: "/backup",
-    icon: <CloudDownloadOutlinedIcon />,
-    adminOnly: false,
-    requiresBackupManage: true,
-  },
-  {
-    label: "ارزیابی عملکرد",
-    path: "/performance/structure",
-    icon: <RateReviewOutlinedIcon />,
-    adminOnly: false,
-    // ⚠️ عمداً OR بین هر سه مجوز - دقیقاً همان الگوی «مدیریت دسترسی» -
-    // کسی که فقط performance.periods.manage دارد (نه structure)، هم باید
-    // حداقل زیرمنوی «دوره‌های ارزیابی» را ببیند.
-    requiresAnyPerformanceAccess: true,
-    children: [
-      {
-        label: "ساختار ارزیابی",
-        path: "/performance/structure",
-        icon: <AccountTreeOutlinedIcon />,
-        requiresPerformanceStructureManage: true,
-      },
-      {
-        label: "دوره‌های ارزیابی",
-        path: "/performance/periods",
-        icon: <EventOutlinedIcon />,
-        requiresPerformancePeriodsManage: true,
-      },
-      {
-        label: "فرم‌های ارزیابی",
-        path: "/performance/forms",
-        icon: <AssignmentOutlinedIcon />,
-        requiresPerformanceFormsManage: true,
-      },
-    ],
-  },
-  { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
-  {
-    label: "پرسنل آنلاین",
-    path: "/presence-report",
-    icon: <ScienceOutlinedIcon />,
-    adminOnly: false,
-    requiresViewAttendanceLogs: true,
-  },
-  {
-    label: "گزارش ورود و خروج",
-    path: "/clock-in-out-report",
-    icon: <FingerprintOutlinedIcon />,
-    adminOnly: false,
-    requiresClockRecordsView: true,
-  },
-  {
-    label: "پیام‌های تبریک تولد",
-    path: "/birthday-messages",
-    icon: <CakeOutlinedIcon />,
-    adminOnly: false,
-    requiresBirthdayMessages: true,
-  },
-  {
-    label: "خودروهای پرسنل",
-    path: "/vehicle-report",
-    icon: <DirectionsCarFilledOutlinedIcon />,
-    adminOnly: false,
-    requiresVehiclesReport: true,
-  },
-];
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -213,85 +55,22 @@ export default function Layout() {
 
   const visibleNavItems = useMemo(
     () =>
-      NAV_ITEMS.filter((item) => {
-        if (item.adminOnly && !user?.is_superuser) return false;
-        if (item.requiresClockInOut && !user?.can_clock_in_out) return false;
-        if (item.requiresClockRecordsView && !user?.can_view_clock_records) return false;
-        if (item.requiresViewAttendanceLogs && !user?.can_view_attendance_logs) return false;
-        if (item.requiresBirthdayMessages && !user?.can_manage_birthday_messages) return false;
-        if (item.requiresSiteNoticeReport && !user?.can_view_site_notice_report) return false;
-        if (item.requiresFeedbackView && !user?.can_view_feedback) return false;
-        if (item.requiresVehiclesReport && !user?.can_view_vehicles_report) return false;
-        if (item.requiresSitesManage && !user?.can_manage_sites) return false;
-        if (item.requiresSitesView && !user?.can_view_sites) return false;
-        if (item.requiresAnySyncAccess && !(user?.can_manage_sync || user?.can_view_sync || user?.can_run_sync)) return false;
-        if (item.requiresUsersManage && !user?.can_manage_users) return false;
-        if (item.requiresRolesManage && !user?.can_manage_roles) return false;
-        if (item.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
-        if (item.requiresBackupManage && !(user?.can_manage_backup || user?.can_bust_cache)) return false;
-        if (item.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
-        if (
-          item.requiresAnyPerformanceAccess &&
-          !(
-            user?.can_manage_performance_structure ||
-            user?.can_manage_performance_periods ||
-            user?.can_manage_performance_forms ||
-            user?.can_manage_performance_assignments
-          )
-        )
-          return false;
-        if (
-          item.requiresAnyEmployeesAccess &&
-          !(user?.can_view_employees || user?.can_update_employees || user?.can_create_employees)
-        )
-          return false;
-        if (
-          item.requiresAnyAccessManagement &&
-          !(
-            user?.can_manage_users ||
-            user?.can_manage_sites ||
-            user?.can_manage_roles ||
-            user?.can_manage_ip_allowlist ||
-            user?.can_manage_system_settings
-          )
-        )
-          return false;
-        if (item.hiddenForAdmin && user?.is_superuser) return false;
-        return true;
-      }).map((item) => {
-        // فرزندان هم مستقل از والد فیلتر می‌شوند — طبق درخواست صریح، هر
-        // مجوزی که به یک نقش داده شود، منوی متناظرش (چه در سطح والد چه
-        // فرزند) باید نمایش داده شود؛ ممکن است کاربری فقط یکی از این چهار
-        // زیرمنو را ببیند، نه لزوماً همه را.
-        const filteredChildren = item.children?.filter((child) => {
-          if (child.adminOnly && !user?.is_superuser) return false;
-          if (child.requiresSitesManage && !user?.can_manage_sites) return false;
-          if (child.requiresUsersManage && !user?.can_manage_users) return false;
-          if (child.requiresRolesManage && !user?.can_manage_roles) return false;
-          if (child.requiresIpAllowlist && !user?.can_manage_ip_allowlist) return false;
-          if (child.requiresSystemSettings && !user?.can_manage_system_settings) return false;
-          if (child.requiresPerformanceStructureManage && !user?.can_manage_performance_structure) return false;
-          if (child.requiresPerformancePeriodsManage && !user?.can_manage_performance_periods) return false;
-          if (child.requiresPerformanceFormsManage && !user?.can_manage_performance_forms) return false;
-          return true;
-        });
+      NAV_ITEMS.filter((item) => isItemVisible(item, user)).map((item) => {
+        // فرزندان هم مستقل از والد فیلتر می‌شوند — هر مجوزی که به یک نقش
+        // داده شود، منوی متناظرش (چه در سطح والد چه فرزند) باید نمایش
+        // داده شود؛ ممکن است کاربری فقط یکی از چند زیرمنو را ببیند، نه
+        // لزوماً همه را.
+        const filteredChildren = item.children?.filter((child) => isItemVisible(child, user));
 
-        // ⚠️ رفع یک مشکل واقعی: خودِ آیتم والد («مدیریت دسترسی») با کلیک
-        // مستقیماً به path خودش (/access) می‌رود؛ ولی /access فقط با
-        // can_manage_users باز می‌شود. کاربری که فقط can_manage_sites دارد
-        // (نه users)، با کلیک روی والد بلافاصله به بیرون هدایت می‌شد، با
-        // اینکه باید می‌توانست حداقل «واحدهای سازمانی» را ببیند. اگر خودِ
-        // والد در دسترس نیست ولی حداقل یک فرزند هست، مسیر والد را به
-        // همان اولین فرزند در‌دسترس تغییر می‌دهیم.
+        // ⚠️ رفع یک مشکل واقعی: خودِ آیتم والد (مثل «مدیریت دسترسی») با
+        // کلیک مستقیماً به path خودش می‌رود؛ ولی آن مسیر ممکن است به یک
+        // مجوز محدودتر از «هر فرزندی» نیاز داشته باشد (نگاه کنید به
+        // ownPageCheck در navItems.jsx). اگر خودِ والد در دسترس نیست ولی
+        // حداقل یک فرزند هست، مسیر والد را به همان اولین فرزند در‌دسترس
+        // تغییر می‌دهیم - این منطق حالا برای *هر* آیتمی با ownPageCheck
+        // به‌طور خودکار کار می‌کند، نه فقط دو مورد خاص قبلی.
         let effectivePath = item.path;
-        if (item.requiresAnyAccessManagement && !user?.can_manage_users && filteredChildren?.length) {
-          effectivePath = filteredChildren[0].path;
-        }
-        if (
-          item.requiresAnyPerformanceAccess &&
-          !user?.can_manage_performance_structure &&
-          filteredChildren?.length
-        ) {
+        if (item.ownPageCheck && !item.ownPageCheck(user) && filteredChildren?.length) {
           effectivePath = filteredChildren[0].path;
         }
 
