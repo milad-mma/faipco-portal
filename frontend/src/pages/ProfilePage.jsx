@@ -43,6 +43,9 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
@@ -93,6 +96,31 @@ const EXTRA_ACCESS_ITEMS = [
     label: "پشتیبان‌گیری",
     path: "/backup",
     icon: <CloudDownloadOutlinedIcon />,
+  },
+  // ⚠️ رفع یک باگ واقعی: «ارزیابی عملکرد» موقع ساخت فقط به NAV_ITEMS در
+  // Layout.jsx (منوی کناری Admin) اضافه شده بود - نه به همین‌جا. یعنی هر
+  // کاربر غیر-Admin (که فقط نوار پایین را می‌بیند، نه منوی کناری)، حتی با
+  // داشتن کامل مجوزهای performance.*، هیچ راهی برای رسیدن به این صفحات از
+  // طریق UI نداشت - فقط با لینک مستقیم قابل‌دسترسی بود. دقیقاً همان الگوی
+  // بقیه موارد این لیست، سه مقصد جداگانه (نه یک آیتم با زیرمنو - این لیست
+  // اصلاً مفهوم زیرمنو ندارد):
+  {
+    flag: "can_manage_performance_structure",
+    label: "ساختار ارزیابی",
+    path: "/performance/structure",
+    icon: <AccountTreeOutlinedIcon />,
+  },
+  {
+    flag: "can_manage_performance_periods",
+    label: "دوره‌های ارزیابی",
+    path: "/performance/periods",
+    icon: <EventOutlinedIcon />,
+  },
+  {
+    flag: "can_manage_performance_forms",
+    label: "فرم‌های ارزیابی",
+    path: "/performance/forms",
+    icon: <AssignmentOutlinedIcon />,
   },
 ];
 
