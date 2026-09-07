@@ -5,7 +5,9 @@ import {
   AccordionSummary,
   Alert,
   Box,
+  Button,
   Chip,
+  IconButton,
   MenuItem,
   Stack,
   Table,
@@ -20,21 +22,25 @@ import {
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEmployees } from "../api/employees";
 import EmployeePicker from "../components/EmployeePicker";
+import InlineTitleEdit from "../components/InlineTitleEdit";
 import {
-  addOtherManager,
+  addManager,
+  addManagerTarget,
   addShiftLead,
-  addSiteManager,
   fetchEvaluationSiteStructure,
   removeDepartmentSupervisor,
-  removeOtherManager,
+  removeManager,
+  removeManagerTarget,
   removeShiftAssignment,
   removeShiftLead,
-  removeSiteManager,
   setDepartmentSupervisor,
   setShiftAssignment,
+  updateManagerTitle,
 } from "../api/evaluationStructure";
 
 function PersonChip({ employee, onRemove }) {
@@ -44,6 +50,137 @@ function PersonChip({ employee, onRemove }) {
       onDelete={onRemove}
       sx={{ mb: 0.5 }}
     />
+  );
+}
+
+function ManagerCard({ siteId, manager, onChanged, onError }) {
+  const targetEmployeeIds = manager.assignments.map((a) => a.target_employee.id);
+
+  async function handleUpdateTitle(newTitle) {
+    try {
+      await updateManagerTitle(manager.id, newTitle);
+      onChanged();
+    } catch (err) {
+      onError(err.response?.data?.detail || "ذخیره عنوان مدیر با خطا مواجه شد.");
+    }
+  }
+
+  async function handleAddTarget(employee) {
+    try {
+      await addManagerTarget(manager.id, employee.id);
+      onChanged();
+    } catch (err) {
+      onError(err.response?.data?.detail || "افزودن فرد به فهرست ارزیابی این مدیر با خطا مواجه شد.");
+    }
+  }
+
+  async function handleRemoveTarget(targetEmployeeId) {
+    try {
+      await removeManagerTarget(manager.id, targetEmployeeId);
+      onChanged();
+    } catch (err) {
+      onError(err.response?.data?.detail || "حذف فرد از فهرست این مدیر با خطا مواجه شد.");
+    }
+  }
+
+  async function handleRemoveManager(e) {
+    e.stopPropagation();
+    try {
+      await removeManager(manager.id);
+      onChanged();
+    } catch (err) {
+      onError(err.response?.data?.detail || "حذف مدیر با خطا مواجه شد.");
+    }
+  }
+
+  return (
+    <Accordion disableGutters variant="outlined" sx={{ mb: 1 }}>
+      <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%" }}>
+          <Typography fontWeight={700}>
+            {manager.employee.first_name} {manager.employee.last_name}
+          </Typography>
+          <Box onClick={(e) => e.stopPropagation()}>
+            <InlineTitleEdit
+              title={manager.title || "بدون عنوان (کلیک برای تعیین، مثلاً «مدیر تولید»)"}
+              onSave={handleUpdateTitle}
+              variant="caption"
+            />
+          </Box>
+          <Chip size="small" label={`${manager.assignments.length} نفر تحت ارزیابی`} />
+          <Box sx={{ flexGrow: 1 }} />
+          <IconButton size="small" onClick={handleRemoveManager}>
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          این مدیر دقیقاً همین افراد زیر را ارزیابی می‌کند - می‌توانید هر پرسنلی از کل سایت (از هر
+          واحدی، حتی سرپرست یک واحد یا یک مدیر دیگر) اضافه کنید.
+        </Typography>
+        <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+          {manager.assignments.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              هنوز هیچ‌کس به این مدیر تخصیص داده نشده است.
+            </Typography>
+          ) : (
+            manager.assignments.map((a) => (
+              <PersonChip
+                key={a.target_employee.id}
+                employee={a.target_employee}
+                onRemove={() => handleRemoveTarget(a.target_employee.id)}
+              />
+            ))
+          )}
+        </Stack>
+        <EmployeePicker
+          siteId={siteId}
+          label="افزودن فرد به فهرست ارزیابی این مدیر"
+          onSelect={handleAddTarget}
+          excludeIds={[...targetEmployeeIds, manager.employee.id]}
+        />
+      </AccordionDetails>
+    </Accordion>
+  );
+}
+
+function AddManagerForm({ siteId, onAdded, onError }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [title, setTitle] = useState("");
+
+  async function handleSelect(employee) {
+    try {
+      await addManager(siteId, employee.id, title.trim() || null);
+      setTitle("");
+      setIsOpen(false);
+      onAdded();
+    } catch (err) {
+      onError(err.response?.data?.detail || "افزودن مدیر با خطا مواجه شد.");
+    }
+  }
+
+  if (!isOpen) {
+    return (
+      <Button startIcon={<AddOutlinedIcon />} onClick={() => setIsOpen(true)}>
+        افزودن مدیر جدید
+      </Button>
+    );
+  }
+
+  return (
+    <Stack spacing={1.5} sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+      <TextField
+        size="small"
+        label="عنوان (اختیاری - مثلاً «مدیر تولید»)"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <EmployeePicker siteId={siteId} label="انتخاب فرد از پرسنل سایت" onSelect={handleSelect} />
+      <Button size="small" onClick={() => setIsOpen(false)} sx={{ alignSelf: "start" }}>
+        انصراف
+      </Button>
+    </Stack>
   );
 }
 
@@ -259,42 +396,6 @@ export default function EvaluationStructurePage() {
 
   useEffect(loadStructure, [siteId]);
 
-  async function handleAddSiteManager(employee) {
-    try {
-      await addSiteManager(siteId, employee.id);
-      loadStructure();
-    } catch (err) {
-      setError(err.response?.data?.detail || "افزودن مدیر سایت با خطا مواجه شد.");
-    }
-  }
-
-  async function handleRemoveSiteManager(managerId) {
-    try {
-      await removeSiteManager(managerId);
-      loadStructure();
-    } catch (err) {
-      setError(err.response?.data?.detail || "حذف مدیر سایت با خطا مواجه شد.");
-    }
-  }
-
-  async function handleAddOtherManager(employee) {
-    try {
-      await addOtherManager(siteId, employee.id);
-      loadStructure();
-    } catch (err) {
-      setError(err.response?.data?.detail || "افزودن مدیر با خطا مواجه شد.");
-    }
-  }
-
-  async function handleRemoveOtherManager(managerId) {
-    try {
-      await removeOtherManager(managerId);
-      loadStructure();
-    } catch (err) {
-      setError(err.response?.data?.detail || "حذف مدیر با خطا مواجه شد.");
-    }
-  }
-
   return (
     <Box>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
@@ -319,12 +420,15 @@ export default function EvaluationStructurePage() {
             می‌کنید.
           </Typography>
           <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
-            قانون کلی (ساده):
+            قانون کلی:
           </Typography>
           <Stack component="ul" sx={{ pl: 2.5, m: 0, mb: 1.5 }} spacing={0.5}>
             <Typography component="li" variant="body2">
-              <b>مدیر سایت</b> → سرپرست‌های همه واحدهای همون سایت + هر مدیر دیگه‌ای که زیر «سایر
-              مدیران» اضافه کنید رو ارزیابی می‌کنه.
+              <b>مدیر</b> (هر تعداد، هر عنوانی - مثلاً «مدیر سایت» یا «مدیر تولید») → دقیقاً همون
+              افرادی رو ارزیابی می‌کنه که خودتون صریحاً به فهرستش اضافه کردید - هیچ قانون خودکاری
+              وجود نداره. یعنی می‌تونید یه مدیر میانی هم تعریف کنید که فقط بخشی از سرپرست‌ها زیر
+              نظرشن، و بقیه سرپرست‌ها مستقیم زیر یه مدیر دیگه (مثلاً مدیر سایت) باشن. همچنین می‌تونید
+              هر فرد خاصی رو - حتی از یه واحد کاملاً متفاوت - مستقیم به فهرست هر مدیری اضافه کنید.
             </Typography>
             <Typography component="li" variant="body2">
               <b>سرپرست واحد</b> → همه پرسنل واحدش رو ارزیابی می‌کنه (مگه این‌که برای اون واحد سرشیفت
@@ -342,17 +446,16 @@ export default function EvaluationStructurePage() {
               یه سایت رو از منوی بالا انتخاب کنید.
             </Typography>
             <Typography component="li" variant="body2">
-              اگه سایت مدیر داره، توی «مدیران سایت» از بین پرسنل انتخابش کنید (می‌تونید چند نفر اضافه
-              کنید).
-            </Typography>
-            <Typography component="li" variant="body2">
               برای هر واحد سازمانی که پایین صفحه لیست شده، روش کلیک کنید و یه سرپرست انتخاب کنید (از
               بین کل پرسنل سایت - لازم نیست حتماً عضو همون واحد باشه).
             </Typography>
             <Typography component="li" variant="body2">
-              فقط اگه واقعاً نیاز دارید (مثلاً واحد بزرگه و چند شیفت داره)، سرشیفت هم اضافه کنید و
-              پرسنل رو بینشون تقسیم کنید. اگه نیازی نیست، همین‌جوری رهاش کنید - سرپرست خودش کل واحد رو
-              ارزیابی می‌کنه.
+              «افزودن مدیر جدید» رو بزنید (مثلاً «مدیر سایت»)، بعد توی فهرست همون مدیر، دقیقاً همون
+              سرپرست‌ها/افرادی که باید ارزیابی کنه رو اضافه کنید. اگه چارتتون چندسطحیه، چند مدیر
+              مختلف بسازید و سرپرست‌ها رو بینشون تقسیم کنید.
+            </Typography>
+            <Typography component="li" variant="body2">
+              فقط اگه واقعاً نیاز دارید (مثلاً واحد بزرگه و چند شیفت داره)، سرشیفت هم اضافه کنید.
             </Typography>
           </Stack>
         </AccordionDetails>
@@ -382,42 +485,24 @@ export default function EvaluationStructurePage() {
         <Stack spacing={3}>
           <Box>
             <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-              مدیران سایت
+              مدیران
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-              مدیر سایت به‌طور خودکار همه سرپرست‌های واحدها را ارزیابی می‌کند - به‌علاوه هر مدیری که
-              پایین‌تر جداگانه اضافه شود.
+              هر مدیر دقیقاً همون افرادی رو ارزیابی می‌کنه که صریحاً به فهرستش اضافه شده - روی هر
+              مدیر کلیک کنید تا فهرستش رو ببینید و ویرایش کنید.
             </Typography>
-            <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
-              {structure.site_managers.map((m) => (
-                <PersonChip key={m.id} employee={m.employee} onRemove={() => handleRemoveSiteManager(m.id)} />
+            <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+              {structure.managers.map((manager) => (
+                <ManagerCard
+                  key={manager.id}
+                  siteId={siteId}
+                  manager={manager}
+                  onChanged={loadStructure}
+                  onError={setError}
+                />
               ))}
             </Stack>
-            <EmployeePicker
-              siteId={siteId}
-              label="افزودن مدیر سایت (از پرسنل همین سایت)"
-              onSelect={handleAddSiteManager}
-            />
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-              سایر مدیران (که مدیر سایت ارزیابی می‌کند)
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-              اگر فردی که اینجا اضافه می‌کنید، هم‌زمان سرپرست یک واحد هم باشد، مشکلی نیست - فقط
-              یک‌بار در فهرست ارزیابی مدیر سایت ظاهر می‌شود.
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
-              {structure.other_managers.map((m) => (
-                <PersonChip key={m.id} employee={m.employee} onRemove={() => handleRemoveOtherManager(m.id)} />
-              ))}
-            </Stack>
-            <EmployeePicker
-              siteId={siteId}
-              label="افزودن مدیر (از پرسنل همین سایت)"
-              onSelect={handleAddOtherManager}
-            />
+            <AddManagerForm siteId={siteId} onAdded={loadStructure} onError={setError} />
           </Box>
 
           <Box>

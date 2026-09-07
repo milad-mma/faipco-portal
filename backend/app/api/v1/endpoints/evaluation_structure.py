@@ -1,6 +1,5 @@
 """
-Endpoint های «ساختار ارزیابی عملکرد» - مدیریت انتساب سرپرست/مدیر سایت/
-سایر مدیران/سرشیفت.
+Endpoint های «ساختار ارزیابی عملکرد» - مدیریت انتساب سرپرست/مدیر/سرشیفت.
 
 ⚠️ نکته امنیتی مهم: برخلاف اکثر Endpoint های این پروژه که site_id را
 مستقیماً در Path/Query دارند (و می‌توانند از الگوی ساده
@@ -21,20 +20,20 @@ from app.core.deps import get_current_user
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Department
-from app.models.evaluation import EvaluationOtherManager, EvaluationShiftAssignment, EvaluationShiftLead, EvaluationSiteManager
+from app.models.evaluation import EvaluationManager, EvaluationShiftAssignment, EvaluationShiftLead
 from app.models.user import User
 from app.schemas.evaluation import (
-    AddOtherManagerIn,
+    AddManagerIn,
+    AddManagerTargetIn,
     AddShiftLeadIn,
-    AddSiteManagerIn,
     DepartmentSupervisorOut,
-    OtherManagerOut,
+    ManagerOut,
     SetDepartmentSupervisorIn,
     SetShiftAssignmentIn,
     ShiftAssignmentOut,
     ShiftLeadOut,
-    SiteManagerOut,
     SiteStructureOut,
+    UpdateManagerTitleIn,
 )
 from app.services.evaluation_structure_service import EvaluationStructureError, EvaluationStructureService
 
@@ -96,58 +95,79 @@ async def remove_department_supervisor(
     await EvaluationStructureService(db).remove_department_supervisor(department_id)
 
 
-@router.post("/sites/{site_id}/managers", response_model=SiteManagerOut)
-async def add_site_manager(
+@router.post("/sites/{site_id}/managers", response_model=ManagerOut)
+async def add_manager(
     site_id: int,
-    payload: AddSiteManagerIn,
+    payload: AddManagerIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     await _require_site_permission(db, current_user, site_id)
     try:
-        return await EvaluationStructureService(db).add_site_manager(site_id, payload.employee_id)
+        return await EvaluationStructureService(db).add_manager(site_id, payload.employee_id, payload.title)
+    except EvaluationStructureError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/managers/{manager_id}/title", response_model=ManagerOut)
+async def update_manager_title(
+    manager_id: int,
+    payload: UpdateManagerTitleIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    manager = await db.get(EvaluationManager, manager_id)
+    if manager is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مدیر موردنظر یافت نشد")
+    await _require_site_permission(db, current_user, manager.site_id)
+    try:
+        return await EvaluationStructureService(db).update_manager_title(manager_id, payload.title)
     except EvaluationStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.delete("/managers/{manager_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_site_manager(
+async def remove_manager(
     manager_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    manager = await db.get(EvaluationSiteManager, manager_id)
+    manager = await db.get(EvaluationManager, manager_id)
     if manager is None:
         return
     await _require_site_permission(db, current_user, manager.site_id)
-    await EvaluationStructureService(db).remove_site_manager(manager_id)
+    await EvaluationStructureService(db).remove_manager(manager_id)
 
 
-@router.post("/sites/{site_id}/other-managers", response_model=OtherManagerOut)
-async def add_other_manager(
-    site_id: int,
-    payload: AddOtherManagerIn,
+@router.post("/managers/{manager_id}/targets", response_model=ManagerOut)
+async def add_manager_target(
+    manager_id: int,
+    payload: AddManagerTargetIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _require_site_permission(db, current_user, site_id)
+    manager = await db.get(EvaluationManager, manager_id)
+    if manager is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مدیر موردنظر یافت نشد")
+    await _require_site_permission(db, current_user, manager.site_id)
     try:
-        return await EvaluationStructureService(db).add_other_manager(site_id, payload.employee_id)
+        return await EvaluationStructureService(db).add_manager_target(manager_id, payload.target_employee_id)
     except EvaluationStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.delete("/other-managers/{manager_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_other_manager(
+@router.delete("/managers/{manager_id}/targets/{target_employee_id}", response_model=ManagerOut)
+async def remove_manager_target(
     manager_id: int,
+    target_employee_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    manager = await db.get(EvaluationOtherManager, manager_id)
+    manager = await db.get(EvaluationManager, manager_id)
     if manager is None:
-        return
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مدیر موردنظر یافت نشد")
     await _require_site_permission(db, current_user, manager.site_id)
-    await EvaluationStructureService(db).remove_other_manager(manager_id)
+    return await EvaluationStructureService(db).remove_manager_target(manager_id, target_employee_id)
 
 
 @router.post("/departments/{department_id}/shift-leads", response_model=ShiftLeadOut)

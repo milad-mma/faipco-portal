@@ -11,15 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.evaluation_rules import resolve_evaluation_target_ids
 
 
-def test_site_manager_evaluates_department_supervisors_and_other_managers():
-    """مدیر سایت: سرپرست‌های واحدهای همان سایت + سایر مدیران همان سایت (اجتماع)."""
+def test_manager_evaluates_explicitly_assigned_targets():
+    """مدیر: هر لیستی از اهداف که صریحاً به او تخصیص داده شده (نه یک قانون خودکار)."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=100,
-        site_manager_of_sites=[1],
+        manager_ids_of_evaluator=[1],
+        manager_targets_by_manager_id={1: [200, 300, 400]},
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={1: [200, 300]},
-        other_managers_by_site={1: [400]},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead={},
@@ -27,33 +26,59 @@ def test_site_manager_evaluates_department_supervisors_and_other_managers():
     assert targets == {200, 300, 400}
 
 
-def test_manager_added_as_both_supervisor_and_other_manager_appears_once():
+def test_intermediate_manager_can_have_partial_targets_not_all_supervisors():
     """
-    طبق تصمیم صریح کاربر: اگر فردی هم سرپرست یک واحد و هم به‌عنوان
-    «سایر مدیران» اضافه شده باشد، در نتیجه نهایی فقط یک‌بار ظاهر شود.
+    طبق بازخورد صریح: چارت واقعی ممکن است چند سطحی باشد - مثلاً یک مدیر
+    میانی (مثل «مدیر تولید») فقط بخشی از سرپرست‌ها را ارزیابی می‌کند، نه
+    همه؛ چون دیگر هیچ قانون خودکاری وجود ندارد، این کاملاً پشتیبانی می‌شود.
     """
-    targets = resolve_evaluation_target_ids(
-        evaluator_employee_id=100,
-        site_manager_of_sites=[1],
+    site_manager_targets = resolve_evaluation_target_ids(
+        evaluator_employee_id=1,  # مدیر سایت
+        manager_ids_of_evaluator=[10],
+        manager_targets_by_manager_id={10: [2], 20: [200, 300]},  # فقط یک سرپرست مستقیم زیر مدیر سایت
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={1: [200]},
-        other_managers_by_site={1: [200]},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead={},
     )
-    assert targets == {200}
+    assert site_manager_targets == {2}
+
+    production_manager_targets = resolve_evaluation_target_ids(
+        evaluator_employee_id=2,  # مدیر تولید - یک مدیر میانی مستقل
+        manager_ids_of_evaluator=[20],
+        manager_targets_by_manager_id={10: [2], 20: [200, 300]},  # بقیه سرپرست‌ها زیر او
+        department_supervisor_of_departments=[],
+        shift_lead_of_shift_lead_ids=[],
+        shift_lead_employees_by_department={},
+        all_employees_by_department={},
+        shift_assignments_by_shift_lead={},
+    )
+    assert production_manager_targets == {200, 300}
+
+
+def test_manager_can_target_arbitrary_employee_from_any_department():
+    """طبق درخواست صریح: یک مدیر باید بتواند هر فرد خاصی را - حتی از واحد/سایت دیگر - مستقیم هدف بگیرد."""
+    targets = resolve_evaluation_target_ids(
+        evaluator_employee_id=100,
+        manager_ids_of_evaluator=[1],
+        manager_targets_by_manager_id={1: [999]},  # ۹۹۹ ممکن است هیچ ربطی به سرپرستی نداشته باشد
+        department_supervisor_of_departments=[],
+        shift_lead_of_shift_lead_ids=[],
+        shift_lead_employees_by_department={},
+        all_employees_by_department={},
+        shift_assignments_by_shift_lead={},
+    )
+    assert targets == {999}
 
 
 def test_department_supervisor_evaluates_all_employees_when_no_shift_leads():
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=200,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[10],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={10: []},
         all_employees_by_department={10: [500, 501, 502]},
         shift_assignments_by_shift_lead={},
@@ -68,11 +93,10 @@ def test_department_supervisor_evaluates_only_shift_leads_when_present():
     """
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=700,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=["C"],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={"C": [600, 601]},
         all_employees_by_department={"C": [600, 601, 800, 801, 802]},
         shift_assignments_by_shift_lead={},
@@ -90,11 +114,10 @@ def test_shift_lead_evaluates_only_own_assigned_subset():
 
     targets_600 = resolve_evaluation_target_ids(
         evaluator_employee_id=600,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=["shift_lead_600"],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead=shift_assignments,
@@ -103,11 +126,10 @@ def test_shift_lead_evaluates_only_own_assigned_subset():
 
     targets_601 = resolve_evaluation_target_ids(
         evaluator_employee_id=601,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=["shift_lead_601"],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead=shift_assignments,
@@ -123,11 +145,10 @@ def test_shift_leads_never_evaluate_each_other():
     """
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=600,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=["shift_lead_600"],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead={"shift_lead_600": [800, 801]},
@@ -139,11 +160,10 @@ def test_person_with_multiple_roles_gets_union_of_all_targets():
     """یک نفر می‌تواند هم‌زمان چند نقش داشته باشد - نتیجه اجتماع همه اهداف است."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=999,
-        site_manager_of_sites=[1],
+        manager_ids_of_evaluator=[1],
+        manager_targets_by_manager_id={1: [200]},
         department_supervisor_of_departments=[10],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={1: [200]},
-        other_managers_by_site={1: []},
         shift_lead_employees_by_department={10: []},
         all_employees_by_department={10: [500, 501]},
         shift_assignments_by_shift_lead={},
@@ -155,11 +175,10 @@ def test_evaluator_never_included_in_own_targets():
     """حتی اگر به هر دلیلی (مثلاً باگ داده) خودش در یکی از فهرست‌ها باشد، هرگز جزو نتیجه نباشد."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=500,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[10],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={10: []},
         all_employees_by_department={10: [500, 501]},
         shift_assignments_by_shift_lead={},
@@ -171,11 +190,10 @@ def test_evaluator_never_included_in_own_targets():
 def test_no_roles_means_no_targets():
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=1,
-        site_manager_of_sites=[],
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
         department_supervisor_of_departments=[],
         shift_lead_of_shift_lead_ids=[],
-        department_supervisors_by_site={},
-        other_managers_by_site={},
         shift_lead_employees_by_department={},
         all_employees_by_department={},
         shift_assignments_by_shift_lead={},

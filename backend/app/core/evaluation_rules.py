@@ -19,11 +19,10 @@ from __future__ import annotations
 
 def resolve_evaluation_target_ids(
     evaluator_employee_id: int,
-    site_manager_of_sites: list,
+    manager_ids_of_evaluator: list,
+    manager_targets_by_manager_id: dict,
     department_supervisor_of_departments: list,
     shift_lead_of_shift_lead_ids: list,
-    department_supervisors_by_site: dict,
-    other_managers_by_site: dict,
     shift_lead_employees_by_department: dict,
     all_employees_by_department: dict,
     shift_assignments_by_shift_lead: dict,
@@ -32,12 +31,18 @@ def resolve_evaluation_target_ids(
     خروجی: مجموعه‌ی شناسه‌های پرسنلی که evaluator_employee_id مجاز است
     ارزیابی کند - اجتماع (Union) اهداف همه نقش‌هایی که هم‌زمان دارد،
     همیشه بدون خودش.
+
+    ⚠️ بازطراحی: نقش «مدیر» دیگر هیچ قانون خودکاری («مدیر سایت = همه
+    سرپرست‌ها») ندارد - اهداف هر مدیر (manager_ids_of_evaluator) کاملاً
+    از manager_targets_by_manager_id (تخصیص صریح و دستی) خوانده می‌شود؛
+    این طراحی اجازه می‌دهد چارت سازمانی واقعی (مثلاً یک مدیر میانی مثل
+    «مدیر تولید» که فقط بخشی از سرپرست‌ها را ارزیابی می‌کند، یا تخصیص
+    مستقیم یک فرد خاص از یک واحد دیگر به هر مدیری) کاملاً پیاده شود.
     """
     target_ids: set = set()
 
-    for site_id in site_manager_of_sites:
-        target_ids.update(department_supervisors_by_site.get(site_id, []))
-        target_ids.update(other_managers_by_site.get(site_id, []))
+    for manager_id in manager_ids_of_evaluator:
+        target_ids.update(manager_targets_by_manager_id.get(manager_id, []))
 
     for department_id in department_supervisor_of_departments:
         shift_lead_employee_ids = shift_lead_employees_by_department.get(department_id, [])

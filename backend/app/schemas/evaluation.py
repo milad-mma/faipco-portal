@@ -27,26 +27,39 @@ class DepartmentSupervisorOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AddSiteManagerIn(BaseModel):
+class AddManagerIn(BaseModel):
     employee_id: int
+    title: str | None = None
 
 
-class SiteManagerOut(BaseModel):
+class UpdateManagerTitleIn(BaseModel):
+    title: str | None = None
+
+
+class AddManagerTargetIn(BaseModel):
+    target_employee_id: int
+
+
+class ManagerAssignmentOut(BaseModel):
     id: int
-    site_id: int
-    employee: EmployeeBrief
+    target_employee: EmployeeBrief
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class AddOtherManagerIn(BaseModel):
-    employee_id: int
+class ManagerOut(BaseModel):
+    """
+    یک «مدیر» به همراه فهرست کامل کسانی که صریحاً به او تخصیص داده
+    شده‌اند - جایگزین مدل قبلی که «مدیر سایت» را از «سایر مدیران» جدا
+    نگه می‌داشت؛ حالا همه‌چیز زیر یک مدیر، با اهدافش، یک‌جا نمایش داده
+    می‌شود.
+    """
 
-
-class OtherManagerOut(BaseModel):
     id: int
     site_id: int
+    title: str | None
     employee: EmployeeBrief
+    assignments: list[ManagerAssignmentOut]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +105,5 @@ class SiteStructureOut(BaseModel):
 
     site_id: int
     site_name: str
-    site_managers: list[SiteManagerOut]
-    other_managers: list[OtherManagerOut]
+    managers: list[ManagerOut]
     departments: list[DepartmentStructureOut]

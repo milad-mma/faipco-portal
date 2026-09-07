@@ -7,22 +7,31 @@
 از سرپرستِ ارزیابی باشد).
 
 ⚠️ همه این جدول‌ها به Employee (نه مستقیماً User) وصل می‌شوند - چون
-انتخاب از پنل مدیریت همیشه از بین «پرسنل» انجام می‌شود. طبق تصمیم صریح
-کاربر، اگر پرسنل انتخاب‌شده هنوز حساب کاربری نداشته باشد، به‌صورت خودکار
-یک حساب برایش ساخته می‌شود (نگاه کنید به UserRepository.get_or_create_employee_user
-در app/services/evaluation_structure_service.py) - دقیقاً همان مکانیزمی
-که برای اولین ورود پرسنل با کد پرسنلی/کد ملی هم استفاده می‌شود.
+انتخاب از پنل مدیریت همیشه از بین «پرسنل» انجام می‌شود.
 
-سلسله‌مراتب نتیجه (طبق تصمیم صریح کاربر):
-    مدیر سایت (چند نفر مجاز)  →  ارزیابی: سرپرست‌های واحدها + سایر مدیران
-    سرپرست واحد               →  ارزیابی: پرسنل واحد خودش
-                                   (اگر آن واحد سرشیفت هم داشته باشد، فقط سرشیفت‌ها)
-    سرشیفت واحد                →  ارزیابی: فقط زیرمجموعه‌ی خودش (نه کل واحد،
-                                   نه سرشیفت‌های دیگر همان واحد)
+⚠️ بازطراحی دور دوم (طبق بازخورد صریح کاربر): طراحی قبلی فرض می‌کرد
+«مدیر سایت» همیشه *همه* سرپرست‌های واحدها را خودکار ارزیابی می‌کند - ولی
+چارت سازمانی واقعی شرکت‌ها این‌قدر ساده نیست: ممکن است مدیر سایت فقط
+چند سرپرست خاص را مستقیم ارزیابی کند، و بقیه زیر نظر یک مدیر میانی
+(مثلاً «مدیر تولید») باشند که خودش هم یک سطح ارزیابی مستقل است. برای
+همین «مدیر سایت» به یک مفهوم عمومی‌تر تبدیل شد: EvaluationManager - هر
+مدیری (سایت، تولید، فنی، هرچی) که اهداف ارزیابی‌اش کاملاً صریح و دستی
+مشخص می‌شود (EvaluationManagerAssignment) - نه با یک قانون خودکار.
+یک مدیر می‌تواند هر پرسنلی را هدف بگیرد؛ سرپرست واحد، مدیر دیگر، یا حتی
+یک پرسنل عادی از هر واحد/سایتی - دقیقاً طبق چارت واقعی سازمان، نه یک
+فرض از پیش تعیین‌شده.
+
+سلسله‌مراتب نتیجه (جدید، منعطف):
+    مدیر (هر تعداد، هر عنوانی)  →  ارزیابی: هر لیستی از افراد که صریحاً
+                                     به او اختصاص داده شده (EvaluationManagerAssignment)
+    سرپرست واحد                 →  ارزیابی: پرسنل واحد خودش
+                                     (اگر آن واحد سرشیفت هم داشته باشد، فقط سرشیفت‌ها)
+    سرشیفت واحد                  →  ارزیابی: فقط زیرمجموعه‌ی خودش (نه کل واحد،
+                                     نه سرشیفت‌های دیگر همان واحد)
 """
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -48,42 +57,50 @@ class EvaluationDepartmentSupervisor(Base, TimestampMixin):
     employee: Mapped["Employee"] = relationship()  # noqa: F821
 
 
-class EvaluationSiteManager(Base, TimestampMixin):
+class EvaluationManager(Base, TimestampMixin):
     """
-    مدیر سایت برای ارزیابی - طبق تصمیم صریح کاربر، هر سایت می‌تواند
-    هم‌زمان چند مدیر سایت داشته باشد (نه لزوماً دقیقاً یک نفر).
+    یک «مدیر» در سلسله‌مراتب ارزیابی یک سایت - می‌تواند مدیر سایت، مدیر
+    تولید، مدیر فنی، یا هر نقش مدیریتی میانی دیگری باشد؛ یک سایت می‌تواند
+    هم‌زمان چند مدیر (در سطوح مختلف یا هم‌سطح) داشته باشد. برخلاف طراحی
+    قبلی، این مدیر به‌طور خودکار هیچ‌کس را ارزیابی نمی‌کند - چه کسانی را
+    ارزیابی می‌کند، کاملاً از طریق EvaluationManagerAssignment و به‌صورت
+    صریح مشخص می‌شود.
     """
 
-    __tablename__ = "evaluation_site_managers"
-    __table_args__ = (UniqueConstraint("site_id", "employee_id", name="uq_evaluation_site_manager"),)
+    __tablename__ = "evaluation_managers"
+    __table_args__ = (UniqueConstraint("site_id", "employee_id", name="uq_evaluation_manager"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    # فقط برای نمایش/تشخیص در پنل مدیریت (مثلاً «مدیر تولید») - هیچ منطقی
+    # به این مقدار وابسته نیست
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
     employee: Mapped["Employee"] = relationship()  # noqa: F821
+    assignments: Mapped[list["EvaluationManagerAssignment"]] = relationship(
+        back_populates="manager", cascade="all, delete-orphan"
+    )
 
 
-class EvaluationOtherManager(Base, TimestampMixin):
+class EvaluationManagerAssignment(Base, TimestampMixin):
     """
-    «سایر مدیران» یک سایت - افرادی که مدیر سایت باید ارزیابی‌شان کند،
-    جدای سرپرست‌های واحد (که خودشان به‌طور خودکار هدف مدیر سایت هستند).
-    اگر فردی که اینجا اضافه می‌شود، هم‌زمان سرپرست یک واحد هم باشد، هیچ
-    تداخلی ایجاد نمی‌شود - در فهرست نهایی اهداف مدیر سایت، این دو منبع
-    ترکیب (Union بر اساس employee_id) می‌شوند، پس چنین فردی فقط یک‌بار
-    ظاهر می‌شود، نه دوبار.
+    این مدیر (EvaluationManager) دقیقاً چه کسانی را ارزیابی می‌کند - هدف
+    می‌تواند سرپرست یک واحد، مدیر دیگر، یا هر پرسنل دیگری (حتی از واحد یا
+    حتی سایت دیگر - طبق درخواست صریح کاربر) باشد. کاملاً دستی و صریح -
+    هیچ قانون خودکاری («مدیر سایت = همه سرپرست‌ها») دیگر اعمال نمی‌شود.
     """
 
-    __tablename__ = "evaluation_other_managers"
-    __table_args__ = (UniqueConstraint("site_id", "employee_id", name="uq_evaluation_other_manager"),)
+    __tablename__ = "evaluation_manager_assignments"
+    __table_args__ = (UniqueConstraint("manager_id", "target_employee_id", name="uq_evaluation_manager_target"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
-    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    manager_id: Mapped[int] = mapped_column(ForeignKey("evaluation_managers.id", ondelete="CASCADE"), nullable=False)
+    target_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
 
-    site: Mapped["Site"] = relationship()  # noqa: F821
-    employee: Mapped["Employee"] = relationship()  # noqa: F821
+    manager: Mapped["EvaluationManager"] = relationship(back_populates="assignments")
+    target_employee: Mapped["Employee"] = relationship()  # noqa: F821
 
 
 class EvaluationShiftLead(Base, TimestampMixin):

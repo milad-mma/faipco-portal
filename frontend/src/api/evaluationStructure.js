@@ -16,24 +16,33 @@ export async function removeDepartmentSupervisor(departmentId) {
   await apiClient.delete(`/performance/departments/${departmentId}/supervisor`);
 }
 
-export async function addSiteManager(siteId, employeeId) {
-  const { data } = await apiClient.post(`/performance/sites/${siteId}/managers`, { employee_id: employeeId });
-  return data;
-}
-
-export async function removeSiteManager(managerId) {
-  await apiClient.delete(`/performance/managers/${managerId}`);
-}
-
-export async function addOtherManager(siteId, employeeId) {
-  const { data } = await apiClient.post(`/performance/sites/${siteId}/other-managers`, {
+export async function addManager(siteId, employeeId, title) {
+  const { data } = await apiClient.post(`/performance/sites/${siteId}/managers`, {
     employee_id: employeeId,
+    title: title || null,
   });
   return data;
 }
 
-export async function removeOtherManager(managerId) {
-  await apiClient.delete(`/performance/other-managers/${managerId}`);
+export async function updateManagerTitle(managerId, title) {
+  const { data } = await apiClient.put(`/performance/managers/${managerId}/title`, { title: title || null });
+  return data;
+}
+
+export async function removeManager(managerId) {
+  await apiClient.delete(`/performance/managers/${managerId}`);
+}
+
+export async function addManagerTarget(managerId, targetEmployeeId) {
+  const { data } = await apiClient.post(`/performance/managers/${managerId}/targets`, {
+    target_employee_id: targetEmployeeId,
+  });
+  return data;
+}
+
+export async function removeManagerTarget(managerId, targetEmployeeId) {
+  const { data } = await apiClient.delete(`/performance/managers/${managerId}/targets/${targetEmployeeId}`);
+  return data;
 }
 
 export async function addShiftLead(departmentId, employeeId) {
