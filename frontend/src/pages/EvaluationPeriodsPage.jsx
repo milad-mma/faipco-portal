@@ -21,6 +21,8 @@ import {
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { fetchSites } from "../api/sites";
+import { fetchEvaluationForms } from "../api/evaluationForms";
+import { generateEvaluationAssignments } from "../api/evaluationProcess";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import {
   createEvaluationPeriod,
@@ -151,12 +153,76 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
   );
 }
 
+function GenerateAssignmentsDialog({ open, onClose, period }) {
+  const [forms, setForms] = useState([]);
+  const [formId, setFormId] = useState("");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setResult(null);
+    setError("");
+    setFormId("");
+    fetchEvaluationForms(period?.site_id).then(setForms);
+  }, [open, period]);
+
+  async function handleGenerate() {
+    setError("");
+    setIsSaving(true);
+    try {
+      const data = await generateEvaluationAssignments(period.id, formId);
+      setResult(data);
+    } catch (err) {
+      setError(err.response?.data?.detail || "تولید انتساب با خطا مواجه شد.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>تولید انتساب ارزیابی برای «{period?.title}»</DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        <Typography variant="body2" color="text.secondary">
+          بر اساس ساختار ارزیابی تعریف‌شده (سرپرست/مدیر سایت/سرشیفت)، برای همه پرسنل واجد شرایط این
+          دوره، Assignment ساخته می‌شود - اجرای دوباره، فقط موارد جدید (مثلاً پرسنل تازه‌اضافه‌شده) را
+          اضافه می‌کند، چیزی را تکراری نمی‌سازد.
+        </Typography>
+        <TextField select label="فرم ارزیابی" value={formId} onChange={(e) => setFormId(e.target.value)}>
+          {forms
+            .filter((f) => f.status === "active")
+            .map((form) => (
+              <MenuItem key={form.id} value={form.id}>
+                {form.title} (نسخه {form.version})
+              </MenuItem>
+            ))}
+        </TextField>
+        {result && (
+          <Alert severity="success">
+            {result.created_count} انتساب جدید ساخته شد - مجموع انتساب‌های این دوره/فرم: {result.total_assignments}
+          </Alert>
+        )}
+        {error && <Alert severity="error">{error}</Alert>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>بستن</Button>
+        <Button variant="contained" onClick={handleGenerate} disabled={isSaving || !formId}>
+          {isSaving ? "در حال تولید..." : "تولید انتساب"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 export default function EvaluationPeriodsPage() {
   const [sites, setSites] = useState([]);
   const [periods, setPeriods] = useState([]);
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(null);
+  const [generateDialogPeriod, setGenerateDialogPeriod] = useState(null);
 
   useEffect(() => {
     fetchSites().then(setSites);
@@ -271,6 +337,9 @@ export default function EvaluationPeriodsPage() {
                         </Button>
                       </>
                     )}
+                    <Button size="small" variant="outlined" onClick={() => setGenerateDialogPeriod(period)}>
+                      تولید انتساب
+                    </Button>
                   </Stack>
                 </TableCell>
               </TableRow>
@@ -285,6 +354,12 @@ export default function EvaluationPeriodsPage() {
         onSaved={loadPeriods}
         sites={sites}
         editingPeriod={editingPeriod}
+      />
+
+      <GenerateAssignmentsDialog
+        open={generateDialogPeriod !== null}
+        onClose={() => setGenerateDialogPeriod(null)}
+        period={generateDialogPeriod}
       />
     </Box>
   );

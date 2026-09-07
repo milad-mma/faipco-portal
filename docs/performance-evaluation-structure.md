@@ -270,3 +270,81 @@ Query نهایی `selectinload` نشده - این دقیقاً همان اصل �
 (هم منطقاً - چون قرار است بخشی از پرسنل همان واحد را ارزیابی کند - و
 هم به‌صراحت در Backend اعتبارسنجی می‌شود: `add_shift_lead` رد می‌کند
 اگر `employee.department_id != department_id`).
+
+## دور سوم — جریان انجام ارزیابی (Migration 052) + کارت داشبورد
+
+سومین و آخرین لایه اصلی سیستم ارزیابی - خودِ عمل «ارزیابی‌کردن».
+
+### مدل‌ها (app/models/evaluation_process.py)
+
+| مدل | توضیح |
+|---|---|
+| EvaluationAssignment | «X باید Y را برای دوره P با فرم F ارزیابی کند» - تولید خودکار |
+| Evaluation | فرم پرشده - با Historical Snapshot کامل (نام/کد پرسنلی/سایت/واحد در لحظه شروع) |
+| EvaluationAnswer | پاسخ هر سوال - با Snapshot متن/نوع سوال |
+
+### تولید Assignment (app/services/evaluation_assignment_service.py)
+
+برای یک دوره + فرم، با استفاده مستقیم از get_evaluation_targets (لایه
+اول)، برای همه پرسنل واجد شرایط (همان سایت دوره، یا همه اگر دوره
+سراسری است)، Assignment های جدید ساخته می‌شوند - قابل اجرای مکرر
+(Idempotent؛ UniqueConstraint از تکرار جلوگیری می‌کند) - دقیقاً طبق
+همان اصل «Dynamic بودن» طرح اولیه: با تغییر ساختار سازمانی، فقط کافی
+است دوباره اجرا شود.
+
+### محاسبه امتیاز (app/core/evaluation_rules.py)
+
+دو تابع خالص جدید: calculate_option_based_question_score (میانگین
+امتیاز گزینه‌های انتخاب‌شده) و calculate_weighted_average (جمع‌بندی
+وزنی - هم برای سوال‌ها→دسته‌بندی، هم دسته‌بندی‌ها→فرم، با همان تابع).
+برای سوالات متن/عدد/تاریخ (بدون گزینه)، امتیاز بر اساس «پاسخ داده شده
+یا نه» است (۱۰۰ یا ۰) - تا در همان فرمول یکسان جمع‌بندی شوند. پنج تست
+واحد جدید (مجموعاً حالا ۲۰ تست در test_evaluation_rules.py).
+
+### جریان (app/services/evaluation_process_service.py)
+
+start_evaluation (ساخت/ادامه Draft با Snapshot) → save_answers (ذخیره
+پیش‌نویس، بدون امتیازدهی) → submit_evaluation (اعتبارسنجی سوالات
+اجباری + محاسبه امتیاز نهایی + قفل‌شدن). هر سه عملیات، مالکیت
+Assignment/Evaluation را نسبت به کاربر جاری تأیید می‌کنند - هرگز فقط
+به یک ID معتبر اعتماد نمی‌شود.
+
+### ⚠️ درس تکرارشونده - همان کلاس باگ صفحه سفید، این‌بار در start_evaluation
+
+موقع پیاده‌سازی، متوجه شدم start_evaluation هم رابطه assignment را
+بدون selectinload برمی‌گرداند - علاوه بر آن، فهمیدم روش «رفع» قبلی
+(refresh() بعد از commit()) به‌تنهایی کافی نیست، چون commit() خودِ
+Object را هم Expire می‌کند؛ حتی assignment ای که دستی روی evaluation
+ست شود، بعد از commit همچنان Expired است. رفع نهایی: بعد از commit،
+همیشه یک Query تازه با selectinload صریح - نه تلاش برای استفاده مجدد
+از یک Object قبل از commit.
+
+### Endpoint ها (prefix=/performance)
+
+- POST /performance/periods/{period_id}/generate-assignments (Admin - مجوز performance.assignments.manage)
+- GET /performance/my-evaluations، POST /performance/assignments/{id}/start
+- PUT /performance/evaluations/{id}/answers، POST /performance/evaluations/{id}/submit
+- GET /performance/my-results، GET /performance/my-dashboard-summary
+
+⚠️ برخلاف بقیه این ماژول، این Endpoint ها (به‌جز generate-assignments)
+هیچ Permission خاصی نمی‌خواهند - فقط داشتن حساب متصل به یک Employee؛
+چون مجاز بودن از روی جدول‌های ساختار سازمانی (لایه اول) تعیین می‌شود،
+نه RBAC.
+
+### Frontend
+
+- کاشی داشبورد (PerformanceEvaluationToolCard.jsx) - جایگزین «به‌زودی»
+  قبلی؛ امتیاز آخرین ارزیابی + Badge تعداد در انتظار.
+- MyPerformancePage.jsx (مسیر /my-performance) - دو تب: نتایج من / ارزیابی پرسنل من.
+- EvaluationFillPage.jsx (مسیر /my-performance/evaluate/:assignmentId) -
+  رندر Dynamic فرم بر اساس نوع هر سوال، ذخیره پیش‌نویس، ثبت نهایی.
+- دیالوگ «تولید انتساب» در EvaluationPeriodsPage.jsx.
+
+## جمع‌بندی نهایی - هر سه لایه اصلی کامل شدند
+
+| لایه | وضعیت |
+|---|---|
+| ساختار سازمانی (چه کسی چه کسی را ارزیابی می‌کند) | ✅ |
+| محتوا (دوره‌ها، فرم‌ها) | ✅ |
+| جریان انجام ارزیابی (Assignment، Draft→Submit، امتیازدهی) | ✅ |
+| گزارش‌های مدیریتی و Dashboard تجمیعی (نه فقط کارت شخصی) | ⏳ باقی‌مانده |

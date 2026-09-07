@@ -6,7 +6,6 @@ import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
-import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import SupportAgentOutlinedIcon from "@mui/icons-material/SupportAgentOutlined";
@@ -21,6 +20,7 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
+import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
 /**
  * داشبورد شخصی پرسنل — بر اساس نمونه HTML ارسالی کاربر (personnel_portal.html).
@@ -28,11 +28,12 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
  * مخصوص خودِ هر پرسنل است: اطلاعات پروفایل، تردد امروز، اطلاعیه‌های اخیر،
  * و دسترسی سریع به قابلیت‌های مختلف.
  *
- * قابلیت‌هایی که در طرح هستند ولی هنوز در پروژه پیاده نشده‌اند (ارزیابی
- * عملکرد، تیکت IT، نظرسنجی، درخواست مرخصی) با برچسب «به‌زودی» غیرفعال
- * نمایش داده می‌شوند — طبق دستور صریح کارفرما. «خودروهای من» از این
- * لیست خارج شد چون واقعاً پیاده‌سازی و به /my-vehicles وصل شد؛ «انتقادات
- * و پیشنهادات» هم همین‌طور — به FeedbackSubmitPage.jsx (مسیر /feedback) وصل شد.
+ * قابلیت‌هایی که در طرح هستند ولی هنوز در پروژه پیاده نشده‌اند (تیکت IT،
+ * نظرسنجی، درخواست مرخصی) با برچسب «به‌زودی» غیرفعال نمایش داده می‌شوند —
+ * طبق دستور صریح کارفرما. «خودروهای من» از این لیست خارج شد چون واقعاً
+ * پیاده‌سازی و به /my-vehicles وصل شد؛ «انتقادات و پیشنهادات» هم همین‌طور —
+ * به FeedbackSubmitPage.jsx (مسیر /feedback) وصل شد؛ «ارزیابی عملکرد» هم
+ * همین‌طور — به MyPerformancePage.jsx (مسیر /my-performance) وصل شد.
  *
  * ⚠️ چیدمان با CSS Grid + gridTemplateAreas پیاده شده (نه MUI Grid ساده) —
  * چون طبق بازخورد، ترتیب موبایل باید با دسکتاپ فرق داشته باشد: در موبایل
@@ -414,7 +415,7 @@ export default function PersonalDashboardPage() {
       >
         <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
         <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
-        <ToolCard icon={<SpeedOutlinedIcon />} label="ارزیابی عملکرد" comingSoon />
+        <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
         <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
         <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />

@@ -64,6 +64,7 @@ class AnswerOut(BaseModel):
 class EvaluationOut(BaseModel):
     id: int
     assignment_id: int
+    form_id: int
     status: str
     total_score: float | None
     comment: str | None

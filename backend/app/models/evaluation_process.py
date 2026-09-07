@@ -120,6 +120,18 @@ class Evaluation(Base, TimestampMixin):
         back_populates="evaluation", cascade="all, delete-orphan"
     )
 
+    @property
+    def form_id(self) -> int:
+        """
+        ⚠️ برای اینکه Frontend بعد از start_evaluation بداند کدام فرم
+        (با چه دسته‌بندی/سوال/گزینه‌هایی) را باید رندر کند - بدون این،
+        مجبور بود جداگانه Assignment را هم Query کند. این یک ستون
+        دیتابیسی جدید نیست - فقط یک میان‌بر پایتونی به assignment.form_id
+        (که باید از قبل selectinload شده باشد، وگرنه همان خطای
+        MissingGreenlet را می‌دهد).
+        """
+        return self.assignment.form_id
+
 
 class EvaluationAnswer(Base, TimestampMixin):
     """

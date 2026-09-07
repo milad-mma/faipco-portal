@@ -19,6 +19,8 @@ import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
+import MyPerformancePage from "./pages/MyPerformancePage";
+import EvaluationFillPage from "./pages/EvaluationFillPage";
 import VehiclesReportPage from "./pages/VehiclesReportPage";
 import NewNoticePage from "./pages/NewNoticePage";
 import PersonalDashboardPage from "./pages/PersonalDashboardPage";
@@ -205,6 +207,8 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
+          <Route path="/my-performance" element={<MyPerformancePage />} />
+          <Route path="/my-performance/evaluate/:assignmentId" element={<EvaluationFillPage />} />
           <Route
             path="/vehicle-report"
             element={

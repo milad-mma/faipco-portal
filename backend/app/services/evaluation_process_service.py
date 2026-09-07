@@ -69,7 +69,7 @@ class EvaluationProcessService:
 
         existing_result = await self.db.execute(
             select(Evaluation)
-            .options(selectinload(Evaluation.answers))
+            .options(selectinload(Evaluation.answers), selectinload(Evaluation.assignment))
             .where(Evaluation.assignment_id == assignment_id)
         )
         existing = existing_result.scalar_one_or_none()
@@ -100,10 +100,22 @@ class EvaluationProcessService:
             form_title_snapshot=form.title,
         )
         self.db.add(evaluation)
+        await self.db.flush()  # برای پرشدن evaluation.id بدون Expire شدن (برخلاف commit)
+        evaluation_id = evaluation.id
         await self.db.commit()
-        await self.db.refresh(evaluation)
-        evaluation.answers = []
-        return evaluation
+
+        # ⚠️ بعد از commit()، هر Object در Session (از‌جمله همان assignment
+        # که بالاتر گرفتیم) Expire می‌شود - دسترسی مستقیم به آن یا حتی به
+        # یک رابطه دستی‌تنظیم‌شده روی evaluation، دوباره همان خطای
+        # MissingGreenlet را می‌دهد. امن‌ترین راه، Query مجدد با
+        # selectinload صریح است - دقیقاً همان الگویی که در بقیه این ماژول
+        # (evaluation_structure_service.py) استفاده شده.
+        result = await self.db.execute(
+            select(Evaluation)
+            .options(selectinload(Evaluation.answers), selectinload(Evaluation.assignment))
+            .where(Evaluation.id == evaluation_id)
+        )
+        return result.scalar_one()
 
     async def save_answers(self, evaluation_id: int, evaluator_employee_id: int, answers: list[dict]) -> Evaluation:
         evaluation = await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
