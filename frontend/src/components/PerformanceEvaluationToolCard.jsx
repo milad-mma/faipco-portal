@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
-import { Badge, Box, Card, Typography } from "@mui/material";
+import { Badge, Box, Card, Chip, Stack, Typography } from "@mui/material";
 import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import { fetchMyEvaluationDashboardSummary } from "../api/evaluationProcess";
 
 /**
  * کاشی «ارزیابی عملکرد» در داشبورد پرسنل - جایگزین نسخه قبلی («به‌زودی»).
- * برای پرسنل عادی: امتیاز آخرین ارزیابی خودش را نشان می‌دهد.
- * برای سرپرست/مدیر (کسانی که Assignment ای به‌عنوان ارزیاب دارند): یک
- * Badge با تعداد ارزیابی‌های در انتظار انجام هم اضافه می‌شود.
+ *
+ * ⚠️ طبق درخواست صریح: امتیاز هرگز روی خودِ کارت داشبورد نمایش داده
+ * نمی‌شود (محرمانه است) - فقط یک برچسب «محرمانه» نشان می‌دهد که نتیجه‌ای
+ * وجود دارد؛ امتیاز واقعی فقط داخل صفحه (بعد از کلیک) نمایش داده می‌شود.
+ * برای سرپرست/مدیر، یک Badge با تعداد ارزیابی‌های در انتظار انجام هم
+ * اضافه می‌شود (این عدد محرمانه نیست - فقط یک یادآوری کاری است).
  */
 export default function PerformanceEvaluationToolCard({ onClick }) {
   const [summary, setSummary] = useState(null);
@@ -18,8 +21,7 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
       .catch(() => setSummary(null));
   }, []);
 
-  const scoreLabel =
-    summary?.latest_score != null ? `امتیاز: ${Math.round(summary.latest_score)}` : "ارزیابی عملکرد";
+  const hasResult = summary?.results_count > 0;
 
   return (
     <Card
@@ -32,7 +34,7 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 0.8,
+        gap: 0.6,
         borderRadius: 2,
         cursor: "pointer",
         "&:hover": { backgroundColor: "action.hover" },
@@ -48,8 +50,13 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
         </Box>
       </Badge>
       <Typography variant="caption" fontWeight={700} textAlign="center" sx={{ px: 0.5 }}>
-        {scoreLabel}
+        ارزیابی عملکرد
       </Typography>
+      {hasResult && (
+        <Stack direction="row" alignItems="center">
+          <Chip label="محرمانه" size="small" color="default" sx={{ height: 18, fontSize: 10 }} />
+        </Stack>
+      )}
     </Card>
   );
 }

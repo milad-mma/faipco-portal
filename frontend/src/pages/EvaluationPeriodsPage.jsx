@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -20,6 +23,8 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEvaluationForms } from "../api/evaluationForms";
 import { generateEvaluationAssignments } from "../api/evaluationProcess";
@@ -277,6 +282,48 @@ export default function EvaluationPeriodsPage() {
           دوره جدید
         </Button>
       </Stack>
+
+      <Accordion variant="outlined" sx={{ mb: 2 }}>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <HelpOutlineOutlinedIcon fontSize="small" color="primary" />
+            <Typography fontWeight={700}>راهنما - این صفحه برای چیه و چطور ازش استفاده کنم؟</Typography>
+          </Stack>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            <b>دوره ارزیابی</b> یعنی یک بازه زمانی مشخص (مثلاً «سه ماه اول ۱۴۰۵») که می‌خواهید توی همون
+            بازه، پرسنل ارزیابی بشن. خودِ دوره فقط یه اسم و یه تاریخ شروع/پایان داره - سوال‌ها و
+            امتیازها جای دیگه‌ای (فرم‌های ارزیابی) تعریف می‌شن.
+          </Typography>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>
+            مراحل کامل کار (به ترتیب):
+          </Typography>
+          <Stack component="ol" sx={{ pl: 2.5, m: 0 }} spacing={0.75}>
+            <Typography component="li" variant="body2">
+              یه دوره جدید بسازید (همین صفحه - دکمه «دوره جدید»).
+            </Typography>
+            <Typography component="li" variant="body2">
+              برید صفحه «فرم‌های ارزیابی» و یه فرم بسازید (سوال‌هایی که می‌خواید پرسیده بشه رو اونجا
+              تعریف می‌کنید - راهنمای کامل توی همون صفحه هست).
+            </Typography>
+            <Typography component="li" variant="body2">
+              برگردید همینجا، کنار همین دوره‌ای که ساختید دکمه «تولید انتساب» رو بزنید و فرمی که ساختید
+              رو انتخاب کنید. سیستم خودش، بر اساس ساختار سازمانی («ساختار ارزیابی» - سرپرست/مدیر
+              سایت/سرشیفت)، مشخص می‌کنه کی باید کی رو ارزیابی کنه.
+            </Typography>
+            <Typography component="li" variant="body2">
+              همین. از این به بعد، سرپرست‌ها و مدیرها از داشبورد خودشون (کارت «ارزیابی عملکرد») وارد
+              می‌شن و ارزیابی پرسنل‌شون رو انجام می‌دن.
+            </Typography>
+          </Stack>
+          <Typography variant="body2" sx={{ mt: 1.5 }}>
+            <b>وضعیت‌های دوره:</b> «پیش‌نویس» یعنی هنوز نهایی نشده (قابل ویرایش/حذف)؛ بقیه وضعیت‌ها
+            (زمان‌بندی‌شده/فعال/بسته‌شده/بایگانی‌شده) فقط برای دسته‌بندی و نمایش‌تون هستن - تولید انتساب
+            توی هر وضعیتی قابل انجامه.
+          </Typography>
+        </AccordionDetails>
+      </Accordion>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

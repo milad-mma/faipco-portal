@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -21,6 +24,8 @@ import {
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import { useNavigate } from "react-router-dom";
 import { fetchSites } from "../api/sites";
 import {
@@ -158,6 +163,42 @@ export default function EvaluationFormsPage() {
           فرم جدید
         </Button>
       </Stack>
+
+      <Accordion variant="outlined" sx={{ mb: 2 }}>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <HelpOutlineOutlinedIcon fontSize="small" color="primary" />
+            <Typography fontWeight={700}>راهنما - فرم ارزیابی چیه؟</Typography>
+          </Stack>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            <b>فرم ارزیابی</b> یعنی مجموعه سوال‌هایی که می‌خواید از هر ارزیاب بپرسید - مثلاً «فرم
+            ارزیابی سالانه پرسنل». سوال‌های خودِ فرم رو توی همین صفحه نمی‌سازید؛ اول یه فرم خالی
+            بسازید، بعد خودکار می‌رید به «فرم‌ساز» که اونجا دسته‌بندی و سوال اضافه می‌کنید.
+          </Typography>
+          <Stack component="ol" sx={{ pl: 2.5, m: 0 }} spacing={0.75}>
+            <Typography component="li" variant="body2">
+              دکمه «فرم جدید» رو بزنید، فقط یه اسم کافیه (مثلاً «فرم ارزیابی عملکرد پرسنل»).
+            </Typography>
+            <Typography component="li" variant="body2">
+              خودکار می‌رید به فرم‌ساز - اونجا دسته‌بندی و سوال اضافه می‌کنید (راهنمای کامل همون‌جا
+              هست).
+            </Typography>
+            <Typography component="li" variant="body2">
+              تا وقتی فرم رو «فعال» نکردید، آزادانه می‌تونید تغییرش بدید یا حذفش کنید.
+            </Typography>
+            <Typography component="li" variant="body2">
+              بعد از فعال‌شدن، دیگه قابل‌ویرایش نیست (تا جواب‌های ثبت‌شده خراب نشه). اگه بعداً نیاز به
+              تغییر داشتید، دکمه «نسخه جدید» یه کپی قابل‌ویرایش از همون فرم می‌سازه.
+            </Typography>
+            <Typography component="li" variant="body2">
+              بعد از ساخت فرم، برید صفحه «دوره‌های ارزیابی» و همین فرم رو برای «تولید انتساب» انتخاب
+              کنید.
+            </Typography>
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

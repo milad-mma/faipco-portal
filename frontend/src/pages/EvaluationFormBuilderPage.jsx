@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import {
@@ -418,6 +419,105 @@ export default function EvaluationFormBuilderPage() {
           )}
         </Stack>
       </Stack>
+
+      <Accordion variant="outlined" defaultExpanded sx={{ mb: 2 }}>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <HelpOutlineOutlinedIcon fontSize="small" color="primary" />
+            <Typography fontWeight={700}>راهنما - دسته‌بندی، سوال و وزن‌دهی چطور کار می‌کنه؟</Typography>
+          </Stack>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            یه فرم از چند <b>دسته‌بندی</b> تشکیل شده، و هر دسته‌بندی چند <b>سوال</b> داره. مثلاً می‌خواید
+            عملکرد یه نفر رو از دو جنبه بسنجید: «کیفیت کار» و «رفتار سازمانی» - این‌ها دو تا دسته‌بندی
+            هستن.
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۱ - ساخت دسته‌بندی
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            پایین صفحه، اسم دسته‌بندی رو بنویسید (مثلاً «کیفیت کار») و «افزودن دسته‌بندی» رو بزنید.
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۲ - وزن دسته‌بندی‌ها (خیلی مهم)
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            «وزن» یعنی این دسته‌بندی چند درصد از نمره کل رو تشکیل می‌ده. مثال: اگه «کیفیت کار» رو ۶۰
+            بذارید و «رفتار» رو ۴۰، یعنی کیفیت کار ۶۰٪ نمره نهایی رو تعیین می‌کنه.
+            <br />
+            ⚠️ <b>مجموع وزن همه دسته‌بندی‌های فعال باید دقیقاً ۱۰۰ بشه</b> - وگرنه هنگام فعال‌سازی فرم،
+            سیستم بهتون میگه کجا رو اصلاح کنید.
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۳ - افزودن سوال
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            روی یه دسته‌بندی کلیک کنید تا باز بشه، بعد «افزودن سوال» رو بزنید و متن سوال رو بنویسید.
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۴ - انتخاب نوع سوال (هرکدوم یعنی چی)
+          </Typography>
+          <Stack component="ul" sx={{ pl: 2.5, m: 0, mb: 1.5 }} spacing={0.5}>
+            <Typography component="li" variant="body2">
+              <b>تک‌انتخابی</b>: مثل «کیفیت کار چطوره؟» با گزینه‌های ضعیف/متوسط/خوب/عالی - فقط یکی
+              انتخاب می‌شه.
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>چندانتخابی</b>: مثل تک‌انتخابی، ولی می‌شه هم‌زمان چند گزینه رو انتخاب کرد.
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>امتیازی</b>: از نظر ساخت دقیقاً مثل تک‌انتخابیه (باز هم گزینه با امتیاز تعریف می‌کنید)
+              - فقط برای سوال‌هایی که حس «امتیازدهی» دارن (مثلاً از ۱ تا ۵) استفاده کنید.
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>بله/خیر</b>: یه سوال ساده با دو گزینه (مثلاً «بله» و «خیر») که خودتون امتیاز هرکدوم رو
+              مشخص می‌کنید.
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>متن آزاد</b>: ارزیاب یه توضیح می‌نویسه (بدون گزینه، بدون امتیاز عددی مستقیم).
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>عدد</b> / <b>تاریخ</b>: ارزیاب یه عدد یا تاریخ وارد می‌کنه (بدون گزینه).
+            </Typography>
+          </Stack>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۵ - تعریف گزینه (فقط برای تک‌انتخابی/چندانتخابی/امتیازی/بله‌خیر)
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            هر گزینه یه «متن» داره (مثلاً «خوب») و یه «امتیاز» از ۰ تا ۱۰۰. مثال ساده برای یه سوال
+            امتیازی از ۱ تا ۵:
+            <br />
+            خیلی ضعیف ← امتیاز ۰ &nbsp;|&nbsp; ضعیف ← امتیاز ۲۵ &nbsp;|&nbsp; متوسط ← امتیاز ۵۰
+            &nbsp;|&nbsp; خوب ← امتیاز ۷۵ &nbsp;|&nbsp; عالی ← امتیاز ۱۰۰
+            <br />
+            (سوال‌های متن/عدد/تاریخ گزینه لازم ندارن - همین که جواب داده بشن، امتیاز کامل می‌گیرن.)
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۶ - وزن هر سوال (دقیقاً مثل وزن دسته‌بندی، ولی یه سطح پایین‌تر)
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            اگه یه دسته‌بندی ۳ تا سوال داره، مشخص می‌کنید هرکدوم چند درصد از نمره اون دسته‌بندی رو
+            تشکیل می‌دن.
+            <br />
+            ⚠️ <b>مجموع وزن سوال‌های فعال هر دسته‌بندی هم باید ۱۰۰ باشه.</b>
+          </Typography>
+
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قدم ۷ - فعال‌سازی
+          </Typography>
+          <Typography variant="body2">
+            وقتی وزن‌ها درست بودن، دکمه «فعال‌سازی فرم» (بالای صفحه) رو بزنید. بعد از فعال‌شدن، فرم آماده
+            استفاده در «تولید انتساب» (صفحه دوره‌های ارزیابی) است.
+          </Typography>
+        </AccordionDetails>
+      </Accordion>
 
       {disabled && (
         <Alert severity="info" sx={{ mb: 2 }}>

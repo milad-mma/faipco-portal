@@ -235,7 +235,8 @@ export default function Layout() {
           !(
             user?.can_manage_performance_structure ||
             user?.can_manage_performance_periods ||
-            user?.can_manage_performance_forms
+            user?.can_manage_performance_forms ||
+            user?.can_manage_performance_assignments
           )
         )
           return false;

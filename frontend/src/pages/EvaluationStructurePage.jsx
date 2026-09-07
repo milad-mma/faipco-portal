@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEmployees } from "../api/employees";
@@ -299,10 +300,63 @@ export default function EvaluationStructurePage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
         ساختار ارزیابی عملکرد
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         مشخص می‌کند چه کسی مجاز به ارزیابی چه کسی است - مستقل از نقش‌ها و مجوزهای عمومی سیستم؛ این
         انتساب‌ها مخصوص همین قابلیت ارزیابی هستند.
       </Typography>
+
+      <Accordion variant="outlined" sx={{ mb: 3 }}>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <HelpOutlineOutlinedIcon fontSize="small" color="primary" />
+            <Typography fontWeight={700}>راهنما - این صفحه چیکار می‌کنه؟</Typography>
+          </Stack>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            این صفحه فقط یه چیز رو مشخص می‌کنه: <b>کی مجاز به ارزیابی‌کردن کیه</b>. سوال‌ها و فرم‌ها
+            جای دیگه‌ای (صفحه «فرم‌های ارزیابی») ساخته می‌شن؛ اینجا فقط سلسله‌مراتب سازمانی رو مشخص
+            می‌کنید.
+          </Typography>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            قانون کلی (ساده):
+          </Typography>
+          <Stack component="ul" sx={{ pl: 2.5, m: 0, mb: 1.5 }} spacing={0.5}>
+            <Typography component="li" variant="body2">
+              <b>مدیر سایت</b> → سرپرست‌های همه واحدهای همون سایت + هر مدیر دیگه‌ای که زیر «سایر
+              مدیران» اضافه کنید رو ارزیابی می‌کنه.
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>سرپرست واحد</b> → همه پرسنل واحدش رو ارزیابی می‌کنه (مگه این‌که برای اون واحد سرشیفت
+              هم تعریف کرده باشید - اون‌وقت فقط سرشیفت‌ها رو ارزیابی می‌کنه).
+            </Typography>
+            <Typography component="li" variant="body2">
+              <b>سرشیفت</b> (اختیاری) → فقط پرسنلی که به خودش تخصیص داده شده رو ارزیابی می‌کنه.
+            </Typography>
+          </Stack>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            چطور شروع کنم؟
+          </Typography>
+          <Stack component="ol" sx={{ pl: 2.5, m: 0 }} spacing={0.5}>
+            <Typography component="li" variant="body2">
+              یه سایت رو از منوی بالا انتخاب کنید.
+            </Typography>
+            <Typography component="li" variant="body2">
+              اگه سایت مدیر داره، توی «مدیران سایت» از بین پرسنل انتخابش کنید (می‌تونید چند نفر اضافه
+              کنید).
+            </Typography>
+            <Typography component="li" variant="body2">
+              برای هر واحد سازمانی که پایین صفحه لیست شده، روش کلیک کنید و یه سرپرست انتخاب کنید (از
+              بین کل پرسنل سایت - لازم نیست حتماً عضو همون واحد باشه).
+            </Typography>
+            <Typography component="li" variant="body2">
+              فقط اگه واقعاً نیاز دارید (مثلاً واحد بزرگه و چند شیفت داره)، سرشیفت هم اضافه کنید و
+              پرسنل رو بینشون تقسیم کنید. اگه نیازی نیست، همین‌جوری رهاش کنید - سرپرست خودش کل واحد رو
+              ارزیابی می‌کنه.
+            </Typography>
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
 
       <TextField
         select
