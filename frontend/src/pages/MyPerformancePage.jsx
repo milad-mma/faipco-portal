@@ -1,10 +1,40 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Box, Button, Card, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
-import { fetchMyEvaluationResults, fetchMyEvaluations } from "../api/evaluationProcess";
+import {
+  fetchMyEvaluationResults,
+  fetchMyEvaluations,
+  fetchMyYearlyAverage,
+  reopenEvaluation,
+} from "../api/evaluationProcess";
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
 const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
+
+function YearlyAverageCard({ yearlyAverage }) {
+  if (!yearlyAverage || yearlyAverage.count === 0) return null;
+  return (
+    <Card variant="outlined" sx={{ p: 2, mb: 2, backgroundColor: "action.hover" }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Box>
+          <Typography variant="body2" color="text.secondary">
+            میانگین امتیاز من در سال {yearlyAverage.jalali_year}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            بر اساس {yearlyAverage.count} ارزیابی ثبت‌شده
+          </Typography>
+        </Box>
+        <Chip
+          label={Math.round(yearlyAverage.average_score)}
+          color={
+            yearlyAverage.average_score >= 70 ? "success" : yearlyAverage.average_score >= 50 ? "warning" : "error"
+          }
+          sx={{ fontSize: 18, height: 36, px: 1 }}
+        />
+      </Stack>
+    </Card>
+  );
+}
 
 function ResultCard({ result }) {
   return (
@@ -14,6 +44,7 @@ function ResultCard({ result }) {
           <Typography fontWeight={700}>{result.form_title_snapshot}</Typography>
           <Typography variant="caption" color="text.secondary">
             ارزیاب: {result.evaluator_name_snapshot} — {new Date(result.submitted_at).toLocaleDateString("fa-IR")}
+            {result.was_edited && " (ویرایش‌شده)"}
           </Typography>
         </Box>
         <Chip
@@ -30,7 +61,7 @@ function ResultCard({ result }) {
   );
 }
 
-function PendingEvaluationCard({ item, onStart }) {
+function PendingEvaluationCard({ item, onStart, onEdit }) {
   return (
     <Card variant="outlined" sx={{ p: 2, mb: 1.5 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -49,6 +80,11 @@ function PendingEvaluationCard({ item, onStart }) {
               {item.status === "draft" ? "ادامه ارزیابی" : "شروع ارزیابی"}
             </Button>
           )}
+          {item.status === "submitted" && !item.was_edited && (
+            <Button size="small" variant="outlined" onClick={() => onEdit(item)}>
+              ویرایش
+            </Button>
+          )}
         </Stack>
       </Stack>
     </Card>
@@ -60,19 +96,38 @@ export default function MyPerformancePage() {
   const [tab, setTab] = useState(0);
   const [results, setResults] = useState(null);
   const [pending, setPending] = useState(null);
+  const [yearlyAverage, setYearlyAverage] = useState(null);
   const [error, setError] = useState("");
+
+  function loadPending() {
+    fetchMyEvaluations()
+      .then(setPending)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌های من با خطا مواجه شد."));
+  }
 
   useEffect(() => {
     fetchMyEvaluationResults()
       .then(setResults)
       .catch((err) => setError(err.response?.data?.detail || "دریافت نتایج ارزیابی با خطا مواجه شد."));
-    fetchMyEvaluations()
-      .then(setPending)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌های من با خطا مواجه شد."));
+    fetchMyYearlyAverage()
+      .then(setYearlyAverage)
+      .catch(() => setYearlyAverage(null));
+    loadPending();
   }, []);
 
   function handleStart(item) {
     navigate(`/my-performance/evaluate/${item.assignment_id}`);
+  }
+
+  async function handleEdit(item) {
+    setError("");
+    try {
+      await reopenEvaluation(item.evaluation_id);
+      navigate(`/my-performance/evaluate/${item.assignment_id}`);
+    } catch (err) {
+      setError(err.response?.data?.detail || "بازکردن ارزیابی برای ویرایش با خطا مواجه شد.");
+      loadPending();
+    }
   }
 
   const pendingCount = pending?.filter((p) => p.status !== "submitted").length || 0;
@@ -96,6 +151,7 @@ export default function MyPerformancePage() {
 
       {tab === 0 && (
         <Box>
+          <YearlyAverageCard yearlyAverage={yearlyAverage} />
           {results === null ? null : results.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               هنوز هیچ ارزیابی‌ای برای شما ثبت نشده است.
@@ -113,7 +169,9 @@ export default function MyPerformancePage() {
               فعلاً هیچ پرسنلی برای ارزیابی به شما اختصاص داده نشده است.
             </Typography>
           ) : (
-            pending.map((item) => <PendingEvaluationCard key={item.assignment_id} item={item} onStart={handleStart} />)
+            pending.map((item) => (
+              <PendingEvaluationCard key={item.assignment_id} item={item} onStart={handleStart} onEdit={handleEdit} />
+            ))
           )}
         </Box>
       )}

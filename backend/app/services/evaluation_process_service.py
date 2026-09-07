@@ -10,13 +10,20 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.evaluation_rules import calculate_option_based_question_score, calculate_weighted_average
+from app.core.persian_date import get_current_jalali_date, jalali_year_range_utc
 from app.models.employee import Department, Employee
-from app.models.evaluation_content import EvaluationCategory, EvaluationForm, EvaluationQuestion
+from app.models.evaluation_content import (
+    EvaluationCategory,
+    EvaluationForm,
+    EvaluationPeriod,
+    EvaluationPeriodStatus,
+    EvaluationQuestion,
+)
 from app.models.evaluation_process import (
     Evaluation,
     EvaluationAnswer,
@@ -230,6 +237,53 @@ class EvaluationProcessService:
         has_value = answer.text_value or answer.number_value is not None or answer.date_value is not None
         return 100.0 if has_value else 0.0
 
+    # ---------- ویرایش یک‌بارمصرفِ ارزیابیِ ثبت‌نهایی‌شده ----------
+
+    async def reopen_for_edit(self, evaluation_id: int, evaluator_employee_id: int) -> Evaluation:
+        """
+        طبق درخواست صریح: ارزیاب فقط یک‌بار می‌تواند یک ارزیابی
+        ثبت‌نهایی‌شده را - تا وقتی دوره‌اش هنوز بسته/بایگانی نشده - دوباره
+        باز و ویرایش کند. بعد از این یک‌بار (was_edited=True)، دیگر
+        امکان بازکردن دوباره وجود ندارد؛ ارزیابی به status=draft
+        برمی‌گردد (پاسخ‌های قبلی به‌عنوان پیش‌فرض همچنان موجودند - چون
+        هرگز حذف نشده بودند)، submit مجدد دوباره امتیاز را از نو محاسبه
+        می‌کند.
+        """
+        evaluation = await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+        if evaluation.status != EvaluationStatus.submitted:
+            raise EvaluationProcessError("فقط ارزیابی‌های ثبت‌نهایی‌شده قابل بازکردن مجدد هستند")
+        if evaluation.was_edited:
+            raise EvaluationProcessError("این ارزیابی قبلاً یک‌بار ویرایش شده - امکان ویرایش دوباره وجود ندارد")
+
+        period = await self.db.get(EvaluationPeriod, evaluation.assignment.period_id)
+        if period is None or period.status in (EvaluationPeriodStatus.closed, EvaluationPeriodStatus.archived):
+            raise EvaluationProcessError("مهلت این دوره ارزیابی به پایان رسیده - دیگر امکان ویرایش وجود ندارد")
+
+        evaluation.status = EvaluationStatus.draft
+        evaluation.was_edited = True
+        await self.db.commit()
+        return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+
+    # ---------- میانگین یک‌سال اخیر (شمسی) ----------
+
+    async def get_yearly_average(self, employee_id: int, jalali_year: int | None = None) -> dict:
+        if jalali_year is None:
+            jalali_year, _, _ = get_current_jalali_date()
+        start_utc, end_utc = jalali_year_range_utc(jalali_year)
+
+        result = await self.db.execute(
+            select(func.avg(Evaluation.total_score), func.count(Evaluation.id))
+            .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .where(
+                EvaluationAssignment.target_employee_id == employee_id,
+                Evaluation.status == EvaluationStatus.submitted,
+                Evaluation.submitted_at >= start_utc,
+                Evaluation.submitted_at < end_utc,
+            )
+        )
+        average, count = result.one()
+        return {"jalali_year": jalali_year, "average_score": float(average) if average is not None else None, "count": count}
+
     # ---------- فهرست‌ها ----------
 
     async def get_my_evaluations(self, evaluator_employee_id: int) -> list[dict]:
@@ -246,12 +300,13 @@ class EvaluationProcessService:
         assignments = assignments_result.scalars().all()
 
         evaluations_result = await self.db.execute(
-            select(Evaluation.assignment_id, Evaluation.id, Evaluation.status).where(
+            select(Evaluation.assignment_id, Evaluation.id, Evaluation.status, Evaluation.was_edited).where(
                 Evaluation.assignment_id.in_([a.id for a in assignments])
             )
         )
         evaluation_by_assignment = {
-            row[0]: {"evaluation_id": row[1], "status": row[2].value} for row in evaluations_result.all()
+            row[0]: {"evaluation_id": row[1], "status": row[2].value, "was_edited": row[3]}
+            for row in evaluations_result.all()
         }
 
         items = []
@@ -265,6 +320,7 @@ class EvaluationProcessService:
                     "form_title": assignment.form.title,
                     "evaluation_id": evaluation_info["evaluation_id"] if evaluation_info else None,
                     "status": evaluation_info["status"] if evaluation_info else "not_started",
+                    "was_edited": evaluation_info["was_edited"] if evaluation_info else False,
                 }
             )
         return items

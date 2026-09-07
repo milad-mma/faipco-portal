@@ -32,6 +32,18 @@ export async function fetchMyEvaluationResults() {
   return data;
 }
 
+export async function reopenEvaluation(evaluationId) {
+  const { data } = await apiClient.post(`/performance/evaluations/${evaluationId}/reopen`);
+  return data;
+}
+
+export async function fetchMyYearlyAverage(jalaliYear) {
+  const { data } = await apiClient.get("/performance/my-yearly-average", {
+    params: jalaliYear ? { jalali_year: jalaliYear } : {},
+  });
+  return data;
+}
+
 export async function fetchMyEvaluationDashboardSummary() {
   const { data } = await apiClient.get("/performance/my-dashboard-summary");
   return data;

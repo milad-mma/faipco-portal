@@ -42,6 +42,17 @@ def jalali_month_range_utc(year: int, month: int) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def jalali_year_range_utc(year: int) -> tuple[datetime, datetime]:
+    """
+    بازه [شروع، پایان) یک سال شمسی کامل (فروردین تا پایان اسفند) را
+    به‌صورت datetime آگاه از منطقه زمانی UTC برمی‌گرداند - برای گزارش‌های
+    «میانگین یک‌سال اخیر» استفاده می‌شود.
+    """
+    start, _ = jalali_month_range_utc(year, 1)
+    _, end = jalali_month_range_utc(year, 12)
+    return start, end
+
+
 def jalali_days_in_month(year: int, month: int) -> int:
     """
     تعداد واقعی روزهای یک ماه شمسی — ۳۱ روز برای ماه‌های ۱ تا ۶، ۳۰ روز

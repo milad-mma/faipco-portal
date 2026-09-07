@@ -21,6 +21,7 @@ import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import InlineTitleEdit from "../components/InlineTitleEdit";
 import {
   addEvaluationCategory,
   addEvaluationQuestion,
@@ -29,6 +30,7 @@ import {
   fetchEvaluationForm,
   updateEvaluationCategory,
   updateEvaluationFormStatus,
+  updateEvaluationFormTitle,
   updateEvaluationQuestion,
 } from "../api/evaluationForms";
 
@@ -403,9 +405,15 @@ export default function EvaluationFormBuilderPage() {
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            {form.title}
-          </Typography>
+          <InlineTitleEdit
+            title={form.title}
+            variant="h5"
+            fontWeight={700}
+            onSave={async (newTitle) => {
+              await updateEvaluationFormTitle(form.id, newTitle);
+              loadForm();
+            }}
+          />
           <Typography variant="body2" color="text.secondary">
             نسخه {form.version}
           </Typography>

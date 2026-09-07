@@ -151,6 +151,12 @@ export const NAV_ITEMS = [
         icon: <AssignmentOutlinedIcon />,
         check: (u) => u?.can_manage_performance_forms,
       },
+      {
+        label: "گزارش‌های مدیریتی",
+        path: "/performance/reports",
+        icon: <AssessmentOutlinedIcon />,
+        check: (u) => u?.can_view_performance_reports,
+      },
     ],
   },
   { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },

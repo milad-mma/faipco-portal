@@ -43,6 +43,7 @@ import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
 import EvaluationStructurePage from "./pages/EvaluationStructurePage";
 import EvaluationPeriodsPage from "./pages/EvaluationPeriodsPage";
 import EvaluationFormsPage from "./pages/EvaluationFormsPage";
+import EvaluationReportsPage from "./pages/EvaluationReportsPage";
 import EvaluationFormBuilderPage from "./pages/EvaluationFormBuilderPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
@@ -144,6 +145,14 @@ export default function App() {
             element={
               <PermissionRoute check={(u) => u?.can_manage_performance_forms}>
                 <EvaluationFormBuilderPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/performance/reports"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_performance_reports}>
+                <EvaluationReportsPage />
               </PermissionRoute>
             }
           />

@@ -23,6 +23,7 @@ from app.schemas.evaluation_content import (
     EvaluationPeriodStatusUpdate,
     EvaluationQuestionIn,
     EvaluationQuestionOut,
+    TitleUpdateIn,
 )
 from app.services.evaluation_form_service import EvaluationFormError, EvaluationFormService
 
@@ -113,6 +114,21 @@ async def update_form_status(
     await _require_form_permission(db, current_user, form_id)
     try:
         return await EvaluationFormService(db).update_form_status(form_id, payload.status)
+    except EvaluationFormError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/{form_id}/title", response_model=EvaluationFormOut)
+async def update_form_title(
+    form_id: int,
+    payload: TitleUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ برخلاف ویرایش کامل، عنوان صرف‌نظر از وضعیت فرم همیشه قابل‌تغییر است."""
+    await _require_form_permission(db, current_user, form_id)
+    try:
+        return await EvaluationFormService(db).update_title(form_id, payload.title)
     except EvaluationFormError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

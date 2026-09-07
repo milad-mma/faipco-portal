@@ -25,6 +25,11 @@ export async function updateEvaluationFormStatus(formId, status) {
   return data;
 }
 
+export async function updateEvaluationFormTitle(formId, title) {
+  const { data } = await apiClient.put(`/performance/forms/${formId}/title`, { title });
+  return data;
+}
+
 export async function duplicateEvaluationForm(formId) {
   const { data } = await apiClient.post(`/performance/forms/${formId}/duplicate`);
   return data;

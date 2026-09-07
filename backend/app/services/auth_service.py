@@ -227,6 +227,7 @@ class AuthService:
         base.can_manage_performance_assignments = (
             user.is_superuser or "performance.assignments.manage" in permission_codes
         )
+        base.can_view_performance_reports = user.is_superuser or "performance.reports.view" in permission_codes
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
         # sites.manage خودش هم شامل مشاهده است — کسی که اجازه مدیریت سایت‌ها را دارد،

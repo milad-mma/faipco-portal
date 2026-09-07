@@ -31,6 +31,7 @@ class MyEvaluationItemOut(BaseModel):
     form_title: str
     evaluation_id: int | None
     status: str  # not_started | draft | submitted
+    was_edited: bool = False
 
 
 class AnswerIn(BaseModel):
@@ -69,6 +70,7 @@ class EvaluationOut(BaseModel):
     total_score: float | None
     comment: str | None
     submitted_at: datetime | None
+    was_edited: bool
     evaluator_name_snapshot: str
     target_name_snapshot: str
     site_name_snapshot: str
@@ -90,6 +92,7 @@ class EvaluationResultOut(BaseModel):
     site_name_snapshot: str
     department_name_snapshot: str | None
     comment: str | None
+    was_edited: bool
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,3 +102,9 @@ class DashboardSummaryOut(BaseModel):
     latest_score: float | None
     results_count: int
     pending_to_evaluate_count: int
+
+
+class YearlyAverageOut(BaseModel):
+    jalali_year: int
+    average_score: float | None
+    count: int

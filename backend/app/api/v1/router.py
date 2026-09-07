@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     evaluation_forms,
     evaluation_periods,
     evaluation_process,
+    evaluation_reports,
     evaluation_structure,
     feedback,
     hr,
@@ -48,3 +49,4 @@ api_router.include_router(evaluation_structure.router, prefix="/performance", ta
 api_router.include_router(evaluation_periods.router, prefix="/performance/periods", tags=["performance"])
 api_router.include_router(evaluation_forms.router, prefix="/performance/forms", tags=["performance"])
 api_router.include_router(evaluation_process.router, prefix="/performance", tags=["performance"])
+api_router.include_router(evaluation_reports.router, prefix="/performance/reports", tags=["performance"])

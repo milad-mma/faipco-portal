@@ -20,6 +20,11 @@ export async function updateEvaluationPeriodStatus(periodId, status) {
   return data;
 }
 
+export async function updateEvaluationPeriodTitle(periodId, title) {
+  const { data } = await apiClient.put(`/performance/periods/${periodId}/title`, { title });
+  return data;
+}
+
 export async function deleteEvaluationPeriod(periodId) {
   await apiClient.delete(`/performance/periods/${periodId}`);
 }

@@ -45,6 +45,23 @@ class EvaluationPeriodService:
         await self.db.refresh(period)
         return period
 
+    async def update_title(self, period_id: int, title: str) -> EvaluationPeriod:
+        """
+        ⚠️ طبق درخواست صریح: برخلاف update_period (که فقط برای دوره‌های
+        هنوز فعال‌نشده مجاز است)، عنوان یک دوره - صرف‌نظر از وضعیتش -
+        همیشه قابل‌ویرایش است؛ چون تغییر متن عنوان (بر خلاف تغییر
+        تاریخ/سایت) هیچ آسیبی به تاریخچه ارزیابی‌های قبلی نمی‌زند
+        (Snapshot ها بر اساس form_title_snapshot/... ذخیره شده‌اند، نه
+        یک ارجاع زنده به period.title).
+        """
+        period = await self.db.get(EvaluationPeriod, period_id)
+        if period is None:
+            raise EvaluationPeriodError("دوره ارزیابی موردنظر یافت نشد")
+        period.title = title
+        await self.db.commit()
+        await self.db.refresh(period)
+        return period
+
     async def update_status(self, period_id: int, status: str) -> EvaluationPeriod:
         if status not in _VALID_STATUSES:
             raise EvaluationPeriodError(f"وضعیت «{status}» معتبر نیست")

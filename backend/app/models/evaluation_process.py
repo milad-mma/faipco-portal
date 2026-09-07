@@ -20,6 +20,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     ARRAY,
+    Boolean,
     DateTime,
     Enum,
     Float,
@@ -105,6 +106,7 @@ class Evaluation(Base, TimestampMixin):
     total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text(), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    was_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # --- Historical Snapshot - در لحظه شروع/Submit پر می‌شود، بعداً تغییر نمی‌کند ---
     evaluator_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)

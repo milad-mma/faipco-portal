@@ -28,12 +28,14 @@ import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEvaluationForms } from "../api/evaluationForms";
 import { generateEvaluationAssignments } from "../api/evaluationProcess";
+import InlineTitleEdit from "../components/InlineTitleEdit";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import {
   createEvaluationPeriod,
   fetchEvaluationPeriods,
   updateEvaluationPeriod,
   updateEvaluationPeriodStatus,
+  updateEvaluationPeriodTitle,
   deleteEvaluationPeriod,
 } from "../api/evaluationPeriods";
 
@@ -345,7 +347,15 @@ export default function EvaluationPeriodsPage() {
           <TableBody>
             {periods.map((period) => (
               <TableRow key={period.id}>
-                <TableCell>{period.title}</TableCell>
+                <TableCell>
+                  <InlineTitleEdit
+                    title={period.title}
+                    onSave={async (newTitle) => {
+                      await updateEvaluationPeriodTitle(period.id, newTitle);
+                      loadPeriods();
+                    }}
+                  />
+                </TableCell>
                 <TableCell>{siteName(period.site_id)}</TableCell>
                 <TableCell>
                   {new Date(period.start_date).toLocaleDateString("fa-IR")} تا{" "}

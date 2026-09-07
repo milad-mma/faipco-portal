@@ -35,6 +35,10 @@ class EvaluationPeriodStatusUpdate(BaseModel):
     status: str
 
 
+class TitleUpdateIn(BaseModel):
+    title: str
+
+
 # ---------- گزینه‌های سوال ----------
 
 

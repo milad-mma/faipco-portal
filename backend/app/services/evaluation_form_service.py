@@ -74,6 +74,21 @@ class EvaluationFormService:
         await self.db.refresh(form)
         return form
 
+    async def update_title(self, form_id: int, title: str) -> EvaluationForm:
+        """
+        ⚠️ طبق درخواست صریح: برخلاف update_form (فقط برای فرم‌های Draft)،
+        عنوان یک فرم - صرف‌نظر از وضعیتش - همیشه قابل‌ویرایش است؛ چون
+        ارزیابی‌های قبلی از form_title_snapshot استفاده می‌کنند (نه ارجاع
+        زنده)، تغییر عنوان فرم فعلی هیچ گزارش تاریخی‌ای را خراب نمی‌کند.
+        """
+        form = await self.db.get(EvaluationForm, form_id)
+        if form is None:
+            raise EvaluationFormError("فرم ارزیابی موردنظر یافت نشد")
+        form.title = title
+        await self.db.commit()
+        await self.db.refresh(form)
+        return form
+
     async def activate_form(self, form_id: int) -> EvaluationForm:
         """
         فرم را از draft به active می‌برد - فقط اگر مجموع وزن‌ها معتبر

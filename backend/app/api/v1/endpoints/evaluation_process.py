@@ -25,6 +25,7 @@ from app.schemas.evaluation_process import (
     GenerateAssignmentsOut,
     MyEvaluationItemOut,
     SaveAnswersIn,
+    YearlyAverageOut,
 )
 from app.services.evaluation_assignment_service import EvaluationAssignmentError, EvaluationAssignmentService
 from app.services.evaluation_process_service import EvaluationProcessError, EvaluationProcessService
@@ -108,6 +109,19 @@ async def submit_evaluation(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.post("/evaluations/{evaluation_id}/reopen", response_model=EvaluationOut)
+async def reopen_evaluation(
+    evaluation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    employee_id = _require_employee(current_user)
+    try:
+        return await EvaluationProcessService(db).reopen_for_edit(evaluation_id, employee_id)
+    except EvaluationProcessError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
 @router.get("/my-results", response_model=list[EvaluationResultOut])
 async def get_my_results(
     db: AsyncSession = Depends(get_db),
@@ -115,6 +129,16 @@ async def get_my_results(
 ):
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_my_results(employee_id)
+
+
+@router.get("/my-yearly-average", response_model=YearlyAverageOut)
+async def get_my_yearly_average(
+    jalali_year: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    employee_id = _require_employee(current_user)
+    return await EvaluationProcessService(db).get_yearly_average(employee_id, jalali_year)
 
 
 @router.get("/my-dashboard-summary", response_model=DashboardSummaryOut)

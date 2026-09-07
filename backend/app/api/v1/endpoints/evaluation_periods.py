@@ -7,7 +7,7 @@ from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.evaluation_content import EvaluationPeriod
 from app.models.user import User
-from app.schemas.evaluation_content import EvaluationPeriodIn, EvaluationPeriodOut, EvaluationPeriodStatusUpdate
+from app.schemas.evaluation_content import EvaluationPeriodIn, EvaluationPeriodOut, EvaluationPeriodStatusUpdate, TitleUpdateIn
 from app.services.evaluation_period_service import EvaluationPeriodError, EvaluationPeriodService
 
 router = APIRouter()
@@ -64,6 +64,24 @@ async def update_period_status(
     await require_site_permission(db, current_user, period.site_id, PERMISSION_CODE)
     try:
         return await EvaluationPeriodService(db).update_status(period_id, payload.status)
+    except EvaluationPeriodError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/{period_id}/title", response_model=EvaluationPeriodOut)
+async def update_period_title(
+    period_id: int,
+    payload: TitleUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ برخلاف ویرایش کامل، عنوان صرف‌نظر از وضعیت دوره همیشه قابل‌تغییر است."""
+    period = await db.get(EvaluationPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دوره ارزیابی موردنظر یافت نشد")
+    await require_site_permission(db, current_user, period.site_id, PERMISSION_CODE)
+    try:
+        return await EvaluationPeriodService(db).update_title(period_id, payload.title)
     except EvaluationPeriodError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
