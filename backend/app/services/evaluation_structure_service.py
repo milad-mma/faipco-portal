@@ -326,13 +326,17 @@ class EvaluationStructureService:
 
     async def get_manager_candidates(self, site_id: int) -> list[dict]:
         """
-        فهرست همه پرسنل این سایت، به‌همراه دو اطلاعه کمکی برای انتخابگر
+        فهرست همه پرسنل این سایت، به‌همراه اطلاعات کمکی برای انتخابگر
         فرانت‌اند:
             - آیا سرپرست یک واحد است (و کدام واحد) - برای بخش «سرپرستان
               بدون مدیر»
             - اگر از قبل زیر ارزیابی یک مدیر دیگر است، نام آن مدیر - تا
               فرانت‌اند بتواند این افراد را غیرفعال/برچسب‌گذاری کند
               («تحت ارزیابی فلانی») به‌جای اینکه کاملاً پنهانشان کند.
+            - آیا خودش هم یک «مدیر» ثبت‌شده است - طبق درخواست صریح: کسی
+              که خودش در سطح مدیر است (حتی اگر هم‌زمان سرپرست یک واحد هم
+              باشد)، نباید در میان‌بر «سرپرستان بدون مدیر» به‌عنوان یک
+              سرپرست ساده و آماده‌واگذاری پیشنهاد شود.
         """
         employees_result = await self.db.execute(select(Employee).where(Employee.site_id == site_id))
         employees = employees_result.scalars().all()
@@ -353,6 +357,11 @@ class EvaluationStructureService:
             row[0]: f"{row[1]} {row[2]}" for row in assignments_result.all()
         }
 
+        managers_result = await self.db.execute(
+            select(EvaluationManager.employee_id).where(EvaluationManager.site_id == site_id)
+        )
+        manager_employee_ids = {row[0] for row in managers_result.all()}
+
         return [
             {
                 "id": employee.id,
@@ -362,6 +371,7 @@ class EvaluationStructureService:
                 "department_id": employee.department_id,
                 "supervisor_department_name": supervisor_department_name_by_employee_id.get(employee.id),
                 "evaluated_by_name": evaluated_by_name_by_employee_id.get(employee.id),
+                "is_manager": employee.id in manager_employee_ids,
             }
             for employee in employees
         ]

@@ -24,7 +24,7 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
   }, [candidates, managerEmployeeId, excludeIds]);
 
   const unassignedSupervisors = useMemo(
-    () => availableCandidates.filter((c) => c.supervisor_department_name && !c.evaluated_by_name),
+    () => availableCandidates.filter((c) => c.supervisor_department_name && !c.evaluated_by_name && !c.is_manager),
     [availableCandidates]
   );
 

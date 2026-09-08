@@ -77,6 +77,7 @@ class EvaluationOut(BaseModel):
     site_name_snapshot: str
     department_name_snapshot: str | None
     form_title_snapshot: str
+    period_title_snapshot: str
     answers: list[AnswerOut]
 
     model_config = ConfigDict(from_attributes=True)
@@ -90,6 +91,7 @@ class EvaluationResultOut(BaseModel):
     submitted_at: datetime | None
     evaluator_name_snapshot: str
     form_title_snapshot: str
+    period_title_snapshot: str
     site_name_snapshot: str
     department_name_snapshot: str | None
     comment: str | None

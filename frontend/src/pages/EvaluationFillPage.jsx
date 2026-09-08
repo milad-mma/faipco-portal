@@ -59,8 +59,18 @@ function QuestionField({ question, value, onChange }) {
         type="number"
         size="small"
         value={value.number_value ?? ""}
-        onChange={(e) => onChange({ ...value, number_value: e.target.value === "" ? null : Number(e.target.value) })}
-        sx={{ maxWidth: 200 }}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "") {
+            onChange({ ...value, number_value: null });
+            return;
+          }
+          const clamped = Math.min(question.weight, Math.max(0, Number(raw)));
+          onChange({ ...value, number_value: clamped });
+        }}
+        inputProps={{ min: 0, max: question.weight }}
+        helperText={`بین ۰ تا ${question.weight} (این عدد مستقیماً امتیاز همین سوال است)`}
+        sx={{ maxWidth: 220 }}
       />
     );
   }

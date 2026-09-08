@@ -116,6 +116,7 @@ class Evaluation(Base, TimestampMixin):
     site_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
     department_name_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
     form_title_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    period_title_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
 
     assignment: Mapped["EvaluationAssignment"] = relationship()
     answers: Mapped[list["EvaluationAnswer"]] = relationship(

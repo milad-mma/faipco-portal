@@ -86,8 +86,9 @@ class EvaluationProcessService:
         evaluator = await self.db.get(Employee, assignment.evaluator_employee_id)
         target = await self.db.get(Employee, assignment.target_employee_id)
         form = await self.db.get(EvaluationForm, assignment.form_id)
-        if evaluator is None or target is None or form is None:
-            raise EvaluationProcessError("اطلاعات ارزیاب/ارزیابی‌شونده/فرم یافت نشد")
+        period = await self.db.get(EvaluationPeriod, assignment.period_id)
+        if evaluator is None or target is None or form is None or period is None:
+            raise EvaluationProcessError("اطلاعات ارزیاب/ارزیابی‌شونده/فرم/دوره یافت نشد")
 
         site = await self.db.get(Site, target.site_id)
         department_name = None
@@ -105,6 +106,7 @@ class EvaluationProcessService:
             site_name_snapshot=site.name if site else "",
             department_name_snapshot=department_name,
             form_title_snapshot=form.title,
+            period_title_snapshot=period.title,
         )
         self.db.add(evaluation)
         await self.db.flush()  # برای پرشدن evaluation.id بدون Expire شدن (برخلاف commit)
@@ -133,6 +135,18 @@ class EvaluationProcessService:
             question = await self.db.get(EvaluationQuestion, answer_data["question_id"])
             if question is None:
                 continue  # سوال حذف شده - نادیده گرفته می‌شود
+
+            # ⚠️ طبق تصمیم صریح: برای سوالات «عدد»، عدد واردشده مستقیماً
+            # امتیاز آن سوال است (از حداکثر weight) - پس باید در همان
+            # محدوده [۰, weight] باشد؛ خارج از این محدوده منطقاً بی‌معنی
+            # است (نمی‌شود بیشتر از حداکثر امتیاز ممکن آن سوال امتیاز داد).
+            if question.question_type.value == "number" and answer_data.get("number_value") is not None:
+                number_value = answer_data["number_value"]
+                weight = float(question.weight)
+                if number_value < 0 or number_value > weight:
+                    raise EvaluationProcessError(
+                        f"پاسخ سوال «{question.text}» باید بین ۰ تا {weight:g} باشد (وزن این سوال {weight:g} است)"
+                    )
 
             existing_result = await self.db.execute(
                 select(EvaluationAnswer).where(
@@ -222,19 +236,36 @@ class EvaluationProcessService:
 
     def _score_single_answer(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> float:
         """
-        ⚠️ برای انواع متن/عدد/تاریخ (که امتیازدهی مستقیم ندارند)، فقط
-        «پاسخ داده شده یا نه» سنجیده می‌شود (۱۰۰ یا ۰) - تا بتوانند در
-        همان فرمول میانگین وزنی یکسان با انواع مبتنی‌بر گزینه شرکت کنند،
-        بدون نیاز به شاخه‌بندی جداگانه در محاسبه سطح دسته‌بندی/فرم.
+        ⚠️ برای انواع متن/تاریخ (که امتیازدهی مستقیم ندارند)، فقط «پاسخ
+        داده شده یا نه» سنجیده می‌شود (۱۰۰ یا ۰).
+
+        ⚠️ نوع «عدد» طبق تصمیم صریح: عدد واردشده مستقیماً معادل همان
+        تعداد امتیاز (از حداکثر امتیازِ همان سوال، که با weight برابر
+        است) محسوب می‌شود - نه «پاسخ داده شده یا نه». مثلاً برای سوالی
+        با weight=20، عدد ۱۲ یعنی «۱۲ امتیاز از ۲۰» - که در مقیاس ۰ تا
+        ۱۰۰ (برای استفاده در calculate_weighted_average که بر اساس
+        weight/100 ضرب می‌کند) معادل (۱۲/۲۰)×۱۰۰=۶۰ است.
         """
         if question.question_type.value in _OPTION_BASED_TYPES:
             if answer is None or not answer.selected_option_ids:
                 return 0.0
             option_scores = [float(o.score) for o in question.options if o.id in answer.selected_option_ids]
             return calculate_option_based_question_score(option_scores)
+
+        if question.question_type.value == "number":
+            weight = float(question.weight)
+            if answer is None or answer.number_value is None or weight <= 0:
+                return 0.0
+            # ⚠️ Clamp دفاعی - محدوده واقعی (۰ تا weight) باید هنگام
+            # ذخیره پاسخ (save_answers) رد شود؛ این فقط یک لایه ایمنی
+            # اضافه است تا حتی در بدترین حالت هم امتیاز نهایی از دامنه
+            # منطقی خارج نشود.
+            clamped_value = min(weight, max(0.0, float(answer.number_value)))
+            return (clamped_value / weight) * 100
+
         if answer is None:
             return 0.0
-        has_value = answer.text_value or answer.number_value is not None or answer.date_value is not None
+        has_value = answer.text_value or answer.date_value is not None
         return 100.0 if has_value else 0.0
 
     # ---------- ویرایش یک‌بارمصرفِ ارزیابیِ ثبت‌نهایی‌شده ----------

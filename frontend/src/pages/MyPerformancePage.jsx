@@ -62,7 +62,7 @@ function ResultCard({ result }) {
     <Card variant="outlined" sx={{ p: 2, mb: 1.5 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Box>
-          <Typography fontWeight={700}>{result.form_title_snapshot}</Typography>
+          <Typography fontWeight={700}>{result.period_title_snapshot}</Typography>
           <Typography variant="caption" color="text.secondary">
             ارزیاب: {result.evaluator_name_snapshot} — {new Date(result.submitted_at).toLocaleDateString("fa-IR")}
           </Typography>
