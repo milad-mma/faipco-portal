@@ -32,6 +32,7 @@ class MyEvaluationItemOut(BaseModel):
     evaluation_id: int | None
     status: str  # not_started | draft | submitted
     was_edited: bool = False
+    total_score: float | None = None
 
 
 class AnswerIn(BaseModel):

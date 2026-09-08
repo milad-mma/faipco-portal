@@ -27,6 +27,7 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEmployees } from "../api/employees";
 import EmployeePicker from "../components/EmployeePicker";
+import ManagerTargetPicker from "../components/ManagerTargetPicker";
 import InlineTitleEdit from "../components/InlineTitleEdit";
 import {
   addManager,
@@ -134,11 +135,11 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
             ))
           )}
         </Stack>
-        <EmployeePicker
+        <ManagerTargetPicker
           siteId={siteId}
-          label="افزودن فرد به فهرست ارزیابی این مدیر"
+          managerEmployeeId={manager.employee.id}
+          excludeIds={targetEmployeeIds}
           onSelect={handleAddTarget}
-          excludeIds={[...targetEmployeeIds, manager.employee.id]}
         />
       </AccordionDetails>
     </Accordion>
@@ -429,6 +430,9 @@ export default function EvaluationStructurePage() {
               وجود نداره. یعنی می‌تونید یه مدیر میانی هم تعریف کنید که فقط بخشی از سرپرست‌ها زیر
               نظرشن، و بقیه سرپرست‌ها مستقیم زیر یه مدیر دیگه (مثلاً مدیر سایت) باشن. همچنین می‌تونید
               هر فرد خاصی رو - حتی از یه واحد کاملاً متفاوت - مستقیم به فهرست هر مدیری اضافه کنید.
+              ⚠️ هر فرد فقط می‌تونه هم‌زمان زیر یه مدیر باشه - اگه توی جست‌وجو کسی رو دیدید که غیرفعاله
+              با نوشته «تحت ارزیابی فلانی»، یعنی از قبل به یه مدیر دیگه اضافه شده؛ باید اول از اونجا
+              حذفش کنید.
             </Typography>
             <Typography component="li" variant="body2">
               <b>سرپرست واحد</b> → همه پرسنل واحدش رو ارزیابی می‌کنه (مگه این‌که برای اون واحد سرشیفت

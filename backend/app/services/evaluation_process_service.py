@@ -300,12 +300,12 @@ class EvaluationProcessService:
         assignments = assignments_result.scalars().all()
 
         evaluations_result = await self.db.execute(
-            select(Evaluation.assignment_id, Evaluation.id, Evaluation.status, Evaluation.was_edited).where(
-                Evaluation.assignment_id.in_([a.id for a in assignments])
-            )
+            select(
+                Evaluation.assignment_id, Evaluation.id, Evaluation.status, Evaluation.was_edited, Evaluation.total_score
+            ).where(Evaluation.assignment_id.in_([a.id for a in assignments]))
         )
         evaluation_by_assignment = {
-            row[0]: {"evaluation_id": row[1], "status": row[2].value, "was_edited": row[3]}
+            row[0]: {"evaluation_id": row[1], "status": row[2].value, "was_edited": row[3], "total_score": row[4]}
             for row in evaluations_result.all()
         }
 
@@ -321,6 +321,7 @@ class EvaluationProcessService:
                     "evaluation_id": evaluation_info["evaluation_id"] if evaluation_info else None,
                     "status": evaluation_info["status"] if evaluation_info else "not_started",
                     "was_edited": evaluation_info["was_edited"] if evaluation_info else False,
+                    "total_score": evaluation_info["total_score"] if evaluation_info else None,
                 }
             )
         return items

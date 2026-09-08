@@ -27,6 +27,7 @@ from app.schemas.evaluation import (
     AddManagerTargetIn,
     AddShiftLeadIn,
     DepartmentSupervisorOut,
+    ManagerCandidateOut,
     ManagerOut,
     SetDepartmentSupervisorIn,
     SetShiftAssignmentIn,
@@ -63,6 +64,16 @@ async def get_site_structure(
         return await EvaluationStructureService(db).get_site_structure(site_id)
     except EvaluationStructureError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/sites/{site_id}/manager-candidates", response_model=list[ManagerCandidateOut])
+async def get_manager_candidates(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_site_permission(db, current_user, site_id)
+    return await EvaluationStructureService(db).get_manager_candidates(site_id)
 
 
 @router.put("/departments/{department_id}/supervisor", response_model=DepartmentSupervisorOut)

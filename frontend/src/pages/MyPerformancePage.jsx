@@ -1,6 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Box, Button, Card, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  Chip,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+} from "@mui/material";
 import {
   fetchMyEvaluationResults,
   fetchMyEvaluations,
@@ -10,6 +28,11 @@ import {
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
 const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
+
+function scoreColor(score) {
+  if (score == null) return "default";
+  return score >= 70 ? "success" : score >= 50 ? "warning" : "error";
+}
 
 function YearlyAverageCard({ yearlyAverage }) {
   if (!yearlyAverage || yearlyAverage.count === 0) return null;
@@ -26,9 +49,7 @@ function YearlyAverageCard({ yearlyAverage }) {
         </Box>
         <Chip
           label={Math.round(yearlyAverage.average_score)}
-          color={
-            yearlyAverage.average_score >= 70 ? "success" : yearlyAverage.average_score >= 50 ? "warning" : "error"
-          }
+          color={scoreColor(yearlyAverage.average_score)}
           sx={{ fontSize: 18, height: 36, px: 1 }}
         />
       </Stack>
@@ -44,13 +65,9 @@ function ResultCard({ result }) {
           <Typography fontWeight={700}>{result.form_title_snapshot}</Typography>
           <Typography variant="caption" color="text.secondary">
             ارزیاب: {result.evaluator_name_snapshot} — {new Date(result.submitted_at).toLocaleDateString("fa-IR")}
-            {result.was_edited && " (ویرایش‌شده)"}
           </Typography>
         </Box>
-        <Chip
-          label={`امتیاز: ${Math.round(result.total_score)}`}
-          color={result.total_score >= 70 ? "success" : result.total_score >= 50 ? "warning" : "error"}
-        />
+        <Chip label={`امتیاز: ${Math.round(result.total_score)}`} color={scoreColor(result.total_score)} />
       </Stack>
       {result.comment && (
         <Typography variant="body2" sx={{ mt: 1 }}>
@@ -61,33 +78,74 @@ function ResultCard({ result }) {
   );
 }
 
-function PendingEvaluationCard({ item, onStart, onEdit }) {
+function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdit }) {
+  const periodTitles = useMemo(() => [...new Set(items.map((i) => i.period_title))], [items]);
+  const filteredItems = periodFilter ? items.filter((i) => i.period_title === periodFilter) : items;
+
   return (
-    <Card variant="outlined" sx={{ p: 2, mb: 1.5 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Box>
-          <Typography fontWeight={700}>
-            {item.target.first_name} {item.target.last_name} ({item.target.personnel_code})
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {item.period_title} — {item.form_title}
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
-          {item.status !== "submitted" && (
-            <Button size="small" variant="contained" onClick={() => onStart(item)}>
-              {item.status === "draft" ? "ادامه ارزیابی" : "شروع ارزیابی"}
-            </Button>
-          )}
-          {item.status === "submitted" && !item.was_edited && (
-            <Button size="small" variant="outlined" onClick={() => onEdit(item)}>
-              ویرایش
-            </Button>
-          )}
-        </Stack>
-      </Stack>
-    </Card>
+    <Box>
+      <TextField
+        select
+        size="small"
+        label="فیلتر بر اساس دوره ارزیابی"
+        value={periodFilter}
+        onChange={(e) => setPeriodFilter(e.target.value)}
+        sx={{ minWidth: 240, mb: 2 }}
+      >
+        <MenuItem value="">همه دوره‌ها</MenuItem>
+        {periodTitles.map((title) => (
+          <MenuItem key={title} value={title}>
+            {title}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <TableContainer component={Card} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>نام و نام خانوادگی</TableCell>
+              <TableCell>کد پرسنلی</TableCell>
+              <TableCell>وضعیت</TableCell>
+              <TableCell>امتیاز</TableCell>
+              <TableCell>عملیات</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredItems.map((item) => (
+              <TableRow key={item.assignment_id}>
+                <TableCell>
+                  {item.target.first_name} {item.target.last_name}
+                </TableCell>
+                <TableCell>{item.target.personnel_code}</TableCell>
+                <TableCell>
+                  <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                </TableCell>
+                <TableCell>
+                  {item.status === "submitted" && item.total_score != null ? (
+                    <Chip size="small" color={scoreColor(item.total_score)} label={Math.round(item.total_score)} />
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+                <TableCell>
+                  {item.status !== "submitted" && (
+                    <Button size="small" variant="contained" onClick={() => onStart(item)}>
+                      {item.status === "draft" ? "ادامه ارزیابی" : "شروع ارزیابی"}
+                    </Button>
+                  )}
+                  {item.status === "submitted" && !item.was_edited && (
+                    <Button size="small" variant="outlined" onClick={() => onEdit(item)}>
+                      ویرایش
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
   );
 }
 
@@ -96,6 +154,7 @@ export default function MyPerformancePage() {
   const [tab, setTab] = useState(0);
   const [results, setResults] = useState(null);
   const [pending, setPending] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState("");
   const [yearlyAverage, setYearlyAverage] = useState(null);
   const [error, setError] = useState("");
 
@@ -169,9 +228,13 @@ export default function MyPerformancePage() {
               فعلاً هیچ پرسنلی برای ارزیابی به شما اختصاص داده نشده است.
             </Typography>
           ) : (
-            pending.map((item) => (
-              <PendingEvaluationCard key={item.assignment_id} item={item} onStart={handleStart} onEdit={handleEdit} />
-            ))
+            <MyPersonnelTable
+              items={pending}
+              periodFilter={periodFilter}
+              setPeriodFilter={setPeriodFilter}
+              onStart={handleStart}
+              onEdit={handleEdit}
+            />
           )}
         </Box>
       )}

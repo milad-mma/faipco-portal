@@ -16,6 +16,11 @@ export async function removeDepartmentSupervisor(departmentId) {
   await apiClient.delete(`/performance/departments/${departmentId}/supervisor`);
 }
 
+export async function fetchManagerCandidates(siteId) {
+  const { data } = await apiClient.get(`/performance/sites/${siteId}/manager-candidates`);
+  return data;
+}
+
 export async function addManager(siteId, employeeId, title) {
   const { data } = await apiClient.post(`/performance/sites/${siteId}/managers`, {
     employee_id: employeeId,

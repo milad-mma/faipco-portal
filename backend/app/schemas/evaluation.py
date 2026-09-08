@@ -64,6 +64,23 @@ class ManagerOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ManagerCandidateOut(BaseModel):
+    """
+    برای انتخابگر «افزودن به فهرست یک مدیر» - علاوه بر اطلاعات پایه،
+    مشخص می‌کند آیا این فرد سرپرست یک واحد است (برای بخش «سرپرستان بدون
+    مدیر») و آیا از قبل تحت ارزیابی مدیر دیگری است (برای غیرفعال‌کردن/
+    برچسب‌گذاری در جست‌وجو - نه پنهان‌کردن کامل).
+    """
+
+    id: int
+    personnel_code: str
+    first_name: str
+    last_name: str
+    department_id: int | None
+    supervisor_department_name: str | None
+    evaluated_by_name: str | None
+
+
 class AddShiftLeadIn(BaseModel):
     employee_id: int
 

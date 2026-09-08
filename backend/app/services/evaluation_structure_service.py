@@ -175,6 +175,22 @@ class EvaluationStructureService:
         if result.scalar_one_or_none() is not None:
             raise EvaluationStructureError("این فرد قبلاً به این مدیر تخصیص داده شده است")
 
+        # ⚠️ طبق درخواست صریح: هر فرد فقط می‌تواند هم‌زمان زیر ارزیابی
+        # یک مدیر باشد - اگر از قبل به مدیر دیگری تخصیص داده شده، ابتدا
+        # باید از همان‌جا حذف شود.
+        existing_elsewhere_result = await self.db.execute(
+            select(EvaluationManagerAssignment)
+            .options(selectinload(EvaluationManagerAssignment.manager).selectinload(EvaluationManager.employee))
+            .where(EvaluationManagerAssignment.target_employee_id == target_employee_id)
+        )
+        existing_elsewhere = existing_elsewhere_result.scalars().first()
+        if existing_elsewhere is not None:
+            other_manager_employee = existing_elsewhere.manager.employee
+            raise EvaluationStructureError(
+                f"این فرد هم‌اکنون تحت ارزیابی «{other_manager_employee.first_name} "
+                f"{other_manager_employee.last_name}» است - ابتدا باید از فهرست آن مدیر حذف شود"
+            )
+
         self.db.add(EvaluationManagerAssignment(manager_id=manager_id, target_employee_id=target_employee_id))
         await self.db.commit()
         return await self._get_manager_with_targets(manager_id)
@@ -305,6 +321,50 @@ class EvaluationStructureService:
             await self.db.commit()
 
     # ---------- نمایش کامل ساختار یک سایت ----------
+
+    # ---------- کاندیدهای انتخاب برای «افزودن به فهرست یک مدیر» ----------
+
+    async def get_manager_candidates(self, site_id: int) -> list[dict]:
+        """
+        فهرست همه پرسنل این سایت، به‌همراه دو اطلاعه کمکی برای انتخابگر
+        فرانت‌اند:
+            - آیا سرپرست یک واحد است (و کدام واحد) - برای بخش «سرپرستان
+              بدون مدیر»
+            - اگر از قبل زیر ارزیابی یک مدیر دیگر است، نام آن مدیر - تا
+              فرانت‌اند بتواند این افراد را غیرفعال/برچسب‌گذاری کند
+              («تحت ارزیابی فلانی») به‌جای اینکه کاملاً پنهانشان کند.
+        """
+        employees_result = await self.db.execute(select(Employee).where(Employee.site_id == site_id))
+        employees = employees_result.scalars().all()
+
+        supervisors_result = await self.db.execute(
+            select(EvaluationDepartmentSupervisor.employee_id, Department.name)
+            .join(Department, Department.id == EvaluationDepartmentSupervisor.department_id)
+            .where(Department.site_id == site_id)
+        )
+        supervisor_department_name_by_employee_id = {row[0]: row[1] for row in supervisors_result.all()}
+
+        assignments_result = await self.db.execute(
+            select(EvaluationManagerAssignment.target_employee_id, Employee.first_name, Employee.last_name)
+            .join(EvaluationManager, EvaluationManager.id == EvaluationManagerAssignment.manager_id)
+            .join(Employee, Employee.id == EvaluationManager.employee_id)
+        )
+        evaluated_by_name_by_employee_id = {
+            row[0]: f"{row[1]} {row[2]}" for row in assignments_result.all()
+        }
+
+        return [
+            {
+                "id": employee.id,
+                "personnel_code": employee.personnel_code,
+                "first_name": employee.first_name,
+                "last_name": employee.last_name,
+                "department_id": employee.department_id,
+                "supervisor_department_name": supervisor_department_name_by_employee_id.get(employee.id),
+                "evaluated_by_name": evaluated_by_name_by_employee_id.get(employee.id),
+            }
+            for employee in employees
+        ]
 
     async def get_site_structure(self, site_id: int) -> dict:
         """
