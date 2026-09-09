@@ -17,6 +17,7 @@ import {
 import { fetchEvaluationForm } from "../api/evaluationForms";
 import { saveEvaluationAnswers, fetchEvaluationById, startEvaluation, submitEvaluation } from "../api/evaluationProcess";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
+import BackLink from "../components/BackLink";
 
 function QuestionField({ question, value, onChange }) {
   const type = question.question_type;
@@ -98,6 +99,12 @@ function QuestionField({ question, value, onChange }) {
 export default function EvaluationFillPage() {
   const { assignmentId, evaluationId } = useParams();
   const navigate = useNavigate();
+  // ⚠️ طبق اصل کلی صریح کاربر: هر صفحه‌ای که از یک صفحه‌ی دیگر باز
+  // می‌شود، باید راه برگشت مشخص (نه صرفاً تاریخچه مرورگر) داشته باشد.
+  // اینجا خودِ نوع پارامتر مسیر (assignmentId در برابر evaluationId)
+  // مشخص می‌کند از کدام تب «ارزیابی عملکرد من» وارد شده‌ایم - چون این
+  // دو مسیر همیشه دقیقاً از همان دو تب باز می‌شوند.
+  const returnPath = evaluationId ? "/my-performance?tab=shift-leads" : "/my-performance?tab=personnel";
   const [evaluation, setEvaluation] = useState(null);
   const [form, setForm] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -165,7 +172,7 @@ export default function EvaluationFillPage() {
     try {
       await saveEvaluationAnswers(evaluation.id, buildAnswersPayload());
       await submitEvaluation(evaluation.id);
-      navigate("/my-performance");
+      navigate(returnPath);
     } catch (err) {
       setError(err.response?.data?.detail || "ثبت نهایی ارزیابی با خطا مواجه شد.");
     } finally {
@@ -182,6 +189,7 @@ export default function EvaluationFillPage() {
 
   return (
     <Box>
+      <BackLink to={returnPath} label="بازگشت به ارزیابی عملکرد من" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
         {form.title}
       </Typography>

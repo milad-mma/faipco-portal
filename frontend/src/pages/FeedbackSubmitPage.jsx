@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
+import BackLink from "../components/BackLink";
 import { submitFeedback } from "../api/feedback";
 
 const CATEGORY_LABELS = {
@@ -85,6 +86,7 @@ export default function FeedbackSubmitPage() {
 
   return (
     <Box sx={{ maxWidth: 640, mx: "auto" }}>
+      <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
         انتقادات و پیشنهادات
       </Typography>
@@ -98,7 +100,7 @@ export default function FeedbackSubmitPage() {
             <Alert severity="success" sx={{ width: "100%" }}>
               پیام شما با موفقیت ثبت شد. سپاس از وقتی که گذاشتید.
             </Alert>
-            <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/")}>
+            <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/my-dashboard")}>
               بازگشت به داشبورد
             </Button>
           </Stack>

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import BackLink from "../components/BackLink";
 import {
   Alert,
   Box,
@@ -339,6 +341,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
 }
 
 export default function NoticesPage() {
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   // اگر با ?type=payroll یا ?type=attendance_card باز شود (از دکمه‌های
   // «فیش حقوقی»/«فیش کارکرد» در داشبورد شخصی)، فقط همان نوع فیلتر می‌شود
@@ -452,6 +455,7 @@ export default function NoticesPage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
+      {!user?.is_superuser && <BackLink to="/my-dashboard" />}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Typography variant="h5" fontWeight={800}>
           {pageTitle}

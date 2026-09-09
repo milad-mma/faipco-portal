@@ -18,6 +18,7 @@ import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../components/IranianLicensePlateInput";
+import BackLink from "../components/BackLink";
 import { createMyVehicle, deleteMyVehicle, fetchMyVehicles } from "../api/vehicles";
 
 const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };
@@ -87,6 +88,7 @@ export default function MyVehiclesPage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 600 }, mx: "auto" }}>
+      <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={800} sx={{ mb: 2 }}>
         خودروهای من
       </Typography>

@@ -13,6 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
+import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 
 /**
@@ -100,6 +101,7 @@ export default function MonthlyAttendanceReportPage() {
 
   return (
     <Box>
+      <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         گزارش تردد ماهانه
       </Typography>

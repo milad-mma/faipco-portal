@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -26,6 +26,7 @@ import {
   fetchMyYearlyAverage,
   reopenEvaluation,
 } from "../api/evaluationProcess";
+import BackLink from "../components/BackLink";
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
 const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
@@ -191,9 +192,23 @@ function ShiftLeadEvaluationsTable({ items, onEdit }) {
   );
 }
 
+const TAB_KEYS = ["results", "personnel", "shift-leads"];
+
 export default function MyPerformancePage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState(0);
+  // ⚠️ طبق اصل کلی بازگشت به مبدأ درست: تب فعال هم در آدرس صفحه ذخیره
+  // می‌شود (?tab=personnel و...) - هم رفرش صفحه تب را گم نمی‌کند، هم
+  // وقتی از صفحه ارزیابی برمی‌گردیم، دقیقاً همان تبی که رفته بودیم باز
+  // می‌شود، نه همیشه تب پیش‌فرض.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = TAB_KEYS.indexOf(searchParams.get("tab"));
+  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0);
+
+  function handleTabChange(newIndex) {
+    setTab(newIndex);
+    setSearchParams({ tab: TAB_KEYS[newIndex] });
+  }
+
   const [results, setResults] = useState(null);
   const [pending, setPending] = useState(null);
   const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
@@ -255,6 +270,7 @@ export default function MyPerformancePage() {
 
   return (
     <Box>
+      <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         ارزیابی عملکرد من
       </Typography>
@@ -265,7 +281,7 @@ export default function MyPerformancePage() {
         </Alert>
       )}
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+      <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ mb: 2 }}>
         <Tab label="نتایج ارزیابی من" />
         <Tab label={pendingCount > 0 ? `ارزیابی پرسنل من (${pendingCount})` : "ارزیابی پرسنل من"} />
         {hasShiftLeadEvaluations && <Tab label="ارزیابی‌های سرشیفت‌های من" />}
