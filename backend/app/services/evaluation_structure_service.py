@@ -478,20 +478,42 @@ class EvaluationStructureService:
 
         shift_lead_employees_by_department: dict[int, list[int]] = {}
         all_employees_by_department: dict[int, list[int]] = {}
+        unassigned_employees_by_department: dict[int, list[int]] = {}
         for department_id in department_ids_as_supervisor:
             shift_lead_employees_result = await self.db.execute(
                 select(EvaluationShiftLead.employee_id).where(EvaluationShiftLead.department_id == department_id)
             )
-            shift_lead_employees_by_department[department_id] = [
-                row[0] for row in shift_lead_employees_result.all()
-            ]
+            shift_lead_employee_ids = [row[0] for row in shift_lead_employees_result.all()]
+            shift_lead_employees_by_department[department_id] = shift_lead_employee_ids
 
             employees_result = await self.db.execute(
                 select(Employee.id).where(
                     Employee.department_id == department_id, Employee.id != evaluator_employee_id
                 )
             )
-            all_employees_by_department[department_id] = [row[0] for row in employees_result.all()]
+            department_employee_ids = [row[0] for row in employees_result.all()]
+            all_employees_by_department[department_id] = department_employee_ids
+
+            # ⚠️ رفع نقص واقعی: پرسنلی که به هیچ سرشیفتی تخصیص داده
+            # نشده‌اند، نباید بی‌ارزیاب بمانند - مستقیماً زیر نظر سرپرست
+            # باقی می‌مانند.
+            if shift_lead_employee_ids:
+                shift_lead_ids_for_department_result = await self.db.execute(
+                    select(EvaluationShiftLead.id).where(EvaluationShiftLead.department_id == department_id)
+                )
+                shift_lead_ids_for_department = [row[0] for row in shift_lead_ids_for_department_result.all()]
+                assigned_result = await self.db.execute(
+                    select(EvaluationShiftAssignment.employee_id).where(
+                        EvaluationShiftAssignment.shift_lead_id.in_(shift_lead_ids_for_department)
+                    )
+                )
+                assigned_employee_ids = {row[0] for row in assigned_result.all()}
+                shift_lead_employee_id_set = set(shift_lead_employee_ids)
+                unassigned_employees_by_department[department_id] = [
+                    eid
+                    for eid in department_employee_ids
+                    if eid not in assigned_employee_ids and eid not in shift_lead_employee_id_set
+                ]
 
         shift_assignments_by_shift_lead: dict[int, list[int]] = {}
         for shift_lead_id in shift_lead_ids:
@@ -511,6 +533,7 @@ class EvaluationStructureService:
             shift_lead_employees_by_department=shift_lead_employees_by_department,
             all_employees_by_department=all_employees_by_department,
             shift_assignments_by_shift_lead=shift_assignments_by_shift_lead,
+            unassigned_employees_by_department=unassigned_employees_by_department,
         )
 
         targets: list[Employee] = []

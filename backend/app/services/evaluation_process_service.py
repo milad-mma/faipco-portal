@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.core.evaluation_rules import calculate_option_based_question_score, calculate_weighted_average
 from app.core.persian_date import get_current_jalali_date, jalali_year_range_utc
 from app.models.employee import Department, Employee
+from app.models.evaluation import EvaluationDepartmentSupervisor, EvaluationShiftLead
 from app.models.evaluation_content import (
     EvaluationCategory,
     EvaluationForm,
@@ -52,6 +53,29 @@ class EvaluationProcessService:
             raise EvaluationProcessError("شما مجاز به انجام این ارزیابی نیستید")
         return assignment
 
+    async def _is_supervisor_of_evaluator(self, original_evaluator_employee_id: int, requesting_employee_id: int) -> bool:
+        """
+        طبق درخواست صریح: سرپرست یک واحد باید دسترسی ویرایش ارزیابی‌های
+        انجام‌شده توسط سرشیفت‌های همان واحد را هم داشته باشد - یعنی اگر
+        ارزیابِ اصلی، سرشیفتِ یک واحدی است که requesting_employee_id
+        سرپرست همان واحد است، دسترسی مجاز است.
+        """
+        shift_lead_result = await self.db.execute(
+            select(EvaluationShiftLead.department_id).where(
+                EvaluationShiftLead.employee_id == original_evaluator_employee_id
+            )
+        )
+        shift_lead_department_ids = [row[0] for row in shift_lead_result.all()]
+        if not shift_lead_department_ids:
+            return False
+        supervisor_result = await self.db.execute(
+            select(EvaluationDepartmentSupervisor.id).where(
+                EvaluationDepartmentSupervisor.employee_id == requesting_employee_id,
+                EvaluationDepartmentSupervisor.department_id.in_(shift_lead_department_ids),
+            )
+        )
+        return supervisor_result.scalar_one_or_none() is not None
+
     async def _get_owned_evaluation(self, evaluation_id: int, evaluator_employee_id: int) -> Evaluation:
         result = await self.db.execute(
             select(Evaluation)
@@ -61,9 +85,23 @@ class EvaluationProcessService:
         evaluation = result.scalar_one_or_none()
         if evaluation is None:
             raise EvaluationProcessError("این ارزیابی یافت نشد")
-        if evaluation.assignment.evaluator_employee_id != evaluator_employee_id:
+        if evaluation.assignment.evaluator_employee_id != evaluator_employee_id and not (
+            await self._is_supervisor_of_evaluator(evaluation.assignment.evaluator_employee_id, evaluator_employee_id)
+        ):
             raise EvaluationProcessError("شما مجاز به انجام این ارزیابی نیستید")
         return evaluation
+
+    async def get_evaluation(self, evaluation_id: int, requesting_employee_id: int) -> Evaluation:
+        """
+        دریافت مستقیم یک Evaluation با ID خودش - برخلاف start_evaluation
+        (که با assignment_id کار می‌کند و فقط برای ارزیابِ اصلی مجاز
+        است)، این متد از همان بررسی دسترسی گسترده‌تر _get_owned_evaluation
+        استفاده می‌کند - یعنی هم ارزیابِ اصلی، هم سرپرستی که این ارزیاب
+        سرشیفتِ واحد اوست، می‌توانند از این طریق به یک Evaluation از‌قبل
+        باز‌شده (draft) برسند - برای ادامه/ویرایش، بدون نیاز به عبور از
+        بررسی مالکیت Assignment.
+        """
+        return await self._get_owned_evaluation(evaluation_id, requesting_employee_id)
 
     async def start_evaluation(self, assignment_id: int, evaluator_employee_id: int) -> Evaluation:
         """
@@ -316,6 +354,58 @@ class EvaluationProcessService:
         return {"jalali_year": jalali_year, "average_score": float(average) if average is not None else None, "count": count}
 
     # ---------- فهرست‌ها ----------
+
+    async def get_shift_lead_evaluations(self, supervisor_employee_id: int) -> list[dict]:
+        """
+        فهرست ارزیابی‌های ثبت‌نهایی‌شده‌ای که توسط سرشیفت‌های واحد(های)ی
+        که این پرسنل سرپرست آن‌هاست، انجام شده - تا سرپرست بتواند در
+        صورت نیاز (طبق درخواست صریح) آن‌ها را دوباره باز و ویرایش کند.
+        """
+        supervised_department_result = await self.db.execute(
+            select(EvaluationDepartmentSupervisor.department_id).where(
+                EvaluationDepartmentSupervisor.employee_id == supervisor_employee_id
+            )
+        )
+        supervised_department_ids = [row[0] for row in supervised_department_result.all()]
+        if not supervised_department_ids:
+            return []
+
+        shift_lead_result = await self.db.execute(
+            select(EvaluationShiftLead.id, EvaluationShiftLead.employee_id).where(
+                EvaluationShiftLead.department_id.in_(supervised_department_ids)
+            )
+        )
+        shift_lead_rows = shift_lead_result.all()
+        shift_lead_employee_ids = [row[1] for row in shift_lead_rows]
+        if not shift_lead_employee_ids:
+            return []
+
+        evaluations_result = await self.db.execute(
+            select(Evaluation)
+            .options(selectinload(Evaluation.assignment))
+            .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .where(
+                EvaluationAssignment.evaluator_employee_id.in_(shift_lead_employee_ids),
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+            .order_by(Evaluation.submitted_at.desc())
+        )
+        evaluations = evaluations_result.scalars().all()
+
+        return [
+            {
+                "evaluation_id": evaluation.id,
+                "assignment_id": evaluation.assignment_id,
+                "shift_lead_name": evaluation.evaluator_name_snapshot,
+                "target_name": evaluation.target_name_snapshot,
+                "period_title": evaluation.period_title_snapshot,
+                "form_title": evaluation.form_title_snapshot,
+                "total_score": evaluation.total_score,
+                "was_edited": evaluation.was_edited,
+                "submitted_at": evaluation.submitted_at,
+            }
+            for evaluation in evaluations
+        ]
 
     async def get_my_evaluations(self, evaluator_employee_id: int) -> list[dict]:
         """ارزیابی‌هایی که این پرسنل باید انجام دهد (Assignment های او) - با وضعیت فعلی هرکدام."""

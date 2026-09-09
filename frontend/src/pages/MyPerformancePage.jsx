@@ -22,6 +22,7 @@ import {
 import {
   fetchMyEvaluationResults,
   fetchMyEvaluations,
+  fetchMyShiftLeadEvaluations,
   fetchMyYearlyAverage,
   reopenEvaluation,
 } from "../api/evaluationProcess";
@@ -149,11 +150,53 @@ function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdi
   );
 }
 
+function ShiftLeadEvaluationsTable({ items, onEdit }) {
+  return (
+    <TableContainer component={Card} variant="outlined">
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>ارزیابی‌شده</TableCell>
+            <TableCell>سرشیفت (ارزیاب)</TableCell>
+            <TableCell>دوره ارزیابی</TableCell>
+            <TableCell>امتیاز</TableCell>
+            <TableCell>عملیات</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.evaluation_id}>
+              <TableCell>{item.target_name}</TableCell>
+              <TableCell>{item.shift_lead_name}</TableCell>
+              <TableCell>{item.period_title}</TableCell>
+              <TableCell>
+                {item.total_score != null ? (
+                  <Chip size="small" color={scoreColor(item.total_score)} label={Math.round(item.total_score)} />
+                ) : (
+                  "—"
+                )}
+              </TableCell>
+              <TableCell>
+                {!item.was_edited && (
+                  <Button size="small" variant="outlined" onClick={() => onEdit(item)}>
+                    ویرایش
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
 export default function MyPerformancePage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState(0);
   const [results, setResults] = useState(null);
   const [pending, setPending] = useState(null);
+  const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
   const [periodFilter, setPeriodFilter] = useState("");
   const [yearlyAverage, setYearlyAverage] = useState(null);
   const [error, setError] = useState("");
@@ -164,6 +207,12 @@ export default function MyPerformancePage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌های من با خطا مواجه شد."));
   }
 
+  function loadShiftLeadEvaluations() {
+    fetchMyShiftLeadEvaluations()
+      .then(setShiftLeadEvaluations)
+      .catch(() => setShiftLeadEvaluations([]));
+  }
+
   useEffect(() => {
     fetchMyEvaluationResults()
       .then(setResults)
@@ -172,6 +221,7 @@ export default function MyPerformancePage() {
       .then(setYearlyAverage)
       .catch(() => setYearlyAverage(null));
     loadPending();
+    loadShiftLeadEvaluations();
   }, []);
 
   function handleStart(item) {
@@ -189,7 +239,19 @@ export default function MyPerformancePage() {
     }
   }
 
+  async function handleEditShiftLeadEvaluation(item) {
+    setError("");
+    try {
+      await reopenEvaluation(item.evaluation_id);
+      navigate(`/my-performance/edit-evaluation/${item.evaluation_id}`);
+    } catch (err) {
+      setError(err.response?.data?.detail || "بازکردن ارزیابی برای ویرایش با خطا مواجه شد.");
+      loadShiftLeadEvaluations();
+    }
+  }
+
   const pendingCount = pending?.filter((p) => p.status !== "submitted").length || 0;
+  const hasShiftLeadEvaluations = shiftLeadEvaluations && shiftLeadEvaluations.length > 0;
 
   return (
     <Box>
@@ -206,6 +268,7 @@ export default function MyPerformancePage() {
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
         <Tab label="نتایج ارزیابی من" />
         <Tab label={pendingCount > 0 ? `ارزیابی پرسنل من (${pendingCount})` : "ارزیابی پرسنل من"} />
+        {hasShiftLeadEvaluations && <Tab label="ارزیابی‌های سرشیفت‌های من" />}
       </Tabs>
 
       {tab === 0 && (
@@ -236,6 +299,16 @@ export default function MyPerformancePage() {
               onEdit={handleEdit}
             />
           )}
+        </Box>
+      )}
+
+      {tab === 2 && hasShiftLeadEvaluations && (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            ارزیابی‌هایی که سرشیفت‌های واحد شما انجام داده‌اند - در صورت نیاز می‌توانید آن‌ها را
+            ویرایش کنید (هرکدام فقط یک‌بار قابل‌ویرایش است).
+          </Typography>
+          <ShiftLeadEvaluationsTable items={shiftLeadEvaluations} onEdit={handleEditShiftLeadEvaluation} />
         </Box>
       )}
     </Box>

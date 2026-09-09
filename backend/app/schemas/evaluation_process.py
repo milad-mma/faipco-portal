@@ -111,3 +111,17 @@ class YearlyAverageOut(BaseModel):
     jalali_year: int
     average_score: float | None
     count: int
+
+
+class ShiftLeadEvaluationOut(BaseModel):
+    """برای سرپرست - ارزیابی‌های ثبت‌شده توسط سرشیفت‌های واحدش، قابل بازکردن/ویرایش."""
+
+    evaluation_id: int
+    assignment_id: int
+    shift_lead_name: str
+    target_name: str
+    period_title: str
+    form_title: str
+    total_score: float | None
+    was_edited: bool
+    submitted_at: datetime | None

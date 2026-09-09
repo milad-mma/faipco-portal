@@ -26,6 +26,7 @@ def resolve_evaluation_target_ids(
     shift_lead_employees_by_department: dict,
     all_employees_by_department: dict,
     shift_assignments_by_shift_lead: dict,
+    unassigned_employees_by_department: dict | None = None,
 ) -> set:
     """
     خروجی: مجموعه‌ی شناسه‌های پرسنلی که evaluator_employee_id مجاز است
@@ -38,6 +39,13 @@ def resolve_evaluation_target_ids(
     این طراحی اجازه می‌دهد چارت سازمانی واقعی (مثلاً یک مدیر میانی مثل
     «مدیر تولید» که فقط بخشی از سرپرست‌ها را ارزیابی می‌کند، یا تخصیص
     مستقیم یک فرد خاص از یک واحد دیگر به هر مدیری) کاملاً پیاده شود.
+
+    ⚠️ رفع یک نقص واقعی (طبق بازخورد صریح کاربر): وقتی یک واحد سرشیفت
+    دارد ولی بعضی پرسنل هنوز به هیچ سرشیفتی تخصیص داده نشده‌اند، قبلاً
+    آن پرسنل اصلاً توسط کسی ارزیابی نمی‌شدند (نه سرپرست، چون قانون
+    می‌گفت «اگر سرشیفت دارد فقط سرشیفت‌ها را ببین»؛ نه سرشیفتی، چون
+    اصلاً تخصیص داده نشده بودند). حالا: پرسنلِ بدون‌تخصیص، مستقیماً زیر
+    نظر سرپرست باقی می‌مانند - یعنی هیچ‌کس بدون ارزیاب نمی‌ماند.
     """
     target_ids: set = set()
 
@@ -48,6 +56,8 @@ def resolve_evaluation_target_ids(
         shift_lead_employee_ids = shift_lead_employees_by_department.get(department_id, [])
         if shift_lead_employee_ids:
             target_ids.update(shift_lead_employee_ids)
+            if unassigned_employees_by_department:
+                target_ids.update(unassigned_employees_by_department.get(department_id, []))
         else:
             target_ids.update(all_employees_by_department.get(department_id, []))
 

@@ -25,6 +25,7 @@ from app.schemas.evaluation_process import (
     GenerateAssignmentsOut,
     MyEvaluationItemOut,
     SaveAnswersIn,
+    ShiftLeadEvaluationOut,
     YearlyAverageOut,
 )
 from app.services.evaluation_assignment_service import EvaluationAssignmentError, EvaluationAssignmentService
@@ -67,6 +68,21 @@ async def get_my_evaluations(
     return await EvaluationProcessService(db).get_my_evaluations(employee_id)
 
 
+@router.get("/my-shift-lead-evaluations", response_model=list[ShiftLeadEvaluationOut])
+async def get_my_shift_lead_evaluations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ طبق درخواست صریح: سرپرست باید دسترسی ویرایش ارزیابی‌های
+    انجام‌شده توسط سرشیفت‌های واحدش را هم داشته باشد - این Endpoint
+    فهرست همان ارزیابی‌ها را برمی‌گرداند (خالی است اگر کاربر جاری اصلاً
+    سرپرست هیچ واحدی نباشد یا آن واحد سرشیفت نداشته باشد).
+    """
+    employee_id = _require_employee(current_user)
+    return await EvaluationProcessService(db).get_shift_lead_evaluations(employee_id)
+
+
 @router.post("/assignments/{assignment_id}/start", response_model=EvaluationOut)
 async def start_evaluation(
     assignment_id: int,
@@ -76,6 +92,25 @@ async def start_evaluation(
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).start_evaluation(assignment_id, employee_id)
+    except EvaluationProcessError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/evaluations/{evaluation_id}", response_model=EvaluationOut)
+async def get_evaluation(
+    evaluation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ برخلاف start_evaluation (که با assignment_id و فقط برای ارزیابِ
+    اصلی کار می‌کند)، این Endpoint مستقیماً با evaluation_id کار می‌کند
+    و به سرپرست هم اجازه می‌دهد - برای ادامه‌ی فرایند «ویرایش ارزیابی
+    سرشیفت» بعد از reopen، بدون برخورد با محدودیت مالکیت Assignment.
+    """
+    employee_id = _require_employee(current_user)
+    try:
+        return await EvaluationProcessService(db).get_evaluation(evaluation_id, employee_id)
     except EvaluationProcessError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

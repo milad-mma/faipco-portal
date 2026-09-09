@@ -15,7 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import { fetchEvaluationForm } from "../api/evaluationForms";
-import { saveEvaluationAnswers, startEvaluation, submitEvaluation } from "../api/evaluationProcess";
+import { saveEvaluationAnswers, fetchEvaluationById, startEvaluation, submitEvaluation } from "../api/evaluationProcess";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 
 function QuestionField({ question, value, onChange }) {
@@ -96,7 +96,7 @@ function QuestionField({ question, value, onChange }) {
 }
 
 export default function EvaluationFillPage() {
-  const { assignmentId } = useParams();
+  const { assignmentId, evaluationId } = useParams();
   const navigate = useNavigate();
   const [evaluation, setEvaluation] = useState(null);
   const [form, setForm] = useState(null);
@@ -106,7 +106,12 @@ export default function EvaluationFillPage() {
   const [saveMessage, setSaveMessage] = useState("");
 
   useEffect(() => {
-    startEvaluation(assignmentId)
+    // ⚠️ دو مسیر ورود به این صفحه: شروع/ادامه ارزیابی خودم (با
+    // assignmentId - از طریق start_evaluation)، یا ویرایش یک ارزیابیِ
+    // از‌قبل باز‌شده توسط سرپرست (با evaluationId مستقیم - چون سرپرست
+    // مالک خودِ Assignment نیست، فقط دسترسی ویژه‌ی ویرایش دارد).
+    const loadPromise = evaluationId ? fetchEvaluationById(evaluationId) : startEvaluation(assignmentId);
+    loadPromise
       .then(async (evalData) => {
         setEvaluation(evalData);
         const formData = await fetchEvaluationForm(evalData.form_id);
@@ -125,7 +130,7 @@ export default function EvaluationFillPage() {
         setAnswers(initialAnswers);
       })
       .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی با خطا مواجه شد."));
-  }, [assignmentId]);
+  }, [assignmentId, evaluationId]);
 
   function updateAnswer(questionId, value) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));

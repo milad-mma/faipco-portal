@@ -12,6 +12,16 @@ export async function fetchMyEvaluations() {
   return data;
 }
 
+export async function fetchMyShiftLeadEvaluations() {
+  const { data } = await apiClient.get("/performance/my-shift-lead-evaluations");
+  return data;
+}
+
+export async function fetchEvaluationById(evaluationId) {
+  const { data } = await apiClient.get(`/performance/evaluations/${evaluationId}`);
+  return data;
+}
+
 export async function startEvaluation(assignmentId) {
   const { data } = await apiClient.post(`/performance/assignments/${assignmentId}/start`);
   return data;

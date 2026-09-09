@@ -218,6 +218,7 @@ export default function App() {
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
           <Route path="/my-performance" element={<MyPerformancePage />} />
           <Route path="/my-performance/evaluate/:assignmentId" element={<EvaluationFillPage />} />
+          <Route path="/my-performance/edit-evaluation/:evaluationId" element={<EvaluationFillPage />} />
           <Route
             path="/vehicle-report"
             element={

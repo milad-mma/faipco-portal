@@ -105,6 +105,27 @@ def test_department_supervisor_evaluates_only_shift_leads_when_present():
     assert 800 not in targets and 801 not in targets and 802 not in targets
 
 
+def test_department_supervisor_also_evaluates_employees_unassigned_to_any_shift_lead():
+    """
+    طبق بازخورد صریح کاربر: اگر واحد سرشیفت دارد ولی بعضی پرسنل هنوز به
+    هیچ سرشیفتی تخصیص داده نشده‌اند، آن پرسنل نباید بی‌ارزیاب بمانند -
+    مستقیماً زیر نظر سرپرست باقی می‌مانند (علاوه بر خودِ سرشیفت‌ها).
+    """
+    targets = resolve_evaluation_target_ids(
+        evaluator_employee_id=700,
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
+        department_supervisor_of_departments=["C"],
+        shift_lead_of_shift_lead_ids=[],
+        shift_lead_employees_by_department={"C": [600, 601]},
+        all_employees_by_department={"C": [600, 601, 800, 801, 802]},
+        shift_assignments_by_shift_lead={},
+        unassigned_employees_by_department={"C": [802]},  # فقط ۸۰۲ به سرشیفتی تخصیص داده نشده
+    )
+    assert targets == {600, 601, 802}  # سرشیفت‌ها + پرسنل بدون‌تخصیص
+    assert 800 not in targets and 801 not in targets  # این‌ها به سرشیفت تخصیص داده شده‌اند - فقط سرشیفتشان آن‌ها را می‌بیند
+
+
 def test_shift_lead_evaluates_only_own_assigned_subset():
     """
     طبق تصمیم صریح کاربر: پرسنل بین سرشیفت‌ها تقسیم می‌شوند - هر سرشیفت
