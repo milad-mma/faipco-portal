@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Avatar, Box, Card, Chip, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
-import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
@@ -309,6 +309,10 @@ export default function PersonalDashboardPage() {
             flex: 1,
             borderRadius: 2,
             p: 1.75,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
             cursor: user?.has_monthly_attendance ? "pointer" : "default",
             opacity: user?.has_monthly_attendance ? 1 : 0.55,
           }}
@@ -327,13 +331,26 @@ export default function PersonalDashboardPage() {
               mb: 2,
             }}
           >
-            <HistoryOutlinedIcon fontSize="small" />
+            <FingerprintOutlinedIcon fontSize="small" />
           </Box>
           <Typography fontWeight={800} fontSize={14}>
             گزارش تردد
           </Typography>
         </Card>
-        <Card variant="outlined" sx={{ position: "relative", flex: 1, borderRadius: 2, p: 1.75, opacity: 0.55 }}>
+        <Card
+          variant="outlined"
+          sx={{
+            position: "relative",
+            flex: 1,
+            borderRadius: 2,
+            p: 1.75,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
+            opacity: 0.55,
+          }}
+        >
           <ComingSoonChip />
           <Box
             sx={{
@@ -351,7 +368,7 @@ export default function PersonalDashboardPage() {
             <CalendarMonthOutlinedIcon fontSize="small" />
           </Box>
           <Typography fontWeight={800} fontSize={14}>
-            درخواست مرخصی
+            درخواست مرخصی/ماموریت
           </Typography>
         </Card>
       </Stack>
