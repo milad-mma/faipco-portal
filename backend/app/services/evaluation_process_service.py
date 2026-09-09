@@ -235,7 +235,11 @@ class EvaluationProcessService:
             if not category.is_active:
                 continue
             for question in category.questions:
-                if question.is_active and question.required and question.id not in answers_by_question:
+                if (
+                    question.is_active
+                    and question.required
+                    and not self._answer_has_content(question, answers_by_question.get(question.id))
+                ):
                     missing_required.append(question.text)
         if missing_required:
             raise EvaluationProcessError(
@@ -272,10 +276,34 @@ class EvaluationProcessService:
         await self.db.commit()
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
 
+    def _answer_has_content(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> bool:
+        """
+        ⚠️ رفع یک نقص واقعی: بررسی «پاسخ داده شده یا نه» (هم برای الزامی
+        بودن سوال، هم برای امتیازدهی متن/تاریخ) قبلاً فقط چک می‌کرد آیا
+        اصلاً یک ردیف EvaluationAnswer برای آن سوال ذخیره شده - نه اینکه
+        محتوای واقعی معناداری دارد یا نه. چون save_answers برای هر سوال
+        (حتی با مقدار کاملاً خالی) یک ردیف می‌سازد، یک سوال متنیِ اجباری
+        می‌توانست با رشته خالی «پاسخ‌داده‌شده» حساب شود و از اعتبارسنجی
+        الزامی‌بودن رد شود. حالا محتوای واقعی هر نوع سوال جداگانه سنجیده
+        می‌شود - هم اینجا، هم در _score_single_answer، از همین یک منبع
+        واحد استفاده می‌شود.
+        """
+        if answer is None:
+            return False
+        question_type = question.question_type.value
+        if question_type in _OPTION_BASED_TYPES:
+            return bool(answer.selected_option_ids)
+        if question_type == "number":
+            return answer.number_value is not None
+        if question_type == "date":
+            return answer.date_value is not None
+        return bool(answer.text_value and answer.text_value.strip())
+
     def _score_single_answer(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> float:
         """
         ⚠️ برای انواع متن/تاریخ (که امتیازدهی مستقیم ندارند)، فقط «پاسخ
-        داده شده یا نه» سنجیده می‌شود (۱۰۰ یا ۰).
+        داده شده یا نه» سنجیده می‌شود (۱۰۰ یا ۰) - با _answer_has_content
+        (نه فقط وجود یک ردیف خالی).
 
         ⚠️ نوع «عدد» طبق تصمیم صریح: عدد واردشده مستقیماً معادل همان
         تعداد امتیاز (از حداکثر امتیازِ همان سوال، که با weight برابر
@@ -302,10 +330,7 @@ class EvaluationProcessService:
             clamped_value = min(weight, max(0.0, float(answer.number_value)))
             return (clamped_value / weight) * 100
 
-        if answer is None:
-            return 0.0
-        has_value = answer.text_value or answer.date_value is not None
-        return 100.0 if has_value else 0.0
+        return 100.0 if self._answer_has_content(question, answer) else 0.0
 
     # ---------- ویرایش یک‌بارمصرفِ ارزیابیِ ثبت‌نهایی‌شده ----------
 
