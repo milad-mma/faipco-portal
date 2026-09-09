@@ -331,16 +331,34 @@ from app.core.evaluation_rules import (  # noqa: E402
 )
 
 
-def test_single_selected_option_score():
-    assert calculate_option_based_question_score([80]) == 80
+def test_single_selected_option_score_normalized_to_100_scale():
+    """اگر گزینه‌ها از قبل روی مقیاس ۰-۱۰۰ باشند (max=100)، نتیجه بدون تغییر همان امتیاز خام است."""
+    assert calculate_option_based_question_score([80], max_option_score=100) == 80
 
 
-def test_multiple_selected_options_score_is_average():
-    assert calculate_option_based_question_score([80, 60]) == 70
+def test_multiple_selected_options_score_is_average_then_normalized():
+    assert calculate_option_based_question_score([80, 60], max_option_score=100) == 70
 
 
 def test_no_selected_options_score_is_zero():
-    assert calculate_option_based_question_score([]) == 0.0
+    assert calculate_option_based_question_score([], max_option_score=100) == 0.0
+
+
+def test_option_score_normalized_when_scale_is_not_0_to_100():
+    """
+    رفع باگ واقعی طبق گزارش کاربر: طراح فرم ممکن است گزینه‌ها را روی
+    مقیاس دیگری (نه ۰-۱۰۰) تنظیم کند - مثلاً ۰ تا ۵ (شبیه سوالات
+    امتیازی رایج). انتخاب بهترین گزینه ممکن (امتیاز خام = حداکثر) باید
+    همیشه دقیقاً ۱۰۰ (نه همان عدد خام کوچک) بدهد.
+    """
+    assert calculate_option_based_question_score([5], max_option_score=5) == 100.0
+    assert calculate_option_based_question_score([4], max_option_score=5) == 80.0
+    assert calculate_option_based_question_score([0], max_option_score=5) == 0.0
+
+
+def test_option_score_normalization_is_a_no_op_for_correctly_scaled_forms():
+    """برای فرم‌هایی که از قبل طبق قرارداد صحیح (حداکثر امتیاز گزینه=۱۰۰) ساخته شده‌اند، رفتار کاملاً بدون تغییر است."""
+    assert calculate_option_based_question_score([75], max_option_score=100) == 75.0
 
 
 def test_weighted_average_two_items():

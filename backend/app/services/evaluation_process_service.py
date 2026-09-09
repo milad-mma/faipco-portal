@@ -288,7 +288,8 @@ class EvaluationProcessService:
             if answer is None or not answer.selected_option_ids:
                 return 0.0
             option_scores = [float(o.score) for o in question.options if o.id in answer.selected_option_ids]
-            return calculate_option_based_question_score(option_scores)
+            max_option_score = max((float(o.score) for o in question.options), default=0.0)
+            return calculate_option_based_question_score(option_scores, max_option_score)
 
         if question.question_type.value == "number":
             weight = float(question.weight)

@@ -108,17 +108,32 @@ def validate_form_weights(categories: list) -> list:
     return errors
 
 
-def calculate_option_based_question_score(selected_option_scores: list) -> float:
+def calculate_option_based_question_score(selected_option_scores: list, max_option_score: float) -> float:
     """
     امتیاز یک سوال از نوع مبتنی‌بر گزینه (single_choice/multiple_choice/
-    rating/yes_no) - میانگین امتیاز گزینه‌های انتخاب‌شده. برای
-    single_choice/rating/yes_no که همیشه دقیقاً یک گزینه انتخاب می‌شود،
-    این میانگین همان یک عدد است؛ برای multiple_choice که می‌تواند چند
-    گزینه هم‌زمان انتخاب شود، میانگین معنادارترین ترکیب است.
+    rating/yes_no) - میانگین امتیاز گزینه‌های انتخاب‌شده، سپس نسبت به
+    حداکثر امتیاز ممکن همان سوال (بزرگ‌ترین امتیاز میان همه گزینه‌های
+    آن سوال) به مقیاس ۰ تا ۱۰۰ نرمالایز می‌شود.
+
+    ⚠️ رفع یک باگ واقعی طبق گزارش کاربر: قبلاً این تابع فرض می‌کرد
+    امتیاز گزینه‌ها همیشه از قبل روی مقیاس ۰ تا ۱۰۰ تنظیم شده‌اند - اگر
+    طراح فرم مقیاس دیگری انتخاب می‌کرد (مثلاً ۰ تا ۵، مشابه سوالات
+    امتیازی رایج)، حتی انتخاب «بهترین گزینه ممکن» برای همه سوالات، به‌جای
+    نتیجه‌ی نهایی نزدیک ۱۰۰، عددی تک‌رقمی (نزدیک همان مقیاس اشتباه)
+    می‌داد - چون تابع خام امتیاز گزینه را بدون نرمالایز برمی‌گرداند.
+    حالا صرف‌نظر از این‌که طراح فرم چه مقیاسی برای گزینه‌ها انتخاب کند
+    (۰-۵، ۰-۱۰، ۰-۱۰۰ یا هرچیز دیگر)، نتیجه همیشه درست نرمالایز می‌شود -
+    دقیقاً مشابه نوع «عدد» که نسبت به weight نرمالایز می‌شود.
+
+    ⚠️ برای فرم‌هایی که از قبل طبق قرارداد صحیح (حداکثر امتیاز گزینه =
+    ۱۰۰) ساخته شده بودند، این تغییر کاملاً بدون تأثیر است (چون نرمالایز
+    نسبت به ۱۰۰ همان مقدار قبلی را می‌دهد) - فقط برای فرم‌هایی که مقیاس
+    دیگری استفاده کرده بودند، رفتار درست می‌شود.
     """
-    if not selected_option_scores:
+    if not selected_option_scores or max_option_score <= 0:
         return 0.0
-    return sum(selected_option_scores) / len(selected_option_scores)
+    average_selected = sum(selected_option_scores) / len(selected_option_scores)
+    return min(100.0, (average_selected / max_option_score) * 100)
 
 
 def calculate_weighted_average(weighted_items: list) -> float:
