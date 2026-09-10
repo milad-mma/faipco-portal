@@ -19,6 +19,9 @@ import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
+import LeaveRequestPage from "./pages/LeaveRequestPage";
+import LeaveRequestStructurePage from "./pages/LeaveRequestStructurePage";
+import LeaveRequestsAdminListPage from "./pages/LeaveRequestsAdminListPage";
 import MyPerformancePage from "./pages/MyPerformancePage";
 import EvaluationFillPage from "./pages/EvaluationFillPage";
 import VehiclesReportPage from "./pages/VehiclesReportPage";
@@ -216,6 +219,23 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
+          <Route path="/leave-requests" element={<LeaveRequestPage />} />
+          <Route
+            path="/leave-requests/structure"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_sites}>
+                <LeaveRequestStructurePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/leave-requests/all"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_leave_requests || u?.can_manage_leave_requests}>
+                <LeaveRequestsAdminListPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/my-performance" element={<MyPerformancePage />} />
           <Route path="/my-performance/evaluate/:assignmentId" element={<EvaluationFillPage />} />
           <Route path="/my-performance/edit-evaluation/:evaluationId" element={<EvaluationFillPage />} />

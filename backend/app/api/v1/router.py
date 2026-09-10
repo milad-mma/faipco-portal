@@ -16,6 +16,8 @@ from app.api.v1.endpoints import (
     evaluation_structure,
     feedback,
     hr,
+    leave_requests,
+    leave_requests_admin,
     mapping_suggestions,
     monthly_attendance,
     notices,
@@ -50,3 +52,5 @@ api_router.include_router(evaluation_periods.router, prefix="/performance/period
 api_router.include_router(evaluation_forms.router, prefix="/performance/forms", tags=["performance"])
 api_router.include_router(evaluation_process.router, prefix="/performance", tags=["performance"])
 api_router.include_router(evaluation_reports.router, prefix="/performance/reports", tags=["performance"])
+api_router.include_router(leave_requests.router, prefix="/leave-requests", tags=["leave-requests"])
+api_router.include_router(leave_requests_admin.router, prefix="/leave-requests", tags=["leave-requests"])

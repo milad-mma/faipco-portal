@@ -65,5 +65,7 @@ class UserOut(BaseModel):
     can_manage_performance_forms: bool = False  # performance.forms.manage — مدیریت فرم‌های ارزیابی عملکرد
     can_manage_performance_assignments: bool = False  # performance.assignments.manage — تولید انتساب ارزیابی
     can_view_performance_reports: bool = False  # performance.reports.view — مشاهده گزارش‌های مدیریتی ارزیابی
+    can_view_leave_requests: bool = False  # leave_requests.view — مشاهده همه درخواست‌های مرخصی/ماموریت یک سایت
+    can_manage_leave_requests: bool = False  # leave_requests.manage — مشاهده و ویرایش همه درخواست‌های مرخصی/ماموریت
 
     model_config = ConfigDict(from_attributes=True)

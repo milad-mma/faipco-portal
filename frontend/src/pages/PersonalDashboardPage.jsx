@@ -339,6 +339,7 @@ export default function PersonalDashboardPage() {
         </Card>
         <Card
           variant="outlined"
+          onClick={() => navigate("/leave-requests")}
           sx={{
             position: "relative",
             flex: 1,
@@ -348,10 +349,9 @@ export default function PersonalDashboardPage() {
             flexDirection: "column",
             alignItems: "center",
             textAlign: "center",
-            opacity: 0.55,
+            cursor: "pointer",
           }}
         >
-          <ComingSoonChip />
           <Box
             sx={{
               width: 38,
