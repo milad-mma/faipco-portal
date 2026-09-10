@@ -73,6 +73,11 @@ class LeaveRequestMapping(Base, TimestampMixin):
     application_id_column: Mapped[str] = mapped_column(String(128), nullable=False, default="ApplicationId")
     source_column: Mapped[str] = mapped_column(String(128), nullable=False, default="Source")
     destination_column: Mapped[str] = mapped_column(String(128), nullable=False, default="Distination")
+    # ⚠️ اختیاری - طبق تحلیل داده واقعی، ActionId با ترکیب مرخصی/مأموریت
+    # × ساعتی/روزانه مرتبط است (نه با زیرنوع دقیق) - مقدار هر ترکیب روی
+    # خودِ LeaveRequestType تنظیم می‌شود؛ اگر ستون آن ناشناخته/غیرلازم
+    # است، این فیلد را خالی بگذارید تا اصلاً نوشته نشود.
+    action_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ActionId")
 
     # ⚠️ اختیاری - فقط برای نصب‌هایی که یک دیتابیس/جدول مشترک بین چند
     # سایت (شعبه) دارند. اگر branch_code_column خالی باشد، یعنی این سایت
@@ -106,6 +111,13 @@ class LeaveRequestType(Base, TimestampMixin):
     is_mission: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # False=مرخصی، True=مأموریت
     is_hourly: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # False=روزانه، True=ساعتی
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ⚠️ طبق تحلیل داده واقعی WF_Requests: ActionId فقط به ترکیب
+    # مرخصی/مأموریت × ساعتی/روزانه بستگی دارد (نه زیرنوع دقیق) - مقدار
+    # پیشنهادی خودکار در فرانت‌اند محاسبه می‌شود (۱=مرخصی‌روزانه،
+    # ۲=مأموریت‌روزانه، ۳=مرخصی‌ساعتی، ۹=مأموریت‌ساعتی) ولی کاملاً
+    # قابل‌ویرایش دستی است - چون ممکن است نصب‌های دیگر کدهای متفاوتی
+    # داشته باشند. اگر خالی بماند، اصلاً نوشته نمی‌شود.
+    action_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
 

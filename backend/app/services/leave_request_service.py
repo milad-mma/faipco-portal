@@ -158,6 +158,10 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
         column_map[mapping.source_column] = values["source"]
     if values.get("destination") is not None:
         column_map[mapping.destination_column] = values["destination"]
+    # ⚠️ اختیاری - طبق تحلیل داده واقعی، فقط اگر هم ستونش نگاشت شده باشد
+    # و هم خودِ نوع درخواست مقداری برایش تعیین کرده باشد، نوشته می‌شود.
+    if mapping.action_id_column and values.get("action_id") is not None:
+        column_map[mapping.action_id_column] = values["action_id"]
 
     columns_sql = ", ".join(q(col) for col in column_map)
     placeholders = ", ".join(f"%({i})s" for i in range(len(column_map)))
@@ -306,6 +310,7 @@ class LeaveRequestService:
             "persian_start_date": persian_start_date,
             "source": source if leave_type.is_mission else None,
             "destination": destination if leave_type.is_mission else None,
+            "action_id": leave_type.action_id,
         }
 
         new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)

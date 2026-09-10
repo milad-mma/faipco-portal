@@ -41,6 +41,7 @@ class LeaveRequestMappingIn(BaseModel):
     application_id_column: str = "ApplicationId"
     source_column: str = "Source"
     destination_column: str = "Distination"
+    action_id_column: str | None = "ActionId"
     branch_code_column: str | None = "BranchCode"
     branch_code_value: int | None = None
     application_id_value: int = 4
@@ -60,6 +61,7 @@ class LeaveRequestTypeIn(BaseModel):
     title: str
     is_mission: bool = False
     is_hourly: bool = False
+    action_id: int | None = None
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
@@ -67,6 +69,7 @@ class LeaveRequestTypeUpdateIn(BaseModel):
     is_mission: bool | None = None
     is_hourly: bool | None = None
     is_active: bool | None = None
+    action_id: int | None = None
 
 
 class LeaveRequestTypeOut(BaseModel):
@@ -76,6 +79,7 @@ class LeaveRequestTypeOut(BaseModel):
     is_mission: bool
     is_hourly: bool
     is_active: bool
+    action_id: int | None
 
     model_config = ConfigDict(from_attributes=True)
 

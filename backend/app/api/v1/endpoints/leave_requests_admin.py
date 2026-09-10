@@ -83,7 +83,7 @@ async def add_type(
 ):
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).add_type(
-        site_id, payload.title, payload.is_mission, payload.is_hourly
+        site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id
     )
 
 

@@ -63,6 +63,7 @@ const DEFAULT_MAPPING = {
   application_id_column: "ApplicationId",
   source_column: "Source",
   destination_column: "Distination",
+  action_id_column: "ActionId",
   branch_code_column: "BranchCode",
   branch_code_value: null,
   application_id_value: 4,
@@ -137,6 +138,7 @@ function MappingSection({ siteId, onError }) {
         ["application_id_column", "ستون ApplicationId"],
         ["source_column", "ستون مبدأ (ماموریت)"],
         ["destination_column", "ستون مقصد (ماموریت)"],
+        ["action_id_column", "ستون ActionId (اختیاری)"],
       ],
     },
   ];
@@ -210,6 +212,28 @@ function TypesSection({ siteId, onError }) {
   const [title, setTitle] = useState("");
   const [isMission, setIsMission] = useState(false);
   const [isHourly, setIsHourly] = useState(false);
+  const [actionId, setActionId] = useState("1");
+  const [actionIdTouched, setActionIdTouched] = useState(false);
+
+  // ⚠️ طبق تحلیل دقیق داده واقعی WF_Requests (۷ ردیف تستی): ActionId
+  // فقط به همین دو بعد بستگی دارد - این فقط یک پیشنهاد خودکار است؛ اگر
+  // کاربر دستی مقدار را عوض کند، دیگر خودکار به‌روزرسانی نمی‌شود.
+  function suggestActionId(mission, hourly) {
+    if (!mission && !hourly) return "1";
+    if (mission && !hourly) return "2";
+    if (!mission && hourly) return "3";
+    return "9";
+  }
+
+  function handleMissionChange(value) {
+    setIsMission(value);
+    if (!actionIdTouched) setActionId(suggestActionId(value, isHourly));
+  }
+
+  function handleHourlyChange(value) {
+    setIsHourly(value);
+    if (!actionIdTouched) setActionId(suggestActionId(isMission, value));
+  }
 
   function load() {
     fetchLeaveRequestTypes(siteId).then(setTypes);
@@ -220,10 +244,17 @@ function TypesSection({ siteId, onError }) {
   async function handleAdd() {
     if (!title.trim()) return;
     try {
-      await addLeaveRequestType(siteId, { title: title.trim(), is_mission: isMission, is_hourly: isHourly });
+      await addLeaveRequestType(siteId, {
+        title: title.trim(),
+        is_mission: isMission,
+        is_hourly: isHourly,
+        action_id: actionId === "" ? null : Number(actionId),
+      });
       setTitle("");
       setIsMission(false);
       setIsHourly(false);
+      setActionId("1");
+      setActionIdTouched(false);
       load();
     } catch (err) {
       onError(err.response?.data?.detail || "افزودن نوع درخواست با خطا مواجه شد.");
@@ -259,6 +290,7 @@ function TypesSection({ siteId, onError }) {
               <TableCell>عنوان</TableCell>
               <TableCell>نوع</TableCell>
               <TableCell>واحد زمان</TableCell>
+              <TableCell>ActionId</TableCell>
               <TableCell>فعال</TableCell>
               <TableCell>حذف</TableCell>
             </TableRow>
@@ -269,6 +301,7 @@ function TypesSection({ siteId, onError }) {
                 <TableCell>{t.title}</TableCell>
                 <TableCell>{t.is_mission ? "ماموریت" : "مرخصی"}</TableCell>
                 <TableCell>{t.is_hourly ? "ساعتی" : "روزانه"}</TableCell>
+                <TableCell>{t.action_id ?? "—"}</TableCell>
                 <TableCell>
                   <Switch checked={t.is_active} onChange={() => handleToggleActive(t)} size="small" />
                 </TableCell>
@@ -286,12 +319,23 @@ function TypesSection({ siteId, onError }) {
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField size="small" label="عنوان نوع جدید" value={title} onChange={(e) => setTitle(e.target.value)} />
         <FormControlLabel
-          control={<Switch checked={isMission} onChange={(e) => setIsMission(e.target.checked)} />}
+          control={<Switch checked={isMission} onChange={(e) => handleMissionChange(e.target.checked)} />}
           label="ماموریت (خاموش=مرخصی)"
         />
         <FormControlLabel
-          control={<Switch checked={isHourly} onChange={(e) => setIsHourly(e.target.checked)} />}
+          control={<Switch checked={isHourly} onChange={(e) => handleHourlyChange(e.target.checked)} />}
           label="ساعتی (خاموش=روزانه)"
+        />
+        <TextField
+          size="small"
+          type="number"
+          label="ActionId (پیشنهادی، قابل‌ویرایش)"
+          value={actionId}
+          onChange={(e) => {
+            setActionId(e.target.value);
+            setActionIdTouched(true);
+          }}
+          sx={{ width: 200 }}
         />
         <Button startIcon={<AddOutlinedIcon />} onClick={handleAdd} disabled={!title.trim()}>
           افزودن

@@ -55,8 +55,12 @@ class LeaveRequestStructureService:
         )
         return list(result.scalars().all())
 
-    async def add_type(self, site_id: int, title: str, is_mission: bool, is_hourly: bool) -> LeaveRequestType:
-        leave_type = LeaveRequestType(site_id=site_id, title=title, is_mission=is_mission, is_hourly=is_hourly)
+    async def add_type(
+        self, site_id: int, title: str, is_mission: bool, is_hourly: bool, action_id: int | None = None
+    ) -> LeaveRequestType:
+        leave_type = LeaveRequestType(
+            site_id=site_id, title=title, is_mission=is_mission, is_hourly=is_hourly, action_id=action_id
+        )
         self.db.add(leave_type)
         await self.db.commit()
         await self.db.refresh(leave_type)
