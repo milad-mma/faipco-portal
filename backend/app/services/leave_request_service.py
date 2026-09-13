@@ -325,9 +325,15 @@ class LeaveRequestService:
         # ورود/خروج است (Employee.Sec_No -> Sections.ManagerEmp_No) -
         # اگر جواب نداد (جدول‌ها تنظیم نشده یا پرسنل/بخش پیدا نشد)،
         # Fallback به تخصیص دستی LeaveRequestApprover.
-        cur_emp_no = await asyncio.to_thread(
-            _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
-        )
+        # ⚠️ اگر خودِ این زنجیره به خطای دیتابیس بخورد (مثلاً نام جدول/ستون
+        # اشتباه تنظیم شده)، آن را هم به‌جای ۵۰۰ عمومی، Fallback در نظر
+        # می‌گیریم - نه اینکه کل ثبت درخواست را متوقف کند.
+        try:
+            cur_emp_no = await asyncio.to_thread(
+                _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
+            )
+        except Exception:
+            cur_emp_no = None
         if cur_emp_no is None:
             approver_employee_id = await self._get_approver_employee_id(employee.department_id)
             if approver_employee_id is None:
@@ -377,7 +383,17 @@ class LeaveRequestService:
             "card_no": leave_type.card_no if leave_type.card_no is not None else 0,
         }
 
-        new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)
+        try:
+            new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)
+        except LeaveRequestError:
+            raise
+        except Exception as e:
+            # ⚠️ طبق گزارش کاربر: قبلاً هر خطای غیرمنتظره (مثلاً خطای خام
+            # درایور دیتابیس، یا خطای Trigger روی خودِ جدول WF_Requests)
+            # به‌صورت ۵۰۰ عمومی و بدون پیام مشخص برمی‌گشت - غیرقابل‌عیب‌یابی.
+            # حالا متن خطای خام (که معمولاً شامل نام ستون/محدودیت مشکل‌دار
+            # است) مستقیماً نمایش داده می‌شود تا علت واقعی مشخص شود.
+            raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
         return {"request_id": new_request_id}
 
     # ---------- خواندن/نمایش ----------
