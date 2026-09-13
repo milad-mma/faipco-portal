@@ -42,6 +42,21 @@ class LeaveRequestMappingIn(BaseModel):
     source_column: str = "Source"
     destination_column: str = "Distination"
     action_id_column: str | None = "ActionId"
+    action_lookup_table_name: str | None = "WF_Action"
+    action_lookup_id_column: str | None = "ActionId"
+    action_lookup_desc_column: str | None = "Fdesc"
+    operation_lookup_table_name: str | None = "WF_OperationTypes"
+    operation_lookup_id_column: str | None = "OperationId"
+    operation_lookup_desc_column: str | None = "Name"
+    card_lookup_table_name: str | None = "Cards"
+    card_lookup_id_column: str | None = "Card_No"
+    card_lookup_desc_column: str | None = "DefaultTitle"
+    employee_table_name: str | None = "Employee"
+    employee_emp_no_column: str | None = "Emp_No"
+    employee_sec_no_column: str | None = "Sec_No"
+    section_table_name: str | None = "Sections"
+    section_sec_no_column: str | None = "Sec_No"
+    section_manager_emp_no_column: str | None = "ManagerEmp_No"
     branch_code_column: str | None = "BranchCode"
     branch_code_value: int | None = None
     application_id_value: int = 4
@@ -62,6 +77,8 @@ class LeaveRequestTypeIn(BaseModel):
     is_mission: bool = False
     is_hourly: bool = False
     action_id: int | None = None
+    operation_id: int | None = None
+    card_no: int | None = None
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
@@ -70,6 +87,8 @@ class LeaveRequestTypeUpdateIn(BaseModel):
     is_hourly: bool | None = None
     is_active: bool | None = None
     action_id: int | None = None
+    operation_id: int | None = None
+    card_no: int | None = None
 
 
 class LeaveRequestTypeOut(BaseModel):
@@ -80,8 +99,28 @@ class LeaveRequestTypeOut(BaseModel):
     is_hourly: bool
     is_active: bool
     action_id: int | None
+    operation_id: int | None
+    card_no: int | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- جدول مرجع WF_Action (فقط‌خواندنی) ----------
+
+
+class ActionLookupItemOut(BaseModel):
+    action_id: int
+    title: str
+
+
+class OperationLookupItemOut(BaseModel):
+    operation_id: int
+    title: str
+
+
+class CardLookupItemOut(BaseModel):
+    card_no: int
+    title: str
 
 
 # ---------- تنظیمات ادمین: تأییدکننده هر واحد ----------

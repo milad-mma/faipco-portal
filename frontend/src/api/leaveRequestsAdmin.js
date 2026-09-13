@@ -54,6 +54,21 @@ export async function fetchAllLeaveRequestsForSite(siteId) {
   return data;
 }
 
+export async function fetchActionLookup(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/action-lookup`);
+  return data;
+}
+
+export async function fetchOperationLookup(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/operation-lookup`);
+  return data;
+}
+
+export async function fetchCardLookup(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/card-lookup`);
+  return data;
+}
+
 export async function adminUpdateLeaveRequest(siteId, requestId, payload) {
   const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/requests/${requestId}`, payload);
   return data;

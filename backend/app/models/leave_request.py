@@ -79,6 +79,46 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # است، این فیلد را خالی بگذارید تا اصلاً نوشته نشود.
     action_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ActionId")
 
+    # ⚠️ جدول مرجع WF_Action - فهرست رسمی ActionId ها به‌همراه عنوان
+    # فارسی‌شان (Fdesc)؛ برای این‌که هنگام ساخت «نوع درخواست» جدید، ادمین
+    # از بین همین فهرست واقعی انتخاب کند - نه حدس بزند. کاملاً اختیاری و
+    # مستقل از Mapping اصلی بالا؛ اگر table_name خالی باشد، این قابلیت
+    # غیرفعال است (فرم افزودن نوع، عادی و بدون فهرست کمکی نمایش داده می‌شود).
+    action_lookup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="WF_Action")
+    action_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ActionId")
+    action_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Fdesc")
+
+    # ⚠️ طبق تأیید صریح کاربر: OperationsID واقعاً از جدول WF_OperationTypes
+    # می‌آید (نه فقط دو مقدار ثابت ۵/۳ که قبلاً حدس زده بودیم) - این جدول
+    # مرجع، فهرست رسمی و کامل انواع عملیات را نگه می‌دارد.
+    operation_lookup_table_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="WF_OperationTypes"
+    )
+    operation_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="OperationId")
+    operation_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Name")
+
+    # ⚠️ طبق تأیید صریح کاربر: Card_No واقعاً از جدول Cards می‌آید (نه یک
+    # مقدار ثابت ۰ که قبلاً به‌عنوان جایگزین موقت نوشته می‌شد).
+    card_lookup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Cards")
+    card_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Card_No")
+    card_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="DefaultTitle")
+
+    # ⚠️ طبق تأیید صریح کاربر: تأییدکننده واقعی (CurEmp_NO) از زنجیره
+    # Employee.Sec_No -> Sections.Sec_No -> Sections.ManagerEmp_No در
+    # همان دیتابیس منبع به‌دست می‌آید - این همان منطق واقعی نرم‌افزار
+    # ورود/خروج است (تأییدشده با داده واقعی: پرسنل ۳۰۷۴۱۳ در بخش ۴، مدیر
+    # بخش=۲۹۲۹۹۴ -> CurEmp_NO=۲۹۲۹۹۴). این روش نسبت به تخصیص دستی
+    # LeaveRequestApprover اولویت دارد - آن جدول فقط برای مواردی که این
+    # زنجیره جواب ندهد (Fallback دستی)، همچنان نگه داشته شده است.
+    employee_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Employee")
+    employee_emp_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Emp_No")
+    employee_sec_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Sec_No")
+    section_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Sections")
+    section_sec_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Sec_No")
+    section_manager_emp_no_column: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="ManagerEmp_No"
+    )
+
     # ⚠️ اختیاری - فقط برای نصب‌هایی که یک دیتابیس/جدول مشترک بین چند
     # سایت (شعبه) دارند. اگر branch_code_column خالی باشد، یعنی این سایت
     # جدول اختصاصی خودش را دارد و فیلتر شعبه‌ای اعمال نمی‌شود.
@@ -118,6 +158,14 @@ class LeaveRequestType(Base, TimestampMixin):
     # قابل‌ویرایش دستی است - چون ممکن است نصب‌های دیگر کدهای متفاوتی
     # داشته باشند. اگر خالی بماند، اصلاً نوشته نمی‌شود.
     action_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ⚠️ طبق تأیید صریح کاربر: OperationsID واقعی از WF_OperationTypes
+    # انتخاب می‌شود (نه فرض ثابت ۵=مرخصی/۳=ماموریت) - اگر خالی بماند،
+    # سرویس برای سازگاری با نصب‌های قدیمی‌تر، همان فرض قبلی (۵/۳ بر
+    # اساس is_mission) را به‌کار می‌برد.
+    operation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ⚠️ طبق تأیید صریح کاربر: Card_No واقعی از جدول Cards انتخاب
+    # می‌شود - اگر خالی بماند، سرویس مقدار پیش‌فرض ۰ را می‌نویسد (رفتار قبلی).
+    card_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
 

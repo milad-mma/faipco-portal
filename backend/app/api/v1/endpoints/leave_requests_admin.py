@@ -15,7 +15,9 @@ from app.models.employee import Department
 from app.models.leave_request import LeaveRequestType
 from app.models.user import User
 from app.schemas.leave_request import (
+    ActionLookupItemOut,
     AdminUpdateRequestIn,
+    CardLookupItemOut,
     LeaveRequestApproverOut,
     LeaveRequestMappingIn,
     LeaveRequestMappingOut,
@@ -23,6 +25,7 @@ from app.schemas.leave_request import (
     LeaveRequestTypeIn,
     LeaveRequestTypeOut,
     LeaveRequestTypeUpdateIn,
+    OperationLookupItemOut,
     SetApproverIn,
 )
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
@@ -64,6 +67,52 @@ async def delete_mapping(
     await LeaveRequestStructureService(db).delete_mapping(site_id)
 
 
+@router.get("/sites/{site_id}/action-lookup", response_model=list[ActionLookupItemOut])
+async def get_action_lookup(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    فهرست رسمی WF_Action (ActionId + عنوان فارسی) - برای کمک به فرم
+    «افزودن نوع درخواست» تا ادمین به‌جای حدس‌زدن، از فهرست واقعی انتخاب
+    کند.
+    """
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestService(db).list_action_lookup(site_id)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/sites/{site_id}/operation-lookup", response_model=list[OperationLookupItemOut])
+async def get_operation_lookup(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """فهرست رسمی WF_OperationTypes (OperationId + عنوان فارسی) - برای کمک به فرم «افزودن نوع درخواست»."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestService(db).list_operation_lookup(site_id)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/sites/{site_id}/card-lookup", response_model=list[CardLookupItemOut])
+async def get_card_lookup(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """فهرست رسمی Cards (Card_No + عنوان فارسی) - برای کمک به فرم «افزودن نوع درخواست»."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestService(db).list_card_lookup(site_id)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
 @router.get("/sites/{site_id}/types", response_model=list[LeaveRequestTypeOut])
 async def list_types(
     site_id: int,
@@ -83,7 +132,7 @@ async def add_type(
 ):
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).add_type(
-        site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id
+        site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no
     )
 
 

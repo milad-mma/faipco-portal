@@ -99,6 +99,59 @@ def _branch_filter_sql(q, mapping: LeaveRequestMapping) -> tuple[str, dict]:
     return "", {}
 
 
+def _resolve_manager_emp_no_sync(conn: SiteConnection, mapping: LeaveRequestMapping, emp_no: int) -> int | None:
+    """
+    ⚠️ فقط‌خواندنی - زنجیره واقعی نرم‌افزار ورود/خروج برای تعیین
+    تأییدکننده: Employee.Sec_No -> Sections.Sec_No -> Sections.ManagerEmp_No.
+    اگر هرکدام از جدول‌های این زنجیره تنظیم نشده باشند، یا پرسنل/بخش
+    موردنظر پیدا نشود، None برمی‌گرداند - تا سرویس بتواند به Fallback
+    دستی (LeaveRequestApprover) برگردد.
+    """
+    if not (mapping.employee_table_name and mapping.section_table_name):
+        return None
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        query = f"""
+            SELECT sec.{q(mapping.section_manager_emp_no_column)} AS {q("ManagerEmpNo")}
+            FROM {q(mapping.employee_table_name)} emp
+            JOIN {q(mapping.section_table_name)} sec
+                ON emp.{q(mapping.employee_sec_no_column)} = sec.{q(mapping.section_sec_no_column)}
+            WHERE emp.{q(mapping.employee_emp_no_column)} = %(emp_no)s
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+        with _dict_cursor(connection, conn.db_type) as cur:
+            cur.execute(query, {"emp_no": emp_no})
+            row = cur.fetchone()
+            if not row or row.get("ManagerEmpNo") is None:
+                return None
+            return int(row["ManagerEmpNo"])
+    finally:
+        connection.close()
+
+
+def _select_lookup_sync(conn: SiteConnection, table_name: str, id_column: str, desc_column: str) -> list[dict]:
+    """
+    ⚠️ فقط‌خواندنی - یک تابع عمومی برای خواندن هر جدول مرجعِ ساده (یک
+    ستون شناسه عددی + یک ستون عنوان فارسی) در دیتابیس منبع سایت - طبق
+    درخواست صریح کاربر، سه جدول این الگو را دارند: WF_Action، Cards،
+    WF_OperationTypes. کاملاً مستقل از جدول اصلی WF_Requests - فقط برای
+    کمک به پرکردن فرم «افزودن نوع درخواست» در پنل ادمین استفاده می‌شود.
+    """
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        query = f"""
+            SELECT {q(id_column)} AS {q("LookupId")}, {q(desc_column)} AS {q("LookupTitle")}
+            FROM {q(table_name)}
+            ORDER BY {q(id_column)} ASC
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+        with _dict_cursor(connection, conn.db_type) as cur:
+            cur.execute(query)
+            return list(cur.fetchall())
+    finally:
+        connection.close()
+
+
 def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, where_sql: str, params: dict) -> list[dict]:
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     branch_sql, branch_params = _branch_filter_sql(q, mapping)
@@ -139,7 +192,7 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
     column_map = {
         mapping.emp_no_column: values["emp_no"],
         mapping.submitting_date_column: values["submitting_date"],
-        mapping.card_no_column: 0,  # ⚠️ معنای دقیق نامشخص - طبق تصمیم صریح همیشه ۰
+        mapping.card_no_column: values.get("card_no", 0),  # ⚠️ طبق تأیید کاربر از جدول Cards می‌آید - پیش‌فرض ۰ اگر نوع درخواست مقداری تعیین نکرده باشد
         mapping.start_date_column: values["start_date"],
         mapping.end_date_column: values.get("end_date"),
         mapping.start_hour_column: values.get("start_hour"),
@@ -268,14 +321,24 @@ class LeaveRequestService:
 
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
 
-        approver_employee_id = await self._get_approver_employee_id(employee.department_id)
-        if approver_employee_id is None:
-            raise LeaveRequestError(
-                "برای واحد سازمانی شما هنوز تأییدکننده مرخصی/ماموریت تعیین نشده - لطفاً با منابع انسانی هماهنگ کنید"
-            )
-        approver = await self.db.get(Employee, approver_employee_id)
-        if approver is None:
-            raise LeaveRequestError("تأییدکننده این واحد یافت نشد")
+        # ⚠️ طبق تأیید صریح کاربر: روش اول، همان زنجیره واقعی نرم‌افزار
+        # ورود/خروج است (Employee.Sec_No -> Sections.ManagerEmp_No) -
+        # اگر جواب نداد (جدول‌ها تنظیم نشده یا پرسنل/بخش پیدا نشد)،
+        # Fallback به تخصیص دستی LeaveRequestApprover.
+        cur_emp_no = await asyncio.to_thread(
+            _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
+        )
+        if cur_emp_no is None:
+            approver_employee_id = await self._get_approver_employee_id(employee.department_id)
+            if approver_employee_id is None:
+                raise LeaveRequestError(
+                    "نتوانستیم تأییدکننده این پرسنل را (نه از زنجیره سازمانی، نه از تخصیص دستی) پیدا کنیم - "
+                    "لطفاً با منابع انسانی هماهنگ کنید"
+                )
+            approver = await self.db.get(Employee, approver_employee_id)
+            if approver is None:
+                raise LeaveRequestError("تأییدکننده این واحد یافت نشد")
+            cur_emp_no = _to_personnel_code_int(approver)
 
         try:
             if leave_type.is_hourly:
@@ -304,13 +367,14 @@ class LeaveRequestService:
             "start_hour": start_hour if leave_type.is_hourly else None,
             "end_hour": end_hour if leave_type.is_hourly else None,
             "duration": duration,
-            "operations_id": 3 if leave_type.is_mission else 5,
+            "operations_id": leave_type.operation_id if leave_type.operation_id is not None else (3 if leave_type.is_mission else 5),
             "description": f"{leave_type.title} — {description}" if description else leave_type.title,
             "cur_emp_no": _to_personnel_code_int(approver),
             "persian_start_date": persian_start_date,
             "source": source if leave_type.is_mission else None,
             "destination": destination if leave_type.is_mission else None,
             "action_id": leave_type.action_id,
+            "card_no": leave_type.card_no if leave_type.card_no is not None else 0,
         }
 
         new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)
@@ -343,6 +407,53 @@ class LeaveRequestService:
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
         return [_normalize_row(row) for row in rows]
+
+    async def _list_lookup(
+        self, site_id: int, table_name: str | None, id_column: str | None, desc_column: str | None
+    ) -> list[dict]:
+        """
+        ⚠️ تابع کمکی عمومی - طبق درخواست صریح کاربر، سه جدول مرجع
+        (WF_Action، WF_OperationTypes، Cards) دقیقاً همین الگو را دارند:
+        یک ستون شناسه + یک ستون عنوان فارسی. اگر برای این سایت تنظیم
+        نشده باشد (نام جدول خالی)، فهرست خالی برمی‌گرداند - نه خطا؛ چون
+        کاملاً اختیاری است.
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        if not table_name:
+            return []
+        rows = await asyncio.to_thread(_select_lookup_sync, site_connection, table_name, id_column, desc_column)
+        return [
+            {"lookup_id": row.get("LookupId"), "title": row.get("LookupTitle")}
+            for row in rows
+            if row.get("LookupId") is not None
+        ]
+
+    async def list_action_lookup(self, site_id: int) -> list[dict]:
+        """فهرست رسمی WF_Action (ActionId + عنوان فارسی) - برای کمک به پنل ادمین هنگام ساخت «نوع درخواست» جدید."""
+        mapping, _ = await self._get_mapping_and_connection(site_id)
+        items = await self._list_lookup(
+            site_id, mapping.action_lookup_table_name, mapping.action_lookup_id_column, mapping.action_lookup_desc_column
+        )
+        return [{"action_id": item["lookup_id"], "title": item["title"]} for item in items]
+
+    async def list_operation_lookup(self, site_id: int) -> list[dict]:
+        """فهرست رسمی WF_OperationTypes (OperationId + عنوان فارسی)."""
+        mapping, _ = await self._get_mapping_and_connection(site_id)
+        items = await self._list_lookup(
+            site_id,
+            mapping.operation_lookup_table_name,
+            mapping.operation_lookup_id_column,
+            mapping.operation_lookup_desc_column,
+        )
+        return [{"operation_id": item["lookup_id"], "title": item["title"]} for item in items]
+
+    async def list_card_lookup(self, site_id: int) -> list[dict]:
+        """فهرست رسمی Cards (Card_No + عنوان فارسی)."""
+        mapping, _ = await self._get_mapping_and_connection(site_id)
+        items = await self._list_lookup(
+            site_id, mapping.card_lookup_table_name, mapping.card_lookup_id_column, mapping.card_lookup_desc_column
+        )
+        return [{"card_no": item["lookup_id"], "title": item["title"]} for item in items]
 
     # ---------- تصمیم‌گیری (تأییدکننده) ----------
 

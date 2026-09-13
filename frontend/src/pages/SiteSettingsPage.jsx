@@ -32,6 +32,11 @@ import {
   upsertSiteConnection,
   upsertSiteMapping,
 } from "../api/sites";
+import {
+  deleteLeaveRequestMapping,
+  fetchLeaveRequestMapping,
+  saveLeaveRequestMapping,
+} from "../api/leaveRequestsAdmin";
 import SchemaDiscoveryDialog from "../components/SchemaDiscoveryDialog";
 
 const DB_TYPES = [
@@ -86,12 +91,55 @@ const EMPTY_ATTENDANCE_MAPPING = {
   calendar_month_column: "",
   calendar_day_column_prefix: "",
 };
+const EMPTY_LEAVE_MAPPING = {
+  table_name: "WF_Requests",
+  request_id_column: "RequestId",
+  emp_no_column: "Emp_No",
+  submitting_date_column: "SubmittingDate",
+  card_no_column: "Card_No",
+  start_date_column: "StartDate",
+  end_date_column: "EndDate",
+  start_hour_column: "StartHour",
+  end_hour_column: "EndHour",
+  duration_column: "Duration",
+  is_final_approved_column: "IsFinalApproved",
+  approval_by_manager_column: "ApprovalByManagerEmp_No",
+  approval_date_column: "ApprovalDate",
+  operations_id_column: "OperationsID",
+  description_column: "Description",
+  cur_emp_no_column: "CurEmp_NO",
+  manager_idea_column: "ManagerIdea",
+  is_first_time_shift_column: "IsFirstTimeShift",
+  persian_start_date_column: "PersianStartDate",
+  application_id_column: "ApplicationId",
+  source_column: "Source",
+  destination_column: "Distination",
+  branch_code_column: "BranchCode",
+  branch_code_value: null,
+  application_id_value: 4,
+  action_id_column: "ActionId",
+  action_lookup_table_name: "WF_Action",
+  action_lookup_id_column: "ActionId",
+  action_lookup_desc_column: "Fdesc",
+  operation_lookup_table_name: "WF_OperationTypes",
+  operation_lookup_id_column: "OperationId",
+  operation_lookup_desc_column: "Name",
+  card_lookup_table_name: "Cards",
+  card_lookup_id_column: "Card_No",
+  card_lookup_desc_column: "DefaultTitle",
+  employee_table_name: "Employee",
+  employee_emp_no_column: "Emp_No",
+  employee_sec_no_column: "Sec_No",
+  section_table_name: "Sections",
+  section_sec_no_column: "Sec_No",
+  section_manager_emp_no_column: "ManagerEmp_No",
+};
 
 export default function SiteSettingsPage() {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = ["mapping", "gps", "attendance-mapping"].includes(searchParams.get("tab"))
+  const initialTab = ["mapping", "gps", "attendance-mapping", "leave-mapping"].includes(searchParams.get("tab"))
     ? searchParams.get("tab")
     : "connection";
 
@@ -100,6 +148,10 @@ export default function SiteSettingsPage() {
   const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] = useState(false);
   const [isSavingAttendanceMapping, setIsSavingAttendanceMapping] = useState(false);
   const [attendanceMappingResult, setAttendanceMappingResult] = useState(null); // { success, message } | null
+  const [leaveMappingForm, setLeaveMappingForm] = useState(EMPTY_LEAVE_MAPPING);
+  const [hasExistingLeaveMapping, setHasExistingLeaveMapping] = useState(false);
+  const [isSavingLeaveMapping, setIsSavingLeaveMapping] = useState(false);
+  const [leaveMappingResult, setLeaveMappingResult] = useState(null); // { success, message } | null
   const [tab, setTab] = useState(initialTab);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -122,7 +174,8 @@ export default function SiteSettingsPage() {
       fetchSiteConnection(siteId).catch(() => null),
       fetchSiteMapping(siteId).catch(() => null),
       fetchSiteAttendanceMapping(siteId).catch(() => null),
-    ]).then(([siteData, connection, mapping, attendanceMapping]) => {
+      fetchLeaveRequestMapping(siteId).catch(() => null),
+    ]).then(([siteData, connection, mapping, attendanceMapping, leaveMapping]) => {
       setSite(siteData || null);
       if (siteData) {
         setGpsForm({
@@ -185,6 +238,10 @@ export default function SiteSettingsPage() {
           calendar_day_column_prefix: attendanceMapping.calendar_day_column_prefix || "",
         });
         setHasExistingAttendanceMapping(true);
+      }
+      if (leaveMapping) {
+        setLeaveMappingForm({ ...EMPTY_LEAVE_MAPPING, ...leaveMapping });
+        setHasExistingLeaveMapping(true);
       }
       setIsLoading(false);
     });
@@ -323,6 +380,42 @@ export default function SiteSettingsPage() {
     }
   }
 
+  async function handleSaveLeaveMapping() {
+    setLeaveMappingResult(null);
+    setIsSavingLeaveMapping(true);
+    try {
+      await saveLeaveRequestMapping(siteId, leaveMappingForm);
+      setHasExistingLeaveMapping(true);
+      setLeaveMappingResult({ success: true, message: "نگاشت مرخصی/ماموریت ذخیره شد." });
+    } catch (err) {
+      setLeaveMappingResult({
+        success: false,
+        message: err.response?.data?.detail || "ذخیره نگاشت مرخصی/ماموریت با خطا مواجه شد.",
+      });
+    } finally {
+      setIsSavingLeaveMapping(false);
+    }
+  }
+
+  async function handleDeleteLeaveMapping() {
+    if (!window.confirm("نگاشت مرخصی/ماموریت این سایت حذف شود؟ ثبت درخواست جدید برای پرسنل این سایت دیگر ممکن نخواهد بود."))
+      return;
+    setIsSavingLeaveMapping(true);
+    try {
+      await deleteLeaveRequestMapping(siteId);
+      setLeaveMappingForm(EMPTY_LEAVE_MAPPING);
+      setHasExistingLeaveMapping(false);
+      setLeaveMappingResult({ success: true, message: "نگاشت مرخصی/ماموریت حذف شد." });
+    } catch (err) {
+      setLeaveMappingResult({
+        success: false,
+        message: err.response?.data?.detail || "حذف نگاشت مرخصی/ماموریت با خطا مواجه شد.",
+      });
+    } finally {
+      setIsSavingLeaveMapping(false);
+    }
+  }
+
   /**
    * پیشنهاد مرحله دوم (بر اساس نام ستون) را که کاربر در
    * SchemaDiscoveryDialog تأیید کرده، روی فرم Mapping مربوطه اعمال
@@ -455,6 +548,7 @@ export default function SiteSettingsPage() {
           <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
           <Tab value="gps" label="موقعیت GPS" disabled={isSaving} />
           <Tab value="attendance-mapping" label="نگاشت تردد" disabled={isSaving} />
+          <Tab value="leave-mapping" label="نگاشت مرخصی/ماموریت" disabled={isSaving} />
         </Tabs>
 
         {tab === "connection" && (
@@ -988,6 +1082,237 @@ export default function SiteSettingsPage() {
                   startIcon={<DeleteOutlineIcon />}
                   onClick={handleDeleteAttendanceMapping}
                   disabled={isSavingAttendanceMapping}
+                >
+                  حذف نگاشت
+                </Button>
+              )}
+            </Stack>
+          </Stack>
+        )}
+
+        {tab === "leave-mapping" && (
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              نام جدول/ستون‌های جدول خام WF_Requests این سایت، به‌همراه جدول‌های مرجع مرتبط - مقادیر
+              پیش‌فرض دقیقاً مطابق نمونه‌ی بررسی‌شده است؛ فقط اگر نصب شما نام‌گذاری متفاوتی دارد تغییر
+              دهید.
+            </Typography>
+
+            <Divider textAlign="right">اتصال پایه</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["table_name", "نام جدول"],
+                ["request_id_column", "ستون شناسه درخواست"],
+                ["emp_no_column", "ستون کد پرسنلی"],
+                ["submitting_date_column", "ستون تاریخ ثبت"],
+                ["card_no_column", "ستون Card_No"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">تاریخ/ساعت درخواست</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["start_date_column", "ستون تاریخ شروع"],
+                ["end_date_column", "ستون تاریخ پایان"],
+                ["start_hour_column", "ستون ساعت شروع"],
+                ["end_hour_column", "ستون ساعت پایان"],
+                ["duration_column", "ستون مدت"],
+                ["persian_start_date_column", "ستون تاریخ شمسی شروع"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">تأیید/رد</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["is_final_approved_column", "ستون تأیید نهایی"],
+                ["approval_by_manager_column", "ستون تأییدکننده"],
+                ["approval_date_column", "ستون تاریخ تأیید"],
+                ["cur_emp_no_column", "ستون تأییدکننده فعلی"],
+                ["manager_idea_column", "ستون نظر تأییدکننده"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">سایر</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["operations_id_column", "ستون نوع عملیات"],
+                ["description_column", "ستون توضیحات"],
+                ["is_first_time_shift_column", "ستون IsFirstTimeShift"],
+                ["application_id_column", "ستون ApplicationId"],
+                ["source_column", "ستون مبدأ (ماموریت)"],
+                ["destination_column", "ستون مقصد (ماموریت)"],
+                ["action_id_column", "ستون ActionId (اختیاری)"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">دیتابیس/جدول مشترک بین چند سایت (اختیاری)</Divider>
+            <Stack direction="row" spacing={1.5}>
+              <TextField
+                size="small"
+                label="ستون BranchCode"
+                value={leaveMappingForm.branch_code_column || ""}
+                onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, branch_code_column: e.target.value || null })}
+                disabled={isSavingLeaveMapping}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="مقدار BranchCode این سایت"
+                value={leaveMappingForm.branch_code_value ?? ""}
+                onChange={(e) =>
+                  setLeaveMappingForm({
+                    ...leaveMappingForm,
+                    branch_code_value: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                disabled={isSavingLeaveMapping}
+              />
+            </Stack>
+
+            <Divider textAlign="right">جدول مرجع WF_Action (اختیاری - پیشنهاد خودکار نوع‌ها)</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["action_lookup_table_name", "نام جدول مرجع (WF_Action)"],
+                ["action_lookup_id_column", "ستون ActionId در جدول مرجع"],
+                ["action_lookup_desc_column", "ستون عنوان فارسی (Fdesc)"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">جدول مرجع WF_OperationTypes (اختیاری - نوع عملیات واقعی)</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["operation_lookup_table_name", "نام جدول مرجع (WF_OperationTypes)"],
+                ["operation_lookup_id_column", "ستون OperationId در جدول مرجع"],
+                ["operation_lookup_desc_column", "ستون عنوان فارسی (Name)"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">جدول مرجع Cards (اختیاری - Card_No واقعی)</Divider>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["card_lookup_table_name", "نام جدول مرجع (Cards)"],
+                ["card_lookup_id_column", "ستون Card_No در جدول مرجع"],
+                ["card_lookup_desc_column", "ستون عنوان فارسی (DefaultTitle)"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            <Divider textAlign="right">تعیین خودکار تأییدکننده (زنجیره پرسنل ← بخش ← مدیر بخش)</Divider>
+            <Typography variant="caption" color="text.secondary">
+              اگر این جدول‌ها تنظیم باشند، سیستم به‌طور خودکار مدیر بخشِ پرسنلِ درخواست‌دهنده را
+              به‌عنوان تأییدکننده تعیین می‌کند - دقیقاً مطابق منطق واقعی نرم‌افزار ورود/خروج. اگر خالی
+              بماند یا پیدا نشود، به تخصیص دستی (تب «تأییدکننده هر واحد» در تنظیمات درخواست
+              مرخصی/ماموریت) برمی‌گردد.
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["employee_table_name", "نام جدول پرسنل (Employee)"],
+                ["employee_emp_no_column", "ستون کد پرسنلی در جدول پرسنل"],
+                ["employee_sec_no_column", "ستون شماره بخش در جدول پرسنل"],
+                ["section_table_name", "نام جدول بخش‌ها (Sections)"],
+                ["section_sec_no_column", "ستون شماره بخش در جدول بخش‌ها"],
+                ["section_manager_emp_no_column", "ستون کد پرسنلی مدیر بخش"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+            </Stack>
+
+            {leaveMappingResult && (
+              <Alert severity={leaveMappingResult.success ? "success" : "error"}>{leaveMappingResult.message}</Alert>
+            )}
+            <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
+              <Button
+                variant="contained"
+                startIcon={isSavingLeaveMapping ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                onClick={handleSaveLeaveMapping}
+                disabled={isSavingLeaveMapping}
+              >
+                {isSavingLeaveMapping ? "در حال ذخیره..." : "ذخیره"}
+              </Button>
+              {hasExistingLeaveMapping && (
+                <Button
+                  color="error"
+                  variant="outlined"
+                  startIcon={<DeleteOutlineIcon />}
+                  onClick={handleDeleteLeaveMapping}
+                  disabled={isSavingLeaveMapping}
                 >
                   حذف نگاشت
                 </Button>
