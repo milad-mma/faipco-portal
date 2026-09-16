@@ -152,6 +152,33 @@ def _select_lookup_sync(conn: SiteConnection, table_name: str, id_column: str, d
         connection.close()
 
 
+def _select_card_lookup_sync(conn: SiteConnection, mapping: LeaveRequestMapping) -> list[dict]:
+    """
+    ⚠️ فقط‌خواندنی - کشف حیاتی تأییدشده با بررسی مستقیم دیتابیس Kara:
+    ActionId هیچ‌وقت مستقل انتخاب نمی‌شود - همیشه دقیقاً برابر
+    Cards.WF_ActionID همان کارتی است که Card_No به آن اشاره می‌کند. این
+    تابع (برخلاف _select_lookup_sync عمومی) همین ستون سوم (ActionId
+    مرتبط) را هم برمی‌گرداند - تا انتخاب یک کارت در پنل ادمین، ActionId
+    را هم خودکار و درست پر کند.
+    """
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        query = f"""
+            SELECT
+                {q(mapping.card_lookup_id_column)} AS {q("LookupId")},
+                {q(mapping.card_lookup_desc_column)} AS {q("LookupTitle")},
+                {q(mapping.card_lookup_action_id_column)} AS {q("LinkedActionId")}
+            FROM {q(mapping.card_lookup_table_name)}
+            ORDER BY {q(mapping.card_lookup_id_column)} ASC
+        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+        with _dict_cursor(connection, conn.db_type) as cur:
+            cur.execute(query)
+            return list(cur.fetchall())
+    finally:
+        connection.close()
+
+
 def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, where_sql: str, params: dict) -> list[dict]:
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     branch_sql, branch_params = _branch_filter_sql(q, mapping)
@@ -318,6 +345,17 @@ class LeaveRequestService:
         leave_type = await self.db.get(LeaveRequestType, leave_type_id)
         if leave_type is None or not leave_type.is_active or leave_type.site_id != employee.site_id:
             raise LeaveRequestError("نوع درخواست موردنظر یافت نشد")
+        # ⚠️ رفع باگ واقعی گزارش‌شده: قبلاً وقتی card_no این نوع تنظیم نشده
+        # بود، مقدار پیش‌فرض ۰ نوشته می‌شد - اما Card_No در WF_Requests یک
+        # محدودیت Foreign Key واقعی به جدول Cards دارد (تأییدشده با بررسی
+        # مستقیم دیتابیس) و مقدار ۰ در آن جدول وجود ندارد - هر INSERT با
+        # آن شکست می‌خورد. حالا به‌جای نوشتن یک مقدار نامعتبر، خطای روشن
+        # می‌دهیم تا ادمین این نوع را کامل کند.
+        if leave_type.card_no is None:
+            raise LeaveRequestError(
+                f"برای نوع «{leave_type.title}» هنوز Card_No تنظیم نشده - لطفاً از تنظیمات "
+                "درخواست مرخصی/ماموریت، یک کارت از فهرست رسمی Cards برای این نوع انتخاب کنید"
+            )
 
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
 
@@ -380,7 +418,7 @@ class LeaveRequestService:
             "source": source if leave_type.is_mission else None,
             "destination": destination if leave_type.is_mission else None,
             "action_id": leave_type.action_id,
-            "card_no": leave_type.card_no if leave_type.card_no is not None else 0,
+            "card_no": leave_type.card_no,  # ⚠️ همیشه معتبر است - بالاتر تضمین شد (None بودن آن خطا می‌دهد)
         }
 
         try:
@@ -464,12 +502,22 @@ class LeaveRequestService:
         return [{"operation_id": item["lookup_id"], "title": item["title"]} for item in items]
 
     async def list_card_lookup(self, site_id: int) -> list[dict]:
-        """فهرست رسمی Cards (Card_No + عنوان فارسی)."""
-        mapping, _ = await self._get_mapping_and_connection(site_id)
-        items = await self._list_lookup(
-            site_id, mapping.card_lookup_table_name, mapping.card_lookup_id_column, mapping.card_lookup_desc_column
-        )
-        return [{"card_no": item["lookup_id"], "title": item["title"]} for item in items]
+        """
+        فهرست رسمی Cards (Card_No + عنوان فارسی + ActionId مرتبط). برخلاف
+        list_action_lookup/list_operation_lookup (که از تابع عمومی
+        _list_lookup استفاده می‌کنند)، این یکی از _select_card_lookup_sync
+        اختصاصی استفاده می‌کند - چون کشف شد ActionId همیشه از همین کارت
+        مشتق می‌شود، نه مستقل.
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        if not mapping.card_lookup_table_name:
+            return []
+        rows = await asyncio.to_thread(_select_card_lookup_sync, site_connection, mapping)
+        return [
+            {"card_no": row.get("LookupId"), "title": row.get("LookupTitle"), "action_id": row.get("LinkedActionId")}
+            for row in rows
+            if row.get("LookupId") is not None
+        ]
 
     # ---------- تصمیم‌گیری (تأییدکننده) ----------
 

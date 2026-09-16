@@ -102,6 +102,14 @@ class LeaveRequestMapping(Base, TimestampMixin):
     card_lookup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Cards")
     card_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Card_No")
     card_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="DefaultTitle")
+    # ⚠️ کشف حیاتی (تأییدشده با بررسی مستقیم دیتابیس Kara): ActionId هیچ‌وقت
+    # مستقل انتخاب نمی‌شود - همیشه دقیقاً برابر Cards.WF_ActionID همان
+    # کارتی است که Card_No به آن اشاره می‌کند (تأییدشده با تطبیق کامل هر
+    # ۷ رکورد واقعی WF_Requests). این ستون برای همین لینک استفاده می‌شود -
+    # تا هنگام انتخاب یک کارت در پنل ادمین، ActionId خودکار و درست پر شود.
+    card_lookup_action_id_column: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="WF_ActionID"
+    )
 
     # ⚠️ طبق تأیید صریح کاربر: تأییدکننده واقعی (CurEmp_NO) از زنجیره
     # Employee.Sec_No -> Sections.Sec_No -> Sections.ManagerEmp_No در

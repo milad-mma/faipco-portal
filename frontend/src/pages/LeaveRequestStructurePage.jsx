@@ -222,11 +222,26 @@ function TypesSection({ siteId, onError }) {
             options={cardLookup}
             getOptionLabel={(item) => `${item.title} (Card_No=${item.card_no})`}
             onChange={(_, item) => {
-              if (item) setCardNo(String(item.card_no));
+              if (item) {
+                setCardNo(String(item.card_no));
+                // ⚠️ کشف حیاتی (تأییدشده با بررسی مستقیم دیتابیس): ActionId
+                // همیشه از همین کارت مشتق می‌شود، نه مستقل - با انتخاب
+                // کارت، خودکار هم‌زمان پر می‌شود.
+                if (item.action_id != null) {
+                  setActionId(String(item.action_id));
+                  setActionIdTouched(true);
+                }
+              }
             }}
-            renderInput={(params) => <TextField {...params} size="small" label="انتخاب از فهرست رسمی Cards (اختیاری)" />}
+            renderInput={(params) => (
+              <TextField {...params} size="small" label="انتخاب کارت از فهرست رسمی Cards (الزامی)" />
+            )}
             sx={{ maxWidth: 400 }}
           />
+          <Typography variant="caption" color="text.secondary">
+            بدون انتخاب کارت، ثبت درخواست از این نوع با خطا مواجه می‌شود (Card_No در WF_Requests به
+            جدول Cards وصل است) - با انتخاب کارت، ActionId هم خودکار درست پر می‌شود.
+          </Typography>
         </Box>
       )}
 

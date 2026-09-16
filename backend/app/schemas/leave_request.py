@@ -51,6 +51,7 @@ class LeaveRequestMappingIn(BaseModel):
     card_lookup_table_name: str | None = "Cards"
     card_lookup_id_column: str | None = "Card_No"
     card_lookup_desc_column: str | None = "DefaultTitle"
+    card_lookup_action_id_column: str | None = "WF_ActionID"
     employee_table_name: str | None = "Employee"
     employee_emp_no_column: str | None = "Emp_No"
     employee_sec_no_column: str | None = "Sec_No"
@@ -121,6 +122,7 @@ class OperationLookupItemOut(BaseModel):
 class CardLookupItemOut(BaseModel):
     card_no: int
     title: str
+    action_id: int | None = None
 
 
 # ---------- تنظیمات ادمین: تأییدکننده هر واحد ----------
