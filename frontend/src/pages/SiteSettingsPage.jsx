@@ -133,6 +133,7 @@ const EMPTY_LEAVE_MAPPING = {
   section_table_name: "Sections",
   section_sec_no_column: "Sec_No",
   section_manager_emp_no_column: "ManagerEmp_No",
+  section_parent_column: "TFather",
 };
 
 export default function SiteSettingsPage() {
@@ -1269,9 +1270,10 @@ export default function SiteSettingsPage() {
             <Divider textAlign="right">تعیین خودکار تأییدکننده (زنجیره پرسنل ← بخش ← مدیر بخش)</Divider>
             <Typography variant="caption" color="text.secondary">
               اگر این جدول‌ها تنظیم باشند، سیستم به‌طور خودکار مدیر بخشِ پرسنلِ درخواست‌دهنده را
-              به‌عنوان تأییدکننده تعیین می‌کند - دقیقاً مطابق منطق واقعی نرم‌افزار ورود/خروج. اگر خالی
-              بماند یا پیدا نشود، به تخصیص دستی (تب «تأییدکننده هر واحد» در تنظیمات درخواست
-              مرخصی/ماموریت) برمی‌گردد.
+              به‌عنوان تأییدکننده تعیین می‌کند - دقیقاً مطابق منطق واقعی نرم‌افزار ورود/خروج. اگر
+              کسی خودش مدیر بخش خودش باشد (نمی‌تواند تأییدکننده خودش باشد)، خودکار به مدیرِ بخش
+              بالادستی صعود می‌کند. اگر خالی بماند یا پیدا نشود، به تخصیص دستی (تب «تأییدکننده هر
+              واحد» در تنظیمات درخواست مرخصی/ماموریت) برمی‌گردد.
             </Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
@@ -1281,6 +1283,7 @@ export default function SiteSettingsPage() {
                 ["section_table_name", "نام جدول بخش‌ها (Sections)"],
                 ["section_sec_no_column", "ستون شماره بخش در جدول بخش‌ها"],
                 ["section_manager_emp_no_column", "ستون کد پرسنلی مدیر بخش"],
+                ["section_parent_column", "ستون بخش بالادستی (برای صعود وقتی مدیر خودشه)"],
               ].map(([key, label]) => (
                 <TextField
                   key={key}

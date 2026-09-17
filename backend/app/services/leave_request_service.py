@@ -103,28 +103,59 @@ def _resolve_manager_emp_no_sync(conn: SiteConnection, mapping: LeaveRequestMapp
     """
     ⚠️ فقط‌خواندنی - زنجیره واقعی نرم‌افزار ورود/خروج برای تعیین
     تأییدکننده: Employee.Sec_No -> Sections.Sec_No -> Sections.ManagerEmp_No.
+
+    ⚠️ کشف حیاتی (تأییدشده با مقایسه مستقیم با نتیجه واقعی کاراوب): اگر
+    مدیرِ به‌دست‌آمده خودِ همان درخواست‌دهنده باشد (یعنی فرد، مدیر بخش
+    خودش است - مثلاً سرپرست/رئیس همان واحد)، هیچ‌کس نمی‌تواند تأییدکننده
+    خودش باشد - باید از طریق ستون section_parent_column (TFather) به
+    بخش بالادستی صعود کرد و دوباره همین بررسی را تکرار کرد، تا مدیرِ
+    متفاوتی پیدا شود یا به ریشه سلسله‌مراتب برسیم.
+
     اگر هرکدام از جدول‌های این زنجیره تنظیم نشده باشند، یا پرسنل/بخش
-    موردنظر پیدا نشود، None برمی‌گرداند - تا سرویس بتواند به Fallback
-    دستی (LeaveRequestApprover) برگردد.
+    موردنظر پیدا نشود، یا حتی در ریشه سلسله‌مراتب هم مدیرِ متفاوتی پیدا
+    نشود، None برمی‌گرداند - تا سرویس بتواند به Fallback دستی
+    (LeaveRequestApprover) برگردد.
     """
     if not (mapping.employee_table_name and mapping.section_table_name):
         return None
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     connection = _connect(conn)
     try:
-        query = f"""
-            SELECT sec.{q(mapping.section_manager_emp_no_column)} AS {q("ManagerEmpNo")}
-            FROM {q(mapping.employee_table_name)} emp
-            JOIN {q(mapping.section_table_name)} sec
-                ON emp.{q(mapping.employee_sec_no_column)} = sec.{q(mapping.section_sec_no_column)}
-            WHERE emp.{q(mapping.employee_emp_no_column)} = %(emp_no)s
-        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
         with _dict_cursor(connection, conn.db_type) as cur:
-            cur.execute(query, {"emp_no": emp_no})
+            employee_query = f"""
+                SELECT {q(mapping.employee_sec_no_column)} AS {q("SecNo")}
+                FROM {q(mapping.employee_table_name)}
+                WHERE {q(mapping.employee_emp_no_column)} = %(emp_no)s
+            """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+            cur.execute(employee_query, {"emp_no": emp_no})
             row = cur.fetchone()
-            if not row or row.get("ManagerEmpNo") is None:
+            if not row or row.get("SecNo") is None:
                 return None
-            return int(row["ManagerEmpNo"])
+            current_sec_no = row["SecNo"]
+
+            # ⚠️ سقف ۱۰ سطح صعود - صرفاً محافظتی در برابر داده حلقه‌ای
+            # نادرست (Sec_No که به خودش یا حلقه‌ای برمی‌گردد)؛ سلسله‌مراتب
+            # واقعی سازمانی هیچ‌وقت این‌قدر عمیق نیست.
+            for _ in range(10):
+                section_query = f"""
+                    SELECT
+                        {q(mapping.section_manager_emp_no_column)} AS {q("ManagerEmpNo")},
+                        {q(mapping.section_parent_column)} AS {q("ParentSecNo")}
+                    FROM {q(mapping.section_table_name)}
+                    WHERE {q(mapping.section_sec_no_column)} = %(sec_no)s
+                """  # noqa: S608
+                cur.execute(section_query, {"sec_no": current_sec_no})
+                section_row = cur.fetchone()
+                if not section_row or section_row.get("ManagerEmpNo") is None:
+                    return None
+                manager_emp_no = int(section_row["ManagerEmpNo"])
+                if manager_emp_no != emp_no:
+                    return manager_emp_no
+                parent_sec_no = section_row.get("ParentSecNo")
+                if parent_sec_no is None:
+                    return None  # به ریشه رسیدیم و هنوز مدیرِ متفاوتی پیدا نشد
+                current_sec_no = parent_sec_no
+            return None
     finally:
         connection.close()
 

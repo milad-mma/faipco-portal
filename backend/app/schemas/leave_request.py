@@ -58,6 +58,7 @@ class LeaveRequestMappingIn(BaseModel):
     section_table_name: str | None = "Sections"
     section_sec_no_column: str | None = "Sec_No"
     section_manager_emp_no_column: str | None = "ManagerEmp_No"
+    section_parent_column: str | None = "TFather"
     branch_code_column: str | None = "BranchCode"
     branch_code_value: int | None = None
     application_id_value: int = 4
