@@ -180,6 +180,9 @@ class LeaveRequestOut(BaseModel):
     manager_idea: str | None
     source: str | None
     destination: str | None
+    type_id: int | None = None
+    type_title: str | None = None
+    requester_name: str | None = None
 
 
 # ---------- تصمیم‌گیری (تأییدکننده) ----------
@@ -199,5 +202,22 @@ class AdminUpdateRequestIn(BaseModel):
     end_date: datetime | None = None
     start_hour: int | None = None
     end_hour: int | None = None
+    duration: str | None = None
+    leave_type_id: int | None = None
     manager_idea: str | None = None
     description: str | None = None
+
+
+# ---------- مجوز مشاهده به تفکیک نوع ----------
+
+
+class TypeViewerIn(BaseModel):
+    employee_id: int
+
+
+class TypeViewerOut(BaseModel):
+    id: int
+    leave_type_id: int
+    employee: EmployeeBrief
+
+    model_config = ConfigDict(from_attributes=True)

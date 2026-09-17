@@ -52,6 +52,7 @@ from app.models.leave_request import (  # noqa: F401
     LeaveRequestApprover,
     LeaveRequestMapping,
     LeaveRequestType,
+    LeaveRequestTypeViewer,
 )
 from app.models.evaluation_content import (  # noqa: F401
     EvaluationCategory,

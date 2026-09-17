@@ -233,7 +233,8 @@ def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, wh
                 {q(mapping.cur_emp_no_column)} AS {q("CurEmpNo")},
                 {q(mapping.manager_idea_column)} AS {q("ManagerIdea")},
                 {q(mapping.source_column)} AS {q("Source")},
-                {q(mapping.destination_column)} AS {q("Distination")}
+                {q(mapping.destination_column)} AS {q("Distination")},
+                {q(mapping.card_no_column)} AS {q("CardNo")}{(", " + q(mapping.action_id_column) + " AS " + q("ActionId")) if mapping.action_id_column else ""}
             FROM {q(mapping.table_name)}
             WHERE {where_sql} {branch_sql}
             ORDER BY {q(mapping.request_id_column)} DESC
@@ -323,6 +324,23 @@ def _update_request_sync(
                 f"WHERE {q(mapping.request_id_column)} = %(request_id)s {branch_sql}"
             )  # noqa: S608
             cur.execute(query, params)
+            connection.commit()
+    finally:
+        connection.close()
+
+
+def _delete_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int) -> None:
+    """⚠️ حذف واقعی ردیف - فقط برای درخواست‌های خودِ کاربر و هنوز درحال‌بررسی (بررسی در لایه سرویس، قبل از فراخوانی این تابع)."""
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    branch_sql, branch_params = _branch_filter_sql(q, mapping)
+    connection = _connect(conn)
+    try:
+        with connection.cursor() as cur:
+            query = (
+                f"DELETE FROM {q(mapping.table_name)} "
+                f"WHERE {q(mapping.request_id_column)} = %(request_id)s {branch_sql}"
+            )  # noqa: S608
+            cur.execute(query, {"request_id": request_id, **branch_params})
             connection.commit()
     finally:
         connection.close()
@@ -443,7 +461,7 @@ class LeaveRequestService:
             "end_hour": end_hour if leave_type.is_hourly else None,
             "duration": duration,
             "operations_id": leave_type.operation_id if leave_type.operation_id is not None else (3 if leave_type.is_mission else 5),
-            "description": f"{leave_type.title} — {description}" if description else leave_type.title,
+            "description": description or "",
             "cur_emp_no": cur_emp_no,
             "persian_start_date": persian_start_date,
             "source": source if leave_type.is_mission else None,
@@ -467,6 +485,53 @@ class LeaveRequestService:
 
     # ---------- خواندن/نمایش ----------
 
+    async def _get_type_lookup(self, site_id: int) -> dict:
+        """
+        ⚠️ برای نمایش «نوع درخواست» جداگانه از توضیحات - نگاشت ترکیب
+        (OperationsID, ActionId, Card_No) هر نوع فعلی این سایت به
+        (شناسه، عنوان) آن. چون WF_Requests شناسه نوع پورتال را ذخیره
+        نمی‌کند، این تنها راه بازشناسی نوع یک درخواست موجود است.
+        """
+        result = await self.db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == site_id))
+        types = result.scalars().all()
+        return {(t.operation_id, t.action_id, t.card_no): (t.id, t.title) for t in types}
+
+    async def _get_requester_names(self, site_id: int, emp_nos: list) -> dict:
+        """⚠️ برای نمایش «نام و نام خانوادگی درخواست‌دهنده» - نگاشت کد پرسنلی (Emp_No خام) به نام کامل، از جدول خودِ پورتال."""
+        emp_no_strings = [str(e) for e in emp_nos if e is not None]
+        if not emp_no_strings:
+            return {}
+        result = await self.db.execute(
+            select(Employee).where(Employee.site_id == site_id, Employee.personnel_code.in_(emp_no_strings))
+        )
+        employees = result.scalars().all()
+        return {int(e.personnel_code): f"{e.first_name} {e.last_name}" for e in employees if e.personnel_code.isdigit()}
+
+    async def delete_request(self, request_id: int, employee: Employee) -> None:
+        """
+        ⚠️ طبق درخواست صریح کاربر - فقط درخواست‌های خودِ فرد، و فقط تا
+        وقتی هنوز تصمیم‌گیری نشده (IsFinalApproved هنوز NULL است) قابل
+        حذف هستند - نه یک درخواستِ از قبل تائید/ردشده.
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
+        rows = await asyncio.to_thread(
+            _select_requests_sync,
+            site_connection,
+            mapping,
+            f"{request_id_col} = %(request_id)s",
+            {"request_id": request_id},
+        )
+        if not rows:
+            raise LeaveRequestError("درخواست موردنظر یافت نشد")
+        request_row = rows[0]
+        emp_no = _to_personnel_code_int(employee)
+        if request_row.get("EmpNo") != emp_no:
+            raise LeaveRequestError("شما مجاز به حذف این درخواست نیستید")
+        if request_row.get("IsFinalApproved") is not None:
+            raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده - دیگر قابل‌حذف نیست")
+        await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
+
     async def list_my_requests(self, employee: Employee) -> list[dict]:
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
         emp_no = _to_personnel_code_int(employee)
@@ -474,7 +539,8 @@ class LeaveRequestService:
         rows = await asyncio.to_thread(
             _select_requests_sync, site_connection, mapping, f"{col} = %(emp_no)s", {"emp_no": emp_no}
         )
-        return [_normalize_row(row) for row in rows]
+        type_lookup = await self._get_type_lookup(employee.site_id)
+        return [_normalize_row(row, type_lookup) for row in rows]
 
     async def list_pending_for_approver(self, approver_employee: Employee) -> list[dict]:
         mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id)
@@ -485,13 +551,39 @@ class LeaveRequestService:
         rows = await asyncio.to_thread(
             _select_requests_sync, site_connection, mapping, where_sql, {"cur_emp_no": cur_emp_no}
         )
-        return [_normalize_row(row) for row in rows]
+        type_lookup = await self._get_type_lookup(approver_employee.site_id)
+        requester_names = await self._get_requester_names(
+            approver_employee.site_id, [row.get("EmpNo") for row in rows]
+        )
+        normalized = []
+        for row in rows:
+            item = _normalize_row(row, type_lookup)
+            item["requester_name"] = requester_names.get(item["emp_no"])
+            normalized.append(item)
+        return normalized
 
-    async def list_all_for_site(self, site_id: int) -> list[dict]:
-        """⚠️ فقط برای دارندگان مجوز leave_requests.view/leave_requests.manage - همه درخواست‌های این سایت، بدون فیلتر."""
+    async def list_all_for_site(self, site_id: int, allowed_type_ids: list | None = None) -> list[dict]:
+        """
+        ⚠️ فقط برای دارندگان مجوز leave_requests.view/leave_requests.manage
+        (یا مجوز محدود به تفکیک نوع - LeaveRequestTypeViewer).
+
+        ⚠️ طبق درخواست صریح کاربر: اگر allowed_type_ids داده شود (یعنی
+        کاربر مجوز سراسری ندارد، فقط به چند نوع خاص دسترسی دارد)، فقط
+        درخواست‌هایی که با یکی از آن نوع‌ها تطبیق دارند برگردانده می‌شوند
+        - نه همه‌ی درخواست‌های سایت.
+        """
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
-        return [_normalize_row(row) for row in rows]
+        type_lookup = await self._get_type_lookup(site_id)
+        requester_names = await self._get_requester_names(site_id, [row.get("EmpNo") for row in rows])
+        normalized = []
+        for row in rows:
+            item = _normalize_row(row, type_lookup)
+            if allowed_type_ids is not None and item["type_id"] not in allowed_type_ids:
+                continue
+            item["requester_name"] = requester_names.get(item["emp_no"])
+            normalized.append(item)
+        return normalized
 
     async def _list_lookup(
         self, site_id: int, table_name: str | None, id_column: str | None, desc_column: str | None
@@ -587,9 +679,16 @@ class LeaveRequestService:
     async def admin_update_request(self, site_id: int, request_id: int, updates: dict) -> None:
         """
         ⚠️ فقط برای دارندگان مجوز leave_requests.manage - طبق درخواست
-        صریح: می‌تواند تصمیم (تأیید/رد) و تاریخ/ساعت درخواست را هم ویرایش
-        کند. کلیدهای مجاز updates: is_final_approved، start_date، end_date،
-        start_hour، end_hour، manager_idea، description.
+        صریح: می‌تواند تصمیم (تأیید/رد)، نوع درخواست، مدت، و تاریخ/ساعت
+        درخواست را هم ویرایش کند. کلیدهای مجاز updates: is_final_approved،
+        start_date، end_date، start_hour، end_hour، duration، leave_type_id،
+        manager_idea، description.
+
+        ⚠️ leave_type_id ویژه است - یک ستون مستقیم در WF_Requests نیست؛
+        وقتی داده شود، نوع موردنظر در LeaveRequestType این سایت پیدا شده
+        و سه ستون واقعی مرتبط (OperationsID, ActionId, Card_No) بر همان
+        اساس به‌روزرسانی می‌شوند - دقیقاً همان چیزی که submit_request هنگام
+        ثبت اولیه می‌نویسد.
         """
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         column_updates: dict = {}
@@ -599,21 +698,41 @@ class LeaveRequestService:
             "end_date": mapping.end_date_column,
             "start_hour": mapping.start_hour_column,
             "end_hour": mapping.end_hour_column,
+            "duration": mapping.duration_column,
             "manager_idea": mapping.manager_idea_column,
             "description": mapping.description_column,
         }
         for key, column in key_to_column.items():
             if key in updates:
                 column_updates[column] = updates[key]
+
+        if "leave_type_id" in updates and updates["leave_type_id"] is not None:
+            leave_type = await self.db.get(LeaveRequestType, updates["leave_type_id"])
+            if leave_type is None or leave_type.site_id != site_id:
+                raise LeaveRequestError("نوع درخواست موردنظر یافت نشد")
+            column_updates[mapping.operations_id_column] = (
+                leave_type.operation_id if leave_type.operation_id is not None else (3 if leave_type.is_mission else 5)
+            )
+            if mapping.action_id_column and leave_type.action_id is not None:
+                column_updates[mapping.action_id_column] = leave_type.action_id
+            column_updates[mapping.card_no_column] = leave_type.card_no if leave_type.card_no is not None else 0
+
         if not column_updates:
             return
         await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, column_updates)
 
 
-def _normalize_row(row: dict) -> dict:
+def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
     """
     یک ردیف خام WF_Requests را به شکل پایدار و مستقل از نوع دیتابیس منبع
     برای استفاده در Schema های Pydantic درمی‌آورد.
+
+    ⚠️ طبق درخواست صریح کاربر: توضیحات کاربر (Description) دیگر شامل
+    عنوان نوع نیست (آن دو جدا شدند) - عنوان نوع («نوع درخواست») اینجا با
+    تطبیق ترکیب (OperationsID, ActionId, Card_No) این ردیف با
+    LeaveRequestType های همان سایت به‌دست می‌آید؛ اگر type_lookup داده
+    نشود یا تطبیقی پیدا نشود، type_id/type_title خالی می‌مانند (نه خطا -
+    یک درخواست قدیمی‌تر ممکن است دیگر با هیچ نوع فعلی تطبیق نداشته باشد).
     """
     is_final_approved = row.get("IsFinalApproved")
     if is_final_approved is None:
@@ -624,6 +743,10 @@ def _normalize_row(row: dict) -> dict:
         status = "rejected"
 
     operations_id = row.get("OperationsID")
+    action_id = row.get("ActionId")
+    card_no = row.get("CardNo")
+    type_key = (operations_id, action_id, card_no)
+    matched_type = (type_lookup or {}).get(type_key)
 
     return {
         "request_id": row.get("RequestId"),
@@ -643,4 +766,6 @@ def _normalize_row(row: dict) -> dict:
         "manager_idea": row.get("ManagerIdea"),
         "source": row.get("Source"),
         "destination": row.get("Distination"),
+        "type_id": matched_type[0] if matched_type else None,
+        "type_title": matched_type[1] if matched_type else None,
     }

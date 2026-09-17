@@ -10,6 +10,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   MenuItem,
   Stack,
   Table,
@@ -23,10 +24,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import {
   decideLeaveRequest,
+  deleteLeaveRequest,
   fetchActiveLeaveRequestTypes,
   fetchMyLeaveRequests,
   fetchPendingLeaveRequestsForMe,
@@ -175,7 +178,24 @@ function SubmitRequestForm({ onSubmitted }) {
   );
 }
 
-function MyRequestsTable({ items }) {
+function MyRequestsTable({ items, onDeleted }) {
+  const [deletingId, setDeletingId] = useState(null);
+  const [error, setError] = useState("");
+
+  async function handleDelete(requestId) {
+    if (!window.confirm("این درخواست حذف شود؟")) return;
+    setError("");
+    setDeletingId(requestId);
+    try {
+      await deleteLeaveRequest(requestId);
+      onDeleted();
+    } catch (err) {
+      setError(err.response?.data?.detail || "حذف درخواست با خطا مواجه شد.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -184,36 +204,54 @@ function MyRequestsTable({ items }) {
     );
   }
   return (
-    <TableContainer component={Card} variant="outlined">
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>توضیحات</TableCell>
-            <TableCell>تاریخ شروع</TableCell>
-            <TableCell>مدت</TableCell>
-            <TableCell>وضعیت</TableCell>
-            <TableCell>نظر تأییدکننده</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {items.map((item) => (
-            <TableRow key={item.request_id}>
-              <TableCell>{item.description}</TableCell>
-              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>
-                {item.start_hour != null
-                  ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                  : `${item.duration} روز`}
-              </TableCell>
-              <TableCell>
-                <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
-              </TableCell>
-              <TableCell>{item.manager_idea || "—"}</TableCell>
+    <Stack spacing={1.5}>
+      {error && <Alert severity="error">{error}</Alert>}
+      <TableContainer component={Card} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>نوع درخواست</TableCell>
+              <TableCell>توضیحات</TableCell>
+              <TableCell>تاریخ شروع</TableCell>
+              <TableCell>مدت</TableCell>
+              <TableCell>وضعیت</TableCell>
+              <TableCell>نظر تأییدکننده</TableCell>
+              <TableCell>حذف</TableCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+          </TableHead>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow key={item.request_id}>
+                <TableCell>{item.type_title || "—"}</TableCell>
+                <TableCell>{item.description || "—"}</TableCell>
+                <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+                <TableCell>
+                  {item.start_hour != null
+                    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+                    : `${item.duration} روز`}
+                </TableCell>
+                <TableCell>
+                  <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                </TableCell>
+                <TableCell>{item.manager_idea || "—"}</TableCell>
+                <TableCell>
+                  {item.status === "pending" && (
+                    <IconButton
+                      size="small"
+                      color="error"
+                      disabled={deletingId === item.request_id}
+                      onClick={() => handleDelete(item.request_id)}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Stack>
   );
 }
 
@@ -239,7 +277,10 @@ function DecideDialog({ item, onClose, onDecided }) {
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>تصمیم برای درخواست</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-        <Typography variant="body2">{item.description}</Typography>
+        <Typography variant="body2" fontWeight={700}>
+          {item.type_title || "—"}
+        </Typography>
+        {item.description && <Typography variant="body2">{item.description}</Typography>}
         {error && <Alert severity="error">{error}</Alert>}
         <TextField
           label="نظر (اختیاری)"
@@ -268,7 +309,7 @@ function PendingApprovalTable({ items, onDecide }) {
   if (items.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        فعلاً هیچ درخواستی منتظر تصمیم شما نیست.
+        فعلاً هیچ درخواستی در انتظار شما نیست.
       </Typography>
     );
   }
@@ -277,7 +318,8 @@ function PendingApprovalTable({ items, onDecide }) {
       <Table size="small">
         <TableHead>
           <TableRow>
-            <TableCell>پرسنل</TableCell>
+            <TableCell>نام و نام خانوادگی</TableCell>
+            <TableCell>نوع درخواست</TableCell>
             <TableCell>توضیحات</TableCell>
             <TableCell>تاریخ شروع</TableCell>
             <TableCell>مدت</TableCell>
@@ -287,8 +329,9 @@ function PendingApprovalTable({ items, onDecide }) {
         <TableBody>
           {items.map((item) => (
             <TableRow key={item.request_id}>
-              <TableCell>{item.emp_no}</TableCell>
-              <TableCell>{item.description}</TableCell>
+              <TableCell>{item.requester_name || item.emp_no}</TableCell>
+              <TableCell>{item.type_title || "—"}</TableCell>
+              <TableCell>{item.description || "—"}</TableCell>
               <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
               <TableCell>
                 {item.start_hour != null
@@ -358,7 +401,7 @@ export default function LeaveRequestPage() {
       <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ mb: 2 }}>
         <Tab label="ثبت درخواست جدید" />
         <Tab label="درخواست‌های من" />
-        {hasPending && <Tab label={`منتظر تصمیم من (${pendingCount})`} />}
+        {hasPending && <Tab label={`درخواست‌های در انتظار (${pendingCount})`} />}
       </Tabs>
 
       {tab === 0 && (
@@ -370,7 +413,7 @@ export default function LeaveRequestPage() {
         />
       )}
 
-      {tab === 1 && myRequests !== null && <MyRequestsTable items={myRequests} />}
+      {tab === 1 && myRequests !== null && <MyRequestsTable items={myRequests} onDeleted={loadMyRequests} />}
 
       {tab === 2 && hasPending && <PendingApprovalTable items={pending} onDecide={setDecidingItem} />}
 

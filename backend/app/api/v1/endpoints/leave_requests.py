@@ -96,6 +96,21 @@ async def get_pending_for_me(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.delete("/{request_id}")
+async def delete_my_request(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ فقط درخواست خودِ فرد، و فقط تا وقتی هنوز تصمیم‌گیری نشده."""
+    employee = await _require_employee(db, current_user)
+    try:
+        await LeaveRequestService(db).delete_request(request_id, employee)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"ok": True}
+
+
 @router.post("/{request_id}/decide")
 async def decide_request(
     request_id: int,

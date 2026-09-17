@@ -27,3 +27,8 @@ export async function decideLeaveRequest(requestId, approved, managerIdea) {
   });
   return data;
 }
+
+export async function deleteLeaveRequest(requestId) {
+  const { data } = await apiClient.delete(`/leave-requests/${requestId}`);
+  return data;
+}

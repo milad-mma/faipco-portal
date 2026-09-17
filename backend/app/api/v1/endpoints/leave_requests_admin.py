@@ -12,7 +12,7 @@ from app.core.site_access import get_sites_with_permission
 from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.employee import Department
-from app.models.leave_request import LeaveRequestType
+from app.models.leave_request import LeaveRequestType, LeaveRequestTypeViewer
 from app.models.user import User
 from app.schemas.leave_request import (
     ActionLookupItemOut,
@@ -27,6 +27,8 @@ from app.schemas.leave_request import (
     LeaveRequestTypeUpdateIn,
     OperationLookupItemOut,
     SetApproverIn,
+    TypeViewerIn,
+    TypeViewerOut,
 )
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
 from app.services.leave_request_structure_service import LeaveRequestStructureError, LeaveRequestStructureService
@@ -168,6 +170,50 @@ async def delete_type(
     await LeaveRequestStructureService(db).delete_type(type_id)
 
 
+@router.get("/types/{type_id}/viewers", response_model=list[TypeViewerOut])
+async def list_type_viewers(
+    type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ طبق درخواست صریح کاربر: مجوز مشاهده به تفکیک نوع - افرادی که فقط اجازه دیدن همین یک نوع درخواست را دارند."""
+    leave_type = await db.get(LeaveRequestType, type_id)
+    if leave_type is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع درخواست موردنظر یافت نشد")
+    await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
+    return await LeaveRequestStructureService(db).list_type_viewers(type_id)
+
+
+@router.post("/types/{type_id}/viewers", response_model=TypeViewerOut)
+async def add_type_viewer(
+    type_id: int,
+    payload: TypeViewerIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    leave_type = await db.get(LeaveRequestType, type_id)
+    if leave_type is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع درخواست موردنظر یافت نشد")
+    await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
+    return await LeaveRequestStructureService(db).add_type_viewer(type_id, payload.employee_id)
+
+
+@router.delete("/types/viewers/{viewer_id}")
+async def remove_type_viewer(
+    viewer_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    viewer = await db.get(LeaveRequestTypeViewer, viewer_id)
+    if viewer is None:
+        return {"ok": True}
+    leave_type = await db.get(LeaveRequestType, viewer.leave_type_id)
+    if leave_type is not None:
+        await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
+    await LeaveRequestStructureService(db).remove_type_viewer(viewer_id)
+    return {"ok": True}
+
+
 @router.get("/sites/{site_id}/approvers", response_model=list[LeaveRequestApproverOut])
 async def list_approvers(
     site_id: int,
@@ -211,19 +257,32 @@ async def remove_approver(
 # ---------- مشاهده/ویرایش مدیریتی (حراست/منابع انسانی) ----------
 
 
-async def _require_view_or_manage(db: AsyncSession, user: User, site_id: int) -> None:
-    """⚠️ کاربر باید یکی از دو مجوز (فقط‌مشاهده یا مدیریت‌کامل) را داشته باشد - نه لزوماً هر دو."""
+async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list | None:
+    """
+    ⚠️ طبق درخواست صریح کاربر: علاوه بر دو مجوز سراسری قبلی (فقط‌مشاهده
+    یا مدیریت‌کامل)، حالا دسترسی محدود «فقط این نوع(ها)»
+    (LeaveRequestTypeViewer) هم پشتیبانی می‌شود. خروجی: None یعنی دسترسی
+    کامل و بی‌قید (سراسری)؛ یک لیست یعنی فقط همین شناسه‌های نوع؛ اگر هیچ
+    دسترسی‌ای نباشد (نه سراسری، نه محدود)، خطای 403 می‌دهد.
+    """
     if user.is_superuser:
-        return
+        return None
     view_sites = await get_sites_with_permission(db, user, "leave_requests.view")
     manage_sites = await get_sites_with_permission(db, user, "leave_requests.manage")
     has_view = view_sites is None or site_id in view_sites
     has_manage = manage_sites is None or site_id in manage_sites
-    if not (has_view or has_manage):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="دسترسی لازم برای مشاهده درخواست‌های این سایت را ندارید",
+    if has_view or has_manage:
+        return None
+    if user.employee_id is not None:
+        allowed_type_ids = await LeaveRequestStructureService(db).get_allowed_type_ids_for_employee(
+            site_id, user.employee_id
         )
+        if allowed_type_ids:
+            return allowed_type_ids
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="دسترسی لازم برای مشاهده درخواست‌های این سایت را ندارید",
+    )
 
 
 @router.get("/sites/{site_id}/all", response_model=list[LeaveRequestOut])
@@ -232,9 +291,9 @@ async def list_all_for_site(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _require_view_or_manage(db, current_user, site_id)
+    allowed_type_ids = await _get_view_access(db, current_user, site_id)
     try:
-        return await LeaveRequestService(db).list_all_for_site(site_id)
+        return await LeaveRequestService(db).list_all_for_site(site_id, allowed_type_ids)
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
