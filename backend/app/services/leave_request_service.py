@@ -26,6 +26,7 @@ import psycopg2.extras
 import jdatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.leave_request_rules import (
     LeaveRequestRulesError,
@@ -577,16 +578,28 @@ class LeaveRequestService:
         types = result.scalars().all()
         return {(t.operation_id, t.action_id, t.card_no): (t.id, t.title) for t in types}
 
-    async def _get_requester_names(self, site_id: int, emp_nos: list) -> dict:
-        """⚠️ برای نمایش «نام و نام خانوادگی درخواست‌دهنده» - نگاشت کد پرسنلی (Emp_No خام) به نام کامل، از جدول خودِ پورتال."""
+    async def _get_requester_info(self, site_id: int, emp_nos: list) -> dict:
+        """
+        ⚠️ برای نمایش «نام و نام خانوادگی» و «واحد» درخواست‌دهنده - نگاشت
+        کد پرسنلی (Emp_No خام) به {name, department}، از جدول خودِ پورتال.
+        """
         emp_no_strings = [str(e) for e in emp_nos if e is not None]
         if not emp_no_strings:
             return {}
         result = await self.db.execute(
-            select(Employee).where(Employee.site_id == site_id, Employee.personnel_code.in_(emp_no_strings))
+            select(Employee)
+            .options(selectinload(Employee.department))
+            .where(Employee.site_id == site_id, Employee.personnel_code.in_(emp_no_strings))
         )
         employees = result.scalars().all()
-        return {int(e.personnel_code): f"{e.first_name} {e.last_name}" for e in employees if e.personnel_code.isdigit()}
+        return {
+            int(e.personnel_code): {
+                "name": f"{e.first_name} {e.last_name}",
+                "department": e.department.name if e.department else None,
+            }
+            for e in employees
+            if e.personnel_code.isdigit()
+        }
 
     async def delete_request(self, request_id: int, employee: Employee) -> None:
         """
@@ -651,13 +664,15 @@ class LeaveRequestService:
             _select_requests_sync, site_connection, mapping, where_sql, {"cur_emp_no": cur_emp_no}
         )
         type_lookup = await self._get_type_lookup(approver_employee.site_id)
-        requester_names = await self._get_requester_names(
+        requester_info = await self._get_requester_info(
             approver_employee.site_id, [row.get("EmpNo") for row in rows]
         )
         normalized = []
         for row in rows:
             item = _normalize_row(row, type_lookup)
-            item["requester_name"] = requester_names.get(item["emp_no"])
+            info = requester_info.get(item["emp_no"], {})
+            item["requester_name"] = info.get("name")
+            item["requester_department"] = info.get("department")
             normalized.append(item)
         return normalized
 
@@ -674,13 +689,15 @@ class LeaveRequestService:
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
         type_lookup = await self._get_type_lookup(site_id)
-        requester_names = await self._get_requester_names(site_id, [row.get("EmpNo") for row in rows])
+        requester_info = await self._get_requester_info(site_id, [row.get("EmpNo") for row in rows])
         normalized = []
         for row in rows:
             item = _normalize_row(row, type_lookup)
             if allowed_type_ids is not None and item["type_id"] not in allowed_type_ids:
                 continue
-            item["requester_name"] = requester_names.get(item["emp_no"])
+            info = requester_info.get(item["emp_no"], {})
+            item["requester_name"] = info.get("name")
+            item["requester_department"] = info.get("department")
             normalized.append(item)
         await self._apply_real_reviews(site_connection, mapping, normalized)
         return normalized

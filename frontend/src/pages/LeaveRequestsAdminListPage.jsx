@@ -21,6 +21,7 @@ import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
+import TimeSelect24 from "../components/TimeSelect24";
 import { useAuth } from "../context/AuthContext";
 import { fetchSites } from "../api/sites";
 import { adminUpdateLeaveRequest, fetchAllLeaveRequestsForSite, fetchLeaveRequestTypes } from "../api/leaveRequestsAdmin";
@@ -207,24 +208,8 @@ function EditableTimeRange({ item, onSave }) {
       {isHourly ? (
         <>
           <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ" showTime={false} />
-          <TextField
-            type="time"
-            size="small"
-            label="شروع"
-            value={startTimeStr}
-            onChange={(e) => setStartTimeStr(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 110 }}
-          />
-          <TextField
-            type="time"
-            size="small"
-            label="پایان"
-            value={endTimeStr}
-            onChange={(e) => setEndTimeStr(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 110 }}
-          />
+          <TimeSelect24 label="شروع" value={startTimeStr} onChange={setStartTimeStr} />
+          <TimeSelect24 label="پایان" value={endTimeStr} onChange={setEndTimeStr} />
         </>
       ) : (
         <>
@@ -256,7 +241,7 @@ export default function LeaveRequestsAdminListPage() {
   const [types, setTypes] = useState([]);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState("request_id");
+  const [sortField, setSortField] = useState("submitted_at");
   const [sortDir, setSortDir] = useState("desc");
 
   useEffect(() => {
@@ -333,7 +318,7 @@ export default function LeaveRequestsAdminListPage() {
     const sorted = [...filtered].sort((a, b) => {
       let av = a[sortField];
       let bv = b[sortField];
-      if (sortField === "start_date") {
+      if (sortField === "start_date" || sortField === "submitted_at") {
         av = av ? new Date(av).getTime() : 0;
         bv = bv ? new Date(bv).getTime() : 0;
       } else {
@@ -397,6 +382,7 @@ export default function LeaveRequestsAdminListPage() {
                     نام و نام خانوادگی
                   </TableSortLabel>
                 </TableCell>
+                <TableCell>واحد</TableCell>
                 <TableCell>
                   <TableSortLabel
                     active={sortField === "type_title"}
@@ -407,6 +393,15 @@ export default function LeaveRequestsAdminListPage() {
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>توضیحات</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={sortField === "submitted_at"}
+                    direction={sortField === "submitted_at" ? sortDir : "asc"}
+                    onClick={() => handleSort("submitted_at")}
+                  >
+                    تاریخ ثبت
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell>
                   <TableSortLabel
                     active={sortField === "start_date"}
@@ -433,6 +428,7 @@ export default function LeaveRequestsAdminListPage() {
               {visibleRequests.map((item) => (
                 <TableRow key={item.request_id}>
                   <TableCell>{item.requester_name || item.emp_no}</TableCell>
+                  <TableCell>{item.requester_department || "—"}</TableCell>
                   <TableCell>
                     {canEdit && types.length > 0 ? (
                       <EditableSelect
@@ -455,6 +451,9 @@ export default function LeaveRequestsAdminListPage() {
                     ) : (
                       item.description || "—"
                     )}
+                  </TableCell>
+                  <TableCell>
+                    {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
                   </TableCell>
                   <TableCell>
                     {canEdit ? (

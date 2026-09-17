@@ -192,6 +192,7 @@ class LeaveRequestOut(BaseModel):
     type_id: int | None = None
     type_title: str | None = None
     requester_name: str | None = None
+    requester_department: str | None = None
 
 
 # ---------- تصمیم‌گیری (تأییدکننده) ----------

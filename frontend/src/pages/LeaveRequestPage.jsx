@@ -28,6 +28,7 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
+import TimeSelect24 from "../components/TimeSelect24";
 import {
   decideLeaveRequest,
   deleteLeaveRequest,
@@ -130,20 +131,8 @@ function SubmitRequestForm({ onSubmitted }) {
             <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" showTime={false} />
             {selectedType.is_hourly ? (
               <Stack direction="row" spacing={1.5}>
-                <TextField
-                  type="time"
-                  label="ساعت شروع"
-                  value={startTimeStr}
-                  onChange={(e) => setStartTimeStr(e.target.value)}
-                  sx={{ flex: 1 }}
-                />
-                <TextField
-                  type="time"
-                  label="ساعت پایان"
-                  value={endTimeStr}
-                  onChange={(e) => setEndTimeStr(e.target.value)}
-                  sx={{ flex: 1 }}
-                />
+                <TimeSelect24 label="ساعت شروع" value={startTimeStr} onChange={setStartTimeStr} sx={{ flex: 1 }} />
+                <TimeSelect24 label="ساعت پایان" value={endTimeStr} onChange={setEndTimeStr} sx={{ flex: 1 }} />
               </Stack>
             ) : (
               <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
@@ -206,19 +195,31 @@ function MyRequestsTable({ items, onDeleted }) {
     );
   }
 
+  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت)
+  const sortedItems = [...items].sort(
+    (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
+  );
+  const todayStr = new Date().toDateString();
+  const isToday = (item) => item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr;
+
   if (isMobile) {
     // نمایش کارتی — موبایل
     return (
       <Stack spacing={1.5}>
         {error && <Alert severity="error">{error}</Alert>}
-        {items.map((item) => (
-          <Card key={item.request_id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+        {sortedItems.map((item) => (
+          <Card
+            key={item.request_id}
+            variant="outlined"
+            sx={{ borderRadius: 2, p: 2, borderColor: isToday(item) ? "primary.main" : undefined }}
+          >
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="body2" fontWeight={700} noWrap>
                   {item.type_title || "—"}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
+                  ثبت: {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"} — شروع:{" "}
                   {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}
                 </Typography>
               </Box>
@@ -268,6 +269,7 @@ function MyRequestsTable({ items, onDeleted }) {
             <TableRow>
               <TableCell>نوع درخواست</TableCell>
               <TableCell>توضیحات</TableCell>
+              <TableCell>تاریخ ثبت</TableCell>
               <TableCell>تاریخ شروع</TableCell>
               <TableCell>مدت</TableCell>
               <TableCell>وضعیت</TableCell>
@@ -276,10 +278,13 @@ function MyRequestsTable({ items, onDeleted }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.request_id}>
+            {sortedItems.map((item) => (
+              <TableRow key={item.request_id} sx={isToday(item) ? { bgcolor: "action.hover" } : undefined}>
                 <TableCell>{item.type_title || "—"}</TableCell>
                 <TableCell>{item.description || "—"}</TableCell>
+                <TableCell>
+                  {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
+                </TableCell>
                 <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
                 <TableCell>
                   {item.start_hour != null
@@ -369,41 +374,84 @@ function PendingApprovalTable({ items, onDecide }) {
       </Typography>
     );
   }
+
+  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت)
+  const sorted = [...items].sort(
+    (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
+  );
+  const todayStr = new Date().toDateString();
+  const todayItems = sorted.filter((item) => item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr);
+  const otherItems = sorted.filter((item) => !(item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr));
+
+  function renderRows(list) {
+    return list.map((item) => (
+      <TableRow key={item.request_id}>
+        <TableCell>{item.requester_name || item.emp_no}</TableCell>
+        <TableCell>{item.requester_department || "—"}</TableCell>
+        <TableCell>{item.type_title || "—"}</TableCell>
+        <TableCell>{item.description || "—"}</TableCell>
+        <TableCell>
+          {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
+        </TableCell>
+        <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+        <TableCell>
+          {item.start_hour != null
+            ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+            : `${item.duration} روز`}
+        </TableCell>
+        <TableCell>
+          <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
+            بررسی
+          </Button>
+        </TableCell>
+      </TableRow>
+    ));
+  }
+
+  const headerRow = (
+    <TableRow>
+      <TableCell>نام و نام خانوادگی</TableCell>
+      <TableCell>واحد</TableCell>
+      <TableCell>نوع درخواست</TableCell>
+      <TableCell>توضیحات</TableCell>
+      <TableCell>تاریخ ثبت</TableCell>
+      <TableCell>تاریخ شروع</TableCell>
+      <TableCell>مدت</TableCell>
+      <TableCell>عملیات</TableCell>
+    </TableRow>
+  );
+
   return (
-    <TableContainer component={Card} variant="outlined">
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>نام و نام خانوادگی</TableCell>
-            <TableCell>نوع درخواست</TableCell>
-            <TableCell>توضیحات</TableCell>
-            <TableCell>تاریخ شروع</TableCell>
-            <TableCell>مدت</TableCell>
-            <TableCell>عملیات</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {items.map((item) => (
-            <TableRow key={item.request_id}>
-              <TableCell>{item.requester_name || item.emp_no}</TableCell>
-              <TableCell>{item.type_title || "—"}</TableCell>
-              <TableCell>{item.description || "—"}</TableCell>
-              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>
-                {item.start_hour != null
-                  ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                  : `${item.duration} روز`}
-              </TableCell>
-              <TableCell>
-                <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
-                  بررسی
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <Stack spacing={2}>
+      {todayItems.length > 0 && (
+        <Box>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+            درخواست‌های امروز ({todayItems.length})
+          </Typography>
+          <TableContainer component={Card} variant="outlined" sx={{ borderColor: "primary.main" }}>
+            <Table size="small">
+              <TableHead>{headerRow}</TableHead>
+              <TableBody>{renderRows(todayItems)}</TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+      {otherItems.length > 0 && (
+        <Box>
+          {todayItems.length > 0 && (
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              سایر درخواست‌ها
+            </Typography>
+          )}
+          <TableContainer component={Card} variant="outlined">
+            <Table size="small">
+              <TableHead>{headerRow}</TableHead>
+              <TableBody>{renderRows(otherItems)}</TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+    </Stack>
   );
 }
 
