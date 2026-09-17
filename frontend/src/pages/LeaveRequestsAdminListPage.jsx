@@ -218,10 +218,10 @@ function TypeViewersSection({ siteId, types }) {
     }
   }
 
-  if (!types || types.length === 0) return null;
+  if (!types) return null; // هنوز در حال بارگذاری اولیه - این با types=[] (خالی) فرق دارد
 
   return (
-    <Box sx={{ mt: 3 }}>
+    <Card variant="outlined" sx={{ mt: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
       <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
         مجوز مشاهده به تفکیک نوع درخواست
       </Typography>
@@ -234,7 +234,10 @@ function TypeViewersSection({ siteId, types }) {
           {error}
         </Alert>
       )}
-      <Stack spacing={1}>
+      {types.length === 0 ? (
+        <Alert severity="info">این سایت هنوز هیچ نوع درخواست فعالی ندارد.</Alert>
+      ) : (
+        <Stack spacing={1}>
         {types.map((t) => (
           <Accordion
             key={t.id}
@@ -269,8 +272,9 @@ function TypeViewersSection({ siteId, types }) {
             </AccordionDetails>
           </Accordion>
         ))}
-      </Stack>
-    </Box>
+        </Stack>
+      )}
+    </Card>
   );
 }
 
@@ -336,8 +340,10 @@ export default function LeaveRequestsAdminListPage() {
         </Alert>
       )}
 
+      {user?.can_manage_sites && <TypeViewersSection siteId={siteId} types={types} />}
+
       {requests !== null && (
-        <TableContainer component={Card} variant="outlined">
+        <TableContainer component={Card} variant="outlined" sx={{ mt: 3 }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -392,8 +398,6 @@ export default function LeaveRequestsAdminListPage() {
           }}
         />
       )}
-
-      {user?.can_manage_sites && <TypeViewersSection siteId={siteId} types={types} />}
     </Box>
   );
 }
