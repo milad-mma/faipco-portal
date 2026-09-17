@@ -246,6 +246,87 @@ def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, wh
         connection.close()
 
 
+def _insert_review_sync(
+    conn: SiteConnection,
+    mapping: LeaveRequestMapping,
+    request_id: int,
+    reviewed_emp_no: int,
+    description: str,
+    review_type: int,
+) -> None:
+    """
+    ⚠️ کشف حیاتی (تأییدشده با داده واقعی): نظر واقعی تأییدکننده در
+    WF_Requests.ManagerIdea ذخیره نمی‌شود - در جدول جداگانه WF_Reviews
+    (یک ردیف به‌ازای هر تصمیم) ذخیره می‌شود. اگر برای این سایت تنظیم
+    نشده باشد (wf_reviews_table_name خالی)، کاری انجام نمی‌دهد - نه
+    خطا؛ چون کاملاً اختیاری است (سازگاری با نصب‌های بدون این جدول).
+    """
+    if not mapping.wf_reviews_table_name:
+        return
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        with connection.cursor() as cur:
+            columns = [
+                mapping.wf_reviews_request_id_column,
+                mapping.wf_reviews_reviewed_emp_no_column,
+                mapping.wf_reviews_description_column,
+                mapping.wf_reviews_type_column,
+                mapping.wf_reviews_date_column,
+                mapping.wf_reviews_show_to_personal_column,
+            ]
+            values = [request_id, reviewed_emp_no, description, review_type, datetime.now(), True]
+            columns_sql = ", ".join(q(c) for c in columns)
+            placeholders = ", ".join(f"%({i})s" for i in range(len(columns)))
+            params = {str(i): v for i, v in enumerate(values)}
+            query = f"INSERT INTO {q(mapping.wf_reviews_table_name)} ({columns_sql}) VALUES ({placeholders})"  # noqa: S608
+            cur.execute(query, params)
+            connection.commit()
+    finally:
+        connection.close()
+
+
+def _select_latest_reviews_sync(
+    conn: SiteConnection, mapping: LeaveRequestMapping, request_ids: list[int]
+) -> dict[int, str]:
+    """
+    ⚠️ برای نمایش «نظر تأییدکننده» واقعی - آخرین ردیف WF_Reviews به‌ازای
+    هر RequestId (ممکن است چند تصمیم/نظر پشت‌سرهم برای یک درخواست ثبت
+    شده باشد، فقط آخرین مهم است). اگر تنظیم نشده یا لیست خالی باشد،
+    دیکشنری خالی برمی‌گرداند - تا سرویس به ManagerIdea خام برگردد.
+    """
+    if not mapping.wf_reviews_table_name or not request_ids:
+        return {}
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        with _dict_cursor(connection, conn.db_type) as cur:
+            id_placeholders = ", ".join(f"%(id{i})s" for i in range(len(request_ids)))
+            params = {f"id{i}": rid for i, rid in enumerate(request_ids)}
+            query = f"""
+                SELECT
+                    {q(mapping.wf_reviews_request_id_column)} AS {q("RequestId")},
+                    {q(mapping.wf_reviews_description_column)} AS {q("Description")},
+                    {q(mapping.wf_reviews_date_column)} AS {q("ReviewDate")}
+                FROM {q(mapping.wf_reviews_table_name)}
+                WHERE {q(mapping.wf_reviews_request_id_column)} IN ({id_placeholders})
+            """  # noqa: S608
+            cur.execute(query, params)
+            rows = list(cur.fetchall())
+    finally:
+        connection.close()
+
+    latest: dict[int, tuple] = {}
+    for row in rows:
+        rid = row.get("RequestId")
+        review_date = row.get("ReviewDate")
+        if rid is None:
+            continue
+        if rid not in latest or (review_date or datetime.min) >= (latest[rid][1] or datetime.min):
+            latest[rid] = (row.get("Description"), review_date)
+    return {rid: desc for rid, (desc, _) in latest.items() if desc is not None}
+
+
 def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, values: dict) -> int:
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     column_map = {
@@ -540,7 +621,25 @@ class LeaveRequestService:
             _select_requests_sync, site_connection, mapping, f"{col} = %(emp_no)s", {"emp_no": emp_no}
         )
         type_lookup = await self._get_type_lookup(employee.site_id)
-        return [_normalize_row(row, type_lookup) for row in rows]
+        normalized = [_normalize_row(row, type_lookup) for row in rows]
+        await self._apply_real_reviews(site_connection, mapping, normalized)
+        return normalized
+
+    async def _apply_real_reviews(self, site_connection, mapping, normalized: list[dict]) -> None:
+        """
+        ⚠️ کشف حیاتی (تأییدشده با داده واقعی): نظر واقعی تأییدکننده در
+        ManagerIdea نیست، در WF_Reviews است. اگر برای این سایت تنظیم
+        نشده یا نظری ثبت نشده باشد، همان مقدار خامِ ManagerIdea که
+        _normalize_row قبلاً گذاشته دست‌نخورده باقی می‌ماند.
+        """
+        request_ids = [item["request_id"] for item in normalized if item.get("status") != "pending"]
+        if not request_ids:
+            return
+        reviews = await asyncio.to_thread(_select_latest_reviews_sync, site_connection, mapping, request_ids)
+        for item in normalized:
+            real_comment = reviews.get(item["request_id"])
+            if real_comment is not None:
+                item["manager_idea"] = real_comment
 
     async def list_pending_for_approver(self, approver_employee: Employee) -> list[dict]:
         mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id)
@@ -583,6 +682,7 @@ class LeaveRequestService:
                 continue
             item["requester_name"] = requester_names.get(item["emp_no"])
             normalized.append(item)
+        await self._apply_real_reviews(site_connection, mapping, normalized)
         return normalized
 
     async def _list_lookup(
@@ -673,6 +773,23 @@ class LeaveRequestService:
             mapping.manager_idea_column: manager_idea or "",
         }
         await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
+
+        # ⚠️ کشف حیاتی (تأییدشده با داده واقعی): نظر واقعی تأییدکننده در
+        # ManagerIdea ذخیره نمی‌شود - باید در WF_Reviews هم ثبت شود تا هم
+        # در خودِ کاراوب صحیح دیده شود، هم توسط پورتال به‌درستی خوانده شود.
+        review_type = (
+            mapping.wf_reviews_approved_type_value if approved else mapping.wf_reviews_rejected_type_value
+        )
+        if review_type is not None:
+            await asyncio.to_thread(
+                _insert_review_sync,
+                site_connection,
+                mapping,
+                request_id,
+                approver_emp_no,
+                manager_idea or "",
+                review_type,
+            )
 
     # ---------- ویرایش مدیریتی (فقط leave_requests.manage) ----------
 

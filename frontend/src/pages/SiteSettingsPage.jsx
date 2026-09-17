@@ -134,6 +134,15 @@ const EMPTY_LEAVE_MAPPING = {
   section_sec_no_column: "Sec_No",
   section_manager_emp_no_column: "ManagerEmp_No",
   section_parent_column: "TFather",
+  wf_reviews_table_name: "WF_Reviews",
+  wf_reviews_request_id_column: "RequestId",
+  wf_reviews_reviewed_emp_no_column: "ReviewedEmp_No",
+  wf_reviews_description_column: "Description",
+  wf_reviews_type_column: "ReviewType",
+  wf_reviews_date_column: "ReviewDate",
+  wf_reviews_show_to_personal_column: "ShowToPersonal",
+  wf_reviews_approved_type_value: 4,
+  wf_reviews_rejected_type_value: 3,
 };
 
 export default function SiteSettingsPage() {
@@ -1295,6 +1304,60 @@ export default function SiteSettingsPage() {
                   sx={{ minWidth: 220 }}
                 />
               ))}
+            </Stack>
+
+            <Divider textAlign="right">جدول WF_Reviews (نظر واقعی تأییدکننده)</Divider>
+            <Typography variant="caption" color="text.secondary">
+              کشف شده با بررسی داده واقعی: نظر واقعی تأییدکننده در ستون ManagerIdea ذخیره نمی‌شود - در
+              این جدول جداگانه (یک ردیف به‌ازای هر تصمیم) ذخیره می‌شود. مقدار «تأیید» (۴) با داده واقعی
+              تأیید شده؛ مقدار «رد» هنوز حدسی است - اگر اشتباه بود همین‌جا اصلاح کنید.
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+              {[
+                ["wf_reviews_table_name", "نام جدول (WF_Reviews)"],
+                ["wf_reviews_request_id_column", "ستون شناسه درخواست"],
+                ["wf_reviews_reviewed_emp_no_column", "ستون کد پرسنلی تأییدکننده"],
+                ["wf_reviews_description_column", "ستون متن نظر"],
+                ["wf_reviews_type_column", "ستون نوع تصمیم"],
+                ["wf_reviews_date_column", "ستون تاریخ تصمیم"],
+                ["wf_reviews_show_to_personal_column", "ستون قابل‌نمایش به پرسنل"],
+              ].map(([key, label]) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={leaveMappingForm[key] || ""}
+                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  disabled={isSavingLeaveMapping}
+                  sx={{ minWidth: 220 }}
+                />
+              ))}
+              <TextField
+                size="small"
+                type="number"
+                label="مقدار «تأیید» (تأییدشده=۴)"
+                value={leaveMappingForm.wf_reviews_approved_type_value ?? ""}
+                onChange={(e) =>
+                  setLeaveMappingForm({
+                    ...leaveMappingForm,
+                    wf_reviews_approved_type_value: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                disabled={isSavingLeaveMapping}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="مقدار «رد» (حدسی=۳)"
+                value={leaveMappingForm.wf_reviews_rejected_type_value ?? ""}
+                onChange={(e) =>
+                  setLeaveMappingForm({
+                    ...leaveMappingForm,
+                    wf_reviews_rejected_type_value: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                disabled={isSavingLeaveMapping}
+              />
             </Stack>
 
             {leaveMappingResult && (

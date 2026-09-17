@@ -59,6 +59,15 @@ class LeaveRequestMappingIn(BaseModel):
     section_sec_no_column: str | None = "Sec_No"
     section_manager_emp_no_column: str | None = "ManagerEmp_No"
     section_parent_column: str | None = "TFather"
+    wf_reviews_table_name: str | None = "WF_Reviews"
+    wf_reviews_request_id_column: str | None = "RequestId"
+    wf_reviews_reviewed_emp_no_column: str | None = "ReviewedEmp_No"
+    wf_reviews_description_column: str | None = "Description"
+    wf_reviews_type_column: str | None = "ReviewType"
+    wf_reviews_date_column: str | None = "ReviewDate"
+    wf_reviews_show_to_personal_column: str | None = "ShowToPersonal"
+    wf_reviews_approved_type_value: int | None = 4
+    wf_reviews_rejected_type_value: int | None = 3
     branch_code_column: str | None = "BranchCode"
     branch_code_value: int | None = None
     application_id_value: int = 4

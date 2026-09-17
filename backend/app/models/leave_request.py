@@ -135,6 +135,31 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # به بالا ادامه پیدا می‌کند تا یک مدیرِ متفاوت پیدا شود.
     section_parent_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="TFather")
 
+    # ⚠️ کشف حیاتی (تأییدشده با بررسی مستقیم دیتابیس Kara): نظر واقعی
+    # تأییدکننده در ستون WF_Requests.ManagerIdea ذخیره نمی‌شود (آن ستون
+    # همیشه خالی/"" باقی می‌ماند حتی وقتی نظر واقعی وجود دارد) - نظر
+    # واقعی در جدول جداگانه WF_Reviews ذخیره می‌شود (یک ردیف به‌ازای هر
+    # تصمیم، نه فقط یک ستون تکی). این فیلدها کاملاً اختیاری‌اند - اگر
+    # نصبی این جدول را نداشت، به رفتار قبلی (فقط ManagerIdea) برمی‌گردد.
+    wf_reviews_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="WF_Reviews")
+    wf_reviews_request_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="RequestId")
+    wf_reviews_reviewed_emp_no_column: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="ReviewedEmp_No"
+    )
+    wf_reviews_description_column: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="Description"
+    )
+    wf_reviews_type_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ReviewType")
+    wf_reviews_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ReviewDate")
+    wf_reviews_show_to_personal_column: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="ShowToPersonal"
+    )
+    # ⚠️ فقط مقدار «تأیید» با داده واقعی تأیید شد (۴). مقدار «رد» هنوز
+    # حدسی است (هیچ نمونه واقعی رد‌شده از طریق خودِ کاراوب در دیتابیس
+    # موجود نبود) - اگر اشتباه بود، همین‌جا در تنظیمات سایت اصلاح کنید.
+    wf_reviews_approved_type_value: Mapped[int | None] = mapped_column(Integer, nullable=True, default=4)
+    wf_reviews_rejected_type_value: Mapped[int | None] = mapped_column(Integer, nullable=True, default=3)
+
     # ⚠️ اختیاری - فقط برای نصب‌هایی که یک دیتابیس/جدول مشترک بین چند
     # سایت (شعبه) دارند. اگر branch_code_column خالی باشد، یعنی این سایت
     # جدول اختصاصی خودش را دارد و فیلتر شعبه‌ای اعمال نمی‌شود.
