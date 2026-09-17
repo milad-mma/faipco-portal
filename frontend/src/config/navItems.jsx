@@ -119,12 +119,6 @@ export const NAV_ITEMS = [
         icon: <SettingsOutlinedIcon />,
         check: (u) => u?.can_manage_system_settings,
       },
-      {
-        label: "همه درخواست‌های مرخصی/ماموریت",
-        path: "/leave-requests/all",
-        icon: <AssignmentOutlinedIcon />,
-        check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
-      },
     ],
   },
   {
@@ -189,6 +183,12 @@ export const NAV_ITEMS = [
     path: "/vehicle-report",
     icon: <DirectionsCarFilledOutlinedIcon />,
     check: (u) => u?.can_view_vehicles_report,
+  },
+  {
+    label: "درخواست‌های مرخصی/ماموریت",
+    path: "/leave-requests/all",
+    icon: <AssignmentOutlinedIcon />,
+    check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
   },
 ];
 

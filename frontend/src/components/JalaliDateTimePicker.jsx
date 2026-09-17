@@ -7,13 +7,14 @@ import { gregorianToJalali, jalaliMonthLength, jalaliToGregorian, JALALI_MONTH_N
  * یک فیلد ساعت:دقیقه. value و onChange با شیء Date میلادی کار می‌کنند (تا
  * بقیه کد، مثل ارسال به سرور، تغییری نکند) — فقط نمایش برای کاربر شمسی است.
  */
-export default function JalaliDateTimePicker({ value, onChange, label }) {
+export default function JalaliDateTimePicker({ value, onChange, label, showTime = true }) {
   const initialJalali = useMemo(() => gregorianToJalali(value || new Date()), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [year, setYear] = useState(initialJalali.jy);
   const [month, setMonth] = useState(initialJalali.jm);
   const [day, setDay] = useState(initialJalali.jd);
   const [time, setTime] = useState(() => {
+    if (!showTime) return "00:00";
     const d = value || new Date();
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
@@ -79,15 +80,17 @@ export default function JalaliDateTimePicker({ value, onChange, label }) {
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          label="ساعت"
-          size="small"
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          sx={{ minWidth: 110 }}
-          InputLabelProps={{ shrink: true }}
-        />
+        {showTime && (
+          <TextField
+            label="ساعت"
+            size="small"
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            sx={{ minWidth: 110 }}
+            InputLabelProps={{ shrink: true }}
+          />
+        )}
       </Stack>
     </Stack>
   );

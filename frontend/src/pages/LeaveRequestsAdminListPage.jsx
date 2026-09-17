@@ -206,7 +206,7 @@ function EditableTimeRange({ item, onSave }) {
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 260 }}>
       {isHourly ? (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ" />
+          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ" showTime={false} />
           <TextField
             type="time"
             size="small"
@@ -228,8 +228,8 @@ function EditableTimeRange({ item, onSave }) {
         </>
       ) : (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" />
-          <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" />
+          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" showTime={false} />
+          <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
         </>
       )}
       <IconButton size="small" color="success" disabled={saving} onClick={handleSave}>
@@ -336,7 +336,7 @@ export default function LeaveRequestsAdminListPage() {
     <Box>
       <BackLink to="/access" label="بازگشت" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
-        همه درخواست‌های مرخصی/ماموریت
+        درخواست‌های مرخصی/ماموریت
       </Typography>
 
       <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>

@@ -127,7 +127,7 @@ function SubmitRequestForm({ onSubmitted }) {
 
         {selectedType && (
           <>
-            <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" />
+            <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" showTime={false} />
             {selectedType.is_hourly ? (
               <Stack direction="row" spacing={1.5}>
                 <TextField
@@ -146,7 +146,7 @@ function SubmitRequestForm({ onSubmitted }) {
                 />
               </Stack>
             ) : (
-              <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" />
+              <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
             )}
 
             {selectedType.is_mission && (
