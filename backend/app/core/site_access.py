@@ -98,3 +98,38 @@ async def get_sites_with_permission(db: AsyncSession, user: User, permission_cod
         return None  # حداقل یک انتصاب سراسری این Permission را دارد
 
     return set(site_ids_raw)
+
+
+async def get_sites_with_permission_prefix(db: AsyncSession, user: User, code_prefix: str) -> dict:
+    """
+    مثل get_sites_with_permission، ولی برای گروهی از Permission ها که همه
+    با یک پیشوند مشترک شروع می‌شوند (مثلاً leave_requests.view.type. که
+    هرکدام مخصوص یک LeaveRequestType است - کد مجوز از قبل مشخص نیست، چون
+    نوع‌ها به‌صورت پویا ساخته می‌شوند).
+
+    خروجی: دیکشنری {کد کامل Permission: مجموعه site_id یا None (نامحدود)}
+    - فقط شامل کدهایی که این کاربر واقعاً حداقل یک بار دارد (چه سراسری،
+    چه محدود به یک سایت). Admin واقعی → دیکشنری خالی برمی‌گرداند؛ فراخوان
+    باید جداگانه user.is_superuser را برای «دسترسی نامحدود» چک کند.
+    """
+    if user.is_superuser:
+        return {}
+
+    stmt = (
+        select(Permission.code, UserRole.site_id)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id, Permission.code.like(f"{code_prefix}%"))
+    )
+    result = await db.execute(stmt)
+
+    mapping: dict = {}
+    for code, site_id in result.all():
+        if code in mapping and mapping[code] is None:
+            continue
+        if site_id is None:
+            mapping[code] = None
+        else:
+            mapping.setdefault(code, set()).add(site_id)
+    return mapping

@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -12,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
   MenuItem,
   Stack,
   Table,
@@ -24,20 +20,14 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
-import EmployeePicker from "../components/EmployeePicker";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { useAuth } from "../context/AuthContext";
 import { fetchSites } from "../api/sites";
 import {
-  addTypeViewer,
   adminUpdateLeaveRequest,
   fetchAllLeaveRequestsForSite,
   fetchLeaveRequestTypes,
-  fetchTypeViewers,
-  removeTypeViewer,
 } from "../api/leaveRequestsAdmin";
 
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده" };
@@ -187,97 +177,6 @@ function EditDialog({ siteId, item, types, onClose, onSaved, canEdit }) {
   );
 }
 
-function TypeViewersSection({ siteId, types }) {
-  const [expandedTypeId, setExpandedTypeId] = useState(null);
-  const [viewersByType, setViewersByType] = useState({});
-  const [error, setError] = useState("");
-
-  function loadViewers(typeId) {
-    fetchTypeViewers(typeId)
-      .then((data) => setViewersByType((prev) => ({ ...prev, [typeId]: data })))
-      .catch(() => setViewersByType((prev) => ({ ...prev, [typeId]: [] })));
-  }
-
-  async function handleAdd(typeId, employee) {
-    setError("");
-    try {
-      await addTypeViewer(typeId, employee.id);
-      loadViewers(typeId);
-    } catch (err) {
-      setError(err.response?.data?.detail || "افزودن دسترسی با خطا مواجه شد.");
-    }
-  }
-
-  async function handleRemove(typeId, viewerId) {
-    setError("");
-    try {
-      await removeTypeViewer(viewerId);
-      loadViewers(typeId);
-    } catch (err) {
-      setError(err.response?.data?.detail || "حذف دسترسی با خطا مواجه شد.");
-    }
-  }
-
-  if (!types) return null; // هنوز در حال بارگذاری اولیه - این با types=[] (خالی) فرق دارد
-
-  return (
-    <Card variant="outlined" sx={{ mt: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
-      <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
-        مجوز مشاهده به تفکیک نوع درخواست
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        افرادی که مجوز سراسری «مشاهده همه درخواست‌ها» ندارند، اینجا می‌توانند فقط به نوع(های) خاصی که برایشان
-        تعیین می‌کنید دسترسی داشته باشند.
-      </Typography>
-      {error && (
-        <Alert severity="error" sx={{ mb: 1.5 }}>
-          {error}
-        </Alert>
-      )}
-      {types.length === 0 ? (
-        <Alert severity="info">این سایت هنوز هیچ نوع درخواست فعالی ندارد.</Alert>
-      ) : (
-        <Stack spacing={1}>
-        {types.map((t) => (
-          <Accordion
-            key={t.id}
-            variant="outlined"
-            expanded={expandedTypeId === t.id}
-            onChange={(_, isExpanded) => {
-              setExpandedTypeId(isExpanded ? t.id : null);
-              if (isExpanded && !viewersByType[t.id]) loadViewers(t.id);
-            }}
-          >
-            <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
-              <Typography>{t.title}</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Stack spacing={1.5}>
-                {(viewersByType[t.id] || []).map((v) => (
-                  <Stack key={v.id} direction="row" alignItems="center" spacing={1.5}>
-                    <Typography variant="body2" sx={{ flex: 1 }}>
-                      {v.employee.first_name} {v.employee.last_name}
-                    </Typography>
-                    <IconButton size="small" color="error" onClick={() => handleRemove(t.id, v.id)}>
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </Stack>
-                ))}
-                <EmployeePicker
-                  siteId={siteId}
-                  label="افزودن فرد مجاز"
-                  onSelect={(employee) => handleAdd(t.id, employee)}
-                />
-              </Stack>
-            </AccordionDetails>
-          </Accordion>
-        ))}
-        </Stack>
-      )}
-    </Card>
-  );
-}
-
 export default function LeaveRequestsAdminListPage() {
   const { user } = useAuth();
   const [sites, setSites] = useState([]);
@@ -304,14 +203,14 @@ export default function LeaveRequestsAdminListPage() {
 
   useEffect(load, [siteId]);
 
+  const canEdit = Boolean(user?.can_manage_leave_requests);
+
   useEffect(() => {
-    if (!siteId || !user?.can_manage_sites) return;
+    if (!siteId || !canEdit) return;
     fetchLeaveRequestTypes(siteId)
       .then(setTypes)
       .catch(() => setTypes([]));
-  }, [siteId, user?.can_manage_sites]);
-
-  const canEdit = Boolean(user?.can_manage_leave_requests);
+  }, [siteId, canEdit]);
 
   return (
     <Box>
@@ -339,8 +238,6 @@ export default function LeaveRequestsAdminListPage() {
           {error}
         </Alert>
       )}
-
-      {user?.can_manage_sites && <TypeViewersSection siteId={siteId} types={types} />}
 
       {requests !== null && (
         <TableContainer component={Card} variant="outlined" sx={{ mt: 3 }}>

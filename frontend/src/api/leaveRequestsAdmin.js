@@ -73,18 +73,3 @@ export async function adminUpdateLeaveRequest(siteId, requestId, payload) {
   const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/requests/${requestId}`, payload);
   return data;
 }
-
-export async function fetchTypeViewers(typeId) {
-  const { data } = await apiClient.get(`/leave-requests/types/${typeId}/viewers`);
-  return data;
-}
-
-export async function addTypeViewer(typeId, employeeId) {
-  const { data } = await apiClient.post(`/leave-requests/types/${typeId}/viewers`, { employee_id: employeeId });
-  return data;
-}
-
-export async function removeTypeViewer(viewerId) {
-  const { data } = await apiClient.delete(`/leave-requests/types/viewers/${viewerId}`);
-  return data;
-}

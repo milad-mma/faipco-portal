@@ -208,22 +208,3 @@ class LeaveRequestApprover(Base, TimestampMixin):
     department: Mapped["Department"] = relationship()  # noqa: F821
     approver_employee: Mapped["Employee"] = relationship()  # noqa: F821
 
-
-class LeaveRequestTypeViewer(Base, TimestampMixin):
-    """
-    ⚠️ طبق درخواست صریح کاربر: مجوز مشاهده به تفکیک نوع درخواست - مثلاً
-    حراست فقط اجازه دیدن درخواست‌های «مرخصی» یا «ماموریت ساعتی» را دارد،
-    نه همه‌ی درخواست‌های سایت. این کاملاً مستقل و مکمل مجوزهای سراسری
-    leave_requests.view/leave_requests.manage است - کسی که آن مجوزهای
-    سراسری را دارد، همه‌چیز را می‌بیند (نیازی به تخصیص اینجا ندارد)؛ این
-    جدول فقط برای دسترسی محدودِ «فقط این نوع(ها)» است.
-    """
-
-    __tablename__ = "leave_request_type_viewers"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    leave_type_id: Mapped[int] = mapped_column(ForeignKey("leave_request_types.id", ondelete="CASCADE"), nullable=False)
-    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
-
-    leave_type: Mapped["LeaveRequestType"] = relationship()
-    employee: Mapped["Employee"] = relationship()  # noqa: F821

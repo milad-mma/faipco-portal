@@ -206,18 +206,3 @@ class AdminUpdateRequestIn(BaseModel):
     leave_type_id: int | None = None
     manager_idea: str | None = None
     description: str | None = None
-
-
-# ---------- مجوز مشاهده به تفکیک نوع ----------
-
-
-class TypeViewerIn(BaseModel):
-    employee_id: int
-
-
-class TypeViewerOut(BaseModel):
-    id: int
-    leave_type_id: int
-    employee: EmployeeBrief
-
-    model_config = ConfigDict(from_attributes=True)
