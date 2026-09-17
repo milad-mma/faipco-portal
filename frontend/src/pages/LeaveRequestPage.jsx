@@ -23,6 +23,7 @@ import {
   Tabs,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
@@ -179,6 +180,7 @@ function SubmitRequestForm({ onSubmitted }) {
 }
 
 function MyRequestsTable({ items, onDeleted }) {
+  const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState("");
 
@@ -203,6 +205,60 @@ function MyRequestsTable({ items, onDeleted }) {
       </Typography>
     );
   }
+
+  if (isMobile) {
+    // نمایش کارتی — موبایل
+    return (
+      <Stack spacing={1.5}>
+        {error && <Alert severity="error">{error}</Alert>}
+        {items.map((item) => (
+          <Card key={item.request_id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={700} noWrap>
+                  {item.type_title || "—"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}
+                </Typography>
+              </Box>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+                <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                {item.status === "pending" && (
+                  <IconButton
+                    size="small"
+                    color="error"
+                    disabled={deletingId === item.request_id}
+                    onClick={() => handleDelete(item.request_id)}
+                    aria-label="حذف"
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Stack>
+            </Stack>
+            {item.description && (
+              <Typography variant="body2" sx={{ mb: 0.5 }}>
+                {item.description}
+              </Typography>
+            )}
+            <Typography variant="caption" color="text.secondary" display="block">
+              مدت:{" "}
+              {item.start_hour != null
+                ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+                : `${item.duration} روز`}
+            </Typography>
+            {item.manager_idea && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                نظر تأییدکننده: {item.manager_idea}
+              </Typography>
+            )}
+          </Card>
+        ))}
+      </Stack>
+    );
+  }
+
   return (
     <Stack spacing={1.5}>
       {error && <Alert severity="error">{error}</Alert>}
@@ -386,7 +442,7 @@ export default function LeaveRequestPage() {
   const hasPending = pendingCount > 0;
 
   return (
-    <Box>
+    <Box sx={{ maxWidth: 1100, mx: "auto" }}>
       <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         درخواست مرخصی/ماموریت

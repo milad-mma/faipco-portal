@@ -228,7 +228,17 @@ class AuthService:
             user.is_superuser or "performance.assignments.manage" in permission_codes
         )
         base.can_view_performance_reports = user.is_superuser or "performance.reports.view" in permission_codes
-        base.can_view_leave_requests = user.is_superuser or "leave_requests.view" in permission_codes
+        # ⚠️ رفع باگ: طبق طراحی جدید مجوز به‌تفکیک نوع، کسی که فقط یک یا
+        # چند مجوز leave_requests.view.type.<id> دارد (نه لزوماً مجوز
+        # سراسری leave_requests.view) هم باید منو را ببیند - وگرنه نقشی
+        # مثل «حراست» که فقط اجازه دیدن یک نوع خاص را دارد، اصلاً منو را
+        # نمی‌بیند (چون can_view_leave_requests قبلاً فقط دقیقاً همان یک
+        # کد سراسری را چک می‌کرد).
+        base.can_view_leave_requests = (
+            user.is_superuser
+            or "leave_requests.view" in permission_codes
+            or any(code.startswith("leave_requests.view.type.") for code in permission_codes)
+        )
         base.can_manage_leave_requests = user.is_superuser or "leave_requests.manage" in permission_codes
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
