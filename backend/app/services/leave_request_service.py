@@ -413,7 +413,7 @@ class LeaveRequestService:
             "duration": duration,
             "operations_id": leave_type.operation_id if leave_type.operation_id is not None else (3 if leave_type.is_mission else 5),
             "description": f"{leave_type.title} — {description}" if description else leave_type.title,
-            "cur_emp_no": _to_personnel_code_int(approver),
+            "cur_emp_no": cur_emp_no,
             "persian_start_date": persian_start_date,
             "source": source if leave_type.is_mission else None,
             "destination": destination if leave_type.is_mission else None,
