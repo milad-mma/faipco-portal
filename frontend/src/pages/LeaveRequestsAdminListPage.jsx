@@ -271,7 +271,22 @@ export default function LeaveRequestsAdminListPage() {
     setError("");
     fetchAllLeaveRequestsForSite(siteId)
       .then(setRequests)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت درخواست‌ها با خطا مواجه شد."));
+      .catch((err) => {
+        // ⚠️ طبق تصمیم صریح کاربر: سایت پیش‌فرض (اولین سایت لیست) لزوماً
+        // همان سایتی نیست که این کاربر مجوز مشاهده‌اش را دارد (مثلاً
+        // نقشی مثل «حراست» فقط برای یک نوع در یک سایت خاص مجوز دارد) -
+        // اگر همین سایت ۴۰۳ داد، خودکار سراغ سایت بعدیِ لیست می‌رویم، به‌
+        // جای اینکه کاربر با صفحه خالی/خطا بماند.
+        if (err.response?.status === 403 && sites.length > 1) {
+          const currentIndex = sites.findIndex((s) => s.id === siteId);
+          const nextSite = sites[currentIndex + 1];
+          if (nextSite) {
+            setSiteId(nextSite.id);
+            return;
+          }
+        }
+        setError(err.response?.data?.detail || "دریافت درخواست‌ها با خطا مواجه شد.");
+      });
   }
 
   useEffect(load, [siteId]);
@@ -362,7 +377,13 @@ export default function LeaveRequestsAdminListPage() {
         </Alert>
       )}
 
-      {requests !== null && (
+      {requests !== null && requests.length === 0 && (
+        <Typography variant="body2" color="text.secondary">
+          هیچ درخواستی برای این سایت یافت نشد.
+        </Typography>
+      )}
+
+      {requests !== null && requests.length > 0 && (
         <TableContainer component={Card} variant="outlined">
           <Table size="small">
             <TableHead>

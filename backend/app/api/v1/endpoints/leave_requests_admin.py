@@ -5,6 +5,7 @@ Endpoint های مدیریتی «درخواست مرخصی/ماموریت»:
     - ویرایش مدیریتی - فقط leave_requests.manage
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
@@ -29,7 +30,11 @@ from app.schemas.leave_request import (
     SetApproverIn,
 )
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
-from app.services.leave_request_structure_service import LeaveRequestStructureError, LeaveRequestStructureService
+from app.services.leave_request_structure_service import (
+    LeaveRequestStructureError,
+    LeaveRequestStructureService,
+    permission_code_for_type_title,
+)
 
 router = APIRouter()
 
@@ -215,13 +220,14 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
     """
     ⚠️ طبق تصمیم صریح کاربر: مجوز به‌تفکیک نوع از طریق همان سیستم
     نقش/مجوز (RBAC) موجود پروژه انجام می‌شود - نه یک جدول اختصاصی جدا.
-    هر LeaveRequestType یک Permission خودش دارد
-    (leave_requests.view.type.<id>) که از صفحه «مدیریت نقش/مجوز» قابل
-    اختصاص به هر نقشی است (مثلاً نقش «حراست» با همین یک مجوز محدود).
+    هر «عنوان» نوع (نه هر ردیف/سایت) یک Permission مشترک دارد
+    (leave_requests.view.type.<عنوان‌با‌زیرخط>) - سایت‌بندی از طریق
+    UserRole.site_id هنگام تخصیص نقش انجام می‌شود، نه از طریق خودِ کد
+    مجوز (دقیقاً مثل leave_requests.view/leave_requests.manage).
 
     خروجی: None یعنی دسترسی کامل و بی‌قید (سراسری)؛ یک لیست یعنی فقط
-    همین شناسه‌های نوع؛ اگر هیچ دسترسی‌ای نباشد (نه سراسری، نه محدود به
-    حداقل یک نوع)، خطای 403 می‌دهد.
+    همین شناسه‌های نوع (برای این سایت خاص)؛ اگر هیچ دسترسی‌ای نباشد (نه
+    سراسری، نه محدود به حداقل یک نوع)، خطای 403 می‌دهد.
     """
     if user.is_superuser:
         return None
@@ -233,13 +239,15 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
         return None
 
     type_permission_map = await get_sites_with_permission_prefix(db, user, "leave_requests.view.type.")
-    allowed_type_ids = []
-    for code, sites in type_permission_map.items():
-        if sites is not None and site_id not in sites:
-            continue
-        type_id_part = code.rsplit(".", 1)[-1]
-        if type_id_part.isdigit():
-            allowed_type_ids.append(int(type_id_part))
+    allowed_codes = {code for code, sites in type_permission_map.items() if sites is None or site_id in sites}
+    if not allowed_codes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="دسترسی لازم برای مشاهده درخواست‌های این سایت را ندارید",
+        )
+
+    site_types = await db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == site_id))
+    allowed_type_ids = [t.id for t in site_types.scalars().all() if permission_code_for_type_title(t.title) in allowed_codes]
     if allowed_type_ids:
         return allowed_type_ids
 

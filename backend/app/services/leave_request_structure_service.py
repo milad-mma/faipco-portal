@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +19,20 @@ from app.repositories.user_repository import UserRepository
 
 class LeaveRequestStructureError(Exception):
     pass
+
+
+def permission_code_for_type_title(title: str) -> str:
+    """
+    ⚠️ طبق درخواست صریح کاربر: مجوز مشاهده باید به‌ازای هر «نوع درخواست»
+    (مفهوم، نه هر ردیف - یعنی یک بار برای «مرخصی روزانه استحقاقی»، نه
+    یک‌بار برای هر سایتی که این عنوان را دارد) فقط یک Permission داشته
+    باشد - سایت‌بندی مثل بقیه سیستم RBAC از طریق UserRole.site_id (هنگام
+    تخصیص نقش به کاربر) انجام می‌شود، نه از طریق کد مجوز. کد از روی
+    عنوانِ نوع (نه شناسه عددی سطر) ساخته می‌شود - تا دو نوع هم‌عنوان در
+    دو سایت مختلف، دقیقاً یک مجوز مشترک بگیرند.
+    """
+    slug = re.sub(r"\s+", "_", title.strip())
+    return f"leave_requests.view.type.{slug}"
 
 
 # ⚠️ طبق درخواست صریح کاربر: وقتی نگاشت مرخصی/ماموریت یک سایت برای اولین
@@ -106,18 +122,22 @@ class LeaveRequestStructureService:
         self.db.add(leave_type)
         await self.db.commit()
         await self.db.refresh(leave_type)
-        # ⚠️ طبق درخواست صریح کاربر: به‌جای یک جدول مجوز اختصاصی جدا، از
-        # همان سیستم نقش/مجوز (RBAC) موجود پروژه استفاده می‌شود - هر نوع
-        # درخواست یک Permission اختصاصی خودش می‌گیرد (leave_requests.view.type.<id>)
-        # تا از صفحه «مدیریت نقش/مجوز» بشود نقشی (مثلاً «حراست») ساخت که
-        # فقط همین یک مجوز را دارد.
-        self.db.add(
-            Permission(
-                code=f"leave_requests.view.type.{leave_type.id}", description=f"مشاهده درخواست‌های «{title}»"
-            )
-        )
-        await self.db.commit()
+        await self._ensure_permission_for_title(title)
         return leave_type
+
+    async def _ensure_permission_for_title(self, title: str) -> None:
+        """
+        ⚠️ طبق درخواست صریح کاربر: یک نوع «مفهومی» (مثلاً «مرخصی روزانه
+        استحقاقی») در چند سایت مختلف باید دقیقاً یک Permission مشترک
+        داشته باشد - نه یکی جداگانه به‌ازای هر سایت. اگر از قبل مجوزی با
+        همین عنوان ساخته شده (برای سایت دیگری)، دوباره ساخته نمی‌شود.
+        """
+        code = permission_code_for_type_title(title)
+        result = await self.db.execute(select(Permission).where(Permission.code == code))
+        if result.scalar_one_or_none() is not None:
+            return
+        self.db.add(Permission(code=code, description=f"مشاهده درخواست‌های «{title}»"))
+        await self.db.commit()
 
     async def update_type(self, type_id: int, data: dict) -> LeaveRequestType:
         leave_type = await self.db.get(LeaveRequestType, type_id)
@@ -126,27 +146,34 @@ class LeaveRequestStructureService:
         for key, value in data.items():
             setattr(leave_type, key, value)
         if "title" in data:
-            result = await self.db.execute(
-                select(Permission).where(Permission.code == f"leave_requests.view.type.{type_id}")
-            )
-            permission = result.scalar_one_or_none()
-            if permission is not None:
-                permission.description = f"مشاهده درخواست‌های «{data['title']}»"
+            # ⚠️ مجوز قدیمی (متعلق به عنوان قبلی) دست‌نخورده باقی می‌ماند -
+            # چون ممکن است هنوز توسط نوع‌های هم‌عنوان در سایت‌های دیگر
+            # استفاده شود؛ فقط مطمئن می‌شویم عنوان جدید هم مجوز خودش را دارد.
+            await self._ensure_permission_for_title(data["title"])
         await self.db.commit()
         await self.db.refresh(leave_type)
         return leave_type
 
     async def delete_type(self, type_id: int) -> None:
         leave_type = await self.db.get(LeaveRequestType, type_id)
-        if leave_type is not None:
-            await self.db.delete(leave_type)
-        result = await self.db.execute(
-            select(Permission).where(Permission.code == f"leave_requests.view.type.{type_id}")
-        )
+        if leave_type is None:
+            return
+        title = leave_type.title
+        await self.db.delete(leave_type)
+        await self.db.commit()
+
+        # ⚠️ مجوز مشترک را فقط وقتی حذف کن که دیگر هیچ نوعی (در هیچ
+        # سایتی) با همین عنوان باقی نمانده باشد - وگرنه دسترسی نقش‌هایی
+        # که برای سایت‌های دیگر همین نوع را می‌بینند هم از بین می‌رود.
+        remaining = await self.db.execute(select(LeaveRequestType).where(LeaveRequestType.title == title))
+        if remaining.scalar_one_or_none() is not None:
+            return
+        code = permission_code_for_type_title(title)
+        result = await self.db.execute(select(Permission).where(Permission.code == code))
         permission = result.scalar_one_or_none()
         if permission is not None:
             await self.db.delete(permission)  # ⚠️ RolePermission های مرتبط با ondelete=CASCADE خودکار پاک می‌شوند
-        await self.db.commit()
+            await self.db.commit()
 
     # ---------- تخصیص تأییدکننده هر واحد ----------
 
