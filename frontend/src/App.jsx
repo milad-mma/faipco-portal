@@ -20,6 +20,7 @@ import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
 import LeaveRequestPage from "./pages/LeaveRequestPage";
+import LeaveRequestStructurePage from "./pages/LeaveRequestStructurePage";
 import LeaveRequestsAdminListPage from "./pages/LeaveRequestsAdminListPage";
 import MyPerformancePage from "./pages/MyPerformancePage";
 import EvaluationFillPage from "./pages/EvaluationFillPage";
@@ -219,6 +220,14 @@ export default function App() {
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
           <Route path="/leave-requests" element={<LeaveRequestPage />} />
+          <Route
+            path="/leave-requests/structure"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_sites}>
+                <LeaveRequestStructurePage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="/leave-requests/all"
             element={
