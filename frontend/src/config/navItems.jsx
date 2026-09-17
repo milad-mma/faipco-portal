@@ -120,12 +120,6 @@ export const NAV_ITEMS = [
         check: (u) => u?.can_manage_system_settings,
       },
       {
-        label: "تنظیمات مرخصی/ماموریت",
-        path: "/leave-requests/structure",
-        icon: <EventOutlinedIcon />,
-        check: (u) => u?.can_manage_sites,
-      },
-      {
         label: "همه درخواست‌های مرخصی/ماموریت",
         path: "/leave-requests/all",
         icon: <AssignmentOutlinedIcon />,
