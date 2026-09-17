@@ -19,6 +19,21 @@ class LeaveRequestStructureError(Exception):
     pass
 
 
+# ⚠️ طبق درخواست صریح کاربر: وقتی نگاشت مرخصی/ماموریت یک سایت برای اولین
+# بار ایجاد می‌شود، همین سه نوع پایه خودکار برایش ساخته می‌شوند - چون
+# همه سایت‌های این استقرار به یک سیستم کاراوب/Kara مشترک با همین مقادیر
+# واقعی وصل‌اند (تأییدشده: OperationsID/ActionId/Card_No این سه نوع برای
+# سایت‌های موجود کاملاً یکسان بود). اگر سایتی مقادیر واقعاً متفاوتی
+# داشت، ادمین می‌تواند بعداً این نوع‌های پیش‌فرض را دستی ویرایش/حذف/
+# جایگزین کند.
+DEFAULT_LEAVE_REQUEST_TYPES = [
+    # title, is_mission, is_hourly, action_id, operation_id, card_no
+    ("مرخصی روزانه استحقاقی", False, False, 1, 5, 57),
+    ("مرخصی ساعتی استحقاقی", False, True, 3, 5, 17),
+    ("ماموریت ساعتی", True, True, 9, 3, 9),
+]
+
+
 class LeaveRequestStructureService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -31,6 +46,7 @@ class LeaveRequestStructureService:
 
     async def upsert_mapping(self, site_id: int, data: dict) -> LeaveRequestMapping:
         existing = await self.get_mapping(site_id)
+        is_new_mapping = existing is None
         if existing is not None:
             for key, value in data.items():
                 setattr(existing, key, value)
@@ -40,7 +56,19 @@ class LeaveRequestStructureService:
             self.db.add(mapping)
         await self.db.commit()
         await self.db.refresh(mapping)
+
+        if is_new_mapping:
+            await self._seed_default_types_if_none(site_id)
+
         return mapping
+
+    async def _seed_default_types_if_none(self, site_id: int) -> None:
+        """⚠️ فقط اگر این سایت هنوز هیچ نوع درخواستی ندارد - تا نوع‌های دستیِ از قبل موجود را دوباره اضافه نکند."""
+        existing_types = await self.list_types(site_id)
+        if existing_types:
+            return
+        for title, is_mission, is_hourly, action_id, operation_id, card_no in DEFAULT_LEAVE_REQUEST_TYPES:
+            await self.add_type(site_id, title, is_mission, is_hourly, action_id, operation_id, card_no)
 
     async def delete_mapping(self, site_id: int) -> None:
         mapping = await self.get_mapping(site_id)

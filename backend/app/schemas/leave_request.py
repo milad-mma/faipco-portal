@@ -202,7 +202,6 @@ class AdminUpdateRequestIn(BaseModel):
     end_date: datetime | None = None
     start_hour: int | None = None
     end_hour: int | None = None
-    duration: str | None = None
     leave_type_id: int | None = None
     manager_idea: str | None = None
     description: str | None = None

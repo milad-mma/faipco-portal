@@ -679,10 +679,18 @@ class LeaveRequestService:
     async def admin_update_request(self, site_id: int, request_id: int, updates: dict) -> None:
         """
         ⚠️ فقط برای دارندگان مجوز leave_requests.manage - طبق درخواست
-        صریح: می‌تواند تصمیم (تأیید/رد)، نوع درخواست، مدت، و تاریخ/ساعت
+        صریح: می‌تواند تصمیم (تأیید/رد)، نوع درخواست، و تاریخ/ساعت
         درخواست را هم ویرایش کند. کلیدهای مجاز updates: is_final_approved،
-        start_date، end_date، start_hour، end_hour، duration، leave_type_id،
+        start_date، end_date، start_hour، end_hour، leave_type_id،
         manager_idea، description.
+
+        ⚠️ طبق درخواست صریح کاربر: «مدت» دیگر یک فیلد خام و مستقیماً
+        قابل‌ویرایش نیست - چون کاربر معنایش را نمی‌فهمید. هرگاه هر دو
+        ساعت شروع/پایان با هم داده شوند، مدت به‌صورت خودکار از رویشان
+        محاسبه می‌شود (فرمت فشرده HHMM)؛ هرگاه هر دو تاریخ شروع/پایان با
+        هم داده شوند، مدت به‌صورت خودکار از رویشان محاسبه می‌شود (تعداد
+        روز) - دقیقاً همان قانونی که submit_request هنگام ثبت اولیه
+        به‌کار می‌برد.
 
         ⚠️ leave_type_id ویژه است - یک ستون مستقیم در WF_Requests نیست؛
         وقتی داده شود، نوع موردنظر در LeaveRequestType این سایت پیدا شده
@@ -698,13 +706,24 @@ class LeaveRequestService:
             "end_date": mapping.end_date_column,
             "start_hour": mapping.start_hour_column,
             "end_hour": mapping.end_hour_column,
-            "duration": mapping.duration_column,
             "manager_idea": mapping.manager_idea_column,
             "description": mapping.description_column,
         }
         for key, column in key_to_column.items():
             if key in updates:
                 column_updates[column] = updates[key]
+
+        try:
+            if updates.get("start_hour") is not None and updates.get("end_hour") is not None:
+                column_updates[mapping.duration_column] = str(
+                    compute_hourly_duration(updates["start_hour"], updates["end_hour"])
+                )
+            elif updates.get("start_date") is not None and updates.get("end_date") is not None:
+                start_date_only = updates["start_date"].date() if hasattr(updates["start_date"], "date") else updates["start_date"]
+                end_date_only = updates["end_date"].date() if hasattr(updates["end_date"], "date") else updates["end_date"]
+                column_updates[mapping.duration_column] = str(compute_daily_duration(start_date_only, end_date_only))
+        except LeaveRequestRulesError as e:
+            raise LeaveRequestError(str(e)) from e
 
         if "leave_type_id" in updates and updates["leave_type_id"] is not None:
             leave_type = await self.db.get(LeaveRequestType, updates["leave_type_id"])
