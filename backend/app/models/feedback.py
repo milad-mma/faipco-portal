@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -47,6 +49,16 @@ class FeedbackMessage(Base, TimestampMixin):
     # ذخیره می‌شود (نه هر بار در زمان نمایش) - یعنی اگر بعداً یک عبارت به
     # فهرست اضافه/حذف شود، روی پیام‌های قبلاً ارسال‌شده اثر نمی‌گذارد.
     contains_profanity: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ⚠️ طبق درخواست صریح کاربر: حذف «نرم» - رکورد واقعاً از دیتابیس پاک
+    # نمی‌شود. قبلاً تنها عملیات مدیریتی، حذف دائمی بود و یک کلیک اشتباه
+    # یعنی از دست رفتن همیشگی بازخورد پرسنل، بدون هیچ راه بازگشتی. حالا
+    # فقط علامت‌گذاری می‌شود و از فهرست‌ها کنار می‌رود، ولی داده باقی
+    # می‌ماند و در صورت نیاز قابل‌بازیابی است.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class ProhibitedPhrase(Base, TimestampMixin):

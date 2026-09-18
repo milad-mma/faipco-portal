@@ -10,7 +10,16 @@ export async function submitFeedback({ category, title, message, isAnonymous }) 
   return data;
 }
 
-export async function fetchFeedback({ senderId, siteId, category, isAnonymous, dateFrom, dateTo } = {}) {
+export async function fetchFeedback({
+  senderId,
+  siteId,
+  category,
+  isAnonymous,
+  dateFrom,
+  dateTo,
+  page,
+  pageSize,
+} = {}) {
   const params = {};
   if (senderId) params.sender_id = senderId;
   if (siteId) params.site_id = siteId;
@@ -18,6 +27,9 @@ export async function fetchFeedback({ senderId, siteId, category, isAnonymous, d
   if (isAnonymous !== undefined && isAnonymous !== "") params.is_anonymous = isAnonymous;
   if (dateFrom) params.date_from = dateFrom;
   if (dateTo) params.date_to = dateTo;
+  if (page) params.page = page;
+  if (pageSize) params.page_size = pageSize;
+  // ⚠️ خروجی سرور حالا صفحه‌بندی‌شده است: {items, total, page, page_size}
   const { data } = await apiClient.get("/feedback", { params });
   return data;
 }

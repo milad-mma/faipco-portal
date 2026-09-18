@@ -142,7 +142,6 @@ const EMPTY_LEAVE_MAPPING = {
   wf_reviews_date_column: "ReviewDate",
   wf_reviews_show_to_personal_column: "ShowToPersonal",
   wf_reviews_approved_type_value: 4,
-  wf_reviews_rejected_type_value: 3,
 };
 
 export default function SiteSettingsPage() {
@@ -1309,8 +1308,9 @@ export default function SiteSettingsPage() {
             <Divider textAlign="right">جدول WF_Reviews (نظر واقعی تأییدکننده)</Divider>
             <Typography variant="caption" color="text.secondary">
               کشف شده با بررسی داده واقعی: نظر واقعی تأییدکننده در ستون ManagerIdea ذخیره نمی‌شود - در
-              این جدول جداگانه (یک ردیف به‌ازای هر تصمیم) ذخیره می‌شود. مقدار «تأیید» (۴) با داده واقعی
-              تأیید شده؛ مقدار «رد» هنوز حدسی است - اگر اشتباه بود همین‌جا اصلاح کنید.
+              این جدول جداگانه (یک ردیف به‌ازای هر تصمیم) ذخیره می‌شود. ReviewType تصمیم را نشان
+              نمی‌دهد؛ کاراوب برای تأیید و رد، هر دو، همین یک مقدار ثابت (۴) را می‌نویسد و تصمیم واقعی
+              فقط در IsFinalApproved ذخیره می‌شود.
             </Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
@@ -1332,28 +1332,19 @@ export default function SiteSettingsPage() {
                   sx={{ minWidth: 220 }}
                 />
               ))}
+              {/* ⚠️ فیلد «مقدار رد» حذف شد - با داده واقعی تأیید شد که
+                  ReviewType اصلاً تصمیم (تأیید/رد) را نشان نمی‌دهد و کاراوب
+                  برای هر دو حالت همین یک مقدار را می‌نویسد. تصمیم واقعی
+                  فقط در IsFinalApproved ذخیره می‌شود. */}
               <TextField
                 size="small"
                 type="number"
-                label="مقدار «تأیید» (تأییدشده=۴)"
+                label="مقدار ثابت ReviewType (کاراوب=۴)"
                 value={leaveMappingForm.wf_reviews_approved_type_value ?? ""}
                 onChange={(e) =>
                   setLeaveMappingForm({
                     ...leaveMappingForm,
                     wf_reviews_approved_type_value: e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-                disabled={isSavingLeaveMapping}
-              />
-              <TextField
-                size="small"
-                type="number"
-                label="مقدار «رد» (حدسی=۳)"
-                value={leaveMappingForm.wf_reviews_rejected_type_value ?? ""}
-                onChange={(e) =>
-                  setLeaveMappingForm({
-                    ...leaveMappingForm,
-                    wf_reviews_rejected_type_value: e.target.value === "" ? null : Number(e.target.value),
                   })
                 }
                 disabled={isSavingLeaveMapping}

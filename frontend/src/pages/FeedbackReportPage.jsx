@@ -15,6 +15,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tabs,
   TextField,
@@ -88,6 +89,9 @@ const EMPTY_DATE_PARTS = { year: null, month: null, day: null };
 function FeedbackMessagesList({ canDelete }) {
   const [allMessages, setAllMessages] = useState(null); // بدون فیلتر - فقط برای ساخت گزینه‌های فیلتر
   const [messages, setMessages] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [error, setError] = useState("");
   const [senderFilter, setSenderFilter] = useState("");
   const [siteFilter, setSiteFilter] = useState("");
@@ -97,8 +101,11 @@ function FeedbackMessagesList({ canDelete }) {
   const [dateToParts, setDateToParts] = useState(EMPTY_DATE_PARTS);
 
   useEffect(() => {
-    fetchFeedback()
-      .then(setAllMessages)
+    // ⚠️ این فقط برای ساختن فهرست فرستندگان در دراپ‌داون فیلتر است - نه
+    // نمایش جدول. صفحه بزرگ گرفته می‌شود تا فهرست فرستندگان تقریباً کامل
+    // باشد (خودِ جدول جداگانه و واقعاً صفحه‌بندی‌شده لود می‌شود).
+    fetchFeedback({ page: 1, pageSize: 200 })
+      .then((data) => setAllMessages(data.items))
       .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
   }, []);
 
@@ -127,10 +134,21 @@ function FeedbackMessagesList({ canDelete }) {
       isAnonymous: anonymousFilter === "" ? undefined : anonymousFilter === "true",
       dateFrom: dateFromIso,
       dateTo: dateToIso,
+      page: page + 1,
+      pageSize: rowsPerPage,
     })
-      .then(setMessages)
+      .then((data) => {
+        setMessages(data.items);
+        setTotal(data.total);
+      })
       .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso, page, rowsPerPage]);
+
+  // ⚠️ با تغییر هر فیلتری به صفحه اول برگرد - وگرنه ممکن است کاربر روی
+  // صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  useEffect(() => {
+    setPage(0);
   }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso]);
 
   const senderOptions = useMemo(() => {
@@ -328,6 +346,20 @@ function FeedbackMessagesList({ canDelete }) {
               </Typography>
             </Card>
           ))}
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setRowsPerPage(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            labelRowsPerPage="تعداد در هر صفحه:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+          />
         </Stack>
       )}
     </Box>

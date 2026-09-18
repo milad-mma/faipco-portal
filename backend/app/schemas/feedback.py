@@ -44,3 +44,12 @@ class ProhibitedPhraseOut(BaseModel):
     phrase: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FeedbackListOut(BaseModel):
+    """⚠️ خروجی صفحه‌بندی‌شده فهرست انتقادات/پیشنهادات."""
+
+    items: list[FeedbackMessageOut]
+    total: int
+    page: int
+    page_size: int

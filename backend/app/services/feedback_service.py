@@ -15,9 +15,10 @@
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.profanity_filter import contains_prohibited_phrase
@@ -25,10 +26,14 @@ from app.core.site_access import get_sites_with_permission
 from app.models.employee import Employee
 from app.models.feedback import FeedbackCategory, FeedbackMessage, ProhibitedPhrase
 from app.models.site import Site
-from app.models.user import User
+from app.models.user import Permission, Role, RolePermission, User, UserRole
+from app.services.push_service import PushService
 from app.schemas.feedback import FeedbackMessageOut
 
 FEEDBACK_RATE_LIMIT_SECONDS = 60
+
+
+logger = logging.getLogger(__name__)
 
 
 class FeedbackAccessDenied(Exception):
@@ -80,7 +85,52 @@ class FeedbackService:
         self.db.add(feedback)
         await self.db.commit()
         await self.db.refresh(feedback)
+
+        # ⚠️ طبق درخواست صریح کاربر: اطلاع‌رسانی به دارندگان مجوز مشاهده.
+        # هرگز نباید خودِ ثبت پیام را متوقف کند - اگر Push پیکربندی نشده
+        # یا خطا داد، پیام همچنان با موفقیت ثبت شده است.
+        await self._notify_reviewers_of_new_feedback(sender)
+
         return feedback
+
+    async def _notify_reviewers_of_new_feedback(self, sender: User) -> None:
+        """
+        ⚠️ اعلان فقط به کسانی می‌رود که مجوز مشاهده انتقادات/پیشنهادات
+        دارند (feedback.view یا feedback.view_all) - یعنی همان کسانی که
+        اصلاً حق دیدن این پیام را دارند.
+
+        ⚠️ محرمانگی: متن اعلان عمداً هیچ اشاره‌ای به فرستنده، عنوان یا
+        محتوای پیام ندارد - چون ممکن است پیام ناشناس باشد و اعلان روی
+        صفحه قفل گوشی دیده شود. فقط می‌گوید «پیام جدیدی ثبت شده».
+
+        ⚠️ خودِ فرستنده هرگز اعلان نمی‌گیرد، حتی اگر خودش مجوز مشاهده
+        داشته باشد - وگرنه برای پیام خودش به خودش اعلان می‌رفت.
+        """
+        try:
+            stmt = (
+                select(User.id)
+                .join(UserRole, UserRole.user_id == User.id)
+                .join(Role, Role.id == UserRole.role_id)
+                .join(RolePermission, RolePermission.role_id == Role.id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(Permission.code.in_(["feedback.view", "feedback.view_all"]))
+                .distinct()
+            )
+            result = await self.db.execute(stmt)
+            user_ids = {row[0] for row in result.all()} - {sender.id}
+            if not user_ids:
+                return
+            await PushService(self.db).notify_users(
+                user_ids,
+                url="/feedback-report",
+                priority="normal",
+                body=(
+                    "پیام جدیدی در انتقادات و پیشنهادات ثبت شده است.\n"
+                    "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+                ),
+            )
+        except Exception:
+            logger.exception("ارسال Push برای پیام جدید انتقادات و پیشنهادات با خطا مواجه شد")
 
     async def _get_accessible_scope(self, current_user: User) -> tuple[set[int] | None, bool]:
         """
@@ -112,7 +162,14 @@ class FeedbackService:
         is_anonymous: bool | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
-    ) -> list[FeedbackMessageOut]:
+        page: int = 1,
+        page_size: int = 25,
+    ) -> dict:
+        """
+        ⚠️ طبق درخواست صریح کاربر: صفحه‌بندی اضافه شد - قبلاً همه پیام‌ها
+        یکجا برگردانده می‌شدند و با رشد تعداد، صفحه کند می‌شد. خروجی حالا
+        {items, total, page, page_size} است (نه یک لیست ساده).
+        """
         accessible_site_ids, has_access = await self._get_accessible_scope(current_user)
         if not has_access:
             raise FeedbackAccessDenied("اجازه مشاهده انتقادات و پیشنهادات را ندارید")
@@ -125,7 +182,9 @@ class FeedbackService:
             .order_by(desc(FeedbackMessage.created_at))
         )
 
-        conditions = []
+        # ⚠️ پیام‌های حذف‌شده (حذف نرم) هرگز در فهرست نمی‌آیند - داده باقی
+        # می‌ماند ولی از دید کاربر خارج است.
+        conditions = [FeedbackMessage.is_deleted.is_(False)]
         if accessible_site_ids is not None:
             conditions.append(Employee.site_id.in_(accessible_site_ids))
         if sender_id is not None:
@@ -140,10 +199,20 @@ class FeedbackService:
             conditions.append(FeedbackMessage.created_at >= date_from)
         if date_to is not None:
             conditions.append(FeedbackMessage.created_at <= date_to)
-        if conditions:
-            query = query.where(and_(*conditions))
+        query = query.where(and_(*conditions))
 
-        result = await self.db.execute(query)
+        count_query = (
+            select(func.count())
+            .select_from(FeedbackMessage)
+            .join(User, User.id == FeedbackMessage.sender_id)
+            .outerjoin(Employee, Employee.id == User.employee_id)
+            .where(and_(*conditions))
+        )
+        total = (await self.db.execute(count_query)).scalar_one()
+
+        safe_page = max(1, page)
+        safe_page_size = max(1, min(page_size, 200))
+        result = await self.db.execute(query.offset((safe_page - 1) * safe_page_size).limit(safe_page_size))
         rows = result.all()
 
         # فقط Admin واقعی همیشه فرستنده را می‌بیند - دارنده مجوز
@@ -170,14 +239,22 @@ class FeedbackService:
                     site_name=site_name if reveal_sender else None,
                 )
             )
-        return out
+        return {"items": out, "total": total, "page": safe_page, "page_size": safe_page_size}
 
-    async def delete_feedback(self, feedback_id: int) -> bool:
-        """حذف یک پیام - فقط از طریق پنل ادمین (Endpoint این را به Admin واقعی محدود می‌کند، نه اینجا)."""
+    async def delete_feedback(self, feedback_id: int, deleted_by_user_id: int | None = None) -> bool:
+        """
+        ⚠️ طبق درخواست صریح کاربر: حذف «نرم» - رکورد واقعاً از دیتابیس
+        پاک نمی‌شود، فقط علامت‌گذاری می‌شود و از فهرست‌ها کنار می‌رود.
+        قبلاً حذف دائمی بود و یک کلیک اشتباه یعنی از دست رفتن همیشگی
+        بازخورد پرسنل. حالا داده باقی می‌ماند و قابل‌بازیابی است (به‌همراه
+        اینکه چه کسی و چه زمانی حذفش کرده).
+        """
         feedback = await self.db.get(FeedbackMessage, feedback_id)
-        if feedback is None:
+        if feedback is None or feedback.is_deleted:
             return False
-        await self.db.delete(feedback)
+        feedback.is_deleted = True
+        feedback.deleted_at = datetime.now(timezone.utc)
+        feedback.deleted_by_user_id = deleted_by_user_id
         await self.db.commit()
         return True
 

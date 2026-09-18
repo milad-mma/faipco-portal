@@ -19,7 +19,13 @@ from app.core.deps import get_current_user, require_superuser
 from app.db.session import get_db
 from app.models.feedback import FeedbackCategory
 from app.models.user import User
-from app.schemas.feedback import FeedbackMessageOut, FeedbackSubmitIn, ProhibitedPhraseIn, ProhibitedPhraseOut
+from app.schemas.feedback import (
+    FeedbackListOut,
+    FeedbackMessageOut,
+    FeedbackSubmitIn,
+    ProhibitedPhraseIn,
+    ProhibitedPhraseOut,
+)
 from app.services.feedback_service import FeedbackAccessDenied, FeedbackRateLimitExceeded, FeedbackService
 
 router = APIRouter()
@@ -40,7 +46,7 @@ async def submit_feedback(
     return {"success": True}
 
 
-@router.get("", response_model=list[FeedbackMessageOut])
+@router.get("", response_model=FeedbackListOut)
 async def list_feedback(
     sender_id: int | None = Query(default=None),
     site_id: int | None = Query(default=None),
@@ -48,9 +54,12 @@ async def list_feedback(
     is_anonymous: bool | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """⚠️ خروجی صفحه‌بندی‌شده است ({items, total, page, page_size}) - نه یک لیست ساده."""
     try:
         return await FeedbackService(db).get_feedback_list(
             current_user,
@@ -60,6 +69,8 @@ async def list_feedback(
             is_anonymous=is_anonymous,
             date_from=date_from,
             date_to=date_to,
+            page=page,
+            page_size=page_size,
         )
     except FeedbackAccessDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -71,7 +82,7 @@ async def delete_feedback(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_superuser),
 ):
-    deleted = await FeedbackService(db).delete_feedback(feedback_id)
+    deleted = await FeedbackService(db).delete_feedback(feedback_id, deleted_by_user_id=_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="یافت نشد")
 

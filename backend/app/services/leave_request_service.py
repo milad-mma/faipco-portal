@@ -945,9 +945,15 @@ class LeaveRequestService:
         # ⚠️ کشف حیاتی (تأییدشده با داده واقعی): نظر واقعی تأییدکننده در
         # ManagerIdea ذخیره نمی‌شود - باید در WF_Reviews هم ثبت شود تا هم
         # در خودِ کاراوب صحیح دیده شود، هم توسط پورتال به‌درستی خوانده شود.
-        review_type = (
-            mapping.wf_reviews_approved_type_value if approved else mapping.wf_reviews_rejected_type_value
-        )
+        #
+        # ⚠️ تصحیح مهم (با داده واقعیِ یک رد‌شده از خودِ کاراوب تأیید شد):
+        # ReviewType اصلاً «تأیید/رد» را نشان نمی‌دهد - کاراوب برای هر دو
+        # حالت مقدار یکسانی (۴) می‌نویسد؛ تصمیم واقعی فقط در
+        # WF_Requests.IsFinalApproved ذخیره می‌شود. فرض قبلی (مقدار
+        # متفاوت برای رد) اشتباه بود و باعث می‌شد رد‌کردن از پورتال، مقداری
+        # در WF_Reviews بنویسد که کاراوب هرگز تولید نمی‌کند. حالا همیشه
+        # همان مقدار استانداردِ کاراوب نوشته می‌شود.
+        review_type = mapping.wf_reviews_approved_type_value
         if review_type is not None:
             await asyncio.to_thread(
                 _insert_review_sync,
