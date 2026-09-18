@@ -28,6 +28,7 @@ from app.models.site import Site
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
+from app.services.image_watermark import add_viewer_watermark, viewer_label_for
 from app.services.birthday_reaction_service import BirthdayReactionError, BirthdayReactionService
 from app.schemas.employee import (
     BirthdayEmployeeOut,
@@ -446,7 +447,23 @@ async def get_birthday_related_photo_thumbnail(
     if not (is_birthday_person or is_reactor):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
 
-    return Response(content=employee.photo_thumbnail, media_type="image/gif")
+    # ⚠️ واترمارکِ شناسه بیننده روی تصویر حک می‌شود. جلوگیری کامل از
+    # ذخیره تصویر در مرورگر ممکن نیست، پس به‌جای وعده امنیتی غیرواقعی،
+    # بازدارندگی ساخته می‌شود: هر عکس نشت‌یافته به کسی که آن را دیده
+    # برمی‌گردد.
+    viewer_employee = (
+        await db.get(Employee, current_user.employee_id) if current_user.employee_id else None
+    )
+    content, media_type = add_viewer_watermark(
+        employee.photo_thumbnail, viewer_label_for(current_user, viewer_employee)
+    )
+    return Response(
+        content=content,
+        media_type=media_type,
+        # ⚠️ no-store: تصویر واترمارک‌شده مخصوص همین بیننده است و نباید در
+        # Cache مرورگر/واسط بماند تا به بیننده دیگری سرو شود.
+        headers={"Cache-Control": "no-store, private"},
+    )
 
 
 @router.get("/{employee_id}/photo-thumbnail")

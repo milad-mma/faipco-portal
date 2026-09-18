@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { fetchBirthdayPhotoThumbnailBlob } from "../api/employees";
 import DefaultPersonAvatar from "./DefaultPersonAvatar";
@@ -16,6 +16,7 @@ import DefaultPersonAvatar from "./DefaultPersonAvatar";
  */
 export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
   const [photoUrl, setPhotoUrl] = useState(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
     if (!employeeId || !hasPhoto) {
@@ -37,6 +38,22 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
     };
   }, [employeeId, hasPhoto]);
 
+  // ⚠️ نقاشی روی Canvas پس از آماده‌شدن تصویر. بعد از کشیدن، خودِ
+  // objectURL آزاد می‌شود تا حتی از طریق حافظه هم لینک قابل‌استفاده‌ای
+  // باقی نماند.
+  useEffect(() => {
+    if (!photoUrl || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0);
+    };
+    img.src = photoUrl;
+  }, [photoUrl]);
+
   return (
     <Box
       sx={{
@@ -52,11 +69,28 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
         color: "text.secondary",
       }}
     >
-      {photoUrl ? (
-        <Box component="img" src={photoUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        <DefaultPersonAvatar />
-      )}
+      {/* ⚠️ عمداً <img> استفاده نمی‌شود: با Canvas، «ذخیره تصویر» راست‌کلیک
+          کار نمی‌کند و هیچ src قابل‌کپی در DOM نمی‌ماند. این جلوی کاربر
+          عادی را می‌گیرد، ولی جلوگیری کامل ممکن نیست (اسکرین‌شات و تب
+          Network همیشه در دسترس‌اند) - لایه اصلی محافظت، واترمارکِ
+          شناسه بیننده است که سمت سرور روی تصویر حک می‌شود. */}
+      <Box
+        component="canvas"
+        ref={canvasRef}
+        onContextMenu={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+        sx={{
+          width: "100%",
+          height: "100%",
+          display: photoUrl ? "block" : "none",
+          objectFit: "cover",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          WebkitTouchCallout: "none",
+          pointerEvents: "none",
+        }}
+      />
+      {!photoUrl && <DefaultPersonAvatar />}
     </Box>
   );
 }
