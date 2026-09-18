@@ -117,3 +117,14 @@ export async function setBirthdayReaction(employeeId, emoji) {
   const { data } = await apiClient.post(`/employees/birthdays/${employeeId}/reaction`, { emoji });
   return data;
 }
+
+export async function fetchBirthdayPhotoThumbnailBlob(employeeId) {
+  // ⚠️ مسیر جداگانه از /photo-thumbnail: آن یکی فقط به خودِ شخص یا Admin
+  // اجازه می‌دهد، ولی آواتار کارت تولد باید برای همه دیده شود - این
+  // Endpoint دسترسی را محدود به همان زمینه (متولد امروز یا
+  // تبریک‌گوینده) نگه می‌دارد.
+  const { data } = await apiClient.get(`/employees/birthday-photo/${employeeId}`, {
+    responseType: "blob",
+  });
+  return data;
+}

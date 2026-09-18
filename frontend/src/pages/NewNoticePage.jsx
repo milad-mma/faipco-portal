@@ -32,6 +32,7 @@ import {
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
+import PillTabs from "../components/PillTabs";
 
 const PRIORITY_LABELS = {
   low: { label: "کم", color: "default" },
@@ -416,23 +417,24 @@ export default function NewNoticePage() {
             {((canAnyNormalTarget ? 1 : 0) +
               (availableTargets?.can_upload_payroll ? 1 : 0) +
               (availableTargets?.can_upload_attendance_card ? 1 : 0)) > 1 && (
-              <Tabs
+              <PillTabs
                 value={createMode}
-                onChange={(_, v) => {
-                  setCreateMode(v);
+                onChange={(k) => {
+                  if (isSubmitting) return;
+                  setCreateMode(k);
                   setError("");
                 }}
-                variant="fullWidth"
+                tabs={[
+                  ...(canAnyNormalTarget ? [{ key: "normal", label: "اطلاعیه متنی" }] : []),
+                  ...(availableTargets?.can_upload_payroll
+                    ? [{ key: "payroll", label: "فیش حقوقی" }]
+                    : []),
+                  ...(availableTargets?.can_upload_attendance_card
+                    ? [{ key: "attendance_card", label: "فیش کارکرد" }]
+                    : []),
+                ]}
                 sx={{ mb: 1 }}
-              >
-                {canAnyNormalTarget && <Tab value="normal" label="اطلاعیه متنی" disabled={isSubmitting} />}
-                {availableTargets?.can_upload_payroll && (
-                  <Tab value="payroll" label="فیش حقوقی (Payroll)" disabled={isSubmitting} />
-                )}
-                {availableTargets?.can_upload_attendance_card && (
-                  <Tab value="attendance_card" label="فیش کارکرد" disabled={isSubmitting} />
-                )}
-              </Tabs>
+              />
             )}
 
             {createMode === "normal" && (

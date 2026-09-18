@@ -22,6 +22,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import PillTabs from "../components/PillTabs";
 import { useAuth } from "../context/AuthContext";
 import JalaliDateSelect from "../components/JalaliDateSelect";
 import { jalaliToGregorian } from "../utils/jalaliDate";
@@ -72,10 +73,14 @@ export default function FeedbackReportPage() {
       </Typography>
 
       {user?.is_superuser && (
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-          <Tab value="messages" label="پیام‌ها" />
-          <Tab value="prohibited-words" label="مدیریت کلمات نامناسب" />
-        </Tabs>
+        <PillTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { key: "messages", label: "پیام‌ها" },
+            { key: "prohibited-words", label: "مدیریت کلمات نامناسب" },
+          ]}
+        />
       )}
 
       {tab === "messages" && <FeedbackMessagesList canDelete={Boolean(user?.is_superuser)} />}

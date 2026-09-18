@@ -6,6 +6,7 @@ import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
 import { fetchServerStats } from "../api/system";
 import UsageLineChart from "./UsageLineChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
+import PillTabs from "./PillTabs";
 
 function formatDateTimeFa(isoString) {
   const d = new Date(isoString);
@@ -179,15 +180,12 @@ export default function ServerStatsCard() {
             </Grid>
           </Grid>
 
-          <Tabs
+<PillTabs
             value={timeTab}
-            onChange={(_, value) => setTimeTab(value)}
-            sx={{ mb: 1, minHeight: 36, "& .MuiTab-root": { minHeight: 36, py: 0.5 } }}
-          >
-            {TIME_TABS.map((tab) => (
-              <Tab key={tab.key} value={tab.key} label={tab.label} />
-            ))}
-          </Tabs>
+            onChange={setTimeTab}
+            tabs={TIME_TABS.map((t) => ({ key: t.key, label: t.label }))}
+            sx={{ mb: 2 }}
+          />
 
           <Grid container spacing={2}>
             <Grid item xs={12} md={4}>

@@ -42,6 +42,7 @@ import {
   fetchPeriodComparison,
   fetchSitePeriodReport,
 } from "../api/evaluationReports";
+import PillTabs from "../components/PillTabs";
 
 function scoreColor(score) {
   if (score == null) return "default";
@@ -831,10 +832,17 @@ export default function EvaluationReportsPage() {
         ))}
       </TextField>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="گزارش یک دوره" />
-        <Tab label="مقایسه دوره‌ها" />
-      </Tabs>
+      {/* ⚠️ PillTabs با کلید رشته‌ای کار می‌کند نه ایندکس عددی - اینجا
+          تبدیل می‌شود تا بقیه منطق صفحه (که با 0/1 نوشته شده) دست‌نخورده
+          بماند. */}
+      <PillTabs
+        value={tab === 0 ? "single" : "compare"}
+        onChange={(k) => setTab(k === "single" ? 0 : 1)}
+        tabs={[
+          { key: "single", label: "گزارش یک دوره" },
+          { key: "compare", label: "مقایسه دوره‌ها" },
+        ]}
+      />
 
       {siteId && tab === 0 && <SinglePeriodReportTab siteId={siteId} periods={periods} />}
       {siteId && tab === 1 && <ComparisonTab siteId={siteId} periods={periods} />}

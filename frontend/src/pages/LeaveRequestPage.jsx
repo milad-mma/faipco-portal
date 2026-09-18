@@ -30,6 +30,7 @@ import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import AccessGateDialog from "../components/AccessGateDialog";
+import PillTabs from "../components/PillTabs";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 import {
   decideLeaveRequest,
@@ -486,18 +487,17 @@ export default function LeaveRequestPage() {
         </Alert>
       )}
 
-      <Tabs
-        value={tab}
-        onChange={(_, v) => handleTabChange(v)}
-        variant="scrollable"
-        scrollButtons="auto"
-        allowScrollButtonsMobile
-        sx={{ mb: 2 }}
-      >
-        <Tab label="ثبت درخواست جدید" />
-        <Tab label="درخواست‌های من" />
-        {hasPending && <Tab label={`درخواست‌های در انتظار (${pendingCount})`} />}
-      </Tabs>
+      {/* ⚠️ کلید رشته‌ای است نه ایندکس - چون تب سوم شرطی است و با
+          ایندکس عددی، پنهان‌شدنش شماره‌ها را جابه‌جا می‌کرد. */}
+      <PillTabs
+        value={["new", "mine", "pending"][tab]}
+        onChange={(k) => handleTabChange(["new", "mine", "pending"].indexOf(k))}
+        tabs={[
+          { key: "new", label: "ثبت درخواست جدید" },
+          { key: "mine", label: "درخواست‌های من" },
+          ...(hasPending ? [{ key: "pending", label: `در انتظار (${pendingCount})` }] : []),
+        ]}
+      />
 
       {tab === 0 && (
         <SubmitRequestForm

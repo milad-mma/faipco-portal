@@ -35,6 +35,7 @@ import {
   reopenEvaluation,
 } from "../api/evaluationProcess";
 import BackLink from "../components/BackLink";
+import PillTabs from "../components/PillTabs";
 import AccessGateDialog from "../components/AccessGateDialog";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
@@ -435,11 +436,20 @@ export default function MyPerformancePage() {
         </Alert>
       )}
 
-      <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ mb: 2 }}>
-        <Tab label="نتایج ارزیابی من" />
-        <Tab label={pendingCount > 0 ? `ارزیابی پرسنل من (${pendingCount})` : "ارزیابی پرسنل من"} />
-        {hasShiftLeadEvaluations && <Tab label="ارزیابی‌های سرشیفت‌های من" />}
-      </Tabs>
+      {/* ⚠️ کلیدها همان TAB_KEYS صفحه‌اند تا با پارامتر ?tab= در URL
+          هم‌راستا بمانند (لینک «انجام ارزیابی‌ها» در دیالوگ اجبار). */}
+      <PillTabs
+        value={TAB_KEYS[tab]}
+        onChange={(k) => handleTabChange(TAB_KEYS.indexOf(k))}
+        tabs={[
+          { key: "results", label: "نتایج ارزیابی من" },
+          {
+            key: "personnel",
+            label: pendingCount > 0 ? `ارزیابی پرسنل من (${pendingCount})` : "ارزیابی پرسنل من",
+          },
+          ...(hasShiftLeadEvaluations ? [{ key: "shift-leads", label: "ارزیابی‌های سرشیفت‌ها" }] : []),
+        ]}
+      />
 
       {tab === 0 && (
         <Box>

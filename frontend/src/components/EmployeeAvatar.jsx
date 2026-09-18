@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Box } from "@mui/material";
-import { fetchEmployeePhotoThumbnailBlob } from "../api/employees";
+import { fetchBirthdayPhotoThumbnailBlob } from "../api/employees";
 import DefaultPersonAvatar from "./DefaultPersonAvatar";
 
 /**
@@ -24,7 +24,7 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
     }
     let objectUrl = null;
     let cancelled = false;
-    fetchEmployeePhotoThumbnailBlob(employeeId)
+    fetchBirthdayPhotoThumbnailBlob(employeeId)
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);

@@ -27,7 +27,7 @@ from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
-from app.models.birthday_reaction import BirthdayReactionEmoji
+from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
 from app.services.birthday_reaction_service import BirthdayReactionError, BirthdayReactionService
 from app.schemas.employee import (
     BirthdayEmployeeOut,
@@ -401,6 +401,52 @@ async def update_my_birthday_visibility(
     await db.commit()
     await db.refresh(employee)
     return employee
+
+
+@router.get("/birthday-photo/{employee_id}")
+async def get_birthday_related_photo_thumbnail(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ طبق تصمیم صریح کاربر: آواتار در کارت «متولدین امروز» و فهرست
+    تبریک‌گویندگان برای همه قابل‌مشاهده است - ولی **فقط در همین دو
+    زمینه**، نه به‌صورت عمومی.
+
+    Endpoint اصلی (/photo-thumbnail) عمداً فقط به خودِ شخص یا Admin
+    اجازه می‌دهد، چون تصویر چهره اطلاعات حساسی است. آن محدودیت
+    دست‌نخورده می‌ماند؛ این مسیر جداگانه فقط عکس کسانی را می‌دهد که
+    **امروز تولدشان است** یا **امروز به یک متولد تبریک گفته‌اند**.
+
+    یعنی دسترسی هم محدود به زمینه است، هم خودکار روز بعد منقضی می‌شود -
+    بدون اینکه عکس همه پرسنل برای همه باز شود.
+    """
+    jalali_year, month, day = get_current_jalali_date()
+
+    employee = await db.get(Employee, employee_id)
+    if employee is None or not employee.photo_thumbnail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
+
+    is_birthday_person = employee.birth_month == month and employee.birth_day == day
+
+    is_reactor = False
+    if not is_birthday_person:
+        reactor_check = await db.execute(
+            select(BirthdayReaction.id)
+            .join(User, User.id == BirthdayReaction.reactor_user_id)
+            .where(
+                User.employee_id == employee_id,
+                BirthdayReaction.jalali_year == jalali_year,
+            )
+            .limit(1)
+        )
+        is_reactor = reactor_check.first() is not None
+
+    if not (is_birthday_person or is_reactor):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
+
+    return Response(content=employee.photo_thumbnail, media_type="image/gif")
 
 
 @router.get("/{employee_id}/photo-thumbnail")

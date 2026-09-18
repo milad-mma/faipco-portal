@@ -4,6 +4,7 @@ import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import { fetchUsageStats } from "../api/system";
 import UsageLineChart from "./UsageLineChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
+import PillTabs from "./PillTabs";
 
 function toJalaliDayLabel(isoDate) {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -132,17 +133,12 @@ export default function UsageStatsCard() {
         )}
       </Typography>
 
-      <Tabs
-        value={activeTab}
-        onChange={(_, value) => setActiveTab(value)}
-        variant="scrollable"
-        scrollButtons="auto"
-        sx={{ mb: 2, minHeight: 36, "& .MuiTab-root": { minHeight: 36, py: 0.5 } }}
-      >
-        {TABS.map((tab) => (
-          <Tab key={tab.key} value={tab.key} label={tab.label} />
-        ))}
-      </Tabs>
+<PillTabs
+            value={activeTab}
+            onChange={setActiveTab}
+            tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
+            sx={{ mb: 2 }}
+          />
 
       {rawData === null ? (
         <Stack alignItems="center" justifyContent="center" sx={{ height: 160 }}>

@@ -38,6 +38,7 @@ import {
   saveLeaveRequestMapping,
 } from "../api/leaveRequestsAdmin";
 import SchemaDiscoveryDialog from "../components/SchemaDiscoveryDialog";
+import PillTabs from "../components/PillTabs";
 
 const DB_TYPES = [
   { value: "postgresql", label: "PostgreSQL" },
@@ -555,13 +556,19 @@ export default function SiteSettingsPage() {
       </Stack>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-        <Tabs value={tab} onChange={handleTabChange} sx={{ mb: 3 }}>
-          <Tab value="connection" label="اتصال دیتابیس" disabled={isSaving} />
-          <Tab value="mapping" label="Mapping ستون‌ها" disabled={isSaving} />
-          <Tab value="gps" label="موقعیت GPS" disabled={isSaving} />
-          <Tab value="attendance-mapping" label="نگاشت تردد" disabled={isSaving} />
-          <Tab value="leave-mapping" label="نگاشت مرخصی/ماموریت" disabled={isSaving} />
-        </Tabs>
+        {/* ⚠️ handleTabChange امضای MUI دارد (event, value) - اینجا فقط
+            value پاس داده می‌شود، پس با null فراخوانی می‌شود. */}
+        <PillTabs
+          value={tab}
+          onChange={(k) => !isSaving && handleTabChange(null, k)}
+          tabs={[
+            { key: "connection", label: "اتصال دیتابیس" },
+            { key: "mapping", label: "Mapping ستون‌ها" },
+            { key: "gps", label: "موقعیت GPS" },
+            { key: "attendance-mapping", label: "نگاشت تردد" },
+            { key: "leave-mapping", label: "نگاشت مرخصی/ماموریت" },
+          ]}
+        />
 
         {tab === "connection" && (
           <Stack spacing={2}>
