@@ -16,10 +16,13 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employee import Employee
+from app.models.evaluation_content import EvaluationPeriod, EvaluationPeriodStatus
 from app.models.evaluation_process import (
     EvaluationAssignment,
     EvaluationAssignmentStatus,
@@ -85,8 +88,6 @@ class AccessGateService:
         (هدف‌گذاری، انتشار، انقضا، و تاریخ پیوستن پرسنل) - وگرنه کاربر
         ممکن بود به‌خاطر اطلاعیه‌ای که اصلاً نمی‌بیند قفل شود.
         """
-        from datetime import datetime, timezone
-
         now = datetime.now(timezone.utc)
 
         result = await self.db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
@@ -146,17 +147,34 @@ class AccessGateService:
 
     async def count_pending_evaluations(self, user: User) -> int:
         """
-        ⚠️ طبق تصمیم صریح کاربر: **هر** ارزیابی انجام‌نشده‌ای، حتی مربوط
-        به دوره‌های قدیمی - نه فقط دوره فعال.
+        ⚠️ طبق تصمیم صریح کاربر: اجبار به وضعیت **بسته‌شده/بایگانی‌شده**
+        دوره گره خورده است - نه به «فعالِ منقضی».
+
+        منطق: تا وقتی دوره در جریان است (زمان‌بندی‌شده یا فعال)، ارزیاب
+        فرصت دارد و آزاد است. دوره با پایان مهلت **خودکار** بسته می‌شود؛
+        از همان لحظه، اگر ارزیابی ناتمامی مانده باشد، ارزیاب قفل می‌شود.
+
+            پیش‌نویس        → اجبار ندارد (دوره هنوز واقعی نشده)
+            زمان‌بندی‌شده   → اجبار ندارد (هنوز شروع نشده)
+            فعال            → اجبار ندارد (هنوز در مهلت)
+            بسته‌شده        → **اجبار فعال**
+            بایگانی‌شده     → **اجبار فعال**
+
+        سه راه خروج برای ادمین: غیرفعال‌کردن اجبار از تنظیمات، تغییر
+        زمان‌بندی دوره، یا برگرداندن دستی وضعیت دوره به «فعال».
         """
         if user.employee_id is None:
             return 0
         result = await self.db.execute(
             select(func.count())
             .select_from(EvaluationAssignment)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
             .where(
                 EvaluationAssignment.evaluator_employee_id == user.employee_id,
                 EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+                EvaluationPeriod.status.in_(
+                    [EvaluationPeriodStatus.closed, EvaluationPeriodStatus.archived]
+                ),
             )
         )
         return result.scalar_one()

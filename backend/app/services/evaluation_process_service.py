@@ -281,6 +281,17 @@ class EvaluationProcessService:
 
         await self.db.commit()
 
+        # ⚠️ اگر این آخرین ارزیابی باقی‌مانده بود، دوره خودکار بسته می‌شود -
+        # بلافاصله، نه در بازدید بعدی فهرست. این مهم است چون اجبار «تکمیل
+        # ارزیابی‌ها» به وضعیت دوره گره خورده؛ تأخیر در بستن یعنی ارزیاب
+        # بعد از اتمام کارش همچنان قفل بماند.
+        try:
+            from app.services.evaluation_period_service import EvaluationPeriodService
+
+            await EvaluationPeriodService(self.db).sync_automatic_statuses()
+        except Exception:
+            logger.exception("هم‌گام‌سازی خودکار وضعیت دوره پس از ثبت ارزیابی با خطا مواجه شد")
+
         # ⚠️ طبق درخواست صریح کاربر: اطلاع‌رسانی به پرسنلِ ارزیابی‌شده که
         # نتیجه‌اش ثبت شد. هرگز نباید خودِ ثبت ارزیابی را متوقف کند - اگر
         # Push پیکربندی نشده یا خطا داد، ارزیابی همچنان ثبت شده است.
