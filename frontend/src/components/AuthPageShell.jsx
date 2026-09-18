@@ -76,6 +76,11 @@ export default function AuthPageShell({ title, subtitle, children }) {
                 alignItems: "center",
                 gap: 1.5,
                 background: "linear-gradient(110deg, #3476ad, #2b91a5)",
+                // ⚠️ رفع ناحیه امن: این هدر در موبایل چسبیده به بالای
+                // صفحه است و با viewport-fit=cover زیر Dynamic Island /
+                // ناچ می‌افتاد. صفحات ورود/بازیابی رمز خارج از Layout
+                // اصلی رندر می‌شوند، پس رفع سراسری آنجا شاملشان نمی‌شود.
+                pt: "env(safe-area-inset-top, 0px)",
                 color: "#fff",
                 px: 2.5,
                 py: 2.25,

@@ -346,6 +346,10 @@ export default function Layout() {
           borderBottom: "1px solid",
           borderColor: "divider",
           zIndex: (theme) => theme.zIndex.drawer + 1,
+          // ⚠️ همان رفع ناحیه امن برای پوسته Admin: این AppBar هم fixed و
+          // چسبیده به بالای صفحه است، پس با viewport-fit=cover محتوایش
+          // زیر Dynamic Island / ناچ می‌افتاد و دکمه‌هایش لمس‌ناپذیر می‌شد.
+          pt: "env(safe-area-inset-top, 0px)",
         }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
@@ -482,6 +486,18 @@ export default function Layout() {
                 overflowY: "auto",
                 overflowX: "hidden",
                 mt: 0,
+                // ⚠️ رفع باگ واقعی (گزارش کاربر: «در آیفون ۱۶ پرو، دکمه
+                // بازگشت آن‌قدر بالای صفحه است که قابل کلیک نیست»):
+                // index.html با viewport-fit=cover تعریف شده، یعنی محتوا
+                // عمداً تا زیر Dynamic Island / ناچ کشیده می‌شود. نوار
+                // پایین از قبل safe-area-inset-bottom را رعایت می‌کرد، ولی
+                // بالای صفحه هیچ جبرانی نداشت - و چون پوسته پرسنل اصلاً
+                // AppBar ندارد (mt:0)، اولین عنصر صفحه دقیقاً زیر ناچ
+                // می‌افتاد و لمس‌ناپذیر می‌شد.
+                //
+                // این یک رفع سراسری است: چون همه صفحات از همین Box واحد
+                // رندر می‌شوند، نیازی به اصلاح تک‌تک صفحات نیست.
+                pt: "calc(16px + env(safe-area-inset-top, 0px))",
               }
             : {
                 // Admin — کاملاً دست‌نخورده، دقیقاً مثل قبل.
