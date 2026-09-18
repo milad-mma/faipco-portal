@@ -416,26 +416,44 @@ def _update_request_sync(
         connection.close()
 
 
-def _delete_reviews_sync(conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int) -> None:
+def _delete_dependent_rows_sync(conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int) -> None:
     """
-    ⚠️ طبق درخواست صریح کاربر: با حذف یک درخواست، ردیف(های) متناظرش در
-    WF_Reviews هم باید حذف شوند - وگرنه رکوردهای یتیم (نظر تأییدکننده‌ای
-    که درخواستش دیگر وجود ندارد) در دیتابیس کاراوب باقی می‌مانند.
+    ⚠️ حذف همه ردیف‌های وابسته به یک درخواست، قبل از حذف خودِ درخواست.
 
-    اگر این سایت اصلاً WF_Reviews را تنظیم نکرده باشد، کاری انجام
-    نمی‌دهد - نه خطا (کاملاً اختیاری، مثل خودِ درج).
+    تأییدشده با بررسی مستقیم Foreign Key های دیتابیس Kara: چهار جدول
+    فرزند به WF_Requests وابسته‌اند و همگی ON DELETE NO_ACTION هستند -
+    یعنی دیتابیس خودش پاکشان نمی‌کند و اگر ردیفی داشته باشند، حذف خودِ
+    درخواست با خطای Foreign Key **شکست می‌خورد**:
+
+        WF_Reviews                  (نظر تأییدکننده)
+        WF_Attachment               (پیوست فایل)
+        WF_MoveUp                   (صعود خودکار زمانی)
+        WF_RequestParallelApproval  (تأیید موازی)
+
+    سه تای آخر در نصب فعلی خالی‌اند، ولی کاراوب می‌تواند پرشان کند - پس
+    نادیده گرفتنشان یعنی یک باگ خفته که فقط وقتی ظاهر می‌شود که کاربر
+    درخواستی با پیوست را حذف کند.
+
+    نام هر جدول اگر تنظیم نشده باشد، آن جدول رد می‌شود (نه خطا) - برای
+    نصب‌هایی که آن جدول را ندارند.
     """
-    if not mapping.wf_reviews_table_name:
-        return
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    targets = [
+        (mapping.wf_reviews_table_name, mapping.wf_reviews_request_id_column or "RequestId"),
+        (mapping.wf_attachment_table_name, "RequestId"),
+        (mapping.wf_moveup_table_name, "RequestId"),
+        (mapping.wf_parallel_approval_table_name, "RequestId"),
+    ]
     connection = _connect(conn)
     try:
         with connection.cursor() as cur:
-            query = (
-                f"DELETE FROM {q(mapping.wf_reviews_table_name)} "
-                f"WHERE {q(mapping.wf_reviews_request_id_column)} = %(request_id)s"
-            )  # noqa: S608
-            cur.execute(query, {"request_id": request_id})
+            for table_name, id_column in targets:
+                if not table_name:
+                    continue
+                query = (
+                    f"DELETE FROM {q(table_name)} WHERE {q(id_column)} = %(request_id)s"
+                )  # noqa: S608
+                cur.execute(query, {"request_id": request_id})
             connection.commit()
     finally:
         connection.close()
@@ -779,10 +797,11 @@ class LeaveRequestService:
         اینجا دارنده مجوز leave_requests.manage می‌تواند **هر** درخواستی
         را در **هر مرحله‌ای** (در حال بررسی، تأییدشده، ردشده) حذف کند.
 
-        ⚠️ ردیف(های) متناظر در WF_Reviews هم حذف می‌شوند - وگرنه نظر
-        تأییدکننده‌ای باقی می‌ماند که درخواستش دیگر وجود ندارد. ترتیب
-        عمداً اول Reviews بعد خودِ درخواست است، تا اگر حذف دوم شکست خورد،
-        رکورد یتیم در Reviews نماند.
+        ⚠️ ردیف‌های همه جدول‌های وابسته هم حذف می‌شوند (WF_Reviews،
+        WF_Attachment، WF_MoveUp، WF_RequestParallelApproval) - چون هر
+        چهار Foreign Key در دیتابیس Kara از نوع NO_ACTION هستند و اگر
+        ردیفی داشته باشند، حذف خودِ درخواست شکست می‌خورد. ترتیب عمداً اول
+        وابسته‌ها بعد خودِ درخواست است.
         """
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
@@ -796,7 +815,7 @@ class LeaveRequestService:
         if not rows:
             raise LeaveRequestError("درخواست موردنظر یافت نشد")
 
-        await asyncio.to_thread(_delete_reviews_sync, site_connection, mapping, request_id)
+        await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
     async def list_my_requests(self, employee: Employee) -> list[dict]:

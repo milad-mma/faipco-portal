@@ -135,6 +135,9 @@ const EMPTY_LEAVE_MAPPING = {
   section_manager_emp_no_column: "ManagerEmp_No",
   section_parent_column: "TFather",
   wf_reviews_table_name: "WF_Reviews",
+  wf_attachment_table_name: "WF_Attachment",
+  wf_moveup_table_name: "WF_MoveUp",
+  wf_parallel_approval_table_name: "WF_RequestParallelApproval",
   wf_reviews_request_id_column: "RequestId",
   wf_reviews_reviewed_emp_no_column: "ReviewedEmp_No",
   wf_reviews_description_column: "Description",
@@ -1321,6 +1324,9 @@ export default function SiteSettingsPage() {
                 ["wf_reviews_type_column", "ستون نوع تصمیم"],
                 ["wf_reviews_date_column", "ستون تاریخ تصمیم"],
                 ["wf_reviews_show_to_personal_column", "ستون قابل‌نمایش به پرسنل"],
+                ["wf_attachment_table_name", "جدول پیوست‌ها (برای حذف)"],
+                ["wf_moveup_table_name", "جدول صعود خودکار (برای حذف)"],
+                ["wf_parallel_approval_table_name", "جدول تأیید موازی (برای حذف)"],
               ].map(([key, label]) => (
                 <TextField
                   key={key}

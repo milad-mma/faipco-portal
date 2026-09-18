@@ -142,6 +142,19 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # تصمیم، نه فقط یک ستون تکی). این فیلدها کاملاً اختیاری‌اند - اگر
     # نصبی این جدول را نداشت، به رفتار قبلی (فقط ManagerIdea) برمی‌گردد.
     wf_reviews_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="WF_Reviews")
+    # ⚠️ جدول‌های وابسته دیگر (تأییدشده با بررسی Foreign Key های واقعی
+    # دیتابیس Kara): WF_Requests سه جدول فرزند دیگر هم دارد که همگی
+    # ON DELETE NO_ACTION هستند - یعنی دیتابیس خودش پاکشان نمی‌کند و اگر
+    # ردیفی داشته باشند، حذف خودِ درخواست با خطای FK شکست می‌خورد.
+    # این‌ها در نصب فعلی خالی‌اند، ولی کاراوب می‌تواند پرشان کند (پیوست
+    # فایل، صعود خودکار، تأیید موازی) - پس هنگام حذف مدیریتی باید پاک شوند.
+    wf_attachment_table_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="WF_Attachment"
+    )
+    wf_moveup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="WF_MoveUp")
+    wf_parallel_approval_table_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="WF_RequestParallelApproval"
+    )
     wf_reviews_request_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="RequestId")
     wf_reviews_reviewed_emp_no_column: Mapped[str | None] = mapped_column(
         String(128), nullable=True, default="ReviewedEmp_No"
