@@ -72,8 +72,34 @@ function formatAnswerValue(answer) {
   if (answer.text_value) return answer.text_value;
   if (answer.number_value != null) return String(answer.number_value);
   if (answer.date_value) return new Date(answer.date_value).toLocaleDateString("fa-IR");
+  // ⚠️ قبلاً فقط تعداد گزینه‌ها نمایش داده می‌شد و معلوم نبود کدام
+  // انتخاب شده - حالا برچسب واقعی گزینه(های) انتخاب‌شده نشان داده می‌شود.
+  if (answer.selected_option_labels?.length) return answer.selected_option_labels.join("، ");
   if (answer.selected_option_ids?.length) return `${answer.selected_option_ids.length} گزینه انتخاب شده`;
   return "—";
+}
+
+/**
+ * ⚠️ طبق گزارش کاربر: کاربر باید بفهمد «از بین چه گزینه‌هایی» انتخاب
+ * شده - نه فقط کدام. همه گزینه‌های ممکن نمایش داده می‌شوند و انتخاب‌شده‌ها
+ * برجسته‌اند. برای ارزیابی‌های قدیمی که گزینه‌هایشان دیگر موجود نیست،
+ * فهرست خالی است و چیزی رندر نمی‌شود (بدون خطا).
+ */
+function AnswerOptionsList({ options }) {
+  if (!options?.length) return null;
+  return (
+    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
+      {options.map((option) => (
+        <Chip
+          key={option.id}
+          size="small"
+          label={`${option.label} (${option.score})`}
+          color={option.is_selected ? "primary" : "default"}
+          variant={option.is_selected ? "filled" : "outlined"}
+        />
+      ))}
+    </Stack>
+  );
 }
 
 function ResultDetailsDialog({ result, onClose }) {
@@ -126,6 +152,7 @@ function ResultDetailsDialog({ result, onClose }) {
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   پاسخ: {formatAnswerValue(answer)}
                 </Typography>
+                <AnswerOptionsList options={answer.available_options} />
               </Box>
             ))}
           </Stack>

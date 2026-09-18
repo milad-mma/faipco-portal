@@ -295,8 +295,6 @@ async def list_all_for_site(
     if is_type_restricted:
         date_from = None
         date_to = None
-        if status_filter == "pending":
-            return []
     try:
         items = await LeaveRequestService(db).list_all_for_site(
             site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
@@ -304,7 +302,16 @@ async def list_all_for_site(
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if is_type_restricted:
-        items = [item for item in items if item["status"] != "pending"]
+        # ⚠️ طبق تصمیم صریح و دقیق‌شده کاربر: نقش محدود به نوع (حراست)
+        # درخواست‌های «در حال بررسی» را فقط برای انواع **ساعتی** نباید
+        # ببیند؛ برای انواع **روزانه** دیدن در حال بررسی اشکالی ندارد.
+        # ملاک ساعتی‌بودن، پرشدن start_hour است (دقیقاً همان چیزی که در
+        # WF_Requests برای انواع ساعتی مقدار می‌گیرد و برای روزانه NULL است).
+        items = [
+            item
+            for item in items
+            if not (item["status"] == "pending" and item["start_hour"] is not None)
+        ]
     return items
 
 

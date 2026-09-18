@@ -48,12 +48,23 @@ class SaveAnswersIn(BaseModel):
     answers: list[AnswerIn] = Field(default_factory=list)
 
 
+class AnswerOptionOut(BaseModel):
+    """⚠️ یک گزینه ممکن برای سوال - با مشخص‌بودن اینکه انتخاب شده یا نه، تا کاربر بفهمد «از بین چه گزینه‌هایی» انتخاب شده است."""
+
+    id: int
+    label: str
+    score: float
+    is_selected: bool
+
+
 class AnswerOut(BaseModel):
     id: int
     question_id: int | None
     question_text_snapshot: str
     question_type_snapshot: str
     selected_option_ids: list[int] | None
+    selected_option_labels: list[str] = []
+    available_options: list[AnswerOptionOut] = []
     text_value: str | None
     number_value: float | None
     date_value: datetime | None
@@ -75,6 +86,8 @@ class MyAnswerOut(BaseModel):
     question_text_snapshot: str
     question_type_snapshot: str
     selected_option_ids: list[int] | None
+    selected_option_labels: list[str] = []
+    available_options: list[AnswerOptionOut] = []
     text_value: str | None
     number_value: float | None
     date_value: datetime | None

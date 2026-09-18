@@ -464,9 +464,10 @@ export default function LeaveRequestsAdminListPage() {
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="">همه</MenuItem>
-          {/* ⚠️ نقش محدود به نوع (مثل حراست) اصلاً حق دیدن درخواست‌های در
-              حال بررسی را ندارد - همین محدودیت سمت سرور هم اعمال می‌شود. */}
-          {!isTypeRestricted && <MenuItem value="pending">در حال بررسی</MenuItem>}
+          {/* ⚠️ گزینه «در حال بررسی» برای همه در دسترس است - محدودیت نقشِ
+              محدود به نوع (حراست) فقط شامل انواع **ساعتی** است و سمت
+              سرور اعمال می‌شود؛ انواع روزانه در حال بررسی را می‌بیند. */}
+          <MenuItem value="pending">در حال بررسی</MenuItem>
           <MenuItem value="approved">تائید شده</MenuItem>
           <MenuItem value="rejected">رد شده</MenuItem>
         </TextField>

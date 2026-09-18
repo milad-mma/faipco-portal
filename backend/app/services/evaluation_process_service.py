@@ -24,6 +24,7 @@ from app.models.evaluation_content import (
     EvaluationPeriod,
     EvaluationPeriodStatus,
     EvaluationQuestion,
+    EvaluationQuestionOption,
 )
 from app.models.evaluation_process import (
     Evaluation,
@@ -515,7 +516,61 @@ class EvaluationProcessService:
             .where(EvaluationAnswer.evaluation_id == evaluation_id)
             .order_by(EvaluationAnswer.id)
         )
-        return list(answers.scalars().all())
+        return await self._enrich_answers_with_options(list(answers.scalars().all()))
+
+    async def _enrich_answers_with_options(self, answers: list) -> list[dict]:
+        """
+        ⚠️ طبق گزارش کاربر: نمایش قبلی فقط شناسه‌های عددی گزینه‌ها را
+        داشت، پس معلوم نبود «از بین چه گزینه‌هایی» و «کدام» انتخاب شده.
+        اینجا برای هر سوالِ گزینه‌ای، هم برچسب گزینه(های) انتخاب‌شده و هم
+        فهرست کامل گزینه‌های ممکن (با امتیاز هرکدام) اضافه می‌شود.
+
+        ⚠️ محدودیت واقعی: برچسب گزینه‌ها Snapshot نمی‌شود (برخلاف متن
+        سوال) و question_id هم با حذف سوال به NULL تبدیل می‌شود
+        (ondelete=SET NULL). پس برای ارزیابی‌های قدیمی‌ای که سوالشان بعداً
+        حذف شده، برچسب‌ها در دسترس نیستند - در این حالت فهرست خالی
+        برمی‌گردد و UI بدون خطا فقط همان چیزی را که دارد نشان می‌دهد.
+        """
+        question_ids = {a.question_id for a in answers if a.question_id is not None}
+        options_by_question: dict[int, list] = {}
+        if question_ids:
+            options_result = await self.db.execute(
+                select(EvaluationQuestionOption)
+                .where(EvaluationQuestionOption.question_id.in_(question_ids))
+                .order_by(EvaluationQuestionOption.sort_order)
+            )
+            for option in options_result.scalars().all():
+                options_by_question.setdefault(option.question_id, []).append(option)
+
+        enriched = []
+        for answer in answers:
+            options = options_by_question.get(answer.question_id, [])
+            selected_ids = set(answer.selected_option_ids or [])
+            enriched.append(
+                {
+                    "id": answer.id,
+                    "question_id": answer.question_id,
+                    "question_text_snapshot": answer.question_text_snapshot,
+                    "question_type_snapshot": answer.question_type_snapshot,
+                    "selected_option_ids": answer.selected_option_ids,
+                    "selected_option_labels": [o.label for o in options if o.id in selected_ids],
+                    "available_options": [
+                        {
+                            "id": o.id,
+                            "label": o.label,
+                            "score": float(o.score),
+                            "is_selected": o.id in selected_ids,
+                        }
+                        for o in options
+                    ],
+                    "text_value": answer.text_value,
+                    "number_value": answer.number_value,
+                    "date_value": answer.date_value,
+                    "score": answer.score,
+                    "comment": answer.comment,
+                }
+            )
+        return enriched
 
     async def get_evaluation_answers_for_report(self, evaluation_id: int) -> list[EvaluationAnswer]:
         """⚠️ برای گزارش‌گیری مدیریتی - بدون محدودیت مالکیت (کنترل دسترسی در لایه Endpoint انجام می‌شود)."""
@@ -524,7 +579,7 @@ class EvaluationProcessService:
             .where(EvaluationAnswer.evaluation_id == evaluation_id)
             .order_by(EvaluationAnswer.id)
         )
-        return list(answers.scalars().all())
+        return await self._enrich_answers_with_options(list(answers.scalars().all()))
 
     async def get_dashboard_summary(self, employee_id: int) -> dict:
         """

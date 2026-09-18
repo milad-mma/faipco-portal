@@ -107,7 +107,14 @@ class EvaluationReportsService:
             .where(EvaluationAnswer.evaluation_id == evaluation_id)
             .order_by(EvaluationAnswer.id)
         )
-        return list(result.scalars().all())
+        # ⚠️ از همان تابع غنی‌سازی evaluation_process_service استفاده می‌شود
+        # (نه یک کپی دوم) - تا برچسب گزینه‌ها و فهرست گزینه‌های ممکن در
+        # گزارش مدیریتی و نمای پرسنلی دقیقاً یکسان ساخته شوند.
+        from app.services.evaluation_process_service import EvaluationProcessService
+
+        return await EvaluationProcessService(self.db)._enrich_answers_with_options(
+            list(result.scalars().all())
+        )
 
     async def get_site_period_report(self, site_id: int, period_id: int) -> dict:
         """گزارش کامل یک سایت برای یک دوره - میانگین کل + شکسته‌شده به هر واحد."""
