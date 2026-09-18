@@ -266,6 +266,9 @@ export default function LeaveRequestsAdminListPage() {
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState("");
   const [requests, setRequests] = useState(null);
+  // ⚠️ داده‌ی مستقل و بدون فیلترِ کارت «امروز» - جدا از requests که
+  // فیلترهای انتخابی کاربر روی آن اعمال شده است.
+  const [todaySourceRequests, setTodaySourceRequests] = useState(null);
   const [types, setTypes] = useState([]);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -302,6 +305,15 @@ export default function LeaveRequestsAdminListPage() {
   function load() {
     if (!siteId) return;
     setError("");
+    // ⚠️ کارت «درخواست‌های مرخصی و ماموریت امروز» عمداً داده‌ی خودش را
+    // جداگانه و بدون هیچ فیلتری می‌گیرد - وگرنه با انتخاب هر فیلتری
+    // (مثلاً وضعیت یا واحد) بی‌صدا کوچک می‌شد، در حالی که این کارت باید
+    // همیشه تصویر کاملِ «امروز چه کسانی مرخصی/ماموریت هستند» را نشان
+    // دهد. سطح دسترسی (از جمله محدودیت به‌تفکیک نوع برای حراست) همچنان
+    // سمت سرور اعمال می‌شود، پس هرکس فقط نوع‌های مجاز خودش را می‌بیند.
+    fetchAllLeaveRequestsForSite(siteId)
+      .then(setTodaySourceRequests)
+      .catch(() => setTodaySourceRequests([]));
     fetchAllLeaveRequestsForSite(siteId, serverFilters)
       .then(setRequests)
       .catch((err) => {
@@ -384,9 +396,9 @@ export default function LeaveRequestsAdminListPage() {
   }, [requests]);
 
   const todayRequests = useMemo(() => {
-    if (!requests) return [];
-    return requests.filter((item) => isRequestActiveToday(item));
-  }, [requests]);
+    if (!todaySourceRequests) return [];
+    return todaySourceRequests.filter((item) => isRequestActiveToday(item));
+  }, [todaySourceRequests]);
 
   // ⚠️ با تغییر جست‌وجو/فیلترها، به صفحه اول برگرد - وگرنه ممکن است
   // کاربر روی صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
