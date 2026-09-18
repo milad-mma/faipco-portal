@@ -20,6 +20,7 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
+import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
@@ -93,14 +94,20 @@ export default function PersonalDashboardPage() {
   const [photoUrl, setPhotoUrl] = useState(null);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
+  // ⚠️ جدا شده تا بعد از ثبت/تغییر ری‌اکشن تبریک، فقط همین بخش دوباره
+  // خوانده شود (نه کل داشبورد).
+  function loadBirthdays() {
+    fetchTodayBirthdays({ respectPrivacy: true })
+      .then(setBirthdays)
+      .catch(() => setBirthdays([]));
+  }
+
   useEffect(() => {
     fetchMyNotices({ page: 1, pageSize: 5, archived: "all" }).then((data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.items.filter((n) => !n.is_read).length);
     });
-    fetchTodayBirthdays({ respectPrivacy: true })
-      .then(setBirthdays)
-      .catch(() => setBirthdays([]));
+    loadBirthdays();
     // ⚠️ شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر -
     // برای کسی که تأییدکننده نیست همیشه صفر برمی‌گردد (نه خطا).
     fetchPendingLeaveRequestCount()
@@ -469,31 +476,39 @@ export default function PersonalDashboardPage() {
               در حال بارگذاری...
             </Typography>
           ) : (
-            <Stack spacing={1}>
+            <Stack spacing={1.5} divider={<Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />}>
               {birthdays.map((e) => (
-                <Stack key={e.id} direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
-                  <Box
-                    sx={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: "50%",
-                      bgcolor: "action.hover",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      color: "text.secondary",
-                    }}
-                  >
-                    <DefaultPersonAvatar />
-                  </Box>
-                  <Typography variant="body2" fontWeight={700} noWrap>
-                    {e.first_name} {e.last_name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" noWrap>
-                    {e.department_name}
-                  </Typography>
-                </Stack>
+                <Box key={e.id}>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
+                    <Box
+                      sx={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: "50%",
+                        bgcolor: "action.hover",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        color: "text.secondary",
+                      }}
+                    >
+                      <DefaultPersonAvatar />
+                    </Box>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" fontWeight={700} noWrap>
+                        {e.first_name} {e.last_name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap display="block">
+                        {e.department_name}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  {/* ⚠️ نوار تبریک - هر متولد نوار مستقل خودش را دارد تا
+                      وقتی چند نفر در یک روز تولد دارند، هیچ‌کدام از قلم
+                      نیفتد (طبق تصمیم صریح کاربر: گزینه «الف»). */}
+                  <BirthdayReactionBar person={e} onChanged={loadBirthdays} />
+                </Box>
               ))}
             </Stack>
           )}

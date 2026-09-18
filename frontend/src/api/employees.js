@@ -112,3 +112,8 @@ export async function executeOrphanedInactiveCleanup() {
   });
   return data; // { deleted_count }
 }
+
+export async function setBirthdayReaction(employeeId, emoji) {
+  const { data } = await apiClient.post(`/employees/birthdays/${employeeId}/reaction`, { emoji });
+  return data;
+}

@@ -46,6 +46,15 @@ class EmployeePageOut(BaseModel):
     total: int
 
 
+class BirthdayReactorOut(BaseModel):
+    """یک نفر که تبریک گفته - نام و واحد سازمانی، برای فهرست بازشونده."""
+
+    user_id: int
+    name: str
+    department: str | None = None
+    emoji: str
+
+
 class BirthdayEmployeeOut(BaseModel):
     """یک پرسنل متولد امروز (شمسی) — برای کارت «متولدین روز جاری» در داشبورد."""
 
@@ -54,6 +63,17 @@ class BirthdayEmployeeOut(BaseModel):
     last_name: str
     site_name: str | None = None
     department_name: str | None = None
+    # ⚠️ ری‌اکشن‌های تبریک - همیشه برگردانده می‌شوند (طبق تصمیم صریح
+    # کاربر، فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است).
+    reaction_counts: dict[str, int] = {}
+    reactors: list[BirthdayReactorOut] = []
+    my_reaction: str | None = None
+    # آیا کاربر جاری خودش همین متولد است؟ (نباید بتواند ری‌اکشن بزند)
+    is_self: bool = False
+
+
+class SetBirthdayReactionIn(BaseModel):
+    emoji: str
 
 
 class EmployeeEnabledUpdate(BaseModel):

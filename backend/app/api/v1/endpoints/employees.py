@@ -27,8 +27,11 @@ from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
+from app.models.birthday_reaction import BirthdayReactionEmoji
+from app.services.birthday_reaction_service import BirthdayReactionError, BirthdayReactionService
 from app.schemas.employee import (
     BirthdayEmployeeOut,
+    SetBirthdayReactionIn,
     BirthdayVisibilityUpdate,
     EmployeeCreateIn,
     EmployeeEnabledUpdate,
@@ -325,6 +328,16 @@ async def list_birthdays_today(
     if respect_privacy:
         stmt = stmt.where(Employee.hide_birthday_in_dashboard.is_(False))
     result = await db.execute(stmt)
+    rows = result.all()
+
+    # ⚠️ ری‌اکشن‌های تبریک تولد - با دو Query برای همه متولدین (نه یک
+    # Query به‌ازای هر نفر). فهرست تبریک‌گویندگان طبق تصمیم صریح کاربر
+    # برای همه قابل‌مشاهده است.
+    employee_ids = [e.id for e, _, _ in rows]
+    reaction_service = BirthdayReactionService(db)
+    reactions = await reaction_service.get_reactions_for_employees(employee_ids)
+    my_reactions = await reaction_service.get_my_reactions(current_user, employee_ids)
+
     return [
         BirthdayEmployeeOut(
             id=e.id,
@@ -332,9 +345,35 @@ async def list_birthdays_today(
             last_name=e.last_name,
             site_name=site_name,
             department_name=department_name,
+            reaction_counts=reactions.get(e.id, {}).get("counts", {}),
+            reactors=reactions.get(e.id, {}).get("reactors", []),
+            my_reaction=my_reactions.get(e.id),
+            is_self=current_user.employee_id == e.id,
         )
-        for e, site_name, department_name in result.all()
+        for e, site_name, department_name in rows
     ]
+
+
+@router.post("/birthdays/{employee_id}/reaction")
+async def set_birthday_reaction(
+    employee_id: int,
+    payload: SetBirthdayReactionIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ ثبت/تغییر/برداشتن ری‌اکشن تبریک تولد. کلیک روی همان ایموجی فعلی،
+    آن را برمی‌دارد (Toggle). خودِ متولد نمی‌تواند به تولد خودش ری‌اکشن
+    بزند و ری‌اکشن فقط در همان روز تولد مجاز است.
+    """
+    try:
+        emoji = BirthdayReactionEmoji(payload.emoji)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ایموجی نامعتبر است")
+    try:
+        return await BirthdayReactionService(db).set_reaction(current_user, employee_id, emoji)
+    except BirthdayReactionError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/me/birthday-visibility", response_model=EmployeeOut)

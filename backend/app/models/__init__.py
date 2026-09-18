@@ -13,6 +13,7 @@ from app.models.site import (  # noqa: F401
     SyncStatus,
 )
 from app.models.employee import Department, Employee, EmployeeMapping  # noqa: F401
+from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji  # noqa: F401
 from app.models.notice import (  # noqa: F401
     Notice,
     NoticeTarget,

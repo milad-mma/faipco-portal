@@ -48,6 +48,7 @@ BIRTHDAY_JOB_ID = "send_birthday_greetings"
 SERVER_STATS_JOB_ID = "record_server_stats"
 BACKUP_JOB_ID = "run_scheduled_backup"
 EVALUATION_REMINDER_JOB_ID = "send_evaluation_reminders"
+BIRTHDAY_REACTION_SUMMARY_JOB_ID = "send_birthday_reaction_summaries"
 # فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
 # فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
 # که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
@@ -71,6 +72,7 @@ _BIRTHDAY_LOCK_KEY = 875312002
 _SERVER_STATS_LOCK_KEY = 875312003
 _BACKUP_LOCK_KEY = 875312004
 _EVALUATION_REMINDER_LOCK_KEY = 875312005
+_BIRTHDAY_REACTION_LOCK_KEY = 875312006
 # نمونه‌برداری واقعی مصرف سرور هر ۱۰ دقیقه یک‌بار — ولی مثل Sync، خودِ Job
 # با تیک مکرر کوتاه‌تر (هر ۲ دقیقه) چک می‌کند «طبق آخرین نمونه ثبت‌شده در
 # دیتابیس، وقتش رسیده یا نه» — همان دلیل بالا (هماهنگی بین چند Worker
@@ -220,6 +222,27 @@ async def _send_evaluation_reminders_job() -> None:
             await _advisory_unlock(db, _EVALUATION_REMINDER_LOCK_KEY)
 
 
+async def _send_birthday_reaction_summaries_job() -> None:
+    """
+    ⚠️ طبق تصمیم صریح کاربر: ۴ ساعت مانده به پایان روز تولد (ساعت ۲۰ به‌وقت
+    تهران)، به هر متولدی که تبریک گرفته یک اعلان خلاصه می‌رود.
+    """
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _BIRTHDAY_REACTION_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            from app.services.birthday_reaction_service import BirthdayReactionService
+
+            result = await BirthdayReactionService(db).send_end_of_day_summaries()
+            if result["notified"]:
+                logger.info("خلاصه تبریک تولد برای %s نفر ارسال شد", result["notified"])
+        except Exception:  # noqa: BLE001 - نباید کل Scheduler را متوقف کند
+            logger.exception("خطا در ارسال خلاصه تبریک تولد")
+        finally:
+            await _advisory_unlock(db, _BIRTHDAY_REACTION_LOCK_KEY)
+
+
 async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
@@ -296,6 +319,20 @@ async def start_scheduler() -> None:
         misfire_grace_time=6 * 60 * 60,
     )
     logger.info("Scheduler یادآوری ارزیابی‌های انجام‌نشده هر روز ساعت ۰۹:۰۰ ارسال می‌شود")
+
+    scheduler.add_job(
+        _send_birthday_reaction_summaries_job,
+        trigger="cron",
+        hour=20,
+        minute=0,
+        id=BIRTHDAY_REACTION_SUMMARY_JOB_ID,
+        replace_existing=True,
+        # ⚠️ بازه اطمینان کوتاه‌تر از بقیه Job ها (۳ ساعت، نه ۶): این اعلان
+        # باید تا قبل از پایان همان روز تولد برسد - اگر با ۶ ساعت جبران
+        # بعد از نیمه‌شب ارسال شود، دیگر روز تولد نیست و بی‌معنا می‌شود.
+        misfire_grace_time=3 * 60 * 60,
+    )
+    logger.info("Scheduler خلاصه تبریک تولد هر روز ساعت ۲۰:۰۰ ارسال می‌شود")
 
     scheduler.start()
 
