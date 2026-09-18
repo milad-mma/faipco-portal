@@ -9,6 +9,7 @@ class EmployeeScoreOut(BaseModel):
     last_name: str
     personnel_code: str
     score: float | None
+    evaluation_id: int | None = None  # برای Drill-down جزئیات سوال‌به‌سوال
 
 
 class DepartmentReportEntryOut(BaseModel):
@@ -31,6 +32,18 @@ class SitePeriodReportOut(BaseModel):
     departments: list[DepartmentReportEntryOut]
 
 
+class EmployeeComparisonOut(BaseModel):
+    """⚠️ امتیاز یک پرسنل در هر دو دوره - برای نمایش زیر هر واحد در «مقایسه دوره‌ها»."""
+
+    first_name: str
+    last_name: str
+    personnel_code: str
+    period_a_score: float | None
+    period_a_evaluation_id: int | None = None
+    period_b_score: float | None
+    period_b_evaluation_id: int | None = None
+
+
 class PeriodComparisonEntryOut(BaseModel):
     department_id: int
     department_name: str
@@ -38,6 +51,7 @@ class PeriodComparisonEntryOut(BaseModel):
     period_a_count: int
     period_b_average: float | None
     period_b_count: int
+    employees: list[EmployeeComparisonOut] = []
 
 
 class PeriodInfoOut(BaseModel):

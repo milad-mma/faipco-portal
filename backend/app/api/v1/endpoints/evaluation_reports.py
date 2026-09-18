@@ -11,6 +11,7 @@ from app.core.deps import get_current_user
 from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.evaluation_process import AnswerOut
 from app.schemas.evaluation_reports import EmailReportIn, PeriodComparisonOut, SitePeriodReportOut
 from app.services.email_service import EmailError, send_email
 from app.services.evaluation_report_xlsx import build_period_comparison_xlsx, build_site_period_report_xlsx
@@ -31,6 +32,29 @@ async def get_site_period_report(
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         return await EvaluationReportsService(db).get_site_period_report(site_id, period_id)
+    except EvaluationReportError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/sites/{site_id}/evaluations/{evaluation_id}/answers", response_model=list[AnswerOut])
+async def get_evaluation_answers_for_report(
+    site_id: int,
+    evaluation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ جزئیات سوال‌به‌سوال یک ارزیابی، برای گزارش‌های مدیریتی (هم گزارش
+    یک دوره، هم مقایسه دوره‌ها). برخلاف نسخه‌ی پرسنلی، اینجا امتیاز و
+    متن کامل پاسخ و نظر ارزیاب هم برگردانده می‌شود (طبق تصمیم صریح کاربر).
+
+    ⚠️ امنیت: علاوه بر مجوز گزارش‌گیری همان سایت، بررسی می‌شود که این
+    ارزیابی واقعاً متعلق به همان سایت باشد - تا با دانستن یک
+    evaluation_id دلخواه نشود جزئیات ارزیابی سایت دیگری را خواند.
+    """
+    await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
+    try:
+        return await EvaluationReportsService(db).get_evaluation_answers(site_id, evaluation_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

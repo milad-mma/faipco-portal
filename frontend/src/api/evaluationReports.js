@@ -52,3 +52,10 @@ export async function emailPeriodComparison(siteId, periodIdA, periodIdB, email)
   );
   return data;
 }
+
+export async function fetchEvaluationAnswersForReport(siteId, evaluationId) {
+  const { data } = await apiClient.get(
+    `/performance/reports/sites/${siteId}/evaluations/${evaluationId}/answers`
+  );
+  return data;
+}

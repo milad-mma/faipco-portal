@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employee import Department, Employee
 from app.models.evaluation_content import EvaluationPeriod
-from app.models.evaluation_process import Evaluation, EvaluationAssignment, EvaluationStatus
+from app.models.evaluation_process import Evaluation, EvaluationAnswer, EvaluationAssignment, EvaluationStatus
 from app.models.site import Site
 
 
@@ -52,7 +52,13 @@ class EvaluationReportsService:
 
     async def _department_employee_scores(self, department_id: int, period_id: int) -> list[dict]:
         result = await self.db.execute(
-            select(Employee.first_name, Employee.last_name, Employee.personnel_code, Evaluation.total_score)
+            select(
+                Employee.first_name,
+                Employee.last_name,
+                Employee.personnel_code,
+                Evaluation.total_score,
+                Evaluation.id,
+            )
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
             .join(Employee, Employee.id == EvaluationAssignment.target_employee_id)
             .where(
@@ -62,9 +68,46 @@ class EvaluationReportsService:
             )
             .order_by(Evaluation.total_score.desc())
         )
+        # ⚠️ evaluation_id برای Drill-down جزئیات سوال‌به‌سوال در گزارش
+        # مدیریتی لازم است (کارت/دیالوگ جزئیات) - قبلاً برگردانده نمی‌شد.
         return [
-            {"first_name": r[0], "last_name": r[1], "personnel_code": r[2], "score": r[3]} for r in result.all()
+            {
+                "first_name": r[0],
+                "last_name": r[1],
+                "personnel_code": r[2],
+                "score": r[3],
+                "evaluation_id": r[4],
+            }
+            for r in result.all()
         ]
+
+    async def get_evaluation_answers(self, site_id: int, evaluation_id: int) -> list[EvaluationAnswer]:
+        """
+        ⚠️ جزئیات سوال‌به‌سوال یک ارزیابی برای گزارش مدیریتی.
+
+        ⚠️ امنیت: بررسی می‌شود که این ارزیابی واقعاً متعلق به همان سایتی
+        باشد که کاربر برایش مجوز گزارش‌گیری دارد - وگرنه با دانستن یک
+        evaluation_id دلخواه می‌شد جزئیات ارزیابی سایت دیگری را خواند.
+        """
+        owner = await self.db.execute(
+            select(Evaluation.id)
+            .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .join(Employee, Employee.id == EvaluationAssignment.target_employee_id)
+            .where(
+                Evaluation.id == evaluation_id,
+                Employee.site_id == site_id,
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+        )
+        if owner.scalar_one_or_none() is None:
+            raise EvaluationReportError("ارزیابی موردنظر یافت نشد")
+
+        result = await self.db.execute(
+            select(EvaluationAnswer)
+            .where(EvaluationAnswer.evaluation_id == evaluation_id)
+            .order_by(EvaluationAnswer.id)
+        )
+        return list(result.scalars().all())
 
     async def get_site_period_report(self, site_id: int, period_id: int) -> dict:
         """گزارش کامل یک سایت برای یک دوره - میانگین کل + شکسته‌شده به هر واحد."""
@@ -115,6 +158,49 @@ class EvaluationReportsService:
             "departments": department_entries,
         }
 
+    async def _department_employee_comparison(
+        self, department_id: int, period_id_a: int, period_id_b: int
+    ) -> list[dict]:
+        """
+        ⚠️ طبق درخواست صریح کاربر: زیر هر واحد در «مقایسه دوره‌ها»، لیست
+        پرسنل با امتیاز هر دو دوره و میزان تغییر.
+
+        پرسنلی که فقط در یکی از دو دوره ارزیابی شده هم می‌آید (امتیاز
+        دوره دیگرش None می‌شود) - چون حذفشان تصویر ناقصی از واحد می‌داد.
+        کلید تطبیق، کد پرسنلی است (نه نام، که ممکن است تکراری باشد).
+        """
+        scores_a = await self._department_employee_scores(department_id, period_id_a)
+        scores_b = await self._department_employee_scores(department_id, period_id_b)
+
+        merged: dict[str, dict] = {}
+        for row in scores_a:
+            merged[row["personnel_code"]] = {
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "personnel_code": row["personnel_code"],
+                "period_a_score": row["score"],
+                "period_a_evaluation_id": row["evaluation_id"],
+                "period_b_score": None,
+                "period_b_evaluation_id": None,
+            }
+        for row in scores_b:
+            entry = merged.setdefault(
+                row["personnel_code"],
+                {
+                    "first_name": row["first_name"],
+                    "last_name": row["last_name"],
+                    "personnel_code": row["personnel_code"],
+                    "period_a_score": None,
+                    "period_a_evaluation_id": None,
+                    "period_b_score": None,
+                    "period_b_evaluation_id": None,
+                },
+            )
+            entry["period_b_score"] = row["score"]
+            entry["period_b_evaluation_id"] = row["evaluation_id"]
+
+        return sorted(merged.values(), key=lambda e: e["last_name"])
+
     async def get_period_comparison(self, site_id: int, period_id_a: int, period_id_b: int) -> dict:
         """مقایسه میانگین یک سایت بین دو دوره - کل سایت + شکسته‌شده به هر واحد."""
         site = await self.db.get(Site, site_id)
@@ -159,6 +245,9 @@ class EvaluationReportsService:
                     "period_a_count": stats_a["count"],
                     "period_b_average": stats_b["average_score"],
                     "period_b_count": stats_b["count"],
+                    "employees": await self._department_employee_comparison(
+                        department.id, period_id_a, period_id_b
+                    ),
                 }
             )
 
