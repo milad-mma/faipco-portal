@@ -349,6 +349,7 @@ async def list_birthdays_today(
             reactors=reactions.get(e.id, {}).get("reactors", []),
             my_reaction=my_reactions.get(e.id),
             is_self=current_user.employee_id == e.id,
+            has_photo=e.photo_thumbnail is not None,
         )
         for e, site_name, department_name in rows
     ]

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Collapse, Stack, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import EmployeeAvatar from "./EmployeeAvatar";
 import { setBirthdayReaction } from "../api/employees";
 
 /**
@@ -45,20 +46,26 @@ function ReactorsToggle({ total, open, onClick }) {
       onClick={onClick}
       aria-expanded={open}
       sx={{
-        mt: 0.75,
+        // ⚠️ طبق گزارش کاربر: نسخه قبلی شبیه دکمه نبود و وسط‌چین هم نبود.
+        // حالا عرض کامل + کادر + پس‌زمینه دارد، پس آشکارا یک دکمه است.
+        mt: 1,
+        width: "100%",
         display: "flex",
         alignItems: "center",
-        gap: 0.25,
-        px: 0,
-        py: 0.25,
-        border: "none",
-        bgcolor: "transparent",
+        justifyContent: "center",
+        gap: 0.5,
+        px: 1,
+        py: 0.6,
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 1,
+        bgcolor: "action.hover",
         cursor: "pointer",
         color: "primary.main",
         fontSize: 11,
         fontWeight: 700,
         fontFamily: "inherit",
-        "&:hover": { textDecoration: "underline" },
+        "&:hover": { bgcolor: "action.selected" },
       }}
     >
       {greetingLabel(total)}
@@ -191,12 +198,14 @@ function ReactorList({ open, reactors }) {
   return (
     <Collapse in={open}>
       <Stack spacing={0.5} sx={{ mt: 0.75, pt: 0.75, borderTop: "1px solid", borderColor: "divider" }}>
+        {/* ⚠️ طبق درخواست صریح کاربر: آواتار سمت چپ نام. چون صفحه RTL است،
+            اولین عنصر در DOM سمت راست می‌افتد - پس آواتار عمداً **آخر**
+            آمده تا سمت چپ رندر شود. */}
         {reactors.map((r, i) => (
           <Stack key={`${r.user_id}-${i}`} direction="row" alignItems="center" spacing={1}>
-            <Typography sx={{ fontSize: 13, width: 18 }}>{EMOJI_BY_KEY[r.emoji] || "•"}</Typography>
-            {/* ⚠️ طبق درخواست صریح کاربر: واحد سازمانی کنار نام باشد، نه
-                زیر آن. noWrap روی خودِ ردیف است تا اگر نام و واحد با هم
-                جا نشدند، به‌جای شکستن به خط دوم، با «…» کوتاه شود. */}
+            <Typography sx={{ fontSize: 13, width: 18, flexShrink: 0 }}>
+              {EMOJI_BY_KEY[r.emoji] || "•"}
+            </Typography>
             <Typography sx={{ fontSize: 12, minWidth: 0, flex: 1 }} noWrap>
               {r.name}
               {r.department && (
@@ -205,6 +214,7 @@ function ReactorList({ open, reactors }) {
                 </Typography>
               )}
             </Typography>
+            <EmployeeAvatar employeeId={r.employee_id} hasPhoto={r.has_photo} size={24} />
           </Stack>
         ))}
       </Stack>

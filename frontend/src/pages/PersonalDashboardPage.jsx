@@ -22,6 +22,7 @@ import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/emp
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
+import EmployeeAvatar from "../components/EmployeeAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
 /**
@@ -480,21 +481,10 @@ export default function PersonalDashboardPage() {
               {birthdays.map((e) => (
                 <Box key={e.id}>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
-                    <Box
-                      sx={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: "50%",
-                        bgcolor: "action.hover",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                        color: "text.secondary",
-                      }}
-                    >
-                      <DefaultPersonAvatar />
-                    </Box>
+                    {/* ⚠️ اگر این پرسنل در کاراوب عکس داشته باشد (که هنگام
+                        Sync ذخیره شده)، همان نمایش داده می‌شود - مثل آواتار
+                        خودِ کاربر در بالای همین داشبورد. */}
+                    <EmployeeAvatar employeeId={e.id} hasPhoto={e.has_photo} size={30} />
                     {/* ⚠️ طبق درخواست صریح کاربر: واحد سازمانی کنار نام باشد،
                         نه زیر آن. noWrap روی خودِ ردیف است تا اگر نام و واحد
                         با هم جا نشدند، به‌جای شکستن به خط دوم با «…» کوتاه شود. */}

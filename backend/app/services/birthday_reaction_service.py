@@ -147,6 +147,10 @@ class BirthdayReactionService:
                 Employee.first_name,
                 Employee.last_name,
                 Department.name,
+                Employee.id,
+                # ⚠️ خودِ عکس کشیده نمی‌شود (حجیم است) - فقط اینکه وجود
+                # دارد یا نه، تا فرانت‌اند بداند درخواست تصویر بزند یا نه.
+                Employee.photo_thumbnail.isnot(None),
             )
             .join(User, User.id == BirthdayReaction.reactor_user_id)
             .outerjoin(Employee, Employee.id == User.employee_id)
@@ -159,7 +163,16 @@ class BirthdayReactionService:
         )
 
         out: dict[int, dict] = {eid: {"counts": {}, "reactors": []} for eid in employee_ids}
-        for emp_id, emoji, reactor_user_id, first_name, last_name, dept_name in result.all():
+        for (
+            emp_id,
+            emoji,
+            reactor_user_id,
+            first_name,
+            last_name,
+            dept_name,
+            reactor_employee_id,
+            has_photo,
+        ) in result.all():
             entry = out[emp_id]
             key = emoji.value
             entry["counts"][key] = entry["counts"].get(key, 0) + 1
@@ -168,9 +181,11 @@ class BirthdayReactionService:
             entry["reactors"].append(
                 {
                     "user_id": reactor_user_id,
+                    "employee_id": reactor_employee_id,
                     "name": f"{first_name} {last_name}" if first_name else "کاربر سامانه",
                     "department": dept_name,
                     "emoji": key,
+                    "has_photo": bool(has_photo),
                 }
             )
         return out

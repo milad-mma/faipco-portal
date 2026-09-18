@@ -47,12 +47,16 @@ class EmployeePageOut(BaseModel):
 
 
 class BirthdayReactorOut(BaseModel):
-    """یک نفر که تبریک گفته - نام و واحد سازمانی، برای فهرست بازشونده."""
+    """یک نفر که تبریک گفته - نام، واحد سازمانی و آواتار، برای فهرست بازشونده."""
 
     user_id: int
+    employee_id: int | None = None
     name: str
     department: str | None = None
     emoji: str
+    # ⚠️ مثل داشبورد شخصی: فقط اگر واقعاً عکس دارد، فرانت‌اند درخواست
+    # تصویر می‌زند - وگرنه برای هر نفر یک ۴۰۴ اضافه به سرور می‌خورد.
+    has_photo: bool = False
 
 
 class BirthdayEmployeeOut(BaseModel):
@@ -70,6 +74,7 @@ class BirthdayEmployeeOut(BaseModel):
     my_reaction: str | None = None
     # آیا کاربر جاری خودش همین متولد است؟ (نباید بتواند ری‌اکشن بزند)
     is_self: bool = False
+    has_photo: bool = False
 
 
 class SetBirthdayReactionIn(BaseModel):
