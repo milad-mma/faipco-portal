@@ -12,7 +12,12 @@ from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.evaluation_process import AnswerOut
-from app.schemas.evaluation_reports import EmailReportIn, PeriodComparisonOut, SitePeriodReportOut
+from app.schemas.evaluation_reports import (
+    EmailReportIn,
+    EmployeeTrendOut,
+    PeriodComparisonOut,
+    SitePeriodReportOut,
+)
 from app.services.email_service import EmailError, send_email
 from app.services.evaluation_report_xlsx import build_period_comparison_xlsx, build_site_period_report_xlsx
 from app.services.evaluation_reports_service import EvaluationReportError, EvaluationReportsService
@@ -55,6 +60,21 @@ async def get_evaluation_answers_for_report(
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         return await EvaluationReportsService(db).get_evaluation_answers(site_id, evaluation_id)
+    except EvaluationReportError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/sites/{site_id}/employees/{personnel_code}/trend", response_model=EmployeeTrendOut)
+async def get_employee_trend(
+    site_id: int,
+    personnel_code: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ گزارش روند فردی - سیر امتیاز یک نفر در طول همه دوره‌های ارزیابی، به‌ترتیب زمانی."""
+    await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
+    try:
+        return await EvaluationReportsService(db).get_employee_trend(site_id, personnel_code)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

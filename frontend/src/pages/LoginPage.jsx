@@ -177,7 +177,7 @@ export default function LoginPage() {
       <Button
         variant="contained"
         startIcon={<RefreshOutlinedIcon />}
-        onClick={recheck}
+        onClick={() => recheck({ force: true })}
         disabled={isChecking}
         sx={{ mt: 1 }}
       >

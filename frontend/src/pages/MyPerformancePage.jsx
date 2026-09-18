@@ -19,6 +19,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tab,
   Tabs,
@@ -196,6 +197,16 @@ function ResultCard({ result, onClick }) {
 function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdit }) {
   const periodTitles = useMemo(() => [...new Set(items.map((i) => i.period_title))], [items]);
   const filteredItems = periodFilter ? items.filter((i) => i.period_title === periodFilter) : items;
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+
+  // ⚠️ با تغییر فیلتر دوره، به صفحه اول برگرد - وگرنه ممکن است کاربر
+  // روی صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  useEffect(() => {
+    setPage(0);
+  }, [periodFilter]);
+
+  const visibleItems = filteredItems.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   return (
     <Box>
@@ -227,7 +238,7 @@ function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdi
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredItems.map((item) => (
+            {visibleItems.map((item) => (
               <TableRow key={item.assignment_id}>
                 <TableCell>
                   {item.target.first_name} {item.target.last_name}
@@ -259,6 +270,20 @@ function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdi
             ))}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={filteredItems.length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[10, 25, 50, 100]}
+          labelRowsPerPage="تعداد در هر صفحه:"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+        />
       </TableContainer>
     </Box>
   );

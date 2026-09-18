@@ -1,6 +1,8 @@
 """Schema های Pydantic برای «گزارش‌های مدیریتی ارزیابی عملکرد»."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -70,3 +72,25 @@ class PeriodComparisonOut(BaseModel):
 
 class EmailReportIn(BaseModel):
     email: EmailStr
+
+
+class EmployeeTrendPointOut(BaseModel):
+    """⚠️ امتیاز یک نفر در یک دوره - یک نقطه از نمودار روند فردی."""
+
+    period_id: int
+    period_title: str
+    score: float | None
+    evaluation_id: int | None = None
+    submitted_at: datetime | None = None
+
+
+class EmployeeTrendOut(BaseModel):
+    """⚠️ گزارش روند فردی - سیر امتیاز یک نفر در طول همه دوره‌های ارزیابی."""
+
+    first_name: str
+    last_name: str
+    personnel_code: str
+    points: list[EmployeeTrendPointOut] = []
+    average_score: float | None = None
+    best_score: float | None = None
+    worst_score: float | None = None

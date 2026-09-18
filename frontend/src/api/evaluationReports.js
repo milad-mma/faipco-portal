@@ -59,3 +59,10 @@ export async function fetchEvaluationAnswersForReport(siteId, evaluationId) {
   );
   return data;
 }
+
+export async function fetchEmployeeTrend(siteId, personnelCode) {
+  const { data } = await apiClient.get(
+    `/performance/reports/sites/${siteId}/employees/${encodeURIComponent(personnelCode)}/trend`
+  );
+  return data;
+}

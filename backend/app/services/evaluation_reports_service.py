@@ -116,6 +116,60 @@ class EvaluationReportsService:
             list(result.scalars().all())
         )
 
+    async def get_employee_trend(self, site_id: int, personnel_code: str) -> dict:
+        """
+        ⚠️ طبق درخواست صریح کاربر: گزارش روند فردی - امتیاز یک نفر در طول
+        همه دوره‌های ارزیابی، به‌ترتیب زمانی، تا بشود سیر صعودی/نزولی
+        عملکردش را دید (قبلاً فقط مقایسه سطح واحد وجود داشت).
+
+        ⚠️ امنیت: فقط پرسنل همان سایتی که کاربر برایش مجوز گزارش‌گیری
+        دارد - تا با دانستن یک کد پرسنلی دلخواه نشود روند فرد دیگری در
+        سایت دیگر را خواند.
+        """
+        employee_result = await self.db.execute(
+            select(Employee).where(Employee.site_id == site_id, Employee.personnel_code == personnel_code)
+        )
+        employee = employee_result.scalar_one_or_none()
+        if employee is None:
+            raise EvaluationReportError("پرسنل موردنظر در این سایت یافت نشد")
+
+        result = await self.db.execute(
+            select(
+                EvaluationPeriod.id,
+                EvaluationPeriod.title,
+                Evaluation.total_score,
+                Evaluation.id,
+                Evaluation.submitted_at,
+            )
+            .join(EvaluationAssignment, EvaluationAssignment.period_id == EvaluationPeriod.id)
+            .join(Evaluation, Evaluation.assignment_id == EvaluationAssignment.id)
+            .where(
+                EvaluationAssignment.target_employee_id == employee.id,
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+            .order_by(Evaluation.submitted_at)
+        )
+        points = [
+            {
+                "period_id": r[0],
+                "period_title": r[1],
+                "score": float(r[2]) if r[2] is not None else None,
+                "evaluation_id": r[3],
+                "submitted_at": r[4],
+            }
+            for r in result.all()
+        ]
+        scores = [p["score"] for p in points if p["score"] is not None]
+        return {
+            "first_name": employee.first_name,
+            "last_name": employee.last_name,
+            "personnel_code": employee.personnel_code,
+            "points": points,
+            "average_score": sum(scores) / len(scores) if scores else None,
+            "best_score": max(scores) if scores else None,
+            "worst_score": min(scores) if scores else None,
+        }
+
     async def get_site_period_report(self, site_id: int, period_id: int) -> dict:
         """گزارش کامل یک سایت برای یک دوره - میانگین کل + شکسته‌شده به هر واحد."""
         site = await self.db.get(Site, site_id)

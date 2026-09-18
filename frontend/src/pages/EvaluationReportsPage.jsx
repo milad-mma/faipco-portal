@@ -29,6 +29,7 @@ import {
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 import { fetchSites } from "../api/sites";
 import { fetchEvaluationPeriods } from "../api/evaluationPeriods";
 import {
@@ -36,6 +37,7 @@ import {
   downloadSitePeriodReport,
   emailPeriodComparison,
   emailSitePeriodReport,
+  fetchEmployeeTrend,
   fetchEvaluationAnswersForReport,
   fetchPeriodComparison,
   fetchSitePeriodReport,
@@ -105,6 +107,158 @@ function ScoreCell({ score, evaluationId, onClick }) {
       onClick={evaluationId ? onClick : undefined}
       sx={{ cursor: evaluationId ? "pointer" : "default" }}
     />
+  );
+}
+
+/**
+ * ⚠️ طبق درخواست صریح کاربر: «گزارش روند فردی» - سیر امتیاز یک نفر در
+ * طول همه دوره‌های ارزیابی. قبلاً فقط مقایسه سطح واحد وجود داشت و
+ * نمی‌شد دید عملکرد یک شخص در طول زمان صعودی بوده یا نزولی.
+ *
+ * نمودار با SVG ساده رسم می‌شود (نه کتابخانه نموداری) - چون پروژه از
+ * قبل هیچ وابستگی نموداری ندارد و اضافه‌کردن یکی فقط برای این صفحه،
+ * حجم بسته را بی‌دلیل زیاد می‌کرد.
+ */
+function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
+  const [trend, setTrend] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchEmployeeTrend(siteId, personnelCode)
+      .then(setTrend)
+      .catch((err) => {
+        setError(err.response?.data?.detail || "دریافت روند فردی با خطا مواجه شد.");
+        setTrend(null);
+      });
+  }, [siteId, personnelCode]);
+
+  const points = trend?.points?.filter((p) => p.score != null) || [];
+  const chartWidth = 560;
+  const chartHeight = 180;
+  const padding = 28;
+
+  function pointCoords(index) {
+    const usableWidth = chartWidth - padding * 2;
+    const x = points.length === 1 ? chartWidth / 2 : padding + (usableWidth * index) / (points.length - 1);
+    const y = padding + ((100 - points[index].score) / 100) * (chartHeight - padding * 2);
+    return { x, y };
+  }
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="md">
+      <DialogTitle>
+        <Typography fontWeight={700}>
+          روند عملکرد: {trend ? `${trend.first_name} ${trend.last_name}` : "..."}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          کد پرسنلی: {personnelCode}
+        </Typography>
+      </DialogTitle>
+      <DialogContent dividers>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {trend === null && !error ? (
+          <Stack alignItems="center" sx={{ py: 3 }}>
+            <CircularProgress size={28} />
+          </Stack>
+        ) : points.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            هنوز هیچ ارزیابی ثبت‌نهایی‌شده‌ای برای این پرسنل وجود ندارد.
+          </Typography>
+        ) : (
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+              <Chip size="small" label={`میانگین: ${Math.round(trend.average_score)}`} color={scoreColor(trend.average_score)} />
+              <Chip size="small" label={`بهترین: ${Math.round(trend.best_score)}`} color="success" variant="outlined" />
+              <Chip size="small" label={`ضعیف‌ترین: ${Math.round(trend.worst_score)}`} color="error" variant="outlined" />
+              <Chip size="small" label={`${points.length} دوره`} variant="outlined" />
+            </Stack>
+
+            {/* نمودار خطی ساده - محور عمودی همیشه ۰ تا ۱۰۰ */}
+            <Box sx={{ overflowX: "auto" }}>
+              <svg width={chartWidth} height={chartHeight} style={{ maxWidth: "100%" }}>
+                {[0, 50, 100].map((gridScore) => {
+                  const y = padding + ((100 - gridScore) / 100) * (chartHeight - padding * 2);
+                  return (
+                    <g key={gridScore}>
+                      <line x1={padding} y1={y} x2={chartWidth - padding} y2={y} stroke="#e0e0e0" strokeWidth="1" />
+                      <text x={chartWidth - padding + 4} y={y + 4} fontSize="10" fill="#9e9e9e">
+                        {gridScore}
+                      </text>
+                    </g>
+                  );
+                })}
+                {points.length > 1 && (
+                  <polyline
+                    fill="none"
+                    stroke="#1976d2"
+                    strokeWidth="2"
+                    points={points.map((_, i) => { const c = pointCoords(i); return `${c.x},${c.y}`; }).join(" ")}
+                  />
+                )}
+                {points.map((point, i) => {
+                  const c = pointCoords(i);
+                  return (
+                    <g key={point.period_id}>
+                      <circle cx={c.x} cy={c.y} r="4" fill="#1976d2" />
+                      <text x={c.x} y={c.y - 9} fontSize="10" textAnchor="middle" fill="#424242">
+                        {Math.round(point.score)}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </Box>
+
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>دوره ارزیابی</TableCell>
+                    <TableCell>امتیاز</TableCell>
+                    <TableCell>تغییر نسبت به دوره قبل</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {trend.points.map((point, i) => {
+                    const prev = i > 0 ? trend.points[i - 1].score : null;
+                    const change =
+                      prev != null && point.score != null ? Math.round(point.score - prev) : null;
+                    return (
+                      <TableRow key={point.period_id}>
+                        <TableCell>{point.period_title}</TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            color={scoreColor(point.score)}
+                            label={point.score != null ? Math.round(point.score) : "—"}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {change != null && (
+                            <Chip
+                              size="small"
+                              color={change > 0 ? "success" : change < 0 ? "error" : "default"}
+                              label={`${change > 0 ? "+" : ""}${change}`}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>بستن</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -238,6 +392,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
   const [error, setError] = useState("");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [detailsEmployee, setDetailsEmployee] = useState(null);
+  const [trendPersonnelCode, setTrendPersonnelCode] = useState(null);
 
   useEffect(() => {
     setReport(null);
@@ -337,6 +492,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
                           <TableCell>نام</TableCell>
                           <TableCell>کد پرسنلی</TableCell>
                           <TableCell>امتیاز</TableCell>
+                          <TableCell>روند</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -358,6 +514,20 @@ function SinglePeriodReportTab({ siteId, periods }) {
                                 label={emp.score != null ? Math.round(emp.score) : "—"}
                               />
                             </TableCell>
+                            <TableCell>
+                              {/* ⚠️ stopPropagation لازم است - وگرنه کلیک روی این
+                                  دکمه، هم‌زمان دیالوگ جزئیات ردیف را هم باز می‌کرد. */}
+                              <Button
+                                size="small"
+                                startIcon={<TimelineOutlinedIcon />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTrendPersonnelCode(emp.personnel_code);
+                                }}
+                              >
+                                روند
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -375,6 +545,14 @@ function SinglePeriodReportTab({ siteId, periods }) {
         onClose={() => setEmailDialogOpen(false)}
         onSend={(email) => emailSitePeriodReport(siteId, periodId, email)}
       />
+
+      {trendPersonnelCode && (
+        <EmployeeTrendDialog
+          siteId={siteId}
+          personnelCode={trendPersonnelCode}
+          onClose={() => setTrendPersonnelCode(null)}
+        />
+      )}
 
       {detailsEmployee && (
         <EmployeeAnswersDialog

@@ -8,6 +8,7 @@ evaluation_id معتبر داده شده اعتماد نمی‌شود.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -18,6 +19,7 @@ from app.core.evaluation_rules import calculate_option_based_question_score, cal
 from app.core.persian_date import get_current_jalali_date, jalali_year_range_utc
 from app.models.employee import Department, Employee
 from app.models.evaluation import EvaluationDepartmentSupervisor, EvaluationShiftLead
+from app.models.user import User
 from app.models.evaluation_content import (
     EvaluationCategory,
     EvaluationForm,
@@ -34,6 +36,9 @@ from app.models.evaluation_process import (
     EvaluationStatus,
 )
 from app.models.site import Site
+from app.services.push_service import PushService
+
+logger = logging.getLogger(__name__)
 
 _OPTION_BASED_TYPES = {"single_choice", "multiple_choice", "rating", "yes_no"}
 
@@ -275,7 +280,31 @@ class EvaluationProcessService:
         evaluation.assignment.status = EvaluationAssignmentStatus.completed
 
         await self.db.commit()
+
+        # ⚠️ طبق درخواست صریح کاربر: اطلاع‌رسانی به پرسنلِ ارزیابی‌شده که
+        # نتیجه‌اش ثبت شد. هرگز نباید خودِ ثبت ارزیابی را متوقف کند - اگر
+        # Push پیکربندی نشده یا خطا داد، ارزیابی همچنان ثبت شده است.
+        await self._notify_target_of_submitted_evaluation(evaluation.assignment.target_employee_id)
+
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+
+    async def _notify_target_of_submitted_evaluation(self, target_employee_id: int) -> None:
+        try:
+            result = await self.db.execute(select(User).where(User.employee_id == target_employee_id))
+            target_user = result.scalar_one_or_none()
+            if target_user is None:
+                return
+            await PushService(self.db).notify_users(
+                {target_user.id},
+                url="/my-performance",
+                priority="normal",
+                body=(
+                    "نتیجه ارزیابی عملکرد شما ثبت شد.\n"
+                    "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+                ),
+            )
+        except Exception:
+            logger.exception("ارسال Push برای نتیجه ارزیابی عملکرد با خطا مواجه شد")
 
     def _answer_has_content(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> bool:
         """

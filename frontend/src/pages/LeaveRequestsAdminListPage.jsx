@@ -527,11 +527,22 @@ export default function LeaveRequestsAdminListPage() {
         </Alert>
       )}
 
-      {todayRequests.length > 0 && (
+      {/* ⚠️ طبق درخواست صریح کاربر: این کارت همیشه نمایش داده می‌شود -
+          حتی وقتی خالی است. قبلاً وقتی موردی نبود کاملاً ناپدید می‌شد و
+          کاربر نمی‌دانست سیستم درست کار می‌کند یا چیزی خراب است. حالا در
+          حالت خالی، پیام روشن نشان داده می‌شود. */}
+      {todaySourceRequests !== null && (
         <Card variant="outlined" sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
           <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
             درخواست‌های مرخصی و ماموریت امروز ({todayRequests.length})
           </Typography>
+          {todayRequests.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {isTypeRestricted
+                ? "برای امروز درخواست تأیید یا رد شده‌ای وجود ندارد."
+                : "برای امروز درخواستی وجود ندارد."}
+            </Typography>
+          ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -564,6 +575,7 @@ export default function LeaveRequestsAdminListPage() {
               </TableBody>
             </Table>
           </TableContainer>
+          )}
         </Card>
       )}
 

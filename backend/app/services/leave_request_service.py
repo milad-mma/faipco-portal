@@ -591,7 +591,13 @@ class LeaveRequestService:
             if approver_user is None:
                 return
             await PushService(self.db).notify_users(
-                {approver_user.id}, url="/leave-requests?tab=pending", priority="normal"
+                {approver_user.id},
+                url="/leave-requests?tab=pending",
+                priority="normal",
+                body=(
+                    "یک درخواست مرخصی/ماموریت در انتظار تصمیم شماست.\n"
+                    "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+                ),
             )
         except Exception:
             logger.exception("ارسال Push برای درخواست مرخصی/ماموریت جدید با خطا مواجه شد")
@@ -607,7 +613,13 @@ class LeaveRequestService:
             if requester_user is None:
                 return
             await PushService(self.db).notify_users(
-                {requester_user.id}, url="/leave-requests?tab=my-requests", priority="normal"
+                {requester_user.id},
+                url="/leave-requests?tab=my-requests",
+                priority="normal",
+                body=(
+                    "درخواست مرخصی/ماموریت شما بررسی شد.\n"
+                    "جهت مشاهده نتیجه روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+                ),
             )
         except Exception:
             logger.exception("ارسال Push برای تصمیم درخواست مرخصی/ماموریت با خطا مواجه شد")
