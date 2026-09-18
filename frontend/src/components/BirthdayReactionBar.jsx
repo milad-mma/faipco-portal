@@ -198,14 +198,12 @@ function ReactorList({ open, reactors }) {
   return (
     <Collapse in={open}>
       <Stack spacing={0.5} sx={{ mt: 0.75, pt: 0.75, borderTop: "1px solid", borderColor: "divider" }}>
-        {/* ⚠️ طبق درخواست صریح کاربر: آواتار سمت چپ نام. چون صفحه RTL است،
-            اولین عنصر در DOM سمت راست می‌افتد - پس آواتار عمداً **آخر**
-            آمده تا سمت چپ رندر شود. */}
+        {/* ⚠️ طبق درخواست صریح کاربر: ترتیب دقیقاً مثل ردیف خودِ فرد متولد -
+            آواتار اول (یعنی سمت راست در RTL)، بعد نام، بعد واحد سازمانی، و
+            در انتها ری‌اکشن آن شخص با یک فاصله کوتاه. */}
         {reactors.map((r, i) => (
           <Stack key={`${r.user_id}-${i}`} direction="row" alignItems="center" spacing={1}>
-            <Typography sx={{ fontSize: 13, width: 18, flexShrink: 0 }}>
-              {EMOJI_BY_KEY[r.emoji] || "•"}
-            </Typography>
+            <EmployeeAvatar employeeId={r.employee_id} hasPhoto={r.has_photo} size={24} />
             <Typography sx={{ fontSize: 12, minWidth: 0, flex: 1 }} noWrap>
               {r.name}
               {r.department && (
@@ -214,7 +212,12 @@ function ReactorList({ open, reactors }) {
                 </Typography>
               )}
             </Typography>
-            <EmployeeAvatar employeeId={r.employee_id} hasPhoto={r.has_photo} size={24} />
+            {/* ⚠️ ری‌اکشن بیرون از بلوکِ noWrap است تا اگر نام و واحد بلند
+                بودند و با «…» کوتاه شدند، خودِ ایموجی قربانی نشود و همیشه
+                دیده شود. flexShrink:0 همین را تضمین می‌کند. */}
+            <Typography sx={{ fontSize: 13, flexShrink: 0 }}>
+              {EMOJI_BY_KEY[r.emoji] || "•"}
+            </Typography>
           </Stack>
         ))}
       </Stack>
