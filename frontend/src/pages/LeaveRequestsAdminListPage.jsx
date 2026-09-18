@@ -311,11 +311,20 @@ export default function LeaveRequestsAdminListPage() {
     // همیشه تصویر کاملِ «امروز چه کسانی مرخصی/ماموریت هستند» را نشان
     // دهد. سطح دسترسی (از جمله محدودیت به‌تفکیک نوع برای حراست) همچنان
     // سمت سرور اعمال می‌شود، پس هرکس فقط نوع‌های مجاز خودش را می‌بیند.
-    fetchAllLeaveRequestsForSite(siteId)
-      .then(setTodaySourceRequests)
-      .catch(() => setTodaySourceRequests([]));
-    fetchAllLeaveRequestsForSite(siteId, serverFilters)
-      .then(setRequests)
+    //
+    // ⚠️ رفع باگ واقعی: این درخواست قبلاً خطای ۴۰۳ را بی‌صدا می‌بلعید و
+    // آرایه خالی می‌گذاشت. برای نقشی مثل حراست که فقط روی یک سایت خاص
+    // مجوز دارد، سایت پیش‌فرض ۴۰۳ می‌داد و کارت «امروز» هیچ‌وقت نمایش
+    // داده نمی‌شد - حتی بعد از اینکه منطق زیر خودکار به سایت درست سوئیچ
+    // می‌کرد. حالا هر دو درخواست با هم مدیریت می‌شوند تا همیشه هم‌راستا بمانند.
+    Promise.all([
+      fetchAllLeaveRequestsForSite(siteId),
+      fetchAllLeaveRequestsForSite(siteId, serverFilters),
+    ])
+      .then(([todayData, filteredData]) => {
+        setTodaySourceRequests(todayData);
+        setRequests(filteredData);
+      })
       .catch((err) => {
         // ⚠️ طبق تصمیم صریح کاربر: سایت پیش‌فرض (اولین سایت لیست) لزوماً
         // همان سایتی نیست که این کاربر مجوز مشاهده‌اش را دارد (مثلاً
@@ -330,6 +339,7 @@ export default function LeaveRequestsAdminListPage() {
             return;
           }
         }
+        setTodaySourceRequests([]);
         setError(err.response?.data?.detail || "دریافت درخواست‌ها با خطا مواجه شد.");
       });
   }
