@@ -156,7 +156,17 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
   const [archiveBusy, setArchiveBusy] = useState(false);
   // ⚠️ پیام ۴۰۳ خودِ سرور نگه داشته می‌شود تا دیالوگ دقیقاً همان دلیل و
   // تعداد واقعی را نشان دهد (نه یک متن حدسی سمت کلاینت).
+  // ⚠️ «باز بودن» از «متن پیام» جدا نگه داشته می‌شود. قبلاً هر دو در یک
+  // state بودند و چون null هم یعنی «بسته» و هم یعنی «سرور متنی نداد»،
+  // وقتی پاسخ ۴۰۳ بدون detail می‌آمد دیالوگ اصلاً باز نمی‌شد و کلیک روی
+  // دانلود هیچ واکنشی نداشت.
+  const [gateOpen, setGateOpen] = useState(false);
   const [gateMessage, setGateMessage] = useState(null);
+
+  function openGate(message) {
+    setGateMessage(message || null);
+    setGateOpen(true);
+  }
   const isUnread = !notice.is_read;
   const isPayroll = notice.notice_type === "payroll";
   const isAttendanceCard = notice.notice_type === "attendance_card";
@@ -284,7 +294,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                   startIcon={<PictureAsPdfOutlinedIcon />}
                   onClick={(e) => {
                     e.stopPropagation();
-                    downloadPayrollReceipt(notice.id, setDownloadError, setGateMessage);
+                    downloadPayrollReceipt(notice.id, setDownloadError, openGate);
                   }}
                 >
                   دانلود فیش من (PDF)
@@ -310,7 +320,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                   startIcon={<PictureAsPdfOutlinedIcon />}
                   onClick={(e) => {
                     e.stopPropagation();
-                    downloadAttendanceCard(notice.id, setDownloadError, setGateMessage);
+                    downloadAttendanceCard(notice.id, setDownloadError, openGate);
                   }}
                 >
                   دانلود فیش کارکرد من (PDF)
@@ -365,9 +375,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           به‌جای پیام مبهم، همین باز می‌شود و راه رفع را نشان می‌دهد.
           بستنش کاربر را به بقیه بخش‌ها برمی‌گرداند. */}
       <AccessGateDialog
-        open={gateMessage !== null}
+        open={gateOpen}
         message={gateMessage}
-        onClose={() => setGateMessage(null)}
+        onClose={() => setGateOpen(false)}
       />
     </Card>
   );
