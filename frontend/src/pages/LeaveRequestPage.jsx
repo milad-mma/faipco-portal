@@ -195,12 +195,12 @@ function MyRequestsTable({ items, onDeleted }) {
     );
   }
 
-  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت)
+  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت) -
+  // بدون برجسته‌سازی «امروز» (آن فقط در صفحات گزارشی/ادمین لازم است، نه
+  // اینجا).
   const sortedItems = [...items].sort(
     (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
   );
-  const todayStr = new Date().toDateString();
-  const isToday = (item) => item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr;
 
   if (isMobile) {
     // نمایش کارتی — موبایل
@@ -208,11 +208,7 @@ function MyRequestsTable({ items, onDeleted }) {
       <Stack spacing={1.5}>
         {error && <Alert severity="error">{error}</Alert>}
         {sortedItems.map((item) => (
-          <Card
-            key={item.request_id}
-            variant="outlined"
-            sx={{ borderRadius: 2, p: 2, borderColor: isToday(item) ? "primary.main" : undefined }}
-          >
+          <Card key={item.request_id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="body2" fontWeight={700} noWrap>
@@ -279,7 +275,7 @@ function MyRequestsTable({ items, onDeleted }) {
           </TableHead>
           <TableBody>
             {sortedItems.map((item) => (
-              <TableRow key={item.request_id} sx={isToday(item) ? { bgcolor: "action.hover" } : undefined}>
+              <TableRow key={item.request_id}>
                 <TableCell>{item.type_title || "—"}</TableCell>
                 <TableCell>{item.description || "—"}</TableCell>
                 <TableCell>
@@ -375,83 +371,54 @@ function PendingApprovalTable({ items, onDecide }) {
     );
   }
 
-  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت)
+  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت) -
+  // بدون بخش جدای «امروز» (آن فقط در صفحات گزارشی/ادمین لازم است، نه
+  // اینجا).
   const sorted = [...items].sort(
     (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
   );
-  const todayStr = new Date().toDateString();
-  const todayItems = sorted.filter((item) => item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr);
-  const otherItems = sorted.filter((item) => !(item.submitted_at && new Date(item.submitted_at).toDateString() === todayStr));
-
-  function renderRows(list) {
-    return list.map((item) => (
-      <TableRow key={item.request_id}>
-        <TableCell>{item.requester_name || item.emp_no}</TableCell>
-        <TableCell>{item.requester_department || "—"}</TableCell>
-        <TableCell>{item.type_title || "—"}</TableCell>
-        <TableCell>{item.description || "—"}</TableCell>
-        <TableCell>
-          {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
-        </TableCell>
-        <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-        <TableCell>
-          {item.start_hour != null
-            ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-            : `${item.duration} روز`}
-        </TableCell>
-        <TableCell>
-          <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
-            بررسی
-          </Button>
-        </TableCell>
-      </TableRow>
-    ));
-  }
-
-  const headerRow = (
-    <TableRow>
-      <TableCell>نام و نام خانوادگی</TableCell>
-      <TableCell>واحد</TableCell>
-      <TableCell>نوع درخواست</TableCell>
-      <TableCell>توضیحات</TableCell>
-      <TableCell>تاریخ ثبت</TableCell>
-      <TableCell>تاریخ شروع</TableCell>
-      <TableCell>مدت</TableCell>
-      <TableCell>عملیات</TableCell>
-    </TableRow>
-  );
 
   return (
-    <Stack spacing={2}>
-      {todayItems.length > 0 && (
-        <Box>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            درخواست‌های امروز ({todayItems.length})
-          </Typography>
-          <TableContainer component={Card} variant="outlined" sx={{ borderColor: "primary.main" }}>
-            <Table size="small">
-              <TableHead>{headerRow}</TableHead>
-              <TableBody>{renderRows(todayItems)}</TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
-      )}
-      {otherItems.length > 0 && (
-        <Box>
-          {todayItems.length > 0 && (
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-              سایر درخواست‌ها
-            </Typography>
-          )}
-          <TableContainer component={Card} variant="outlined">
-            <Table size="small">
-              <TableHead>{headerRow}</TableHead>
-              <TableBody>{renderRows(otherItems)}</TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
-      )}
-    </Stack>
+    <TableContainer component={Card} variant="outlined">
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>نام و نام خانوادگی</TableCell>
+            <TableCell>واحد</TableCell>
+            <TableCell>نوع درخواست</TableCell>
+            <TableCell>توضیحات</TableCell>
+            <TableCell>تاریخ ثبت</TableCell>
+            <TableCell>تاریخ شروع</TableCell>
+            <TableCell>مدت</TableCell>
+            <TableCell>عملیات</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {sorted.map((item) => (
+            <TableRow key={item.request_id}>
+              <TableCell>{item.requester_name || item.emp_no}</TableCell>
+              <TableCell>{item.requester_department || "—"}</TableCell>
+              <TableCell>{item.type_title || "—"}</TableCell>
+              <TableCell>{item.description || "—"}</TableCell>
+              <TableCell>
+                {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
+              </TableCell>
+              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+              <TableCell>
+                {item.start_hour != null
+                  ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+                  : `${item.duration} روز`}
+              </TableCell>
+              <TableCell>
+                <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
+                  بررسی
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 

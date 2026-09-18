@@ -36,6 +36,26 @@ function formatCompactTime(compact) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+// ⚠️ طبق درخواست صریح کاربر: «امروز» یعنی امروز جزو بازه‌ی خودِ
+// مرخصی/ماموریت است (نه تاریخ ثبت درخواست) - حراست باید بداند امروز
+// چه کسانی مرخصی/ماموریت هستند، نه چه کسانی امروز برای روزی دیگر
+// درخواست ثبت کرده‌اند. درخواست‌های رد‌شده هرگز «امروز فعال» نیستند.
+function isRequestActiveToday(item) {
+  if (item.status === "rejected" || !item.start_date) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (item.start_hour != null) {
+    const start = new Date(item.start_date);
+    start.setHours(0, 0, 0, 0);
+    return start.getTime() === today.getTime();
+  }
+  const start = new Date(item.start_date);
+  start.setHours(0, 0, 0, 0);
+  const end = item.end_date ? new Date(item.end_date) : start;
+  end.setHours(0, 0, 0, 0);
+  return today.getTime() >= start.getTime() && today.getTime() <= end.getTime();
+}
+
 function timeStringToCompact(timeStr) {
   if (!timeStr) return null;
   const [h, m] = timeStr.split(":").map(Number);
@@ -304,6 +324,11 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
+  const todayRequests = useMemo(() => {
+    if (!requests) return [];
+    return requests.filter((item) => isRequestActiveToday(item));
+  }, [requests]);
+
   const visibleRequests = useMemo(() => {
     if (!requests) return [];
     const term = search.trim().toLowerCase();
@@ -360,6 +385,46 @@ export default function LeaveRequestsAdminListPage() {
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
+      )}
+
+      {todayRequests.length > 0 && (
+        <Card variant="outlined" sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
+            امروز مرخصی/ماموریت هستند ({todayRequests.length})
+          </Typography>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>نام و نام خانوادگی</TableCell>
+                  <TableCell>واحد</TableCell>
+                  <TableCell>نوع درخواست</TableCell>
+                  <TableCell>بازه زمانی</TableCell>
+                  <TableCell>وضعیت</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {todayRequests.map((item) => (
+                  <TableRow key={item.request_id}>
+                    <TableCell>{item.requester_name || item.emp_no}</TableCell>
+                    <TableCell>{item.requester_department || "—"}</TableCell>
+                    <TableCell>{item.type_title || "—"}</TableCell>
+                    <TableCell>
+                      {item.start_hour != null
+                        ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+                        : `${item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} تا ${
+                            item.end_date ? new Date(item.end_date).toLocaleDateString("fa-IR") : "—"
+                          }`}
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
       )}
 
       {requests !== null && requests.length === 0 && (
