@@ -179,6 +179,31 @@ class AccessGateService:
         )
         return result.scalar_one()
 
+    async def pending_evaluations_by_period(self, user: User) -> list[dict]:
+        """
+        ⚠️ طبق درخواست صریح کاربر: دیالوگ باید بگوید آن ارزیابی‌های
+        انجام‌نشده مربوط به **کدام دوره** هستند - نه فقط یک عدد کل.
+
+        همان شرط count_pending_evaluations، ولی گروه‌بندی‌شده بر اساس دوره.
+        """
+        if user.employee_id is None:
+            return []
+        result = await self.db.execute(
+            select(EvaluationPeriod.title, func.count(EvaluationAssignment.id))
+            .select_from(EvaluationAssignment)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
+            .where(
+                EvaluationAssignment.evaluator_employee_id == user.employee_id,
+                EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+                EvaluationPeriod.status.in_(
+                    [EvaluationPeriodStatus.closed, EvaluationPeriodStatus.archived]
+                ),
+            )
+            .group_by(EvaluationPeriod.id, EvaluationPeriod.title)
+            .order_by(EvaluationPeriod.title)
+        )
+        return [{"period_title": title, "count": count} for title, count in result.all()]
+
     async def check(self, user: User, feature: str) -> None:
         """
         بررسی پیش‌نیازها برای یک قابلیت. اگر مانعی باشد AccessGateBlocked
@@ -202,10 +227,15 @@ class AccessGateService:
         if await self.is_gate_enabled(GATE_PENDING_EVALUATIONS, feature):
             pending = await self.count_pending_evaluations(user)
             if pending > 0:
-                raise AccessGateBlocked(
-                    f"برای دسترسی به این بخش، ابتدا باید {pending} ارزیابی انجام‌نشده خود را تکمیل کنید.",
-                    GATE_PENDING_EVALUATIONS,
-                )
+                # ⚠️ نام دوره‌ها در خودِ پیام ۴۰۳ می‌آید تا دیالوگی که از
+                # یک پاسخ خطا باز می‌شود (نه از وضعیت پیش‌بارگذاری‌شده) هم
+                # بتواند بگوید ارزیابی‌ها مربوط به کدام دوره‌اند.
+                by_period = await self.pending_evaluations_by_period(user)
+                detail = "، ".join(f"{p['period_title']} ({p['count']} مورد)" for p in by_period)
+                message = f"برای دسترسی به این بخش، ابتدا باید {pending} ارزیابی انجام‌نشده خود را تکمیل کنید."
+                if detail:
+                    message += f" دوره‌های مربوطه: {detail}"
+                raise AccessGateBlocked(message, GATE_PENDING_EVALUATIONS)
 
     async def get_status(self, user: User) -> dict:
         """
@@ -214,7 +244,12 @@ class AccessGateService:
         کلیک کند و ۴۰۳ بگیرد).
         """
         if user.is_superuser:
-            return {"unread_notices": 0, "pending_evaluations": 0, "blocked_features": {}}
+            return {
+                "unread_notices": 0,
+                "pending_evaluations": 0,
+                "pending_by_period": [],
+                "blocked_features": {},
+            }
 
         unread = await self.count_unread_notices(user)
         pending = await self.count_pending_evaluations(user)
@@ -226,4 +261,9 @@ class AccessGateService:
             elif pending > 0 and await self.is_gate_enabled(GATE_PENDING_EVALUATIONS, feature):
                 blocked[feature] = GATE_PENDING_EVALUATIONS
 
-        return {"unread_notices": unread, "pending_evaluations": pending, "blocked_features": blocked}
+        return {
+            "unread_notices": unread,
+            "pending_evaluations": pending,
+            "pending_by_period": await self.pending_evaluations_by_period(user) if pending else [],
+            "blocked_features": blocked,
+        }

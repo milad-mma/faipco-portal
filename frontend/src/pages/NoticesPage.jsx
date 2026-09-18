@@ -88,7 +88,10 @@ async function downloadPayrollReceipt(noticeId, setDownloadError, onGateBlocked)
     // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
     // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
     if (err.response?.status === 403) {
-      onGateBlocked?.(err.response?.data?.detail || "");
+      // ⚠️ رشته خالی پاس نده - falsy است و دیالوگ را وادار می‌کند به متن
+      // پیش‌فرض خودش با تعداد نامشخص برگردد («۰ اطلاعیه»). اگر سرور دلیلی
+      // نداد، null می‌فرستیم تا دیالوگ متن عمومی و بدون عدد نشان دهد.
+      onGateBlocked?.(err.response?.data?.detail || null);
       return;
     }
     setDownloadError(
@@ -109,7 +112,10 @@ async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked)
     // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
     // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
     if (err.response?.status === 403) {
-      onGateBlocked?.(err.response?.data?.detail || "");
+      // ⚠️ رشته خالی پاس نده - falsy است و دیالوگ را وادار می‌کند به متن
+      // پیش‌فرض خودش با تعداد نامشخص برگردد («۰ اطلاعیه»). اگر سرور دلیلی
+      // نداد، null می‌فرستیم تا دیالوگ متن عمومی و بدون عدد نشان دهد.
+      onGateBlocked?.(err.response?.data?.detail || null);
       return;
     }
     setDownloadError(

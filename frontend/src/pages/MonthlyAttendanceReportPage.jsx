@@ -209,6 +209,7 @@ export default function MonthlyAttendanceReportPage() {
             ? gateStatus?.pending_evaluations
             : gateStatus?.unread_notices
         }
+        byPeriod={gateStatus?.pending_by_period}
         onClose={() => setGateOpen(false)}
       />
     </Box>
