@@ -218,13 +218,16 @@ class BirthdayReactionService:
             total = sum(counts.get(emp_id, {}).get("counts", {}).values())
             if total <= 0:
                 continue
+            # ⚠️ طبق درخواست صریح کاربر: فعل با تعداد مطابقت کند -
+            # «۱ نفر ... تبریک گفت» در برابر «۳ نفر ... تبریک گفتند».
+            verb = "گفت" if total == 1 else "گفتند"
             try:
                 await PushService(self.db).notify_users(
                     {user_id},
                     url="/my-dashboard",
                     priority="normal",
                     body=(
-                        f"امروز {total} نفر از همکارانتان تولد شما را تبریک گفتند.\n"
+                        f"امروز {total} نفر از همکارانتان تولد شما را تبریک {verb}.\n"
                         "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
                     ),
                 )

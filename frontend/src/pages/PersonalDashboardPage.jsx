@@ -495,14 +495,22 @@ export default function PersonalDashboardPage() {
                     >
                       <DefaultPersonAvatar />
                     </Box>
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="body2" fontWeight={700} noWrap>
-                        {e.first_name} {e.last_name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap display="block">
-                        {e.department_name}
-                      </Typography>
-                    </Box>
+                    {/* ⚠️ طبق درخواست صریح کاربر: واحد سازمانی کنار نام باشد،
+                        نه زیر آن. noWrap روی خودِ ردیف است تا اگر نام و واحد
+                        با هم جا نشدند، به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
+                    <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, flex: 1 }} noWrap>
+                      {e.first_name} {e.last_name}
+                      {e.department_name && (
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: 0.75, fontWeight: 400 }}
+                        >
+                          — {e.department_name}
+                        </Typography>
+                      )}
+                    </Typography>
                   </Stack>
                   {/* ⚠️ نوار تبریک - هر متولد نوار مستقل خودش را دارد تا
                       وقتی چند نفر در یک روز تولد دارند، هیچ‌کدام از قلم

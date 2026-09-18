@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Box, Chip, Collapse, Stack, Typography } from "@mui/material";
+import { Box, Collapse, Stack, Typography } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { setBirthdayReaction } from "../api/employees";
 
 /**
@@ -22,6 +23,55 @@ const EMOJIS = [
 ];
 
 const EMOJI_BY_KEY = Object.fromEntries(EMOJIS.map((e) => [e.key, e.char]));
+
+// ⚠️ طبق درخواست صریح کاربر: فعل باید با تعداد مطابقت کند - «۱ نفر تبریک
+// گفت» در برابر «۳ نفر تبریک گفتند». در یک تابع مشترک نگه داشته شده تا
+// دو جایی که این متن نمایش داده می‌شود هرگز از هم واگرا نشوند.
+function greetingLabel(total) {
+  const verb = total === 1 ? "گفت" : "گفتند";
+  return `${total.toLocaleString("fa-IR")} نفر تبریک ${verb}`;
+}
+
+/**
+ * ⚠️ طبق گزارش کاربر: نسخه قبلی یک Chip ساده بود و هیچ نشانه‌ای نداشت
+ * که کلیک‌پذیر است. حالا با رنگ لینک، آیکون فلش (که با باز/بسته شدن
+ * می‌چرخد) و زیرخط هنگام Hover، کاملاً واضح است که باید رویش زد.
+ */
+function ReactorsToggle({ total, open, onClick }) {
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      sx={{
+        mt: 0.75,
+        display: "flex",
+        alignItems: "center",
+        gap: 0.25,
+        px: 0,
+        py: 0.25,
+        border: "none",
+        bgcolor: "transparent",
+        cursor: "pointer",
+        color: "primary.main",
+        fontSize: 11,
+        fontWeight: 700,
+        fontFamily: "inherit",
+        "&:hover": { textDecoration: "underline" },
+      }}
+    >
+      {greetingLabel(total)}
+      <ExpandMoreIcon
+        sx={{
+          fontSize: 15,
+          transition: "transform 0.2s",
+          transform: open ? "rotate(180deg)" : "none",
+        }}
+      />
+    </Box>
+  );
+}
 
 export default function BirthdayReactionBar({ person, onChanged }) {
   const [busy, setBusy] = useState(false);
@@ -52,12 +102,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
   if (person.is_self) {
     return total > 0 ? (
       <Box sx={{ mt: 0.75 }}>
-        <Chip
-          size="small"
-          label={`${total.toLocaleString("fa-IR")} نفر تبریک گفتند`}
-          onClick={() => setShowList((v) => !v)}
-          sx={{ height: 22, fontSize: 11, cursor: "pointer" }}
-        />
+        <ReactorsToggle total={total} open={showList} onClick={() => setShowList((v) => !v)} />
         <ReactorList open={showList} reactors={reactors} />
       </Box>
     ) : null;
@@ -89,12 +134,25 @@ export default function BirthdayReactionBar({ person, onChanged }) {
                 bgcolor: mine ? "action.selected" : "transparent",
                 border: "1px solid",
                 borderColor: mine ? "primary.main" : "divider",
+                // ⚠️ رنگ صریح متن دکمه - عنصر <button> رنگ پیش‌فرض مرورگر را
+                // می‌گیرد (نه رنگ تم)، پس در دارک‌مود باید صریح تعیین شود.
+                color: "text.primary",
                 "&:hover": { bgcolor: "action.hover" },
               }}
             >
               <span>{e.char}</span>
               {n > 0 && (
-                <Typography component="span" sx={{ fontSize: 10, fontWeight: 700 }}>
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    // ⚠️ رفع باگ دارک‌مود: قبلاً هیچ رنگی تعیین نشده بود، پس
+                    // عدد رنگ پیش‌فرض دکمه (مشکی) را می‌گرفت و در حالت تیره
+                    // روی پس‌زمینه تیره کاملاً نامرئی می‌شد.
+                    color: mine ? "primary.main" : "text.secondary",
+                  }}
+                >
                   {n.toLocaleString("fa-IR")}
                 </Typography>
               )}
@@ -122,12 +180,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
       </Collapse>
 
       {total > 0 && (
-        <Chip
-          size="small"
-          label={`${total.toLocaleString("fa-IR")} نفر تبریک گفتند`}
-          onClick={() => setShowList((v) => !v)}
-          sx={{ mt: 0.75, height: 22, fontSize: 11, cursor: "pointer" }}
-        />
+        <ReactorsToggle total={total} open={showList} onClick={() => setShowList((v) => !v)} />
       )}
       <ReactorList open={showList} reactors={reactors} />
     </Box>
@@ -141,16 +194,17 @@ function ReactorList({ open, reactors }) {
         {reactors.map((r, i) => (
           <Stack key={`${r.user_id}-${i}`} direction="row" alignItems="center" spacing={1}>
             <Typography sx={{ fontSize: 13, width: 18 }}>{EMOJI_BY_KEY[r.emoji] || "•"}</Typography>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography sx={{ fontSize: 12 }} noWrap>
-                {r.name}
-              </Typography>
+            {/* ⚠️ طبق درخواست صریح کاربر: واحد سازمانی کنار نام باشد، نه
+                زیر آن. noWrap روی خودِ ردیف است تا اگر نام و واحد با هم
+                جا نشدند، به‌جای شکستن به خط دوم، با «…» کوتاه شود. */}
+            <Typography sx={{ fontSize: 12, minWidth: 0, flex: 1 }} noWrap>
+              {r.name}
               {r.department && (
-                <Typography sx={{ fontSize: 10 }} color="text.secondary" noWrap>
-                  {r.department}
+                <Typography component="span" sx={{ fontSize: 11, ml: 0.75 }} color="text.secondary">
+                  — {r.department}
                 </Typography>
               )}
-            </Box>
+            </Typography>
           </Stack>
         ))}
       </Stack>
