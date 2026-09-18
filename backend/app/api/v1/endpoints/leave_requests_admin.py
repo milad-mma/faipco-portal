@@ -128,7 +128,20 @@ async def list_types(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    """
+    ⚠️ رفع باگ واقعی: این Endpoint قبلاً فقط sites.manage را می‌پذیرفت،
+    برای همین کاربر منابع انسانی (leave_requests.manage) فهرست نوع‌ها را
+    نمی‌گرفت و دراپ‌داون «نوع درخواست» در صفحه گزارش برایش اصلاً نمایش
+    داده نمی‌شد - یعنی نمی‌توانست نوع را ویرایش کند، در حالی که ادمین
+    می‌توانست. حالا دارندگان مجوز ویرایش درخواست‌ها هم می‌توانند فهرست
+    نوع‌ها را بخوانند (خواندن فهرست نوع‌ها اطلاعات حساسی نیست و برای
+    ویرایش/فیلتر لازم است).
+    """
+    if not current_user.is_superuser:
+        manage_sites = await get_sites_with_permission(db, current_user, "leave_requests.manage")
+        has_leave_manage = manage_sites is None or site_id in manage_sites
+        if not has_leave_manage:
+            await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).list_types(site_id)
 
 

@@ -128,7 +128,7 @@ function SubmitRequestForm({ onSubmitted }) {
 
         {selectedType && (
           <>
-            <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" showTime={false} />
+            <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
             {selectedType.is_hourly ? (
               <Stack direction="row" spacing={1.5}>
                 <TimeSelect24 label="ساعت شروع" value={startTimeStr} onChange={setStartTimeStr} sx={{ flex: 1 }} />
@@ -266,7 +266,7 @@ function MyRequestsTable({ items, onDeleted }) {
               <TableCell>نوع درخواست</TableCell>
               <TableCell>توضیحات</TableCell>
               <TableCell>تاریخ ثبت</TableCell>
-              <TableCell>تاریخ شروع</TableCell>
+              <TableCell>تاریخ مرخصی/ماموریت</TableCell>
               <TableCell>مدت</TableCell>
               <TableCell>وضعیت</TableCell>
               <TableCell>نظر تأییدکننده</TableCell>
@@ -388,7 +388,7 @@ function PendingApprovalTable({ items, onDecide }) {
             <TableCell>نوع درخواست</TableCell>
             <TableCell>توضیحات</TableCell>
             <TableCell>تاریخ ثبت</TableCell>
-            <TableCell>تاریخ شروع</TableCell>
+            <TableCell>تاریخ مرخصی/ماموریت</TableCell>
             <TableCell>مدت</TableCell>
             <TableCell>عملیات</TableCell>
           </TableRow>

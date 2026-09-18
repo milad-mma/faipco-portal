@@ -34,9 +34,10 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
         <TextField
           select
           size={size}
+          label="ساعت"
           value={hourStr}
           onChange={(e) => handleHourChange(e.target.value)}
-          sx={{ minWidth: 80 }}
+          sx={{ minWidth: 90 }}
         >
           {HOURS.map((h) => (
             <MenuItem key={h} value={h}>
@@ -47,9 +48,10 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
         <TextField
           select
           size={size}
+          label="دقیقه"
           value={minuteStr}
           onChange={(e) => handleMinuteChange(e.target.value)}
-          sx={{ minWidth: 80 }}
+          sx={{ minWidth: 90 }}
         >
           {MINUTES.map((m) => (
             <MenuItem key={m} value={m}>

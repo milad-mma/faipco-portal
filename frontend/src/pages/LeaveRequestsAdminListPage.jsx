@@ -240,7 +240,7 @@ function EditableTimeRange({ item, onSave }) {
         </>
       ) : (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ شروع" showTime={false} />
+          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
           <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
         </>
       )}
@@ -509,7 +509,7 @@ export default function LeaveRequestsAdminListPage() {
       {todayRequests.length > 0 && (
         <Card variant="outlined" sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
           <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-            امروز مرخصی/ماموریت هستند ({todayRequests.length})
+            درخواست‌های مرخصی و ماموریت امروز ({todayRequests.length})
           </Typography>
           <TableContainer>
             <Table size="small">
@@ -592,7 +592,7 @@ export default function LeaveRequestsAdminListPage() {
                     direction={sortField === "start_date" ? sortDir : "asc"}
                     onClick={() => handleSort("start_date")}
                   >
-                    بازه زمانی
+                    تاریخ مرخصی/ماموریت
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>مدت</TableCell>
