@@ -20,6 +20,7 @@ import {
   Typography,
 } from "@mui/material";
 import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import BackLink from "../components/BackLink";
@@ -28,6 +29,7 @@ import TimeSelect24 from "../components/TimeSelect24";
 import { useAuth } from "../context/AuthContext";
 import { fetchSites } from "../api/sites";
 import {
+  adminDeleteLeaveRequest,
   adminUpdateLeaveRequest,
   exportLeaveRequests,
   fetchAllLeaveRequestsForSite,
@@ -280,6 +282,7 @@ export default function LeaveRequestsAdminListPage() {
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
@@ -345,6 +348,23 @@ export default function LeaveRequestsAdminListPage() {
   }
 
   useEffect(load, [siteId, serverFilters]);
+
+  async function handleDelete(item) {
+    const who = item.requester_name || item.emp_no;
+    if (!window.confirm(`درخواست «${item.type_title || "—"}» برای ${who} حذف شود؟ این عمل قابل بازگشت نیست.`)) {
+      return;
+    }
+    setError("");
+    setDeletingId(item.request_id);
+    try {
+      await adminDeleteLeaveRequest(siteId, item.request_id);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || "حذف درخواست با خطا مواجه شد.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleExport() {
     setError("");
@@ -639,6 +659,7 @@ export default function LeaveRequestsAdminListPage() {
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>نظر تأییدکننده</TableCell>
+                {canEdit && <TableCell>حذف</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -711,6 +732,21 @@ export default function LeaveRequestsAdminListPage() {
                       item.manager_idea || "—"
                     )}
                   </TableCell>
+                  {/* ⚠️ حذف مدیریتی - برخلاف حذف پرسنلی، هر درخواستی در هر
+                      مرحله‌ای قابل‌حذف است (ردیف WF_Reviews هم پاک می‌شود). */}
+                  {canEdit && (
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        disabled={deletingId === item.request_id}
+                        onClick={() => handleDelete(item)}
+                        aria-label="حذف"
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

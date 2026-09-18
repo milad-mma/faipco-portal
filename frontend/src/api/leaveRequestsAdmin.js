@@ -81,3 +81,7 @@ export async function adminUpdateLeaveRequest(siteId, requestId, payload) {
   const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/requests/${requestId}`, payload);
   return data;
 }
+
+export async function adminDeleteLeaveRequest(siteId, requestId) {
+  await apiClient.delete(`/leave-requests/sites/${siteId}/requests/${requestId}`);
+}

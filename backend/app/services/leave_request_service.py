@@ -416,6 +416,31 @@ def _update_request_sync(
         connection.close()
 
 
+def _delete_reviews_sync(conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int) -> None:
+    """
+    ⚠️ طبق درخواست صریح کاربر: با حذف یک درخواست، ردیف(های) متناظرش در
+    WF_Reviews هم باید حذف شوند - وگرنه رکوردهای یتیم (نظر تأییدکننده‌ای
+    که درخواستش دیگر وجود ندارد) در دیتابیس کاراوب باقی می‌مانند.
+
+    اگر این سایت اصلاً WF_Reviews را تنظیم نکرده باشد، کاری انجام
+    نمی‌دهد - نه خطا (کاملاً اختیاری، مثل خودِ درج).
+    """
+    if not mapping.wf_reviews_table_name:
+        return
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        with connection.cursor() as cur:
+            query = (
+                f"DELETE FROM {q(mapping.wf_reviews_table_name)} "
+                f"WHERE {q(mapping.wf_reviews_request_id_column)} = %(request_id)s"
+            )  # noqa: S608
+            cur.execute(query, {"request_id": request_id})
+            connection.commit()
+    finally:
+        connection.close()
+
+
 def _delete_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int) -> None:
     """⚠️ حذف واقعی ردیف - فقط برای درخواست‌های خودِ کاربر و هنوز درحال‌بررسی (بررسی در لایه سرویس، قبل از فراخوانی این تابع)."""
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
@@ -745,6 +770,33 @@ class LeaveRequestService:
             raise LeaveRequestError("شما مجاز به حذف این درخواست نیستید")
         if request_row.get("IsFinalApproved") is not None:
             raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده - دیگر قابل‌حذف نیست")
+        await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
+
+    async def admin_delete_request(self, site_id: int, request_id: int) -> None:
+        """
+        ⚠️ طبق درخواست صریح کاربر: حذف مدیریتی - برخلاف delete_request که
+        فقط درخواست خودِ فرد و فقط تا قبل از تصمیم‌گیری را حذف می‌کند،
+        اینجا دارنده مجوز leave_requests.manage می‌تواند **هر** درخواستی
+        را در **هر مرحله‌ای** (در حال بررسی، تأییدشده، ردشده) حذف کند.
+
+        ⚠️ ردیف(های) متناظر در WF_Reviews هم حذف می‌شوند - وگرنه نظر
+        تأییدکننده‌ای باقی می‌ماند که درخواستش دیگر وجود ندارد. ترتیب
+        عمداً اول Reviews بعد خودِ درخواست است، تا اگر حذف دوم شکست خورد،
+        رکورد یتیم در Reviews نماند.
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
+        rows = await asyncio.to_thread(
+            _select_requests_sync,
+            site_connection,
+            mapping,
+            f"{request_id_col} = %(request_id)s",
+            {"request_id": request_id},
+        )
+        if not rows:
+            raise LeaveRequestError("درخواست موردنظر یافت نشد")
+
+        await asyncio.to_thread(_delete_reviews_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
     async def list_my_requests(self, employee: Employee) -> list[dict]:

@@ -352,6 +352,25 @@ async def export_leave_requests(
     )
 
 
+@router.delete("/sites/{site_id}/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_request(
+    site_id: int,
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ حذف مدیریتی - هر درخواستی در هر مرحله‌ای (برخلاف حذف پرسنلی که فقط
+    درخواست خودِ فرد و فقط تا قبل از تصمیم‌گیری را حذف می‌کند). ردیف
+    متناظر در WF_Reviews هم حذف می‌شود.
+    """
+    await require_site_permission(db, current_user, site_id, "leave_requests.manage")
+    try:
+        await LeaveRequestService(db).admin_delete_request(site_id, request_id)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
 @router.put("/sites/{site_id}/requests/{request_id}")
 async def admin_update_request(
     site_id: int,
@@ -361,9 +380,18 @@ async def admin_update_request(
     current_user: User = Depends(get_current_user),
 ):
     await require_site_permission(db, current_user, site_id, "leave_requests.manage")
+    # ⚠️ رفع باگ واقعی (گزارش کاربر: «وضعیت و نظر تأییدکننده تغییر
+    # نمی‌کند»): قبلاً هر مقدار None از payload حذف می‌شد. اما None اینجا
+    # یک مقدار معنادار است، نه «داده نشده» - برگرداندن وضعیت به «در حال
+    # بررسی» یعنی is_final_approved=None، که دقیقاً همان چیزی بود که
+    # فیلتر حذفش می‌کرد و در نتیجه هیچ تغییری اعمال نمی‌شد.
+    #
+    # exclude_unset=True فقط فیلدهایی را نگه می‌دارد که کلاینت واقعاً
+    # فرستاده - پس None عمدی حفظ می‌شود، ولی فیلدهای دست‌نخورده هم
+    # بی‌دلیل بازنویسی نمی‌شوند.
     try:
         await LeaveRequestService(db).admin_update_request(
-            site_id, request_id, {k: v for k, v in payload.model_dump().items() if v is not None}
+            site_id, request_id, payload.model_dump(exclude_unset=True)
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
