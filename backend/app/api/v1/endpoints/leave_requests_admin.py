@@ -286,12 +286,26 @@ async def list_all_for_site(
     current_user: User = Depends(get_current_user),
 ):
     allowed_type_ids = await _get_view_access(db, current_user, site_id)
+    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (نقشی
+    # مثل «حراست» - یعنی allowed_type_ids لیست است نه None) حق دیدن
+    # درخواست‌های «در حال بررسی» را ندارد؛ فقط تصمیم‌گیری‌شده‌ها. همچنین
+    # اجازه فیلتر بر اساس بازه تاریخ را هم ندارد (پارامترهای تاریخ
+    # نادیده گرفته می‌شوند، نه اینکه خطا بدهند).
+    is_type_restricted = allowed_type_ids is not None
+    if is_type_restricted:
+        date_from = None
+        date_to = None
+        if status_filter == "pending":
+            return []
     try:
-        return await LeaveRequestService(db).list_all_for_site(
+        items = await LeaveRequestService(db).list_all_for_site(
             site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if is_type_restricted:
+        items = [item for item in items if item["status"] != "pending"]
+    return items
 
 
 @router.get("/sites/{site_id}/export")
@@ -307,6 +321,14 @@ async def export_leave_requests(
 ):
     """⚠️ خروجی Excel - دقیقاً همان فیلترهای لیست را می‌پذیرد، تا آنچه کاربر می‌بیند همان چیزی باشد که خروجی می‌گیرد."""
     allowed_type_ids = await _get_view_access(db, current_user, site_id)
+    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (نقشی
+    # مثل «حراست») اصلاً حق خروجی Excel ندارد - دکمه‌اش در UI هم پنهان
+    # است، ولی این بررسی سمت سرور تضمین می‌کند حتی با فراخوانی مستقیم
+    # Endpoint هم نتواند خروجی بگیرد.
+    if allowed_type_ids is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="شما مجاز به تهیه خروجی Excel نیستید"
+        )
     try:
         items = await LeaveRequestService(db).list_all_for_site(
             site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department

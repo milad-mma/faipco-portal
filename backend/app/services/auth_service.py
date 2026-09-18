@@ -240,6 +240,15 @@ class AuthService:
             or any(code.startswith("leave_requests.view.type.") for code in permission_codes)
         )
         base.can_manage_leave_requests = user.is_superuser or "leave_requests.manage" in permission_codes
+        # ⚠️ «محدود به نوع» یعنی فقط مجوز به‌تفکیک نوع دارد، نه هیچ‌کدام از
+        # دو مجوز سراسری - دقیقاً همان تشخیصی که _get_view_access سمت
+        # سرور انجام می‌دهد (نقشی مثل «حراست»).
+        base.leave_requests_type_restricted = (
+            not user.is_superuser
+            and "leave_requests.view" not in permission_codes
+            and "leave_requests.manage" not in permission_codes
+            and any(code.startswith("leave_requests.view.type.") for code in permission_codes)
+        )
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
         # sites.manage خودش هم شامل مشاهده است — کسی که اجازه مدیریت سایت‌ها را دارد،

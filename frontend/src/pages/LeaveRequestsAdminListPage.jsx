@@ -13,6 +13,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TableSortLabel,
   TextField,
@@ -276,6 +277,8 @@ export default function LeaveRequestsAdminListPage() {
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   // ⚠️ فیلترهایی که سمت سرور اعمال می‌شوند (نه فقط روی داده‌ی لودشده) -
   // تا خروجی Excel هم دقیقاً همان چیزی باشد که کاربر روی صفحه می‌بیند.
@@ -342,6 +345,10 @@ export default function LeaveRequestsAdminListPage() {
   }
 
   const canEdit = Boolean(user?.can_manage_leave_requests);
+  // ⚠️ نقشی مثل «حراست» - فقط مجوز به‌تفکیک نوع دارد، نه مجوز سراسری.
+  // برای این افراد: بدون درخواست‌های در حال بررسی، بدون خروجی Excel،
+  // بدون فیلتر بازه تاریخ (همه این محدودیت‌ها سمت سرور هم اعمال می‌شوند).
+  const isTypeRestricted = Boolean(user?.leave_requests_type_restricted);
 
   useEffect(() => {
     if (!siteId || !canEdit) return;
@@ -380,6 +387,12 @@ export default function LeaveRequestsAdminListPage() {
     if (!requests) return [];
     return requests.filter((item) => isRequestActiveToday(item));
   }, [requests]);
+
+  // ⚠️ با تغییر جست‌وجو/فیلترها، به صفحه اول برگرد - وگرنه ممکن است
+  // کاربر روی صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  useEffect(() => {
+    setPage(0);
+  }, [search, statusFilter, typeFilter, departmentFilter, dateFrom, dateTo, siteId]);
 
   const visibleRequests = useMemo(() => {
     if (!requests) return [];
@@ -439,7 +452,9 @@ export default function LeaveRequestsAdminListPage() {
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="">همه</MenuItem>
-          <MenuItem value="pending">در حال بررسی</MenuItem>
+          {/* ⚠️ نقش محدود به نوع (مثل حراست) اصلاً حق دیدن درخواست‌های در
+              حال بررسی را ندارد - همین محدودیت سمت سرور هم اعمال می‌شود. */}
+          {!isTypeRestricted && <MenuItem value="pending">در حال بررسی</MenuItem>}
           <MenuItem value="approved">تائید شده</MenuItem>
           <MenuItem value="rejected">رد شده</MenuItem>
         </TextField>
@@ -471,31 +486,14 @@ export default function LeaveRequestsAdminListPage() {
             </MenuItem>
           ))}
         </TextField>
-        <Button
-          variant="outlined"
-          startIcon={<FileDownloadOutlinedIcon />}
-          onClick={handleExport}
-          disabled={isExporting || !siteId}
-        >
-          {isExporting ? "در حال آماده‌سازی..." : "خروجی Excel"}
-        </Button>
-      </Stack>
-
-      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          بازه تاریخ مرخصی/ماموریت:
-        </Typography>
-        <JalaliDateTimePicker value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
-        <JalaliDateTimePicker value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
-        {(dateFrom || dateTo) && (
+        {!isTypeRestricted && (
           <Button
-            size="small"
-            onClick={() => {
-              setDateFrom(null);
-              setDateTo(null);
-            }}
+            variant="outlined"
+            startIcon={<FileDownloadOutlinedIcon />}
+            onClick={handleExport}
+            disabled={isExporting || !siteId}
           >
-            حذف فیلتر تاریخ
+            {isExporting ? "در حال آماده‌سازی..." : "خروجی Excel"}
           </Button>
         )}
       </Stack>
@@ -609,7 +607,7 @@ export default function LeaveRequestsAdminListPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {visibleRequests.map((item) => (
+              {visibleRequests.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((item) => (
                 <TableRow key={item.request_id}>
                   <TableCell>{item.requester_name || item.emp_no}</TableCell>
                   <TableCell>{item.requester_department || "—"}</TableCell>
@@ -682,7 +680,47 @@ export default function LeaveRequestsAdminListPage() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={visibleRequests.length}
+            page={page}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setRowsPerPage(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            labelRowsPerPage="تعداد در هر صفحه:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+          />
         </TableContainer>
+      )}
+
+      {/* ⚠️ طبق درخواست صریح کاربر: فیلتر بازه تاریخ زیر جدول قرار گرفت
+          (نه بالای آن). برای نقش محدود به نوع (حراست) اصلاً نمایش داده
+          نمی‌شود - همان محدودیت سمت سرور هم اعمال می‌شود. */}
+      {!isTypeRestricted && (
+        <Card variant="outlined" sx={{ mt: 2, p: 2, borderRadius: 2 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1.5 }}>
+            فیلتر بر اساس بازه تاریخ مرخصی/ماموریت
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+            <JalaliDateTimePicker value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
+            <JalaliDateTimePicker value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
+            {(dateFrom || dateTo) && (
+              <Button
+                size="small"
+                onClick={() => {
+                  setDateFrom(null);
+                  setDateTo(null);
+                }}
+              >
+                حذف فیلتر تاریخ
+              </Button>
+            )}
+          </Stack>
+        </Card>
       )}
     </Box>
   );

@@ -24,6 +24,7 @@ from app.schemas.evaluation_process import (
     GenerateAssignmentsIn,
     GenerateAssignmentsOut,
     MyEvaluationItemOut,
+    MyAnswerOut,
     SaveAnswersIn,
     ShiftLeadEvaluationOut,
     YearlyAverageOut,
@@ -164,6 +165,20 @@ async def get_my_results(
 ):
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_my_results(employee_id)
+
+
+@router.get("/my-results/{evaluation_id}/answers", response_model=list[MyAnswerOut])
+async def get_my_result_answers(
+    evaluation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ جزئیات سوال‌به‌سوال نتیجه ارزیابی خودِ پرسنل - فقط ارزیابی‌های ثبت‌نهایی‌شده‌ای که خودش هدفشان بوده."""
+    employee_id = _require_employee(current_user)
+    try:
+        return await EvaluationProcessService(db).get_my_result_answers(evaluation_id, employee_id)
+    except EvaluationProcessError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get("/my-yearly-average", response_model=YearlyAverageOut)

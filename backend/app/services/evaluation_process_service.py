@@ -486,6 +486,46 @@ class EvaluationProcessService:
         )
         return list(result.scalars().all())
 
+    async def get_my_result_answers(self, evaluation_id: int, target_employee_id: int) -> list[EvaluationAnswer]:
+        """
+        ⚠️ طبق درخواست صریح کاربر: پرسنل باید بتواند امتیاز جزء‌به‌جزء
+        سوالات ارزیابی خودش را ببیند - نه فقط امتیاز کل.
+
+        ⚠️ امنیت: فقط ارزیابی‌هایی که این فرد واقعاً هدفشان بوده و
+        ثبت‌نهایی شده‌اند - نه پیش‌نویس، نه ارزیابی دیگران.
+
+        ⚠️ طبق تصمیم صریح کاربر: فیلد comment هر سوال (نظر خصوصی ارزیاب
+        روی همان سوال) عمداً در Schema خروجی نیست - فقط متن سوال، پاسخ
+        و امتیاز به پرسنل نشان داده می‌شود.
+        """
+        result = await self.db.execute(
+            select(Evaluation)
+            .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .where(
+                Evaluation.id == evaluation_id,
+                EvaluationAssignment.target_employee_id == target_employee_id,
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise EvaluationProcessError("نتیجه ارزیابی موردنظر یافت نشد")
+
+        answers = await self.db.execute(
+            select(EvaluationAnswer)
+            .where(EvaluationAnswer.evaluation_id == evaluation_id)
+            .order_by(EvaluationAnswer.id)
+        )
+        return list(answers.scalars().all())
+
+    async def get_evaluation_answers_for_report(self, evaluation_id: int) -> list[EvaluationAnswer]:
+        """⚠️ برای گزارش‌گیری مدیریتی - بدون محدودیت مالکیت (کنترل دسترسی در لایه Endpoint انجام می‌شود)."""
+        answers = await self.db.execute(
+            select(EvaluationAnswer)
+            .where(EvaluationAnswer.evaluation_id == evaluation_id)
+            .order_by(EvaluationAnswer.id)
+        )
+        return list(answers.scalars().all())
+
     async def get_dashboard_summary(self, employee_id: int) -> dict:
         """
         خلاصه‌ی مخصوص کارت داشبورد - یک درخواست، همه‌چیز: امتیاز

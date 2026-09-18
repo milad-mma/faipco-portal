@@ -469,7 +469,14 @@ export default function LeaveRequestPage() {
         </Alert>
       )}
 
-      <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ mb: 2 }}>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => handleTabChange(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ mb: 2 }}
+      >
         <Tab label="ثبت درخواست جدید" />
         <Tab label="درخواست‌های من" />
         {hasPending && <Tab label={`درخواست‌های در انتظار (${pendingCount})`} />}

@@ -42,6 +42,11 @@ export async function fetchMyEvaluationResults() {
   return data;
 }
 
+export async function fetchMyEvaluationResultAnswers(evaluationId) {
+  const { data } = await apiClient.get(`/performance/my-results/${evaluationId}/answers`);
+  return data;
+}
+
 export async function reopenEvaluation(evaluationId) {
   const { data } = await apiClient.post(`/performance/evaluations/${evaluationId}/reopen`);
   return data;

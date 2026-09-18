@@ -63,6 +63,26 @@ class AnswerOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MyAnswerOut(BaseModel):
+    """
+    ⚠️ طبق تصمیم صریح کاربر: نسخه‌ی مخصوص نمایش به خودِ پرسنل - عمداً
+    فیلد comment (نظر خصوصی ارزیاب روی همان سوال) را ندارد؛ فقط متن
+    سوال، پاسخ و امتیاز. از AnswerOut جدا نگه داشته شده تا اگر بعداً
+    فیلدی به AnswerOut اضافه شود، ناخواسته به پرسنل نشت نکند.
+    """
+
+    id: int
+    question_text_snapshot: str
+    question_type_snapshot: str
+    selected_option_ids: list[int] | None
+    text_value: str | None
+    number_value: float | None
+    date_value: datetime | None
+    score: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class EvaluationOut(BaseModel):
     id: int
     assignment_id: int

@@ -6,6 +6,12 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   MenuItem,
   Stack,
   Table,
@@ -20,6 +26,7 @@ import {
   Typography,
 } from "@mui/material";
 import {
+  fetchMyEvaluationResultAnswers,
   fetchMyEvaluationResults,
   fetchMyEvaluations,
   fetchMyShiftLeadEvaluations,
@@ -59,9 +66,85 @@ function YearlyAverageCard({ yearlyAverage }) {
   );
 }
 
-function ResultCard({ result }) {
+// ⚠️ نمایش پاسخ ارزیاب به هر سوال - بسته به نوع سوال، مقدار در فیلد
+// متفاوتی ذخیره شده (همان ساختار EvaluationAnswer در بک‌اند).
+function formatAnswerValue(answer) {
+  if (answer.text_value) return answer.text_value;
+  if (answer.number_value != null) return String(answer.number_value);
+  if (answer.date_value) return new Date(answer.date_value).toLocaleDateString("fa-IR");
+  if (answer.selected_option_ids?.length) return `${answer.selected_option_ids.length} گزینه انتخاب شده`;
+  return "—";
+}
+
+function ResultDetailsDialog({ result, onClose }) {
+  const [answers, setAnswers] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchMyEvaluationResultAnswers(result.id)
+      .then(setAnswers)
+      .catch((err) => {
+        setError(err.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد.");
+        setAnswers([]);
+      });
+  }, [result.id]);
+
   return (
-    <Card variant="outlined" sx={{ p: 2, mb: 1.5 }}>
+    <Dialog open onClose={onClose} fullWidth maxWidth="md">
+      <DialogTitle>
+        <Typography fontWeight={700}>{result.period_title_snapshot}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          ارزیاب: {result.evaluator_name_snapshot} — امتیاز کل: {Math.round(result.total_score)}
+        </Typography>
+      </DialogTitle>
+      <DialogContent dividers>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {answers === null ? (
+          <Stack alignItems="center" sx={{ py: 3 }}>
+            <CircularProgress size={28} />
+          </Stack>
+        ) : answers.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            جزئیاتی برای این ارزیابی ثبت نشده است.
+          </Typography>
+        ) : (
+          <Stack divider={<Divider flexItem />} spacing={1.5}>
+            {answers.map((answer) => (
+              <Box key={answer.id}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                  <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
+                    {answer.question_text_snapshot}
+                  </Typography>
+                  {answer.score != null && (
+                    <Chip size="small" label={`${Math.round(answer.score)}`} color={scoreColor(answer.score)} />
+                  )}
+                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  پاسخ: {formatAnswerValue(answer)}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>بستن</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function ResultCard({ result, onClick }) {
+  return (
+    <Card
+      variant="outlined"
+      onClick={onClick}
+      sx={{ p: 2, mb: 1.5, borderRadius: 2, cursor: "pointer", "&:hover": { bgcolor: "action.hover" } }}
+    >
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Box>
           <Typography fontWeight={700}>{result.period_title_snapshot}</Typography>
@@ -76,6 +159,9 @@ function ResultCard({ result }) {
           {result.comment}
         </Typography>
       )}
+      <Typography variant="caption" color="primary" sx={{ mt: 1, display: "block" }}>
+        برای دیدن جزئیات سوالات کلیک کنید
+      </Typography>
     </Card>
   );
 }
@@ -210,6 +296,7 @@ export default function MyPerformancePage() {
   }
 
   const [results, setResults] = useState(null);
+  const [detailsResult, setDetailsResult] = useState(null);
   const [pending, setPending] = useState(null);
   const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
   const [periodFilter, setPeriodFilter] = useState("");
@@ -295,7 +382,9 @@ export default function MyPerformancePage() {
               هنوز هیچ ارزیابی‌ای برای شما ثبت نشده است.
             </Typography>
           ) : (
-            results.map((result) => <ResultCard key={result.id} result={result} />)
+            results.map((result) => (
+              <ResultCard key={result.id} result={result} onClick={() => setDetailsResult(result)} />
+            ))
           )}
         </Box>
       )}
@@ -327,6 +416,8 @@ export default function MyPerformancePage() {
           <ShiftLeadEvaluationsTable items={shiftLeadEvaluations} onEdit={handleEditShiftLeadEvaluation} />
         </Box>
       )}
+
+      {detailsResult && <ResultDetailsDialog result={detailsResult} onClose={() => setDetailsResult(null)} />}
     </Box>
   );
 }

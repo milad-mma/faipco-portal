@@ -31,20 +31,9 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
         </Stack>
       )}
       <Stack direction="row" spacing={1}>
-        <TextField
-          select
-          size={size}
-          label="ساعت"
-          value={hourStr}
-          onChange={(e) => handleHourChange(e.target.value)}
-          sx={{ minWidth: 90 }}
-        >
-          {HOURS.map((h) => (
-            <MenuItem key={h} value={h}>
-              {h}
-            </MenuItem>
-          ))}
-        </TextField>
+        {/* ⚠️ طبق درخواست صریح کاربر: ساعت سمت چپ، دقیقه سمت راست. چون
+            صفحه RTL است، اولین عنصر در DOM سمت راست رندر می‌شود - پس
+            «دقیقه» عمداً اول آمده تا «ساعت» سمت چپ بیفتد. */}
         <TextField
           select
           size={size}
@@ -56,6 +45,20 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
           {MINUTES.map((m) => (
             <MenuItem key={m} value={m}>
               {m}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          size={size}
+          label="ساعت"
+          value={hourStr}
+          onChange={(e) => handleHourChange(e.target.value)}
+          sx={{ minWidth: 90 }}
+        >
+          {HOURS.map((h) => (
+            <MenuItem key={h} value={h}>
+              {h}
             </MenuItem>
           ))}
         </TextField>

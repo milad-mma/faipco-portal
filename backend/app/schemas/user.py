@@ -66,6 +66,11 @@ class UserOut(BaseModel):
     can_manage_performance_assignments: bool = False  # performance.assignments.manage — تولید انتساب ارزیابی
     can_view_performance_reports: bool = False  # performance.reports.view — مشاهده گزارش‌های مدیریتی ارزیابی
     can_view_leave_requests: bool = False  # leave_requests.view — مشاهده همه درخواست‌های مرخصی/ماموریت یک سایت
+    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (مثل
+    # نقش «حراست») - نه مجوز سراسری view/manage. برای این افراد، UI
+    # صفحه گزارش محدودتر است (بدون درخواست‌های در حال بررسی، بدون خروجی
+    # Excel، بدون فیلتر بازه تاریخ) - همان محدودیت‌ها سمت سرور هم اعمال می‌شوند.
+    leave_requests_type_restricted: bool = False
     can_manage_leave_requests: bool = False  # leave_requests.manage — مشاهده و ویرایش همه درخواست‌های مرخصی/ماموریت
 
     model_config = ConfigDict(from_attributes=True)
