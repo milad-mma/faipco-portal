@@ -9,7 +9,7 @@ evaluation_id معتبر داده شده اعتماد نمی‌شود.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -287,6 +287,62 @@ class EvaluationProcessService:
         await self._notify_target_of_submitted_evaluation(evaluation.assignment.target_employee_id)
 
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
+
+    async def send_pending_evaluation_reminders(self, days_before_deadline: int = 3) -> dict:
+        """
+        ⚠️ طبق درخواست صریح کاربر: یادآوری به ارزیاب‌هایی که هنوز ارزیابی
+        محول‌شده را انجام نداده‌اند.
+
+        فقط دوره‌های **فعال** که مهلتشان (end_date) نزدیک است - یعنی تا
+        `days_before_deadline` روز دیگر یا کمتر باقی مانده، و هنوز
+        نگذشته. دوره‌های بسته/آرشیو یا آن‌هایی که هنوز خیلی مانده،
+        یادآوری نمی‌گیرند (تا کاربر با اعلان بی‌مورد خسته نشود).
+
+        هر ارزیاب **یک** اعلان می‌گیرد - صرف‌نظر از اینکه چند ارزیابی
+        انجام‌نشده دارد؛ تعداد در متن پیام می‌آید. خروجی برای لاگ/تست:
+        تعداد ارزیاب‌های مطلع‌شده و کل ارزیابی‌های معوق.
+        """
+        now = datetime.now(timezone.utc)
+        deadline_limit = now + timedelta(days=days_before_deadline)
+
+        result = await self.db.execute(
+            select(EvaluationAssignment.evaluator_employee_id, func.count(EvaluationAssignment.id))
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
+            .where(
+                EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+                EvaluationPeriod.status == EvaluationPeriodStatus.active,
+                EvaluationPeriod.end_date > now,
+                EvaluationPeriod.end_date <= deadline_limit,
+            )
+            .group_by(EvaluationAssignment.evaluator_employee_id)
+        )
+        pending_by_evaluator = {row[0]: row[1] for row in result.all()}
+        if not pending_by_evaluator:
+            return {"notified_evaluators": 0, "pending_total": 0}
+
+        users_result = await self.db.execute(
+            select(User.id, User.employee_id).where(User.employee_id.in_(pending_by_evaluator.keys()))
+        )
+        notified = 0
+        for user_id, employee_id in users_result.all():
+            count = pending_by_evaluator.get(employee_id, 0)
+            if count <= 0:
+                continue
+            try:
+                await PushService(self.db).notify_users(
+                    {user_id},
+                    url="/my-performance?tab=1",
+                    priority="normal",
+                    body=(
+                        f"{count} ارزیابی عملکرد انجام‌نشده دارید و مهلت آن رو به پایان است.\n"
+                        "جهت تکمیل روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
+                    ),
+                )
+                notified += 1
+            except Exception:
+                logger.exception("ارسال یادآوری ارزیابی عملکرد برای کاربر %s با خطا مواجه شد", user_id)
+
+        return {"notified_evaluators": notified, "pending_total": sum(pending_by_evaluator.values())}
 
     async def _notify_target_of_submitted_evaluation(self, target_employee_id: int) -> None:
         try:

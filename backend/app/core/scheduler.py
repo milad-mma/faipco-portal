@@ -47,6 +47,7 @@ JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
 SERVER_STATS_JOB_ID = "record_server_stats"
 BACKUP_JOB_ID = "run_scheduled_backup"
+EVALUATION_REMINDER_JOB_ID = "send_evaluation_reminders"
 # فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
 # فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
 # که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
@@ -69,6 +70,7 @@ _SYNC_LOCK_KEY = 875312001
 _BIRTHDAY_LOCK_KEY = 875312002
 _SERVER_STATS_LOCK_KEY = 875312003
 _BACKUP_LOCK_KEY = 875312004
+_EVALUATION_REMINDER_LOCK_KEY = 875312005
 # نمونه‌برداری واقعی مصرف سرور هر ۱۰ دقیقه یک‌بار — ولی مثل Sync، خودِ Job
 # با تیک مکرر کوتاه‌تر (هر ۲ دقیقه) چک می‌کند «طبق آخرین نمونه ثبت‌شده در
 # دیتابیس، وقتش رسیده یا نه» — همان دلیل بالا (هماهنگی بین چند Worker
@@ -190,6 +192,34 @@ async def _run_scheduled_backup_check() -> None:
             await _advisory_unlock(db, _BACKUP_LOCK_KEY)
 
 
+async def _send_evaluation_reminders_job() -> None:
+    """
+    ⚠️ طبق درخواست صریح کاربر: یادآوری روزانه به ارزیاب‌هایی که هنوز
+    ارزیابی محول‌شده را انجام نداده‌اند و مهلت دوره نزدیک است.
+
+    مثل بقیه Job ها با Advisory Lock محافظت می‌شود - تا اگر چند Worker
+    هم‌زمان بالا باشند، یادآوری تکراری برای یک نفر ارسال نشود.
+    """
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _EVALUATION_REMINDER_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            from app.services.evaluation_process_service import EvaluationProcessService
+
+            result = await EvaluationProcessService(db).send_pending_evaluation_reminders()
+            if result["notified_evaluators"]:
+                logger.info(
+                    "یادآوری ارزیابی عملکرد برای %s ارزیاب ارسال شد (%s ارزیابی معوق)",
+                    result["notified_evaluators"],
+                    result["pending_total"],
+                )
+        except Exception:  # noqa: BLE001 - نباید کل Scheduler را متوقف کند
+            logger.exception("خطا در ارسال یادآوری ارزیابی عملکرد")
+        finally:
+            await _advisory_unlock(db, _EVALUATION_REMINDER_LOCK_KEY)
+
+
 async def start_scheduler() -> None:
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
@@ -253,6 +283,19 @@ async def start_scheduler() -> None:
         "Scheduler هر %s دقیقه چک می‌کند که آیا طبق زمان‌بندی بکاپ (که از دیتابیس خوانده می‌شود) وقتش رسیده یا نه",
         BACKUP_CHECK_INTERVAL_MINUTES,
     )
+
+    scheduler.add_job(
+        _send_evaluation_reminders_job,
+        trigger="cron",
+        hour=9,
+        minute=0,
+        id=EVALUATION_REMINDER_JOB_ID,
+        replace_existing=True,
+        # ⚠️ مثل Job تبریک تولد: اگر سرور دقیقاً سر ساعت ۹ در حال Restart
+        # باشد، بدون این بازه اطمینان، یادآوری آن روز کاملاً از دست می‌رفت.
+        misfire_grace_time=6 * 60 * 60,
+    )
+    logger.info("Scheduler یادآوری ارزیابی‌های انجام‌نشده هر روز ساعت ۰۹:۰۰ ارسال می‌شود")
 
     scheduler.start()
 
