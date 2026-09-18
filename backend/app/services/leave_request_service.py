@@ -281,13 +281,57 @@ def _insert_review_sync(
                 mapping.wf_reviews_date_column,
                 mapping.wf_reviews_show_to_personal_column,
             ]
-            values = [request_id, reviewed_emp_no, description, review_type, datetime.now(), True]
+            # ⚠️ طبق تصمیم صریح کاربر (هم‌راستا با رفتار واقعی کاراوب):
+            # ReviewDate فقط تاریخ است، بدون ساعت. رکوردهای ساخته‌شده توسط
+            # خودِ کاراوب همگی ساعت 00:00:00 دارند - اگر ساعت هم بنویسیم،
+            # ممکن است در گزارش‌های خودِ کاراوب رفتار متفاوتی ایجاد کند.
+            today = datetime.now()
+            review_date = datetime(today.year, today.month, today.day)
+            values = [request_id, reviewed_emp_no, description, review_type, review_date, True]
             columns_sql = ", ".join(q(c) for c in columns)
             placeholders = ", ".join(f"%({i})s" for i in range(len(columns)))
             params = {str(i): v for i, v in enumerate(values)}
             query = f"INSERT INTO {q(mapping.wf_reviews_table_name)} ({columns_sql}) VALUES ({placeholders})"  # noqa: S608
             cur.execute(query, params)
             connection.commit()
+    finally:
+        connection.close()
+
+
+def _update_review_description_sync(
+    conn: SiteConnection, mapping: LeaveRequestMapping, request_id: int, description: str
+) -> bool:
+    """
+    ⚠️ رفع ناسازگاری واقعی (گزارش کاربر): ویرایش مدیریتیِ «نظر تأییدکننده»
+    قبلاً فقط ManagerIdea را به‌روز می‌کرد - در حالی که نظر واقعی در
+    WF_Reviews.Description است و پرتال هم همان را برای نمایش می‌خواند.
+    نتیجه: ادمین نظر را ویرایش می‌کرد ولی هیچ تغییری در نمایش نمی‌دید.
+
+    این تابع آخرین ردیف Review همان درخواست را به‌روز می‌کند. خروجی
+    True یعنی ردیفی به‌روز شد؛ False یعنی اصلاً Review ای وجود نداشت
+    (در این حالت فراخوان باید یک ردیف جدید درج کند).
+    """
+    if not mapping.wf_reviews_table_name:
+        return False
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    connection = _connect(conn)
+    try:
+        with connection.cursor() as cur:
+            # فقط آخرین Review به‌روز می‌شود (همان که _select_latest_reviews_sync
+            # برای نمایش انتخاب می‌کند) - نه همه‌ی تاریخچه تصمیم‌ها.
+            id_col = q("Id")
+            query = f"""
+                UPDATE {q(mapping.wf_reviews_table_name)}
+                SET {q(mapping.wf_reviews_description_column)} = %(description)s
+                WHERE {id_col} = (
+                    SELECT MAX({id_col}) FROM {q(mapping.wf_reviews_table_name)}
+                    WHERE {q(mapping.wf_reviews_request_id_column)} = %(request_id)s
+                )
+            """  # noqa: S608
+            cur.execute(query, {"description": description, "request_id": request_id})
+            updated = cur.rowcount
+            connection.commit()
+            return updated > 0
     finally:
         connection.close()
 
@@ -1005,11 +1049,17 @@ class LeaveRequestService:
         if request_row.get("IsFinalApproved") is not None:
             raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده است")
 
+        # ⚠️ طبق تصمیم صریح کاربر (هم‌راستا با رفتار واقعی کاراوب):
+        # ManagerIdea عمداً خالی نوشته می‌شود. بررسی رکوردهای واقعیِ
+        # ساخته‌شده توسط خودِ کاراوب نشان داد این ستون همیشه خالی است و
+        # نظر واقعی فقط در WF_Reviews.Description ذخیره می‌شود - پس
+        # نوشتن همزمان در هر دو جا، دو منبع حقیقت می‌ساخت که می‌توانستند
+        # از هم واگرا شوند (دقیقاً همان باگی که در ویرایش مدیریتی دیدیم).
         updates = {
             mapping.is_final_approved_column: approved,
             mapping.approval_by_manager_column: approver_emp_no,
             mapping.approval_date_column: datetime.now(),
-            mapping.manager_idea_column: manager_idea or "",
+            mapping.manager_idea_column: "",
         }
         await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
 
@@ -1024,8 +1074,11 @@ class LeaveRequestService:
         # متفاوت برای رد) اشتباه بود و باعث می‌شد رد‌کردن از پورتال، مقداری
         # در WF_Reviews بنویسد که کاراوب هرگز تولید نمی‌کند. حالا همیشه
         # همان مقدار استانداردِ کاراوب نوشته می‌شود.
+        # ⚠️ طبق تصمیم صریح کاربر: وقتی مدیر اصلاً نظری ننوشته، هیچ ردیف
+        # Review ساخته نمی‌شود - دقیقاً مثل کاراوب (رکورد تأییدشده‌ای در
+        # دیتابیس بود که هیچ Review نداشت، چون مدیر متنی ننوشته بود).
         review_type = mapping.wf_reviews_approved_type_value
-        if review_type is not None:
+        if review_type is not None and (manager_idea or "").strip():
             await asyncio.to_thread(
                 _insert_review_sync,
                 site_connection,
@@ -1073,7 +1126,6 @@ class LeaveRequestService:
             "end_date": mapping.end_date_column,
             "start_hour": mapping.start_hour_column,
             "end_hour": mapping.end_hour_column,
-            "manager_idea": mapping.manager_idea_column,
             "description": mapping.description_column,
         }
         for key, column in key_to_column.items():
@@ -1103,9 +1155,48 @@ class LeaveRequestService:
                 column_updates[mapping.action_id_column] = leave_type.action_id
             column_updates[mapping.card_no_column] = leave_type.card_no if leave_type.card_no is not None else 0
 
-        if not column_updates:
-            return
-        await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, column_updates)
+        # ⚠️ «نظر تأییدکننده» فقط در WF_Reviews.Description نوشته می‌شود -
+        # نه در ManagerIdea. این هم‌راستا با رفتار واقعی کاراوب است (که
+        # ManagerIdea را همیشه خالی می‌گذارد) و از داشتن دو منبع حقیقت که
+        # می‌توانند واگرا شوند جلوگیری می‌کند - دقیقاً همان باگی که باعث شد
+        # ویرایش ادمین در نمایش دیده نشود.
+        #
+        # اگر هنوز هیچ Review ای برای این درخواست ثبت نشده باشد (مثلاً
+        # مدیر بدون نوشتن نظر تصمیم گرفته بود)، یک ردیف جدید درج می‌شود.
+        new_manager_idea = updates.get("manager_idea")
+
+        if column_updates:
+            await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, column_updates)
+
+        if "manager_idea" in updates and mapping.wf_reviews_table_name:
+            updated = await asyncio.to_thread(
+                _update_review_description_sync,
+                site_connection,
+                mapping,
+                request_id,
+                new_manager_idea or "",
+            )
+            if not updated and mapping.wf_reviews_approved_type_value is not None:
+                # تأییدکننده‌ی ثبت‌شده‌ی خودِ درخواست را می‌خوانیم تا ردیف
+                # جدید Review به نام همان فرد ثبت شود، نه یک مقدار ساختگی.
+                request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
+                rows = await asyncio.to_thread(
+                    _select_requests_sync,
+                    site_connection,
+                    mapping,
+                    f"{request_id_col} = %(request_id)s",
+                    {"request_id": request_id},
+                )
+                approver_emp_no = rows[0].get("ApprovalByManagerEmpNo") if rows else None
+                await asyncio.to_thread(
+                    _insert_review_sync,
+                    site_connection,
+                    mapping,
+                    request_id,
+                    approver_emp_no or 0,
+                    new_manager_idea or "",
+                    mapping.wf_reviews_approved_type_value,
+                )
 
 
 def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
