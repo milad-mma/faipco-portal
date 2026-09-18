@@ -30,7 +30,7 @@ import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import AccessGateDialog from "../components/AccessGateDialog";
-import { fetchMyAccessGateStatus } from "../api/accessGate";
+import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 import {
   decideLeaveRequest,
   deleteLeaveRequest,
@@ -434,19 +434,19 @@ export default function LeaveRequestPage() {
   const [error, setError] = useState("");
   // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
   // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
-  const [gateStatus, setGateStatus] = useState(null);
+  // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
+  // بازگشت فوکوس خودکار تازه شود - بدون نیاز به رفرش دستی.
+  const { status: gateStatus } = useAccessGateStatus();
   const [gateOpen, setGateOpen] = useState(false);
 
+  // ⚠️ با هر تغییر وضعیت، دیالوگ هم‌گام می‌شود: اگر کاربر پیش‌نیاز را
+  // انجام داد و برگشت، دیالوگ خودکار بسته می‌شود (نه اینکه هشدار
+  // قدیمی تا رفرش دستی باقی بماند).
   useEffect(() => {
-    fetchMyAccessGateStatus()
-      .then((st) => {
-        setGateStatus(st);
-        // ⚠️ دیالوگ به‌محض ورود باز می‌شود (نه بعد از کلیک) - تا کاربر
-        // قبل از پرکردن فرم بفهمد اجازه ندارد، نه بعدش.
-        if (st?.blocked_features?.["leave_request"]) setGateOpen(true);
-      })
-      .catch(() => setGateStatus(null));
-  }, []);
+    if (!gateStatus) return;
+    setGateOpen(Boolean(gateStatus.blocked_features?.["leave_request"]));
+  }, [gateStatus]);
+
 
   function loadMyRequests() {
     fetchMyLeaveRequests()

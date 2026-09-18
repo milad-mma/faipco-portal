@@ -16,7 +16,7 @@ import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import AccessGateDialog from "../components/AccessGateDialog";
-import { fetchMyAccessGateStatus } from "../api/accessGate";
+import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
 /**
  * گزارش تردد ماهانه شخصی — از دستگاه‌های حضور و غیاب واقعی، در همان SQL
@@ -54,19 +54,19 @@ export default function MonthlyAttendanceReportPage() {
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [gateStatus, setGateStatus] = useState(null);
+  // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
+  // بازگشت فوکوس خودکار تازه شود - بدون نیاز به رفرش دستی.
+  const { status: gateStatus } = useAccessGateStatus();
   const [gateOpen, setGateOpen] = useState(false);
 
+  // ⚠️ با هر تغییر وضعیت، دیالوگ هم‌گام می‌شود: اگر کاربر پیش‌نیاز را
+  // انجام داد و برگشت، دیالوگ خودکار بسته می‌شود (نه اینکه هشدار
+  // قدیمی تا رفرش دستی باقی بماند).
   useEffect(() => {
-    fetchMyAccessGateStatus()
-      .then((st) => {
-        setGateStatus(st);
-        // ⚠️ دیالوگ به‌محض ورود باز می‌شود (نه بعد از کلیک) - تا کاربر
-        // قبل از پرکردن فرم بفهمد اجازه ندارد، نه بعدش.
-        if (st?.blocked_features?.["attendance_report"]) setGateOpen(true);
-      })
-      .catch(() => setGateStatus(null));
-  }, []);
+    if (!gateStatus) return;
+    setGateOpen(Boolean(gateStatus.blocked_features?.["attendance_report"]));
+  }, [gateStatus]);
+
 
   const topScrollRef = useRef(null);
   const tableScrollRef = useRef(null);

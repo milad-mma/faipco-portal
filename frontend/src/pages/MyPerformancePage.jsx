@@ -36,7 +36,7 @@ import {
 } from "../api/evaluationProcess";
 import BackLink from "../components/BackLink";
 import AccessGateDialog from "../components/AccessGateDialog";
-import { fetchMyAccessGateStatus } from "../api/accessGate";
+import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
 const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
@@ -351,19 +351,19 @@ export default function MyPerformancePage() {
 
   const [results, setResults] = useState(null);
   const [detailsResult, setDetailsResult] = useState(null);
-  const [gateStatus, setGateStatus] = useState(null);
+  // ⚠️ Hook مشترک - وضعیت با برگشت به صفحه (مثلاً پس از تکمیل ارزیابی
+  // در صفحه فرم) یا بازگشت فوکوس، خودکار تازه می‌شود.
+  const { status: gateStatus } = useAccessGateStatus();
   const [gateOpen, setGateOpen] = useState(false);
 
   // دیالوگ فقط وقتی کاربر روی تب «نتایج» است باز می‌شود.
   useEffect(() => {
-    if (tab === 0 && gateStatus?.blocked_features?.["evaluation_result"]) setGateOpen(true);
+    if (!gateStatus) return;
+    // ⚠️ دو طرفه: هم باز می‌کند، هم وقتی پیش‌نیاز برطرف شد خودکار
+    // می‌بندد - وگرنه هشدار قدیمی تا رفرش دستی باقی می‌ماند.
+    setGateOpen(tab === 0 && Boolean(gateStatus.blocked_features?.["evaluation_result"]));
   }, [tab, gateStatus]);
 
-  useEffect(() => {
-    fetchMyAccessGateStatus()
-      .then(setGateStatus)
-      .catch(() => setGateStatus(null));
-  }, []);
   const [pending, setPending] = useState(null);
   const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
   const [periodFilter, setPeriodFilter] = useState("");
