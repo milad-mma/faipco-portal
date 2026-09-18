@@ -35,7 +35,7 @@ import {
   reopenEvaluation,
 } from "../api/evaluationProcess";
 import BackLink from "../components/BackLink";
-import AccessGateNotice from "../components/AccessGateNotice";
+import AccessGateDialog from "../components/AccessGateDialog";
 import { fetchMyAccessGateStatus } from "../api/accessGate";
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
@@ -352,6 +352,12 @@ export default function MyPerformancePage() {
   const [results, setResults] = useState(null);
   const [detailsResult, setDetailsResult] = useState(null);
   const [gateStatus, setGateStatus] = useState(null);
+  const [gateOpen, setGateOpen] = useState(false);
+
+  // دیالوگ فقط وقتی کاربر روی تب «نتایج» است باز می‌شود.
+  useEffect(() => {
+    if (tab === 0 && gateStatus?.blocked_features?.["evaluation_result"]) setGateOpen(true);
+  }, [tab, gateStatus]);
 
   useEffect(() => {
     fetchMyAccessGateStatus()
@@ -423,11 +429,6 @@ export default function MyPerformancePage() {
         ارزیابی عملکرد من
       </Typography>
 
-      {/* ⚠️ فقط تب «نتایج» مشروط است - تب «پرسنل من» (انجام ارزیابی) باید
-          همیشه باز بماند، وگرنه کاربری که به‌خاطر ارزیابی انجام‌نشده قفل
-          شده، نمی‌توانست همان ارزیابی را انجام دهد و قفل را باز کند. */}
-      {tab === 0 && <AccessGateNotice status={gateStatus} feature="evaluation_result" />}
-
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -484,6 +485,21 @@ export default function MyPerformancePage() {
       )}
 
       {detailsResult && <ResultDetailsDialog result={detailsResult} onClose={() => setDetailsResult(null)} />}
+
+      {/* ⚠️ فقط تب «نتایج» مشروط است - تب «پرسنل من» (انجام ارزیابی)
+          همیشه باز می‌ماند، وگرنه کاربری که به‌خاطر ارزیابی
+          انجام‌نشده قفل شده، نمی‌توانست همان ارزیابی را انجام دهد
+          و قفل خودش را باز کند. */}
+      <AccessGateDialog
+        open={gateOpen}
+        gate={gateStatus?.blocked_features?.["evaluation_result"]}
+        count={
+          gateStatus?.blocked_features?.["evaluation_result"] === "pending_evaluations"
+            ? gateStatus?.pending_evaluations
+            : gateStatus?.unread_notices
+        }
+        onClose={() => setGateOpen(false)}
+      />
     </Box>
   );
 }

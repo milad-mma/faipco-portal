@@ -15,6 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
+import AccessGateDialog from "../components/AccessGateDialog";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
@@ -77,12 +78,19 @@ function triggerBlobDownload(blob, filename) {
   setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
-async function downloadPayrollReceipt(noticeId, setDownloadError) {
+async function downloadPayrollReceipt(noticeId, setDownloadError, onGateBlocked) {
   setDownloadError("");
   try {
     const blob = await fetchMyPayrollReceiptBlob(noticeId);
     triggerBlobDownload(blob, `فیش-حقوقی-${noticeId}.pdf`);
   } catch (err) {
+    // ⚠️ طبق درخواست صریح کاربر: ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده -
+    // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
+    // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
+    if (err.response?.status === 403) {
+      onGateBlocked?.(err.response?.data?.detail || "");
+      return;
+    }
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
@@ -91,12 +99,19 @@ async function downloadPayrollReceipt(noticeId, setDownloadError) {
   }
 }
 
-async function downloadAttendanceCard(noticeId, setDownloadError) {
+async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked) {
   setDownloadError("");
   try {
     const blob = await fetchMyAttendanceCardBlob(noticeId);
     triggerBlobDownload(blob, `فیش-کارکرد-${noticeId}.pdf`);
   } catch (err) {
+    // ⚠️ طبق درخواست صریح کاربر: ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده -
+    // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
+    // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
+    if (err.response?.status === 403) {
+      onGateBlocked?.(err.response?.data?.detail || "");
+      return;
+    }
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
@@ -133,6 +148,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
   const [expanded, setExpanded] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [archiveBusy, setArchiveBusy] = useState(false);
+  // ⚠️ پیام ۴۰۳ خودِ سرور نگه داشته می‌شود تا دیالوگ دقیقاً همان دلیل و
+  // تعداد واقعی را نشان دهد (نه یک متن حدسی سمت کلاینت).
+  const [gateMessage, setGateMessage] = useState(null);
   const isUnread = !notice.is_read;
   const isPayroll = notice.notice_type === "payroll";
   const isAttendanceCard = notice.notice_type === "attendance_card";
@@ -260,7 +278,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                   startIcon={<PictureAsPdfOutlinedIcon />}
                   onClick={(e) => {
                     e.stopPropagation();
-                    downloadPayrollReceipt(notice.id, setDownloadError);
+                    downloadPayrollReceipt(notice.id, setDownloadError, setGateMessage);
                   }}
                 >
                   دانلود فیش من (PDF)
@@ -286,7 +304,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                   startIcon={<PictureAsPdfOutlinedIcon />}
                   onClick={(e) => {
                     e.stopPropagation();
-                    downloadAttendanceCard(notice.id, setDownloadError);
+                    downloadAttendanceCard(notice.id, setDownloadError, setGateMessage);
                   }}
                 >
                   دانلود فیش کارکرد من (PDF)
@@ -336,6 +354,15 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           </Stack>
         </Box>
       </Collapse>
+
+      {/* ⚠️ دیالوگ پیش‌نیاز دسترسی - وقتی سرور برای دانلود فیش ۴۰۳ می‌دهد،
+          به‌جای پیام مبهم، همین باز می‌شود و راه رفع را نشان می‌دهد.
+          بستنش کاربر را به بقیه بخش‌ها برمی‌گرداند. */}
+      <AccessGateDialog
+        open={gateMessage !== null}
+        message={gateMessage}
+        onClose={() => setGateMessage(null)}
+      />
     </Card>
   );
 }

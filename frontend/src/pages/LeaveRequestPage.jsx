@@ -29,7 +29,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
-import AccessGateNotice from "../components/AccessGateNotice";
+import AccessGateDialog from "../components/AccessGateDialog";
 import { fetchMyAccessGateStatus } from "../api/accessGate";
 import {
   decideLeaveRequest,
@@ -435,10 +435,16 @@ export default function LeaveRequestPage() {
   // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
   // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
   const [gateStatus, setGateStatus] = useState(null);
+  const [gateOpen, setGateOpen] = useState(false);
 
   useEffect(() => {
     fetchMyAccessGateStatus()
-      .then(setGateStatus)
+      .then((st) => {
+        setGateStatus(st);
+        // ⚠️ دیالوگ به‌محض ورود باز می‌شود (نه بعد از کلیک) - تا کاربر
+        // قبل از پرکردن فرم بفهمد اجازه ندارد، نه بعدش.
+        if (st?.blocked_features?.["leave_request"]) setGateOpen(true);
+      })
       .catch(() => setGateStatus(null));
   }, []);
 
@@ -473,8 +479,6 @@ export default function LeaveRequestPage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         درخواست مرخصی/ماموریت
       </Typography>
-
-      <AccessGateNotice status={gateStatus} feature="leave_request" />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -519,6 +523,17 @@ export default function LeaveRequestPage() {
           }}
         />
       )}
+
+      <AccessGateDialog
+        open={gateOpen}
+        gate={gateStatus?.blocked_features?.["leave_request"]}
+        count={
+          gateStatus?.blocked_features?.["leave_request"] === "pending_evaluations"
+            ? gateStatus?.pending_evaluations
+            : gateStatus?.unread_notices
+        }
+        onClose={() => setGateOpen(false)}
+      />
     </Box>
   );
 }

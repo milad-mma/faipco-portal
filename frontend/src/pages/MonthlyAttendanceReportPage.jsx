@@ -15,7 +15,7 @@ import {
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
-import AccessGateNotice from "../components/AccessGateNotice";
+import AccessGateDialog from "../components/AccessGateDialog";
 import { fetchMyAccessGateStatus } from "../api/accessGate";
 
 /**
@@ -55,10 +55,16 @@ export default function MonthlyAttendanceReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [gateStatus, setGateStatus] = useState(null);
+  const [gateOpen, setGateOpen] = useState(false);
 
   useEffect(() => {
     fetchMyAccessGateStatus()
-      .then(setGateStatus)
+      .then((st) => {
+        setGateStatus(st);
+        // ⚠️ دیالوگ به‌محض ورود باز می‌شود (نه بعد از کلیک) - تا کاربر
+        // قبل از پرکردن فرم بفهمد اجازه ندارد، نه بعدش.
+        if (st?.blocked_features?.["attendance_report"]) setGateOpen(true);
+      })
       .catch(() => setGateStatus(null));
   }, []);
 
@@ -111,7 +117,6 @@ export default function MonthlyAttendanceReportPage() {
   return (
     <Box>
       <BackLink to="/my-dashboard" />
-      <AccessGateNotice status={gateStatus} feature="attendance_report" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         گزارش تردد ماهانه
       </Typography>
@@ -195,6 +200,17 @@ export default function MonthlyAttendanceReportPage() {
           </TableContainer>
         </>
       ) : null}
+
+      <AccessGateDialog
+        open={gateOpen}
+        gate={gateStatus?.blocked_features?.["attendance_report"]}
+        count={
+          gateStatus?.blocked_features?.["attendance_report"] === "pending_evaluations"
+            ? gateStatus?.pending_evaluations
+            : gateStatus?.unread_notices
+        }
+        onClose={() => setGateOpen(false)}
+      />
     </Box>
   );
 }
