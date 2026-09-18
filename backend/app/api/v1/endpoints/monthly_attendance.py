@@ -24,6 +24,7 @@ from app.models.employee import Employee
 from app.models.site import AttendanceMapping, SiteConnection
 from app.models.user import User
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
+from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
 
@@ -35,6 +36,13 @@ async def monthly_attendance_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
+    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    try:
+        await AccessGateService(db).check(current_user, "attendance_report")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
     if current_user.employee_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این کاربر به هیچ پرسنلی متصل نیست")
 

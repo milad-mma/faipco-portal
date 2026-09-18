@@ -35,6 +35,8 @@ import {
   reopenEvaluation,
 } from "../api/evaluationProcess";
 import BackLink from "../components/BackLink";
+import AccessGateNotice from "../components/AccessGateNotice";
+import { fetchMyAccessGateStatus } from "../api/accessGate";
 
 const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
 const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
@@ -349,6 +351,13 @@ export default function MyPerformancePage() {
 
   const [results, setResults] = useState(null);
   const [detailsResult, setDetailsResult] = useState(null);
+  const [gateStatus, setGateStatus] = useState(null);
+
+  useEffect(() => {
+    fetchMyAccessGateStatus()
+      .then(setGateStatus)
+      .catch(() => setGateStatus(null));
+  }, []);
   const [pending, setPending] = useState(null);
   const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
   const [periodFilter, setPeriodFilter] = useState("");
@@ -413,6 +422,11 @@ export default function MyPerformancePage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         ارزیابی عملکرد من
       </Typography>
+
+      {/* ⚠️ فقط تب «نتایج» مشروط است - تب «پرسنل من» (انجام ارزیابی) باید
+          همیشه باز بماند، وگرنه کاربری که به‌خاطر ارزیابی انجام‌نشده قفل
+          شده، نمی‌توانست همان ارزیابی را انجام دهد و قفل را باز کند. */}
+      {tab === 0 && <AccessGateNotice status={gateStatus} feature="evaluation_result" />}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

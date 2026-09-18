@@ -125,6 +125,17 @@ class SystemSettingsService:
 
     # ---------- کلید فعال/غیرفعال محدودیت IP — مستقل از این‌که رنجی ثبت شده یا نه ----------
 
+    # ---------- پیش‌نیازهای دسترسی (اطلاعیه خوانده‌نشده / ارزیابی انجام‌نشده) ----------
+
+    async def get_access_gate(self, key: str) -> bool:
+        """⚠️ پیش‌فرض خاموش - این یک محدودیت است و نباید با به‌روزرسانی ناگهان همه را قفل کند."""
+        raw = await self._get_raw(key)
+        return raw == "true"
+
+    async def set_access_gate(self, key: str, enabled: bool) -> bool:
+        await self._set_raw(key, "true" if enabled else "false")
+        return enabled
+
     async def get_ip_allowlist_enabled(self) -> bool:
         raw = await self._get_raw(IP_ALLOWLIST_ENABLED_KEY)
         return raw == "true"

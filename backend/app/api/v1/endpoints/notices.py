@@ -51,6 +51,7 @@ from app.services.payroll_service import PayrollNoticeService
 from app.services.payroll_common import PayrollParseError
 from app.services.attendance_card_pdf import render_attendance_card_pdf
 from app.services.attendance_card_service import AttendanceCardNoticeService
+from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
 
@@ -420,6 +421,15 @@ async def download_my_payroll_receipt(
     از روی current_user.employee_id خوانده می‌شود، پس دسترسی به فیش دیگران
     از این مسیر ساختاراً غیرممکن است.
     """
+    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و
+    # کاربر اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳
+    # می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
+    try:
+        await AccessGateService(db).check(current_user, "payroll_receipt")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
     notice = await db.get(Notice, notice_id)
     if notice is None or notice.is_deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
@@ -507,6 +517,15 @@ async def download_my_attendance_card(
     همان مدل دسترسی ساختاری فیش حقوقی: همیشه از روی current_user.employee_id،
     هیچ پارامتری برای انتخاب employee_id دیگری وجود ندارد.
     """
+    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و
+    # کاربر اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳
+    # می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
+    try:
+        await AccessGateService(db).check(current_user, "attendance_card")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
     notice = await db.get(Notice, notice_id)
     if notice is None or notice.is_deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")

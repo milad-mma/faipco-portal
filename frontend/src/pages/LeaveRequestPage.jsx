@@ -29,6 +29,8 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
+import AccessGateNotice from "../components/AccessGateNotice";
+import { fetchMyAccessGateStatus } from "../api/accessGate";
 import {
   decideLeaveRequest,
   deleteLeaveRequest,
@@ -430,6 +432,15 @@ export default function LeaveRequestPage() {
   const [pending, setPending] = useState(null);
   const [decidingItem, setDecidingItem] = useState(null);
   const [error, setError] = useState("");
+  // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
+  // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
+  const [gateStatus, setGateStatus] = useState(null);
+
+  useEffect(() => {
+    fetchMyAccessGateStatus()
+      .then(setGateStatus)
+      .catch(() => setGateStatus(null));
+  }, []);
 
   function loadMyRequests() {
     fetchMyLeaveRequests()
@@ -462,6 +473,8 @@ export default function LeaveRequestPage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         درخواست مرخصی/ماموریت
       </Typography>
+
+      <AccessGateNotice status={gateStatus} feature="leave_request" />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

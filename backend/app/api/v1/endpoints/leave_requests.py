@@ -19,6 +19,7 @@ from app.schemas.leave_request import (
     SubmitLeaveRequestOut,
 )
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
+from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
 
@@ -55,6 +56,13 @@ async def submit_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
+    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    try:
+        await AccessGateService(db).check(current_user, "leave_request")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
     employee = await _require_employee(db, current_user)
     try:
         return await LeaveRequestService(db).submit_request(

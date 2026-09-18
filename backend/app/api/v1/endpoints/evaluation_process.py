@@ -31,6 +31,7 @@ from app.schemas.evaluation_process import (
 )
 from app.services.evaluation_assignment_service import EvaluationAssignmentError, EvaluationAssignmentService
 from app.services.evaluation_process_service import EvaluationProcessError, EvaluationProcessService
+from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
 
@@ -163,6 +164,13 @@ async def get_my_results(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
+    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    try:
+        await AccessGateService(db).check(current_user, "evaluation_result")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_my_results(employee_id)
 

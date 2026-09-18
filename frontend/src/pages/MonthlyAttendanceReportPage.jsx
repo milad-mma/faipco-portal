@@ -15,6 +15,8 @@ import {
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
+import AccessGateNotice from "../components/AccessGateNotice";
+import { fetchMyAccessGateStatus } from "../api/accessGate";
 
 /**
  * گزارش تردد ماهانه شخصی — از دستگاه‌های حضور و غیاب واقعی، در همان SQL
@@ -52,6 +54,13 @@ export default function MonthlyAttendanceReportPage() {
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [gateStatus, setGateStatus] = useState(null);
+
+  useEffect(() => {
+    fetchMyAccessGateStatus()
+      .then(setGateStatus)
+      .catch(() => setGateStatus(null));
+  }, []);
 
   const topScrollRef = useRef(null);
   const tableScrollRef = useRef(null);
@@ -102,6 +111,7 @@ export default function MonthlyAttendanceReportPage() {
   return (
     <Box>
       <BackLink to="/my-dashboard" />
+      <AccessGateNotice status={gateStatus} feature="attendance_report" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         گزارش تردد ماهانه
       </Typography>
