@@ -32,3 +32,8 @@ export async function deleteLeaveRequest(requestId) {
   const { data } = await apiClient.delete(`/leave-requests/${requestId}`);
   return data;
 }
+
+export async function fetchPendingLeaveRequestCount() {
+  const { data } = await apiClient.get("/leave-requests/pending-count");
+  return data;
+}

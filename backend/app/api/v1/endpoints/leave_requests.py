@@ -96,6 +96,24 @@ async def get_pending_for_me(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.get("/pending-count")
+async def get_pending_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ⚠️ برای شمارنده روی کارت داشبورد پرسنل (مثل شمارنده ارزیابی عملکرد).
+    هرگز خطا نمی‌دهد - کاربران بدون Employee یا سایت‌های بدون نگاشت،
+    صفر می‌گیرند (کارت داشبورد برای همه نمایش داده می‌شود).
+    """
+    if current_user.employee_id is None:
+        return {"pending_count": 0}
+    employee = await db.get(Employee, current_user.employee_id)
+    if employee is None:
+        return {"pending_count": 0}
+    return {"pending_count": await LeaveRequestService(db).get_pending_count_for_approver(employee)}
+
+
 @router.delete("/{request_id}")
 async def delete_my_request(
     request_id: int,

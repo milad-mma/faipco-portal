@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Avatar, Box, Card, Chip, Stack, Typography } from "@mui/material";
+import { Avatar, Badge, Box, Card, Chip, Stack, Typography } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
@@ -19,6 +19,7 @@ import { fetchMyNotices } from "../api/notices";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
+import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
@@ -90,6 +91,7 @@ export default function PersonalDashboardPage() {
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
   const [birthdays, setBirthdays] = useState(null);
   const [photoUrl, setPhotoUrl] = useState(null);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   useEffect(() => {
     fetchMyNotices({ page: 1, pageSize: 5, archived: "all" }).then((data) => {
@@ -99,6 +101,11 @@ export default function PersonalDashboardPage() {
     fetchTodayBirthdays({ respectPrivacy: true })
       .then(setBirthdays)
       .catch(() => setBirthdays([]));
+    // ⚠️ شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر -
+    // برای کسی که تأییدکننده نیست همیشه صفر برمی‌گردد (نه خطا).
+    fetchPendingLeaveRequestCount()
+      .then((data) => setPendingLeaveCount(data.pending_count || 0))
+      .catch(() => setPendingLeaveCount(0));
   }, []);
 
   // عکس پرسنلی — مثل تم قبلی، فقط اگر واقعاً برای این کاربر ثبت شده باشد
@@ -345,6 +352,7 @@ export default function PersonalDashboardPage() {
             flex: 1,
             borderRadius: 2,
             p: 1.75,
+            overflow: "visible",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -352,21 +360,30 @@ export default function PersonalDashboardPage() {
             cursor: "pointer",
           }}
         >
-          <Box
-            sx={{
-              width: 38,
-              height: 38,
-              borderRadius: "50%",
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              mb: 2,
-            }}
+          {/* ⚠️ شمارنده درخواست‌های در انتظار تصمیم - مثل شمارنده ارزیابی
+              عملکرد، فقط برای مدیر/سرپرستی که درخواستی منتظر اوست نمایش
+              داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
+          <Badge
+            color="warning"
+            badgeContent={pendingLeaveCount}
+            invisible={!pendingLeaveCount}
+            sx={{ "& .MuiBadge-badge": { overflow: "visible" }, mb: 2 }}
           >
-            <CalendarMonthOutlinedIcon fontSize="small" />
-          </Box>
+            <Box
+              sx={{
+                width: 38,
+                height: 38,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <CalendarMonthOutlinedIcon fontSize="small" />
+            </Box>
+          </Badge>
           <Typography fontWeight={800} fontSize={14}>
             درخواست مرخصی/ماموریت
           </Typography>

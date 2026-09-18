@@ -4,7 +4,9 @@ Endpoint های مدیریتی «درخواست مرخصی/ماموریت»:
     - مشاهده همه درخواست‌های یک سایت - مجوز leave_requests.view یا leave_requests.manage
     - ویرایش مدیریتی - فقط leave_requests.manage
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,7 @@ from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.employee import Department
 from app.models.leave_request import LeaveRequestType
+from app.models.site import Site
 from app.models.user import User
 from app.schemas.leave_request import (
     ActionLookupItemOut,
@@ -30,6 +33,7 @@ from app.schemas.leave_request import (
     SetApproverIn,
 )
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
+from app.services.leave_request_xlsx import build_leave_requests_xlsx
 from app.services.leave_request_structure_service import (
     LeaveRequestStructureError,
     LeaveRequestStructureService,
@@ -260,14 +264,50 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
 @router.get("/sites/{site_id}/all", response_model=list[LeaveRequestOut])
 async def list_all_for_site(
     site_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status_filter: str | None = None,
+    type_id: int | None = None,
+    department: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     allowed_type_ids = await _get_view_access(db, current_user, site_id)
     try:
-        return await LeaveRequestService(db).list_all_for_site(site_id, allowed_type_ids)
+        return await LeaveRequestService(db).list_all_for_site(
+            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
+        )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/sites/{site_id}/export")
+async def export_leave_requests(
+    site_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status_filter: str | None = None,
+    type_id: int | None = None,
+    department: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """⚠️ خروجی Excel - دقیقاً همان فیلترهای لیست را می‌پذیرد، تا آنچه کاربر می‌بیند همان چیزی باشد که خروجی می‌گیرد."""
+    allowed_type_ids = await _get_view_access(db, current_user, site_id)
+    try:
+        items = await LeaveRequestService(db).list_all_for_site(
+            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
+        )
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    site = await db.get(Site, site_id)
+    content = build_leave_requests_xlsx(items, site.name if site else "")
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="leave-requests-{site_id}.xlsx"'},
+    )
 
 
 @router.put("/sites/{site_id}/requests/{request_id}")

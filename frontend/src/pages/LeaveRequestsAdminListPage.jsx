@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
+  Button,
   Card,
   Chip,
   IconButton,
@@ -19,12 +20,18 @@ import {
 } from "@mui/material";
 import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import { useAuth } from "../context/AuthContext";
 import { fetchSites } from "../api/sites";
-import { adminUpdateLeaveRequest, fetchAllLeaveRequestsForSite, fetchLeaveRequestTypes } from "../api/leaveRequestsAdmin";
+import {
+  adminUpdateLeaveRequest,
+  exportLeaveRequests,
+  fetchAllLeaveRequestsForSite,
+  fetchLeaveRequestTypes,
+} from "../api/leaveRequestsAdmin";
 
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده" };
 const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error" };
@@ -263,6 +270,24 @@ export default function LeaveRequestsAdminListPage() {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState("submitted_at");
   const [sortDir, setSortDir] = useState("desc");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState(null);
+  const [dateTo, setDateTo] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // ⚠️ فیلترهایی که سمت سرور اعمال می‌شوند (نه فقط روی داده‌ی لودشده) -
+  // تا خروجی Excel هم دقیقاً همان چیزی باشد که کاربر روی صفحه می‌بیند.
+  const serverFilters = useMemo(() => {
+    const f = {};
+    if (statusFilter) f.status_filter = statusFilter;
+    if (typeFilter) f.type_id = typeFilter;
+    if (departmentFilter) f.department = departmentFilter;
+    if (dateFrom) f.date_from = toDateOnly(dateFrom);
+    if (dateTo) f.date_to = toDateOnly(dateTo);
+    return f;
+  }, [statusFilter, typeFilter, departmentFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchSites().then((data) => {
@@ -274,7 +299,7 @@ export default function LeaveRequestsAdminListPage() {
   function load() {
     if (!siteId) return;
     setError("");
-    fetchAllLeaveRequestsForSite(siteId)
+    fetchAllLeaveRequestsForSite(siteId, serverFilters)
       .then(setRequests)
       .catch((err) => {
         // ⚠️ طبق تصمیم صریح کاربر: سایت پیش‌فرض (اولین سایت لیست) لزوماً
@@ -294,7 +319,27 @@ export default function LeaveRequestsAdminListPage() {
       });
   }
 
-  useEffect(load, [siteId]);
+  useEffect(load, [siteId, serverFilters]);
+
+  async function handleExport() {
+    setError("");
+    setIsExporting(true);
+    try {
+      const blob = await exportLeaveRequests(siteId, serverFilters);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `leave-requests-${siteId}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.response?.data?.detail || "تهیه خروجی Excel با خطا مواجه شد.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   const canEdit = Boolean(user?.can_manage_leave_requests);
 
@@ -323,6 +368,13 @@ export default function LeaveRequestsAdminListPage() {
       setSortDir("asc");
     }
   }
+
+  // ⚠️ فهرست واحدها از خودِ داده‌ی لودشده ساخته می‌شود (نه یک درخواست
+  // اضافه) - فقط واحدهایی که واقعاً درخواستی دارند در فیلتر ظاهر می‌شوند.
+  const availableDepartments = useMemo(() => {
+    if (!requests) return [];
+    return [...new Set(requests.map((item) => item.requester_department).filter(Boolean))].sort();
+  }, [requests]);
 
   const todayRequests = useMemo(() => {
     if (!requests) return [];
@@ -379,6 +431,73 @@ export default function LeaveRequestsAdminListPage() {
           onChange={(e) => setSearch(e.target.value)}
           sx={{ minWidth: 240 }}
         />
+        <TextField
+          select
+          label="وضعیت"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="">همه</MenuItem>
+          <MenuItem value="pending">در حال بررسی</MenuItem>
+          <MenuItem value="approved">تائید شده</MenuItem>
+          <MenuItem value="rejected">رد شده</MenuItem>
+        </TextField>
+        <TextField
+          select
+          label="نوع درخواست"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">همه</MenuItem>
+          {types.map((t) => (
+            <MenuItem key={t.id} value={t.id}>
+              {t.title}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          label="واحد"
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          sx={{ minWidth: 180 }}
+        >
+          <MenuItem value="">همه</MenuItem>
+          {availableDepartments.map((d) => (
+            <MenuItem key={d} value={d}>
+              {d}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Button
+          variant="outlined"
+          startIcon={<FileDownloadOutlinedIcon />}
+          onClick={handleExport}
+          disabled={isExporting || !siteId}
+        >
+          {isExporting ? "در حال آماده‌سازی..." : "خروجی Excel"}
+        </Button>
+      </Stack>
+
+      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          بازه تاریخ مرخصی/ماموریت:
+        </Typography>
+        <JalaliDateTimePicker value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
+        <JalaliDateTimePicker value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
+        {(dateFrom || dateTo) && (
+          <Button
+            size="small"
+            onClick={() => {
+              setDateFrom(null);
+              setDateTo(null);
+            }}
+          >
+            حذف فیلتر تاریخ
+          </Button>
+        )}
       </Stack>
 
       {error && (

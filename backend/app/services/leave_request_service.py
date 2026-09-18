@@ -16,6 +16,7 @@ Sync Engine/گزارش تردد ماهانه.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime
 
 import pymssql
@@ -38,6 +39,10 @@ from app.core.security import decrypt_secret
 from app.models.employee import Employee
 from app.models.leave_request import LeaveRequestApprover, LeaveRequestMapping, LeaveRequestType
 from app.models.site import DbType, SiteConnection
+from app.models.user import User
+from app.services.push_service import PushService
+
+logger = logging.getLogger(__name__)
 
 
 class LeaveRequestError(Exception):
@@ -529,6 +534,10 @@ class LeaveRequestService:
         except LeaveRequestRulesError as e:
             raise LeaveRequestError(str(e)) from e
 
+        await self._ensure_no_overlap(
+            site_connection, mapping, employee, start_date, effective_end_date, start_hour, end_hour
+        )
+
         jalali_start = jdatetime.date.fromgregorian(date=start_date)
         persian_start_date = jalali_date_to_compact(jalali_start.year, jalali_start.month, jalali_start.day)
 
@@ -563,7 +572,45 @@ class LeaveRequestService:
             # حالا متن خطای خام (که معمولاً شامل نام ستون/محدودیت مشکل‌دار
             # است) مستقیماً نمایش داده می‌شود تا علت واقعی مشخص شود.
             raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
+
+        # ⚠️ اطلاع‌رسانی به تأییدکننده - هرگز نباید خودِ ثبت درخواست را
+        # متوقف کند (اگر Push پیکربندی نشده یا خطا داد، درخواست همچنان
+        # با موفقیت ثبت شده است).
+        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
+
         return {"request_id": new_request_id}
+
+    async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int) -> None:
+        try:
+            result = await self.db.execute(
+                select(User)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(Employee.site_id == site_id, Employee.personnel_code == str(cur_emp_no))
+            )
+            approver_user = result.scalar_one_or_none()
+            if approver_user is None:
+                return
+            await PushService(self.db).notify_users(
+                {approver_user.id}, url="/leave-requests?tab=pending", priority="normal"
+            )
+        except Exception:
+            logger.exception("ارسال Push برای درخواست مرخصی/ماموریت جدید با خطا مواجه شد")
+
+    async def _notify_requester_of_decision(self, site_id: int, emp_no: int) -> None:
+        try:
+            result = await self.db.execute(
+                select(User)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no))
+            )
+            requester_user = result.scalar_one_or_none()
+            if requester_user is None:
+                return
+            await PushService(self.db).notify_users(
+                {requester_user.id}, url="/leave-requests?tab=my-requests", priority="normal"
+            )
+        except Exception:
+            logger.exception("ارسال Push برای تصمیم درخواست مرخصی/ماموریت با خطا مواجه شد")
 
     # ---------- خواندن/نمایش ----------
 
@@ -600,6 +647,68 @@ class LeaveRequestService:
             for e in employees
             if e.personnel_code.isdigit()
         }
+
+    async def _ensure_no_overlap(
+        self,
+        site_connection,
+        mapping: LeaveRequestMapping,
+        employee: Employee,
+        start_date: date,
+        end_date: date | None,
+        start_hour: int | None,
+        end_hour: int | None,
+    ) -> None:
+        """
+        ⚠️ طبق درخواست صریح کاربر: جلوگیری از ثبت دو درخواست هم‌پوشان برای
+        یک نفر. فقط درخواست‌های «در حال بررسی» و «تأییدشده» مانع می‌شوند -
+        درخواست ردشده هیچ تداخلی ایجاد نمی‌کند.
+
+        برای نوع ساعتی، تداخل یعنی همان روز و هم‌پوشانی بازه ساعت‌ها؛ برای
+        نوع روزانه، تداخل یعنی هم‌پوشانی بازه‌ی روزها. یک درخواست ساعتی و
+        یک درخواست روزانه در همان روز هم تداخل محسوب می‌شوند.
+        """
+        emp_no = _to_personnel_code_int(employee)
+        col = _quote(site_connection.db_type, mapping.emp_no_column)
+        rows = await asyncio.to_thread(
+            _select_requests_sync, site_connection, mapping, f"{col} = %(emp_no)s", {"emp_no": emp_no}
+        )
+        new_start = start_date
+        new_end = end_date or start_date
+
+        for row in rows:
+            if row.get("IsFinalApproved") is False:
+                continue  # ردشده - مانع نیست
+            existing_start_raw = row.get("StartDate")
+            if not existing_start_raw:
+                continue
+            existing_start = existing_start_raw.date() if hasattr(existing_start_raw, "date") else existing_start_raw
+            existing_end_raw = row.get("EndDate")
+            existing_end = (
+                (existing_end_raw.date() if hasattr(existing_end_raw, "date") else existing_end_raw)
+                if existing_end_raw
+                else existing_start
+            )
+            if new_end < existing_start or new_start > existing_end:
+                continue  # هیچ روز مشترکی ندارند
+
+            existing_start_hour = row.get("StartHour")
+            # اگر هر دو ساعتی‌اند، فقط وقتی تداخل است که بازه ساعت‌ها هم بریده شوند
+            if start_hour is not None and existing_start_hour is not None:
+                existing_end_hour = row.get("EndHour")
+                if existing_end_hour is None or end_hour is None:
+                    raise LeaveRequestError("برای همین بازه زمانی از قبل درخواستی ثبت کرده‌اید")
+                if end_hour <= existing_start_hour or start_hour >= existing_end_hour:
+                    continue
+            raise LeaveRequestError("برای همین بازه زمانی از قبل درخواستی ثبت کرده‌اید")
+
+    async def get_pending_count_for_approver(self, approver_employee: Employee) -> int:
+        """⚠️ برای شمارنده روی کارت داشبورد پرسنل (مثل شمارنده ارزیابی عملکرد) - تعداد درخواست‌های در انتظار تصمیم این فرد."""
+        try:
+            pending = await self.list_pending_for_approver(approver_employee)
+        except LeaveRequestError:
+            # اگر این سایت اصلاً نگاشت مرخصی/ماموریت ندارد، شمارنده صفر است - نه خطا
+            return 0
+        return len(pending)
 
     async def delete_request(self, request_id: int, employee: Employee) -> None:
         """
@@ -676,7 +785,16 @@ class LeaveRequestService:
             normalized.append(item)
         return normalized
 
-    async def list_all_for_site(self, site_id: int, allowed_type_ids: list | None = None) -> list[dict]:
+    async def list_all_for_site(
+        self,
+        site_id: int,
+        allowed_type_ids: list | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        status_filter: str | None = None,
+        type_id_filter: int | None = None,
+        department_filter: str | None = None,
+    ) -> list[dict]:
         """
         ⚠️ فقط برای دارندگان مجوز leave_requests.view/leave_requests.manage
         (یا مجوز محدود به تفکیک نوع - LeaveRequestTypeViewer).
@@ -685,6 +803,10 @@ class LeaveRequestService:
         کاربر مجوز سراسری ندارد، فقط به چند نوع خاص دسترسی دارد)، فقط
         درخواست‌هایی که با یکی از آن نوع‌ها تطبیق دارند برگردانده می‌شوند
         - نه همه‌ی درخواست‌های سایت.
+
+        ⚠️ فیلترهای گزارشی (بازه تاریخی، وضعیت، نوع، واحد) - بازه تاریخی
+        بر اساس تاریخ خودِ مرخصی/ماموریت است (نه تاریخ ثبت)، چون گزارش‌گیری
+        واقعی همیشه «چه کسانی در فلان بازه مرخصی بودند» است.
         """
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
@@ -695,7 +817,24 @@ class LeaveRequestService:
             item = _normalize_row(row, type_lookup)
             if allowed_type_ids is not None and item["type_id"] not in allowed_type_ids:
                 continue
+            if type_id_filter is not None and item["type_id"] != type_id_filter:
+                continue
+            if status_filter and item["status"] != status_filter:
+                continue
+            if date_from or date_to:
+                item_start = item["start_date"]
+                if item_start is None:
+                    continue
+                item_start = item_start.date() if hasattr(item_start, "date") else item_start
+                item_end = item["end_date"] or item["start_date"]
+                item_end = item_end.date() if hasattr(item_end, "date") else item_end
+                if date_to and item_start > date_to:
+                    continue
+                if date_from and item_end < date_from:
+                    continue
             info = requester_info.get(item["emp_no"], {})
+            if department_filter and info.get("department") != department_filter:
+                continue
             item["requester_name"] = info.get("name")
             item["requester_department"] = info.get("department")
             normalized.append(item)
@@ -807,6 +946,11 @@ class LeaveRequestService:
                 manager_idea or "",
                 review_type,
             )
+
+        # ⚠️ اطلاع‌رسانی به درخواست‌دهنده - هرگز نباید خودِ تصمیم را متوقف کند.
+        requester_emp_no = request_row.get("EmpNo")
+        if requester_emp_no is not None:
+            await self._notify_requester_of_decision(approver_employee.site_id, requester_emp_no)
 
     # ---------- ویرایش مدیریتی (فقط leave_requests.manage) ----------
 
