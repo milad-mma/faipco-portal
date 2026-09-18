@@ -265,9 +265,18 @@ class NoticeService:
 
         target_conditions = [NoticeTarget.target_type == NoticeTargetType.all]
 
+        # ⚠️ طبق درخواست صریح کاربر: پرسنلی که تازه از طریق Sync به پرتال
+        # اضافه شده، نباید اطلاعیه‌های قبل از ورودش را ببیند. مبنا
+        # Employee.created_at است - یعنی دقیقاً همان لحظه‌ای که Sync این
+        # ردیف را ساخته (این ستون فقط هنگام INSERT مقدار می‌گیرد و در
+        # به‌روزرسانی‌های بعدی Sync دست‌نخورده می‌ماند، پس واقعاً «تاریخ
+        # ورود» است، نه آخرین همگام‌سازی).
+        joined_at = None
+
         if user.employee_id is not None:
             employee = await self.db.get(Employee, user.employee_id)
             if employee is not None:
+                joined_at = employee.created_at
                 target_conditions.append(
                     and_(
                         NoticeTarget.target_type == NoticeTargetType.site,
@@ -310,6 +319,19 @@ class NoticeService:
             or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
             Notice.id.in_(matching_notice_ids),
         )
+
+        # ⚠️ فقط اطلاعیه‌هایی که **بعد از** پیوستن این پرسنل منتشر شده‌اند.
+        # مبنای مقایسه publish_at است (زمان واقعی انتشار)، و اگر تعیین
+        # نشده باشد به created_at خودِ اطلاعیه برمی‌گردیم - چون اطلاعیه‌ی
+        # بدون publish_at بلافاصله منتشر شده است.
+        #
+        # کاربران مدیریتی محض (بدون employee_id، مثل admin) این محدودیت را
+        # نمی‌گیرند - آن‌ها تاریخ پیوستنی ندارند و باید همه را ببینند.
+        if joined_at is not None:
+            base_filters = (
+                *base_filters,
+                func.coalesce(Notice.publish_at, Notice.created_at) >= joined_at,
+            )
         # فیلتر نوع (فقط فیش حقوقی / فقط فیش کارکرد) — برای صفحه اختصاصی هرکدام
         if notice_type is not None:
             base_filters = (*base_filters, Notice.notice_type == notice_type)
