@@ -154,23 +154,41 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
         bgcolor: "#fff",
         direction: "ltr",
         flexShrink: 0,
+        // ⚠️ طبق گزارش کاربر: اندازه پلاک بین ردیف‌ها متغیر بود. علت این
+        // بود که عرض از روی محتوا محاسبه می‌شد - مثلاً «۱۱» باریک‌تر از
+        // «۸۸» رندر می‌شد و پلاک ناقص از پلاک کامل کوچک‌تر. حالا ابعاد
+        // ثابت است تا همه پلاک‌ها دقیقاً یک اندازه باشند.
+        width: 168,
+        height: 38,
       }}
     >
       <Box
         sx={{
+          flex: 1,
           display: "flex",
           alignItems: "center",
+          justifyContent: "center",
           gap: 0.75,
           px: 1,
-          py: 0.5,
           fontSize: 16,
           fontWeight: 800,
           color: "#16324F",
+          // ⚠️ اعداد با عرض یکسان رندر می‌شوند تا جابه‌جایی رقم‌ها باعث
+          // تکان‌خوردن چیدمان نشود.
+          fontVariantNumeric: "tabular-nums",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
         }}
       >
-        <span>{digits1}</span>
-        <span>{letter}</span>
-        <span>{digits2}</span>
+        <Box component="span" sx={{ minWidth: 26, textAlign: "center" }}>
+          {digits1}
+        </Box>
+        <Box component="span" sx={{ minWidth: 16, textAlign: "center" }}>
+          {letter}
+        </Box>
+        <Box component="span" sx={{ minWidth: 38, textAlign: "center" }}>
+          {digits2}
+        </Box>
       </Box>
       <Box
         sx={{
@@ -180,7 +198,9 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          px: 0.75,
+          // عرض ثابت - وگرنه کد استان تک‌رقمی بلوک را باریک‌تر می‌کرد.
+          width: 38,
+          flexShrink: 0,
         }}
       >
         <Box sx={{ fontSize: 8, fontWeight: 800, color: "#16324F" }}>ایران</Box>
