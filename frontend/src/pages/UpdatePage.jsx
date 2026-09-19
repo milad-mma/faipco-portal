@@ -14,6 +14,7 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import { applyUpdate, checkForUpdate, fetchUpdateStatus } from "../api/system";
 import { monoFontSx } from "../theme";
+import AnnouncementSettings from "../components/AnnouncementSettings";
 
 const CONFIRM_PHRASE = "UPDATE";
 const POLL_INTERVAL_MS = 3000;
@@ -231,6 +232,13 @@ export default function UpdatePage() {
           )}
         </Card>
       )}
+
+      {/* ⚠️ طبق درخواست صریح کاربر: ویرایشگر اعلان تغییرات در همین صفحه
+          بررسی و اعمال آپدیت قرار می‌گیرد - چون معمولاً بلافاصله پس از
+          اعمال یک آپدیت، ادمین می‌خواهد تغییرات را به کاربران اطلاع دهد. */}
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>
+        <AnnouncementSettings />
+      </Card>
     </Box>
   );
 }

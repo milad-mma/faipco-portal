@@ -14,6 +14,10 @@ SYNC_INTERVAL_KEY = "sync_interval_minutes"
 LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"  # ISO-format UTC — برای تشخیص «الان وقتشه یا نه» مستقل از هر Worker
 IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
 IP_ALLOWLIST_ENABLED_KEY = "ip_allowlist_enabled"
+ANNOUNCEMENT_ENABLED_KEY = "announcement_enabled"
+ANNOUNCEMENT_TITLE_KEY = "announcement_title"
+ANNOUNCEMENT_BODY_KEY = "announcement_body"
+ANNOUNCEMENT_VERSION_KEY = "announcement_version"
 BIRTHDAY_SEND_TIME_KEY = "birthday_send_time"  # فرمت "HH:MM"
 BIRTHDAY_GREETINGS_ENABLED_KEY = "birthday_greetings_enabled"
 LAST_BIRTHDAY_GREETINGS_DATE_KEY = "last_birthday_greetings_date"  # فرمت شمسی "YYYY-MM-DD"
@@ -124,6 +128,38 @@ class SystemSettingsService:
         return message
 
     # ---------- کلید فعال/غیرفعال محدودیت IP — مستقل از این‌که رنجی ثبت شده یا نه ----------
+
+    # ---------- اعلان تغییرات پرتال (دیالوگ خوش‌آمد) ----------
+
+    async def get_announcement(self) -> dict:
+        """
+        ⚠️ اعلان تغییرات اخیر پرتال که هنگام ورود به کاربر نمایش داده
+        می‌شود.
+
+        `version` کلید اصلی طراحی است: وقتی ادمین متن را ویرایش می‌کند،
+        نسخه یک واحد بالا می‌رود. کاربری که قبلاً «دیگر نمایش نده» زده،
+        اعلان **جدید** را دوباره می‌بیند - وگرنه یک‌بار رد کردن یعنی
+        هرگز ندیدن هیچ اعلان بعدی.
+        """
+        raw_version = await self._get_raw(ANNOUNCEMENT_VERSION_KEY)
+        return {
+            "enabled": (await self._get_raw(ANNOUNCEMENT_ENABLED_KEY)) == "true",
+            "title": await self._get_raw(ANNOUNCEMENT_TITLE_KEY) or "",
+            "body": await self._get_raw(ANNOUNCEMENT_BODY_KEY) or "",
+            "version": int(raw_version) if raw_version and raw_version.isdigit() else 0,
+        }
+
+    async def set_announcement(self, enabled: bool, title: str, body: str) -> dict:
+        """⚠️ هر ذخیره‌ای که **محتوا** را عوض کند، نسخه را بالا می‌برد تا همه دوباره ببینند."""
+        current = await self.get_announcement()
+        version = current["version"]
+        if title != current["title"] or body != current["body"]:
+            version += 1
+        await self._set_raw(ANNOUNCEMENT_ENABLED_KEY, "true" if enabled else "false")
+        await self._set_raw(ANNOUNCEMENT_TITLE_KEY, title)
+        await self._set_raw(ANNOUNCEMENT_BODY_KEY, body)
+        await self._set_raw(ANNOUNCEMENT_VERSION_KEY, str(version))
+        return {"enabled": enabled, "title": title, "body": body, "version": version}
 
     # ---------- پیش‌نیازهای دسترسی (اطلاعیه خوانده‌نشده / ارزیابی انجام‌نشده) ----------
 

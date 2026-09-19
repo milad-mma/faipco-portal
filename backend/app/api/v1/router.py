@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     access_gate,
+    announcement,
     attendance,
     auth,
     backup,
@@ -56,3 +57,4 @@ api_router.include_router(evaluation_reports.router, prefix="/performance/report
 api_router.include_router(leave_requests.router, prefix="/leave-requests", tags=["leave-requests"])
 api_router.include_router(leave_requests_admin.router, prefix="/leave-requests", tags=["leave-requests"])
 api_router.include_router(access_gate.router, prefix="/access-gate", tags=["access-gate"])
+api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])

@@ -35,6 +35,7 @@ import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { usePresenceMonitor } from "../utils/presenceSocket";
+import AnnouncementDialog from "./AnnouncementDialog";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { NAV_ITEMS, isItemVisible } from "../config/navItems";
@@ -547,6 +548,11 @@ export default function Layout() {
       )}
 
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
+
+      {/* ⚠️ اینجا (نه main.jsx) mount می‌شود چون Layout فقط برای کاربر
+          لاگین‌شده رندر می‌شود - وگرنه در صفحه ورود هم درخواست می‌رفت و
+          ۴۰۱ می‌گرفت. */}
+      <AnnouncementDialog />
 
       <Snackbar
         open={Boolean(snackbar)}

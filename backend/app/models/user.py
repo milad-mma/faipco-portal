@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -43,6 +43,10 @@ class User(Base, TimestampMixin):
     # یک مقدار تصادفی غیرقابل‌حدس است (نه چیزی که کسی واقعاً بداند) و ورود
     # همچنان از مسیر کد ملی انجام می‌شود.
     has_custom_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ⚠️ آخرین نسخه اعلان تغییرات که این کاربر «دیگر نمایش نده» زده است.
+    # روی خودِ کاربر ذخیره می‌شود (نه localStorage) تا با عوض‌کردن مرورگر
+    # یا دستگاه، اعلانِ قبلاً ردشده دوباره ظاهر نشود.
+    dismissed_announcement_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # اگر True باشد، کاربر بعد از ورود موفق، تا وقتی رمز عبورش را عوض نکند
     # (طبق قانون قدرت رمز — حداقل ۱۰ کاراکتر + حرف کوچک + حرف بزرگ + عدد)
