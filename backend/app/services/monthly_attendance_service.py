@@ -345,6 +345,34 @@ async def get_monthly_attendance(
     for row in raw_rows:
         rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
 
+    def _mark(card_no: int, start: int | None, end: int | None) -> dict:
+        mark = _label(card_no)
+        mark["from"] = _format_time(start % 2400) if start is not None else None
+        mark["to"] = _format_time(end % 2400) if end is not None else None
+        mark["minutes"] = _minutes_between(start, end)
+        return mark
+
+    # ⚠️ علامت مرخصی/ماموریت ساعتی - دقیقاً مثل محاسبه کاراوب (کارکرد روزانه،
+    # ستون S_Sha): تردد «ورود» (اول/سوم/...) یعنی از خروج قبلی یا شروع شیفت تا
+    # همین تردد؛ تردد «خروج» (دوم/چهارم/...) یعنی از همین تردد تا ورود بعدی یا
+    # پایان شیفت. ترتیب ورود/خروج از کارکرد روزانه کاراوب خوانده می‌شود تا شیفت
+    # شب/گردشی (خروج بعد از نیمه‌شب که تاریخ روز بعد را دارد) هم درست باشد؛
+    # علامت کارت (Status) همیشه از خودِ جدول تردد (زنده) خوانده می‌شود.
+    shift_punch_marks: dict[tuple[int, int], dict | None] = {}
+    shift_hourly: dict[int, list[dict]] = {}
+    for shift_date, info in ((overlay or {}).get("shift_days") or {}).items():
+        times = info["cards"]
+        for index, kara_time in enumerate(times):
+            actual_date = shift_date if kara_time < 2400 else kara_attendance_overlay.next_jalali_date(shift_date)
+            actual_time = kara_time % 2400
+            status_code = overlay["punch_status"].get((actual_date, actual_time))
+            mark = None
+            if status_code:
+                start, end = kara_attendance_overlay.hourly_interval(times, index, info["bounds"])
+                mark = _mark(status_code, start, end)
+                shift_hourly.setdefault(shift_date, []).append(mark)
+            shift_punch_marks[(actual_date, actual_time)] = mark
+
     today_int = _today_jalali_int()
     days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
     max_transits = 0
@@ -366,25 +394,26 @@ async def get_monthly_attendance(
         hourly: list[dict] = []
         daily_mark = None
         if overlay is not None:
-            shift = (overlay.get("shift_times") or {}).get(date_int)
-            times = [r["AttendanceTime"] for r in day_rows]
-            for index, r in enumerate(day_rows):
-                status_code = overlay["punch_status"].get((date_int, r["AttendanceTime"]))
-                if not status_code:
-                    transit_marks.append(None)
-                    continue
-                mark = _label(status_code)
-                if index % 2 == 0:  # ورود
-                    start = times[index - 1] if index > 0 else (shift[0] if shift else None)
-                    end = times[index]
-                else:  # خروج
-                    start = times[index]
-                    end = times[index + 1] if index + 1 < len(times) else (shift[1] if shift else None)
-                mark["from"] = _format_time(start) if start is not None else None
-                mark["to"] = _format_time(end) if end is not None else None
-                mark["minutes"] = _minutes_between(start, end)
-                transit_marks.append(mark)
-                hourly.append(mark)
+            covered = all((date_int, t) in shift_punch_marks for t in (r["AttendanceTime"] for r in day_rows))
+            if covered:
+                # ترددهای این روز در کارکرد روزانه کاراوب شیفت‌بندی شده‌اند
+                for r in day_rows:
+                    mark = shift_punch_marks[(date_int, r["AttendanceTime"])]
+                    transit_marks.append(mark)
+                hourly.extend(shift_hourly.get(date_int, []))
+            else:
+                # هنوز در کارکرد روزانه محاسبه نشده - همان قاعده روی ترددهای خام همین تاریخ
+                shift = (overlay.get("shift_times") or {}).get(date_int)
+                times = [r["AttendanceTime"] for r in day_rows]
+                for index, r in enumerate(day_rows):
+                    status_code = overlay["punch_status"].get((date_int, r["AttendanceTime"]))
+                    if not status_code:
+                        transit_marks.append(None)
+                        continue
+                    start, end = kara_attendance_overlay.hourly_interval(times, index, shift)
+                    mark = _mark(status_code, start, end)
+                    transit_marks.append(mark)
+                    hourly.append(mark)
             daily_code = overlay["daily"].get(date_int)
             if daily_code and day not in holidays:
                 daily_mark = _label(daily_code)

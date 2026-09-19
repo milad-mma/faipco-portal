@@ -243,7 +243,9 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
                     ? "نام جدول"
                     : role === "day_prefix"
                       ? "پیشوند ستون روزها"
-                      : `ستون ${defaults[key]}`;
+                      : role === "card_prefix"
+                        ? "پیشوند ستون ترددها (۱ تا ۲۴)"
+                        : `ستون ${defaults[key]}`;
                 return (
                   <TextField
                     key={key}

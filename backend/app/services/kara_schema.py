@@ -149,6 +149,9 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "daily_work.emp_no": "Emp_No",
     "daily_work.date": "Date",
     "daily_work.shift_no": "Shift_No",
+    # ترددهای هر روزِ شیفت به‌ترتیب (Card1..Card24) - کاراوب ترددهای بعد از نیمه‌شبِ
+    # شیفت شب را به همان روز شیفت نسبت می‌دهد و ساعت را +۲۴۰۰ می‌نویسد (مثلاً ۲۵۵۰)
+    "daily_work.card_prefix": "Card",
     # شیفت‌ها
     "shifts.table": "Shifts",
     "shifts.shift_no": "Shift_No",
@@ -160,6 +163,9 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "shifts.start_time5": "Start_Time5",
     "shifts.end_time": "End_Time",
     "shifts.end_time5": "End_Time5",
+    # شیفت شب: پایان شیفت روز بعد است
+    "shifts.added_day": "AddedDay",
+    "shifts.added_day5": "AddedDay5",
     # تقویم شیفت گروهی
     "grp_shift.table": "GrpShift",
     "grp_shift.grp_no": "Grp_No",

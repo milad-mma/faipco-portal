@@ -40,6 +40,9 @@ KIND_LEAVE = "leave"
 KIND_MISSION = "mission"
 KIND_OTHER = "other"
 
+# تعداد ستون‌های تردد کارکرد روزانه کاراوب (Card1..Card24)
+DAILY_WORK_CARDS = 24
+
 
 def _connect(conn: SiteConnection):
     return pymssql.connect(
@@ -62,6 +65,26 @@ def _clean_title(title: str | None) -> str:
 def _is_thursday(date_int: int) -> bool:
     j = jdatetime.date(date_int // 10000, (date_int // 100) % 100, date_int % 100)
     return j.togregorian().weekday() == 3
+
+
+def next_jalali_date(date_int: int) -> int:
+    j = jdatetime.date(date_int // 10000, (date_int // 100) % 100, date_int % 100) + jdatetime.timedelta(days=1)
+    return j.year * 10000 + j.month * 100 + j.day
+
+
+def hourly_interval(times: list[int], index: int, bounds: tuple[int, int] | None) -> tuple[int | None, int | None]:
+    """
+    بازه مرخصی/ماموریت ساعتیِ کارتِ زده‌شده روی times[index] - دقیقاً مثل
+    کاراوب (با S_Sha کارکرد روزانه مقایسه شد، شامل شیفت شب):
+      ورود (اندیس زوج): از خروج قبلی یا شروع شیفت تا همین تردد
+      خروج (اندیس فرد): از همین تردد تا ورود بعدی یا پایان شیفت
+    ساعت‌ها فشرده HHMM هستند و می‌توانند از ۲۴۰۰ بیشتر باشند (روز بعد).
+    """
+    if index % 2 == 0:
+        start = times[index - 1] if index > 0 else (bounds[0] if bounds else None)
+        return start, times[index]
+    end = times[index + 1] if index + 1 < len(times) else (bounds[1] if bounds else None)
+    return times[index], end
 
 
 def _kind_for_card_type(card_type) -> str:
@@ -90,6 +113,7 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
     daily_rows: list = []
     work_calendar: dict[int, bool] = {}
     shift_times: dict[int, tuple[int, int]] = {}
+    shift_days: dict[int, dict] = {}
     cards: dict[int, dict] = {}
     connection = _connect(conn)
     try:
@@ -123,16 +147,25 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
             # شیفت آن روز در کارکرد روزانه، در جدول شیفت‌ها تعریف نشده (مثل ۵۰۱)
             if n.can_read_work_calendar:
                 W = lambda role: n.c("daily_work", role)  # noqa: E731
-                sh_no = n.c("shifts", "shift_no")
-                with_times = all(n.has("shifts", r) for r in ("start_time", "start_time5", "end_time", "end_time5"))
-                times_sql = (
-                    f", s.{n.c('shifts', 'start_time')} AS StartTime, s.{n.c('shifts', 'start_time5')} AS StartTime5, "
-                    f"s.{n.c('shifts', 'end_time')} AS EndTime, s.{n.c('shifts', 'end_time5')} AS EndTime5"
-                    if with_times
-                    else ""
+                S = lambda role: n.c("shifts", role)  # noqa: E731
+                sh_no = S("shift_no")
+                with_times = all(
+                    n.has("shifts", r)
+                    for r in ("start_time", "start_time5", "end_time", "end_time5", "added_day", "added_day5")
                 )
+                with_cards = with_times and n.has("daily_work", "card_prefix")
+                extra_sql = ""
+                if with_times:
+                    extra_sql += (
+                        f", s.{S('start_time')} AS StartTime, s.{S('start_time5')} AS StartTime5, "
+                        f"s.{S('end_time')} AS EndTime, s.{S('end_time5')} AS EndTime5, "
+                        f"s.{S('added_day')} AS AddedDay, s.{S('added_day5')} AS AddedDay5"
+                    )
+                if with_cards:
+                    prefix = n.raw("daily_work", "card_prefix")
+                    extra_sql += "".join(f", w.[{prefix}{i}] AS C{i}" for i in range(1, DAILY_WORK_CARDS + 1))
                 cur.execute(
-                    f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff{times_sql} "
+                    f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff{extra_sql} "
                     f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
                     f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
                     {"e": emp_no, "f": from_date, "t": to_date},
@@ -140,12 +173,19 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
                 for r in cur.fetchall():
                     date_int = int(r["DateInt"])
                     work_calendar[date_int] = bool(r["IsOff"])
+                    bounds = None
                     if with_times and not r["IsOff"]:
                         thursday = _is_thursday(date_int)
                         start = r["StartTime5"] if thursday else r["StartTime"]
                         end = r["EndTime5"] if thursday else r["EndTime"]
+                        added = r["AddedDay5"] if thursday else r["AddedDay"]
                         if start is not None and end is not None:
-                            shift_times[date_int] = (int(start), int(end))
+                            # مثل کاراوب: ساعت روز بعد = +۲۴۰۰
+                            bounds = (int(start), int(end) + (2400 if added else 0))
+                            shift_times[date_int] = bounds
+                    if with_cards:
+                        times = [int(r[f"C{i}"]) for i in range(1, DAILY_WORK_CARDS + 1) if r.get(f"C{i}") is not None]
+                        shift_days[date_int] = {"bounds": bounds, "cards": times}
 
             card_nos = set(punch_status.values()) | {int(r["CardNo"]) for r in daily_rows}
             if card_nos and n.has_cards and getattr(n.leave, "card_lookup_desc_column", None):
@@ -181,6 +221,8 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
         "cards": cards,
         "work_calendar": work_calendar,
         "shift_times": shift_times,
+        # ترددهای هر روزِ شیفت از کارکرد روزانه کاراوب (ساعت بعد از نیمه‌شب = +۲۴۰۰)
+        "shift_days": shift_days,
         # «غیبت» فقط وقتی قابل‌تشخیص است که مرخصی/ماموریت روزانه خوانده شده باشد
         "daily_enabled": n.can_read_daily_marks,
     }
