@@ -2,16 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
+  Chip,
   CircularProgress,
   Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
@@ -49,7 +53,16 @@ import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
  * سیستم آزمایشی GPS) — این یک منبع داده متفاوت (دستگاه حضور و غیاب واقعی
  * کارخانه) و یک صفحه کاملاً جدا است.
  */
+// ⚠️ مرخصی/ماموریت (فقط سایت‌های کاراوب): روزانه از Mor_Mam، ساعتی از
+// علامت (Status) خودِ تردد - بازه از همان تردد تا تردد بعدی.
+const KIND_COLOR = { leave: "success", mission: "info", other: "warning" };
+
+function hourlyText(mark) {
+  return mark.to ? `${mark.label} ${mark.from} تا ${mark.to}` : `${mark.label} از ${mark.from}`;
+}
+
 export default function MonthlyAttendanceReportPage() {
+  const theme = useTheme();
   const [period, setPeriod] = useState({ year: null, month: null }); // مقدار اولیه از پاسخ سرور پر می‌شود
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,6 +100,16 @@ export default function MonthlyAttendanceReportPage() {
   }, [period.year, period.month]);
 
   const transitColumnCount = report?.max_transits_in_month || 1; // حداقل یک ستون، حتی اگر ماه کلاً خالی باشد
+  // ستون «مرخصی / ماموریت» فقط وقتی نمایش داده می‌شود که در این ماه واقعاً موردی باشد
+  const hasAbsences = Boolean(
+    report?.days?.some((d) => d.daily_absence || (d.hourly_absences && d.hourly_absences.length))
+  );
+
+  function rowBackground(day) {
+    if (day.is_holiday) return "rgba(211, 47, 47, 0.08)";
+    if (day.daily_absence) return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
+    return undefined;
+  }
 
   // بعد از هر رندر جدول (تغییر داده یا تعداد ستون‌ها)، عرض واقعی قابل‌اسکرول
   // جدول را اندازه می‌گیریم تا اسکرول‌بار بالایی هم دقیقاً همان عرض را داشته باشد.
@@ -135,6 +158,14 @@ export default function MonthlyAttendanceReportPage() {
         />
       </Box>
 
+      {hasAbsences && (
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+          <Chip size="small" color="success" variant="outlined" label="مرخصی" />
+          <Chip size="small" color="info" variant="outlined" label="ماموریت" />
+          <Chip size="small" color="error" variant="outlined" label="تعطیل" />
+        </Stack>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -162,6 +193,7 @@ export default function MonthlyAttendanceReportPage() {
                 <TableRow>
                   <TableCell>روز هفته</TableCell>
                   <TableCell>تاریخ</TableCell>
+                  {hasAbsences && <TableCell>مرخصی / ماموریت</TableCell>}
                   {Array.from({ length: transitColumnCount }, (_, i) => (
                     <TableCell key={i} align="center">
                       {`تردد ${i + 1}`}
@@ -171,7 +203,7 @@ export default function MonthlyAttendanceReportPage() {
               </TableHead>
               <TableBody>
                 {report.days.map((day) => (
-                  <TableRow key={day.date} hover sx={day.is_holiday ? { bgcolor: "rgba(211, 47, 47, 0.08)" } : undefined}>
+                  <TableRow key={day.date} hover sx={{ bgcolor: rowBackground(day) }}>
                     <TableCell sx={{ color: day.is_holiday ? "error.main" : undefined, fontWeight: day.is_holiday ? 700 : undefined }}>
                       {day.weekday}
                     </TableCell>
@@ -184,15 +216,55 @@ export default function MonthlyAttendanceReportPage() {
                     >
                       {day.date}
                     </TableCell>
-                    {Array.from({ length: transitColumnCount }, (_, i) => (
-                      <TableCell
-                        key={i}
-                        align="center"
-                        sx={{ fontFamily: "monospace", color: day.is_holiday ? "error.main" : undefined }}
-                      >
-                        {day.transits[i] || "—"}
+                    {hasAbsences && (
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                          {day.daily_absence && (
+                            <Chip
+                              size="small"
+                              color={KIND_COLOR[day.daily_absence.kind]}
+                              label={day.daily_absence.label}
+                            />
+                          )}
+                          {(day.hourly_absences || []).map((mark, idx) => (
+                            <Chip
+                              key={idx}
+                              size="small"
+                              variant="outlined"
+                              color={KIND_COLOR[mark.kind]}
+                              label={hourlyText(mark)}
+                            />
+                          ))}
+                        </Stack>
                       </TableCell>
-                    ))}
+                    )}
+                    {Array.from({ length: transitColumnCount }, (_, i) => {
+                      const mark = day.transit_marks?.[i];
+                      const cell = (
+                        <TableCell
+                          key={i}
+                          align="center"
+                          sx={{
+                            fontFamily: "monospace",
+                            color: mark
+                              ? `${KIND_COLOR[mark.kind]}.main`
+                              : day.is_holiday
+                                ? "error.main"
+                                : undefined,
+                            fontWeight: mark ? 700 : undefined,
+                          }}
+                        >
+                          {day.transits[i] || "—"}
+                        </TableCell>
+                      );
+                      return mark ? (
+                        <Tooltip key={i} title={hourlyText(mark)} arrow>
+                          {cell}
+                        </Tooltip>
+                      ) : (
+                        cell
+                      );
+                    })}
                   </TableRow>
                 ))}
               </TableBody>

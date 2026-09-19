@@ -21,6 +21,7 @@ from app.core.deps import get_current_user
 from app.core.persian_date import get_current_jalali_year_month
 from app.db.session import get_db
 from app.models.employee import Employee
+from app.models.leave_request import LeaveRequestMapping, LeaveRequestType
 from app.models.site import AttendanceMapping, SiteConnection
 from app.models.user import User
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
@@ -73,9 +74,30 @@ async def monthly_attendance_report(
         year = year or current_year
         month = month or current_month
 
+    # ⚠️ نمایش مرخصی/ماموریت فقط وقتی هم‌رفتاری با کاراوب برای این سایت
+    # فعال است (همان تیک تنظیمات درخواست مرخصی/ماموریت)
+    leave_mapping = (
+        await db.execute(select(LeaveRequestMapping).where(LeaveRequestMapping.site_id == employee.site_id))
+    ).scalar_one_or_none()
+    kara_overlay = bool(leave_mapping and leave_mapping.kara_writeback_enabled)
+    type_titles: dict[int, str] = {}
+    if kara_overlay:
+        types = (
+            await db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == employee.site_id))
+        ).scalars().all()
+        for leave_type in types:
+            if leave_type.card_no is not None and leave_type.card_no not in type_titles:
+                type_titles[leave_type.card_no] = leave_type.title
+
     try:
         return await get_monthly_attendance(
-            site_connection, mapping, personnel_code=employee.personnel_code, year=year, month=month
+            site_connection,
+            mapping,
+            personnel_code=employee.personnel_code,
+            year=year,
+            month=month,
+            kara_overlay=kara_overlay,
+            type_titles=type_titles,
         )
     except MonthlyAttendanceError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))

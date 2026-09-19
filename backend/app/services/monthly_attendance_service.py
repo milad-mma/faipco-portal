@@ -39,6 +39,7 @@ import psycopg2.extras
 from app.core.persian_date import jalali_weekday_name, jalali_year_month_to_yyyymmdd_range
 from app.core.security import decrypt_secret
 from app.models.site import AttendanceMapping, AttendanceMappingMode, DbType, SiteConnection
+from app.services import kara_attendance_overlay
 
 logger = logging.getLogger("faipco.monthly_attendance")
 
@@ -263,6 +264,8 @@ async def get_monthly_attendance(
     personnel_code: str,
     year: int,
     month: int,
+    kara_overlay: bool = False,
+    type_titles: dict[int, str] | None = None,
 ) -> dict:
     """
     گزارش تردد ماهانه یک پرسنل مشخص - داده خام، دقیقاً همان‌طور که در
@@ -301,6 +304,24 @@ async def get_monthly_attendance(
         logger.exception("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id)
         holidays = set()
 
+    # ⚠️ لایه مرخصی/ماموریت (فقط کاراوب) - شکستش نباید گزارش اصلی را خراب کند
+    overlay = None
+    if kara_overlay and site_connection.db_type == DbType.mssql:
+        try:
+            overlay = await asyncio.to_thread(
+                kara_attendance_overlay.fetch_overlay_sync, site_connection, emp_no, from_date, to_date
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("خطا در دریافت مرخصی/ماموریت برای گزارش تردد (Emp_No=%s)", emp_no)
+            overlay = None
+
+    def _label(card_no: int) -> dict:
+        card = (overlay or {}).get("cards", {}).get(card_no, {})
+        # عنوان نوع درخواست تعریف‌شده در پرتال (خواناتر) مقدم است؛ در غیر
+        # این صورت عنوان رسمی همان کارت در کاراوب
+        title = (type_titles or {}).get(card_no) or card.get("title") or f"کد {card_no}"
+        return {"code": card_no, "label": title, "kind": card.get("kind", kara_attendance_overlay.KIND_OTHER)}
+
     # گروه‌بندی دقیقاً بر اساس همان ستون Date خام دستگاه - بدون هیچ تغییر
     rows_by_date: dict[int, list[dict]] = {}
     for row in raw_rows:
@@ -315,6 +336,26 @@ async def get_monthly_attendance(
         day_rows = rows_by_date.get(date_int, [])
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
+
+        # علامت مرخصی/ماموریت ساعتی روی هر تردد: بازه از همان تردد تا تردد بعدی
+        transit_marks: list[dict | None] = []
+        hourly: list[dict] = []
+        daily_mark = None
+        if overlay is not None:
+            for index, r in enumerate(day_rows):
+                status_code = overlay["punch_status"].get((date_int, r["AttendanceTime"]))
+                if not status_code:
+                    transit_marks.append(None)
+                    continue
+                mark = _label(status_code)
+                mark["from"] = transits[index]
+                mark["to"] = transits[index + 1] if index + 1 < len(transits) else None
+                transit_marks.append(mark)
+                hourly.append(mark)
+            daily_code = overlay["daily"].get(date_int)
+            if daily_code and day not in holidays:
+                daily_mark = _label(daily_code)
+
         days_out.append(
             {
                 "date": _format_jalali_date(date_int),
@@ -322,6 +363,9 @@ async def get_monthly_attendance(
                 "weekday": jalali_weekday_name(year, month, day),
                 "transits": transits,
                 "is_holiday": day in holidays,
+                "transit_marks": transit_marks,
+                "hourly_absences": hourly,
+                "daily_absence": daily_mark,
             }
         )
 

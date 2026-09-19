@@ -165,8 +165,28 @@ def _day_deduction_minutes(cur, emp_no: int, day: date) -> int:
             return 0  # شیفت غیرکاری (مثل جمعه/تعطیل - در Shifts تعریف نشده)
         return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
 
-    # هنوز ردیف DailyWork برای آن روز ساخته نشده (مثلاً ماه آینده):
-    # آخرین شیفت کاری همین فرد + قاعده روز هفته
+    # هنوز ردیف DailyWork برای آن روز ساخته نشده (DailyWork فقط تا آخر ماه
+    # جاری ساخته می‌شود). منبع بعدی، تقویم شیفت گروهی خودِ کاراوب است که
+    # برای ماه‌های آینده هم (با جمعه‌ها و تعطیلات رسمی = ۵۰۱) از قبل تنظیم
+    # شده: گروه فرد در آن تاریخ (EmpGrps) -> شیفت آن روز در GrpShift.
+    # (با داده شهریور ۱۴۰۵ مقایسه شد: ۷۶۰۹ از ۷۶۲۳ روز با DailyWork یکی بود)
+    jalali = _jalali_int(day)
+    j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
+    cur.execute(
+        f"SELECT TOP 1 s.[Kasr_Gh] AS KasrGh, s.[Kasr_Gh5] AS KasrGh5, g.[D{j_day}] AS ShiftNo "
+        "FROM [GrpShift] g LEFT JOIN [Shifts] s ON s.[Shift_No] = g.[D" + str(j_day) + "] "
+        "WHERE g.[Year] = %(y)s AND g.[Month] = %(m)s AND g.[Grp_No] = ("
+        "  SELECT TOP 1 e.[NewGrp_No] FROM [EmpGrps] e WHERE e.[Emp_No] = %(e)s AND e.[Date] <= %(d)s "
+        "  ORDER BY e.[Date] DESC)",
+        {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
+    )
+    row = cur.fetchone()
+    if row and row.get("ShiftNo") is not None:
+        if row.get("KasrGh") is None:
+            return 0  # روز غیرکاری/تعطیل در تقویم گروه
+        return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
+
+    # آخرین راه: قاعده روز هفته با آخرین شیفت کاری همین فرد
     if day.weekday() == _FRIDAY:
         return 0
     cur.execute(
