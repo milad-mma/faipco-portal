@@ -88,10 +88,15 @@ async def export_site_period_report(
 ):
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
-        report = await EvaluationReportsService(db).get_site_period_report(site_id, period_id)
+        service = EvaluationReportsService(db)
+        report = await service.get_site_period_report(site_id, period_id)
+        # ⚠️ ریز سوال/جواب‌ها در شیت جداگانه - طبق گزارش کاربر که در
+        # خروجی Excel موجود نبود. برای نسخه ایمیل‌شده هم همین داده می‌رود
+        # تا دو خروجی از هم واگرا نشوند.
+        answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_site_period_report_xlsx(report)
+    content = build_site_period_report_xlsx(report, answers)
     filename = f"performance-report-{site_id}-{period_id}.xlsx"
     return Response(
         content=content,
@@ -110,10 +115,15 @@ async def email_site_period_report(
 ):
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
-        report = await EvaluationReportsService(db).get_site_period_report(site_id, period_id)
+        service = EvaluationReportsService(db)
+        report = await service.get_site_period_report(site_id, period_id)
+        # ⚠️ ریز سوال/جواب‌ها در شیت جداگانه - طبق گزارش کاربر که در
+        # خروجی Excel موجود نبود. برای نسخه ایمیل‌شده هم همین داده می‌رود
+        # تا دو خروجی از هم واگرا نشوند.
+        answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_site_period_report_xlsx(report)
+    content = build_site_period_report_xlsx(report, answers)
     filename = f"performance-report-{site_id}-{period_id}.xlsx"
     try:
         await send_email(

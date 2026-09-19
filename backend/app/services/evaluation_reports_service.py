@@ -22,6 +22,19 @@ class EvaluationReportError(Exception):
     pass
 
 
+def _format_answer_value(answer: dict) -> str:
+    """⚠️ همان منطق نمایش در UI - تا Excel و صفحه یک چیز نشان دهند."""
+    if answer.get("text_value"):
+        return answer["text_value"]
+    if answer.get("number_value") is not None:
+        return str(answer["number_value"])
+    if answer.get("date_value"):
+        return str(answer["date_value"])
+    if answer.get("selected_option_labels"):
+        return "، ".join(answer["selected_option_labels"])
+    return "—"
+
+
 class EvaluationReportsService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -169,6 +182,76 @@ class EvaluationReportsService:
             "best_score": max(scores) if scores else None,
             "worst_score": min(scores) if scores else None,
         }
+
+    async def get_period_answers(self, site_id: int, period_id: int) -> list[dict]:
+        """
+        ⚠️ طبق گزارش کاربر: ریز سوال/جواب‌ها در خروجی Excel نبود.
+        این متد همه پاسخ‌های یک دوره را - برای همه پرسنل آن سایت - در یک
+        Query جمع می‌کند تا در شیت جداگانه Excel بیاید.
+
+        ⚠️ برچسب گزینه‌ها از همان تابع مشترک غنی‌سازی می‌آید (نه یک
+        پیاده‌سازی دوم) تا خروجی Excel دقیقاً با آنچه در UI دیده می‌شود
+        یکسان باشد.
+        """
+        from app.models.evaluation_process import EvaluationAnswer
+        from app.services.evaluation_process_service import EvaluationProcessService
+
+        result = await self.db.execute(
+            select(
+                Employee.first_name,
+                Employee.last_name,
+                Employee.personnel_code,
+                Department.name,
+                Evaluation.id,
+                Evaluation.total_score,
+            )
+            .join(EvaluationAssignment, EvaluationAssignment.target_employee_id == Employee.id)
+            .join(Evaluation, Evaluation.assignment_id == EvaluationAssignment.id)
+            .outerjoin(Department, Department.id == Employee.department_id)
+            .where(
+                Employee.site_id == site_id,
+                EvaluationAssignment.period_id == period_id,
+                Evaluation.status == EvaluationStatus.submitted,
+            )
+            .order_by(Department.name, Employee.last_name)
+        )
+        rows = result.all()
+        if not rows:
+            return []
+
+        evaluation_ids = [r[4] for r in rows]
+        answers_result = await self.db.execute(
+            select(EvaluationAnswer)
+            .where(EvaluationAnswer.evaluation_id.in_(evaluation_ids))
+            .order_by(EvaluationAnswer.evaluation_id, EvaluationAnswer.id)
+        )
+        all_answers = list(answers_result.scalars().all())
+        enriched = await EvaluationProcessService(self.db)._enrich_answers_with_options(all_answers)
+
+        by_evaluation: dict[int, list] = {}
+        for answer, raw in zip(enriched, all_answers):
+            by_evaluation.setdefault(raw.evaluation_id, []).append(answer)
+
+        out = []
+        for first_name, last_name, personnel_code, dept_name, evaluation_id, total_score in rows:
+            for answer in by_evaluation.get(evaluation_id, []):
+                out.append(
+                    {
+                        "department": dept_name,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "personnel_code": personnel_code,
+                        "total_score": float(total_score) if total_score is not None else None,
+                        "question": answer["question_text_snapshot"],
+                        "answer": _format_answer_value(answer),
+                        "options": "، ".join(
+                            f"{o['label']} ({o['score']})" for o in answer["available_options"]
+                        ),
+                        "score": answer["score"],
+                        "comment": answer["comment"],
+                    }
+                )
+        return out
 
     async def get_site_period_report(self, site_id: int, period_id: int) -> dict:
         """گزارش کامل یک سایت برای یک دوره - میانگین کل + شکسته‌شده به هر واحد."""

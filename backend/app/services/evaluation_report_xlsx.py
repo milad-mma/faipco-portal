@@ -30,7 +30,7 @@ def _autofit_columns(ws, widths: list[int]) -> None:
         ws.column_dimensions[get_column_letter(i)].width = width
 
 
-def build_site_period_report_xlsx(report: dict) -> bytes:
+def build_site_period_report_xlsx(report: dict, answers: list[dict] | None = None) -> bytes:
     wb = Workbook()
 
     summary_ws = wb.active
@@ -78,6 +78,43 @@ def build_site_period_report_xlsx(report: dict) -> bytes:
             )
     _autofit_columns(detail_ws, [20, 16, 16, 14, 10])
 
+    # ⚠️ طبق گزارش کاربر: ریز سوال/جواب‌ها در Excel نبود. شیت جداگانه تا
+    # شیت «جزئیات پرسنل» (که نمای خلاصه است) شلوغ نشود.
+    if answers:
+        answers_ws = wb.create_sheet("سوال و پاسخ")
+        answers_ws.sheet_view.rightToLeft = True
+        answers_ws.append(
+            [
+                "واحد",
+                "نام",
+                "نام خانوادگی",
+                "کد پرسنلی",
+                "امتیاز کل",
+                "سوال",
+                "پاسخ",
+                "گزینه‌های ممکن",
+                "امتیاز سوال",
+                "نظر ارزیاب",
+            ]
+        )
+        _style_header_row(answers_ws, 1, 10)
+        for a in answers:
+            answers_ws.append(
+                [
+                    a["department"] or "—",
+                    a["first_name"],
+                    a["last_name"],
+                    a["personnel_code"],
+                    round(a["total_score"], 1) if a["total_score"] is not None else "—",
+                    a["question"],
+                    a["answer"],
+                    a["options"] or "—",
+                    round(a["score"], 1) if a["score"] is not None else "—",
+                    a["comment"] or "—",
+                ]
+            )
+        _autofit_columns(answers_ws, [18, 14, 14, 12, 10, 45, 28, 38, 10, 30])
+
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -120,6 +157,47 @@ def build_period_comparison_xlsx(comparison: dict) -> bytes:
             ]
         )
     _autofit_columns(ws, [24, 22, 22, 12])
+
+    # ⚠️ طبق گزارش کاربر: «روند» در Excel نبود. تب مقایسه در UI زیر هر
+    # واحد لیست پرسنل با دو امتیاز و میزان تغییر را نشان می‌دهد؛ اینجا
+    # همان داده در یک شیت جداگانه می‌آید تا خروجی با صفحه هم‌خوان باشد.
+    has_employees = any(d.get("employees") for d in comparison["departments"])
+    if has_employees:
+        trend_ws = wb.create_sheet("روند پرسنل")
+        trend_ws.sheet_view.rightToLeft = True
+        trend_ws.append(
+            [
+                "واحد",
+                "نام",
+                "نام خانوادگی",
+                "کد پرسنلی",
+                comparison["period_a"]["title"],
+                comparison["period_b"]["title"],
+                "تغییر",
+            ]
+        )
+        _style_header_row(trend_ws, 1, 7)
+        for dept in comparison["departments"]:
+            for emp in dept.get("employees", []):
+                score_a = emp.get("period_a_score")
+                score_b = emp.get("period_b_score")
+                change = (
+                    round(score_b - score_a, 1)
+                    if (score_a is not None and score_b is not None)
+                    else "—"
+                )
+                trend_ws.append(
+                    [
+                        dept["department_name"],
+                        emp["first_name"],
+                        emp["last_name"],
+                        emp["personnel_code"],
+                        round(score_a, 1) if score_a is not None else "—",
+                        round(score_b, 1) if score_b is not None else "—",
+                        change,
+                    ]
+                )
+        _autofit_columns(trend_ws, [20, 15, 15, 13, 20, 20, 10])
 
     buffer = io.BytesIO()
     wb.save(buffer)
