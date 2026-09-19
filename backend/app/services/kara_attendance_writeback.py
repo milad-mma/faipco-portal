@@ -42,8 +42,20 @@ Checksum: مقدار آن را برنامه کاراوب محاسبه می‌ک�
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import jdatetime
+
+_KARA_TZ = ZoneInfo("Asia/Tehran")
+
+
+def kara_now() -> datetime:
+    """
+    ساعت محلی ایران (بدون tzinfo) - کاراوب همه تاریخ/ساعت‌ها را به وقت
+    محلی می‌نویسد؛ سرور پرتال UTC است و datetime.now() خام، ۳:۳۰ ساعت
+    عقب ثبت می‌کرد (تأییدِ ۱۲:۳۵ به‌صورت ۰۹:۰۵ ثبت شد).
+    """
+    return datetime.now(_KARA_TZ).replace(tzinfo=None)
 
 ACCEPT_APPLIED = 0
 ACCEPT_APPROVED_NOT_APPLIED = 8
@@ -69,7 +81,7 @@ def _jalali_int(d: date) -> int:
 
 
 def _now_parts() -> tuple[datetime, int, int]:
-    now = datetime.now()
+    now = kara_now()
     return now, _jalali_int(now.date()), now.hour * 100 + now.minute
 
 
@@ -298,7 +310,7 @@ def _log_mor_mam(cur, row: dict, ref_number, change_type: int, username: str, ap
         "[Requested], [StandardRequested], [SerialNumber], [Issue_Date], [Type], [Babat], [Inc_Type], "
         "[BranchCode]) VALUES (%(u)s, %(ap)s, %(un)s, '', %(now)s, %(ct)s, %(ref)s, %(e)s, %(sd)s, %(sds)s, "
         "%(ed)s, %(eds)s, %(rq)s, %(sr)s, '', %(is)s, %(ty)s, %(bb)s, %(it)s, %(b)s)",
-        {**row, "ap": app_id, "un": username, "ct": change_type, "ref": ref_number, "now": datetime.now()},
+        {**row, "ap": app_id, "un": username, "ct": change_type, "ref": ref_number, "now": kara_now()},
     )
 
 

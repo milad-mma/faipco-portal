@@ -286,7 +286,7 @@ def _insert_review_sync(
             # ReviewDate فقط تاریخ است، بدون ساعت. رکوردهای ساخته‌شده توسط
             # خودِ کاراوب همگی ساعت 00:00:00 دارند - اگر ساعت هم بنویسیم،
             # ممکن است در گزارش‌های خودِ کاراوب رفتار متفاوتی ایجاد کند.
-            today = datetime.now()
+            today = kara_wb.kara_now()
             review_date = datetime(today.year, today.month, today.day)
             values = [request_id, reviewed_emp_no, description, review_type, review_date, True]
             columns_sql = ", ".join(q(c) for c in columns)
@@ -654,7 +654,7 @@ class LeaveRequestService:
 
         values = {
             "emp_no": _to_personnel_code_int(employee),
-            "submitting_date": datetime.now(),
+            "submitting_date": kara_wb.kara_now(),
             "start_date": datetime(start_date.year, start_date.month, start_date.day),
             "end_date": datetime(effective_end_date.year, effective_end_date.month, effective_end_date.day)
             if effective_end_date
@@ -1114,7 +1114,7 @@ class LeaveRequestService:
         updates = {
             mapping.is_final_approved_column: approved,
             mapping.approval_by_manager_column: approver_emp_no,
-            mapping.approval_date_column: datetime.now(),
+            mapping.approval_date_column: kara_wb.kara_now(),
             mapping.manager_idea_column: "",
         }
         await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
