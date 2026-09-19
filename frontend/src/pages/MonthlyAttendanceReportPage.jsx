@@ -55,11 +55,24 @@ import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
  */
 // ⚠️ مرخصی/ماموریت (فقط سایت‌های کاراوب): روزانه از Mor_Mam، ساعتی از
 // علامت (Status) خودِ تردد - بازه از همان تردد تا تردد بعدی.
+// ⚠️ طبق درخواست صریح کاربر: تعطیل و غیبت هم مثل مرخصی/ماموریت برچسب
+// دارند - غیبت (زرد) = روز کاری گذشته بدون تردد و بدون مرخصی/ماموریت.
 const KIND_COLOR = { leave: "success", mission: "info", other: "warning" };
+const STATUS_CHIPS = {
+  holiday: { label: "تعطیل", color: "error" },
+  absent: { label: "غیبت", color: "warning" },
+};
 
 function hourlyText(mark) {
   return mark.to ? `${mark.label} ${mark.from} تا ${mark.to}` : `${mark.label} از ${mark.from}`;
 }
+
+// برچسب کوچک و قابل‌شکستن در چند خط - تا جدول در موبایل جا شود
+const compactChipSx = {
+  height: "auto",
+  fontSize: { xs: "0.62rem", sm: "0.7rem" },
+  "& .MuiChip-label": { px: 0.75, py: 0.25, whiteSpace: "normal", lineHeight: 1.35 },
+};
 
 export default function MonthlyAttendanceReportPage() {
   const theme = useTheme();
@@ -102,12 +115,13 @@ export default function MonthlyAttendanceReportPage() {
   const transitColumnCount = report?.max_transits_in_month || 1; // حداقل یک ستون، حتی اگر ماه کلاً خالی باشد
   // ستون «مرخصی / ماموریت» فقط وقتی نمایش داده می‌شود که در این ماه واقعاً موردی باشد
   const hasAbsences = Boolean(
-    report?.days?.some((d) => d.daily_absence || (d.hourly_absences && d.hourly_absences.length))
+    report?.days?.some((d) => d.day_status || (d.hourly_absences && d.hourly_absences.length))
   );
 
   function rowBackground(day) {
     if (day.is_holiday) return "rgba(211, 47, 47, 0.08)";
     if (day.daily_absence) return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
+    if (day.day_status === "absent") return alpha(theme.palette.warning.main, 0.14);
     return undefined;
   }
 
@@ -163,6 +177,7 @@ export default function MonthlyAttendanceReportPage() {
           <Chip size="small" color="success" variant="outlined" label="مرخصی" />
           <Chip size="small" color="info" variant="outlined" label="ماموریت" />
           <Chip size="small" color="error" variant="outlined" label="تعطیل" />
+          <Chip size="small" color="warning" variant="outlined" label="غیبت" />
         </Stack>
       )}
 
@@ -188,12 +203,23 @@ export default function MonthlyAttendanceReportPage() {
             variant="outlined"
             sx={{ borderRadius: 2 }}
           >
-            <Table size="small">
+            <Table
+              size="small"
+              sx={{
+                // ⚠️ طبق درخواست کاربر: فشرده‌تر تا در موبایل کامل دیده شود
+                "& .MuiTableCell-root": {
+                  px: { xs: 0.5, sm: 1 },
+                  py: { xs: 0.5, sm: 0.75 },
+                  fontSize: { xs: "0.7rem", sm: "0.8rem" },
+                  whiteSpace: "nowrap",
+                },
+              }}
+            >
               <TableHead>
                 <TableRow>
-                  <TableCell>روز هفته</TableCell>
+                  <TableCell>روز</TableCell>
                   <TableCell>تاریخ</TableCell>
-                  {hasAbsences && <TableCell>مرخصی / ماموریت</TableCell>}
+                  {hasAbsences && <TableCell>وضعیت</TableCell>}
                   {Array.from({ length: transitColumnCount }, (_, i) => (
                     <TableCell key={i} align="center">
                       {`تردد ${i + 1}`}
@@ -214,17 +240,33 @@ export default function MonthlyAttendanceReportPage() {
                         fontWeight: day.is_holiday ? 700 : undefined,
                       }}
                     >
-                      {day.date}
+                      {/* در موبایل بدون سال (۰۶/۲۱) تا ستون باریک‌تر شود */}
+                      <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
+                        {day.date}
+                      </Box>
+                      <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
+                        {day.date.slice(5)}
+                      </Box>
                     </TableCell>
                     {hasAbsences && (
-                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      <TableCell sx={{ "&&": { whiteSpace: "normal" }, minWidth: { xs: 84, sm: 120 }, maxWidth: 220 }}>
                         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                          {day.daily_absence && (
+                          {day.daily_absence ? (
                             <Chip
                               size="small"
                               color={KIND_COLOR[day.daily_absence.kind]}
                               label={day.daily_absence.label}
+                              sx={compactChipSx}
                             />
+                          ) : (
+                            STATUS_CHIPS[day.day_status] && (
+                              <Chip
+                                size="small"
+                                color={STATUS_CHIPS[day.day_status].color}
+                                label={STATUS_CHIPS[day.day_status].label}
+                                sx={compactChipSx}
+                              />
+                            )
                           )}
                           {(day.hourly_absences || []).map((mark, idx) => (
                             <Chip
@@ -233,6 +275,7 @@ export default function MonthlyAttendanceReportPage() {
                               variant="outlined"
                               color={KIND_COLOR[mark.kind]}
                               label={hourlyText(mark)}
+                              sx={compactChipSx}
                             />
                           ))}
                         </Stack>

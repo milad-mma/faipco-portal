@@ -41,6 +41,7 @@ from app.models.leave_request import LeaveRequestApprover, LeaveRequestMapping, 
 from app.models.site import DbType, SiteConnection
 from app.models.user import User
 from app.services import kara_attendance_writeback as kara_wb
+from app.services.kara_schema import KaraNames
 from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
@@ -320,7 +321,7 @@ def _update_review_description_sync(
         with connection.cursor() as cur:
             # فقط آخرین Review به‌روز می‌شود (همان که _select_latest_reviews_sync
             # برای نمایش انتخاب می‌کند) - نه همه‌ی تاریخچه تصمیم‌ها.
-            id_col = q("Id")
+            id_col = q(KaraNames(mapping).raw("wf_reviews", "id"))
             query = f"""
                 UPDATE {q(mapping.wf_reviews_table_name)}
                 SET {q(mapping.wf_reviews_description_column)} = %(description)s
@@ -486,17 +487,18 @@ def _delete_dependent_rows_sync(conn: SiteConnection, mapping: LeaveRequestMappi
     نصب‌هایی که آن جدول را ندارند.
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    names = KaraNames(mapping)
     targets = [
-        (mapping.wf_reviews_table_name, mapping.wf_reviews_request_id_column or "RequestId"),
-        (mapping.wf_attachment_table_name, "RequestId"),
-        (mapping.wf_moveup_table_name, "RequestId"),
-        (mapping.wf_parallel_approval_table_name, "RequestId"),
+        (mapping.wf_reviews_table_name, mapping.wf_reviews_request_id_column),
+        (mapping.wf_attachment_table_name, names.raw("wf_attachment", "request_id")),
+        (mapping.wf_moveup_table_name, names.raw("wf_moveup", "request_id")),
+        (mapping.wf_parallel_approval_table_name, names.raw("wf_parallel", "request_id")),
     ]
     connection = _connect(conn)
     try:
         with connection.cursor() as cur:
             for table_name, id_column in targets:
-                if not table_name:
+                if not table_name or not id_column:
                     continue
                 query = (
                     f"DELETE FROM {q(table_name)} WHERE {q(id_column)} = %(request_id)s"
@@ -529,12 +531,15 @@ def _kara_writeback_enabled(conn: SiteConnection, mapping: LeaveRequestMapping) 
     return bool(getattr(mapping, "kara_writeback_enabled", False)) and conn.db_type == DbType.mssql
 
 
-def _run_kara_writeback_sync(conn: SiteConnection, fn, *args):
-    """یک تابع kara_attendance_writeback را در یک تراکنش واحد اجرا می‌کند (همه یا هیچ)."""
+def _run_kara_writeback_sync(conn: SiteConnection, mapping: LeaveRequestMapping, fn, *args):
+    """
+    یک تابع kara_attendance_writeback را در یک تراکنش واحد اجرا می‌کند (همه
+    یا هیچ). نام جدول/ستون‌ها از تنظیمات همین سایت (KaraNames) به آن داده می‌شود.
+    """
     connection = _connect(conn)
     try:
         with connection.cursor(as_dict=True) as cur:
-            result = fn(cur, *args)
+            result = fn(cur, KaraNames(mapping), *args)
         connection.commit()
         return result
     except Exception:
@@ -714,6 +719,7 @@ class LeaveRequestService:
                 values["extra_columns"] = await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
+                    mapping,
                     kara_wb.submit_extra_columns,
                     values["emp_no"],
                     cur_emp_no,
@@ -915,13 +921,14 @@ class LeaveRequestService:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
+                    mapping,
                     kara_wb.revert_effects,
                     rows[0],
                     None,
                     mapping.application_id_value,
                 )
             await asyncio.to_thread(
-                _run_kara_writeback_sync, site_connection, kara_wb.delete_request_state_rows, request_id
+                _run_kara_writeback_sync, site_connection, mapping, kara_wb.delete_request_state_rows, request_id
             )
 
         await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
@@ -1176,6 +1183,7 @@ class LeaveRequestService:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
+                    mapping,
                     kara_wb.apply_on_approval,
                     request_row,
                     approver_emp_no,
@@ -1316,6 +1324,7 @@ class LeaveRequestService:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
+                    mapping,
                     kara_wb.revert_effects,
                     old_row,
                     None,
@@ -1339,6 +1348,7 @@ class LeaveRequestService:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
+                    mapping,
                     kara_wb.apply_on_approval,
                     new_row,
                     approver,
@@ -1346,7 +1356,7 @@ class LeaveRequestService:
                     mapping.branch_code_value or 1,
                 )
             elif new_row:
-                await asyncio.to_thread(_run_kara_writeback_sync, site_connection, kara_wb.clear_accept_code, request_id)
+                await asyncio.to_thread(_run_kara_writeback_sync, site_connection, mapping, kara_wb.clear_accept_code, request_id)
 
         if "manager_idea" in updates and mapping.wf_reviews_table_name:
             updated = await asyncio.to_thread(

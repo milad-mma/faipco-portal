@@ -17,7 +17,7 @@ EmployeeMapping: چون نصب‌های مختلف ممکن است نام‌گذ
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -187,6 +187,10 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # تأیید نهایی در کارکرد هم اثر می‌کند (ساعتی روی تردد مطابق، روزانه در
     # Mor_Mam) و فیلدهای تکمیلی WF_Requests مثل خودِ کاراوب پر می‌شوند.
     kara_writeback_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ⚠️ نام جدول/ستون‌های کاراوب برای ثبت در کارکرد و گزارش مرخصی/ماموریت
+    # (app/services/kara_schema.py) - فقط مقادیری که با پیش‌فرض کاراوب فرق
+    # دارند ذخیره می‌شوند؛ بقیه از پیش‌فرض خوانده می‌شوند.
+    kara_schema: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
 

@@ -36,8 +36,9 @@ Checksum: مقدار آن را برنامه کاراوب محاسبه می‌ک�
 دارند و کاراوب با آن‌ها مشکلی ندارد).
 
 ⚠️ فقط برای SQL Server (کاراوب). همه توابع یک cursor از pymssql
-(as_dict=True) می‌گیرند و commit را به فراخوان می‌سپارند تا هر عملیات
-در یک تراکنش انجام شود.
+(as_dict=True) و یک KaraNames (نام جدول/ستون‌ها از تنظیمات سایت) می‌گیرند
+و commit را به فراخوان می‌سپارند تا هر عملیات در یک تراکنش انجام شود.
+هیچ نام جدول/ستونی در این فایل مستقیم نوشته نشده (app/services/kara_schema.py).
 """
 from __future__ import annotations
 
@@ -45,6 +46,8 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import jdatetime
+
+from app.services.kara_schema import KaraNames
 
 _KARA_TZ = ZoneInfo("Asia/Tehran")
 
@@ -100,114 +103,132 @@ def _minutes_to_hhmm(minutes: int) -> int:
     return (minutes // 60) * 100 + minutes % 60
 
 
-def get_sec_no(cur, emp_no: int | None) -> int | None:
+def get_sec_no(cur, n: KaraNames, emp_no: int | None) -> int | None:
     if emp_no is None:
         return None
-    cur.execute("SELECT TOP 1 [Sec_No] FROM [Employee] WHERE [Emp_No] = %(e)s", {"e": emp_no})
+    cur.execute(
+        f"SELECT TOP 1 {n.employee_sec_no} AS SecNo FROM {n.employee_table} WHERE {n.employee_emp_no} = %(e)s",
+        {"e": emp_no},
+    )
     row = cur.fetchone()
-    return row["Sec_No"] if row else None
+    return row["SecNo"] if row else None
 
 
-def _resolve_kara_user(cur, emp_nos: list[int | None]) -> tuple[object, str]:
+def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[str, str]:
     """
     کاربرِ کاراوبی که تغییر به نامش ثبت می‌شود - کاراوب کاربرِ مدیر
     تأییدکننده را می‌نویسد (UserId در Mor_Mam، Username در لاگ‌ها).
     اگر آن فرد کاربر کاراوب نداشت، کاربر درخواست‌دهنده، و در نهایت
     قدیمی‌ترین کاربر فعال (ستون‌ها NOT NULL هستند).
     """
+    select = (
+        f"SELECT TOP 1 {n.c('users', 'user_id')} AS UserId, {n.c('users', 'username')} AS Username "
+        f"FROM {n.t('users')} "
+    )
     for emp_no in emp_nos:
         if emp_no is None:
             continue
         cur.execute(
-            "SELECT TOP 1 [UserId], [Username] FROM [Users] WHERE [Emp_No] = %(e)s "
-            "ORDER BY [IsActive] DESC, [CreationDate]",
+            select + f"WHERE {n.c('users', 'emp_no')} = %(e)s "
+            f"ORDER BY {n.c('users', 'is_active')} DESC, {n.c('users', 'creation_date')}",
             {"e": emp_no},
         )
         row = cur.fetchone()
         if row:
             return str(row["UserId"]), row["Username"]
-    cur.execute("SELECT TOP 1 [UserId], [Username] FROM [Users] WHERE [IsActive] = 1 ORDER BY [CreationDate]")
+    cur.execute(select + f"WHERE {n.c('users', 'is_active')} = 1 ORDER BY {n.c('users', 'creation_date')}")
     row = cur.fetchone()
     if not row:
-        raise RuntimeError("هیچ کاربر فعالی در جدول Users کاراوب پیدا نشد")
+        raise RuntimeError("هیچ کاربر فعالی در جدول کاربران کاراوب پیدا نشد")
     return str(row["UserId"]), row["Username"]
 
 
 # ---------- ثبت درخواست ----------
 
 
-def submit_extra_columns(cur, requester_emp_no: int, approver_emp_no: int | None, duration) -> dict:
-    """ستون‌هایی که کاراوب هنگام ثبت پر می‌کند و پرتال قبلاً NULL می‌گذاشت."""
+def submit_extra_columns(cur, n: KaraNames, requester_emp_no: int, approver_emp_no: int | None, duration) -> dict:
+    """ستون‌هایی که کاراوب هنگام ثبت پر می‌کند و پرتال قبلاً NULL می‌گذاشت (نام ستون‌ها از تنظیمات)."""
     return {
-        "SubmittedByEmployeeID": requester_emp_no,
-        "Requested_Time": str(duration),
-        "DutyTools": "",
-        "DutyTamin": "",
-        "CurSection": get_sec_no(cur, approver_emp_no),
+        n.raw("wf_requests", "submitted_by"): requester_emp_no,
+        n.raw("wf_requests", "requested_time"): str(duration),
+        n.raw("wf_requests", "duty_tools"): "",
+        n.raw("wf_requests", "duty_tamin"): "",
+        n.raw("wf_requests", "cur_section"): get_sec_no(cur, n, approver_emp_no),
     }
 
 
 # ---------- کسر روزانه مرخصی استحقاقی ----------
 
 
-def _day_deduction_minutes(cur, emp_no: int, day: date) -> int:
-    """ساعت کسر یک روز از شیفت همان روز (DailyWork -> Shifts)."""
-    cur.execute(
-        "SELECT TOP 1 w.[Shift_No] AS ShiftNo, s.[Kasr_Gh] AS KasrGh, s.[Kasr_Gh5] AS KasrGh5 "
-        "FROM [DailyWork] w LEFT JOIN [Shifts] s ON s.[Shift_No] = w.[Shift_No] "
-        "WHERE w.[Emp_No] = %(e)s AND w.[Date] = %(d)s",
-        {"e": emp_no, "d": _jalali_int(day)},
-    )
-    row = cur.fetchone()
-    thursday = day.weekday() == _THURSDAY
-    if row:
-        if row.get("KasrGh") is None:
-            return 0  # شیفت غیرکاری (مثل جمعه/تعطیل - در Shifts تعریف نشده)
-        return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
+def _kasr_minutes(row: dict | None, thursday: bool) -> int | None:
+    """None یعنی «از این منبع اطلاعاتی نیامد»؛ ۰ یعنی روز غیرکاری."""
+    if not row or row.get("ShiftNo") is None:
+        return None
+    if row.get("KasrGh") is None:
+        return 0  # شیفت غیرکاری/تعطیل (در جدول شیفت‌ها تعریف نشده، مثل ۵۰۱)
+    return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
 
-    # هنوز ردیف DailyWork برای آن روز ساخته نشده (DailyWork فقط تا آخر ماه
-    # جاری ساخته می‌شود). منبع بعدی، تقویم شیفت گروهی خودِ کاراوب است که
-    # برای ماه‌های آینده هم (با جمعه‌ها و تعطیلات رسمی = ۵۰۱) از قبل تنظیم
-    # شده: گروه فرد در آن تاریخ (EmpGrps) -> شیفت آن روز در GrpShift.
-    # (با داده شهریور ۱۴۰۵ مقایسه شد: ۷۶۰۹ از ۷۶۲۳ روز با DailyWork یکی بود)
+
+def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
+    """ساعت کسر یک روز: شیفت همان روز -> ستون کسر مرخصی استحقاقی آن شیفت."""
+    thursday = day.weekday() == _THURSDAY
     jalali = _jalali_int(day)
-    j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
+    shifts, sh_no = n.t("shifts"), n.c("shifts", "shift_no")
+    kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"
+
+    # ۱) کارکرد روزانه کاراوب (فقط شماره شیفت روز خوانده می‌شود)
     cur.execute(
-        f"SELECT TOP 1 s.[Kasr_Gh] AS KasrGh, s.[Kasr_Gh5] AS KasrGh5, g.[D{j_day}] AS ShiftNo "
-        "FROM [GrpShift] g LEFT JOIN [Shifts] s ON s.[Shift_No] = g.[D" + str(j_day) + "] "
-        "WHERE g.[Year] = %(y)s AND g.[Month] = %(m)s AND g.[Grp_No] = ("
-        "  SELECT TOP 1 e.[NewGrp_No] FROM [EmpGrps] e WHERE e.[Emp_No] = %(e)s AND e.[Date] <= %(d)s "
-        "  ORDER BY e.[Date] DESC)",
+        f"SELECT TOP 1 w.{n.c('daily_work', 'shift_no')} AS ShiftNo, {kasr} "
+        f"FROM {n.t('daily_work')} w LEFT JOIN {shifts} s ON s.{sh_no} = w.{n.c('daily_work', 'shift_no')} "
+        f"WHERE w.{n.c('daily_work', 'emp_no')} = %(e)s AND w.{n.c('daily_work', 'date')} = %(d)s",
+        {"e": emp_no, "d": jalali},
+    )
+    minutes = _kasr_minutes(cur.fetchone(), thursday)
+    if minutes is not None:
+        return minutes
+
+    # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود - برای ماه‌های
+    # آینده، تقویم شیفت گروهی کاراوب (جمعه‌ها و تعطیلات رسمی = غیرکاری):
+    # گروه فرد در آن تاریخ -> شیفت آن روز گروه. (با شهریور ۱۴۰۵ مقایسه
+    # شد: ۷۶۰۹ از ۷۶۲۳ روز با کارکرد روزانه یکی بود)
+    j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
+    day_col = f"[{n.raw('grp_shift', 'day_prefix')}{j_day}]"
+    cur.execute(
+        f"SELECT TOP 1 g.{day_col} AS ShiftNo, {kasr} "
+        f"FROM {n.t('grp_shift')} g LEFT JOIN {shifts} s ON s.{sh_no} = g.{day_col} "
+        f"WHERE g.{n.c('grp_shift', 'year')} = %(y)s AND g.{n.c('grp_shift', 'month')} = %(m)s "
+        f"AND g.{n.c('grp_shift', 'grp_no')} = ("
+        f"SELECT TOP 1 e.{n.c('emp_grps', 'new_grp_no')} FROM {n.t('emp_grps')} e "
+        f"WHERE e.{n.c('emp_grps', 'emp_no')} = %(e)s AND e.{n.c('emp_grps', 'date')} <= %(d)s "
+        f"ORDER BY e.{n.c('emp_grps', 'date')} DESC)",
         {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
     )
-    row = cur.fetchone()
-    if row and row.get("ShiftNo") is not None:
-        if row.get("KasrGh") is None:
-            return 0  # روز غیرکاری/تعطیل در تقویم گروه
-        return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
+    minutes = _kasr_minutes(cur.fetchone(), thursday)
+    if minutes is not None:
+        return minutes
 
-    # آخرین راه: قاعده روز هفته با آخرین شیفت کاری همین فرد
+    # ۳) آخرین راه: قاعده روز هفته با آخرین شیفت کاری همین فرد
     if day.weekday() == _FRIDAY:
         return 0
     cur.execute(
-        "SELECT TOP 1 s.[Kasr_Gh] AS KasrGh, s.[Kasr_Gh5] AS KasrGh5 "
-        "FROM [DailyWork] w JOIN [Shifts] s ON s.[Shift_No] = w.[Shift_No] "
-        "WHERE w.[Emp_No] = %(e)s ORDER BY w.[Date] DESC",
+        f"SELECT TOP 1 w.{n.c('daily_work', 'shift_no')} AS ShiftNo, {kasr} "
+        f"FROM {n.t('daily_work')} w JOIN {shifts} s ON s.{sh_no} = w.{n.c('daily_work', 'shift_no')} "
+        f"WHERE w.{n.c('daily_work', 'emp_no')} = %(e)s ORDER BY w.{n.c('daily_work', 'date')} DESC",
         {"e": emp_no},
     )
-    row = cur.fetchone()
-    if row and row.get("KasrGh") is not None:
-        return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
+    minutes = _kasr_minutes(cur.fetchone(), thursday)
+    if minutes is not None:
+        return minutes
     return 240 if thursday else 480
 
 
-def _mor_mam_amounts(cur, emp_no: int, card_no: int, start: date, end: date) -> tuple[int, int, int | None]:
+def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
     """(Requested, StandardRequested, Inc_Type) دقیقاً مطابق کاراوب."""
     if card_no in ENTITLEMENT_CARDS:
         total = 0
         day = start
         while day <= end:
-            total += _day_deduction_minutes(cur, emp_no, day)
+            total += _day_deduction_minutes(cur, n, emp_no, day)
             day += timedelta(days=1)
         return -_minutes_to_hhmm(total), -total, 0
     days = (end - start).days + 1
@@ -217,37 +238,53 @@ def _mor_mam_amounts(cur, emp_no: int, card_no: int, start: date, end: date) -> 
 # ---------- تأیید نهایی ----------
 
 
-def apply_on_approval(cur, request: dict, approver_emp_no: int, app_id: int, branch_code: int) -> int:
+def _set_accept_code(cur, n: KaraNames, request_id: int, accept: int | None, cur_section: int | None = None) -> None:
+    accept_col, section_col = n.c("wf_requests", "accept_code"), n.c("wf_requests", "cur_section")
+    cur.execute(
+        f"UPDATE {n.requests_table} SET {accept_col} = %(a)s, {section_col} = COALESCE(%(s)s, {section_col}) "
+        f"WHERE {n.requests_id} = %(r)s",
+        {"a": accept, "s": cur_section, "r": request_id},
+    )
+
+
+def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int) -> int:
     """
     اثر تأیید نهایی را مثل کاراوب اعمال می‌کند و AcceptCode نهایی را
     برمی‌گرداند (۰ یا ۸). request یک ردیف نرمال‌نشده از _select_requests_sync است.
     """
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
-    user_id, username = _resolve_kara_user(cur, [approver_emp_no, emp_no])
+    user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
     now, today_j, now_hhmm = _now_parts()
     start = _to_date(request["StartDate"])
 
     if request.get("StartHour") is not None:
-        accept = _apply_hourly(cur, request, emp_no, card_no, start, user_id, username, app_id, today_j, now_hhmm)
+        accept = _apply_hourly(cur, n, request, emp_no, card_no, start, user_id, username, app_id, today_j, now_hhmm)
     else:
         end = _to_date(request.get("EndDate")) or start
-        _insert_mor_mam(cur, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code)
+        _insert_mor_mam(
+            cur, n, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code
+        )
         accept = ACCEPT_APPLIED
 
-    cur.execute(
-        "UPDATE [WF_Requests] SET [AcceptCode] = %(a)s, [CurSection] = COALESCE(%(s)s, [CurSection]) "
-        "WHERE [RequestId] = %(r)s",
-        {"a": accept, "s": get_sec_no(cur, approver_emp_no), "r": request["RequestId"]},
-    )
+    _set_accept_code(cur, n, request["RequestId"], accept, get_sec_no(cur, n, approver_emp_no))
     return accept
 
 
-def _apply_hourly(cur, request, emp_no, card_no, day, user_id, username, app_id, today_j, now_hhmm) -> int:
+def _punch_select(n: KaraNames) -> str:
+    return (
+        f"SELECT TOP 1 {n.c('datafile', 'id')} AS Id, {n.c('datafile', 'time')} AS Time, "
+        f"{n.c('datafile', 'status')} AS Status, {n.c('datafile', 'duration')} AS Duration, "
+        f"{n.c('datafile', 'prev_day')} AS PrevDay, {n.c('datafile', 'application_id')} AS ApplicationId, "
+        f"{n.c('datafile', 'branch_code')} AS BranchCode FROM {n.t('datafile')} "
+        f"WHERE {n.c('datafile', 'emp_no')} = %(e)s AND {n.c('datafile', 'date')} = %(d)s "
+        f"AND {n.c('datafile', 'time')} BETWEEN %(s)s AND %(t)s "
+    )
+
+
+def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_id, today_j, now_hhmm) -> int:
     cur.execute(
-        "SELECT TOP 1 [Id], [Time], [Status], [Duration], [PrevDay], [ApplicationId], [BranchCode] "
-        "FROM [DataFile] WHERE [Emp_No] = %(e)s AND [Date] = %(d)s AND [Time] BETWEEN %(s)s AND %(t)s "
-        "ORDER BY [Time]",
+        _punch_select(n) + f"ORDER BY {n.c('datafile', 'time')}",
         {"e": emp_no, "d": _jalali_int(day), "s": int(request["StartHour"]), "t": int(request["EndHour"])},
     )
     punch = cur.fetchone()
@@ -257,12 +294,12 @@ def _apply_hourly(cur, request, emp_no, card_no, day, user_id, username, app_id,
         new_duration = int(request.get("Duration") or 0)
     except (TypeError, ValueError):
         new_duration = 0
-    _update_punch(cur, punch, emp_no, day, card_no, new_duration, user_id, username, app_id, today_j, now_hhmm)
+    _update_punch(cur, n, punch, emp_no, day, card_no, new_duration, user_id, username, app_id, today_j, now_hhmm)
     return ACCEPT_APPLIED
 
 
 def _update_punch(
-    cur, punch, emp_no, day, new_status, new_duration, user_id, username, app_id, today_j, now_hhmm, restore=False
+    cur, n, punch, emp_no, day, new_status, new_duration, user_id, username, app_id, today_j, now_hhmm, restore=False
 ):
     source_app_id = int(punch["ApplicationId"]) & 0xFFFF
     # ردیف لاگ همیشه با پرچم «گردش کار» ثبت می‌شود (مثل کاراوب)
@@ -273,14 +310,18 @@ def _update_punch(
     # تردد دقیقاً مثل قبل از اعمال درخواست شود.
     punch_app_id = source_app_id if restore else log_app_id
     cur.execute(
-        "UPDATE [DataFile] SET [Status] = %(st)s, [Duration] = %(du)s, [ApplicationId] = %(ap)s, [Checksum] = 0 "
-        "WHERE [Id] = %(id)s",
+        f"UPDATE {n.t('datafile')} SET {n.c('datafile', 'status')} = %(st)s, {n.c('datafile', 'duration')} = %(du)s, "
+        f"{n.c('datafile', 'application_id')} = %(ap)s, {n.c('datafile', 'checksum')} = 0 "
+        f"WHERE {n.c('datafile', 'id')} = %(id)s",
         {"st": new_status, "du": new_duration, "ap": punch_app_id, "id": punch["Id"]},
     )
+    L = lambda role: n.c("log_datafile", role)  # noqa: E731
     cur.execute(
-        "INSERT INTO [LogDataFile] ([UserId], [ApplicationId], [Username], [AddictionInformation], [EditDate], "
-        "[EditTime], [IoDate], [Emp_No], [OldTime], [NewTime], [OldDuration], [NewDuration], [OldStatus], "
-        "[NewStatus], [OldPrevDay], [NewPrevDay], [OldVT], [NewVT], [OldAC], [NewAC], [BranchCode]) VALUES "
+        f"INSERT INTO {n.t('log_datafile')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
+        f"{L('additional_info')}, {L('edit_date')}, {L('edit_time')}, {L('io_date')}, {L('emp_no')}, "
+        f"{L('old_time')}, {L('new_time')}, {L('old_duration')}, {L('new_duration')}, {L('old_status')}, "
+        f"{L('new_status')}, {L('old_prev_day')}, {L('new_prev_day')}, {L('old_vt')}, {L('new_vt')}, "
+        f"{L('old_ac')}, {L('new_ac')}, {L('branch_code')}) VALUES "
         "(%(u)s, %(ap)s, %(un)s, '', %(ed)s, %(et)s, %(io)s, %(e)s, %(tm)s, %(tm)s, %(od)s, %(nd)s, %(os)s, "
         "%(ns)s, %(pd)s, %(pd)s, NULL, NULL, NULL, NULL, %(b)s)",
         {
@@ -302,8 +343,8 @@ def _update_punch(
     )
 
 
-def _insert_mor_mam(cur, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code):
-    requested, standard, inc_type = _mor_mam_amounts(cur, emp_no, card_no, start, end)
+def _insert_mor_mam(cur, n, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code):
+    requested, standard, inc_type = _mor_mam_amounts(cur, n, emp_no, card_no, start, end)
     row = {
         "e": emp_no,
         "sd": _jalali_int(start),
@@ -320,25 +361,29 @@ def _insert_mor_mam(cur, request, emp_no, card_no, start, end, user_id, username
         "now": now,
         "b": branch_code,
     }
+    M = lambda role: n.c("mor_mam", role)  # noqa: E731
     cur.execute(
-        "INSERT INTO [Mor_Mam] ([Emp_No], [S_Date], [S_DateStandard], [E_Date], [E_DateStandard], [Requested], "
-        "[StandardRequested], [SerialNumber], [Issue_Date], [Type], [Babat], [Inc_Type], [UserId], "
-        "[LastModifyDate], [Checksum], [BranchCode]) OUTPUT INSERTED.[RefNumber] VALUES "
+        f"INSERT INTO {n.t('mor_mam')} ({M('emp_no')}, {M('s_date')}, {M('s_date_standard')}, {M('e_date')}, "
+        f"{M('e_date_standard')}, {M('requested')}, {M('standard_requested')}, {M('serial_number')}, "
+        f"{M('issue_date')}, {M('type')}, {M('babat')}, {M('inc_type')}, {M('user_id')}, {M('last_modify_date')}, "
+        f"{M('checksum')}, {M('branch_code')}) OUTPUT INSERTED.{M('ref_number')} AS RefNumber VALUES "
         "(%(e)s, %(sd)s, %(sds)s, %(ed)s, %(eds)s, %(rq)s, %(sr)s, '', %(is)s, %(ty)s, %(bb)s, %(it)s, %(u)s, "
         "%(now)s, 0, %(b)s)",
         row,
     )
     ref_number = cur.fetchone()["RefNumber"]
-    _log_mor_mam(cur, row, ref_number, change_type=1, username=username, app_id=app_id)
+    _log_mor_mam(cur, n, row, ref_number, change_type=1, username=username, app_id=app_id)
 
 
-def _log_mor_mam(cur, row: dict, ref_number, change_type: int, username: str, app_id: int) -> None:
+def _log_mor_mam(cur, n: KaraNames, row: dict, ref_number, change_type: int, username: str, app_id: int) -> None:
+    L = lambda role: n.c("log_mor_mam", role)  # noqa: E731
     cur.execute(
-        "INSERT INTO [LogMorMam] ([UserId], [ApplicationId], [Username], [AdditionalInformation], [ChangeDate], "
-        "[ChangeType], [RefNumber], [Emp_No], [S_Date], [S_DateStandard], [E_Date], [E_DateStandard], "
-        "[Requested], [StandardRequested], [SerialNumber], [Issue_Date], [Type], [Babat], [Inc_Type], "
-        "[BranchCode]) VALUES (%(u)s, %(ap)s, %(un)s, '', %(now)s, %(ct)s, %(ref)s, %(e)s, %(sd)s, %(sds)s, "
-        "%(ed)s, %(eds)s, %(rq)s, %(sr)s, '', %(is)s, %(ty)s, %(bb)s, %(it)s, %(b)s)",
+        f"INSERT INTO {n.t('log_mor_mam')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
+        f"{L('additional_info')}, {L('change_date')}, {L('change_type')}, {L('ref_number')}, {L('emp_no')}, "
+        f"{L('s_date')}, {L('s_date_standard')}, {L('e_date')}, {L('e_date_standard')}, {L('requested')}, "
+        f"{L('standard_requested')}, {L('serial_number')}, {L('issue_date')}, {L('type')}, {L('babat')}, "
+        f"{L('inc_type')}, {L('branch_code')}) VALUES (%(u)s, %(ap)s, %(un)s, '', %(now)s, %(ct)s, %(ref)s, "
+        "%(e)s, %(sd)s, %(sds)s, %(ed)s, %(eds)s, %(rq)s, %(sr)s, '', %(is)s, %(ty)s, %(bb)s, %(it)s, %(b)s)",
         {**row, "ap": app_id, "un": username, "ct": change_type, "ref": ref_number, "now": kara_now()},
     )
 
@@ -346,7 +391,7 @@ def _log_mor_mam(cur, row: dict, ref_number, change_type: int, username: str, ap
 # ---------- لغو اثر ----------
 
 
-def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) -> None:
+def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, app_id: int) -> None:
     """
     اثر یک درخواستِ تأییدشده را از کارکرد برمی‌دارد (هنگام رد، حذف یا
     ویرایش مدیریتی). اگر اثری ثبت نشده بود، کاری نمی‌کند.
@@ -354,18 +399,20 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
     start = _to_date(request["StartDate"])
-    user_id, username = _resolve_kara_user(cur, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
+    user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
     now, today_j, now_hhmm = _now_parts()
 
     if request.get("StartHour") is not None:
-        cur.execute("SELECT [AcceptCode] FROM [WF_Requests] WHERE [RequestId] = %(r)s", {"r": request["RequestId"]})
+        cur.execute(
+            f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
+            f"WHERE {n.requests_id} = %(r)s",
+            {"r": request["RequestId"]},
+        )
         state = cur.fetchone()
         if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
             return  # روی ترددی اعمال نشده بود
         cur.execute(
-            "SELECT TOP 1 [Id], [Time], [Status], [Duration], [PrevDay], [ApplicationId], [BranchCode] "
-            "FROM [DataFile] WHERE [Emp_No] = %(e)s AND [Date] = %(d)s AND [Time] BETWEEN %(s)s AND %(t)s "
-            "AND [Status] = %(c)s ORDER BY [Time]",
+            _punch_select(n) + f"AND {n.c('datafile', 'status')} = %(c)s ORDER BY {n.c('datafile', 'time')}",
             {
                 "e": emp_no,
                 "d": _jalali_int(start),
@@ -379,10 +426,12 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
             # ⚠️ وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال خوانده می‌شود -
             # اگر تردد از اول با کارت ماموریت/مرخصی زده شده بود (Status=۹/۱۷
             # از خودِ دستگاه)، حذف درخواست نباید آن علامت واقعی را هم پاک کند.
+            L = lambda role: n.c("log_datafile", role)  # noqa: E731
             cur.execute(
-                "SELECT TOP 1 [OldStatus], [OldDuration] FROM [LogDataFile] "
-                "WHERE [Emp_No] = %(e)s AND [IoDate] = %(d)s AND [OldTime] = %(t)s AND [NewTime] = %(t)s "
-                "AND [NewStatus] = %(c)s AND ([ApplicationId] & %(flag)s) <> 0 ORDER BY [Id] DESC",
+                f"SELECT TOP 1 {L('old_status')} AS OldStatus, {L('old_duration')} AS OldDuration "
+                f"FROM {n.t('log_datafile')} WHERE {L('emp_no')} = %(e)s AND {L('io_date')} = %(d)s "
+                f"AND {L('old_time')} = %(t)s AND {L('new_time')} = %(t)s AND {L('new_status')} = %(c)s "
+                f"AND ({L('application_id')} & %(flag)s) <> 0 ORDER BY {L('id')} DESC",
                 {
                     "e": emp_no,
                     "d": _jalali_int(start),
@@ -392,19 +441,22 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
                 },
             )
             before = cur.fetchone() or {}
-            old_status = before.get("OldStatus") or 0
-            old_duration = before.get("OldDuration") or 0
             _update_punch(
-                cur, punch, emp_no, start, old_status, old_duration,
+                cur, n, punch, emp_no, start, before.get("OldStatus") or 0, before.get("OldDuration") or 0,
                 user_id, username, app_id, today_j, now_hhmm, restore=True,
             )
         return
 
     end = _to_date(request.get("EndDate")) or start
+    M = lambda role: n.c("mor_mam", role)  # noqa: E731
     cur.execute(
-        "SELECT TOP 1 * FROM [Mor_Mam] WHERE [Emp_No] = %(e)s AND [S_Date] = %(sd)s AND "
-        "ISNULL([E_Date], [S_Date]) = %(ed)s AND [Type] = %(ty)s "
-        "ORDER BY CASE WHEN [Babat] = %(bb)s THEN 0 ELSE 1 END, [RefNumber] DESC",
+        f"SELECT TOP 1 {M('ref_number')} AS RefNumber, {M('emp_no')} AS EmpNo, {M('s_date')} AS SDate, "
+        f"{M('s_date_standard')} AS SDateStandard, {M('e_date')} AS EDate, {M('e_date_standard')} AS EDateStandard, "
+        f"{M('requested')} AS Requested, {M('standard_requested')} AS StandardRequested, "
+        f"{M('issue_date')} AS IssueDate, {M('type')} AS Type, {M('babat')} AS Babat, {M('inc_type')} AS IncType, "
+        f"{M('branch_code')} AS BranchCode FROM {n.t('mor_mam')} "
+        f"WHERE {M('emp_no')} = %(e)s AND {M('s_date')} = %(sd)s AND ISNULL({M('e_date')}, {M('s_date')}) = %(ed)s "
+        f"AND {M('type')} = %(ty)s ORDER BY CASE WHEN {M('babat')} = %(bb)s THEN 0 ELSE 1 END, {M('ref_number')} DESC",
         {
             "e": emp_no,
             "sd": _jalali_int(start),
@@ -416,29 +468,33 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
     mor = cur.fetchone()
     if not mor:
         return
-    cur.execute("DELETE FROM [Mor_Mam] WHERE [RefNumber] = %(r)s", {"r": mor["RefNumber"]})
+    cur.execute(f"DELETE FROM {n.t('mor_mam')} WHERE {M('ref_number')} = %(r)s", {"r": mor["RefNumber"]})
     log_row = {
         "u": user_id,
-        "e": mor["Emp_No"],
-        "sd": mor["S_Date"],
-        "sds": mor["S_DateStandard"],
-        "ed": mor["E_Date"],
-        "eds": mor["E_DateStandard"],
+        "e": mor["EmpNo"],
+        "sd": mor["SDate"],
+        "sds": mor["SDateStandard"],
+        "ed": mor["EDate"],
+        "eds": mor["EDateStandard"],
         "rq": mor["Requested"],
         "sr": mor["StandardRequested"],
-        "is": mor["Issue_Date"],
+        "is": mor["IssueDate"],
         "ty": mor["Type"],
         "bb": mor["Babat"],
-        "it": mor["Inc_Type"],
+        "it": mor["IncType"],
         "b": mor["BranchCode"],
     }
-    _log_mor_mam(cur, log_row, mor["RefNumber"], change_type=3, username=username, app_id=app_id)
+    _log_mor_mam(cur, n, log_row, mor["RefNumber"], change_type=3, username=username, app_id=app_id)
 
 
-def clear_accept_code(cur, request_id: int) -> None:
-    cur.execute("UPDATE [WF_Requests] SET [AcceptCode] = NULL WHERE [RequestId] = %(r)s", {"r": request_id})
+def clear_accept_code(cur, n: KaraNames, request_id: int) -> None:
+    accept_col = n.c("wf_requests", "accept_code")
+    cur.execute(f"UPDATE {n.requests_table} SET {accept_col} = NULL WHERE {n.requests_id} = %(r)s", {"r": request_id})
 
 
-def delete_request_state_rows(cur, request_id: int) -> None:
-    """WF_RequestState به WF_Requests کلید خارجی ندارد - باید دستی پاک شود."""
-    cur.execute("DELETE FROM [WF_RequestState] WHERE [RequestId] = %(r)s", {"r": request_id})
+def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
+    """جدول وضعیت درخواست (WF_RequestState) به جدول درخواست کلید خارجی ندارد - باید دستی پاک شود."""
+    cur.execute(
+        f"DELETE FROM {n.t('wf_request_state')} WHERE {n.c('wf_request_state', 'request_id')} = %(r)s",
+        {"r": request_id},
+    )

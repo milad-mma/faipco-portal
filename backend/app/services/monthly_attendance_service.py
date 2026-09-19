@@ -65,6 +65,16 @@ def _format_time(raw_time: int) -> str:
     return f"{int(hour):02d}:{minute}"
 
 
+def _today_jalali_int() -> int:
+    """امروزِ شمسی (به وقت ایران) به فرمت فشرده YYYYMMDD."""
+    import jdatetime
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    today = jdatetime.date.fromgregorian(date=datetime.now(ZoneInfo("Asia/Tehran")).date())
+    return today.year * 10000 + today.month * 100 + today.day
+
+
 def _format_jalali_date(yyyymmdd: int) -> str:
     """14050524 -> "1405/05/24" """
     s = str(yyyymmdd)
@@ -264,7 +274,7 @@ async def get_monthly_attendance(
     personnel_code: str,
     year: int,
     month: int,
-    kara_overlay: bool = False,
+    kara_names=None,
     type_titles: dict[int, str] | None = None,
 ) -> dict:
     """
@@ -306,10 +316,10 @@ async def get_monthly_attendance(
 
     # ⚠️ لایه مرخصی/ماموریت (فقط کاراوب) - شکستش نباید گزارش اصلی را خراب کند
     overlay = None
-    if kara_overlay and site_connection.db_type == DbType.mssql:
+    if kara_names is not None and site_connection.db_type == DbType.mssql:
         try:
             overlay = await asyncio.to_thread(
-                kara_attendance_overlay.fetch_overlay_sync, site_connection, emp_no, from_date, to_date
+                kara_attendance_overlay.fetch_overlay_sync, site_connection, kara_names, emp_no, from_date, to_date
             )
         except Exception:  # noqa: BLE001
             logger.exception("خطا در دریافت مرخصی/ماموریت برای گزارش تردد (Emp_No=%s)", emp_no)
@@ -327,6 +337,7 @@ async def get_monthly_attendance(
     for row in raw_rows:
         rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
 
+    today_int = _today_jalali_int()
     days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
     max_transits = 0
     days_out = []
@@ -356,13 +367,28 @@ async def get_monthly_attendance(
             if daily_code and day not in holidays:
                 daily_mark = _label(daily_code)
 
+        # ⚠️ برچسب وضعیت روز (طبق درخواست صریح کاربر):
+        #   تعطیل  = تعطیل تقویمی یا روز غیرکاری شیفت خودِ فرد (کارکرد روزانه)
+        #   غیبت   = روز کاری گذشته، بدون هیچ تردد و بدون مرخصی/ماموریت روزانه
+        # امروز و روزهای آینده هرگز «غیبت» نمی‌گیرند.
+        is_off = day in holidays or bool(overlay and overlay.get("work_calendar", {}).get(date_int))
+        if is_off:
+            day_status = "holiday"
+        elif daily_mark is not None:
+            day_status = daily_mark["kind"]
+        elif overlay is not None and not transits and date_int < today_int:
+            day_status = "absent"
+        else:
+            day_status = None
+
         days_out.append(
             {
                 "date": _format_jalali_date(date_int),
                 "day": day,
                 "weekday": jalali_weekday_name(year, month, day),
                 "transits": transits,
-                "is_holiday": day in holidays,
+                "is_holiday": is_off,
+                "day_status": day_status,
                 "transit_marks": transit_marks,
                 "hourly_absences": hourly,
                 "daily_absence": daily_mark,

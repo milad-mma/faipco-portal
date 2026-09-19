@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -19,6 +22,7 @@ import {
 import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
   deleteSiteAttendanceMapping,
   deleteSiteConnection,
@@ -119,6 +123,7 @@ const EMPTY_LEAVE_MAPPING = {
   branch_code_value: null,
   application_id_value: 4,
   kara_writeback_enabled: true,
+  kara_schema: {},
   action_id_column: "ActionId",
   action_lookup_table_name: "WF_Action",
   action_lookup_id_column: "ActionId",
@@ -148,6 +153,79 @@ const EMPTY_LEAVE_MAPPING = {
   wf_reviews_show_to_personal_column: "ShowToPersonal",
   wf_reviews_approved_type_value: 4,
 };
+
+// ⚠️ طبق درخواست صریح کاربر: هر نام جدول/ستونی که در ثبت کارکرد کاراوب و
+// گزارش مرخصی/ماموریت استفاده می‌شود از همین‌جا قابل‌تغییر است. مقدار
+// پیش‌فرض همان نام واقعی کاراوب است؛ فقط در صورت تفاوت نصب تغییر دهید.
+const KARA_SCHEMA_GROUPS = {
+  wf_requests: "ستون‌های تکمیلی جدول درخواست (WF_Requests)",
+  wf_reviews: "جدول نظر تأییدکننده (WF_Reviews)",
+  wf_attachment: "جدول پیوست‌ها",
+  wf_moveup: "جدول صعود خودکار",
+  wf_parallel: "جدول تأیید موازی",
+  wf_request_state: "جدول وضعیت/ابطال درخواست (WF_RequestState)",
+  users: "کاربران کاراوب (ثبت‌کننده تغییر در لاگ‌ها)",
+  datafile: "ترددها (DataFile)",
+  log_datafile: "لاگ تغییر ترددها (LogDataFile)",
+  mor_mam: "مرخصی/ماموریت روزانه (Mor_Mam)",
+  log_mor_mam: "لاگ مرخصی/ماموریت روزانه (LogMorMam)",
+  cards: "ستون‌های تکمیلی جدول کارت‌ها (Cards)",
+  daily_work: "کارکرد روزانه (DailyWork) - فقط شماره شیفت روز",
+  shifts: "شیفت‌ها (Shifts) - ساعت کسر مرخصی استحقاقی",
+  grp_shift: "تقویم شیفت گروهی (GrpShift)",
+  emp_grps: "گروه شیفت پرسنل (EmpGrps)",
+};
+
+function KaraSchemaFields({ values, defaults, onChange, disabled }) {
+  const keys = Object.keys(defaults || {});
+  if (keys.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        بعد از اولین ذخیره تنظیمات، فهرست نام‌ها در اینجا نمایش داده می‌شود.
+      </Typography>
+    );
+  }
+  const groups = [];
+  for (const key of keys) {
+    const group = key.split(".")[0];
+    let entry = groups.find((g) => g.group === group);
+    if (!entry) {
+      entry = { group, keys: [] };
+      groups.push(entry);
+    }
+    entry.keys.push(key);
+  }
+  return (
+    <Stack spacing={2}>
+      {groups.map(({ group, keys: groupKeys }) => (
+        <Box key={group}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>
+            {KARA_SCHEMA_GROUPS[group] || group}
+          </Typography>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
+            {groupKeys.map((key) => {
+              const role = key.split(".")[1];
+              const label =
+                role === "table" ? "نام جدول" : role === "day_prefix" ? "پیشوند ستون روزها" : `ستون ${defaults[key]}`;
+              return (
+                <TextField
+                  key={key}
+                  size="small"
+                  label={label}
+                  value={values?.[key] ?? defaults[key]}
+                  onChange={(e) => onChange({ ...(values || {}), [key]: e.target.value })}
+                  disabled={disabled}
+                  sx={{ minWidth: 190 }}
+                  inputProps={{ dir: "ltr" }}
+                />
+              );
+            })}
+          </Stack>
+        </Box>
+      ))}
+    </Stack>
+  );
+}
 
 export default function SiteSettingsPage() {
   const { siteId } = useParams();
@@ -398,7 +476,9 @@ export default function SiteSettingsPage() {
     setLeaveMappingResult(null);
     setIsSavingLeaveMapping(true);
     try {
-      await saveLeaveRequestMapping(siteId, leaveMappingForm);
+      const saved = await saveLeaveRequestMapping(siteId, leaveMappingForm);
+      // پاسخ سرور شامل نام‌های نهایی و پیش‌فرض‌های کاراوب است
+      if (saved) setLeaveMappingForm({ ...EMPTY_LEAVE_MAPPING, ...saved });
       setHasExistingLeaveMapping(true);
       setLeaveMappingResult({ success: true, message: "نگاشت مرخصی/ماموریت ذخیره شد." });
     } catch (err) {
@@ -1377,6 +1457,26 @@ export default function SiteSettingsPage() {
               }
               label="ثبت در کارکرد کاراوب مثل خودِ کاراوب (روزانه در Mor_Mam، ساعتی روی تردد مطابق)"
             />
+
+            <Accordion variant="outlined" disableGutters sx={{ borderRadius: 2, "&:before": { display: "none" } }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2" fontWeight={700}>
+                  نگاشت جدول‌ها و ستون‌های کارکرد کاراوب
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  همه نام‌هایی که در ثبت مرخصی/ماموریت در کارکرد و نمایش آن در گزارش تردد استفاده می‌شوند. مقدار
+                  پیش‌فرض همان نام واقعی کاراوب است؛ فقط اگر نصب شما متفاوت است تغییر دهید.
+                </Typography>
+                <KaraSchemaFields
+                  values={leaveMappingForm.kara_schema}
+                  defaults={leaveMappingForm.kara_schema_defaults}
+                  onChange={(next) => setLeaveMappingForm({ ...leaveMappingForm, kara_schema: next })}
+                  disabled={isSavingLeaveMapping}
+                />
+              </AccordionDetails>
+            </Accordion>
 
             {leaveMappingResult && (
               <Alert severity={leaveMappingResult.success ? "success" : "error"}>{leaveMappingResult.message}</Alert>

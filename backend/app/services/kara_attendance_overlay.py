@@ -14,6 +14,8 @@
     ۹ ماموریت). بازه از همان تردد تا تردد بعدی همان روز است. این علامت یا
     از خودِ دستگاه (کارت مرخصی/ماموریت) می‌آید یا از تأیید درخواست.
 
+نام همه جدول/ستون‌ها از تنظیمات سایت می‌آید (app/services/kara_schema.py).
+
 همه چیز فقط خواندنی است و اگر هر بخش شکست بخورد، گزارش اصلی تردد
 بدون این لایه نمایش داده می‌شود (مثل تقویم تعطیلات).
 """
@@ -25,6 +27,7 @@ import pymssql
 
 from app.core.security import decrypt_secret
 from app.models.site import SiteConnection
+from app.services.kara_schema import KaraNames
 
 KIND_LEAVE = "leave"
 KIND_MISSION = "mission"
@@ -59,47 +62,67 @@ def _kind_for_card_type(card_type) -> str:
     return KIND_OTHER
 
 
-def fetch_overlay_sync(conn: SiteConnection, emp_no: int, from_date: int, to_date: int) -> dict:
+def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_date: int, to_date: int) -> dict:
     """
     خروجی:
       {
         "punch_status": {(date, time): status, ...}   # فقط Status غیرصفر
         "daily": {date: card_no, ...}                 # روزهای مرخصی/ماموریت روزانه
         "cards": {card_no: {"title": str, "kind": str}, ...}
+        "work_calendar": {date: is_off_day, ...}      # فقط روزهایی که کارکرد روزانه دارند
       }
+    همه نام جدول/ستون‌ها از تنظیمات سایت (KaraNames) می‌آیند.
     """
+    D = lambda role: n.c("datafile", role)  # noqa: E731
+    M = lambda role: n.c("mor_mam", role)  # noqa: E731
     connection = _connect(conn)
     try:
         with connection.cursor(as_dict=True) as cur:
             cur.execute(
-                "SELECT [Date], [Time], [Status] FROM [DataFile] "
-                "WHERE [Emp_No] = %(e)s AND [Date] BETWEEN %(f)s AND %(t)s AND [Status] <> 0",
+                f"SELECT {D('date')} AS DateInt, {D('time')} AS TimeInt, {D('status')} AS Status "
+                f"FROM {n.t('datafile')} WHERE {D('emp_no')} = %(e)s AND {D('date')} BETWEEN %(f)s AND %(t)s "
+                f"AND {D('status')} <> 0",
                 {"e": emp_no, "f": from_date, "t": to_date},
             )
-            punch_status = {(r["Date"], r["Time"]): int(r["Status"]) for r in cur.fetchall()}
+            punch_status = {(r["DateInt"], r["TimeInt"]): int(r["Status"]) for r in cur.fetchall()}
 
             cur.execute(
-                "SELECT m.[Type], m.[S_Date], ISNULL(m.[E_Date], m.[S_Date]) AS EDate "
-                "FROM [Mor_Mam] m JOIN [Cards] c ON c.[Card_No] = m.[Type] "
-                "WHERE m.[Emp_No] = %(e)s AND c.[IsDay] = 1 AND (m.[Inc_Type] = 0 OR m.[Inc_Type] IS NULL) "
-                "AND m.[S_Date] <= %(t)s AND ISNULL(m.[E_Date], m.[S_Date]) >= %(f)s "
-                "ORDER BY m.[RefNumber]",
+                f"SELECT m.{M('type')} AS CardNo, m.{M('s_date')} AS SDate, "
+                f"ISNULL(m.{M('e_date')}, m.{M('s_date')}) AS EDate "
+                f"FROM {n.t('mor_mam')} m JOIN {n.cards_table} c ON c.{n.cards_no} = m.{M('type')} "
+                f"WHERE m.{M('emp_no')} = %(e)s AND c.{n.c('cards', 'is_day')} = 1 "
+                f"AND (m.{M('inc_type')} = 0 OR m.{M('inc_type')} IS NULL) "
+                f"AND m.{M('s_date')} <= %(t)s AND ISNULL(m.{M('e_date')}, m.{M('s_date')}) >= %(f)s "
+                f"ORDER BY m.{M('ref_number')}",
                 {"e": emp_no, "f": from_date, "t": to_date},
             )
             daily_rows = list(cur.fetchall())
 
-            card_nos = set(punch_status.values()) | {int(r["Type"]) for r in daily_rows}
+            # روزهای غیرکاریِ خودِ این پرسنل (مثلاً جمعه یا روز استراحت شیفتی):
+            # شیفت آن روز در کارکرد روزانه، در جدول شیفت‌ها تعریف نشده (مثل ۵۰۱)
+            W = lambda role: n.c("daily_work", role)  # noqa: E731
+            cur.execute(
+                f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{n.c('shifts', 'shift_no')} IS NULL THEN 1 ELSE 0 END AS IsOff "
+                f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s "
+                f"ON s.{n.c('shifts', 'shift_no')} = w.{W('shift_no')} "
+                f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
+                {"e": emp_no, "f": from_date, "t": to_date},
+            )
+            work_calendar = {int(r["DateInt"]): bool(r["IsOff"]) for r in cur.fetchall()}
+
+            card_nos = set(punch_status.values()) | {int(r["CardNo"]) for r in daily_rows}
             cards: dict[int, dict] = {}
             if card_nos:
                 placeholders = ", ".join(f"%(c{i})s" for i in range(len(card_nos)))
                 params = {f"c{i}": c for i, c in enumerate(sorted(card_nos))}
                 cur.execute(
-                    f"SELECT [Card_No], [DefaultTitle], [CardType] FROM [Cards] WHERE [Card_No] IN ({placeholders})",
+                    f"SELECT {n.cards_no} AS CardNo, {n.cards_title} AS Title, {n.c('cards', 'card_type')} AS CardType "
+                    f"FROM {n.cards_table} WHERE {n.cards_no} IN ({placeholders})",
                     params,
                 )
                 for r in cur.fetchall():
-                    cards[int(r["Card_No"])] = {
-                        "title": _clean_title(r.get("DefaultTitle")),
+                    cards[int(r["CardNo"])] = {
+                        "title": _clean_title(r.get("Title")),
                         "kind": _kind_for_card_type(r.get("CardType")),
                     }
     finally:
@@ -107,10 +130,10 @@ def fetch_overlay_sync(conn: SiteConnection, emp_no: int, from_date: int, to_dat
 
     daily: dict[int, int] = {}
     for r in daily_rows:
-        start, end = int(r["S_Date"]), int(r["EDate"])
+        start, end = int(r["SDate"]), int(r["EDate"])
         # بازه‌های تاریخ شمسی فشرده هستند (YYYYMMDD) - روز به روز داخل همان ماه گزارش
         for date_int in range(max(start, from_date), min(end, to_date) + 1):
             if 1 <= date_int % 100 <= 31 and 1 <= (date_int // 100) % 100 <= 12:
-                daily[date_int] = int(r["Type"])
+                daily[date_int] = int(r["CardNo"])
 
-    return {"punch_status": punch_status, "daily": daily, "cards": cards}
+    return {"punch_status": punch_status, "daily": daily, "cards": cards, "work_calendar": work_calendar}

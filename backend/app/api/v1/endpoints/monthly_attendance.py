@@ -24,6 +24,7 @@ from app.models.employee import Employee
 from app.models.leave_request import LeaveRequestMapping, LeaveRequestType
 from app.models.site import AttendanceMapping, SiteConnection
 from app.models.user import User
+from app.services.kara_schema import KaraNames
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
 from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
@@ -96,7 +97,7 @@ async def monthly_attendance_report(
             personnel_code=employee.personnel_code,
             year=year,
             month=month,
-            kara_overlay=kara_overlay,
+            kara_names=KaraNames(leave_mapping) if kara_overlay else None,
             type_titles=type_titles,
         )
     except MonthlyAttendanceError as e:

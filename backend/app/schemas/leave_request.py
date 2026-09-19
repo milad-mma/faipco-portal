@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.services.kara_schema import KARA_SCHEMA_DEFAULTS, effective_kara_schema, validate_kara_schema
 
 
 class EmployeeBrief(BaseModel):
@@ -75,11 +77,26 @@ class LeaveRequestMappingIn(BaseModel):
     branch_code_value: int | None = None
     application_id_value: int = 4
     kara_writeback_enabled: bool = True
+    # نام جدول/ستون‌های کاراوب - کلید «گروه.نقش»؛ فقط مقادیر متفاوت با پیش‌فرض ذخیره می‌شوند
+    kara_schema: dict[str, str] = {}
+
+    @field_validator("kara_schema", mode="before")
+    @classmethod
+    def _kara_schema(cls, value):
+        return validate_kara_schema(value)
 
 
 class LeaveRequestMappingOut(LeaveRequestMappingIn):
     id: int
     site_id: int
+    # برای پنل تنظیمات: مقدار پیش‌فرض هر نام (تا فرم همه فیلدها را نشان دهد)
+    kara_schema_defaults: dict[str, str] = KARA_SCHEMA_DEFAULTS
+
+    @field_validator("kara_schema", mode="before")
+    @classmethod
+    def _kara_schema(cls, value):
+        # خروجی = مقادیر نهایی (پیش‌فرض + تنظیمات سایت)
+        return effective_kara_schema(value)
 
     model_config = ConfigDict(from_attributes=True)
 
