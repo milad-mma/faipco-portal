@@ -69,14 +69,9 @@ function formatMinutes(minutes) {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-// بازه مثل کاراوب: ورود = از شروع شیفت/خروج قبلی تا همین تردد؛ خروج = تا ورود بعدی/پایان شیفت
+// طبق خواست کاربر فقط عنوان و مدت - مثلاً «مرخصی ساعتی استحقاقی (1:43)»
 function hourlyText(mark) {
-  let range;
-  if (mark.from && mark.to) range = `${mark.from} تا ${mark.to}`;
-  else if (mark.to) range = `تا ${mark.to}`;
-  else range = `از ${mark.from}`;
-  const duration = mark.minutes ? ` (${formatMinutes(mark.minutes)})` : "";
-  return `${mark.label} ${range}${duration}`;
+  return mark.minutes ? `${mark.label} (${formatMinutes(mark.minutes)})` : mark.label;
 }
 
 // برچسب کوچک و قابل‌شکستن در چند خط - تا جدول در موبایل جا شود
