@@ -1265,6 +1265,17 @@ export default function SiteSettingsPage() {
 
         {tab === "leave-mapping" && (
           <Stack spacing={2}>
+            <Alert
+              severity="info"
+              action={
+                <Button color="inherit" size="small" onClick={() => navigate(`/leave-requests/settings?site=${siteId}`)}>
+                  باز کردن
+                </Button>
+              }
+            >
+              نوع‌های درخواست، تأییدکننده هر واحد و مسئول نیروی انسانی (تأیید نهایی تردد فراموش‌شده) در صفحه
+              «تنظیمات درخواست مرخصی/ماموریت» تعیین می‌شوند.
+            </Alert>
             <Typography variant="body2" color="text.secondary">
               نام جدول/ستون‌های جدول خام WF_Requests این سایت، به‌همراه جدول‌های مرجع مرتبط - مقادیر
               پیش‌فرض دقیقاً مطابق نمونه‌ی بررسی‌شده است؛ فقط اگر نصب شما نام‌گذاری متفاوتی دارد تغییر

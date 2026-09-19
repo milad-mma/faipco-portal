@@ -188,7 +188,21 @@ export const NAV_ITEMS = [
     label: "درخواست‌های مرخصی/ماموریت",
     path: "/leave-requests/all",
     icon: <AssignmentOutlinedIcon />,
-    check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+    ownPageCheck: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+    children: [
+      {
+        label: "فهرست درخواست‌ها",
+        path: "/leave-requests/all",
+        icon: <AssignmentOutlinedIcon />,
+        check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+      },
+      {
+        label: "تنظیمات مرخصی/ماموریت",
+        path: "/leave-requests/settings",
+        icon: <SettingsOutlinedIcon />,
+        check: (u) => u?.can_manage_sites,
+      },
+    ],
   },
 ];
 

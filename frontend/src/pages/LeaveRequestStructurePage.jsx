@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Accordion,
   AccordionDetails,
@@ -433,6 +434,7 @@ function HrOfficerSection({ siteId, onError }) {
 }
 
 export default function LeaveRequestStructurePage() {
+  const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState("");
   const [error, setError] = useState("");
@@ -440,13 +442,17 @@ export default function LeaveRequestStructurePage() {
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
-      if (data.length > 0) setSiteId(data[0].id);
+      // از دکمه تب «نگاشت مرخصی/ماموریت» تنظیمات سایت، همان سایت انتخاب می‌شود
+      const requested = Number(searchParams.get("site"));
+      const match = data.find((site) => site.id === requested);
+      if (match) setSiteId(match.id);
+      else if (data.length > 0) setSiteId(data[0].id);
     });
   }, []);
 
   return (
     <Box>
-      <BackLink to="/access" label="بازگشت" />
+      <BackLink to="/sites" label="بازگشت" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
         تنظیمات درخواست مرخصی/ماموریت
       </Typography>
@@ -454,8 +460,8 @@ export default function LeaveRequestStructurePage() {
         نوع‌های قابل‌انتخاب پرسنل، تأییدکننده هر واحد سازمانی و مسئول نیروی انسانی سایت.
       </Typography>
       <Alert severity="info" sx={{ mb: 2 }}>
-        نگاشت ستون‌های جدول خام WF_Requests به «تنظیمات سایت» منتقل شد - از صفحه سایت موردنظر، تب
-        «نگاشت مرخصی/ماموریت» را باز کنید.
+        نگاشت ستون‌های جدول‌های کاراوب در «تنظیمات سایت» است - از صفحه سایت موردنظر، تب «نگاشت مرخصی/ماموریت» را
+        باز کنید.
       </Alert>
 
       <TextField
