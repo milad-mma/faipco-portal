@@ -36,7 +36,10 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
         width: "100%",
         maxWidth: 380,
         height: 74,
-        direction: "ltr", // پلاک همیشه از چپ به راست خوانده می‌شود، صرف‌نظر از جهت کلی صفحه
+        // ⚠️ همان رفع باگ PlateDisplay: به‌خاطر stylis-plugin-rtl، مقدار
+        // `direction: "ltr"` در زمان build به rtl بازنویسی می‌شد و بی‌اثر
+        // بود. ترتیب صریحاً با row-reverse تثبیت می‌شود.
+        flexDirection: "row-reverse",
       }}
     >
       {/* بخش اصلی: [۲ رقم] [حرف] [۳ رقم] */}
@@ -48,6 +51,8 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           justifyContent: "center",
           gap: 1,
           px: 1,
+          // همان دلیل بالا - ترتیب ورودی‌ها هم باید تثبیت شود.
+          flexDirection: "row-reverse",
         }}
       >
         <TextField
@@ -152,7 +157,13 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
         borderRadius: 1,
         overflow: "hidden",
         bgcolor: "#fff",
-        direction: "ltr",
+        // ⚠️ رفع باگ جهت (گزارش کاربر: پلاک برعکس دیده می‌شد). کل برنامه
+        // با stylis-plugin-rtl رندر می‌شود که خصوصیت‌های جهت‌دار را در
+        // زمان build برعکس می‌کند - یعنی `direction: "ltr"` اینجا به rtl
+        // بازنویسی می‌شد و بی‌اثر بود. به‌جای تکیه بر direction، ترتیب
+        // چیدمان صریحاً با row-reverse تثبیت می‌شود (چون خودِ plugin هم
+        // row را به row-reverse برمی‌گرداند، نتیجه نهایی چپ‌به‌راست است).
+        flexDirection: "row-reverse",
         flexShrink: 0,
         // ⚠️ طبق گزارش کاربر: اندازه پلاک بین ردیف‌ها متغیر بود. علت این
         // بود که عرض از روی محتوا محاسبه می‌شد - مثلاً «۱۱» باریک‌تر از
@@ -173,6 +184,8 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
           fontSize: 16,
           fontWeight: 800,
           color: "#16324F",
+          // همان دلیل بالا - ترتیب ارقام هم باید تثبیت شود.
+          flexDirection: "row-reverse",
           // ⚠️ اعداد با عرض یکسان رندر می‌شوند تا جابه‌جایی رقم‌ها باعث
           // تکان‌خوردن چیدمان نشود.
           fontVariantNumeric: "tabular-nums",
