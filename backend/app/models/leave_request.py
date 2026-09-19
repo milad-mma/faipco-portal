@@ -183,6 +183,11 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # واقعی، در تمام ردیف‌ها همیشه ۴ بوده است؛ قابل‌تغییر برای نصب‌های دیگر.
     application_id_value: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
 
+    # ⚠️ هم‌رفتاری با کاراوب (app/services/kara_attendance_writeback.py):
+    # تأیید نهایی در کارکرد هم اثر می‌کند (ساعتی روی تردد مطابق، روزانه در
+    # Mor_Mam) و فیلدهای تکمیلی WF_Requests مثل خودِ کاراوب پر می‌شوند.
+    kara_writeback_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     site: Mapped["Site"] = relationship()  # noqa: F821
 
 

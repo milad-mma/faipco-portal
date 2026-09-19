@@ -118,6 +118,7 @@ const EMPTY_LEAVE_MAPPING = {
   branch_code_column: "BranchCode",
   branch_code_value: null,
   application_id_value: 4,
+  kara_writeback_enabled: true,
   action_id_column: "ActionId",
   action_lookup_table_name: "WF_Action",
   action_lookup_id_column: "ActionId",
@@ -1363,6 +1364,19 @@ export default function SiteSettingsPage() {
                 disabled={isSavingLeaveMapping}
               />
             </Stack>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={leaveMappingForm.kara_writeback_enabled !== false}
+                  onChange={(e) =>
+                    setLeaveMappingForm({ ...leaveMappingForm, kara_writeback_enabled: e.target.checked })
+                  }
+                  disabled={isSavingLeaveMapping}
+                />
+              }
+              label="ثبت در کارکرد کاراوب مثل خودِ کاراوب (روزانه در Mor_Mam، ساعتی روی تردد مطابق)"
+            />
 
             {leaveMappingResult && (
               <Alert severity={leaveMappingResult.success ? "success" : "error"}>{leaveMappingResult.message}</Alert>

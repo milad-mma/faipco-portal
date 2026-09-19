@@ -40,6 +40,7 @@ from app.models.employee import Employee
 from app.models.leave_request import LeaveRequestApprover, LeaveRequestMapping, LeaveRequestType
 from app.models.site import DbType, SiteConnection
 from app.models.user import User
+from app.services import kara_attendance_writeback as kara_wb
 from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
@@ -405,6 +406,9 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
     # و هم خودِ نوع درخواست مقداری برایش تعیین کرده باشد، نوشته می‌شود.
     if mapping.action_id_column and values.get("action_id") is not None:
         column_map[mapping.action_id_column] = values["action_id"]
+    # ⚠️ ستون‌هایی که خودِ کاراوب هنگام ثبت پر می‌کند (kara_attendance_writeback)
+    for extra_column, extra_value in (values.get("extra_columns") or {}).items():
+        column_map[extra_column] = extra_value
 
     columns_sql = ", ".join(q(col) for col in column_map)
     placeholders = ", ".join(f"%({i})s" for i in range(len(column_map)))
@@ -516,6 +520,26 @@ def _delete_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, req
             )  # noqa: S608
             cur.execute(query, {"request_id": request_id, **branch_params})
             connection.commit()
+    finally:
+        connection.close()
+
+
+def _kara_writeback_enabled(conn: SiteConnection, mapping: LeaveRequestMapping) -> bool:
+    """هم‌رفتاری با کاراوب (Mor_Mam/DataFile/...) فقط روی SQL Server و وقتی در تنظیمات سایت فعال باشد."""
+    return bool(getattr(mapping, "kara_writeback_enabled", False)) and conn.db_type == DbType.mssql
+
+
+def _run_kara_writeback_sync(conn: SiteConnection, fn, *args):
+    """یک تابع kara_attendance_writeback را در یک تراکنش واحد اجرا می‌کند (همه یا هیچ)."""
+    connection = _connect(conn)
+    try:
+        with connection.cursor(as_dict=True) as cur:
+            result = fn(cur, *args)
+        connection.commit()
+        return result
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 
@@ -647,6 +671,21 @@ class LeaveRequestService:
             "action_id": leave_type.action_id,
             "card_no": leave_type.card_no,  # ⚠️ همیشه معتبر است - بالاتر تضمین شد (None بودن آن خطا می‌دهد)
         }
+
+        # ⚠️ هم‌رفتاری با کاراوب: SubmittedByEmployeeID، Requested_Time،
+        # DutyTools/DutyTamin و CurSection را کاراوب هنگام ثبت پر می‌کند.
+        if _kara_writeback_enabled(site_connection, mapping):
+            try:
+                values["extra_columns"] = await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_wb.submit_extra_columns,
+                    values["emp_no"],
+                    cur_emp_no,
+                    duration,
+                )
+            except Exception as e:
+                raise LeaveRequestError(f"خواندن اطلاعات تکمیلی از کاراوب با خطا مواجه شد: {e}") from e
 
         try:
             new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)
@@ -859,6 +898,23 @@ class LeaveRequestService:
         if not rows:
             raise LeaveRequestError("درخواست موردنظر یافت نشد")
 
+        # ⚠️ هم‌رفتاری با کاراوب: اگر درخواست تأییدشده بود، اثرش در کارکرد
+        # (تردد علامت‌خورده یا ردیف Mor_Mam) هم باید برداشته شود؛ و
+        # WF_RequestState (بدون کلید خارجی) هم باید دستی پاک شود.
+        if _kara_writeback_enabled(site_connection, mapping):
+            if rows[0].get("IsFinalApproved"):
+                await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_wb.revert_effects,
+                    rows[0],
+                    None,
+                    mapping.application_id_value,
+                )
+            await asyncio.to_thread(
+                _run_kara_writeback_sync, site_connection, kara_wb.delete_request_state_rows, request_id
+            )
+
         await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
@@ -1063,6 +1119,31 @@ class LeaveRequestService:
         }
         await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
 
+        # ⚠️ هم‌رفتاری با کاراوب: تأیید نهایی باید در کارکرد هم اثر کند -
+        # ساعتی روی تردد مطابق (یا AcceptCode=8 اگر ترددی نیست)، روزانه در
+        # Mor_Mam. اگر این مرحله شکست بخورد، خودِ تأیید هم برگردانده می‌شود
+        # تا درخواستی «تأییدشده ولی بی‌اثر» باقی نماند.
+        if approved and _kara_writeback_enabled(site_connection, mapping):
+            try:
+                await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_wb.apply_on_approval,
+                    request_row,
+                    approver_emp_no,
+                    mapping.application_id_value,
+                    mapping.branch_code_value or 1,
+                )
+            except Exception as e:
+                logger.exception("اعمال تأیید درخواست %s در کارکرد کاراوب شکست خورد", request_id)
+                rollback = {
+                    mapping.is_final_approved_column: None,
+                    mapping.approval_by_manager_column: None,
+                    mapping.approval_date_column: None,
+                }
+                await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, rollback)
+                raise LeaveRequestError(f"ثبت این تأیید در کارکرد کاراوب با خطا مواجه شد: {e}") from e
+
         # ⚠️ کشف حیاتی (تأییدشده با داده واقعی): نظر واقعی تأییدکننده در
         # ManagerIdea ذخیره نمی‌شود - باید در WF_Reviews هم ثبت شود تا هم
         # در خودِ کاراوب صحیح دیده شود، هم توسط پورتال به‌درستی خوانده شود.
@@ -1165,8 +1246,59 @@ class LeaveRequestService:
         # مدیر بدون نوشتن نظر تصمیم گرفته بود)، یک ردیف جدید درج می‌شود.
         new_manager_idea = updates.get("manager_idea")
 
+        # ⚠️ هم‌رفتاری با کاراوب: تغییر وضعیت/تاریخ/ساعت/نوع یک درخواست
+        # روی کارکرد اثر دارد - اثر قبلی (اگر تأییدشده بود) برداشته و بعد
+        # از ویرایش، اگر همچنان/تازه تأییدشده است، دوباره اعمال می‌شود.
+        writeback = _kara_writeback_enabled(site_connection, mapping) and bool(
+            {"is_final_approved", "start_date", "end_date", "start_hour", "end_hour", "leave_type_id"}
+            & set(updates)
+        )
+        request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
+        old_row = None
+        if writeback:
+            old_rows = await asyncio.to_thread(
+                _select_requests_sync,
+                site_connection,
+                mapping,
+                f"{request_id_col} = %(request_id)s",
+                {"request_id": request_id},
+            )
+            old_row = old_rows[0] if old_rows else None
+            if old_row and old_row.get("IsFinalApproved"):
+                await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_wb.revert_effects,
+                    old_row,
+                    None,
+                    mapping.application_id_value,
+                )
+
         if column_updates:
             await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, column_updates)
+
+        if writeback and old_row is not None:
+            new_rows = await asyncio.to_thread(
+                _select_requests_sync,
+                site_connection,
+                mapping,
+                f"{request_id_col} = %(request_id)s",
+                {"request_id": request_id},
+            )
+            new_row = new_rows[0] if new_rows else None
+            if new_row and new_row.get("IsFinalApproved"):
+                approver = new_row.get("ApprovalByManagerEmpNo") or new_row.get("CurEmpNo")
+                await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_wb.apply_on_approval,
+                    new_row,
+                    approver,
+                    mapping.application_id_value,
+                    mapping.branch_code_value or 1,
+                )
+            elif new_row:
+                await asyncio.to_thread(_run_kara_writeback_sync, site_connection, kara_wb.clear_accept_code, request_id)
 
         if "manager_idea" in updates and mapping.wf_reviews_table_name:
             updated = await asyncio.to_thread(

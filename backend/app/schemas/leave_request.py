@@ -74,6 +74,7 @@ class LeaveRequestMappingIn(BaseModel):
     branch_code_column: str | None = "BranchCode"
     branch_code_value: int | None = None
     application_id_value: int = 4
+    kara_writeback_enabled: bool = True
 
 
 class LeaveRequestMappingOut(LeaveRequestMappingIn):
