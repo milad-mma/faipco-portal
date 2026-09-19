@@ -63,8 +63,20 @@ const STATUS_CHIPS = {
   absent: { label: "غیبت", color: "warning" },
 };
 
+function formatMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+// بازه مثل کاراوب: ورود = از شروع شیفت/خروج قبلی تا همین تردد؛ خروج = تا ورود بعدی/پایان شیفت
 function hourlyText(mark) {
-  return mark.to ? `${mark.label} ${mark.from} تا ${mark.to}` : `${mark.label} از ${mark.from}`;
+  let range;
+  if (mark.from && mark.to) range = `${mark.from} تا ${mark.to}`;
+  else if (mark.to) range = `تا ${mark.to}`;
+  else range = `از ${mark.from}`;
+  const duration = mark.minutes ? ` (${formatMinutes(mark.minutes)})` : "";
+  return `${mark.label} ${range}${duration}`;
 }
 
 // برچسب کوچک و قابل‌شکستن در چند خط - تا جدول در موبایل جا شود

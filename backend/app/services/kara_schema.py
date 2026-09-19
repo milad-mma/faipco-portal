@@ -154,6 +154,12 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "shifts.shift_no": "Shift_No",
     "shifts.kasr_gh": "Kasr_Gh",
     "shifts.kasr_gh5": "Kasr_Gh5",
+    # ساعت شروع/پایان شیفت (پنجشنبه ستون‌های «5») - بازه مرخصی/ماموریت ساعتیِ
+    # اولین ورود از شروع شیفت و آخرین خروج تا پایان شیفت حساب می‌شود
+    "shifts.start_time": "Start_Time",
+    "shifts.start_time5": "Start_Time5",
+    "shifts.end_time": "End_Time",
+    "shifts.end_time5": "End_Time5",
     # تقویم شیفت گروهی
     "grp_shift.table": "GrpShift",
     "grp_shift.grp_no": "Grp_No",

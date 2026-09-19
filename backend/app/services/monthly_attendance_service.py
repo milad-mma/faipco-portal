@@ -65,6 +65,14 @@ def _format_time(raw_time: int) -> str:
     return f"{int(hour):02d}:{minute}"
 
 
+def _minutes_between(start: int | None, end: int | None) -> int | None:
+    """فاصله دو ساعت فشرده HHMM به دقیقه (None اگر یکی نامعلوم یا ترتیب نادرست باشد)."""
+    if start is None or end is None:
+        return None
+    diff = (end // 100 * 60 + end % 100) - (start // 100 * 60 + start % 100)
+    return diff if diff > 0 else None
+
+
 def _today_jalali_int() -> int:
     """امروزِ شمسی (به وقت ایران) به فرمت فشرده YYYYMMDD."""
     import jdatetime
@@ -348,19 +356,33 @@ async def get_monthly_attendance(
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
 
-        # علامت مرخصی/ماموریت ساعتی روی هر تردد: بازه از همان تردد تا تردد بعدی
+        # ⚠️ علامت مرخصی/ماموریت ساعتی روی هر تردد - دقیقاً مثل محاسبه کاراوب
+        # (کارکرد روزانه، ستون S_Sha): تردد «ورود» (اول/سوم/...) یعنی از خروج
+        # قبلی یا شروع شیفت تا همین تردد؛ تردد «خروج» (دوم/چهارم/...) یعنی از
+        # همین تردد تا ورود بعدی یا پایان شیفت. (قبلاً همیشه «از همین تردد تا
+        # تردد بعدی» نمایش داده می‌شد - ورود ۰۸:۱۳ با کارت مرخصی به‌اشتباه
+        # «۰۸:۱۳ تا ۱۴:۳۷» دیده می‌شد، در حالی که کاراوب ۰۶:۳۰ تا ۰۸:۱۳ حساب می‌کند.)
         transit_marks: list[dict | None] = []
         hourly: list[dict] = []
         daily_mark = None
         if overlay is not None:
+            shift = (overlay.get("shift_times") or {}).get(date_int)
+            times = [r["AttendanceTime"] for r in day_rows]
             for index, r in enumerate(day_rows):
                 status_code = overlay["punch_status"].get((date_int, r["AttendanceTime"]))
                 if not status_code:
                     transit_marks.append(None)
                     continue
                 mark = _label(status_code)
-                mark["from"] = transits[index]
-                mark["to"] = transits[index + 1] if index + 1 < len(transits) else None
+                if index % 2 == 0:  # ورود
+                    start = times[index - 1] if index > 0 else (shift[0] if shift else None)
+                    end = times[index]
+                else:  # خروج
+                    start = times[index]
+                    end = times[index + 1] if index + 1 < len(times) else (shift[1] if shift else None)
+                mark["from"] = _format_time(start) if start is not None else None
+                mark["to"] = _format_time(end) if end is not None else None
+                mark["minutes"] = _minutes_between(start, end)
                 transit_marks.append(mark)
                 hourly.append(mark)
             daily_code = overlay["daily"].get(date_int)

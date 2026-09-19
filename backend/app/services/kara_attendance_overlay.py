@@ -11,8 +11,14 @@
 
 ساعتی (مرخصی ساعتی، ماموریت ساعتی):
     روی خودِ تردد: DataFile.Status = شماره کارت (مثلاً ۱۷ مرخصی شخصی،
-    ۹ ماموریت). بازه از همان تردد تا تردد بعدی همان روز است. این علامت یا
-    از خودِ دستگاه (کارت مرخصی/ماموریت) می‌آید یا از تأیید درخواست.
+    ۹ ماموریت). این علامت یا از خودِ دستگاه (کارت مرخصی/ماموریت) می‌آید یا
+    از تأیید درخواست. بازه آن به «ورود» یا «خروج» بودن تردد بستگی دارد
+    (تأییدشده با کارکرد روزانه کاراوب - ستون S_Sha، ۱۴۰۵/۰۶/۲۸):
+      - تردد ورود (اول، سوم، ... روز): از خروج قبلی - یا شروع شیفت اگر اولین
+        تردد است - تا همین تردد. مثال: ورود ۰۸:۱۳ با کارت مرخصی، شیفت ۰۶:۳۰
+        -> مرخصی ۰۶:۳۰ تا ۰۸:۱۳ (۱:۴۳)
+      - تردد خروج (دوم، چهارم، ...): از همین تردد تا ورود بعدی - یا پایان
+        شیفت اگر ورودی بعدش نیست. مثال: خروج ۰۸:۵۲ و ورود ۱۰:۳۱ -> ۱:۳۹
 
 نام همه جدول/ستون‌ها از تنظیمات سایت می‌آید (app/services/kara_schema.py).
 
@@ -23,6 +29,7 @@ from __future__ import annotations
 
 import re
 
+import jdatetime
 import pymssql
 
 from app.core.security import decrypt_secret
@@ -52,6 +59,11 @@ def _clean_title(title: str | None) -> str:
     return re.sub(r"\s*[0-9۰-۹]+$", "", cleaned).strip()
 
 
+def _is_thursday(date_int: int) -> bool:
+    j = jdatetime.date(date_int // 10000, (date_int // 100) % 100, date_int % 100)
+    return j.togregorian().weekday() == 3
+
+
 def _kind_for_card_type(card_type) -> str:
     # Cards.CardType در داده واقعی: ۳ = ماموریت، ۵/۷ = مرخصی (با/بدون حقوق)،
     # ۲ = تاخیر/تعجیل و مانند آن
@@ -77,6 +89,7 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
     punch_status: dict = {}
     daily_rows: list = []
     work_calendar: dict[int, bool] = {}
+    shift_times: dict[int, tuple[int, int]] = {}
     cards: dict[int, dict] = {}
     connection = _connect(conn)
     try:
@@ -111,13 +124,28 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
             if n.can_read_work_calendar:
                 W = lambda role: n.c("daily_work", role)  # noqa: E731
                 sh_no = n.c("shifts", "shift_no")
+                with_times = all(n.has("shifts", r) for r in ("start_time", "start_time5", "end_time", "end_time5"))
+                times_sql = (
+                    f", s.{n.c('shifts', 'start_time')} AS StartTime, s.{n.c('shifts', 'start_time5')} AS StartTime5, "
+                    f"s.{n.c('shifts', 'end_time')} AS EndTime, s.{n.c('shifts', 'end_time5')} AS EndTime5"
+                    if with_times
+                    else ""
+                )
                 cur.execute(
-                    f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff "
+                    f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff{times_sql} "
                     f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
                     f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
                     {"e": emp_no, "f": from_date, "t": to_date},
                 )
-                work_calendar = {int(r["DateInt"]): bool(r["IsOff"]) for r in cur.fetchall()}
+                for r in cur.fetchall():
+                    date_int = int(r["DateInt"])
+                    work_calendar[date_int] = bool(r["IsOff"])
+                    if with_times and not r["IsOff"]:
+                        thursday = _is_thursday(date_int)
+                        start = r["StartTime5"] if thursday else r["StartTime"]
+                        end = r["EndTime5"] if thursday else r["EndTime"]
+                        if start is not None and end is not None:
+                            shift_times[date_int] = (int(start), int(end))
 
             card_nos = set(punch_status.values()) | {int(r["CardNo"]) for r in daily_rows}
             if card_nos and n.has_cards and getattr(n.leave, "card_lookup_desc_column", None):
@@ -152,6 +180,7 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
         "daily": daily,
         "cards": cards,
         "work_calendar": work_calendar,
+        "shift_times": shift_times,
         # «غیبت» فقط وقتی قابل‌تشخیص است که مرخصی/ماموریت روزانه خوانده شده باشد
         "daily_enabled": n.can_read_daily_marks,
     }
