@@ -85,3 +85,8 @@ export async function adminUpdateLeaveRequest(siteId, requestId, payload) {
 export async function adminDeleteLeaveRequest(siteId, requestId) {
   await apiClient.delete(`/leave-requests/sites/${siteId}/requests/${requestId}`);
 }
+
+export async function fetchKaraSchemaDefaults() {
+  const { data } = await apiClient.get("/leave-requests/kara-schema-defaults");
+  return data;
+}

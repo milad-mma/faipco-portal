@@ -104,7 +104,7 @@ def _minutes_to_hhmm(minutes: int) -> int:
 
 
 def get_sec_no(cur, n: KaraNames, emp_no: int | None) -> int | None:
-    if emp_no is None:
+    if emp_no is None or not n.has_employee_section:
         return None
     cur.execute(
         f"SELECT TOP 1 {n.employee_sec_no} AS SecNo FROM {n.employee_table} WHERE {n.employee_emp_no} = %(e)s",
@@ -147,14 +147,20 @@ def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[st
 
 
 def submit_extra_columns(cur, n: KaraNames, requester_emp_no: int, approver_emp_no: int | None, duration) -> dict:
-    """ستون‌هایی که کاراوب هنگام ثبت پر می‌کند و پرتال قبلاً NULL می‌گذاشت (نام ستون‌ها از تنظیمات)."""
-    return {
-        n.raw("wf_requests", "submitted_by"): requester_emp_no,
-        n.raw("wf_requests", "requested_time"): str(duration),
-        n.raw("wf_requests", "duty_tools"): "",
-        n.raw("wf_requests", "duty_tamin"): "",
-        n.raw("wf_requests", "cur_section"): get_sec_no(cur, n, approver_emp_no),
+    """
+    ستون‌هایی که کاراوب هنگام ثبت پر می‌کند - فقط آن‌هایی که در تنظیمات
+    نگاشت شده‌اند (ستون نگاشت‌نشده نوشته نمی‌شود).
+    """
+    values = {
+        "submitted_by": requester_emp_no,
+        "requested_time": str(duration),
+        "duty_tools": "",
+        "duty_tamin": "",
     }
+    columns = {n.raw("wf_requests", role): value for role, value in values.items() if n.has("wf_requests", role)}
+    if n.has("wf_requests", "cur_section"):
+        columns[n.raw("wf_requests", "cur_section")] = get_sec_no(cur, n, approver_emp_no)
+    return columns
 
 
 # ---------- کسر روزانه مرخصی استحقاقی ----------
@@ -170,55 +176,66 @@ def _kasr_minutes(row: dict | None, thursday: bool) -> int | None:
 
 
 def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
-    """ساعت کسر یک روز: شیفت همان روز -> ستون کسر مرخصی استحقاقی آن شیفت."""
+    """
+    ساعت کسر یک روز: شیفت همان روز -> ستون کسر مرخصی استحقاقی آن شیفت.
+    هر منبع فقط اگر نگاشت شده باشد استفاده می‌شود؛ در نهایت قاعده روز هفته.
+    """
     thursday = day.weekday() == _THURSDAY
     jalali = _jalali_int(day)
-    shifts, sh_no = n.t("shifts"), n.c("shifts", "shift_no")
-    kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"
 
-    # ۱) کارکرد روزانه کاراوب (فقط شماره شیفت روز خوانده می‌شود)
-    cur.execute(
-        f"SELECT TOP 1 w.{n.c('daily_work', 'shift_no')} AS ShiftNo, {kasr} "
-        f"FROM {n.t('daily_work')} w LEFT JOIN {shifts} s ON s.{sh_no} = w.{n.c('daily_work', 'shift_no')} "
-        f"WHERE w.{n.c('daily_work', 'emp_no')} = %(e)s AND w.{n.c('daily_work', 'date')} = %(d)s",
-        {"e": emp_no, "d": jalali},
-    )
-    minutes = _kasr_minutes(cur.fetchone(), thursday)
-    if minutes is not None:
-        return minutes
+    if n.has("shifts"):
+        shifts, sh_no = n.t("shifts"), n.c("shifts", "shift_no")
+        kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"
 
-    # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود - برای ماه‌های
-    # آینده، تقویم شیفت گروهی کاراوب (جمعه‌ها و تعطیلات رسمی = غیرکاری):
-    # گروه فرد در آن تاریخ -> شیفت آن روز گروه. (با شهریور ۱۴۰۵ مقایسه
-    # شد: ۷۶۰۹ از ۷۶۲۳ روز با کارکرد روزانه یکی بود)
-    j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
-    day_col = f"[{n.raw('grp_shift', 'day_prefix')}{j_day}]"
-    cur.execute(
-        f"SELECT TOP 1 g.{day_col} AS ShiftNo, {kasr} "
-        f"FROM {n.t('grp_shift')} g LEFT JOIN {shifts} s ON s.{sh_no} = g.{day_col} "
-        f"WHERE g.{n.c('grp_shift', 'year')} = %(y)s AND g.{n.c('grp_shift', 'month')} = %(m)s "
-        f"AND g.{n.c('grp_shift', 'grp_no')} = ("
-        f"SELECT TOP 1 e.{n.c('emp_grps', 'new_grp_no')} FROM {n.t('emp_grps')} e "
-        f"WHERE e.{n.c('emp_grps', 'emp_no')} = %(e)s AND e.{n.c('emp_grps', 'date')} <= %(d)s "
-        f"ORDER BY e.{n.c('emp_grps', 'date')} DESC)",
-        {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
-    )
-    minutes = _kasr_minutes(cur.fetchone(), thursday)
-    if minutes is not None:
-        return minutes
+        # ۱) کارکرد روزانه کاراوب (فقط شماره شیفت روز خوانده می‌شود)
+        if n.has("daily_work"):
+            W = lambda role: n.c("daily_work", role)  # noqa: E731
+            cur.execute(
+                f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {kasr} "
+                f"FROM {n.t('daily_work')} w LEFT JOIN {shifts} s ON s.{sh_no} = w.{W('shift_no')} "
+                f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
+                {"e": emp_no, "d": jalali},
+            )
+            minutes = _kasr_minutes(cur.fetchone(), thursday)
+            if minutes is not None:
+                return minutes
 
-    # ۳) آخرین راه: قاعده روز هفته با آخرین شیفت کاری همین فرد
+        # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود - برای ماه‌های
+        # آینده، تقویم شیفت گروهی کاراوب (جمعه‌ها و تعطیلات رسمی = غیرکاری):
+        # گروه فرد در آن تاریخ -> شیفت آن روز گروه. (با شهریور ۱۴۰۵ مقایسه
+        # شد: ۷۶۰۹ از ۷۶۲۳ روز با کارکرد روزانه یکی بود)
+        if n.has("grp_shift") and n.has("emp_grps"):
+            j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
+            day_col = f"[{n.raw('grp_shift', 'day_prefix')}{j_day}]"
+            G = lambda role: n.c("grp_shift", role)  # noqa: E731
+            E = lambda role: n.c("emp_grps", role)  # noqa: E731
+            cur.execute(
+                f"SELECT TOP 1 g.{day_col} AS ShiftNo, {kasr} "
+                f"FROM {n.t('grp_shift')} g LEFT JOIN {shifts} s ON s.{sh_no} = g.{day_col} "
+                f"WHERE g.{G('year')} = %(y)s AND g.{G('month')} = %(m)s AND g.{G('grp_no')} = ("
+                f"SELECT TOP 1 e.{E('new_grp_no')} FROM {n.t('emp_grps')} e "
+                f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC)",
+                {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
+            )
+            minutes = _kasr_minutes(cur.fetchone(), thursday)
+            if minutes is not None:
+                return minutes
+
+    # ۳) آخرین راه: قاعده روز هفته
     if day.weekday() == _FRIDAY:
         return 0
-    cur.execute(
-        f"SELECT TOP 1 w.{n.c('daily_work', 'shift_no')} AS ShiftNo, {kasr} "
-        f"FROM {n.t('daily_work')} w JOIN {shifts} s ON s.{sh_no} = w.{n.c('daily_work', 'shift_no')} "
-        f"WHERE w.{n.c('daily_work', 'emp_no')} = %(e)s ORDER BY w.{n.c('daily_work', 'date')} DESC",
-        {"e": emp_no},
-    )
-    minutes = _kasr_minutes(cur.fetchone(), thursday)
-    if minutes is not None:
-        return minutes
+    if n.has("shifts") and n.has("daily_work"):
+        W = lambda role: n.c("daily_work", role)  # noqa: E731
+        cur.execute(
+            f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, s.{n.c('shifts', 'kasr_gh')} AS KasrGh, "
+            f"s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5 FROM {n.t('daily_work')} w "
+            f"JOIN {n.t('shifts')} s ON s.{n.c('shifts', 'shift_no')} = w.{W('shift_no')} "
+            f"WHERE w.{W('emp_no')} = %(e)s ORDER BY w.{W('date')} DESC",
+            {"e": emp_no},
+        )
+        minutes = _kasr_minutes(cur.fetchone(), thursday)
+        if minutes is not None:
+            return minutes
     return 240 if thursday else 480
 
 
@@ -239,12 +256,17 @@ def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, 
 
 
 def _set_accept_code(cur, n: KaraNames, request_id: int, accept: int | None, cur_section: int | None = None) -> None:
-    accept_col, section_col = n.c("wf_requests", "accept_code"), n.c("wf_requests", "cur_section")
-    cur.execute(
-        f"UPDATE {n.requests_table} SET {accept_col} = %(a)s, {section_col} = COALESCE(%(s)s, {section_col}) "
-        f"WHERE {n.requests_id} = %(r)s",
-        {"a": accept, "s": cur_section, "r": request_id},
-    )
+    """فقط ستون‌هایی که نگاشت شده‌اند به‌روز می‌شوند."""
+    sets, params = [], {"r": request_id}
+    if n.has("wf_requests", "accept_code"):
+        sets.append(f"{n.c('wf_requests', 'accept_code')} = %(a)s")
+        params["a"] = accept
+    if n.has("wf_requests", "cur_section") and cur_section is not None:
+        sets.append(f"{n.c('wf_requests', 'cur_section')} = %(s)s")
+        params["s"] = cur_section
+    if not sets:
+        return
+    cur.execute(f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s", params)
 
 
 def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int) -> int:
@@ -254,11 +276,15 @@ def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, ap
     """
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
+    hourly = request.get("StartHour") is not None
+    # ⚠️ قابلیتی که جدول‌هایش نگاشت نشده، اصلاً اجرا نمی‌شود (بدون تیک جداگانه)
+    if (hourly and not n.can_write_hourly) or (not hourly and not n.can_write_daily):
+        return None
     user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
     now, today_j, now_hhmm = _now_parts()
     start = _to_date(request["StartDate"])
 
-    if request.get("StartHour") is not None:
+    if hourly:
         accept = _apply_hourly(cur, n, request, emp_no, card_no, start, user_id, username, app_id, today_j, now_hhmm)
     else:
         end = _to_date(request.get("EndDate")) or start
@@ -273,18 +299,18 @@ def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, ap
 
 def _punch_select(n: KaraNames) -> str:
     return (
-        f"SELECT TOP 1 {n.c('datafile', 'id')} AS Id, {n.c('datafile', 'time')} AS Time, "
+        f"SELECT TOP 1 {n.c('datafile', 'id')} AS Id, {n.df_time} AS Time, "
         f"{n.c('datafile', 'status')} AS Status, {n.c('datafile', 'duration')} AS Duration, "
         f"{n.c('datafile', 'prev_day')} AS PrevDay, {n.c('datafile', 'application_id')} AS ApplicationId, "
-        f"{n.c('datafile', 'branch_code')} AS BranchCode FROM {n.t('datafile')} "
-        f"WHERE {n.c('datafile', 'emp_no')} = %(e)s AND {n.c('datafile', 'date')} = %(d)s "
-        f"AND {n.c('datafile', 'time')} BETWEEN %(s)s AND %(t)s "
+        f"{n.c('datafile', 'branch_code')} AS BranchCode FROM {n.df_table} "
+        f"WHERE {n.df_emp_no} = %(e)s AND {n.df_date} = %(d)s "
+        f"AND {n.df_time} BETWEEN %(s)s AND %(t)s "
     )
 
 
 def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_id, today_j, now_hhmm) -> int:
     cur.execute(
-        _punch_select(n) + f"ORDER BY {n.c('datafile', 'time')}",
+        _punch_select(n) + f"ORDER BY {n.df_time}",
         {"e": emp_no, "d": _jalali_int(day), "s": int(request["StartHour"]), "t": int(request["EndHour"])},
     )
     punch = cur.fetchone()
@@ -310,11 +336,13 @@ def _update_punch(
     # تردد دقیقاً مثل قبل از اعمال درخواست شود.
     punch_app_id = source_app_id if restore else log_app_id
     cur.execute(
-        f"UPDATE {n.t('datafile')} SET {n.c('datafile', 'status')} = %(st)s, {n.c('datafile', 'duration')} = %(du)s, "
+        f"UPDATE {n.df_table} SET {n.c('datafile', 'status')} = %(st)s, {n.c('datafile', 'duration')} = %(du)s, "
         f"{n.c('datafile', 'application_id')} = %(ap)s, {n.c('datafile', 'checksum')} = 0 "
         f"WHERE {n.c('datafile', 'id')} = %(id)s",
         {"st": new_status, "du": new_duration, "ap": punch_app_id, "id": punch["Id"]},
     )
+    if not n.has("log_datafile"):
+        return  # لاگ تغییر تردد نگاشت نشده
     L = lambda role: n.c("log_datafile", role)  # noqa: E731
     cur.execute(
         f"INSERT INTO {n.t('log_datafile')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
@@ -376,6 +404,8 @@ def _insert_mor_mam(cur, n, request, emp_no, card_no, start, end, user_id, usern
 
 
 def _log_mor_mam(cur, n: KaraNames, row: dict, ref_number, change_type: int, username: str, app_id: int) -> None:
+    if not n.has("log_mor_mam"):
+        return  # لاگ مرخصی/ماموریت روزانه نگاشت نشده
     L = lambda role: n.c("log_mor_mam", role)  # noqa: E731
     cur.execute(
         f"INSERT INTO {n.t('log_mor_mam')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
@@ -399,20 +429,24 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
     start = _to_date(request["StartDate"])
+    hourly = request.get("StartHour") is not None
+    if (hourly and not n.can_write_hourly) or (not hourly and not n.can_write_daily):
+        return
     user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
     now, today_j, now_hhmm = _now_parts()
 
-    if request.get("StartHour") is not None:
+    if hourly:
+        if n.has("wf_requests", "accept_code"):
+            cur.execute(
+                f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
+                f"WHERE {n.requests_id} = %(r)s",
+                {"r": request["RequestId"]},
+            )
+            state = cur.fetchone()
+            if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
+                return  # روی ترددی اعمال نشده بود
         cur.execute(
-            f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
-            f"WHERE {n.requests_id} = %(r)s",
-            {"r": request["RequestId"]},
-        )
-        state = cur.fetchone()
-        if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
-            return  # روی ترددی اعمال نشده بود
-        cur.execute(
-            _punch_select(n) + f"AND {n.c('datafile', 'status')} = %(c)s ORDER BY {n.c('datafile', 'time')}",
+            _punch_select(n) + f"AND {n.c('datafile', 'status')} = %(c)s ORDER BY {n.df_time}",
             {
                 "e": emp_no,
                 "d": _jalali_int(start),
@@ -426,21 +460,23 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
             # ⚠️ وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال خوانده می‌شود -
             # اگر تردد از اول با کارت ماموریت/مرخصی زده شده بود (Status=۹/۱۷
             # از خودِ دستگاه)، حذف درخواست نباید آن علامت واقعی را هم پاک کند.
-            L = lambda role: n.c("log_datafile", role)  # noqa: E731
-            cur.execute(
-                f"SELECT TOP 1 {L('old_status')} AS OldStatus, {L('old_duration')} AS OldDuration "
-                f"FROM {n.t('log_datafile')} WHERE {L('emp_no')} = %(e)s AND {L('io_date')} = %(d)s "
-                f"AND {L('old_time')} = %(t)s AND {L('new_time')} = %(t)s AND {L('new_status')} = %(c)s "
-                f"AND ({L('application_id')} & %(flag)s) <> 0 ORDER BY {L('id')} DESC",
-                {
-                    "e": emp_no,
-                    "d": _jalali_int(start),
-                    "t": punch["Time"],
-                    "c": card_no,
-                    "flag": app_id << _EDITOR_SHIFT,
-                },
-            )
-            before = cur.fetchone() or {}
+            before = {}
+            if n.has("log_datafile"):
+                L = lambda role: n.c("log_datafile", role)  # noqa: E731
+                cur.execute(
+                    f"SELECT TOP 1 {L('old_status')} AS OldStatus, {L('old_duration')} AS OldDuration "
+                    f"FROM {n.t('log_datafile')} WHERE {L('emp_no')} = %(e)s AND {L('io_date')} = %(d)s "
+                    f"AND {L('old_time')} = %(t)s AND {L('new_time')} = %(t)s AND {L('new_status')} = %(c)s "
+                    f"AND ({L('application_id')} & %(flag)s) <> 0 ORDER BY {L('id')} DESC",
+                    {
+                        "e": emp_no,
+                        "d": _jalali_int(start),
+                        "t": punch["Time"],
+                        "c": card_no,
+                        "flag": app_id << _EDITOR_SHIFT,
+                    },
+                )
+                before = cur.fetchone() or {}
             _update_punch(
                 cur, n, punch, emp_no, start, before.get("OldStatus") or 0, before.get("OldDuration") or 0,
                 user_id, username, app_id, today_j, now_hhmm, restore=True,
@@ -488,12 +524,16 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
 
 
 def clear_accept_code(cur, n: KaraNames, request_id: int) -> None:
+    if not n.has("wf_requests", "accept_code"):
+        return
     accept_col = n.c("wf_requests", "accept_code")
     cur.execute(f"UPDATE {n.requests_table} SET {accept_col} = NULL WHERE {n.requests_id} = %(r)s", {"r": request_id})
 
 
 def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
     """جدول وضعیت درخواست (WF_RequestState) به جدول درخواست کلید خارجی ندارد - باید دستی پاک شود."""
+    if not n.has("wf_request_state"):
+        return
     cur.execute(
         f"DELETE FROM {n.t('wf_request_state')} WHERE {n.c('wf_request_state', 'request_id')} = %(r)s",
         {"r": request_id},

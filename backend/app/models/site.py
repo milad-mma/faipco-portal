@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -144,3 +144,9 @@ class AttendanceMapping(Base, TimestampMixin):
     calendar_month_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # پیشوند ستون‌های روز — مثلاً "D" یعنی ستون‌ها D1، D2، ...، D31 هستند
     calendar_day_column_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    # ⚠️ ستون‌های تکمیلی جدول تردد، لاگ تغییر تردد، کارکرد روزانه، شیفت‌ها و
+    # تقویم شیفت گروهی (app/services/kara_schema.py - ATTENDANCE_SCHEMA_DEFAULTS)
+    # برای اعمال مرخصی/ماموریت ساعتی روی تردد و برچسب‌های گزارش تردد.
+    # هر بخش فقط اگر نگاشت شده باشد فعال است.
+    kara_schema: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

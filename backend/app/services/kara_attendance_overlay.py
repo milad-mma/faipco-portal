@@ -73,50 +73,61 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
       }
     همه نام جدول/ستون‌ها از تنظیمات سایت (KaraNames) می‌آیند.
     """
-    D = lambda role: n.c("datafile", role)  # noqa: E731
     M = lambda role: n.c("mor_mam", role)  # noqa: E731
+    punch_status: dict = {}
+    daily_rows: list = []
+    work_calendar: dict[int, bool] = {}
+    cards: dict[int, dict] = {}
     connection = _connect(conn)
     try:
         with connection.cursor(as_dict=True) as cur:
-            cur.execute(
-                f"SELECT {D('date')} AS DateInt, {D('time')} AS TimeInt, {D('status')} AS Status "
-                f"FROM {n.t('datafile')} WHERE {D('emp_no')} = %(e)s AND {D('date')} BETWEEN %(f)s AND %(t)s "
-                f"AND {D('status')} <> 0",
-                {"e": emp_no, "f": from_date, "t": to_date},
-            )
-            punch_status = {(r["DateInt"], r["TimeInt"]): int(r["Status"]) for r in cur.fetchall()}
+            # ساعتی: علامت روی خودِ تردد (جدول تردد از تب «نگاشت تردد»)
+            if n.can_read_hourly_marks:
+                status_col = n.c("datafile", "status")
+                cur.execute(
+                    f"SELECT {n.df_date} AS DateInt, {n.df_time} AS TimeInt, {status_col} AS Status "
+                    f"FROM {n.df_table} WHERE {n.df_emp_no} = %(e)s AND {n.df_date} BETWEEN %(f)s AND %(t)s "
+                    f"AND {status_col} <> 0",
+                    {"e": emp_no, "f": from_date, "t": to_date},
+                )
+                punch_status = {(r["DateInt"], r["TimeInt"]): int(r["Status"]) for r in cur.fetchall()}
 
-            cur.execute(
-                f"SELECT m.{M('type')} AS CardNo, m.{M('s_date')} AS SDate, "
-                f"ISNULL(m.{M('e_date')}, m.{M('s_date')}) AS EDate "
-                f"FROM {n.t('mor_mam')} m JOIN {n.cards_table} c ON c.{n.cards_no} = m.{M('type')} "
-                f"WHERE m.{M('emp_no')} = %(e)s AND c.{n.c('cards', 'is_day')} = 1 "
-                f"AND (m.{M('inc_type')} = 0 OR m.{M('inc_type')} IS NULL) "
-                f"AND m.{M('s_date')} <= %(t)s AND ISNULL(m.{M('e_date')}, m.{M('s_date')}) >= %(f)s "
-                f"ORDER BY m.{M('ref_number')}",
-                {"e": emp_no, "f": from_date, "t": to_date},
-            )
-            daily_rows = list(cur.fetchall())
+            # روزانه: جدول مرخصی/ماموریت روزانه (فقط کارت‌های روزانه و ردیف‌های مصرف)
+            if n.can_read_daily_marks:
+                cur.execute(
+                    f"SELECT m.{M('type')} AS CardNo, m.{M('s_date')} AS SDate, "
+                    f"ISNULL(m.{M('e_date')}, m.{M('s_date')}) AS EDate "
+                    f"FROM {n.t('mor_mam')} m JOIN {n.cards_table} c ON c.{n.cards_no} = m.{M('type')} "
+                    f"WHERE m.{M('emp_no')} = %(e)s AND c.{n.c('cards', 'is_day')} = 1 "
+                    f"AND (m.{M('inc_type')} = 0 OR m.{M('inc_type')} IS NULL) "
+                    f"AND m.{M('s_date')} <= %(t)s AND ISNULL(m.{M('e_date')}, m.{M('s_date')}) >= %(f)s "
+                    f"ORDER BY m.{M('ref_number')}",
+                    {"e": emp_no, "f": from_date, "t": to_date},
+                )
+                daily_rows = list(cur.fetchall())
 
             # روزهای غیرکاریِ خودِ این پرسنل (مثلاً جمعه یا روز استراحت شیفتی):
             # شیفت آن روز در کارکرد روزانه، در جدول شیفت‌ها تعریف نشده (مثل ۵۰۱)
-            W = lambda role: n.c("daily_work", role)  # noqa: E731
-            cur.execute(
-                f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{n.c('shifts', 'shift_no')} IS NULL THEN 1 ELSE 0 END AS IsOff "
-                f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s "
-                f"ON s.{n.c('shifts', 'shift_no')} = w.{W('shift_no')} "
-                f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
-                {"e": emp_no, "f": from_date, "t": to_date},
-            )
-            work_calendar = {int(r["DateInt"]): bool(r["IsOff"]) for r in cur.fetchall()}
+            if n.can_read_work_calendar:
+                W = lambda role: n.c("daily_work", role)  # noqa: E731
+                sh_no = n.c("shifts", "shift_no")
+                cur.execute(
+                    f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff "
+                    f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
+                    f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
+                    {"e": emp_no, "f": from_date, "t": to_date},
+                )
+                work_calendar = {int(r["DateInt"]): bool(r["IsOff"]) for r in cur.fetchall()}
 
             card_nos = set(punch_status.values()) | {int(r["CardNo"]) for r in daily_rows}
-            cards: dict[int, dict] = {}
-            if card_nos:
+            if card_nos and n.has_cards and getattr(n.leave, "card_lookup_desc_column", None):
                 placeholders = ", ".join(f"%(c{i})s" for i in range(len(card_nos)))
                 params = {f"c{i}": c for i, c in enumerate(sorted(card_nos))}
+                card_type_sql = (
+                    f"{n.c('cards', 'card_type')} AS CardType" if n.has("cards", "card_type") else "NULL AS CardType"
+                )
                 cur.execute(
-                    f"SELECT {n.cards_no} AS CardNo, {n.cards_title} AS Title, {n.c('cards', 'card_type')} AS CardType "
+                    f"SELECT {n.cards_no} AS CardNo, {n.cards_title} AS Title, {card_type_sql} "
                     f"FROM {n.cards_table} WHERE {n.cards_no} IN ({placeholders})",
                     params,
                 )
@@ -136,4 +147,16 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
             if 1 <= date_int % 100 <= 31 and 1 <= (date_int // 100) % 100 <= 12:
                 daily[date_int] = int(r["CardNo"])
 
-    return {"punch_status": punch_status, "daily": daily, "cards": cards, "work_calendar": work_calendar}
+    return {
+        "punch_status": punch_status,
+        "daily": daily,
+        "cards": cards,
+        "work_calendar": work_calendar,
+        # «غیبت» فقط وقتی قابل‌تشخیص است که مرخصی/ماموریت روزانه خوانده شده باشد
+        "daily_enabled": n.can_read_daily_marks,
+    }
+
+
+def is_enabled(n: KaraNames) -> bool:
+    """آیا حداقل یکی از بخش‌های این لایه نگاشت شده است؟"""
+    return n.can_read_hourly_marks or n.can_read_daily_marks or n.can_read_work_calendar

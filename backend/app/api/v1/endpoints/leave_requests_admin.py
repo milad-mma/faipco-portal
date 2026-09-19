@@ -32,6 +32,7 @@ from app.schemas.leave_request import (
     OperationLookupItemOut,
     SetApproverIn,
 )
+from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, LEAVE_SCHEMA_DEFAULTS
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
 from app.services.leave_request_xlsx import build_leave_requests_xlsx
 from app.services.leave_request_structure_service import (
@@ -53,6 +54,15 @@ async def get_mapping(
 ):
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).get_mapping(site_id)
+
+
+@router.get("/kara-schema-defaults")
+async def get_kara_schema_defaults(current_user: User = Depends(get_current_user)):
+    """
+    نام‌های پیش‌فرض کاراوب - فقط برای دکمه «پر کردن با نام‌های کاراوب» در
+    تب‌های نگاشت تردد و مرخصی/ماموریت. تا ادمین ذخیره نکند، استفاده نمی‌شوند.
+    """
+    return {"attendance": ATTENDANCE_SCHEMA_DEFAULTS, "leave": LEAVE_SCHEMA_DEFAULTS}
 
 
 @router.put("/sites/{site_id}/mapping", response_model=LeaveRequestMappingOut)

@@ -376,7 +376,7 @@ async def get_monthly_attendance(
             day_status = "holiday"
         elif daily_mark is not None:
             day_status = daily_mark["kind"]
-        elif overlay is not None and not transits and date_int < today_int:
+        elif overlay is not None and overlay.get("daily_enabled") and not transits and date_int < today_int:
             day_status = "absent"
         else:
             day_status = None

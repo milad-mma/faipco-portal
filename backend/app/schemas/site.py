@@ -1,5 +1,7 @@
 """Schema های Pydantic برای مدیریت Site، اتصال دیتابیس و Mapping ستون‌ها."""
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+
+from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, validate_schema
 
 from app.models.site import AttendanceMappingMode, DbType, SyncStatus
 
@@ -140,6 +142,15 @@ class AttendanceMappingIn(BaseModel):
     calendar_month_column: str | None = None
     calendar_day_column_prefix: str | None = None
 
+    # ستون‌های تکمیلی تردد، لاگ تردد، کارکرد روزانه و شیفت‌ها (کلید «گروه.نقش»)
+    # - هر بخش فقط اگر نگاشت شده باشد فعال است
+    kara_schema: dict[str, str] = {}
+
+    @field_validator("kara_schema", mode="before")
+    @classmethod
+    def _kara_schema(cls, value):
+        return validate_schema(value, ATTENDANCE_SCHEMA_DEFAULTS)
+
     @model_validator(mode="after")
     def _validate_columns_for_mode(self) -> "AttendanceMappingIn":
         if self.mapping_mode == AttendanceMappingMode.single_column:
@@ -156,5 +167,10 @@ class AttendanceMappingIn(BaseModel):
 class AttendanceMappingOut(AttendanceMappingIn):
     id: int
     site_id: int
+
+    @field_validator("kara_schema", mode="before")
+    @classmethod
+    def _kara_schema(cls, value):
+        return dict(value or {})
 
     model_config = ConfigDict(from_attributes=True)

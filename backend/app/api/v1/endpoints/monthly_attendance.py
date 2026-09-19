@@ -24,6 +24,7 @@ from app.models.employee import Employee
 from app.models.leave_request import LeaveRequestMapping, LeaveRequestType
 from app.models.site import AttendanceMapping, SiteConnection
 from app.models.user import User
+from app.services import kara_attendance_overlay
 from app.services.kara_schema import KaraNames
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
 from app.services.access_gate_service import AccessGateBlocked, AccessGateService
@@ -75,14 +76,16 @@ async def monthly_attendance_report(
         year = year or current_year
         month = month or current_month
 
-    # ⚠️ نمایش مرخصی/ماموریت فقط وقتی هم‌رفتاری با کاراوب برای این سایت
-    # فعال است (همان تیک تنظیمات درخواست مرخصی/ماموریت)
+    # ⚠️ نمایش مرخصی/ماموریت/تعطیل/غیبت: بدون تیک جداگانه - هر بخش فقط اگر
+    # جدول‌هایش در نگاشت تردد/مرخصی این سایت نگاشت شده باشد فعال است.
     leave_mapping = (
         await db.execute(select(LeaveRequestMapping).where(LeaveRequestMapping.site_id == employee.site_id))
     ).scalar_one_or_none()
-    kara_overlay = bool(leave_mapping and leave_mapping.kara_writeback_enabled)
+    kara_names = KaraNames(leave_mapping, mapping)
+    if not kara_attendance_overlay.is_enabled(kara_names):
+        kara_names = None
     type_titles: dict[int, str] = {}
-    if kara_overlay:
+    if kara_names is not None:
         types = (
             await db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == employee.site_id))
         ).scalars().all()
@@ -97,7 +100,7 @@ async def monthly_attendance_report(
             personnel_code=employee.personnel_code,
             year=year,
             month=month,
-            kara_names=KaraNames(leave_mapping) if kara_overlay else None,
+            kara_names=kara_names,
             type_titles=type_titles,
         )
     except MonthlyAttendanceError as e:
