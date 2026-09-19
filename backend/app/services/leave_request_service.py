@@ -1071,6 +1071,10 @@ class LeaveRequestService:
             raise LeaveRequestError("شما مجاز به حذف این درخواست نیستید")
         if request_row.get("IsFinalApproved") is not None:
             raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده - دیگر قابل‌حذف نیست")
+        # ⚠️ تردد فراموش‌شده‌ای که سرپرست تأیید و به منابع انسانی ارجاع داده،
+        # هنوز «در حال بررسی» است ولی ردیف ارجاع (و شاید نظر سرپرست) دارد -
+        # بدون حذف آن‌ها، کلید خارجی جلوی حذف درخواست را می‌گیرد.
+        await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
     async def admin_delete_request(self, site_id: int, request_id: int) -> None:
