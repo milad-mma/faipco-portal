@@ -191,7 +191,7 @@ class LeaveRequestHrOfficerOut(BaseModel):
 class ForgottenPunchIn(BaseModel):
     """یک تردد فراموش‌شده - ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)."""
 
-    kind: str = "in"  # in | out
+    kind: str | None = None  # in | out | None (فرم فعلی پرتال: فقط یک تردد بدون تعیین ورود/خروج)
     punch_date: date
     time: int  # فرمت فشرده HHMM - مثلاً 700
 

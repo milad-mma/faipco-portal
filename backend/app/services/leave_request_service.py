@@ -721,9 +721,11 @@ class LeaveRequestService:
             raise LeaveRequestError("حداقل یکی از ترددهای ورود یا خروج را وارد کنید")
         if len(punches) > 2:
             raise LeaveRequestError("در هر درخواست حداکثر یک ورود و یک خروج قابل‌ثبت است")
-        kinds = [p.kind for p in punches]
+        kinds = [p.kind for p in punches if p.kind]
         if any(k not in _PUNCH_LABELS for k in kinds) or len(set(kinds)) != len(kinds):
             raise LeaveRequestError("نوع تردد نامعتبر است (فقط یک ورود و یک خروج)")
+        if len(punches) > 1 and len(kinds) != len(punches):
+            raise LeaveRequestError("برای هر تردد فراموش‌شده باید یک درخواست جداگانه ثبت شود")
 
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
         kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
@@ -742,7 +744,7 @@ class LeaveRequestService:
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 raise LeaveRequestError("ساعت تردد نامعتبر است")
             moment = datetime(p.punch_date.year, p.punch_date.month, p.punch_date.day, hour, minute)
-            label = _PUNCH_LABELS[p.kind]
+            label = _PUNCH_LABELS.get(p.kind or "", "تردد")
             if moment > now:
                 raise LeaveRequestError(f"زمان {label} نمی‌تواند در آینده باشد")
             if (now.date() - p.punch_date).days > FORGOTTEN_PUNCH_MAX_PAST_DAYS:
@@ -750,7 +752,7 @@ class LeaveRequestService:
                     f"ثبت تردد فراموش‌شده فقط تا {FORGOTTEN_PUNCH_MAX_PAST_DAYS} روز گذشته امکان‌پذیر است"
                 )
             parsed.append((p, moment, label))
-        by_kind = {p.kind: moment for p, moment, _ in parsed}
+        by_kind = {p.kind: moment for p, moment, _ in parsed if p.kind}
         if "in" in by_kind and "out" in by_kind:
             if by_kind["out"] <= by_kind["in"]:
                 raise LeaveRequestError("زمان خروج باید بعد از زمان ورود باشد")
@@ -803,7 +805,7 @@ class LeaveRequestService:
                 "duration": 0,
                 "operations_id": leave_type.operation_id if leave_type.operation_id is not None else 2,
                 # ورود/خروج در خودِ جدول تردد کاراوب ذخیره نمی‌شود - برای تأییدکننده در توضیحات می‌آید
-                "description": f"{label} - {text}" if text else label,
+                "description": (f"{label} - {text}" if text else label) if p.kind else text,
                 "cur_emp_no": cur_emp_no,
                 "persian_start_date": jalali_date_to_compact(jalali.year, jalali.month, jalali.day),
                 "action_id": leave_type.action_id,

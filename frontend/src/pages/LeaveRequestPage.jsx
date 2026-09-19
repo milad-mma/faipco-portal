@@ -11,12 +11,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   IconButton,
   MenuItem,
   Snackbar,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -85,9 +83,9 @@ function SubmitRequestForm({ onSubmitted }) {
   const [description, setDescription] = useState("");
   const [source, setSource] = useState("");
   const [destination, setDestination] = useState("");
-  // تردد فراموش‌شده: ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)
-  const [punchIn, setPunchIn] = useState({ enabled: true, date: new Date(), time: "07:00" });
-  const [punchOut, setPunchOut] = useState({ enabled: true, date: new Date(), time: "15:00" });
+  // تردد فراموش‌شده: هر درخواست فقط یک تردد (تاریخ + ساعت)
+  const [punchDate, setPunchDate] = useState(new Date());
+  const [punchTime, setPunchTime] = useState("07:00");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -106,18 +104,7 @@ function SubmitRequestForm({ onSubmitted }) {
     const toDateOnly = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     if (selectedType.is_forgotten_punch) {
-      const punches = [
-        punchIn.enabled && { kind: "in", punch_date: toDateOnly(punchIn.date), time: timeStringToCompact(punchIn.time) },
-        punchOut.enabled && {
-          kind: "out",
-          punch_date: toDateOnly(punchOut.date),
-          time: timeStringToCompact(punchOut.time),
-        },
-      ].filter(Boolean);
-      if (punches.length === 0) {
-        setError("حداقل یکی از ترددهای ورود یا خروج را انتخاب کنید");
-        return;
-      }
+      const punches = [{ punch_date: toDateOnly(punchDate), time: timeStringToCompact(punchTime) }];
       setIsSubmitting(true);
       try {
         await submitLeaveRequest({
@@ -182,43 +169,20 @@ function SubmitRequestForm({ onSubmitted }) {
 
         {selectedType?.is_forgotten_punch && (
           <>
-            {[
-              ["ورود", punchIn, setPunchIn],
-              ["خروج", punchOut, setPunchOut],
-            ].map(([label, value, setValue]) => (
-              <Box key={label} sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={value.enabled}
-                      onChange={(e) => setValue({ ...value, enabled: e.target.checked })}
-                    />
-                  }
-                  label={`${label} فراموش شده`}
-                />
-                {value.enabled && (
-                  <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
-                    <Box sx={{ flex: 1 }}>
-                      <JalaliDateTimePicker
-                        value={value.date}
-                        onChange={(d) => setValue({ ...value, date: d })}
-                        label={`تاریخ ${label}`}
-                        showTime={false}
-                      />
-                    </Box>
-                    <TimeSelect24
-                      label={`ساعت ${label}`}
-                      value={value.time}
-                      onChange={(t) => setValue({ ...value, time: t })}
-                      sx={{ flex: 1 }}
-                    />
-                  </Stack>
-                )}
+            <Stack spacing={2} alignItems="center">
+              <Box sx={{ width: "100%", maxWidth: 280 }}>
+                <JalaliDateTimePicker value={punchDate} onChange={setPunchDate} label="تاریخ تردد" showTime={false} />
               </Box>
-            ))}
-            <Typography variant="caption" color="text.secondary">
-              برای شیفت شب، تاریخ خروج را روز بعد انتخاب کنید. درخواست اول توسط سرپرست و سپس مسئول نیروی انسانی
-              تأیید و بعد در سیستم حضور و غیاب ثبت می‌شود.
+              <TimeSelect24
+                label="ساعت تردد"
+                value={punchTime}
+                onChange={setPunchTime}
+                sx={{ width: "100%", maxWidth: 280 }}
+              />
+            </Stack>
+            <Typography variant="caption" color="text.secondary" textAlign="center">
+              برای هر تردد فراموش شده باید یک درخواست جداگانه ثبت شود. درخواست ابتدا توسط سرپرست و سپس مسئول نیروی
+              انسانی تأیید و بعد در سیستم حضور و غیاب ثبت می‌شود.
             </Typography>
             <TextField
               label="توضیحات"
