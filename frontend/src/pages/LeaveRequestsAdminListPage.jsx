@@ -37,8 +37,8 @@ import {
   fetchLeaveRequestTypes,
 } from "../api/leaveRequestsAdmin";
 
-const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده" };
-const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error" };
+const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
+const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
 
 function formatCompactTime(compact) {
   if (compact == null) return "—";
@@ -52,7 +52,7 @@ function formatCompactTime(compact) {
 // چه کسانی مرخصی/ماموریت هستند، نه چه کسانی امروز برای روزی دیگر
 // درخواست ثبت کرده‌اند. درخواست‌های رد‌شده هرگز «امروز فعال» نیستند.
 function isRequestActiveToday(item) {
-  if (item.status === "rejected" || !item.start_date) return false;
+  if (item.status === "rejected" || item.status === "cancelled" || !item.start_date) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (item.start_hour != null) {
@@ -522,6 +522,7 @@ export default function LeaveRequestsAdminListPage() {
           <MenuItem value="pending">در حال بررسی</MenuItem>
           <MenuItem value="approved">تائید شده</MenuItem>
           <MenuItem value="rejected">رد شده</MenuItem>
+          <MenuItem value="cancelled">ابطال شده</MenuItem>
         </TextField>
         <TextField
           select
@@ -718,7 +719,8 @@ export default function LeaveRequestsAdminListPage() {
                   </TableCell>
                   <TableCell>{formatDuration(item)}</TableCell>
                   <TableCell>
-                    {canEdit ? (
+                    {/* ابطال‌شده در کاراوب قابل‌تغییر از پرتال نیست */}
+                    {canEdit && item.status !== "cancelled" ? (
                       <EditableSelect
                         value={item.status}
                         options={STATUS_OPTIONS}

@@ -12,7 +12,7 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * است که کد بقیه پروژه (timeStringToCompact) از قبل انتظار دارد - تا
  * جایگزینی بدون تغییر منطق اطراف ممکن باشد.
  */
-export default function TimeSelect24({ value, onChange, label, size = "small", sx }) {
+export default function TimeSelect24({ value, onChange, label, size = "small", sx, align }) {
   const [hourStr, minuteStr] = (value || "00:00").split(":");
 
   function handleHourChange(newHour) {
@@ -23,8 +23,14 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
     onChange(`${hourStr}:${newMinute}`);
   }
 
+  // align="center": برچسب و فیلدها وسط‌چین (پیش‌فرض همان چینش قبلی)
+  const centered = align === "center";
   return (
-    <Stack spacing={0.5} sx={sx}>
+    <Stack
+      spacing={0.5}
+      alignItems={centered ? "center" : undefined}
+      sx={centered ? { "& .MuiSelect-select": { textAlign: "center" }, ...sx } : sx}
+    >
       {label && (
         <Stack direction="row" sx={{ color: "text.secondary", fontSize: 13 }}>
           {label}

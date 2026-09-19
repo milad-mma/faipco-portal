@@ -7,7 +7,7 @@ import { gregorianToJalali, jalaliMonthLength, jalaliToGregorian, JALALI_MONTH_N
  * یک فیلد ساعت:دقیقه. value و onChange با شیء Date میلادی کار می‌کنند (تا
  * بقیه کد، مثل ارسال به سرور، تغییری نکند) — فقط نمایش برای کاربر شمسی است.
  */
-export default function JalaliDateTimePicker({ value, onChange, label, showTime = true }) {
+export default function JalaliDateTimePicker({ value, onChange, label, showTime = true, align }) {
   const initialJalali = useMemo(() => gregorianToJalali(value || new Date()), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [year, setYear] = useState(initialJalali.jy);
@@ -37,8 +37,14 @@ export default function JalaliDateTimePicker({ value, onChange, label, showTime 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, day, time, dayCount]);
 
+  // align="center": برچسب و فیلدها وسط‌چین (پیش‌فرض همان چینش قبلی)
+  const centered = align === "center";
   return (
-    <Stack spacing={1.5}>
+    <Stack
+      spacing={1.5}
+      alignItems={centered ? "center" : undefined}
+      sx={centered ? { "& .MuiSelect-select": { textAlign: "center" } } : undefined}
+    >
       {label && (
         <Stack direction="row" sx={{ color: "text.secondary", fontSize: 13 }}>
           {label}

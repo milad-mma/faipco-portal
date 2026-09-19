@@ -233,11 +233,18 @@ def _select_card_lookup_sync(conn: SiteConnection, mapping: LeaveRequestMapping)
 def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, where_sql: str, params: dict) -> list[dict]:
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     branch_sql, branch_params = _branch_filter_sql(q, mapping)
+    # ⚠️ وضعیت اعمال در کاراوب (۲۲ = ابطال‌شده) - فقط اگر ستونش نگاشت شده باشد
+    names = KaraNames(mapping)
+    accept_sql = (
+        f"{q(names.raw('wf_requests', 'accept_code'))} AS {q('AcceptCode')}, "
+        if names.has("wf_requests", "accept_code")
+        else ""
+    )
     connection = _connect(conn)
     try:
         query = f"""
             SELECT
-                {q(mapping.request_id_column)} AS {q("RequestId")},
+                {accept_sql}{q(mapping.request_id_column)} AS {q("RequestId")},
                 {q(mapping.emp_no_column)} AS {q("EmpNo")},
                 {q(mapping.submitting_date_column)} AS {q("SubmittingDate")},
                 {q(mapping.start_date_column)} AS {q("StartDate")},
@@ -776,7 +783,11 @@ class LeaveRequestService:
             ):
                 raise LeaveRequestError(f"تردد {label} در همین تاریخ و ساعت از قبل در سیستم ثبت شده است")
             for row in existing:
-                if row.get("CardNo") not in forgotten_cards or row.get("IsFinalApproved") is False:
+                if (
+                    row.get("CardNo") not in forgotten_cards
+                    or row.get("IsFinalApproved") is False
+                    or row.get("AcceptCode") == kara_wb.ACCEPT_CANCELLED
+                ):
                     continue
                 row_date = row.get("StartDate")
                 row_date = row_date.date() if hasattr(row_date, "date") else row_date
@@ -940,6 +951,20 @@ class LeaveRequestService:
             "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
         )
 
+    async def _notify_requester_of_forgotten_punch(self, site_id: int, emp_no: int, stage: str) -> None:
+        """اعلان مراحل تردد فراموش‌شده به درخواست‌دهنده (طبق درخواست صریح کاربر)."""
+        texts = {
+            "supervisor": "درخواست تردد فراموش‌شده شما توسط سرپرست تأیید شد و برای تأیید نهایی به منابع انسانی ارسال شد.",
+            "approved": "درخواست تردد فراموش‌شده شما توسط منابع انسانی تأیید و در سیستم حضور و غیاب ثبت شد.",
+            "rejected": "درخواست تردد فراموش‌شده شما رد شد.",
+        }
+        _schedule_push(
+            site_id,
+            emp_no,
+            "/leave-requests?tab=my-requests",
+            texts[stage] + "\nجهت مشاهده جزئیات روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+        )
+
     async def _notify_requester_of_decision(self, site_id: int, emp_no: int) -> None:
         _schedule_push(
             site_id,
@@ -1014,8 +1039,8 @@ class LeaveRequestService:
         forgotten_cards, _ = await self._get_forgotten_context(employee.site_id)
 
         for row in rows:
-            if row.get("IsFinalApproved") is False:
-                continue  # ردشده - مانع نیست
+            if row.get("IsFinalApproved") is False or row.get("AcceptCode") == kara_wb.ACCEPT_CANCELLED:
+                continue  # ردشده یا ابطال‌شده - مانع نیست
             if row.get("CardNo") in forgotten_cards:
                 continue  # تردد فراموش‌شده بازه زمانی ندارد - با مرخصی/ماموریت تداخل نمی‌کند
             existing_start_raw = row.get("StartDate")
@@ -1109,7 +1134,8 @@ class LeaveRequestService:
         # WF_RequestState (بدون کلید خارجی) هم باید دستی پاک شود.
         kara_names = await self._get_kara_names(site_id, mapping, site_connection)
         if kara_names is not None:
-            if rows[0].get("IsFinalApproved"):
+            # ابطال‌شده در کاراوب: اثرش را خودِ کاراوب برداشته است
+            if rows[0].get("IsFinalApproved") and rows[0].get("AcceptCode") != kara_wb.ACCEPT_CANCELLED:
                 forgotten_cards, _ = await self._get_forgotten_context(site_id)
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
@@ -1416,6 +1442,8 @@ class LeaveRequestService:
                         manager_idea,
                         mapping.wf_reviews_approved_type_value,
                     )
+                if request_row.get("EmpNo") is not None:
+                    await self._notify_requester_of_forgotten_punch(site_id, request_row["EmpNo"], "supervisor")
                 _schedule_push(
                     site_id,
                     hr_emp_no,
@@ -1494,7 +1522,12 @@ class LeaveRequestService:
         # ⚠️ اطلاع‌رسانی به درخواست‌دهنده - هرگز نباید خودِ تصمیم را متوقف کند.
         requester_emp_no = request_row.get("EmpNo")
         if requester_emp_no is not None:
-            await self._notify_requester_of_decision(approver_employee.site_id, requester_emp_no)
+            if is_forgotten:
+                await self._notify_requester_of_forgotten_punch(
+                    approver_employee.site_id, requester_emp_no, "approved" if approved else "rejected"
+                )
+            else:
+                await self._notify_requester_of_decision(approver_employee.site_id, requester_emp_no)
 
     # ---------- ویرایش مدیریتی (فقط leave_requests.manage) ----------
 
@@ -1604,7 +1637,7 @@ class LeaveRequestService:
         old_row = None
         if writeback:
             old_row = current_rows[0]
-            if old_row.get("IsFinalApproved"):
+            if old_row.get("IsFinalApproved") and old_row.get("AcceptCode") != kara_wb.ACCEPT_CANCELLED:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
@@ -1690,7 +1723,10 @@ def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
     یک درخواست قدیمی‌تر ممکن است دیگر با هیچ نوع فعلی تطبیق نداشته باشد).
     """
     is_final_approved = row.get("IsFinalApproved")
-    if is_final_approved is None:
+    if row.get("AcceptCode") == kara_wb.ACCEPT_CANCELLED:
+        # ⚠️ ابطال‌شده در خودِ کاراوب (IsFinalApproved همان ۱ می‌ماند، فقط AcceptCode = ۲۲)
+        status = "cancelled"
+    elif is_final_approved is None:
         status = "pending"
     elif is_final_approved:
         status = "approved"

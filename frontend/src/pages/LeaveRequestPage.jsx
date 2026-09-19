@@ -45,8 +45,8 @@ import {
   submitLeaveRequest,
 } from "../api/leaveRequests";
 
-const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده" };
-const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error" };
+const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
+const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
 
 // تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
 function statusLabel(item) {
@@ -169,16 +169,15 @@ function SubmitRequestForm({ onSubmitted }) {
 
         {selectedType?.is_forgotten_punch && (
           <>
-            <Stack spacing={2} alignItems="center">
-              <Box sx={{ width: "100%", maxWidth: 280 }}>
-                <JalaliDateTimePicker value={punchDate} onChange={setPunchDate} label="تاریخ تردد" showTime={false} />
-              </Box>
-              <TimeSelect24
-                label="ساعت تردد"
-                value={punchTime}
-                onChange={setPunchTime}
-                sx={{ width: "100%", maxWidth: 280 }}
+            <Stack spacing={2} alignItems="center" sx={{ width: "100%" }}>
+              <JalaliDateTimePicker
+                value={punchDate}
+                onChange={setPunchDate}
+                label="تاریخ تردد"
+                showTime={false}
+                align="center"
               />
+              <TimeSelect24 label="ساعت تردد" value={punchTime} onChange={setPunchTime} align="center" />
             </Stack>
             <Typography variant="caption" color="text.secondary" textAlign="center">
               برای هر تردد فراموش شده باید یک درخواست جداگانه ثبت شود. درخواست ابتدا توسط سرپرست و سپس مسئول نیروی

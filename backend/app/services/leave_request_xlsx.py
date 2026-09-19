@@ -16,7 +16,7 @@ _HEADER_FILL = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _RTL_ALIGNMENT = Alignment(horizontal="right", readingOrder=2)
 
-_STATUS_LABELS = {"pending": "در حال بررسی", "approved": "تائید شده", "rejected": "رد شده"}
+_STATUS_LABELS = {"pending": "در حال بررسی", "approved": "تائید شده", "rejected": "رد شده", "cancelled": "ابطال شده"}
 
 _COLUMNS = [
     ("نام و نام خانوادگی", 26),
