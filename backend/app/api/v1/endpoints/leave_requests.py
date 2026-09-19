@@ -12,6 +12,7 @@ from app.models.employee import Employee
 from app.models.leave_request import LeaveRequestType
 from app.models.user import User
 from app.schemas.leave_request import (
+    DecidedLeaveRequestsPage,
     DecideRequestIn,
     LeaveRequestOut,
     LeaveRequestTypeOut,
@@ -100,6 +101,21 @@ async def get_pending_for_me(
     employee = await _require_employee(db, current_user)
     try:
         return await LeaveRequestService(db).list_pending_for_approver(employee)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/decided-by-me", response_model=DecidedLeaveRequestsPage)
+async def get_decided_by_me(
+    page: int = 0,
+    page_size: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """سوابق درخواست‌هایی که همین فرد قبلاً تأیید/رد کرده - صفحه‌بندی‌شده، جدیدترین تصمیم بالا."""
+    employee = await _require_employee(db, current_user)
+    try:
+        return await LeaveRequestService(db).list_decided_by_approver(employee, page, page_size)
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

@@ -356,7 +356,28 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
         )
         punch = cur.fetchone()
         if punch:
-            _update_punch(cur, punch, emp_no, start, 0, 0, user_id, username, app_id, today_j, now_hhmm, restore=True)
+            # ⚠️ وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال خوانده می‌شود -
+            # اگر تردد از اول با کارت ماموریت/مرخصی زده شده بود (Status=۹/۱۷
+            # از خودِ دستگاه)، حذف درخواست نباید آن علامت واقعی را هم پاک کند.
+            cur.execute(
+                "SELECT TOP 1 [OldStatus], [OldDuration] FROM [LogDataFile] "
+                "WHERE [Emp_No] = %(e)s AND [IoDate] = %(d)s AND [OldTime] = %(t)s AND [NewTime] = %(t)s "
+                "AND [NewStatus] = %(c)s AND ([ApplicationId] & %(flag)s) <> 0 ORDER BY [Id] DESC",
+                {
+                    "e": emp_no,
+                    "d": _jalali_int(start),
+                    "t": punch["Time"],
+                    "c": card_no,
+                    "flag": app_id << _EDITOR_SHIFT,
+                },
+            )
+            before = cur.fetchone() or {}
+            old_status = before.get("OldStatus") or 0
+            old_duration = before.get("OldDuration") or 0
+            _update_punch(
+                cur, punch, emp_no, start, old_status, old_duration,
+                user_id, username, app_id, today_j, now_hhmm, restore=True,
+            )
         return
 
     end = _to_date(request.get("EndDate")) or start

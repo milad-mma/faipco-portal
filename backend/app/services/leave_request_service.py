@@ -977,6 +977,45 @@ class LeaveRequestService:
             normalized.append(item)
         return normalized
 
+    async def list_decided_by_approver(
+        self, approver_employee: Employee, page: int = 0, page_size: int = 10
+    ) -> dict:
+        """
+        ⚠️ طبق درخواست صریح کاربر: در کارتابل تأییدکننده، علاوه بر
+        درخواست‌های در انتظار، سوابق درخواست‌هایی که قبلاً تأیید/رد کرده
+        هم نمایش داده شود (جدیدترین تصمیم بالا، با صفحه‌بندی).
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id)
+        approver_emp_no = _to_personnel_code_int(approver_employee)
+        approver_col = _quote(site_connection.db_type, mapping.approval_by_manager_column)
+        approved_col = _quote(site_connection.db_type, mapping.is_final_approved_column)
+        where_sql = f"{approver_col} = %(approver)s AND {approved_col} IS NOT NULL"
+        rows = await asyncio.to_thread(
+            _select_requests_sync, site_connection, mapping, where_sql, {"approver": approver_emp_no}
+        )
+        rows.sort(
+            key=lambda r: (r.get("ApprovalDate") or datetime.min, r.get("RequestId") or 0),
+            reverse=True,
+        )
+        total = len(rows)
+        page = max(page, 0)
+        page_size = min(max(page_size, 1), 100)
+        page_rows = rows[page * page_size : (page + 1) * page_size]
+
+        type_lookup = await self._get_type_lookup(approver_employee.site_id)
+        requester_info = await self._get_requester_info(
+            approver_employee.site_id, [row.get("EmpNo") for row in page_rows]
+        )
+        items = []
+        for row in page_rows:
+            item = _normalize_row(row, type_lookup)
+            info = requester_info.get(item["emp_no"], {})
+            item["requester_name"] = info.get("name")
+            item["requester_department"] = info.get("department")
+            items.append(item)
+        await self._apply_real_reviews(site_connection, mapping, items)
+        return {"items": items, "total": total}
+
     async def list_all_for_site(
         self,
         site_id: int,

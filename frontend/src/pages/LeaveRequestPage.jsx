@@ -20,6 +20,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tab,
   Tabs,
@@ -36,6 +37,7 @@ import PillTabs from "../components/PillTabs";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 import {
   decideLeaveRequest,
+  fetchDecidedLeaveRequestsByMe,
   deleteLeaveRequest,
   fetchActiveLeaveRequestTypes,
   fetchMyLeaveRequests,
@@ -445,6 +447,88 @@ function PendingApprovalTable({ items, onDecide }) {
   );
 }
 
+function formatDuration(item) {
+  return item.start_hour != null
+    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+    : `${item.duration} روز`;
+}
+
+// ⚠️ طبق درخواست صریح کاربر: سوابق درخواست‌هایی که همین تأییدکننده قبلاً
+// تأیید/رد کرده، زیر درخواست‌های در انتظار - جدیدترین تصمیم بالا، با
+// صفحه‌بندی سمت سرور (سوابق با گذشت زمان زیاد می‌شود).
+function DecidedHistoryTable({ reloadKey }) {
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setError("");
+    fetchDecidedLeaveRequestsByMe(page, rowsPerPage)
+      .then(setData)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت سوابق با خطا مواجه شد."));
+  }, [page, rowsPerPage, reloadKey]);
+
+  if (error) return <Alert severity="error">{error}</Alert>;
+  if (data === null) return null;
+  if (data.total === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        هنوز درخواستی را تأیید یا رد نکرده‌اید.
+      </Typography>
+    );
+  }
+
+  return (
+    <TableContainer component={Card} variant="outlined">
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>نام و نام خانوادگی</TableCell>
+            <TableCell>واحد</TableCell>
+            <TableCell>نوع درخواست</TableCell>
+            <TableCell>تاریخ مرخصی/ماموریت</TableCell>
+            <TableCell>مدت</TableCell>
+            <TableCell>وضعیت</TableCell>
+            <TableCell>تاریخ تصمیم</TableCell>
+            <TableCell>نظر شما</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {data.items.map((item) => (
+            <TableRow key={item.request_id}>
+              <TableCell>{item.requester_name || item.emp_no}</TableCell>
+              <TableCell>{item.requester_department || "—"}</TableCell>
+              <TableCell>{item.type_title || "—"}</TableCell>
+              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+              <TableCell>{formatDuration(item)}</TableCell>
+              <TableCell>
+                <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+              </TableCell>
+              <TableCell>{item.approved_at ? new Date(item.approved_at).toLocaleDateString("fa-IR") : "—"}</TableCell>
+              <TableCell>{item.manager_idea || "—"}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <TablePagination
+        component="div"
+        count={data.total}
+        page={page}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={(e) => {
+          setRowsPerPage(parseInt(e.target.value, 10));
+          setPage(0);
+        }}
+        rowsPerPageOptions={[10, 25, 50]}
+        labelRowsPerPage="تعداد در هر صفحه:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+      />
+    </TableContainer>
+  );
+}
+
 export default function LeaveRequestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = ["submit", "my-requests", "pending"].indexOf(searchParams.get("tab"));
@@ -455,6 +539,10 @@ export default function LeaveRequestPage() {
   const [error, setError] = useState("");
   // پیام موفقیت پس از ثبت/تأیید/رد/حذف - قبلاً هیچ بازخوردی نمایش داده نمی‌شد
   const [toast, setToast] = useState("");
+  // تعداد کل سوابق تصمیم این فرد - فقط برای اینکه تب کارتابل برای کسی که
+  // درخواست در انتظار ندارد ولی قبلاً تصمیم گرفته هم نمایش داده شود
+  const [decidedTotal, setDecidedTotal] = useState(0);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
   // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
   // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
   // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
@@ -483,9 +571,16 @@ export default function LeaveRequestPage() {
       .catch(() => setPending([]));
   }
 
+  function loadDecidedTotal() {
+    fetchDecidedLeaveRequestsByMe(0, 1)
+      .then((data) => setDecidedTotal(data.total))
+      .catch(() => setDecidedTotal(0));
+  }
+
   useEffect(() => {
     loadMyRequests();
     loadPending();
+    loadDecidedTotal();
   }, []);
 
   function handleTabChange(newIndex) {
@@ -495,6 +590,7 @@ export default function LeaveRequestPage() {
 
   const pendingCount = pending?.length || 0;
   const hasPending = pendingCount > 0;
+  const showInbox = hasPending || decidedTotal > 0;
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
@@ -517,7 +613,9 @@ export default function LeaveRequestPage() {
         tabs={[
           { key: "new", label: "ثبت درخواست جدید" },
           { key: "mine", label: "درخواست‌های من" },
-          ...(hasPending ? [{ key: "pending", label: `در انتظار (${pendingCount})` }] : []),
+          ...(showInbox
+            ? [{ key: "pending", label: hasPending ? `کارتابل تأیید (${pendingCount})` : "کارتابل تأیید" }]
+            : []),
         ]}
       />
 
@@ -539,7 +637,22 @@ export default function LeaveRequestPage() {
           }}
         />}
 
-      {tab === 2 && hasPending && <PendingApprovalTable items={pending} onDecide={setDecidingItem} />}
+      {tab === 2 && showInbox && (
+        <Stack spacing={3}>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+              در انتظار تصمیم شما {hasPending ? `(${pendingCount})` : ""}
+            </Typography>
+            <PendingApprovalTable items={pending || []} onDecide={setDecidingItem} />
+          </Box>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+              سوابق تصمیم‌های قبلی
+            </Typography>
+            <DecidedHistoryTable reloadKey={historyReloadKey} />
+          </Box>
+        </Stack>
+      )}
 
       {decidingItem && (
         <DecideDialog
@@ -550,6 +663,8 @@ export default function LeaveRequestPage() {
             setDecidingItem(null);
             loadPending();
             loadMyRequests();
+            loadDecidedTotal();
+            setHistoryReloadKey((k) => k + 1);
           }}
         />
       )}

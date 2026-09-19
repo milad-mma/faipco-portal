@@ -199,6 +199,11 @@ class LeaveRequestOut(BaseModel):
     requester_department: str | None = None
 
 
+class DecidedLeaveRequestsPage(BaseModel):
+    items: list[LeaveRequestOut]
+    total: int
+
+
 # ---------- تصمیم‌گیری (تأییدکننده) ----------
 
 

@@ -20,6 +20,13 @@ export async function fetchPendingLeaveRequestsForMe() {
   return data;
 }
 
+export async function fetchDecidedLeaveRequestsByMe(page = 0, pageSize = 10) {
+  const { data } = await apiClient.get("/leave-requests/decided-by-me", {
+    params: { page, page_size: pageSize },
+  });
+  return data;
+}
+
 export async function decideLeaveRequest(requestId, approved, managerIdea) {
   const { data } = await apiClient.post(`/leave-requests/${requestId}/decide`, {
     approved,
