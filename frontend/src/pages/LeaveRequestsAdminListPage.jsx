@@ -7,6 +7,7 @@ import {
   Chip,
   IconButton,
   MenuItem,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -283,6 +284,7 @@ export default function LeaveRequestsAdminListPage() {
   const [dateTo, setDateTo] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [toast, setToast] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
@@ -358,6 +360,7 @@ export default function LeaveRequestsAdminListPage() {
     setDeletingId(item.request_id);
     try {
       await adminDeleteLeaveRequest(siteId, item.request_id);
+      setToast("درخواست حذف شد.");
       load();
     } catch (err) {
       setError(err.response?.data?.detail || "حذف درخواست با خطا مواجه شد.");
@@ -403,6 +406,7 @@ export default function LeaveRequestsAdminListPage() {
     setError("");
     try {
       await adminUpdateLeaveRequest(siteId, requestId, payload);
+      setToast("تغییرات ذخیره شد.");
       load();
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره تغییرات با خطا مواجه شد.");
@@ -793,6 +797,17 @@ export default function LeaveRequestsAdminListPage() {
           </Stack>
         </Card>
       )}
+
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={4000}
+        onClose={() => setToast("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setToast("")} sx={{ width: "100%" }}>
+          {toast}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

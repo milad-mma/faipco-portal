@@ -241,12 +241,21 @@ def _apply_hourly(cur, request, emp_no, card_no, day, user_id, username, app_id,
     return ACCEPT_APPLIED
 
 
-def _update_punch(cur, punch, emp_no, day, new_status, new_duration, user_id, username, app_id, today_j, now_hhmm):
-    new_app_id = (app_id << _EDITOR_SHIFT) | (int(punch["ApplicationId"]) & 0xFFFF)
+def _update_punch(
+    cur, punch, emp_no, day, new_status, new_duration, user_id, username, app_id, today_j, now_hhmm, restore=False
+):
+    source_app_id = int(punch["ApplicationId"]) & 0xFFFF
+    # ردیف لاگ همیشه با پرچم «گردش کار» ثبت می‌شود (مثل کاراوب)
+    log_app_id = (app_id << _EDITOR_SHIFT) | source_app_id
+    # ⚠️ طبق گزارش کاربر: بعد از لغو اثر (حذف/رد درخواست)، پرچم «گردش کار»
+    # روی خودِ تردد باقی می‌ماند و در کاراوب با Hover «گردش کار» نشان داده
+    # می‌شد. هنگام لغو، ApplicationId تردد به منبع اولیه‌اش برمی‌گردد تا
+    # تردد دقیقاً مثل قبل از اعمال درخواست شود.
+    punch_app_id = source_app_id if restore else log_app_id
     cur.execute(
         "UPDATE [DataFile] SET [Status] = %(st)s, [Duration] = %(du)s, [ApplicationId] = %(ap)s, [Checksum] = 0 "
         "WHERE [Id] = %(id)s",
-        {"st": new_status, "du": new_duration, "ap": new_app_id, "id": punch["Id"]},
+        {"st": new_status, "du": new_duration, "ap": punch_app_id, "id": punch["Id"]},
     )
     cur.execute(
         "INSERT INTO [LogDataFile] ([UserId], [ApplicationId], [Username], [AddictionInformation], [EditDate], "
@@ -256,7 +265,7 @@ def _update_punch(cur, punch, emp_no, day, new_status, new_duration, user_id, us
         "%(ns)s, %(pd)s, %(pd)s, NULL, NULL, NULL, NULL, %(b)s)",
         {
             "u": user_id,
-            "ap": new_app_id,
+            "ap": log_app_id,
             "un": username,
             "ed": today_j,
             "et": now_hhmm,
@@ -347,7 +356,7 @@ def revert_effects(cur, request: dict, actor_emp_no: int | None, app_id: int) ->
         )
         punch = cur.fetchone()
         if punch:
-            _update_punch(cur, punch, emp_no, start, 0, 0, user_id, username, app_id, today_j, now_hhmm)
+            _update_punch(cur, punch, emp_no, start, 0, 0, user_id, username, app_id, today_j, now_hhmm, restore=True)
         return
 
     end = _to_date(request.get("EndDate")) or start

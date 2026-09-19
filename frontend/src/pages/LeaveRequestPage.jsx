@@ -6,12 +6,14 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   IconButton,
   MenuItem,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -161,7 +163,12 @@ function SubmitRequestForm({ onSubmitted }) {
               minRows={2}
             />
 
-            <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting}>
+            <Button
+              variant="contained"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
+            >
               {isSubmitting ? "در حال ثبت..." : "ثبت درخواست"}
             </Button>
           </>
@@ -317,24 +324,26 @@ function MyRequestsTable({ items, onDeleted }) {
 
 function DecideDialog({ item, onClose, onDecided }) {
   const [managerIdea, setManagerIdea] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // null | "approve" | "reject" - کدام دکمه در حال ارسال است (برای نمایش لودینگ روی همان دکمه)
+  const [pendingAction, setPendingAction] = useState(null);
   const [error, setError] = useState("");
+  const isSubmitting = pendingAction !== null;
 
   async function handleDecide(approved) {
     setError("");
-    setIsSubmitting(true);
+    setPendingAction(approved ? "approve" : "reject");
     try {
       await decideLeaveRequest(item.request_id, approved, managerIdea);
-      onDecided();
+      onDecided(approved);
     } catch (err) {
       setError(err.response?.data?.detail || "ثبت تصمیم با خطا مواجه شد.");
     } finally {
-      setIsSubmitting(false);
+      setPendingAction(null);
     }
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open onClose={isSubmitting ? undefined : onClose} fullWidth maxWidth="xs">
       <DialogTitle>تصمیم برای درخواست</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         <Typography variant="body2" fontWeight={700}>
@@ -354,11 +363,22 @@ function DecideDialog({ item, onClose, onDecided }) {
         <Button onClick={onClose} disabled={isSubmitting}>
           انصراف
         </Button>
-        <Button color="error" onClick={() => handleDecide(false)} disabled={isSubmitting}>
-          رد
+        <Button
+          color="error"
+          onClick={() => handleDecide(false)}
+          disabled={isSubmitting}
+          startIcon={pendingAction === "reject" ? <CircularProgress size={16} color="inherit" /> : null}
+        >
+          {pendingAction === "reject" ? "در حال رد..." : "رد"}
         </Button>
-        <Button variant="contained" color="success" onClick={() => handleDecide(true)} disabled={isSubmitting}>
-          تائید
+        <Button
+          variant="contained"
+          color="success"
+          onClick={() => handleDecide(true)}
+          disabled={isSubmitting}
+          startIcon={pendingAction === "approve" ? <CircularProgress size={16} color="inherit" /> : null}
+        >
+          {pendingAction === "approve" ? "در حال تائید..." : "تائید"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -433,6 +453,8 @@ export default function LeaveRequestPage() {
   const [pending, setPending] = useState(null);
   const [decidingItem, setDecidingItem] = useState(null);
   const [error, setError] = useState("");
+  // پیام موفقیت پس از ثبت/تأیید/رد/حذف - قبلاً هیچ بازخوردی نمایش داده نمی‌شد
+  const [toast, setToast] = useState("");
   // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
   // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
   // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
@@ -502,13 +524,20 @@ export default function LeaveRequestPage() {
       {tab === 0 && (
         <SubmitRequestForm
           onSubmitted={() => {
+            setToast("درخواست شما ثبت شد و برای تأییدکننده ارسال شد.");
             handleTabChange(1);
             loadMyRequests();
           }}
         />
       )}
 
-      {tab === 1 && myRequests !== null && <MyRequestsTable items={myRequests} onDeleted={loadMyRequests} />}
+      {tab === 1 && myRequests !== null && <MyRequestsTable
+          items={myRequests}
+          onDeleted={() => {
+            setToast("درخواست حذف شد.");
+            loadMyRequests();
+          }}
+        />}
 
       {tab === 2 && hasPending && <PendingApprovalTable items={pending} onDecide={setDecidingItem} />}
 
@@ -516,7 +545,8 @@ export default function LeaveRequestPage() {
         <DecideDialog
           item={decidingItem}
           onClose={() => setDecidingItem(null)}
-          onDecided={() => {
+          onDecided={(approved) => {
+            setToast(approved ? "درخواست تأیید شد." : "درخواست رد شد.");
             setDecidingItem(null);
             loadPending();
             loadMyRequests();
@@ -535,6 +565,17 @@ export default function LeaveRequestPage() {
         byPeriod={gateStatus?.pending_by_period}
         onClose={() => setGateOpen(false)}
       />
+
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={4000}
+        onClose={() => setToast("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setToast("")} sx={{ width: "100%" }}>
+          {toast}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

@@ -551,6 +551,41 @@ def _to_personnel_code_int(employee: Employee) -> int:
         raise LeaveRequestError("کد پرسنلی این کارمند عددی نیست - ثبت درخواست مرخصی/ماموریت برایش ممکن نیست") from e
 
 
+# ⚠️ رفع کندی گزارش‌شده (ثبت/تأیید/رد چند ده ثانیه طول می‌کشید): ارسال Push
+# قبلاً داخل همان درخواست HTTP منتظر می‌ماند و webpush() هیچ Timeout ای
+# ندارد - اگر سرویس Push مرورگر (FCM و ...) کند یا در دسترس نبود، کل پاسخ
+# معطل می‌شد. حالا مثل اطلاعیه‌ها در پس‌زمینه و با Session جداگانه ارسال
+# می‌شود و پاسخ فوراً برمی‌گردد.
+_background_push_tasks: set = set()
+
+
+def _schedule_push(site_id: int, emp_no: int, url: str, body: str) -> None:
+    task = asyncio.create_task(_send_push_to_emp_no(site_id, emp_no, url, body))
+    _background_push_tasks.add(task)
+    task.add_done_callback(_background_push_tasks.discard)
+
+
+async def _send_push_to_emp_no(site_id: int, emp_no: int, url: str, body: str) -> None:
+    from app.db.session import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(User)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no))
+            )
+            user = result.scalar_one_or_none()
+            if user is None:
+                return
+            await asyncio.wait_for(
+                PushService(db).notify_users({user.id}, url=url, priority="normal", body=body),
+                timeout=60,
+            )
+    except Exception:
+        logger.exception("ارسال Push درخواست مرخصی/ماموریت با خطا مواجه شد")
+
+
 class LeaveRequestService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -707,48 +742,22 @@ class LeaveRequestService:
         return {"request_id": new_request_id}
 
     async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int) -> None:
-        try:
-            result = await self.db.execute(
-                select(User)
-                .join(Employee, Employee.id == User.employee_id)
-                .where(Employee.site_id == site_id, Employee.personnel_code == str(cur_emp_no))
-            )
-            approver_user = result.scalar_one_or_none()
-            if approver_user is None:
-                return
-            await PushService(self.db).notify_users(
-                {approver_user.id},
-                url="/leave-requests?tab=pending",
-                priority="normal",
-                body=(
-                    "یک درخواست مرخصی/ماموریت در انتظار تصمیم شماست.\n"
-                    "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                ),
-            )
-        except Exception:
-            logger.exception("ارسال Push برای درخواست مرخصی/ماموریت جدید با خطا مواجه شد")
+        _schedule_push(
+            site_id,
+            cur_emp_no,
+            "/leave-requests?tab=pending",
+            "یک درخواست مرخصی/ماموریت در انتظار تصمیم شماست.\n"
+            "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+        )
 
     async def _notify_requester_of_decision(self, site_id: int, emp_no: int) -> None:
-        try:
-            result = await self.db.execute(
-                select(User)
-                .join(Employee, Employee.id == User.employee_id)
-                .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no))
-            )
-            requester_user = result.scalar_one_or_none()
-            if requester_user is None:
-                return
-            await PushService(self.db).notify_users(
-                {requester_user.id},
-                url="/leave-requests?tab=my-requests",
-                priority="normal",
-                body=(
-                    "درخواست مرخصی/ماموریت شما بررسی شد.\n"
-                    "جهت مشاهده نتیجه روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                ),
-            )
-        except Exception:
-            logger.exception("ارسال Push برای تصمیم درخواست مرخصی/ماموریت با خطا مواجه شد")
+        _schedule_push(
+            site_id,
+            emp_no,
+            "/leave-requests?tab=my-requests",
+            "درخواست مرخصی/ماموریت شما بررسی شد.\n"
+            "جهت مشاهده نتیجه روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+        )
 
     # ---------- خواندن/نمایش ----------
 
