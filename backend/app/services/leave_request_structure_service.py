@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.employee import Department, Employee
-from app.models.leave_request import LeaveRequestApprover, LeaveRequestMapping, LeaveRequestType
+from app.models.leave_request import (
+    LeaveRequestApprover,
+    LeaveRequestHrOfficer,
+    LeaveRequestMapping,
+    LeaveRequestType,
+)
 from app.models.user import Permission
 from app.repositories.user_repository import UserRepository
 
@@ -43,10 +48,12 @@ def permission_code_for_type_title(title: str) -> str:
 # داشت، ادمین می‌تواند بعداً این نوع‌های پیش‌فرض را دستی ویرایش/حذف/
 # جایگزین کند.
 DEFAULT_LEAVE_REQUEST_TYPES = [
-    # title, is_mission, is_hourly, action_id, operation_id, card_no
-    ("مرخصی روزانه استحقاقی", False, False, 1, 5, 57),
-    ("مرخصی ساعتی استحقاقی", False, True, 3, 5, 17),
-    ("ماموریت ساعتی", True, True, 9, 3, 9),
+    # title, is_mission, is_hourly, action_id, operation_id, card_no, is_forgotten_punch
+    ("مرخصی روزانه استحقاقی", False, False, 1, 5, 57, False),
+    ("مرخصی ساعتی استحقاقی", False, True, 3, 5, 17, False),
+    ("ماموریت ساعتی", True, True, 9, 3, 9, False),
+    # مقادیر واقعی کاراوب برای «ورود و خروج فراموش شده» (WF_Action = ۸)
+    ("تردد فراموش شده", False, True, 8, 2, 305, True),
 ]
 
 
@@ -83,8 +90,8 @@ class LeaveRequestStructureService:
         existing_types = await self.list_types(site_id)
         if existing_types:
             return
-        for title, is_mission, is_hourly, action_id, operation_id, card_no in DEFAULT_LEAVE_REQUEST_TYPES:
-            await self.add_type(site_id, title, is_mission, is_hourly, action_id, operation_id, card_no)
+        for title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten in DEFAULT_LEAVE_REQUEST_TYPES:
+            await self.add_type(site_id, title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten)
 
     async def delete_mapping(self, site_id: int) -> None:
         mapping = await self.get_mapping(site_id)
@@ -109,8 +116,10 @@ class LeaveRequestStructureService:
         action_id: int | None = None,
         operation_id: int | None = None,
         card_no: int | None = None,
+        is_forgotten_punch: bool = False,
     ) -> LeaveRequestType:
         leave_type = LeaveRequestType(
+            is_forgotten_punch=is_forgotten_punch,
             site_id=site_id,
             title=title,
             is_mission=is_mission,
@@ -223,6 +232,39 @@ class LeaveRequestStructureService:
             select(LeaveRequestApprover).where(LeaveRequestApprover.department_id == department_id)
         )
         existing = result.scalar_one_or_none()
+        if existing is not None:
+            await self.db.delete(existing)
+            await self.db.commit()
+
+
+    # ---------- مسئول نیروی انسانی سایت (تأییدکننده نهایی تردد فراموش‌شده) ----------
+
+    async def get_hr_officer(self, site_id: int) -> LeaveRequestHrOfficer | None:
+        result = await self.db.execute(
+            select(LeaveRequestHrOfficer)
+            .options(selectinload(LeaveRequestHrOfficer.employee))
+            .where(LeaveRequestHrOfficer.site_id == site_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def set_hr_officer(self, site_id: int, employee_id: int) -> LeaveRequestHrOfficer:
+        employee = await self.db.get(Employee, employee_id)
+        if employee is None or employee.site_id != site_id:
+            raise LeaveRequestStructureError("پرسنل موردنظر در این سایت یافت نشد")
+        if not (employee.personnel_code or "").isdigit():
+            raise LeaveRequestStructureError("کد پرسنلی این فرد عددی نیست - نمی‌تواند تأییدکننده کاراوب باشد")
+        await UserRepository(self.db).get_or_create_employee_user(employee)
+        existing = await self.get_hr_officer(site_id)
+        if existing is not None:
+            existing.employee_id = employee_id
+        else:
+            self.db.add(LeaveRequestHrOfficer(site_id=site_id, employee_id=employee_id))
+        await self.db.commit()
+        self.db.expire_all()
+        return await self.get_hr_officer(site_id)
+
+    async def remove_hr_officer(self, site_id: int) -> None:
+        existing = await self.get_hr_officer(site_id)
         if existing is not None:
             await self.db.delete(existing)
             await self.db.commit()

@@ -23,6 +23,7 @@ from app.schemas.leave_request import (
     AdminUpdateRequestIn,
     CardLookupItemOut,
     LeaveRequestApproverOut,
+    LeaveRequestHrOfficerOut,
     LeaveRequestMappingIn,
     LeaveRequestMappingOut,
     LeaveRequestOut,
@@ -31,6 +32,7 @@ from app.schemas.leave_request import (
     LeaveRequestTypeUpdateIn,
     OperationLookupItemOut,
     SetApproverIn,
+    SetHrOfficerIn,
 )
 from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, LEAVE_SCHEMA_DEFAULTS
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
@@ -164,7 +166,8 @@ async def add_type(
 ):
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).add_type(
-        site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no
+        site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no,
+        payload.is_forgotten_punch,
     )
 
 
@@ -238,6 +241,41 @@ async def remove_approver(
         return
     await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
     await LeaveRequestStructureService(db).remove_approver(department_id)
+
+
+@router.get("/sites/{site_id}/hr-officer", response_model=LeaveRequestHrOfficerOut | None)
+async def get_hr_officer(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """مسئول نیروی انسانی سایت - تأییدکننده نهایی «تردد فراموش‌شده» (بعد از سرپرست)."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    return await LeaveRequestStructureService(db).get_hr_officer(site_id)
+
+
+@router.put("/sites/{site_id}/hr-officer", response_model=LeaveRequestHrOfficerOut)
+async def set_hr_officer(
+    site_id: int,
+    payload: SetHrOfficerIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestStructureService(db).set_hr_officer(site_id, payload.employee_id)
+    except LeaveRequestStructureError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete("/sites/{site_id}/hr-officer", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_hr_officer(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await LeaveRequestStructureService(db).remove_hr_officer(site_id)
 
 
 # ---------- مشاهده/ویرایش مدیریتی (حراست/منابع انسانی) ----------

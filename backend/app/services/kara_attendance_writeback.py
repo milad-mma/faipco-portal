@@ -538,3 +538,184 @@ def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
         f"DELETE FROM {n.t('wf_request_state')} WHERE {n.c('wf_request_state', 'request_id')} = %(r)s",
         {"r": request_id},
     )
+
+
+# ---------- تردد فراموش‌شده ----------
+#
+# رفتار کاراوب (تأییدشده با درخواست‌های ۵۶ و ۵۷، ۱۴۰۵/۰۶/۲۸):
+#   ثبت: یک ردیف درخواست به‌ازای هر تردد - StartDate = تاریخ تردد،
+#        StartHour = ساعت تردد، EndHour = ۰، EndDate = NULL، Duration = '0'
+#   تأیید نهایی: یک ردیف تازه در جدول تردد (Status 0، Modify 1، Direction 0،
+#        ApplicationId = شناسه برنامه، DeviceNumber NULL، Duration 0،
+#        PrevDay 0، VT 0، AC 0) + یک ردیف لاگ «درج» (همه ستون‌های Old* خالی)؛
+#        AcceptCode = 0
+#   حذف تردد (در کاراوب): لاگ با همه ستون‌های New* خالی و ApplicationId =
+#        (شناسه ویرایشگر << 16) | منبع تردد
+#
+# PrevDay همیشه ۰ نوشته می‌شود (مثل کاراوب) - شیفت شب با تاریخ واقعی هر
+# تردد ثبت می‌شود و محاسبه کارکرد را خودِ کاراوب انجام می‌دهد.
+
+
+def punch_exists(cur, n: KaraNames, emp_no: int, date_int: int, time_int: int) -> bool:
+    """آیا همین تردد (همان روز و همان دقیقه) از قبل در جدول تردد هست؟"""
+    if not n.has_punch_table:
+        return False
+    cur.execute(
+        f"SELECT TOP 1 1 AS X FROM {n.df_table} WHERE {n.df_emp_no} = %(e)s AND {n.df_date} = %(d)s "
+        f"AND {n.df_time} = %(t)s",
+        {"e": emp_no, "d": date_int, "t": time_int},
+    )
+    return cur.fetchone() is not None
+
+
+def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int):
+    """تأیید نهایی تردد فراموش‌شده: درج تردد + لاگ + AcceptCode = ۰."""
+    if not n.can_write_punch:
+        raise RuntimeError("ستون‌های لازم جدول تردد برای ثبت تردد فراموش‌شده در تنظیمات سایت نگاشت نشده‌اند")
+    emp_no = int(request["EmpNo"])
+    day = _to_date(request["StartDate"])
+    date_int = _jalali_int(day)
+    time_int = int(request["StartHour"])
+    user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
+    _, today_j, now_hhmm = _now_parts()
+
+    if not punch_exists(cur, n, emp_no, date_int, time_int):
+        D = lambda role: n.c("datafile", role)  # noqa: E731
+        cur.execute(
+            f"INSERT INTO {n.df_table} ({n.df_emp_no}, {n.df_date}, {n.df_time}, {D('status')}, {D('modify')}, "
+            f"{D('direction')}, {D('application_id')}, {D('duration')}, {D('prev_day')}, {D('vt')}, {D('ac')}, "
+            f"{D('checksum')}, {D('branch_code')}) VALUES "
+            "(%(e)s, %(d)s, %(t)s, 0, 1, 0, %(ap)s, 0, 0, 0, 0, 0, %(b)s)",
+            {"e": emp_no, "d": date_int, "t": time_int, "ap": app_id, "b": branch_code},
+        )
+        _log_punch_change(
+            cur, n, user_id, username, app_id, today_j, now_hhmm, date_int, emp_no, branch_code,
+            old=None, new={"Time": time_int, "Duration": 0, "Status": 0, "PrevDay": 0},
+        )
+
+    _set_accept_code(cur, n, request["RequestId"], ACCEPT_APPLIED, get_sec_no(cur, n, approver_emp_no))
+    return ACCEPT_APPLIED
+
+
+def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int | None, app_id: int) -> None:
+    """
+    لغو اثر تردد فراموش‌شده (حذف/رد مدیریتی پس از تأیید): فقط همان ترددی
+    که این پرتال/گردش کار درج کرده بود حذف می‌شود - تردد دستگاه یا تردد
+    دستیِ کاراوب هرگز پاک نمی‌شود.
+    """
+    if not n.can_write_punch:
+        return
+    if n.has("wf_requests", "accept_code"):
+        cur.execute(
+            f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
+            f"WHERE {n.requests_id} = %(r)s",
+            {"r": request["RequestId"]},
+        )
+        state = cur.fetchone()
+        if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
+            return
+    emp_no = int(request["EmpNo"])
+    date_int = _jalali_int(_to_date(request["StartDate"]))
+    D = lambda role: n.c("datafile", role)  # noqa: E731
+    cur.execute(
+        f"SELECT TOP 1 {D('id')} AS Id, {n.df_time} AS Time, {D('status')} AS Status, {D('duration')} AS Duration, "
+        f"{D('prev_day')} AS PrevDay, {D('application_id')} AS ApplicationId, {D('branch_code')} AS BranchCode "
+        f"FROM {n.df_table} WHERE {n.df_emp_no} = %(e)s AND {n.df_date} = %(d)s AND {n.df_time} = %(t)s "
+        f"AND {D('modify')} = 1 AND ({D('application_id')} & 65535) = %(ap)s ORDER BY {D('id')} DESC",
+        {"e": emp_no, "d": date_int, "t": int(request["StartHour"]), "ap": app_id},
+    )
+    punch = cur.fetchone()
+    if not punch:
+        return
+    user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
+    _, today_j, now_hhmm = _now_parts()
+    cur.execute(f"DELETE FROM {n.df_table} WHERE {D('id')} = %(id)s", {"id": punch["Id"]})
+    log_app_id = (app_id << _EDITOR_SHIFT) | (int(punch["ApplicationId"]) & 0xFFFF)
+    _log_punch_change(
+        cur, n, user_id, username, log_app_id, today_j, now_hhmm, date_int, emp_no, punch["BranchCode"],
+        old=punch, new=None,
+    )
+
+
+def _log_punch_change(cur, n, user_id, username, app_id, today_j, now_hhmm, io_date, emp_no, branch_code, old, new):
+    """ردیف لاگ درج (old=None) یا حذف (new=None) تردد - دقیقاً مثل کاراوب."""
+    if not n.has("log_datafile"):
+        return
+    old = old or {}
+    new = new or {}
+    L = lambda role: n.c("log_datafile", role)  # noqa: E731
+    cur.execute(
+        f"INSERT INTO {n.t('log_datafile')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
+        f"{L('additional_info')}, {L('edit_date')}, {L('edit_time')}, {L('io_date')}, {L('emp_no')}, "
+        f"{L('old_time')}, {L('new_time')}, {L('old_duration')}, {L('new_duration')}, {L('old_status')}, "
+        f"{L('new_status')}, {L('old_prev_day')}, {L('new_prev_day')}, {L('old_vt')}, {L('new_vt')}, "
+        f"{L('old_ac')}, {L('new_ac')}, {L('branch_code')}) VALUES "
+        "(%(u)s, %(ap)s, %(un)s, '', %(ed)s, %(et)s, %(io)s, %(e)s, %(ot)s, %(nt)s, %(od)s, %(nd)s, %(os)s, "
+        "%(ns)s, %(op)s, %(np)s, NULL, NULL, NULL, NULL, %(b)s)",
+        {
+            "u": user_id,
+            "ap": app_id,
+            "un": username,
+            "ed": today_j,
+            "et": now_hhmm,
+            "io": io_date,
+            "e": emp_no,
+            "ot": old.get("Time"),
+            "nt": new.get("Time"),
+            "od": old.get("Duration"),
+            "nd": new.get("Duration"),
+            "os": old.get("Status"),
+            "ns": new.get("Status"),
+            "op": old.get("PrevDay"),
+            "np": new.get("PrevDay"),
+            "b": branch_code,
+        },
+    )
+
+
+def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: int) -> None:
+    """
+    ارجاع درخواست از سرپرست به مسئول نیروی انسانی: تأییدکننده فعلی و
+    واحد او عوض می‌شود و (اگر نگاشت شده باشد) یک ردیف در جدول ارجاع
+    کاراوب ثبت می‌شود تا تاریخچه مسیر درخواست در خودِ کاراوب هم دیده شود.
+    """
+    cur_col = getattr(n.leave, "cur_emp_no_column", None)
+    if not cur_col:
+        raise RuntimeError("ستون تأییدکننده فعلی در نگاشت درخواست تنظیم نشده است")
+    sets, params = [f"[{cur_col}] = %(to)s"], {"to": to_emp_no, "r": request["RequestId"]}
+    from_sec = get_sec_no(cur, n, from_emp_no)
+    to_sec = get_sec_no(cur, n, to_emp_no)
+    if n.has("wf_requests", "cur_section") and to_sec is not None:
+        sets.append(f"{n.c('wf_requests', 'cur_section')} = %(sec)s")
+        params["sec"] = to_sec
+    cur.execute(f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s", params)
+
+    if not n.can_write_moveup:
+        return
+    values = {
+        "request_id": request["RequestId"],
+        "date": kara_now(),
+        "from_manager": from_emp_no,
+        "to_manager": to_emp_no,
+        "card_no": request.get("CardNo"),
+        "from_sec": from_sec,
+        "to_sec": to_sec,
+    }
+    columns = [(n.c("wf_moveup", role), value) for role, value in values.items() if n.has("wf_moveup", role)]
+    cur.execute(
+        f"INSERT INTO [{n.leave.wf_moveup_table_name}] ({', '.join(c for c, _ in columns)}) "
+        f"VALUES ({', '.join(f'%(v{i})s' for i in range(len(columns)))})",
+        {f"v{i}": value for i, (_, value) in enumerate(columns)},
+    )
+
+
+def request_ids_moved_by(cur, n: KaraNames, from_emp_no: int) -> list[int]:
+    """شناسه درخواست‌هایی که این فرد (به‌عنوان سرپرست) به مرحله بعد ارجاع داده است."""
+    if not n.can_write_moveup:
+        return []
+    cur.execute(
+        f"SELECT DISTINCT {n.c('wf_moveup', 'request_id')} AS RequestId FROM [{n.leave.wf_moveup_table_name}] "
+        f"WHERE {n.c('wf_moveup', 'from_manager')} = %(e)s",
+        {"e": from_emp_no},
+    )
+    return [int(r["RequestId"]) for r in cur.fetchall()]

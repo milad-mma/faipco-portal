@@ -40,6 +40,13 @@ LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     "wf_reviews.id": "Id",
     "wf_attachment.request_id": "RequestId",
     "wf_moveup.request_id": "RequestId",
+    # ارجاع درخواست تردد فراموش‌شده از سرپرست به مسئول نیروی انسانی
+    "wf_moveup.date": "DateMoveUp",
+    "wf_moveup.from_manager": "FromManagerEmp_No",
+    "wf_moveup.to_manager": "ToManagerEmp_No",
+    "wf_moveup.card_no": "CardNo",
+    "wf_moveup.from_sec": "FromSec_No",
+    "wf_moveup.to_sec": "ToSec_No",
     "wf_parallel.request_id": "RequestId",
     "wf_request_state.table": "WF_RequestState",
     "wf_request_state.request_id": "RequestId",
@@ -105,6 +112,11 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "datafile.application_id": "ApplicationId",
     "datafile.checksum": "Checksum",
     "datafile.branch_code": "BranchCode",
+    # فقط برای درج تردد فراموش‌شده
+    "datafile.modify": "Modify",
+    "datafile.direction": "Direction",
+    "datafile.vt": "VT",
+    "datafile.ac": "AC",
     # لاگ تغییر ترددها
     "log_datafile.table": "LogDataFile",
     "log_datafile.id": "Id",
@@ -157,6 +169,12 @@ COLUMN_ONLY_GROUPS = {"wf_requests", "wf_reviews", "wf_attachment", "wf_moveup",
 
 # ستون‌هایی که ثبت مرخصی/ماموریت ساعتی روی تردد بدون آن‌ها ممکن نیست
 HOURLY_WRITE_COLUMNS = ("id", "status", "duration", "prev_day", "application_id", "checksum", "branch_code")
+
+# ستون‌هایی که درج تردد فراموش‌شده بدون آن‌ها ممکن نیست (همه NOT NULL در کاراوب)
+PUNCH_INSERT_COLUMNS = HOURLY_WRITE_COLUMNS + ("modify", "direction", "vt", "ac")
+
+# ستون‌هایی که ثبت ارجاع (سرپرست -> مسئول نیروی انسانی) بدون آن‌ها ممکن نیست
+MOVEUP_REQUIRED_COLUMNS = ("request_id", "date", "from_manager", "to_manager")
 
 _SAFE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,127}$")
 
@@ -325,6 +343,22 @@ class KaraNames:
             self.has("users")
             and self.has_punch_table
             and all(self.has("datafile", role) for role in HOURLY_WRITE_COLUMNS)
+        )
+
+    @property
+    def can_write_punch(self) -> bool:
+        """درج تردد فراموش‌شده (پس از تأیید نهایی) در جدول تردد."""
+        return (
+            self.has("users")
+            and self.has_punch_table
+            and all(self.has("datafile", role) for role in PUNCH_INSERT_COLUMNS)
+        )
+
+    @property
+    def can_write_moveup(self) -> bool:
+        """ثبت ردیف ارجاع در جدول صعود/ارجاع کاراوب."""
+        return bool(getattr(self.leave, "wf_moveup_table_name", None)) and all(
+            self.has("wf_moveup", role) for role in MOVEUP_REQUIRED_COLUMNS
         )
 
     @property

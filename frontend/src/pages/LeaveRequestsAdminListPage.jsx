@@ -90,6 +90,7 @@ function toDateOnly(date) {
 // روی ساعت/تاریخ شروع و پایان محاسبه و نمایش داده می‌شود (نه ویرایش
 // مستقیم) - ساعتی: به ساعت و دقیقه؛ روزانه: به تعداد روز.
 function formatDuration(item) {
+  if (item.is_forgotten_punch) return "—";
   if (item.start_hour != null && item.end_hour != null) {
     const startMinutes = Math.floor(item.start_hour / 100) * 60 + (item.start_hour % 100);
     const endMinutes = Math.floor(item.end_hour / 100) * 60 + (item.end_hour % 100);
@@ -195,8 +196,22 @@ function EditableSelect({ value, options, onSave, renderValue }) {
   );
 }
 
+// بازه هر درخواست؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد) است
+function rangeLabel(item) {
+  const fa = (d) => (d ? new Date(d).toLocaleDateString("fa-IR") : "—");
+  if (item.is_forgotten_punch) return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
+  return item.start_hour != null
+    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+    : `${fa(item.start_date)} تا ${fa(item.end_date)}`;
+}
+
+function statusChipLabel(item) {
+  return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
+}
+
 function EditableTimeRange({ item, onSave }) {
   const isHourly = item.start_hour != null;
+  const isPunch = Boolean(item.is_forgotten_punch);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [startDate, setStartDate] = useState(item.start_date ? new Date(item.start_date) : new Date());
@@ -205,11 +220,7 @@ function EditableTimeRange({ item, onSave }) {
   const [endTimeStr, setEndTimeStr] = useState(compactTimeToString(item.end_hour) || "10:00");
 
   if (!editing) {
-    const label = isHourly
-      ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-      : `${item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} تا ${
-          item.end_date ? new Date(item.end_date).toLocaleDateString("fa-IR") : "—"
-        }`;
+    const label = rangeLabel(item);
     return (
       <Box
         onClick={() => setEditing(true)}
@@ -223,7 +234,9 @@ function EditableTimeRange({ item, onSave }) {
   async function handleSave() {
     setSaving(true);
     const payload = { start_date: toDateOnly(startDate) };
-    if (isHourly) {
+    if (isPunch) {
+      payload.start_hour = timeStringToCompact(startTimeStr);
+    } else if (isHourly) {
       payload.start_hour = timeStringToCompact(startTimeStr);
       payload.end_hour = timeStringToCompact(endTimeStr);
     } else {
@@ -236,7 +249,12 @@ function EditableTimeRange({ item, onSave }) {
 
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 260 }}>
-      {isHourly ? (
+      {isPunch ? (
+        <>
+          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ تردد" showTime={false} />
+          <TimeSelect24 label="ساعت تردد" value={startTimeStr} onChange={setStartTimeStr} />
+        </>
+      ) : isHourly ? (
         <>
           <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ" showTime={false} />
           <TimeSelect24 label="شروع" value={startTimeStr} onChange={setStartTimeStr} />
@@ -584,15 +602,9 @@ export default function LeaveRequestsAdminListPage() {
                     <TableCell>{item.requester_name || item.emp_no}</TableCell>
                     <TableCell>{item.requester_department || "—"}</TableCell>
                     <TableCell>{item.type_title || "—"}</TableCell>
+                    <TableCell>{rangeLabel(item)}</TableCell>
                     <TableCell>
-                      {item.start_hour != null
-                        ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                        : `${item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} تا ${
-                            item.end_date ? new Date(item.end_date).toLocaleDateString("fa-IR") : "—"
-                          }`}
-                    </TableCell>
-                    <TableCell>
-                      <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                      <Chip size="small" color={STATUS_COLORS[item.status]} label={statusChipLabel(item)} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -700,12 +712,8 @@ export default function LeaveRequestsAdminListPage() {
                   <TableCell>
                     {canEdit ? (
                       <EditableTimeRange item={item} onSave={(payload) => handleFieldSave(item.request_id, payload)} />
-                    ) : item.start_hour != null ? (
-                      `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
                     ) : (
-                      `${item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} تا ${
-                        item.end_date ? new Date(item.end_date).toLocaleDateString("fa-IR") : "—"
-                      }`
+                      rangeLabel(item)
                     )}
                   </TableCell>
                   <TableCell>{formatDuration(item)}</TableCell>
@@ -722,7 +730,7 @@ export default function LeaveRequestsAdminListPage() {
                         }
                       />
                     ) : (
-                      <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                      <Chip size="small" color={STATUS_COLORS[item.status]} label={statusChipLabel(item)} />
                     )}
                   </TableCell>
                   <TableCell>

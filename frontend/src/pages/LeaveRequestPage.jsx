@@ -11,10 +11,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Snackbar,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -48,11 +50,23 @@ import {
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده" };
 const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error" };
 
+// تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
+function statusLabel(item) {
+  return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
+}
+
 function formatCompactTime(compact) {
   if (compact == null) return "—";
   const hour = Math.floor(compact / 100);
   const minute = compact % 100;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatDuration(item) {
+  if (item.is_forgotten_punch) return `تردد ساعت ${formatCompactTime(item.start_hour)}`;
+  return item.start_hour != null
+    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+    : `${item.duration} روز`;
 }
 
 function timeStringToCompact(timeStr) {
@@ -71,6 +85,9 @@ function SubmitRequestForm({ onSubmitted }) {
   const [description, setDescription] = useState("");
   const [source, setSource] = useState("");
   const [destination, setDestination] = useState("");
+  // تردد فراموش‌شده: ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)
+  const [punchIn, setPunchIn] = useState({ enabled: true, date: new Date(), time: "07:00" });
+  const [punchOut, setPunchOut] = useState({ enabled: true, date: new Date(), time: "15:00" });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -86,10 +103,40 @@ function SubmitRequestForm({ onSubmitted }) {
       setError("لطفاً نوع درخواست را انتخاب کنید");
       return;
     }
+    const toDateOnly = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (selectedType.is_forgotten_punch) {
+      const punches = [
+        punchIn.enabled && { kind: "in", punch_date: toDateOnly(punchIn.date), time: timeStringToCompact(punchIn.time) },
+        punchOut.enabled && {
+          kind: "out",
+          punch_date: toDateOnly(punchOut.date),
+          time: timeStringToCompact(punchOut.time),
+        },
+      ].filter(Boolean);
+      if (punches.length === 0) {
+        setError("حداقل یکی از ترددهای ورود یا خروج را انتخاب کنید");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        await submitLeaveRequest({
+          leave_type_id: selectedType.id,
+          start_date: punches[0].punch_date,
+          description,
+          punches,
+        });
+        setDescription("");
+        onSubmitted(true);
+      } catch (err) {
+        setError(err.response?.data?.detail || "ثبت درخواست با خطا مواجه شد.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const toDateOnly = (d) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       await submitLeaveRequest({
         leave_type_id: selectedType.id,
         start_date: toDateOnly(startDate),
@@ -133,7 +180,65 @@ function SubmitRequestForm({ onSubmitted }) {
           ))}
         </TextField>
 
-        {selectedType && (
+        {selectedType?.is_forgotten_punch && (
+          <>
+            {[
+              ["ورود", punchIn, setPunchIn],
+              ["خروج", punchOut, setPunchOut],
+            ].map(([label, value, setValue]) => (
+              <Box key={label} sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={value.enabled}
+                      onChange={(e) => setValue({ ...value, enabled: e.target.checked })}
+                    />
+                  }
+                  label={`${label} فراموش شده`}
+                />
+                {value.enabled && (
+                  <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <JalaliDateTimePicker
+                        value={value.date}
+                        onChange={(d) => setValue({ ...value, date: d })}
+                        label={`تاریخ ${label}`}
+                        showTime={false}
+                      />
+                    </Box>
+                    <TimeSelect24
+                      label={`ساعت ${label}`}
+                      value={value.time}
+                      onChange={(t) => setValue({ ...value, time: t })}
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+                )}
+              </Box>
+            ))}
+            <Typography variant="caption" color="text.secondary">
+              برای شیفت شب، تاریخ خروج را روز بعد انتخاب کنید. درخواست اول توسط سرپرست و سپس مسئول نیروی انسانی
+              تأیید و بعد در سیستم حضور و غیاب ثبت می‌شود.
+            </Typography>
+            <TextField
+              label="توضیحات"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              multiline
+              minRows={2}
+            />
+            <Button
+              variant="contained"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              {isSubmitting ? "در حال ثبت..." : "ثبت درخواست"}
+            </Button>
+          </>
+        )}
+
+        {selectedType && !selectedType.is_forgotten_punch && (
           <>
             <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
             {selectedType.is_hourly ? (
@@ -232,7 +337,7 @@ function MyRequestsTable({ items, onDeleted }) {
                 </Typography>
               </Box>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
-                <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
                 {item.status === "pending" && (
                   <IconButton
                     size="small"
@@ -252,10 +357,8 @@ function MyRequestsTable({ items, onDeleted }) {
               </Typography>
             )}
             <Typography variant="caption" color="text.secondary" display="block">
-              مدت:{" "}
-              {item.start_hour != null
-                ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                : `${item.duration} روز`}
+              {item.is_forgotten_punch ? "" : "مدت: "}
+              {formatDuration(item)}
             </Typography>
             {item.manager_idea && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
@@ -294,13 +397,9 @@ function MyRequestsTable({ items, onDeleted }) {
                   {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
                 </TableCell>
                 <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+                <TableCell>{formatDuration(item)}</TableCell>
                 <TableCell>
-                  {item.start_hour != null
-                    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                    : `${item.duration} روز`}
-                </TableCell>
-                <TableCell>
-                  <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                  <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
                 </TableCell>
                 <TableCell>{item.manager_idea || "—"}</TableCell>
                 <TableCell>
@@ -352,6 +451,16 @@ function DecideDialog({ item, onClose, onDecided }) {
           {item.type_title || "—"}
         </Typography>
         {item.description && <Typography variant="body2">{item.description}</Typography>}
+        {item.is_forgotten_punch && (
+          <Typography variant="body2" color="text.secondary">
+            {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} — {formatDuration(item)}
+          </Typography>
+        )}
+        {item.is_forgotten_punch && !item.awaiting_hr && (
+          <Alert severity="info">
+            پس از تأیید شما، درخواست برای تأیید نهایی به مسئول نیروی انسانی ارسال می‌شود.
+          </Alert>
+        )}
         {error && <Alert severity="error">{error}</Alert>}
         <TextField
           label="نظر (اختیاری)"
@@ -429,11 +538,7 @@ function PendingApprovalTable({ items, onDecide }) {
                 {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
               </TableCell>
               <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>
-                {item.start_hour != null
-                  ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-                  : `${item.duration} روز`}
-              </TableCell>
+              <TableCell>{formatDuration(item)}</TableCell>
               <TableCell>
                 <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
                   بررسی
@@ -447,11 +552,6 @@ function PendingApprovalTable({ items, onDecide }) {
   );
 }
 
-function formatDuration(item) {
-  return item.start_hour != null
-    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
-    : `${item.duration} روز`;
-}
 
 // ⚠️ طبق درخواست صریح کاربر: سوابق درخواست‌هایی که همین تأییدکننده قبلاً
 // تأیید/رد کرده، زیر درخواست‌های در انتظار - جدیدترین تصمیم بالا، با
@@ -503,7 +603,7 @@ function DecidedHistoryTable({ reloadKey }) {
               <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
               <TableCell>{formatDuration(item)}</TableCell>
               <TableCell>
-                <Chip size="small" color={STATUS_COLORS[item.status]} label={STATUS_LABELS[item.status]} />
+                <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
               </TableCell>
               <TableCell>{item.approved_at ? new Date(item.approved_at).toLocaleDateString("fa-IR") : "—"}</TableCell>
               <TableCell>{item.manager_idea || "—"}</TableCell>
@@ -621,8 +721,12 @@ export default function LeaveRequestPage() {
 
       {tab === 0 && (
         <SubmitRequestForm
-          onSubmitted={() => {
-            setToast("درخواست شما ثبت شد و برای تأییدکننده ارسال شد.");
+          onSubmitted={(isForgottenPunch) => {
+            setToast(
+              isForgottenPunch
+                ? "درخواست تردد فراموش‌شده ثبت شد و برای سرپرست ارسال شد."
+                : "درخواست شما ثبت شد و برای تأییدکننده ارسال شد."
+            );
             handleTabChange(1);
             loadMyRequests();
           }}

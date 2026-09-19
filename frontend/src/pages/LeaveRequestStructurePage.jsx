@@ -36,9 +36,12 @@ import {
   fetchOperationLookup,
   fetchCardLookup,
   fetchLeaveRequestApprovers,
+  fetchLeaveRequestHrOfficer,
   fetchLeaveRequestTypes,
   removeLeaveRequestApprover,
+  removeLeaveRequestHrOfficer,
   setLeaveRequestApprover,
+  setLeaveRequestHrOfficer,
   updateLeaveRequestType,
 } from "../api/leaveRequestsAdmin";
 
@@ -47,6 +50,7 @@ function TypesSection({ siteId, onError }) {
   const [title, setTitle] = useState("");
   const [isMission, setIsMission] = useState(false);
   const [isHourly, setIsHourly] = useState(false);
+  const [isForgottenPunch, setIsForgottenPunch] = useState(false);
   const [actionId, setActionId] = useState("1");
   const [actionIdTouched, setActionIdTouched] = useState(false);
   const [actionLookup, setActionLookup] = useState([]);
@@ -103,8 +107,10 @@ function TypesSection({ siteId, onError }) {
         action_id: actionId === "" ? null : Number(actionId),
         operation_id: operationId === "" ? null : Number(operationId),
         card_no: cardNo === "" ? null : Number(cardNo),
+        is_forgotten_punch: isForgottenPunch,
       });
       setTitle("");
+      setIsForgottenPunch(false);
       setIsMission(false);
       setIsHourly(false);
       setActionId("1");
@@ -157,8 +163,8 @@ function TypesSection({ siteId, onError }) {
             {types.map((t) => (
               <TableRow key={t.id}>
                 <TableCell>{t.title}</TableCell>
-                <TableCell>{t.is_mission ? "ماموریت" : "مرخصی"}</TableCell>
-                <TableCell>{t.is_hourly ? "ساعتی" : "روزانه"}</TableCell>
+                <TableCell>{t.is_forgotten_punch ? "تردد فراموش‌شده" : t.is_mission ? "ماموریت" : "مرخصی"}</TableCell>
+                <TableCell>{t.is_forgotten_punch ? "—" : t.is_hourly ? "ساعتی" : "روزانه"}</TableCell>
                 <TableCell>{t.action_id ?? "—"}</TableCell>
                 <TableCell>{t.operation_id ?? "—"}</TableCell>
                 <TableCell>{t.card_no ?? "—"}</TableCell>
@@ -248,13 +254,32 @@ function TypesSection({ siteId, onError }) {
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField size="small" label="عنوان نوع جدید" value={title} onChange={(e) => setTitle(e.target.value)} />
         <FormControlLabel
-          control={<Switch checked={isMission} onChange={(e) => handleMissionChange(e.target.checked)} />}
-          label="ماموریت (خاموش=مرخصی)"
+          control={
+            <Switch
+              checked={isForgottenPunch}
+              onChange={(e) => {
+                setIsForgottenPunch(e.target.checked);
+                if (e.target.checked) {
+                  setIsMission(false);
+                  setIsHourly(true);
+                }
+              }}
+            />
+          }
+          label="تردد فراموش‌شده"
         />
-        <FormControlLabel
-          control={<Switch checked={isHourly} onChange={(e) => handleHourlyChange(e.target.checked)} />}
-          label="ساعتی (خاموش=روزانه)"
-        />
+        {!isForgottenPunch && (
+          <>
+            <FormControlLabel
+              control={<Switch checked={isMission} onChange={(e) => handleMissionChange(e.target.checked)} />}
+              label="ماموریت (خاموش=مرخصی)"
+            />
+            <FormControlLabel
+              control={<Switch checked={isHourly} onChange={(e) => handleHourlyChange(e.target.checked)} />}
+              label="ساعتی (خاموش=روزانه)"
+            />
+          </>
+        )}
         <TextField
           size="small"
           type="number"
@@ -353,6 +378,60 @@ function ApproversSection({ siteId, onError }) {
   );
 }
 
+// ⚠️ طبق درخواست صریح کاربر: «تردد فراموش‌شده» اول توسط سرپرست (مثل مرخصی)
+// و در نهایت توسط مسئول نیروی انسانی همین سایت تأیید می‌شود.
+function HrOfficerSection({ siteId, onError }) {
+  const [officer, setOfficer] = useState(undefined);
+
+  function load() {
+    fetchLeaveRequestHrOfficer(siteId)
+      .then(setOfficer)
+      .catch(() => setOfficer(null));
+  }
+
+  useEffect(load, [siteId]);
+
+  async function handleSet(employee) {
+    try {
+      await setLeaveRequestHrOfficer(siteId, employee.id);
+      load();
+    } catch (err) {
+      onError(err.response?.data?.detail || "تعیین مسئول نیروی انسانی با خطا مواجه شد.");
+    }
+  }
+
+  async function handleRemove() {
+    try {
+      await removeLeaveRequestHrOfficer(siteId);
+      load();
+    } catch (err) {
+      onError(err.response?.data?.detail || "حذف مسئول نیروی انسانی با خطا مواجه شد.");
+    }
+  }
+
+  if (officer === undefined) return null;
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography variant="body2" color="text.secondary">
+        درخواست «تردد فراموش‌شده» اول توسط سرپرست پرسنل تأیید می‌شود و بعد برای این فرد ارجاع می‌شود؛ تردد فقط
+        پس از تأیید او در کاراوب ثبت می‌شود.
+      </Typography>
+      {officer ? (
+        <Box>
+          <Chip
+            label={`${officer.employee.first_name} ${officer.employee.last_name} (${officer.employee.personnel_code})`}
+            onDelete={handleRemove}
+          />
+        </Box>
+      ) : (
+        <Alert severity="warning">هنوز مسئول نیروی انسانی تعیین نشده - ثبت تردد فراموش‌شده ممکن نیست.</Alert>
+      )}
+      <EmployeePicker siteId={siteId} label="تعیین/تغییر مسئول نیروی انسانی" onSelect={handleSet} />
+    </Stack>
+  );
+}
+
 export default function LeaveRequestStructurePage() {
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState("");
@@ -372,7 +451,7 @@ export default function LeaveRequestStructurePage() {
         تنظیمات درخواست مرخصی/ماموریت
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        نوع‌های قابل‌انتخاب پرسنل و تأییدکننده هر واحد سازمانی.
+        نوع‌های قابل‌انتخاب پرسنل، تأییدکننده هر واحد سازمانی و مسئول نیروی انسانی سایت.
       </Typography>
       <Alert severity="info" sx={{ mb: 2 }}>
         نگاشت ستون‌های جدول خام WF_Requests به «تنظیمات سایت» منتقل شد - از صفحه سایت موردنظر، تب
@@ -416,6 +495,15 @@ export default function LeaveRequestStructurePage() {
             </AccordionSummary>
             <AccordionDetails>
               <ApproversSection siteId={siteId} onError={setError} />
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion variant="outlined">
+            <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+              <Typography fontWeight={700}>مسئول نیروی انسانی (تأیید نهایی تردد فراموش‌شده)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <HrOfficerSection siteId={siteId} onError={setError} />
             </AccordionDetails>
           </Accordion>
         </Stack>

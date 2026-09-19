@@ -222,8 +222,27 @@ class LeaveRequestType(Base, TimestampMixin):
     # ⚠️ طبق تأیید صریح کاربر: Card_No واقعی از جدول Cards انتخاب
     # می‌شود - اگر خالی بماند، سرویس مقدار پیش‌فرض ۰ را می‌نویسد (رفتار قبلی).
     card_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ⚠️ «تردد فراموش‌شده»: به‌جای بازه زمانی، یک یا دو تردد (ورود/خروج، هر
+    # کدام با تاریخ خودش - برای شیفت شب) ثبت می‌شود؛ اول سرپرست و بعد
+    # مسئول نیروی انسانی سایت تأیید می‌کند و در پایان تردد در کاراوب درج می‌شود.
+    is_forgotten_punch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
+
+
+class LeaveRequestHrOfficer(Base, TimestampMixin):
+    """
+    مسئول نیروی انسانی هر سایت - تأییدکننده نهایی درخواست‌های «تردد
+    فراموش‌شده» (بعد از سرپرست). هر سایت حداکثر یک نفر.
+    """
+
+    __tablename__ = "leave_request_hr_officers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), unique=True, nullable=False)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+
+    employee: Mapped["Employee"] = relationship()  # noqa: F821
 
 
 class LeaveRequestApprover(Base, TimestampMixin):

@@ -100,9 +100,11 @@ def build_leave_requests_xlsx(items: list[dict], site_name: str = "") -> bytes:
                 _to_jalali(item.get("start_date")),
                 _to_jalali(item.get("end_date")),
                 _format_compact_time(item.get("start_hour")),
-                _format_compact_time(item.get("end_hour")),
-                _format_duration(item),
-                _STATUS_LABELS.get(item.get("status"), item.get("status") or ""),
+                "" if item.get("is_forgotten_punch") else _format_compact_time(item.get("end_hour")),
+                "" if item.get("is_forgotten_punch") else _format_duration(item),
+                "در انتظار منابع انسانی"
+                if item.get("awaiting_hr")
+                else _STATUS_LABELS.get(item.get("status"), item.get("status") or ""),
                 item.get("manager_idea") or "",
             ]
         )

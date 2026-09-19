@@ -37,7 +37,12 @@ from app.core.leave_request_rules import (
 )
 from app.core.security import decrypt_secret
 from app.models.employee import Employee
-from app.models.leave_request import LeaveRequestApprover, LeaveRequestMapping, LeaveRequestType
+from app.models.leave_request import (
+    LeaveRequestApprover,
+    LeaveRequestHrOfficer,
+    LeaveRequestMapping,
+    LeaveRequestType,
+)
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 from app.models.user import User
 from app.services import kara_attendance_writeback as kara_wb
@@ -49,6 +54,13 @@ logger = logging.getLogger(__name__)
 
 class LeaveRequestError(Exception):
     pass
+
+
+# تردد فراموش‌شده: حداکثر چند روز گذشته قابل‌ثبت است (مثل WF_Action.RequestValidDays کاراوب)
+FORGOTTEN_PUNCH_MAX_PAST_DAYS = 31
+# حداکثر فاصله ورود تا خروج در یک درخواست (شیفت شب ۱۲ ساعته + حاشیه)
+FORGOTTEN_PUNCH_MAX_SPAN_HOURS = 24
+_PUNCH_LABELS = {"in": "ورود", "out": "خروج"}
 
 
 def _quote(db_type: DbType, name: str) -> str:
@@ -638,6 +650,174 @@ class LeaveRequestService:
         )
         return result.scalar_one_or_none()
 
+    async def _resolve_approver_emp_no(self, employee: Employee, mapping, site_connection) -> int:
+        """
+        سرپرست (تأییدکننده اول) - طبق تأیید صریح کاربر: روش اول، همان زنجیره
+        واقعی نرم‌افزار ورود/خروج است (Employee.Sec_No -> Sections.ManagerEmp_No)؛
+        اگر جواب نداد (جدول‌ها تنظیم نشده، پرسنل/بخش پیدا نشد یا خطای
+        دیتابیس)، Fallback به تخصیص دستی LeaveRequestApprover.
+        """
+        try:
+            cur_emp_no = await asyncio.to_thread(
+                _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
+            )
+        except Exception:
+            cur_emp_no = None
+        if cur_emp_no is not None:
+            return cur_emp_no
+        approver_employee_id = await self._get_approver_employee_id(employee.department_id)
+        if approver_employee_id is None:
+            raise LeaveRequestError(
+                "نتوانستیم تأییدکننده این پرسنل را (نه از زنجیره سازمانی، نه از تخصیص دستی) پیدا کنیم - "
+                "لطفاً با منابع انسانی هماهنگ کنید"
+            )
+        approver = await self.db.get(Employee, approver_employee_id)
+        if approver is None:
+            raise LeaveRequestError("تأییدکننده این واحد یافت نشد")
+        return _to_personnel_code_int(approver)
+
+    async def _get_hr_officer_emp_no(self, site_id: int) -> int | None:
+        result = await self.db.execute(
+            select(Employee.personnel_code)
+            .join(LeaveRequestHrOfficer, LeaveRequestHrOfficer.employee_id == Employee.id)
+            .where(LeaveRequestHrOfficer.site_id == site_id)
+        )
+        code = result.scalar_one_or_none()
+        return int(code) if code and str(code).isdigit() else None
+
+    async def _get_forgotten_context(self, site_id: int) -> tuple[set, int | None]:
+        """(شماره کارت‌های نوع «تردد فراموش‌شده»، کد پرسنلی مسئول نیروی انسانی)"""
+        result = await self.db.execute(
+            select(LeaveRequestType.card_no).where(
+                LeaveRequestType.site_id == site_id,
+                LeaveRequestType.is_forgotten_punch.is_(True),
+                LeaveRequestType.card_no.is_not(None),
+            )
+        )
+        cards = {int(c) for c in result.scalars().all()}
+        return cards, await self._get_hr_officer_emp_no(site_id)
+
+    @staticmethod
+    def _annotate_stage(items: list[dict], hr_emp_no: int | None) -> None:
+        for item in items:
+            item["awaiting_hr"] = bool(
+                item.get("is_forgotten_punch")
+                and item.get("status") == "pending"
+                and hr_emp_no is not None
+                and item.get("current_approver_emp_no") == hr_emp_no
+            )
+
+    async def _submit_forgotten_punches(
+        self, employee: Employee, leave_type: LeaveRequestType, punches: list, description: str
+    ) -> dict:
+        """
+        تردد فراموش‌شده - طبق درخواست صریح کاربر:
+          - یک یا دو تردد (ورود/خروج)، هر کدام با تاریخ خودش (شیفت شب)
+          - اول سرپرست (مثل مرخصی) و بعد مسئول نیروی انسانی سایت تأیید می‌کند
+          - در پایان تردد در کاراوب درج می‌شود؛ گزارش تردد هیچ تغییری ندارد
+        مثل کاراوب، به‌ازای هر تردد یک ردیف درخواست جداگانه ثبت می‌شود.
+        """
+        if not punches:
+            raise LeaveRequestError("حداقل یکی از ترددهای ورود یا خروج را وارد کنید")
+        if len(punches) > 2:
+            raise LeaveRequestError("در هر درخواست حداکثر یک ورود و یک خروج قابل‌ثبت است")
+        kinds = [p.kind for p in punches]
+        if any(k not in _PUNCH_LABELS for k in kinds) or len(set(kinds)) != len(kinds):
+            raise LeaveRequestError("نوع تردد نامعتبر است (فقط یک ورود و یک خروج)")
+
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
+        if kara_names is None or not kara_names.can_write_punch:
+            raise LeaveRequestError(
+                "ثبت تردد فراموش‌شده برای این سایت فعال نیست - ستون‌های تکمیلی جدول تردد و جدول کاربران "
+                "باید در تنظیمات سایت نگاشت شوند"
+            )
+        if await self._get_hr_officer_emp_no(employee.site_id) is None:
+            raise LeaveRequestError("مسئول نیروی انسانی این سایت هنوز تعیین نشده - لطفاً با منابع انسانی هماهنگ کنید")
+
+        now = kara_wb.kara_now()
+        parsed: list[tuple] = []
+        for p in punches:
+            hour, minute = divmod(int(p.time), 100)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise LeaveRequestError("ساعت تردد نامعتبر است")
+            moment = datetime(p.punch_date.year, p.punch_date.month, p.punch_date.day, hour, minute)
+            label = _PUNCH_LABELS[p.kind]
+            if moment > now:
+                raise LeaveRequestError(f"زمان {label} نمی‌تواند در آینده باشد")
+            if (now.date() - p.punch_date).days > FORGOTTEN_PUNCH_MAX_PAST_DAYS:
+                raise LeaveRequestError(
+                    f"ثبت تردد فراموش‌شده فقط تا {FORGOTTEN_PUNCH_MAX_PAST_DAYS} روز گذشته امکان‌پذیر است"
+                )
+            parsed.append((p, moment, label))
+        by_kind = {p.kind: moment for p, moment, _ in parsed}
+        if "in" in by_kind and "out" in by_kind:
+            if by_kind["out"] <= by_kind["in"]:
+                raise LeaveRequestError("زمان خروج باید بعد از زمان ورود باشد")
+            if (by_kind["out"] - by_kind["in"]).total_seconds() > FORGOTTEN_PUNCH_MAX_SPAN_HOURS * 3600:
+                raise LeaveRequestError(f"فاصله ورود تا خروج نمی‌تواند بیش از {FORGOTTEN_PUNCH_MAX_SPAN_HOURS} ساعت باشد")
+
+        emp_no = _to_personnel_code_int(employee)
+        forgotten_cards, _ = await self._get_forgotten_context(employee.site_id)
+        existing = await asyncio.to_thread(
+            _select_requests_sync,
+            site_connection,
+            mapping,
+            f"{_quote(site_connection.db_type, mapping.emp_no_column)} = %(emp_no)s",
+            {"emp_no": emp_no},
+        )
+        for p, _, label in parsed:
+            jalali = jdatetime.date.fromgregorian(date=p.punch_date)
+            date_int = jalali_date_to_compact(jalali.year, jalali.month, jalali.day)
+            if await asyncio.to_thread(
+                _run_kara_writeback_sync, site_connection, kara_names, kara_wb.punch_exists, emp_no, date_int, int(p.time)
+            ):
+                raise LeaveRequestError(f"تردد {label} در همین تاریخ و ساعت از قبل در سیستم ثبت شده است")
+            for row in existing:
+                if row.get("CardNo") not in forgotten_cards or row.get("IsFinalApproved") is False:
+                    continue
+                row_date = row.get("StartDate")
+                row_date = row_date.date() if hasattr(row_date, "date") else row_date
+                if row_date == p.punch_date and row.get("StartHour") == int(p.time):
+                    raise LeaveRequestError(f"برای تردد {label} در همین تاریخ و ساعت از قبل درخواست ثبت کرده‌اید")
+
+        cur_emp_no = await self._resolve_approver_emp_no(employee, mapping, site_connection)
+        try:
+            extra_columns = await asyncio.to_thread(
+                _run_kara_writeback_sync, site_connection, kara_names, kara_wb.submit_extra_columns, emp_no, cur_emp_no, 0
+            )
+        except Exception as e:
+            raise LeaveRequestError(f"خواندن اطلاعات تکمیلی از کاراوب با خطا مواجه شد: {e}") from e
+
+        request_ids: list[int] = []
+        for p, _, label in sorted(parsed, key=lambda item: item[1]):
+            jalali = jdatetime.date.fromgregorian(date=p.punch_date)
+            text = (description or "").strip()
+            values = {
+                "emp_no": emp_no,
+                "submitting_date": kara_wb.kara_now(),
+                "start_date": datetime(p.punch_date.year, p.punch_date.month, p.punch_date.day),
+                "end_date": None,
+                "start_hour": int(p.time),
+                "end_hour": 0,  # مثل کاراوب
+                "duration": 0,
+                "operations_id": leave_type.operation_id if leave_type.operation_id is not None else 2,
+                # ورود/خروج در خودِ جدول تردد کاراوب ذخیره نمی‌شود - برای تأییدکننده در توضیحات می‌آید
+                "description": f"{label} - {text}" if text else label,
+                "cur_emp_no": cur_emp_no,
+                "persian_start_date": jalali_date_to_compact(jalali.year, jalali.month, jalali.day),
+                "action_id": leave_type.action_id,
+                "card_no": leave_type.card_no,
+                "extra_columns": extra_columns,
+            }
+            try:
+                request_ids.append(await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values))
+            except Exception as e:
+                raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
+
+        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
+        return {"request_id": request_ids[0], "request_ids": request_ids}
+
     async def submit_request(
         self,
         employee: Employee,
@@ -649,6 +829,7 @@ class LeaveRequestService:
         description: str,
         source: str | None = None,
         destination: str | None = None,
+        punches: list | None = None,
     ) -> dict:
         leave_type = await self.db.get(LeaveRequestType, leave_type_id)
         if leave_type is None or not leave_type.is_active or leave_type.site_id != employee.site_id:
@@ -665,32 +846,11 @@ class LeaveRequestService:
                 "درخواست مرخصی/ماموریت، یک کارت از فهرست رسمی Cards برای این نوع انتخاب کنید"
             )
 
-        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        if leave_type.is_forgotten_punch:
+            return await self._submit_forgotten_punches(employee, leave_type, punches or [], description)
 
-        # ⚠️ طبق تأیید صریح کاربر: روش اول، همان زنجیره واقعی نرم‌افزار
-        # ورود/خروج است (Employee.Sec_No -> Sections.ManagerEmp_No) -
-        # اگر جواب نداد (جدول‌ها تنظیم نشده یا پرسنل/بخش پیدا نشد)،
-        # Fallback به تخصیص دستی LeaveRequestApprover.
-        # ⚠️ اگر خودِ این زنجیره به خطای دیتابیس بخورد (مثلاً نام جدول/ستون
-        # اشتباه تنظیم شده)، آن را هم به‌جای ۵۰۰ عمومی، Fallback در نظر
-        # می‌گیریم - نه اینکه کل ثبت درخواست را متوقف کند.
-        try:
-            cur_emp_no = await asyncio.to_thread(
-                _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
-            )
-        except Exception:
-            cur_emp_no = None
-        if cur_emp_no is None:
-            approver_employee_id = await self._get_approver_employee_id(employee.department_id)
-            if approver_employee_id is None:
-                raise LeaveRequestError(
-                    "نتوانستیم تأییدکننده این پرسنل را (نه از زنجیره سازمانی، نه از تخصیص دستی) پیدا کنیم - "
-                    "لطفاً با منابع انسانی هماهنگ کنید"
-                )
-            approver = await self.db.get(Employee, approver_employee_id)
-            if approver is None:
-                raise LeaveRequestError("تأییدکننده این واحد یافت نشد")
-            cur_emp_no = _to_personnel_code_int(approver)
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        cur_emp_no = await self._resolve_approver_emp_no(employee, mapping, site_connection)
 
         try:
             if leave_type.is_hourly:
@@ -798,7 +958,7 @@ class LeaveRequestService:
         """
         result = await self.db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == site_id))
         types = result.scalars().all()
-        return {(t.operation_id, t.action_id, t.card_no): (t.id, t.title) for t in types}
+        return {(t.operation_id, t.action_id, t.card_no): (t.id, t.title, t.is_forgotten_punch) for t in types}
 
     async def _get_requester_info(self, site_id: int, emp_nos: list) -> dict:
         """
@@ -849,10 +1009,13 @@ class LeaveRequestService:
         )
         new_start = start_date
         new_end = end_date or start_date
+        forgotten_cards, _ = await self._get_forgotten_context(employee.site_id)
 
         for row in rows:
             if row.get("IsFinalApproved") is False:
                 continue  # ردشده - مانع نیست
+            if row.get("CardNo") in forgotten_cards:
+                continue  # تردد فراموش‌شده بازه زمانی ندارد - با مرخصی/ماموریت تداخل نمی‌کند
             existing_start_raw = row.get("StartDate")
             if not existing_start_raw:
                 continue
@@ -941,11 +1104,12 @@ class LeaveRequestService:
         kara_names = await self._get_kara_names(site_id, mapping, site_connection)
         if kara_names is not None:
             if rows[0].get("IsFinalApproved"):
+                forgotten_cards, _ = await self._get_forgotten_context(site_id)
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
                     kara_names,
-                    kara_wb.revert_effects,
+                    kara_wb.revert_forgotten_punch if rows[0].get("CardNo") in forgotten_cards else kara_wb.revert_effects,
                     rows[0],
                     None,
                     mapping.application_id_value,
@@ -967,6 +1131,7 @@ class LeaveRequestService:
         type_lookup = await self._get_type_lookup(employee.site_id)
         normalized = [_normalize_row(row, type_lookup) for row in rows]
         await self._apply_real_reviews(site_connection, mapping, normalized)
+        self._annotate_stage(normalized, await self._get_hr_officer_emp_no(employee.site_id))
         return normalized
 
     async def _apply_real_reviews(self, site_connection, mapping, normalized: list[dict]) -> None:
@@ -1005,6 +1170,7 @@ class LeaveRequestService:
             item["requester_name"] = info.get("name")
             item["requester_department"] = info.get("department")
             normalized.append(item)
+        self._annotate_stage(normalized, await self._get_hr_officer_emp_no(approver_employee.site_id))
         return normalized
 
     async def list_decided_by_approver(
@@ -1023,8 +1189,31 @@ class LeaveRequestService:
         rows = await asyncio.to_thread(
             _select_requests_sync, site_connection, mapping, where_sql, {"approver": approver_emp_no}
         )
+        # تردد فراموش‌شده‌هایی که این فرد به‌عنوان سرپرست تأیید و به مسئول
+        # نیروی انسانی ارجاع داده (تصمیم نهایی با او نبوده)
+        kara_names = await self._get_kara_names(approver_employee.site_id, mapping, site_connection)
+        if kara_names is not None and kara_names.can_write_moveup:
+            try:
+                moved_ids = await asyncio.to_thread(
+                    _run_kara_writeback_sync, site_connection, kara_names, kara_wb.request_ids_moved_by, approver_emp_no
+                )
+            except Exception:
+                logger.exception("خواندن ارجاع‌های کاراوب با خطا مواجه شد")
+                moved_ids = []
+            known = {r.get("RequestId") for r in rows}
+            moved_ids = [rid for rid in moved_ids if rid not in known]
+            if moved_ids:
+                id_col = _quote(site_connection.db_type, mapping.request_id_column)
+                placeholders = ", ".join(f"%(m{i})s" for i in range(len(moved_ids)))
+                rows += await asyncio.to_thread(
+                    _select_requests_sync,
+                    site_connection,
+                    mapping,
+                    f"{id_col} IN ({placeholders})",
+                    {f"m{i}": rid for i, rid in enumerate(moved_ids)},
+                )
         rows.sort(
-            key=lambda r: (r.get("ApprovalDate") or datetime.min, r.get("RequestId") or 0),
+            key=lambda r: (r.get("ApprovalDate") or r.get("SubmittingDate") or datetime.min, r.get("RequestId") or 0),
             reverse=True,
         )
         total = len(rows)
@@ -1044,6 +1233,7 @@ class LeaveRequestService:
             item["requester_department"] = info.get("department")
             items.append(item)
         await self._apply_real_reviews(site_connection, mapping, items)
+        self._annotate_stage(items, await self._get_hr_officer_emp_no(approver_employee.site_id))
         return {"items": items, "total": total}
 
     async def list_all_for_site(
@@ -1100,6 +1290,7 @@ class LeaveRequestService:
             item["requester_department"] = info.get("department")
             normalized.append(item)
         await self._apply_real_reviews(site_connection, mapping, normalized)
+        self._annotate_stage(normalized, await self._get_hr_officer_emp_no(site_id))
         return normalized
 
     async def _list_lookup(
@@ -1183,6 +1374,51 @@ class LeaveRequestService:
         if request_row.get("IsFinalApproved") is not None:
             raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده است")
 
+        # ⚠️ تردد فراموش‌شده (طبق درخواست صریح کاربر): تأیید سرپرست نهایی
+        # نیست - درخواست به مسئول نیروی انسانی سایت ارجاع می‌شود و فقط تأیید
+        # او تردد را در کاراوب درج می‌کند. رد در هر مرحله نهایی است.
+        forgotten_cards, hr_emp_no = await self._get_forgotten_context(site_id)
+        is_forgotten = request_row.get("CardNo") in forgotten_cards
+        kara_names = await self._get_kara_names(site_id, mapping, site_connection)
+        if is_forgotten and approved:
+            if hr_emp_no is None:
+                raise LeaveRequestError("مسئول نیروی انسانی این سایت تعیین نشده - تأیید تردد فراموش‌شده ممکن نیست")
+            if kara_names is None or not kara_names.can_write_punch:
+                raise LeaveRequestError("ستون‌های لازم جدول تردد برای ثبت تردد فراموش‌شده در تنظیمات سایت نگاشت نشده‌اند")
+            # اگر مسئول نیروی انسانی خودش درخواست‌دهنده است، تأیید سرپرست نهایی است
+            if approver_emp_no != hr_emp_no and request_row.get("EmpNo") != hr_emp_no:
+                try:
+                    await asyncio.to_thread(
+                        _run_kara_writeback_sync,
+                        site_connection,
+                        kara_names,
+                        kara_wb.move_up_to,
+                        request_row,
+                        approver_emp_no,
+                        hr_emp_no,
+                    )
+                except Exception as e:
+                    logger.exception("ارجاع درخواست %s به مسئول نیروی انسانی شکست خورد", request_id)
+                    raise LeaveRequestError(f"ارجاع درخواست به مسئول نیروی انسانی با خطا مواجه شد: {e}") from e
+                if mapping.wf_reviews_approved_type_value is not None and (manager_idea or "").strip():
+                    await asyncio.to_thread(
+                        _insert_review_sync,
+                        site_connection,
+                        mapping,
+                        request_id,
+                        approver_emp_no,
+                        manager_idea,
+                        mapping.wf_reviews_approved_type_value,
+                    )
+                _schedule_push(
+                    site_id,
+                    hr_emp_no,
+                    "/leave-requests?tab=pending",
+                    "یک درخواست تردد فراموش‌شده (تأییدشده توسط سرپرست) در انتظار تأیید شماست.\n"
+                    "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+                )
+                return
+
         # ⚠️ طبق تصمیم صریح کاربر (هم‌راستا با رفتار واقعی کاراوب):
         # ManagerIdea عمداً خالی نوشته می‌شود. بررسی رکوردهای واقعیِ
         # ساخته‌شده توسط خودِ کاراوب نشان داد این ستون همیشه خالی است و
@@ -1201,14 +1437,13 @@ class LeaveRequestService:
         # ساعتی روی تردد مطابق (یا AcceptCode=8 اگر ترددی نیست)، روزانه در
         # Mor_Mam. اگر این مرحله شکست بخورد، خودِ تأیید هم برگردانده می‌شود
         # تا درخواستی «تأییدشده ولی بی‌اثر» باقی نماند.
-        kara_names = await self._get_kara_names(site_id, mapping, site_connection)
         if approved and kara_names is not None:
             try:
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
                     kara_names,
-                    kara_wb.apply_on_approval,
+                    kara_wb.apply_forgotten_punch if is_forgotten else kara_wb.apply_on_approval,
                     request_row,
                     approver_emp_no,
                     mapping.application_id_value,
@@ -1280,6 +1515,30 @@ class LeaveRequestService:
         ثبت اولیه می‌نویسد.
         """
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
+        current_rows = await asyncio.to_thread(
+            _select_requests_sync,
+            site_connection,
+            mapping,
+            f"{request_id_col} = %(request_id)s",
+            {"request_id": request_id},
+        )
+        if not current_rows:
+            raise LeaveRequestError("درخواست موردنظر یافت نشد")
+        forgotten_cards, _ = await self._get_forgotten_context(site_id)
+        updates = dict(updates)
+        target_card = current_rows[0].get("CardNo")
+        if updates.get("leave_type_id") is not None:
+            new_type = await self.db.get(LeaveRequestType, updates["leave_type_id"])
+            if new_type is not None:
+                target_card = new_type.card_no
+        if target_card in forgotten_cards:
+            # تردد فراموش‌شده بازه ندارد: فقط تاریخ و ساعت خودِ تردد (مثل کاراوب)
+            updates.pop("end_date", None)
+            if "start_hour" in updates:
+                updates["end_hour"] = 0
+            else:
+                updates.pop("end_hour", None)
         column_updates: dict = {}
         key_to_column = {
             "is_final_approved": mapping.is_final_approved_column,
@@ -1294,7 +1553,9 @@ class LeaveRequestService:
                 column_updates[column] = updates[key]
 
         try:
-            if updates.get("start_hour") is not None and updates.get("end_hour") is not None:
+            if target_card in forgotten_cards:
+                pass  # مدت همیشه '0'
+            elif updates.get("start_hour") is not None and updates.get("end_hour") is not None:
                 column_updates[mapping.duration_column] = str(
                     compute_hourly_duration(updates["start_hour"], updates["end_hour"])
                 )
@@ -1334,23 +1595,17 @@ class LeaveRequestService:
             {"is_final_approved", "start_date", "end_date", "start_hour", "end_hour", "leave_type_id"}
             & set(updates)
         )
-        request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
         old_row = None
         if writeback:
-            old_rows = await asyncio.to_thread(
-                _select_requests_sync,
-                site_connection,
-                mapping,
-                f"{request_id_col} = %(request_id)s",
-                {"request_id": request_id},
-            )
-            old_row = old_rows[0] if old_rows else None
-            if old_row and old_row.get("IsFinalApproved"):
+            old_row = current_rows[0]
+            if old_row.get("IsFinalApproved"):
                 await asyncio.to_thread(
                     _run_kara_writeback_sync,
                     site_connection,
                     kara_names,
-                    kara_wb.revert_effects,
+                    kara_wb.revert_forgotten_punch
+                    if old_row.get("CardNo") in forgotten_cards
+                    else kara_wb.revert_effects,
                     old_row,
                     None,
                     mapping.application_id_value,
@@ -1374,7 +1629,9 @@ class LeaveRequestService:
                     _run_kara_writeback_sync,
                     site_connection,
                     kara_names,
-                    kara_wb.apply_on_approval,
+                    kara_wb.apply_forgotten_punch
+                    if new_row.get("CardNo") in forgotten_cards
+                    else kara_wb.apply_on_approval,
                     new_row,
                     approver,
                     mapping.application_id_value,
@@ -1460,4 +1717,5 @@ def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
         "destination": row.get("Distination"),
         "type_id": matched_type[0] if matched_type else None,
         "type_title": matched_type[1] if matched_type else None,
+        "is_forgotten_punch": bool(matched_type[2]) if matched_type and len(matched_type) > 2 else False,
     }

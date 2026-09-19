@@ -49,6 +49,20 @@ export async function removeLeaveRequestApprover(departmentId) {
   await apiClient.delete(`/leave-requests/departments/${departmentId}/approver`);
 }
 
+export async function fetchLeaveRequestHrOfficer(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/hr-officer`);
+  return data;
+}
+
+export async function setLeaveRequestHrOfficer(siteId, employeeId) {
+  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/hr-officer`, { employee_id: employeeId });
+  return data;
+}
+
+export async function removeLeaveRequestHrOfficer(siteId) {
+  await apiClient.delete(`/leave-requests/sites/${siteId}/hr-officer`);
+}
+
 export async function fetchAllLeaveRequestsForSite(siteId, filters = {}) {
   const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/all`, { params: filters });
   return data;

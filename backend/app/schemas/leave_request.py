@@ -107,6 +107,7 @@ class LeaveRequestTypeIn(BaseModel):
     action_id: int | None = None
     operation_id: int | None = None
     card_no: int | None = None
+    is_forgotten_punch: bool = False
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
@@ -117,6 +118,7 @@ class LeaveRequestTypeUpdateIn(BaseModel):
     action_id: int | None = None
     operation_id: int | None = None
     card_no: int | None = None
+    is_forgotten_punch: bool | None = None
 
 
 class LeaveRequestTypeOut(BaseModel):
@@ -129,6 +131,7 @@ class LeaveRequestTypeOut(BaseModel):
     action_id: int | None
     operation_id: int | None
     card_no: int | None
+    is_forgotten_punch: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -167,7 +170,30 @@ class LeaveRequestApproverOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ---------- تنظیمات ادمین: مسئول نیروی انسانی سایت ----------
+
+
+class SetHrOfficerIn(BaseModel):
+    employee_id: int
+
+
+class LeaveRequestHrOfficerOut(BaseModel):
+    id: int
+    site_id: int
+    employee: EmployeeBrief
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ---------- ثبت درخواست (پرسنل) ----------
+
+
+class ForgottenPunchIn(BaseModel):
+    """یک تردد فراموش‌شده - ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)."""
+
+    kind: str = "in"  # in | out
+    punch_date: date
+    time: int  # فرمت فشرده HHMM - مثلاً 700
 
 
 class SubmitLeaveRequestIn(BaseModel):
@@ -179,10 +205,13 @@ class SubmitLeaveRequestIn(BaseModel):
     description: str = ""
     source: str | None = None
     destination: str | None = None
+    # فقط برای نوع «تردد فراموش‌شده» (یک یا دو تردد)
+    punches: list[ForgottenPunchIn] | None = None
 
 
 class SubmitLeaveRequestOut(BaseModel):
     request_id: int
+    request_ids: list[int] = []
 
 
 # ---------- نمایش یک درخواست (نرمالایز‌شده) ----------
@@ -210,6 +239,9 @@ class LeaveRequestOut(BaseModel):
     type_title: str | None = None
     requester_name: str | None = None
     requester_department: str | None = None
+    is_forgotten_punch: bool = False
+    # تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
+    awaiting_hr: bool = False
 
 
 class DecidedLeaveRequestsPage(BaseModel):
