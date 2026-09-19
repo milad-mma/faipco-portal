@@ -546,7 +546,7 @@ def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
 #   ثبت: یک ردیف درخواست به‌ازای هر تردد - StartDate = تاریخ تردد،
 #        StartHour = ساعت تردد، EndHour = ۰، EndDate = NULL، Duration = '0'
 #   تأیید نهایی: یک ردیف تازه در جدول تردد (Status 0، Modify 1، Direction 0،
-#        ApplicationId = شناسه برنامه، DeviceNumber NULL، Duration 0،
+#        ApplicationId = شناسه برنامه، DeviceNumber صریحاً NULL، Duration 0،
 #        PrevDay 0، VT 0، AC 0) + یک ردیف لاگ «درج» (همه ستون‌های Old* خالی)؛
 #        AcceptCode = 0
 #   حذف تردد (در کاراوب): لاگ با همه ستون‌های New* خالی و ApplicationId =
@@ -583,9 +583,10 @@ def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int
         D = lambda role: n.c("datafile", role)  # noqa: E731
         cur.execute(
             f"INSERT INTO {n.df_table} ({n.df_emp_no}, {n.df_date}, {n.df_time}, {D('status')}, {D('modify')}, "
-            f"{D('direction')}, {D('application_id')}, {D('duration')}, {D('prev_day')}, {D('vt')}, {D('ac')}, "
-            f"{D('checksum')}, {D('branch_code')}) VALUES "
-            "(%(e)s, %(d)s, %(t)s, 0, 1, 0, %(ap)s, 0, 0, 0, 0, 0, %(b)s)",
+            f"{D('direction')}, {D('application_id')}, {D('device_number')}, {D('duration')}, {D('prev_day')}, "
+            f"{D('vt')}, {D('ac')}, {D('checksum')}, {D('branch_code')}) VALUES "
+            # DeviceNumber صریحاً NULL (مثل کاراوب) - پیش‌فرض دیتابیس با کلید خارجی دستگاه‌ها تداخل دارد
+            "(%(e)s, %(d)s, %(t)s, 0, 1, 0, %(ap)s, NULL, 0, 0, 0, 0, 0, %(b)s)",
             {"e": emp_no, "d": date_int, "t": time_int, "ap": app_id, "b": branch_code},
         )
         _log_punch_change(

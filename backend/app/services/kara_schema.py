@@ -117,6 +117,9 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "datafile.direction": "Direction",
     "datafile.vt": "VT",
     "datafile.ac": "AC",
+    # ⚠️ باید صریحاً NULL نوشته شود: پیش‌فرض دیتابیس (DF_DataFile_Clock_No) یک
+    # شماره دستگاه نامعتبر است و با کلید خارجی FK_DataFile_Devices خطا می‌دهد
+    "datafile.device_number": "DeviceNumber",
     # لاگ تغییر ترددها
     "log_datafile.table": "LogDataFile",
     "log_datafile.id": "Id",
@@ -171,7 +174,7 @@ COLUMN_ONLY_GROUPS = {"wf_requests", "wf_reviews", "wf_attachment", "wf_moveup",
 HOURLY_WRITE_COLUMNS = ("id", "status", "duration", "prev_day", "application_id", "checksum", "branch_code")
 
 # ستون‌هایی که درج تردد فراموش‌شده بدون آن‌ها ممکن نیست (همه NOT NULL در کاراوب)
-PUNCH_INSERT_COLUMNS = HOURLY_WRITE_COLUMNS + ("modify", "direction", "vt", "ac")
+PUNCH_INSERT_COLUMNS = HOURLY_WRITE_COLUMNS + ("modify", "direction", "vt", "ac", "device_number")
 
 # ستون‌هایی که ثبت ارجاع (سرپرست -> مسئول نیروی انسانی) بدون آن‌ها ممکن نیست
 MOVEUP_REQUIRED_COLUMNS = ("request_id", "date", "from_manager", "to_manager")
