@@ -257,7 +257,8 @@ export default function MonthlyAttendanceReportPage() {
                     </TableCell>
                     {hasAbsences && (
                       <TableCell sx={{ "&&": { whiteSpace: "normal" }, minWidth: { xs: 84, sm: 120 }, maxWidth: 220 }}>
-                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                        {/* طبق خواست کاربر: چند مرخصی/ماموریت در یک روز زیر هم، نه کنار هم */}
+                        <Stack direction="column" spacing={0.5} alignItems="flex-start">
                           {day.daily_absence ? (
                             <Chip
                               size="small"
