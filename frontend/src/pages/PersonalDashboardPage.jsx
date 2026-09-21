@@ -64,10 +64,10 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
       onClick={comingSoon ? undefined : onClick}
       sx={{
         position: "relative",
-        // ⚠️ حداقل ۸۲ و کشیده تا ته ردیف - وقتی کارت «متولدین امروز» بلند
-        // می‌شود، همه کاشی‌ها هم‌اندازه بزرگ شوند (قبلاً ارتفاع ثابت داشتند و
-        // فقط کاشی «ارزیابی عملکرد» بزرگ می‌شد)
-        minHeight: 82,
+        // ⚠️ ارتفاع ثابت و مستقل از «متولدین امروز» (در دسکتاپ ۱۱۰). height:100%
+        // فقط برای هم‌قد ماندن کاشی‌های یک ردیف است (مثلاً وقتی کاشی «ارزیابی
+        // عملکرد» شمارنده دارد).
+        minHeight: { xs: 82, md: 110 },
         height: "100%",
         display: "flex",
         flexDirection: "column",
@@ -196,11 +196,11 @@ export default function PersonalDashboardPage() {
         maxWidth: 1100,
         mx: "auto",
         gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
-        // ⚠️ دسکتاپ: وقتی «متولدین امروز» (کنار ردیف میانبرها و ابزارها) بلند
-        // می‌شود، فضای اضافه به نسبت ۱ به ۲ بین ردیف میانبرها و ردیف ابزارها
-        // (که خودش دو ردیف کاشی است) تقسیم می‌شود تا همه کارت‌های ستون
-        // اصلی متناسب بزرگ شوند، نه فقط بعضی‌شان.
-        gridTemplateRows: { md: "auto auto 1fr 2fr" },
+        // ⚠️ طبق تصمیم کاربر (فقط دسکتاپ): کارت‌های ستون اصلی ارتفاع طبیعی
+        // و ثابت خودشان را دارند و با بلندشدن «متولدین امروز» کشیده نمی‌شوند؛
+        // برعکس، کارت متولدین هم‌قد ردیف میانبرها + ابزارها می‌شود و اگر
+        // متولدین زیاد بودند، لیست داخل خودِ کارت اسکرول می‌خورد.
+        gridTemplateRows: { md: "auto auto auto auto" },
         gridTemplateAreas: {
           xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
           md: `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
@@ -343,6 +343,7 @@ export default function PersonalDashboardPage() {
           sx={{
             position: "relative",
             flex: 1,
+            minHeight: { md: 140 },
             borderRadius: 2,
             p: 1.75,
             display: "flex",
@@ -381,6 +382,7 @@ export default function PersonalDashboardPage() {
           sx={{
             position: "relative",
             flex: 1,
+            minHeight: { md: 140 },
             borderRadius: 2,
             p: 1.75,
             overflow: "visible",
@@ -492,19 +494,39 @@ export default function PersonalDashboardPage() {
 
       {/* متولدین امروز */}
       {(birthdays === null || birthdays.length > 0) && (
-        <Card variant="outlined" sx={{ gridArea: "birthdays", borderRadius: 2, p: 1.75 }}>
-          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1 }}>
+        <Card
+          variant="outlined"
+          sx={{
+            gridArea: "birthdays",
+            borderRadius: 2,
+            p: 1.75,
+            // ⚠️ فقط دسکتاپ: contain:size یعنی محتوای این کارت در تعیین ارتفاع
+            // ردیف‌های Grid نقشی ندارد؛ کارت فقط تا ته ناحیه‌اش کشیده می‌شود
+            // (هم‌قد میانبرها + ابزارها) و لیست داخلش اسکرول می‌خورد.
+            contain: { md: "size" },
+            display: { md: "flex" },
+            flexDirection: { md: "column" },
+          }}
+        >
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1, flexShrink: 0 }}>
             <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
-            <Typography fontWeight={800} fontSize={14}>
+            <Typography fontWeight={800} fontSize={14} sx={{ flex: 1 }}>
               متولدین امروز
             </Typography>
+            {birthdays?.length > 0 && (
+              <Chip label={`${birthdays.length} نفر`} size="small" sx={{ fontSize: 10, height: 20 }} />
+            )}
           </Stack>
           {birthdays === null ? (
             <Typography variant="caption" color="text.secondary">
               در حال بارگذاری...
             </Typography>
           ) : (
-            <Stack spacing={1.5} divider={<Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />}>
+            <Stack
+              spacing={1.5}
+              divider={<Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />}
+              sx={{ flex: { md: 1 }, minHeight: { md: 0 }, overflowY: { md: "auto" }, paddingInlineEnd: { md: 0.5 } }}
+            >
               {birthdays.map((e) => (
                 <Box key={e.id}>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
