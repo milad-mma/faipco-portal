@@ -38,6 +38,7 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
       sx={{
         position: "relative",
         minHeight: 82,
+        height: "100%",
         overflow: "visible",
         display: "flex",
         flexDirection: "column",

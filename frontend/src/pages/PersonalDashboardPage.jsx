@@ -64,7 +64,11 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
       onClick={comingSoon ? undefined : onClick}
       sx={{
         position: "relative",
-        height: 82,
+        // ⚠️ حداقل ۸۲ و کشیده تا ته ردیف - وقتی کارت «متولدین امروز» بلند
+        // می‌شود، همه کاشی‌ها هم‌اندازه بزرگ شوند (قبلاً ارتفاع ثابت داشتند و
+        // فقط کاشی «ارزیابی عملکرد» بزرگ می‌شد)
+        minHeight: 82,
+        height: "100%",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -182,6 +186,11 @@ export default function PersonalDashboardPage() {
         maxWidth: 1100,
         mx: "auto",
         gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
+        // ⚠️ دسکتاپ: وقتی «متولدین امروز» (کنار ردیف میانبرها و ابزارها) بلند
+        // می‌شود، فضای اضافه به نسبت ۱ به ۲ بین ردیف میانبرها و ردیف ابزارها
+        // (که خودش دو ردیف کاشی است) تقسیم می‌شود تا همه کارت‌های ستون
+        // اصلی متناسب بزرگ شوند، نه فقط بعضی‌شان.
+        gridTemplateRows: { md: "auto auto 1fr 2fr" },
         gridTemplateAreas: {
           xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
           md: `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
@@ -327,6 +336,7 @@ export default function PersonalDashboardPage() {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
             textAlign: "center",
             cursor: user?.has_monthly_attendance ? "pointer" : "default",
             opacity: user?.has_monthly_attendance ? 1 : 0.55,
@@ -364,6 +374,7 @@ export default function PersonalDashboardPage() {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
             textAlign: "center",
             cursor: "pointer",
           }}
@@ -452,6 +463,8 @@ export default function PersonalDashboardPage() {
           gridArea: "tools",
           display: "grid",
           gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)", md: "repeat(3, 1fr)" },
+          // ردیف‌های کاشی هم‌اندازه، و با کشیده‌شدن این ناحیه همه با هم بزرگ می‌شوند
+          gridAutoRows: "1fr",
           gap: 1.25,
         }}
       >
