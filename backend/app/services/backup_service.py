@@ -195,6 +195,10 @@ def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Pat
     return dump_path
 
 
+# محل نگهداری موقت داده فعلی حین بازیابی (برای برگشت در صورت شکست)
+_PRERESTORE_SCHEMA = "public_prerestore"
+
+
 def schedule_restore(dump_path: Path) -> None:
     """
     برخلاف نسخه‌های قبلی، اینجا کل کار واقعی به یک Scope کاملاً مستقل و جدا
@@ -224,13 +228,14 @@ def schedule_restore(dump_path: Path) -> None:
     و از نو بسازیم، بعد pg_restore را روی یک Schema کاملاً خالی اجرا کنیم —
     دیگر هیچ «ترتیب Drop» ای در کار نیست.
 
-    نکته Atomicity: چون پاک‌کردن Schema یک مرحله جدا (نه بخشی از تراکنش
-    pg_restore) است، اگر pg_restore بعد از این مرحله شکست بخورد، دیتابیس
-    با یک Schema خالی (بدون جدول) باقی می‌ماند — نه دقیقاً حالت قبل از
-    شروع. این قابل‌قبول است چون: (۱) دوباره‌اجراکردن کل فرآیند کاملاً
-    بی‌خطر و Idempotent است (پاک‌کردن یک Schema خالی هم مشکلی ندارد)،
-    (۲) سرویس در هر صورت (چه موفق چه ناموفق) دوباره روشن می‌شود و لاگ خطا
-    واضح نشان داده می‌شود.
+    ⚠️ برگشت خودکار (رفع باگ گزارش‌شده): قبلاً Schema فعلی پاک می‌شد و اگر
+    pg_restore یا Migration شکست می‌خورد، دیتابیس خالی می‌ماند (در حالی که
+    پیام پایانی می‌گفت «روی داده قبلی»). حالا Schema فعلی پاک نمی‌شود، فقط به
+    public_prerestore تغییر نام می‌دهد؛ بازیابی روی یک public خالی انجام
+    می‌شود. موفق = Schema قدیمی پاک می‌شود. ناموفق = public نیمه‌کاره پاک و
+    Schema قدیمی دوباره public می‌شود - یعنی دقیقاً داده قبل از شروع. اگر
+    حتی این برگشت هم شکست بخورد، داده قبلی در public_prerestore دست‌نخورده
+    می‌ماند و لاگ صریحاً می‌گوید.
     """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
@@ -267,8 +272,10 @@ echo "Stopping faipco-backend..."
 systemctl stop faipco-backend
 sleep 2
 
-echo "Resetting public schema (DROP CASCADE + CREATE) before restoring..."
-{psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; ALTER SCHEMA public OWNER TO {db_user}; GRANT ALL ON SCHEMA public TO {db_user};"
+# ⚠️ داده فعلی پاک نمی‌شود - Schema فعلی فقط تغییر نام می‌دهد تا اگر بازیابی
+# یا Migration شکست خورد، دقیقاً همان داده قبلی برگردانده شود.
+echo "Moving current data aside (public -> {_PRERESTORE_SCHEMA}) before restoring..."
+{psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA IF EXISTS {_PRERESTORE_SCHEMA} CASCADE; ALTER SCHEMA public RENAME TO {_PRERESTORE_SCHEMA}; CREATE SCHEMA public; ALTER SCHEMA public OWNER TO {db_user}; GRANT ALL ON SCHEMA public TO {db_user};"
 reset_exit=$?
 
 if [ "$reset_exit" -eq 0 ]; then
@@ -291,6 +298,18 @@ else
   migrate_exit=1
 fi
 
+rollback_exit=0
+if [ "$reset_exit" -eq 0 ]; then
+  if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
+    echo "Dropping previous data ({_PRERESTORE_SCHEMA})..."
+    {psql_path} "{libpq_url}" -c "DROP SCHEMA IF EXISTS {_PRERESTORE_SCHEMA} CASCADE;"
+  else
+    echo "Restore failed — putting the previous data back..."
+    {psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA public CASCADE; ALTER SCHEMA {_PRERESTORE_SCHEMA} RENAME TO public;"
+    rollback_exit=$?
+  fi
+fi
+
 echo "Starting faipco-backend..."
 systemctl start faipco-backend
 
@@ -298,8 +317,12 @@ rm -rf {_RESTORE_STAGING_DIR}
 
 if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
   echo "=== Restore finished successfully: $(date -Iseconds) ==="
+elif [ "$reset_exit" -ne 0 ]; then
+  echo "=== Restore FAILED: $(date -Iseconds) — nothing was changed; the service is running on the original data. ==="
+elif [ "$rollback_exit" -eq 0 ]; then
+  echo "=== Restore FAILED: $(date -Iseconds) — the previous data was put back; the service is running on the original data. ==="
 else
-  echo "=== Restore FAILED: $(date -Iseconds) — check the output above. The service was restarted regardless, on the original pre-restore data. ==="
+  echo "=== Restore FAILED and ROLLBACK FAILED: $(date -Iseconds) — the previous data is kept in schema {_PRERESTORE_SCHEMA}. Do not run another restore; ask for manual recovery. ==="
 fi
 """
     script_path = Path("/tmp/faipco-restore-run.sh")

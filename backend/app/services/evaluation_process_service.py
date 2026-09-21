@@ -51,10 +51,17 @@ class EvaluationProcessService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _ensure_period_enabled(self, period_id: int) -> None:
+        """دوره‌ای که ادمین غیرفعال کرده، برای پرسنل در دسترس نیست."""
+        period = await self.db.get(EvaluationPeriod, period_id)
+        if period is None or period.is_disabled:
+            raise EvaluationProcessError("این دوره ارزیابی غیرفعال شده و دیگر در دسترس نیست")
+
     async def _get_owned_assignment(self, assignment_id: int, evaluator_employee_id: int) -> EvaluationAssignment:
         assignment = await self.db.get(EvaluationAssignment, assignment_id)
         if assignment is None:
             raise EvaluationProcessError("این ارزیابی یافت نشد")
+        await self._ensure_period_enabled(assignment.period_id)
         if assignment.evaluator_employee_id != evaluator_employee_id:
             raise EvaluationProcessError("شما مجاز به انجام این ارزیابی نیستید")
         return assignment
@@ -91,6 +98,7 @@ class EvaluationProcessService:
         evaluation = result.scalar_one_or_none()
         if evaluation is None:
             raise EvaluationProcessError("این ارزیابی یافت نشد")
+        await self._ensure_period_enabled(evaluation.assignment.period_id)
         if evaluation.assignment.evaluator_employee_id != evaluator_employee_id and not (
             await self._is_supervisor_of_evaluator(evaluation.assignment.evaluator_employee_id, evaluator_employee_id)
         ):
@@ -322,6 +330,7 @@ class EvaluationProcessService:
             .where(
                 EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
                 EvaluationPeriod.status == EvaluationPeriodStatus.active,
+                EvaluationPeriod.is_disabled.is_(False),
                 EvaluationPeriod.end_date > now,
                 EvaluationPeriod.end_date <= deadline_limit,
             )
@@ -342,7 +351,7 @@ class EvaluationProcessService:
             try:
                 await PushService(self.db).notify_users(
                     {user_id},
-                    url="/my-performance?tab=1",
+                    url="/my-performance?tab=personnel",
                     priority="normal",
                     body=(
                         f"{count} ارزیابی عملکرد انجام‌نشده دارید و مهلت آن رو به پایان است.\n"
@@ -466,7 +475,9 @@ class EvaluationProcessService:
         result = await self.db.execute(
             select(func.avg(Evaluation.total_score), func.count(Evaluation.id))
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
             .where(
+                EvaluationPeriod.is_disabled.is_(False),
                 EvaluationAssignment.target_employee_id == employee_id,
                 Evaluation.status == EvaluationStatus.submitted,
                 Evaluation.submitted_at >= start_utc,
@@ -507,7 +518,9 @@ class EvaluationProcessService:
             select(Evaluation)
             .options(selectinload(Evaluation.assignment))
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
             .where(
+                EvaluationPeriod.is_disabled.is_(False),
                 EvaluationAssignment.evaluator_employee_id.in_(shift_lead_employee_ids),
                 Evaluation.status == EvaluationStatus.submitted,
             )
@@ -539,7 +552,11 @@ class EvaluationProcessService:
                 selectinload(EvaluationAssignment.period),
                 selectinload(EvaluationAssignment.form),
             )
-            .where(EvaluationAssignment.evaluator_employee_id == evaluator_employee_id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
+            .where(
+                EvaluationAssignment.evaluator_employee_id == evaluator_employee_id,
+                EvaluationPeriod.is_disabled.is_(False),
+            )
         )
         assignments = assignments_result.scalars().all()
 
@@ -575,9 +592,11 @@ class EvaluationProcessService:
         result = await self.db.execute(
             select(Evaluation)
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
             .where(
                 EvaluationAssignment.target_employee_id == target_employee_id,
                 Evaluation.status == EvaluationStatus.submitted,
+                EvaluationPeriod.is_disabled.is_(False),
             )
             .order_by(Evaluation.submitted_at.desc())
         )
@@ -598,10 +617,12 @@ class EvaluationProcessService:
         result = await self.db.execute(
             select(Evaluation)
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
             .where(
                 Evaluation.id == evaluation_id,
                 EvaluationAssignment.target_employee_id == target_employee_id,
                 Evaluation.status == EvaluationStatus.submitted,
+                EvaluationPeriod.is_disabled.is_(False),
             )
         )
         if result.scalar_one_or_none() is None:
@@ -688,9 +709,12 @@ class EvaluationProcessService:
         latest_score = results[0].total_score if results else None
 
         pending_result = await self.db.execute(
-            select(EvaluationAssignment.id).where(
+            select(EvaluationAssignment.id)
+            .join(EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id)
+            .where(
                 EvaluationAssignment.evaluator_employee_id == employee_id,
                 EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+                EvaluationPeriod.is_disabled.is_(False),
             )
         )
         pending_count = len(pending_result.all())

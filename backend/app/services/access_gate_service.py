@@ -175,6 +175,7 @@ class AccessGateService:
                 EvaluationPeriod.status.in_(
                     [EvaluationPeriodStatus.closed, EvaluationPeriodStatus.archived]
                 ),
+                EvaluationPeriod.is_disabled.is_(False),
             )
         )
         return result.scalar_one()
@@ -198,6 +199,7 @@ class AccessGateService:
                 EvaluationPeriod.status.in_(
                     [EvaluationPeriodStatus.closed, EvaluationPeriodStatus.archived]
                 ),
+                EvaluationPeriod.is_disabled.is_(False),
             )
             .group_by(EvaluationPeriod.id, EvaluationPeriod.title)
             .order_by(EvaluationPeriod.title)

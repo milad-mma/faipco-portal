@@ -12,9 +12,12 @@
 
 ## ۲. تنظیمات SMTP سراسری
 
-`SmtpSettings` (Migration 045، یک ردیف Singleton) - تنظیم یک‌جا برای هر
-دو قابلیت زیر (فراموشی رمز عبور + ارسال بکاپ به ایمیل)، در پنل «تنظیمات
-سامانه». پشتیبانی از سه نوع رمزنگاری: STARTTLS (رایج‌ترین، معمولاً پورت
+`SmtpSettings` (Migration 045، یک ردیف Singleton) - تنظیم یک‌جا برای همه
+ارسال‌های ایمیلی پرتال (فراموشی رمز عبور، ارسال بکاپ به ایمیل، و ارسال
+گزارش Excel ارزیابی عملکرد به ایمیل)، در پنل «تنظیمات سامانه»
+(`GET/PUT /system/smtp-settings` و `POST /system/smtp-settings/test`، مجوز
+`system.settings`). فیلدها: `enabled`، `host`، `port` (پیش‌فرض ۵۸۷)،
+`username`، رمز، `from_address`، `from_name`، `encryption_mode`. پشتیبانی از سه نوع رمزنگاری: STARTTLS (رایج‌ترین، معمولاً پورت
 ۵۸۷)، SSL/TLS مستقیم (معمولاً پورت ۴۶۵)، یا بدون رمزنگاری. رمز عبور
 هرگز خام ذخیره نمی‌شود (همان `encrypt_secret`/`decrypt_secret` استفاده‌شده
 برای رمز اتصال دیتابیس سایت‌ها)، و هرگز در پاسخ API برنمی‌گردد (فقط
@@ -31,13 +34,18 @@ Sync است، در `asyncio.to_thread` اجرا می‌شود تا Event Loop ر
 
 ### مدل و سرویس
 
-`PasswordResetToken` (Migration 045) - توکن یک‌بارمصرف، ۳۰ دقیقه اعتبار
-(`RESET_TOKEN_TTL_MINUTES`). `app/services/password_reset_service.py`:
+`PasswordResetToken` (Migration 045) - توکن یک‌بارمصرف (`secrets.token_urlsafe(32)`)،
+**۱۰ دقیقه** اعتبار (`EMAIL_TOKEN_TTL_MINUTES`؛ کانال پیامک ۵ دقیقه — نگاه
+کنید [sms-password-reset.md](sms-password-reset.md)). `app/services/password_reset_service.py`:
 
-- `request_reset(identifier, reset_link_base)`: شناسه واردشده را با همان
-  دو روش ورود سیستم جست‌وجو می‌کند (نام‌کاربری مدیریتی، یا کد پرسنلی).
-  اولویت ایمیل با `Employee.email` (تازه Sync‌شده) است، نه `User.email`
-  (که عملاً در هیچ‌جای این پروژه ست نمی‌شود).
+- `request_reset(identifier, channel, reset_link_base)`: شناسه واردشده را با همان
+  دو روش ورود سیستم جست‌وجو می‌کند (نام‌کاربری مدیریتی، یا کد پرسنلی —
+  پرسنلی که هنوز هیچ‌وقت وارد پرتال نشده و حساب `User` ندارد، پیدا
+  نمی‌شود). اولویت ایمیل با `Employee.email` (تازه Sync‌شده) است، بعد
+  `User.email` (فقط برای حساب‌های بدون Employee). اگر توکن معتبر و
+  مصرف‌نشده‌ای از قبل وجود داشته باشد، توکن جدیدی ساخته/ارسال نمی‌شود و
+  فقط زمان باقی‌مانده آن برمی‌گردد. اگر ارسال ایمیل شکست بخورد، توکن
+  ساخته‌شده حذف می‌شود.
 - `reset_password(token, new_password)`: توکن را اعتبارسنجی (وجود دارد،
   مصرف‌نشده، منقضی‌نشده) و رمز جدید را با همان منطق `has_custom_password=True`
   ثبت می‌کند - دقیقاً همان رفتار «تغییر رمز از پروفایل» موجود (یعنی بعد
@@ -45,11 +53,21 @@ Sync است، در `asyncio.to_thread` اجرا می‌شود تا Event Loop ر
 
 ⚠️ امنیتی — User Enumeration: `request_reset` همیشه بی‌صدا کامل
 می‌شود، چه شناسه معتبر باشد چه نه، و چه ایمیلی ثبت شده باشد چه نه -
-Endpoint هم همیشه یک پیام موفقیت یکسان برمی‌گرداند. این‌طور کسی نمی‌تواند
+Endpoint هم همیشه یک پاسخ هم‌شکل برمی‌گرداند (`message` +
+`masked_contact` + `expires_in_seconds`؛ برای شناسه نامعتبر، ماسک قلابی
+ولی قطعی — جزئیات در [sms-password-reset.md](sms-password-reset.md)). این‌طور کسی نمی‌تواند
 با امتحان‌کردن شناسه‌های مختلف بفهمد کدام‌ها در سامانه واقعاً وجود دارند.
 تنها استثنا: اگر خودِ سرویس ایمیل روی سرور قطع/تنظیم‌نشده باشد، خطای
-واقعی نشان داده می‌شود (چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی
+واقعی (HTTP 503) نشان داده می‌شود (چون آن یک مشکل پیکربندی سیستم است، نه اطلاعاتی
 درباره یک کاربر خاص).
+
+### قالب ایمیل قابل‌شخصی‌سازی (Migration 047)
+
+`SmtpSettings.password_reset_email_subject` / `password_reset_email_body` —
+عنوان و متن ایمیل فراموشی رمز از پنل قابل‌تغییر است. جای‌گذار
+`{reset_link}` با لینک واقعی جایگزین می‌شود (با `replace` ساده، نه
+`format`)؛ اگر متن سفارشی این جای‌گذار را نداشته باشد، لینک به انتهای متن
+اضافه می‌شود. اگر خالی بمانند، قالب پیش‌فرض داخل کد استفاده می‌شود.
 
 ### لینک بازنشانی — همیشه از یک آدرس سرور-محور
 
@@ -60,10 +78,15 @@ Endpoint هم همیشه یک پیام موفقیت یکسان برمی‌گرد
 
 ### Endpoint ها و صفحات
 
-`POST /auth/forgot-password`، `POST /auth/reset-password` (هر دو Public
-- بدون نیاز به ورود، طبیعتاً). `ForgotPasswordPage.jsx` (مسیر
-`/forgot-password`)، `ResetPasswordPage.jsx` (مسیر `/reset-password?token=...`)
-- لینک «فراموشی رمز عبور» در صفحه ورود اضافه شد.
+`POST /auth/forgot-password`، `POST /auth/verify-reset-code`،
+`POST /auth/reset-password` (همه Public - بدون نیاز به ورود، طبیعتاً؛ دو
+مورد آخر با قفل موقت IP-محور در برابر Brute-force). `ForgotPasswordPage.jsx`
+(مسیر `/forgot-password`)، `ResetPasswordPage.jsx` (مسیر
+`/reset-password?token=...`) - لینک «فراموشی رمز عبور» در صفحه ورود. کانال
+پیش‌فرض صفحه «فراموشی رمز» **پیامک** است و ایمیل گزینه دوم.
+
+رمز جدید باید از `validate_password_strength` عبور کند؛ بعد از بازنشانی
+`has_custom_password=True` و `must_change_password=False` می‌شود.
 
 ## ۴. ارسال بکاپ به ایمیل
 

@@ -12,7 +12,22 @@ sudo bash install-pgadmin.sh --allowed-network 192.168.99.0/24
 
 اسکریپت خودش تعاملی ایمیل و رمز عبور ورود به pgAdmin را می‌پرسد (اگر با
 `--admin-email`/`--admin-password` از قبل نداده باشید). `--allowed-network`
-را حتماً با رنج واقعی شبکه محلی خودتان (فرمت CIDR) عوض کنید.
+را حتماً با رنج واقعی شبکه محلی خودتان (فرمت CIDR) عوض کنید. اگر رمز را
+خالی بگذارید، یک رمز تصادفی (`openssl rand -base64 18`) ساخته و فقط یک‌بار
+در پایان نصب چاپ می‌شود.
+
+| گزینه | متغیر محیطی معادل | پیش‌فرض |
+|---|---|---|
+| `--allowed-network` | `FAIPCO_PGADMIN_ALLOWED_NETWORK` | `192.168.99.0/24` |
+| `--port` | `FAIPCO_PGADMIN_PORT` | `5050` |
+| `--admin-email` | `FAIPCO_PGADMIN_ADMIN_EMAIL` | (پرسیده می‌شود) |
+| `--admin-password` | `FAIPCO_PGADMIN_ADMIN_PASSWORD` | (پرسیده/تصادفی) |
+| — | `FAIPCO_PGADMIN_DATA_DIR` | `/opt/pgadmin4-data` |
+
+اسکریپت اگر Docker نصب نباشد، بسته `docker.io` را نصب می‌کند؛ اجرای دوباره
+آن کانتینر قبلی `pgadmin4` را حذف و از نو می‌سازد، ولی داده‌های
+`DATA_DIR` (مالک UID/GID `5050`) دست‌نخورده می‌ماند. کانتینر با
+`--restart=always` و ایمیج `dpage/pgadmin4:latest` اجرا می‌شود.
 
 ## چرا Docker، نه نصب مستقیم با pip
 

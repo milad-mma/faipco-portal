@@ -51,6 +51,10 @@ class EvaluationPeriod(Base, TimestampMixin):
         default=EvaluationPeriodStatus.draft,
         nullable=False,
     )
+    # ⚠️ غیرفعال (طبق درخواست کاربر): ارزیابی‌های این دوره برای ارزیاب‌ها و
+    # پرسنل دیگر در دسترس نیست (نه فهرست، نه انجام، نه نتیجه، نه اجبار) - فقط
+    # ادمین در صفحه دوره‌ها و گزارش‌های مدیریتی می‌بیند. برگشت‌پذیر است.
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821

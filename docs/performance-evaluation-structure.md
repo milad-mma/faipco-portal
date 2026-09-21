@@ -1,9 +1,184 @@
-# ساختار ارزیابی عملکرد (Evaluation Organizational Structure)
+# ماژول ارزیابی عملکرد (Performance Evaluation)
 
-مشخص می‌کند چه کسی مجاز به ارزیابی چه کسی است - اولین بخش از سیستم
-جامع «ارزیابی عملکرد پرسنل». این سند فقط همین بخش (ساختار سازمانی
-ارزیابی) را پوشش می‌دهد؛ دوره‌ها/فرم‌ها/سوالات/امتیازدهی در جلسات
-بعدی ساخته می‌شوند.
+سند اصلی ماژول «ارزیابی عملکرد پرسنل»: ساختار سازمانی (چه کسی چه کسی
+را ارزیابی می‌کند)، محتوا (دوره/فرم/سوال)، جریان انجام ارزیابی،
+امتیازدهی و گزارش‌ها. بخش «وضعیت فعلی» پایین، خلاصه‌ی دقیق وضعیت امروز
+کد است؛ بقیه سند، تاریخچه‌ی تصمیم‌ها و رفع‌ها به ترتیب زمانی است (بخش‌های
+قدیمی‌تر ممکن است با طراحی فعلی فرق داشته باشند - هرجا تناقض بود، «وضعیت
+فعلی» معتبر است). جزئیات گزارش‌ها، اعلان‌ها، یادآوری و اجبار «تکمیل
+ارزیابی‌ها» در `docs/evaluation.md` آمده است.
+
+## وضعیت فعلی (منطبق با کد)
+
+### لایه‌ها و فایل‌ها
+
+| لایه | Backend | Frontend |
+|---|---|---|
+| ساختار سازمانی | `models/evaluation.py`، `services/evaluation_structure_service.py`، `core/evaluation_rules.py`، `endpoints/evaluation_structure.py` | `EvaluationStructurePage.jsx`، `ManagerTargetPicker.jsx`، `EmployeePicker.jsx` |
+| دوره‌ها | `models/evaluation_content.py`، `services/evaluation_period_service.py`، `endpoints/evaluation_periods.py` | `EvaluationPeriodsPage.jsx` |
+| فرم‌ها | `models/evaluation_content.py`، `services/evaluation_form_service.py`، `endpoints/evaluation_forms.py` | `EvaluationFormsPage.jsx`، `EvaluationFormBuilderPage.jsx` |
+| انتساب و انجام ارزیابی | `models/evaluation_process.py`، `services/evaluation_assignment_service.py`، `services/evaluation_process_service.py`، `endpoints/evaluation_process.py` | `MyPerformancePage.jsx`، `EvaluationFillPage.jsx`، `PerformanceEvaluationToolCard.jsx` |
+| گزارش‌ها | `services/evaluation_reports_service.py`، `services/evaluation_report_xlsx.py`، `endpoints/evaluation_reports.py` | `EvaluationReportsPage.jsx` |
+
+Migration ها: 050 (ساختار)، 051 (محتوا)، 052 (فرایند)، 053 (`was_edited` +
+مجوز گزارش)، 054 (مدیر منعطف؛ حذف `evaluation_site_managers` و
+`evaluation_other_managers`)، 055 (`period_title_snapshot`).
+
+### موجودیت‌ها
+
+| جدول | نکته کلیدی |
+|---|---|
+| `evaluation_department_supervisors` | سرپرست ارزیابی هر واحد؛ `department_id` یکتا (هر واحد حداکثر یک سرپرست)، یک نفر می‌تواند سرپرست چند واحد باشد |
+| `evaluation_managers` | «مدیر» عمومی در یک سایت (`site_id`, `employee_id` یکتا) + `title` نمایشی |
+| `evaluation_manager_assignments` | اهداف صریح هر مدیر؛ هدف می‌تواند هر پرسنلی (حتی سایت دیگر) باشد؛ هر فرد فقط زیر **یک** مدیر (در Service اعمال می‌شود) |
+| `evaluation_shift_leads` | سرشیفت‌های هر واحد (عضو همان واحد) |
+| `evaluation_shift_assignments` | هر پرسنل حداکثر زیر یک سرشیفت (`employee_id` یکتا)، فقط از همان واحد |
+| `evaluation_periods` | `site_id=NULL` یعنی همه سایت‌ها؛ وضعیت: `draft/scheduled/active/closed/archived` |
+| `evaluation_forms` | `version` + `parent_form_id`؛ وضعیت: `draft/active/inactive/archived` |
+| `evaluation_categories` / `evaluation_questions` / `evaluation_question_options` | وزن دسته (٪ فرم) و وزن سوال (٪ دسته)؛ ۷ نوع سوال: `single_choice/multiple_choice/rating/yes_no/text/number/date` |
+| `evaluation_assignments` | ارزیاب+هدف+دوره+فرم (یکتا)؛ وضعیت `pending/completed` |
+| `evaluations` | حداکثر یکی به‌ازای هر Assignment؛ `draft/submitted`، `total_score`، `was_edited`، Snapshot نام/کد ارزیاب و هدف، سایت، واحد، عنوان فرم و دوره |
+| `evaluation_answers` | Snapshot متن/نوع سوال؛ `question_id` با حذف سوال `NULL` می‌شود؛ `score` (۰-۱۰۰) و `comment` ارزیاب |
+
+### قوانین «چه کسی چه کسی را ارزیابی می‌کند» (`resolve_evaluation_target_ids`)
+
+اجتماع اهداف همه نقش‌های فرد، همیشه بدون خودش:
+- **مدیر**: فقط اهداف صریح `evaluation_manager_assignments` (هیچ قانون خودکاری).
+- **سرپرست واحد**: اگر واحد سرشیفت ندارد → همه پرسنل واحد؛ اگر دارد →
+  سرشیفت‌ها + پرسنلی که به هیچ سرشیفتی تخصیص داده نشده‌اند.
+- **سرشیفت**: فقط پرسنل تخصیص‌یافته به خودش.
+
+`get_evaluation_targets` داده خام را از دیتابیس می‌خواند و به این تابع
+خالص می‌دهد؛ `tests/test_evaluation_rules.py` (۲۴ تست) قوانین ساختار،
+وزن‌ها و امتیازدهی را پوشش می‌دهد.
+
+### جریان کار
+
+1. **ساختار** (`/performance/structure`): تعریف مدیران و اهدافشان،
+   سرپرست هر واحد، سرشیفت‌ها و تخصیص پرسنل به سرشیفت. انتخاب هر
+   سرپرست/مدیر/سرشیفت در صورت نبود حساب کاربری، خودکار حساب می‌سازد.
+2. **فرم** (`/performance/forms` و `/performance/forms/:formId`): ساخت
+   Draft، دسته‌بندی/سوال/گزینه، سپس «فعال‌سازی» (فقط اگر مجموع وزن
+   دسته‌های فعال و سوالات فعال هر دسته ۱۰۰ باشد). تغییر فرم فعال فقط با
+   «نسخه جدید» (کپی Draft با `version+1`).
+3. **دوره** (`/performance/periods`): ساخت دوره با بازه زمانی؛ وضعیت
+   خودکار هم‌گام می‌شود (`sync_automatic_statuses` - هنگام فهرست‌گیری،
+   ویرایش دوره و بعد از هر ثبت نهایی؛ Job زمان‌بندی‌شده ندارد):
+   زمان‌بندی‌شده→فعال با رسیدن شروع، فعال→زمان‌بندی‌شده اگر شروع به
+   آینده برود، فعال→بسته با گذشتن پایان یا تکمیل همه انتساب‌ها (فقط اگر
+   حداقل یک انتساب وجود داشته باشد). پیش‌نویس و بسته/بایگانی هرگز خودکار
+   تغییر نمی‌کنند.
+4. **تولید انتساب**: دکمه «تولید انتساب» در صفحه دوره‌ها + انتخاب یک
+   فرم فعال → `POST /performance/periods/{id}/generate-assignments`.
+   برای همه پرسنل فعال (`is_enabled`) سایت دوره (یا همه سایت‌ها) اهداف
+   Resolve و Assignment ساخته می‌شود؛ اجرای مجدد فقط موارد جدید را اضافه
+   می‌کند (Idempotent). Backend وضعیت دوره/فرم را بررسی نمی‌کند (فیلتر
+   فرم فعال فقط در UI است).
+5. **انجام ارزیابی** (`/my-performance` → `/my-performance/evaluate/:assignmentId`):
+   `start` (ساخت Draft با Snapshot) → `answers` (ذخیره پیش‌نویس) →
+   `submit` (بررسی سوالات اجباری با محتوای واقعی، محاسبه امتیاز، قفل،
+   Assignment=completed، هم‌گام‌سازی وضعیت دوره، Push به ارزیابی‌شونده).
+   انجام/ثبت ارزیابی به وضعیت دوره وابسته نیست (در دوره بسته هم ممکن است).
+6. **ویرایش یک‌بارمصرف**: `POST /performance/evaluations/{id}/reopen` -
+   فقط اگر ثبت‌نهایی، `was_edited=false` و دوره بسته/بایگانی نباشد؛
+   ارزیابی به Draft برمی‌گردد و بعد از ثبت مجدد امتیاز از نو محاسبه می‌شود.
+   سرپرست واحد می‌تواند ارزیابی‌های سرشیفت‌های واحد خودش را هم باز/ویرایش
+   کند (مسیر `/my-performance/edit-evaluation/:evaluationId`).
+7. **نتایج و گزارش‌ها**: پرسنل نتیجه خود را در تب «نتایج ارزیابی من»
+   می‌بیند (بدون نظر ارزیاب)؛ مدیران با مجوز گزارش در
+   `/performance/reports` (جزئیات در `docs/evaluation.md`).
+
+### امتیازدهی
+
+- انواع گزینه‌ای (`single_choice/multiple_choice/rating/yes_no`): میانگین
+  امتیاز گزینه‌های انتخابی ÷ بزرگ‌ترین امتیاز گزینه همان سوال × ۱۰۰ (هر
+  مقیاسی، مثلاً ۰-۵ یا ۰-۱۰۰، نتیجه یکسان می‌دهد).
+- `number`: مقدار باید بین ۰ و وزن سوال باشد (در ذخیره رد می‌شود)؛ امتیاز
+  = مقدار ÷ وزن × ۱۰۰.
+- `text` / `date`: پاسخ واقعی داده شده → ۱۰۰، وگرنه ۰.
+- امتیاز دسته = میانگین وزنی سوالات فعال؛ امتیاز کل = میانگین وزنی
+  دسته‌های فعال. امتیاز فقط لحظه ثبت محاسبه و ذخیره می‌شود.
+
+### مجوزها و دسترسی
+
+| مجوز (Migration) | فلگ `/auth/me` | کاربرد |
+|---|---|---|
+| `performance.structure.manage` (050) | `can_manage_performance_structure` | صفحه و API ساختار (بررسی site-scoped روی سایت واقعی رکورد) |
+| `performance.periods.manage` (051) | `can_manage_performance_periods` | صفحه دوره‌ها و ایجاد/ویرایش/وضعیت/عنوان/حذف دوره |
+| `performance.forms.manage` (051) | `can_manage_performance_forms` | صفحه فرم‌ها/فرم‌ساز و همه عملیات نوشتن فرم |
+| `performance.assignments.manage` (052) | `can_manage_performance_assignments` | فقط API تولید انتساب (در UI هیچ منو/مسیری با این فلگ کنترل نمی‌شود؛ دکمه در صفحه دوره‌هاست که خود `periods.manage` می‌خواهد) |
+| `performance.reports.view` (053) | `can_view_performance_reports` | صفحه و API گزارش‌ها |
+| `performance.evaluate` (052) | — | در کد استفاده نمی‌شود |
+
+- رکوردهای سراسری (`site_id=NULL`) فقط با مجوز سراسری قابل‌مدیریت‌اند؛
+  Superuser همه‌جا مجاز است.
+- `GET` فهرست دوره‌ها/فرم‌ها و `GET /performance/forms/{id}` فقط احراز
+  هویت می‌خواهند (برای رندر فرم در صفحه ارزیابی).
+- Endpoint های «من» (`my-*`، `assignments/*`، `evaluations/*`) مجوز RBAC
+  نمی‌خواهند؛ فقط حساب متصل به Employee و مالکیت Assignment/Evaluation
+  (یا سرپرستیِ ارزیابِ سرشیفت) بررسی می‌شود.
+- `GET /performance/my-results` پشت اجبار دسترسی `evaluation_result` است
+  (در `docs/evaluation.md`).
+
+### مسیرهای Frontend
+
+| مسیر | صفحه | شرط |
+|---|---|---|
+| `/performance/structure` | EvaluationStructurePage | `can_manage_performance_structure` |
+| `/performance/periods` | EvaluationPeriodsPage | `can_manage_performance_periods` |
+| `/performance/forms` | EvaluationFormsPage | `can_manage_performance_forms` |
+| `/performance/forms/:formId` | EvaluationFormBuilderPage | `can_manage_performance_forms` |
+| `/performance/reports` | EvaluationReportsPage | `can_view_performance_reports` |
+| `/my-performance` | MyPerformancePage (تب‌ها: `?tab=results` نتایج من، `personnel` ارزیابی پرسنل من، `shift-leads` ارزیابی‌های سرشیفت‌ها - فقط اگر داده داشته باشد) | کاربر با Employee |
+| `/my-performance/evaluate/:assignmentId` | EvaluationFillPage | ارزیاب |
+| `/my-performance/edit-evaluation/:evaluationId` | EvaluationFillPage | ارزیاب یا سرپرستِ سرشیفت |
+
+منو: آیتم «ارزیابی عملکرد» در `config/navItems.jsx` با چهار زیرمنو
+(ساختار، دوره‌ها، فرم‌ها، گزارش‌های مدیریتی)؛ برای کاربران غیر-Superuser
+از همین منبع در «دسترسی‌های ویژه» پنل کاربری هم نمایش داده می‌شود. کاشی
+داشبورد پرسنلی فقط برچسب «محرمانه» + Badge تعداد ارزیابی‌های در انتظار.
+
+### Endpoint ها (همه زیر `/api/v1`)
+
+- **ساختار** (`/performance`): `GET sites/{site_id}/structure`،
+  `GET sites/{site_id}/manager-candidates`،
+  `PUT/DELETE departments/{id}/supervisor`، `POST sites/{site_id}/managers`،
+  `PUT managers/{id}/title`، `DELETE managers/{id}`،
+  `POST managers/{id}/targets`، `DELETE managers/{id}/targets/{employee_id}`،
+  `POST departments/{id}/shift-leads`، `DELETE shift-leads/{id}`،
+  `PUT shift-assignments`، `DELETE shift-assignments/{employee_id}`.
+- **دوره‌ها** (`/performance/periods`): `GET`، `POST`، `PUT /{id}`،
+  `PUT /{id}/status`، `PUT /{id}/title`، `DELETE /{id}`.
+- **فرم‌ها** (`/performance/forms`): `GET`، `GET /{id}`، `POST`، `PUT /{id}`،
+  `PUT /{id}/status`، `PUT /{id}/title`، `POST /{id}/duplicate`،
+  `DELETE /{id}`، `POST /{id}/categories`، `PUT/DELETE categories/{id}`،
+  `POST categories/{id}/questions`، `PUT/DELETE questions/{id}`.
+- **فرایند** (`/performance`): `POST periods/{id}/generate-assignments`،
+  `GET my-evaluations`، `GET my-shift-lead-evaluations`،
+  `POST assignments/{id}/start`، `GET evaluations/{id}`،
+  `PUT evaluations/{id}/answers`، `POST evaluations/{id}/submit`،
+  `POST evaluations/{id}/reopen`، `GET my-results`،
+  `GET my-results/{id}/answers`، `GET my-yearly-average`،
+  `GET my-dashboard-summary`.
+- **گزارش‌ها** (`/performance/reports`): در `docs/evaluation.md`.
+
+### قوانین ویرایش/حذف (Historical Integrity)
+
+- دوره: حذف فقط در Draft؛ ویرایش تاریخ/جزئیات در Backend برای همه
+  وضعیت‌ها به‌جز بسته/بایگانی مجاز است، ولی دکمه «ویرایش» در UI فقط برای
+  Draft نمایش داده می‌شود؛ عنوان همیشه قابل‌ویرایش؛ وضعیت با منوی inline
+  آزادانه قابل‌تغییر است (ولی هم‌گام‌سازی خودکار ممکن است بلافاصله آن را
+  برگرداند، مثلاً «فعال» با پایان گذشته دوباره «بسته» می‌شود).
+- فرم: `PUT /{id}`، افزودن دسته و حذف دسته/فرم فقط در Draft؛ عنوان همیشه.
+  ⚠️ ویرایش دسته و افزودن/ویرایش/حذف سوال در Backend وضعیت فرم را چک
+  نمی‌کند - فقط UI فرم‌ساز در وضعیت غیر Draft آن‌ها را غیرفعال می‌کند.
+  تغییر وضعیت فرم به `inactive/archived` فقط از API ممکن است (UI دکمه‌ای
+  برایش ندارد).
+
+## تاریخچه تغییرات
+
+بخش‌های زیر به ترتیب زمانی نوشته شده‌اند و برای درک دلیل تصمیم‌ها نگه
+داشته شده‌اند.
 
 ## چرا یک انتساب کاملاً جدا، نه استفاده از RBAC یا سرپرست موجود
 
@@ -13,10 +188,14 @@
 موجود هم استفاده نمی‌کند - چون آن فیلد برای هدف‌گیری اطلاعیه‌ها
 استفاده می‌شود و باید کاملاً مستقل از سرپرستِ ارزیابی باشد.
 
-به‌جای این‌ها، پنج جدول اختصاصی این ماژول، یک انتساب کاملاً صریح و
+به‌جای این‌ها، جدول‌های اختصاصی این ماژول (ابتدا پنج جدول؛ بعد از Migration 054: supervisors/managers/manager_assignments/shift_leads/shift_assignments)، یک انتساب کاملاً صریح و
 مستقل نگه می‌دارند.
 
 ## سلسله‌مراتب (طبق تصمیم صریح کاربر)
+
+> ⚠️ طرح اولیه (Migration 050). بخش «مدیر سایت» در Migration 054 با
+> «مدیر منعطف» با اهداف صریح جایگزین شد، و پرسنل بدون تخصیص به سرشیفت
+> بعداً زیر نظر سرپرست قرار گرفتند - قانون فعلی در «وضعیت فعلی» بالا.
 
 ```
 مدیر سایت (چند نفر مجاز)
@@ -34,6 +213,9 @@
 ```
 
 ## مدل‌ها (app/models/evaluation.py، Migration 050)
+
+> ⚠️ `evaluation_site_managers` و `evaluation_other_managers` در Migration 054
+> حذف و با `evaluation_managers` + `evaluation_manager_assignments` جایگزین شدند.
 
 | جدول | نقش |
 |---|---|
@@ -90,6 +272,9 @@ manager_id/shift_lead_id کار می‌کنند - یعنی site_id باید اب
 
 ## Endpoint ها (prefix=/performance)
 
+> ⚠️ فهرست دور اول؛ مسیرهای `other-managers` و `managers/{manager_id}` قدیمی
+> حذف شده‌اند - فهرست فعلی در «وضعیت فعلی» بالا.
+
 | Method | Path | توضیح |
 |---|---|---|
 | GET | /performance/sites/{site_id}/structure | کل ساختار یک سایت (یک درخواست، برای رندر UI) |
@@ -104,7 +289,7 @@ manager_id/shift_lead_id کار می‌کنند - یعنی site_id باید اب
 ## Frontend
 
 - EvaluationStructurePage.jsx (مسیر /performance/structure): انتخاب
-  سایت، مدیریت مدیران سایت/سایر مدیران، و یک Accordion برای هر واحد
+  سایت، مدیریت مدیران سایت/سایر مدیران (بعداً: بخش یکپارچه «مدیران»)، و یک Accordion برای هر واحد
   (سرپرست، سرشیفت‌ها، جدول تخصیص پرسنل به سرشیفت‌ها).
 - EmployeePicker.jsx: کامپوننت انتخابگر پرسنل با جست‌وجوی زنده،
   قابل‌محدودسازی به یک سایت/واحد مشخص - قابل‌استفاده مجدد برای بقیه
@@ -121,7 +306,7 @@ manager_id/shift_lead_id کار می‌کنند - یعنی site_id باید اب
   باشد (و برعکس) - جلوگیری از تناقض سلسله‌مراتبی.
 - تخصیص پرسنل به سرشیفت فقط برای پرسنل همان واحدِ آن سرشیفت مجاز است.
 
-## مراحل بعدی (هنوز پیاده‌سازی نشده)
+## مراحل بعدی (در زمان نگارش؛ همگی بعداً پیاده‌سازی شدند)
 
 طبق طرح گسترده‌تر (سند شخصی‌سازی‌شده قبلی)، مراحل بعدی که روی همین
 ساختار سوار می‌شوند: دوره‌های ارزیابی، فرم‌ها/دسته‌بندی‌ها/سوالات،
@@ -183,7 +368,7 @@ Draft، که ممکن است ناقص باشد) اجرا می‌شود: مجمو
   عملکرد» اضافه شدند - با همان الگوی «نمایش والد اگر حداقل یکی از
   زیرمجموعه‌ها مجاز باشد» که برای «مدیریت دسترسی» موجود بود.
 
-## جمع‌بندی پیشرفت
+## جمع‌بندی پیشرفت (در پایان دور دوم)
 
 | مرحله | وضعیت |
 |---|---|
@@ -321,6 +506,8 @@ Object را هم Expire می‌کند؛ حتی assignment ای که دستی ر�
 
 ### Endpoint ها (prefix=/performance)
 
+(فهرست کامل فعلی در «وضعیت فعلی» بالا.)
+
 - POST /performance/periods/{period_id}/generate-assignments (Admin - مجوز performance.assignments.manage)
 - GET /performance/my-evaluations، POST /performance/assignments/{id}/start
 - PUT /performance/evaluations/{id}/answers، POST /performance/evaluations/{id}/submit
@@ -340,7 +527,7 @@ Object را هم Expire می‌کند؛ حتی assignment ای که دستی ر�
   رندر Dynamic فرم بر اساس نوع هر سوال، ذخیره پیش‌نویس، ثبت نهایی.
 - دیالوگ «تولید انتساب» در EvaluationPeriodsPage.jsx.
 
-## جمع‌بندی نهایی - هر سه لایه اصلی کامل شدند
+## جمع‌بندی (در پایان دور سوم) - هر سه لایه اصلی کامل شدند
 
 | لایه | وضعیت |
 |---|---|
@@ -353,7 +540,9 @@ Object را هم Expire می‌کند؛ حتی assignment ای که دستی ر�
 
 ### باگ منو: performance.assignments.manage نادیده گرفته می‌شد
 
-شرط نمایش منوی والد «ارزیابی عملکرد» (`requiresAnyPerformanceAccess`
+(تاریخی - این منطق بعداً به `config/navItems.jsx` منتقل شد و امروز فلگ
+`can_manage_performance_assignments` در منو استفاده نمی‌شود.) شرط نمایش
+منوی والد «ارزیابی عملکرد» (`requiresAnyPerformanceAccess`
 در `Layout.jsx`) فقط سه مجوز (`structure`/`periods`/`forms`) را چک
 می‌کرد - مجوز چهارم (`performance.assignments.manage`) از قلم افتاده
 بود. رفع شد - حالا هر چهار مجوز در شرط OR حساب می‌شوند.
@@ -504,7 +693,8 @@ const isPersonnelNav = !user?.is_superuser;
   شکسته‌شده به واحد).
 - `evaluation_report_xlsx.py`: تولید فایل اکسل حرفه‌ای (راست‌به‌چپ،
   هدر رنگی) با openpyxl - دو نوع خروجی (گزارش تک‌دوره با دو شیت
-  خلاصه/جزئیات پرسنل، و مقایسه دو دوره).
+  خلاصه/جزئیات پرسنل، و مقایسه دو دوره). (بعداً شیت‌های «سوال و پاسخ» و «روند پرسنل»
+  هم اضافه شد - `docs/evaluation.md`.)
 - ارسال همان خروجی به ایمیل - با استفاده مستقیم از `email_service.py`
   موجود پروژه (که از قبل از پیوست پشتیبانی می‌کرد).
 - مجوز جدید: `performance.reports.view`.
@@ -531,7 +721,8 @@ const isPersonnelNav = !user?.is_superuser;
 ### ۴. ویرایش عنوان دوره/فرم بدون محدودیت وضعیت
 
 متدهای `update_title` جداگانه در هر دو سرویس (period/form) - برخلاف
-ویرایش کامل (که فقط برای Draft مجاز است)، عنوان صرف‌نظر از وضعیت همیشه
+ویرایش کامل (در آن زمان فقط Draft؛ برای دوره بعداً به «همه به‌جز
+بسته/بایگانی» گسترش یافت)، عنوان صرف‌نظر از وضعیت همیشه
 قابل‌تغییر است (چون فقط متن نمایشی است، تاریخچه ارزیابی از
 Snapshot استفاده می‌کند، نه ارجاع زنده). Frontend: کامپوننت مشترک
 `InlineTitleEdit.jsx` (کلیک روی مداد → ویرایش inline) - در جدول
@@ -709,7 +900,7 @@ Endpoint جدید `GET /performance/sites/{site_id}/manager-candidates`
   Endpoint جدید (`GET /performance/evaluations/{id}`) و یک مسیر جدید
   فرانت‌اند (`/my-performance/edit-evaluation/:evaluationId`) اضافه شد
   که مستقیماً با evaluation_id کار می‌کند، نه assignment_id.
-- Frontend: تب جدید «ارزیابی‌های سرشیفت‌های من» در `MyPerformancePage.jsx`
+- Frontend: تب جدید «ارزیابی‌های سرشیفت‌ها» (کلید `shift-leads`) در `MyPerformancePage.jsx`
   (فقط اگر واقعاً چیزی برای نمایش وجود داشته باشد).
 
 ## اصل کلی جدید — دکمه بازگشت در همه صفحات مرتبط (طبق درخواست صریح کاربر)
@@ -729,7 +920,7 @@ Endpoint جدید `GET /performance/sites/{site_id}/manager-candidates`
 
 `EvaluationFillPage.jsx` از دو مسیر متفاوت باز می‌شود - با `assignmentId`
 (از تب «ارزیابی پرسنل من») یا `evaluationId` (از تب «ارزیابی‌های
-سرشیفت‌های من»، برای ویرایش). چون این دو مسیر همیشه دقیقاً از همان دو
+سرشیفت‌ها»، برای ویرایش). چون این دو مسیر همیشه دقیقاً از همان دو
 تب باز می‌شوند، خودِ وجود هرکدام از این دو پارامتر، مقصد بازگشت درست را
 مشخص می‌کند - نیازی به پارامتر اضافه نبود.
 

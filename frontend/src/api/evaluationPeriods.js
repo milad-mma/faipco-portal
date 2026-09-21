@@ -25,6 +25,23 @@ export async function updateEvaluationPeriodTitle(periodId, title) {
   return data;
 }
 
-export async function deleteEvaluationPeriod(periodId) {
-  await apiClient.delete(`/performance/periods/${periodId}`);
+// confirmTitle: برای دوره‌ای که ارزیابی منتشرشده دارد، عنوان دقیق دوره (تأیید حذف قطعی)
+export async function deleteEvaluationPeriod(periodId, confirmTitle) {
+  await apiClient.delete(`/performance/periods/${periodId}`, {
+    params: confirmTitle ? { confirm_title: confirmTitle } : undefined,
+  });
+}
+
+export async function setEvaluationPeriodDisabled(periodId, isDisabled) {
+  const { data } = await apiClient.put(`/performance/periods/${periodId}/disabled`, { is_disabled: isDisabled });
+  return data;
+}
+
+export async function fetchPublishedEvaluations(periodId) {
+  const { data } = await apiClient.get(`/performance/periods/${periodId}/assignments`);
+  return data;
+}
+
+export async function deletePublishedEvaluation(periodId, assignmentId) {
+  await apiClient.delete(`/performance/periods/${periodId}/assignments/${assignmentId}`);
 }

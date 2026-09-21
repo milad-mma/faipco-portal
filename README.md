@@ -59,7 +59,9 @@ cd frontend && npm install && npm run dev
 | [`docs/role-management.md`](docs/role-management.md) | پنل مدیریت نقش/مجوز |
 | [`docs/removed-code-archive.md`](docs/removed-code-archive.md) | بایگانی کد حذف‌شده (کد کامل + دلیل حذف، برای بازسازی احتمالی) |
 | [`docs/branding.md`](docs/branding.md) | برندینگ قابل‌تغییر (نام + لوگوی سامانه، از پنل «تنظیمات سامانه») |
-| [`docs/monthly-attendance.md`](docs/monthly-attendance.md) | گزارش تردد ماهانه (از دستگاه‌های حضور و غیاب، با نگاشت قابل‌تنظیم) |
+| [`docs/monthly-attendance.md`](docs/monthly-attendance.md) | گزارش تردد ماهانه (از دستگاه‌های حضور و غیاب، با نگاشت قابل‌تنظیم) + برچسب مرخصی/ماموریت/تعطیل/غیبت |
+| [`docs/leave-requests.md`](docs/leave-requests.md) | درخواست مرخصی/ماموریت و تردد فراموش‌شده (کارتابل، تأیید دو مرحله‌ای، گزارش مدیریتی) |
+| [`docs/kara-integration.md`](docs/kara-integration.md) | ⚠️ مرجع فنی نوشتن/خواندن در دیتابیس کاراوب: نگاشت‌ها، رفتار دقیق، مجوزهای SQL، Migration ها |
 | [`docs/feedback.md`](docs/feedback.md) | انتقادات و پیشنهادات (با امکان ناشناس‌بودن) |
 | [`docs/backup-scheduling.md`](docs/backup-scheduling.md) | زمان‌بندی بکاپ + ارسال خودکار به سرور SMB/FTP |
 | [`docs/smtp-and-password-reset.md`](docs/smtp-and-password-reset.md) | تنظیمات SMTP، فراموشی رمز عبور، ارسال بکاپ به ایمیل |
@@ -67,6 +69,8 @@ cd frontend && npm install && npm run dev
 | [`docs/sms-password-reset.md`](docs/sms-password-reset.md) | فراموشی رمز عبور از طریق پیامک (ippanel) |
 | [`docs/schema-discovery.md`](docs/schema-discovery.md) | کشف خودکار ساختار دیتابیس سایت‌ها |
 | [`docs/performance-evaluation-structure.md`](docs/performance-evaluation-structure.md) | ساختار سازمانی ارزیابی عملکرد (سرپرست/مدیر سایت/سرشیفت) |
+| [`docs/evaluation.md`](docs/evaluation.md) | فرآیند ارزیابی عملکرد: فرم، دوره، تکمیل، نتایج، گزارش‌ها و خروجی اکسل |
+| [`docs/announcements.md`](docs/announcements.md) | اعلان تغییرات پرتال (پنجره «چه چیزی جدید است» با امکان «دیگر نشان نده») |
 | [`docs/development.md`](docs/development.md) | راه‌اندازی محیط توسعه محلی |
 | [`docs/deployment.md`](docs/deployment.md) | نصب/آپدیت روی سرور Production |
 | [`docs/sync-engine.md`](docs/sync-engine.md) | راه‌اندازی Sync خودکار پرسنل |

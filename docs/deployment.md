@@ -15,19 +15,27 @@ sudo bash install.sh --domain portal.mycompany.com --admin-username admin
 ```
 
 اسکریپت به‌صورت خودکار **نصب یا آپدیت** را تشخیص می‌دهد (بر اساس اینکه
-`backend/.env` از قبل وجود دارد یا نه):
+`backend/.env` از قبل وجود دارد یا نه). لاگ کامل هر اجرا در
+`/var/log/faipco-install.log` ذخیره می‌شود.
 
-- **نصب تازه**: پیش‌نیازها (Python، Node.js، PostgreSQL، Nginx) → ساخت
-  دیتابیس با پسورد تصادفی امن → Clone سورس → نصب وابستگی‌ها → تولید `.env` با
-  کلیدهای امنیتی یکتا + کلیدهای VAPID → Migration ها → Build فرانت‌اند → سرویس
-  systemd (`faipco-backend`) → پیکربندی Nginx → Seed اولیه + ساخت کاربر Admin
+- **نصب تازه**: در صورت کمبود RAM، فعال‌سازی Swap → پیش‌نیازها (Python،
+  FreeTDS برای SQL Server، Nginx، UFW، `smbclient` برای بکاپ SMB، Node.js 20،
+  PostgreSQL) → Clone سورس → ساخت venv و نصب `requirements.txt` → ساخت
+  دیتابیس و کاربر `faipco_user` با پسورد تصادفی امن → تولید `.env` با کلیدهای
+  امنیتی یکتا + کلیدهای VAPID (`DEBUG=false`، `APP_VERSION` از تگ Git) →
+  Migration ها (`alembic upgrade head`) → Build فرانت‌اند
+  (`VITE_API_BASE_URL=/api/v1`) → سرویس systemd `faipco-backend` (Uvicorn روی
+  `127.0.0.1:8000` با ۲ Worker) + قانون Sudoers محدود برای بازیابی/آپدیت از پنل
+  → پیکربندی Nginx (سرو فرانت‌اند، Proxy مسیر `/api` و WebSocket، هدرهای امنیتی،
+  قوانین Cache برای `sw.js`/`index.html`) → `seed_permissions` + ساخت کاربر Admin
   → تنظیم فایروال (UFW).
 - **آپدیت** (وقتی نصب قبلی پیدا شود): `.env`، پسورد دیتابیس، کلیدهای VAPID و
-  خودِ دیتابیس **هرگز دست‌خورده نمی‌شوند** — فقط سورس رفرش، وابستگی‌ها دوباره
-  نصب، Migration های جدید به‌صورت افزایشی اجرا (`alembic upgrade head`،
-  هیچ‌وقت داده‌ای پاک نمی‌کند)، فرانت‌اند دوباره Build، و سرویس‌ها Restart
-  می‌شوند. یعنی هر بار که روی GitHub Push می‌کنید، همین یک دستور برای Deploy
-  کافی است.
+  خودِ دیتابیس **هرگز دست‌خورده نمی‌شوند** (فقط `APP_VERSION` به‌روز می‌شود و
+  کلیدهای جاافتاده اضافه می‌شوند) — سورس رفرش، وابستگی‌ها دوباره نصب، Migration
+  های جدید به‌صورت افزایشی اجرا (هیچ‌وقت داده‌ای پاک نمی‌کند)، Permission های
+  جدید Seed، فرانت‌اند دوباره Build، و سرویس‌ها Restart می‌شوند. کاربر Admin
+  دوباره ساخته نمی‌شود. یعنی هر بار که روی GitHub Push می‌کنید، همین یک دستور
+  برای Deploy کافی است.
 
 **آرگومان‌های قابل استفاده:**
 
@@ -40,6 +48,9 @@ sudo bash install.sh --domain portal.mycompany.com --admin-username admin
 | `--repo` | آدرس Git Repository | `github.com/milad-mma/faipco-portal` |
 | `--branch` | Branch مورد استفاده | `main` |
 | `--reverse-proxy-ip` | ⚠️ در ادامه توضیح داده شده — به‌شدت توصیه‌شده اگر یک Reverse Proxy خارجی دارید | ندارد |
+
+به‌جای آرگومان، می‌توان از متغیرهای محیطی `FAIPCO_REPO_URL`، `FAIPCO_BRANCH`،
+`FAIPCO_INSTALL_DIR`، `FAIPCO_ADMIN_USERNAME` و `FAIPCO_ADMIN_PASSWORD` هم استفاده کرد.
 
 ⚠️ اگر `--admin-password` ندهید، پسورد پیش‌فرض `admin` است — چون این رمز
 قانون قدرت رمز (حداقل ۱۰ کاراکتر + حرف کوچک + حرف بزرگ + عدد؛ نگاه کنید
@@ -74,9 +85,36 @@ Proxy روی یک شبکه محلی/خصوصی جدا از این سرور اس�
 
 ## آپدیت از داخل پنل
 
-علاوه بر اجرای دستی `install.sh`، از نسخه‌ای که نسخه فعلی را با GitHub
-مقایسه می‌کند، می‌توانید مستقیم از پنل (منوی «بررسی و اعمال آپدیت»، فقط
-Admin) هم آپدیت را اجرا کنید — این قابلیت عملاً معادل اجرای دستی همین
-`install.sh` است، فقط از راه دور و پشت تأیید رمز عبور دوباره. جزئیات این
-تصمیم امنیتی و محدودیت‌هایش را در همان صفحه پنل و کامنت‌های
-`backend/app/services/update_service.py` ببینید.
+علاوه بر اجرای دستی `install.sh`، از منوی «بررسی و اعمال آپدیت» (فقط Admin
+اصلی، مسیر `/update`) می‌توانید نسخه فعلی را با آخرین Tag منتشرشده در GitHub
+مقایسه کنید و آپدیت را مستقیم از پنل اجرا کنید — این قابلیت عملاً معادل اجرای
+دستی همین `install.sh` است (با `systemd-run`، خارج از Cgroup سرویس)، فقط از راه
+دور، پشت تأیید دوباره رمز عبور و عبارت تأیید، با نمایش لاگ زنده. جزئیات در
+کامنت‌های `backend/app/services/update_service.py`. در همان صفحه، متن «اعلان
+تغییرات پرتال» هم برای نمایش به کاربران قابل ویرایش است.
+
+## دستورات مفید پس از نصب
+
+```bash
+systemctl status faipco-backend     # وضعیت سرویس Backend
+journalctl -u faipco-backend -f     # لاگ زنده
+systemctl restart faipco-backend    # بعد از ویرایش backend/.env
+```
+
+ابزارهای جانبی: `install-pgadmin.sh` برای نصب اختیاری pgAdmin 4
+([`pgadmin.md`](pgadmin.md))، و `scripts/pentest-live.sh` برای تست نفوذ
+غیرمخرب روی دامنه خودتان ([`pentest-manual-checklist.md`](pentest-manual-checklist.md)).
+
+## اتصال به کاراوب (مرخصی/ماموریت و تردد فراموش‌شده)
+
+`install.sh` هنگام آپدیت، Migration ها (`alembic upgrade head`) و
+وابستگی‌های Python را خودکار اجرا می‌کند. برای قابلیت‌هایی که در دیتابیس
+کاراوب می‌نویسند، کاربر SQL Server ای که در «تنظیمات سایت ← اتصال» تعریف شده
+باید مجوزهای جدول
+[`kara-integration.md` بخش ۷](kara-integration.md#۷-مجوزهای-لازم-کاربر-پرتال-در-دیتابیس-کاراوب)
+را داشته باشد. بعد از اولین نصب/آپدیت:
+
+1. تنظیمات سایت ← تب «نگاشت تردد» و «نگاشت مرخصی/ماموریت» ← «پر کردن
+   فیلدهای خالی با نام‌های کاراوب» ← ذخیره.
+2. «تنظیمات مرخصی/ماموریت» ← نوع‌های درخواست و مسئول نیروی انسانی هر سایت.
+

@@ -67,8 +67,45 @@ VitePWA({
 هیچ SW فعال قبلی برای «انتظار کشیدن» وجود ندارد، نسخه اول همان لحظه خودکار
 فعال می‌شود (این محدودیت `skipWaiting` فقط برای سناریوی آپدیت معنا دارد).
 
+با کلیک روی «بارگذاری»، `applyPendingUpdate()` **اول کل Cache Storage**
+(`caches.keys()` → `caches.delete`) را پاک می‌کند و بعد پیام `SKIP_WAITING`
+را به SW منتظر می‌فرستد؛ SW جدید `skipWaiting()` + `clients.claim()` می‌کند
+و رویداد `controllerchange` (با محافظ یک‌باره) صفحه را Reload می‌کند. پاک‌کردن
+صریح Cache برای رفع موردی بود که کاربر بعد از بارگذاری هنوز بخشی از فایل‌های
+قدیمی را می‌دید.
+
 `localStorage` (و در نتیجه ورود کاربر) در این فرآیند هرگز دست‌نخورده
 می‌ماند — فقط کدهای فرانت‌اند تازه می‌شوند.
+
+## پاک‌کردن کش اپ برای همه کاربران (از پنل)
+
+کارت «نگهداری اپلیکیشن» در صفحه `/backup` (مجوز `system.cache_bust`) →
+`POST /system/cache-bust` → `cache_service.bump_app_cache_version()`. چون
+هیچ API وبی برای پاک‌کردن کش مرورگر کاربر از راه دور وجود ندارد، این تابع
+فقط یک خط `// cache-bust: <timestamp>` را به انتهای `frontend/dist/sw.js`
+اضافه/جایگزین می‌کند (نوشتن Atomic). تغییر حتی یک بایت کافی است تا مرورگر
+هر کاربر در بازدید/چک بعدی، SW را «جدید» ببیند و همان چرخه آپدیت بالا
+(پیام «نسخه جدید آماده است») اجرا شود. هیچ داده یا ورود کاربری پاک
+نمی‌شود. ⚠️ اجرای دوباره `install.sh` (Build تازه) این خط را طبیعتاً حذف
+می‌کند — که مشکلی نیست، چون خودِ Build جدید هم sw.js را تغییر می‌دهد.
+
+## Push Notification در Service Worker
+
+`sw.js` علاوه بر Precache، رویداد `push` را هم مدیریت می‌کند: Payload
+(JSON با `title`/`body`/`url`) با `showNotification` نمایش داده می‌شود —
+همیشه با صدا، ویبره قوی، `requireInteraction: true`، `dir: rtl`، آیکون
+`/icons/icon-192.png` و badge تک‌رنگ `/icons/badge-96.png`، و `tag` یکتا
+(هر Push جدا نمایش داده می‌شود). هم‌زمان به همه تب‌های باز پیام
+`faipco-notice-push` فرستاده می‌شود تا لیست‌ها بدون Reload تازه شوند.
+کلیک روی اعلان، تب باز را به `url` (پیش‌فرض `/notices`) می‌برد یا تب جدید
+باز می‌کند. ثبت اشتراک سمت کلاینت در `utils/push.js` است.
+
+## دکمه نصب در صفحه ورود
+
+`utils/pwaInstall.js` رویداد `beforeinstallprompt` را نگه می‌دارد
+(Chromium) و `LoginPage` در صورت قابل‌نصب‌بودن (و اجرا نشدن در حالت
+standalone) دکمه نصب نشان می‌دهد؛ روی iOS (که این API را ندارد) فقط
+راهنمای متنی «Share → Add to Home Screen» نمایش داده می‌شود.
 
 ## حذف PWA توسط کاربر — چرا نمی‌شود واکنش نشان داد
 
@@ -134,8 +171,9 @@ Cache Busting (`?v=2`) روی لینک Manifest و آدرس آیکون‌ها ا
 مشکل نصب که قرار بود حل شود را در جای دیگری بدتر می‌کرد).
 
 **راه‌حل درست**: به‌جای Query String، از خودِ هدر HTTP استفاده می‌شود —
-`location = /manifest.json` در Nginx (`install.sh`) صریحاً
-`Cache-Control: no-cache, must-revalidate` می‌فرستد؛ یعنی مرورگر همیشه قبل
+`location = /manifest.json` و `location = /sw.js` در Nginx (`install.sh`)
+صریحاً `Cache-Control: no-cache, must-revalidate` می‌فرستند (فایل‌های
+Hash‌دار `/assets/` برعکس `max-age=31536000, immutable` دارند)؛ یعنی مرورگر همیشه قبل
 از استفاده از نسخه Cache شده، با سرور تأیید می‌گیرد. فایل‌های `/icons/*`
 هم (چون Location اختصاصی ندارند) از همین قانون در `location /` استفاده
 می‌کنند. نتیجه: هم Manifest/آیکون‌ها هیچ‌وقت به‌طور خطرناکی قدیمی نمی‌مانند،

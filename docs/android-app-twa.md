@@ -43,6 +43,19 @@ bubblewrap init --manifest https://portal.faipco.ir/manifest.json
   است — همین را قبول کنید، چون دقیقاً همین مقدار از قبل در
   `frontend/public/.well-known/assetlinks.json` نوشته شده. اگر اسم دیگری
   انتخاب کردید، حتماً آن فایل را هم به همان مقدار به‌روز کنید.
+- مقادیری که از `frontend/public/manifest.json` خوانده می‌شوند: نام
+  `FAIPCO Portal` / `FAIPCO`، `start_url: /`، `display: standalone`،
+  `orientation: portrait-primary`، `theme_color: #16324F`،
+  `background_color: #FFFFFF` و آیکون‌های `icon-512.png` /
+  `icon-maskable-512.png`. نام و رنگ برند قابل‌تغییر از پنل (تنظیمات
+  سامانه) روی خودِ APK اثر ندارد — چون این مقادیر هنگام Build در بسته ثابت
+  می‌شوند.
+- **Location delegation**: چون ثبت تردد GPS (نگاه کنید
+  [`gps-attendance.md`](gps-attendance.md)) به Geolocation مرورگر نیاز دارد،
+  اگر ویزارد پرسید، پشتیبانی از Location Delegation را فعال کنید
+  (`features.locationDelegation` در `twa-manifest.json`) تا درخواست مجوز
+  موقعیت داخل اپ درست کار کند. سمت سرور، هدر `Permissions-Policy` در
+  `install.sh` از قبل `geolocation=(self)` را مجاز کرده است.
 - **Signing key**: یک Keystore جدید می‌سازد و رمز عبورش را می‌پرسد.
   ⚠️ **این فایل و رمزش را در جای امنی نگه دارید** (مثلاً یک Password
   Manager) — هر آپدیت آینده اپلیکیشن (نه محتوای وب، بلکه خودِ بسته APK)
@@ -78,7 +91,10 @@ keytool -list -v -keystore android.keystore -alias android
 curl https://portal.faipco.ir/.well-known/assetlinks.json
 ```
 
-باید همان JSON با Fingerprint واقعی برگردد (نه صفحه HTML).
+باید همان JSON با Fingerprint واقعی برگردد (نه صفحه HTML). Nginx این مسیر
+را با `location = /.well-known/assetlinks.json` جدا سرو می‌کند
+(`application/json`، `Cache-Control: no-cache`، و `404` واقعی به‌جای
+Fallback به `index.html` اگر فایل نباشد).
 
 ## مرحله ۵ — نصب و تست
 

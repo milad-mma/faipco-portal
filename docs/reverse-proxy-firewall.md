@@ -10,7 +10,9 @@
 
 1. مستقیم به سرور وصل بشه (نه از طریق دامنه/پروکسی)
 2. یه هدر `X-Forwarded-For` جعلی بفرسته (با یه IP داخل رنج مجاز شما)
-3. کل قابلیت «رنج‌های IP مجاز» (ضدVPN) رو دور بزنه
+3. کل قابلیت «رنج‌های IP مجاز» (ضدVPN) رو دور بزنه — و با عوض‌کردن IP
+   جعلی در هر درخواست، قفل IP‌محورِ بازنشانی رمز
+   ([`rate-limiting.md`](rate-limiting.md)) رو هم بی‌اثر کنه
 
 این توی این پروژه **تست و تأیید شد**.
 
@@ -40,20 +42,49 @@ sudo ufw allow from 192.168.99.17 to any port 80
 
 ## راه‌حل: محدودکردن Firewall
 
-### روی نصب‌های جدید (توصیه‌شده)
+### با اسکریپت نصب (توصیه‌شده)
 
 ```bash
 sudo bash install.sh --reverse-proxy-ip <IP-که-سرور-اصلی-واقعاً-می‌بینه>
+# یا: FAIPCO_REVERSE_PROXY_IP=<IP> sudo -E bash install.sh
 ```
+
+`configure_firewall()` در `install.sh` این کارها رو می‌کنه:
+
+- `ufw allow OpenSSH` (همیشه)
+- با `--reverse-proxy-ip`: فقط `ufw allow from <IP> to any port 80` و `443`
+- بدون اون: `ufw allow 'Nginx Full'` (۸۰/۴۴۳ برای کل اینترنت باز) + هشدار
+- در آخر `ufw --force enable`
+
+مقدار در `backend/.env` به‌صورت `REVERSE_PROXY_IP=...` ذخیره می‌شه و
+**چسبنده‌ست**: اجراهای بعدی (مثلاً آپدیت از پنل) که این پرچم رو ندارن،
+همون مقدار قبلی رو از `.env` می‌خونن — وگرنه فایروال بی‌صدا دوباره باز
+می‌شد.
+
+⚠️ اسکریپت قانون‌های باز قبلی رو **پاک نمی‌کنه**. اگه سرور قبلاً بدون این
+پرچم نصب شده (یعنی `Nginx Full` باز مونده)، اضافه‌کردن پرچم کافی نیست —
+قانون قبلی رو دستی حذف کنید (پایین).
 
 ### روی سرورهای موجود (دستی، همین الان)
 
 ```bash
-sudo ufw delete allow 80/tcp
+sudo ufw delete allow 'Nginx Full'   # قانونی که نصب بدون پرچم اضافه می‌کنه
+sudo ufw delete allow 80/tcp         # اگه دستی اضافه شده بود
 sudo ufw delete allow 443/tcp
 sudo ufw allow from <IP-محلی-پروکسی> to any port 80
 sudo ufw allow from <IP-محلی-پروکسی> to any port 443
 sudo ufw status numbered   # تأیید کنید SSH (پورت ۲۲) دست‌نخورده مونده
+```
+
+## روی خودِ پروکسی خارجی
+
+بک‌اند IP کاربر رو از **اولین مقدار** `X-Forwarded-For` می‌خونه
+(`app/core/ip_allowlist.py: get_client_ip`). پس پروکسی خارجی باید این هدر
+رو **بازنویسی** کنه، نه اینکه به هدرِ فرستاده‌شده توسط کاربر اضافه کنه —
+وگرنه حتی از مسیر درست (دامنه) هم قابل‌جعله:
+
+```nginx
+proxy_set_header X-Forwarded-For $remote_addr;   # ✅ نه $proxy_add_x_forwarded_for
 ```
 
 ## چطور تأیید کنم درست کار کرده؟

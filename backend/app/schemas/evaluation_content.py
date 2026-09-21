@@ -27,12 +27,37 @@ class EvaluationPeriodOut(EvaluationPeriodIn):
     id: int
     status: str
     created_by_user_id: int | None = None
+    is_disabled: bool = False
+    # تعداد ارزیابی‌های منتشرشده (انتساب‌ها) و انجام‌شده - فقط در فهرست دوره‌ها
+    assignments_total: int = 0
+    assignments_completed: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class EvaluationPeriodStatusUpdate(BaseModel):
     status: str
+
+
+class EvaluationPeriodDisabledUpdate(BaseModel):
+    is_disabled: bool
+
+
+class EvaluationPeriodDeleteIn(BaseModel):
+    # برای دوره‌ای که ارزیابی منتشرشده دارد: عنوان دقیق دوره به‌عنوان تأیید
+    confirm_title: str | None = None
+
+
+class PublishedEvaluationOut(BaseModel):
+    assignment_id: int
+    evaluator_name: str
+    evaluator_personnel_code: str | None = None
+    target_name: str
+    target_personnel_code: str | None = None
+    form_title: str | None = None
+    status: str  # not_started | draft | submitted
+    total_score: float | None = None
+    submitted_at: datetime | None = None
 
 
 class TitleUpdateIn(BaseModel):

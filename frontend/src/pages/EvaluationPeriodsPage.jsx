@@ -11,7 +11,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   MenuItem,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -25,6 +27,7 @@ import {
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { fetchSites } from "../api/sites";
 import { fetchEvaluationForms } from "../api/evaluationForms";
 import { generateEvaluationAssignments } from "../api/evaluationProcess";
@@ -37,6 +40,9 @@ import {
   updateEvaluationPeriodStatus,
   updateEvaluationPeriodTitle,
   deleteEvaluationPeriod,
+  deletePublishedEvaluation,
+  fetchPublishedEvaluations,
+  setEvaluationPeriodDisabled,
 } from "../api/evaluationPeriods";
 
 const STATUS_LABELS = {
@@ -160,6 +166,165 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
   );
 }
 
+const EVALUATION_STATUS_LABELS = { not_started: "شروع‌نشده", draft: "در حال انجام", submitted: "ثبت‌شده" };
+const EVALUATION_STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
+
+// ⚠️ طبق درخواست کاربر: نمایش ارزیابی‌های منتشرشده یک دوره و امکان حذف تک‌تک آن‌ها
+function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+
+  function load() {
+    setError("");
+    fetchPublishedEvaluations(period.id)
+      .then(setItems)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌ها با خطا مواجه شد."));
+  }
+
+  useEffect(load, [period.id]);
+
+  async function handleDelete(item) {
+    if (
+      !window.confirm(
+        `ارزیابی «${item.target_name}» توسط «${item.evaluator_name}» همراه پاسخ‌ها و نتیجه‌اش برای همیشه حذف شود؟`
+      )
+    )
+      return;
+    setDeletingId(item.assignment_id);
+    try {
+      await deletePublishedEvaluation(period.id, item.assignment_id);
+      load();
+      onChanged();
+    } catch (err) {
+      setError(err.response?.data?.detail || "حذف ارزیابی با خطا مواجه شد.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="md">
+      <DialogTitle>ارزیابی‌های منتشرشده «{period.title}»</DialogTitle>
+      <DialogContent>
+        {period.is_disabled && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            این دوره غیرفعال است - ارزیابی‌هایش برای ارزیاب‌ها و پرسنل نمایش داده نمی‌شود.
+          </Alert>
+        )}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {items === null ? null : items.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            هنوز هیچ ارزیابی‌ای برای این دوره منتشر نشده (تولید انتساب انجام نشده).
+          </Typography>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>ارزیاب</TableCell>
+                  <TableCell>ارزیابی‌شونده</TableCell>
+                  <TableCell>فرم</TableCell>
+                  <TableCell>وضعیت</TableCell>
+                  <TableCell>امتیاز</TableCell>
+                  <TableCell>حذف</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow key={item.assignment_id}>
+                    <TableCell>{item.evaluator_name}</TableCell>
+                    <TableCell>{item.target_name}</TableCell>
+                    <TableCell>{item.form_title || "—"}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={EVALUATION_STATUS_COLORS[item.status]}
+                        label={EVALUATION_STATUS_LABELS[item.status] || item.status}
+                      />
+                    </TableCell>
+                    <TableCell>{item.total_score != null ? Number(item.total_score).toFixed(1) : "—"}</TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        disabled={deletingId === item.assignment_id}
+                        onClick={() => handleDelete(item)}
+                        aria-label="حذف"
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>بستن</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// حذف دوره‌ای که ارزیابی منتشرشده دارد: فقط با تایپ دقیق عنوان دوره
+function DeletePeriodDialog({ period, onClose, onDeleted }) {
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [error, setError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDelete() {
+    setError("");
+    setIsDeleting(true);
+    try {
+      await deleteEvaluationPeriod(period.id, confirmTitle);
+      onDeleted();
+    } catch (err) {
+      setError(err.response?.data?.detail || "حذف دوره ارزیابی با خطا مواجه شد.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={isDeleting ? undefined : onClose} fullWidth maxWidth="xs">
+      <DialogTitle>حذف قطعی دوره ارزیابی</DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        <Alert severity="error">
+          دوره «{period.title}» و همه {period.assignments_total} ارزیابی منتشرشده‌اش (همراه پاسخ‌ها و نتایج)
+          برای همیشه حذف می‌شوند و قابل‌برگشت نیستند. اگر فقط می‌خواهید در دسترس پرسنل نباشد، «غیرفعال» کنید.
+        </Alert>
+        <TextField
+          label="برای تأیید، عنوان دوره را دقیقاً وارد کنید"
+          value={confirmTitle}
+          onChange={(e) => setConfirmTitle(e.target.value)}
+          placeholder={period.title}
+        />
+        {error && <Alert severity="error">{error}</Alert>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={isDeleting}>
+          انصراف
+        </Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={handleDelete}
+          disabled={isDeleting || confirmTitle.trim() !== period.title.trim()}
+        >
+          {isDeleting ? "در حال حذف..." : "حذف قطعی"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function GenerateAssignmentsDialog({ open, onClose, period }) {
   const [forms, setForms] = useState([]);
   const [formId, setFormId] = useState("");
@@ -230,6 +395,9 @@ export default function EvaluationPeriodsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(null);
   const [generateDialogPeriod, setGenerateDialogPeriod] = useState(null);
+  const [publishedPeriod, setPublishedPeriod] = useState(null);
+  const [deletingPeriod, setDeletingPeriod] = useState(null);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     fetchSites().then(setSites);
@@ -259,11 +427,36 @@ export default function EvaluationPeriodsPage() {
   }
 
   async function handleDelete(period) {
+    // دوره‌ای که ارزیابی منتشرشده دارد یا دیگر پیش‌نویس نیست: تأیید با تایپ عنوان
+    if (period.assignments_total > 0 || period.status !== "draft") {
+      setDeletingPeriod(period);
+      return;
+    }
+    if (!window.confirm(`دوره «${period.title}» حذف شود؟`)) return;
     try {
       await deleteEvaluationPeriod(period.id);
+      setToast("دوره حذف شد.");
       loadPeriods();
     } catch (err) {
       setError(err.response?.data?.detail || "حذف دوره ارزیابی با خطا مواجه شد.");
+    }
+  }
+
+  async function handleToggleDisabled(period) {
+    const disable = !period.is_disabled;
+    if (
+      disable &&
+      !window.confirm(
+        `ارزیابی‌های دوره «${period.title}» برای ارزیاب‌ها و پرسنل غیرفعال شوند؟ (نه فهرست، نه انجام، نه نتیجه - قابل برگشت)`
+      )
+    )
+      return;
+    try {
+      await setEvaluationPeriodDisabled(period.id, disable);
+      setToast(disable ? "دوره غیرفعال شد و دیگر در دسترس پرسنل نیست." : "دوره دوباره فعال شد.");
+      loadPeriods();
+    } catch (err) {
+      setError(err.response?.data?.detail || "تغییر وضعیت دسترسی با خطا مواجه شد.");
     }
   }
 
@@ -320,9 +513,11 @@ export default function EvaluationPeriodsPage() {
             </Typography>
           </Stack>
           <Typography variant="body2" sx={{ mt: 1.5 }}>
-            <b>وضعیت‌های دوره:</b> «پیش‌نویس» یعنی هنوز نهایی نشده (قابل ویرایش/حذف)؛ بقیه وضعیت‌ها
-            (زمان‌بندی‌شده/فعال/بسته‌شده/بایگانی‌شده) فقط برای دسته‌بندی و نمایش‌تون هستن - تولید انتساب
-            توی هر وضعیتی قابل انجامه.
+            <b>وضعیت‌های دوره:</b> زمان‌بندی‌شده/فعال/بسته‌شده خودکار با تاریخ‌ها عوض می‌شن. برای تمدید مهلت
+            یک دوره بسته‌شده، «تمدید/ویرایش» رو بزنید و تاریخ پایان رو جلو ببرید - دوره خودش دوباره فعال
+            می‌شه. «غیرفعال» ارزیابی‌های دوره رو از دسترس ارزیاب‌ها و پرسنل خارج می‌کنه (قابل برگشت)؛ «حذف»
+            دوره رو با همه ارزیابی‌ها و نتایجش برای همیشه پاک می‌کنه. با زدن روی ستون «ارزیابی‌های منتشرشده»
+            فهرست‌شون رو می‌بینید و می‌تونید تک‌تک حذف‌شون کنید.
           </Typography>
         </AccordionDetails>
       </Accordion>
@@ -341,12 +536,13 @@ export default function EvaluationPeriodsPage() {
               <TableCell>سایت</TableCell>
               <TableCell>بازه</TableCell>
               <TableCell>وضعیت</TableCell>
+              <TableCell>ارزیابی‌های منتشرشده</TableCell>
               <TableCell>عملیات</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {periods.map((period) => (
-              <TableRow key={period.id}>
+              <TableRow key={period.id} sx={period.is_disabled ? { opacity: 0.6 } : undefined}>
                 <TableCell>
                   <InlineTitleEdit
                     title={period.title}
@@ -375,25 +571,40 @@ export default function EvaluationPeriodsPage() {
                       </MenuItem>
                     ))}
                   </TextField>
+                  {period.is_disabled && (
+                    <Chip size="small" color="error" variant="outlined" label="غیرفعال" sx={{ mt: 0.5 }} />
+                  )}
                 </TableCell>
                 <TableCell>
-                  <Stack direction="row" spacing={1}>
-                    {period.status === "draft" && (
-                      <>
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setEditingPeriod(period);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          ویرایش
-                        </Button>
-                        <Button size="small" color="error" onClick={() => handleDelete(period)}>
-                          حذف
-                        </Button>
-                      </>
+                  <Button size="small" onClick={() => setPublishedPeriod(period)}>
+                    {period.assignments_completed} از {period.assignments_total} انجام‌شده
+                  </Button>
+                </TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    {period.status !== "archived" && (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setEditingPeriod(period);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        {period.status === "closed" ? "تمدید/ویرایش" : "ویرایش"}
+                      </Button>
                     )}
+                    {period.status !== "draft" && (
+                      <Button
+                        size="small"
+                        color={period.is_disabled ? "success" : "warning"}
+                        onClick={() => handleToggleDisabled(period)}
+                      >
+                        {period.is_disabled ? "فعال‌سازی" : "غیرفعال"}
+                      </Button>
+                    )}
+                    <Button size="small" color="error" onClick={() => handleDelete(period)}>
+                      حذف
+                    </Button>
                     <Button size="small" variant="outlined" onClick={() => setGenerateDialogPeriod(period)}>
                       تولید انتساب
                     </Button>
@@ -415,9 +626,43 @@ export default function EvaluationPeriodsPage() {
 
       <GenerateAssignmentsDialog
         open={generateDialogPeriod !== null}
-        onClose={() => setGenerateDialogPeriod(null)}
+        onClose={() => {
+          setGenerateDialogPeriod(null);
+          loadPeriods();
+        }}
         period={generateDialogPeriod}
       />
+
+      {publishedPeriod && (
+        <PublishedEvaluationsDialog
+          period={publishedPeriod}
+          onClose={() => setPublishedPeriod(null)}
+          onChanged={loadPeriods}
+        />
+      )}
+
+      {deletingPeriod && (
+        <DeletePeriodDialog
+          period={deletingPeriod}
+          onClose={() => setDeletingPeriod(null)}
+          onDeleted={() => {
+            setDeletingPeriod(null);
+            setToast("دوره و ارزیابی‌هایش حذف شدند.");
+            loadPeriods();
+          }}
+        />
+      )}
+
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={4000}
+        onClose={() => setToast("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setToast("")} sx={{ width: "100%" }}>
+          {toast}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

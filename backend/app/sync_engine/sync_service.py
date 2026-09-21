@@ -509,9 +509,18 @@ class SyncService:
         await self.db.flush()
 
     async def _deactivate_missing(self, site_id: int, seen_codes: set[str]) -> int:
-        """پرسنلی که دیگر اصلاً در منبع دیده نشدند (حذف فیزیکی از منبع)، غیرفعال می‌شوند."""
+        """
+        پرسنلی که دیگر اصلاً در منبع دیده نشدند (حذف فیزیکی از منبع)، غیرفعال می‌شوند.
+
+        ⚠️ پرسنلی که دستی در پرتال اضافه شده‌اند (is_manually_created) هیچ‌وقت
+        در منبع نیستند - قبلاً هر Sync غیرفعالشان می‌کرد (باگ گزارش‌شده).
+        """
         result = await self.db.execute(
-            select(Employee).where(Employee.site_id == site_id, Employee.is_active.is_(True))
+            select(Employee).where(
+                Employee.site_id == site_id,
+                Employee.is_active.is_(True),
+                Employee.is_manually_created.is_(False),
+            )
         )
         count = 0
         for emp in result.scalars().all():

@@ -3,7 +3,45 @@
 تا امروز، نام شرکت («شرکت تولیدی صنعتی فوادالیاف»)، نام کوتاه («فایپکو»)
 و لوگو در **شش جای مختلف** کد Hard-code شده بودند (اسپلش‌اسکرین، نوار
 بالای پنل Admin، پنل کاربری، صفحه ورود — هر دو نسخه موبایل/دسکتاپ، و
-Manifest نصب PWA). این‌ها همه از پنل «تنظیمات سامانه» قابل‌تغییرند.
+Manifest نصب PWA). این‌ها همه از پنل «تنظیمات سامانه» (`/system-settings`،
+مجوز `system.settings`) قابل‌تغییرند.
+
+## وضعیت فعلی (خلاصه)
+
+بخش‌های بعدی تاریخچه چهار دور پیاده‌سازی است؛ وضعیت نهایی کد:
+
+- **۱۰ فیلد متنی مستقل** در ۶ گروه (هر گروه دکمه ذخیره جدا):
+  `browser_title`، `manifest_short_name` + `manifest_description`،
+  `splash_title` + `splash_subtitle`، `login_title` + `login_subtitle`،
+  `sidebar_title`، `profile_title` + `profile_subtitle`. سقف طول: ۳۰ برای
+  `manifest_short_name`، ۵۰ برای `sidebar_title`، ۲۰۰ برای
+  `manifest_description`، بقیه ۱۰۰. **فیلد خالی = بازگشت به پیش‌فرض** (ردیف
+  تنظیم پاک می‌شود، رشته خالی ذخیره نمی‌شود).
+- **۴ لوگوی مستقل** با `GET/POST/DELETE /system/logo/{slug}`، slug یکی از
+  `app-logo`، `app-logo-small`، `pwa-icon`، `favicon` (slug نامعتبر → ۴۰۴).
+  آپلود: jpg/png/webp/svg، حداکثر ۴ مگابایت. GET بدون احراز هویت است و اگر
+  لوگو تنظیم نشده باشد ۴۰۴ می‌دهد.
+- `GET /system/branding` (بدون احراز هویت) همه متن‌ها + چهار فلگ
+  `has_custom_*` را برمی‌گرداند؛ `PUT /system/branding` (مجوز
+  `system.settings`) فقط فیلدهای حاضر در بدنه را تغییر می‌دهد.
+- `GET /system/manifest.json` و `GET /system/index.html` نسخه‌های پویا هستند
+  که Nginx به آن‌ها Proxy می‌کند (پایین).
+- ذخیره‌سازی: جدول `system_settings` (کلید/مقدار، لوگوها Base64) —
+  `SystemSettingsService`. بدون Cache: هر درخواست مستقیماً از دیتابیس
+  خوانده می‌شود.
+
+| محل | متن | لوگو |
+|---|---|---|
+| اسپلش‌اسکرین (`SplashScreen.jsx`) | `splash_title`/`splash_subtitle` | `app-logo` |
+| صفحه ورود + فراموشی/بازنشانی رمز (`LoginPage`، `AuthPageShell`) | `login_title`/`login_subtitle` | `app-logo-small` |
+| نوار بالای پنل (`Layout.jsx`) | `sidebar_title` | `app-logo-small` |
+| پنل کاربری (`ProfilePage.jsx`) | `profile_title`/`profile_subtitle` | `app-logo` |
+| تب مرورگر | `browser_title` (+ `<title>` در index.html پویا) | `favicon` |
+| Manifest / صفحه اصلی گوشی | `name`=`browser_title`، `short_name`، `description` | `pwa-icon` |
+
+⚠️ PDF فیش کارکرد لوگوی ثابت `backend/app/assets/images/faipco-logo.png`
+را استفاده می‌کند، نه لوگوی برندینگ (بنگرید به
+[`docs/payroll-notices.md`](payroll-notices.md)).
 
 ## کجا اعمال می‌شود
 
@@ -31,11 +69,12 @@ Manifest نصب PWA). این‌ها همه از پنل «تنظیمات ساما
 ### Backend
 
 - `SystemSettingsService`: `get_branding`/`set_branding`،
-  `get_app_logo`/`set_app_logo`/`delete_app_logo`
-- **`GET /system/branding`**، **`PUT /system/branding`**
+  `get_app_logo`/`set_app_logo`/`delete_app_logo` (در دور دوم به
+  `get_logo`/`set_logo`/`delete_logo(which)` Generic تبدیل شد)
+- **`GET /system/branding`** (عمومی)، **`PUT /system/branding`**
   (`require_permission("system.settings")`)
 - **`GET/POST/DELETE /system/logo`** — دقیقاً هم‌الگو با
-  `/system/login-background`
+  `/system/login-background` (در دور دوم به `/system/logo/{slug}` تبدیل شد)
 - **`GET /system/manifest.json`**: نسخه پویای PWA Manifest — جایگزین
   فایل ثابت `frontend/public/manifest.json`؛ نام/آیکون را از تنظیمات
   واقعی می‌خواند. اگر لوگوی سفارشی تنظیم نشده باشد، به آیکون‌های
@@ -50,16 +89,18 @@ Proxy می‌شود.
 - **`BrandingContext`** (`src/context/BrandingContext.jsx`): یک Provider
   سراسری (بیرون از AuthProvider — چون اسپلش‌اسکرین/صفحه ورود قبل از
   Login به آن نیاز دارند) که یک‌بار `/system/branding` را می‌گیرد و
-  `{name, shortName, description, logoUrl}` را در کل اپ در دسترس
-  می‌گذارد. مقدار پیش‌فرض همان چیزی است که قبلاً Hard-code بود — پس
-  هیچ تأخیر/چشمک‌زدن اضافه‌ای نسبت به قبل ایجاد نمی‌شود.
+  مقادیر برندینگ را در کل اپ در دسترس می‌گذارد (امروز:
+  `browserTitle`، `manifestShortName`، `splashTitle`، ...، `appLogoUrl`،
+  `appLogoSmallUrl`، `isLoading`). رفتار «اول پیش‌فرض، بعد جایگزین» این دور
+  در دور سوم حذف شد.
 - هر جایی که از لوگو استفاده می‌کند، یک `onError` هم دارد که اگر
-  Endpoint لوگوی سفارشی ۴۰۴ بدهد (هنوز آپلود نشده)، خودکار به فایل
-  ثابت پیش‌فرض (`/faipco-logo.png`) برمی‌گردد.
+  Endpoint لوگوی سفارشی خطا بدهد، خودکار به فایل ثابت پیش‌فرض
+  (`/faipco-logo.png`) برمی‌گردد. (`BrandingContext` هم اگر
+  `has_custom_*` نادرست باشد، اصلاً آدرس Backend را نمی‌دهد.)
 - **`SystemSettingsPage.jsx`**: یک کامپوننت مشترک آپلود عکس
-  (`ImageUploadCard`) بین «لوگو» و «عکس پس‌زمینه ورود» به اشتراک
-  گذاشته شد (برای جلوگیری از تکرار کد) + فیلدهای نام/اسم‌کوتاه/توضیح
-  با دکمه «بازگشت به پیش‌فرض».
+  (`ImageUploadCard`) بین لوگوها و «عکس پس‌زمینه ورود» به اشتراک
+  گذاشته شد (برای جلوگیری از تکرار کد) + فیلدهای متنی؛ خالی‌گذاشتن یک
+  فیلد و ذخیره، آن را به پیش‌فرض برمی‌گرداند (دکمه جداگانه‌ای ندارد).
 
 ## دور دوم — برندینگ گسترده‌تر: هر متن/لوگو کاملاً مجزا
 
@@ -89,6 +130,9 @@ Proxy می‌شود.
 
 ### سه لوگوی مجزا
 
+(در دور چهارم لوگوی کوچک هم اضافه شد و مصرف `app-logo` تغییر کرد — جدول
+نهایی در «وضعیت فعلی» بالا.)
+
 | لوگو | Endpoint | مصرف | سایز توصیه‌شده |
 |---|---|---|---|
 | درون‌برنامه‌ای | `/system/logo/app-logo` | اسپلش، صفحه ورود، نوار بالا، پنل کاربری | هر اندازه‌ای |
@@ -104,7 +148,8 @@ Proxy می‌شود.
 مثل `apple-mobile-web-app-title` (دور قبلی)، اگر Favicon سفارشی تنظیم
 شده باشد، `BrandingContext` تگ‌های `<link rel="icon">`/`<link rel="apple-touch-icon">`
 موجود در `index.html` را با JS، بعد از بارگذاری، به آدرس Backend تغییر
-می‌دهد.
+می‌دهد. (یعنی قبل از اجرای JS — و در index.html پویا که فقط `<title>` را
+عوض می‌کند — همان Favicon ثابت دیده می‌شود.)
 
 ### آنچه هنوز محدودیت واقعی دارد
 
@@ -133,6 +178,10 @@ Proxy می‌شود.
 نه پیش‌فرض. نتیجه: وقتی صفحه ورود/داشبورد/اسپلش واقعاً روی صفحه دیده
 می‌شوند، مقادیر برندینگ از قبل واقعی و نهایی‌اند؛ هیچ‌جا هیچ مقداری
 جایگزین نمی‌شود.
+
+⚠️ اگر `/system/branding` خطا بدهد (مثلاً بارگذاری آفلاین)، `isLoading`
+باز هم بسته می‌شود و همان پیش‌فرض‌های داخل `BrandingContext` (هم‌مقدار با
+پیش‌فرض‌های Backend) نمایش داده می‌شوند — تا اپ پشت اسپلش گیر نکند.
 
 ### سه فیلد مستقل دیگر — طبق درخواست «جزئی‌تر»
 
