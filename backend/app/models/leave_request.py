@@ -73,6 +73,12 @@ class LeaveRequestMapping(Base, TimestampMixin):
     application_id_column: Mapped[str] = mapped_column(String(128), nullable=False, default="ApplicationId")
     source_column: Mapped[str] = mapped_column(String(128), nullable=False, default="Source")
     destination_column: Mapped[str] = mapped_column(String(128), nullable=False, default="Distination")
+
+    # ⚠️ طبق درخواست کاربر: غیرفعال‌سازی ماژول برای این سایت از صفحه «تنظیمات
+    # درخواست مرخصی/ماموریت» (نه از فرم نگاشت - در upsert_mapping دست نمی‌خورد،
+    # چون در LeaveRequestMappingIn نیست). تا True است صفحه درخواست پرسنل بسته
+    # است و کارت داشبورد «غیرفعال» نشان می‌دهد.
+    is_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # ⚠️ اختیاری - طبق تحلیل داده واقعی، ActionId با ترکیب مرخصی/مأموریت
     # × ساعتی/روزانه مرتبط است (نه با زیرنوع دقیق) - مقدار هر ترکیب روی
     # خودِ LeaveRequestType تنظیم می‌شود؛ اگر ستون آن ناشناخته/غیرلازم

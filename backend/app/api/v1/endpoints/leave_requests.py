@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.employee import Employee
-from app.models.leave_request import LeaveRequestType
+from app.models.leave_request import LeaveRequestMapping, LeaveRequestType
 from app.models.user import User
 from app.schemas.leave_request import (
     DecidedLeaveRequestsPage,
@@ -43,6 +43,11 @@ async def get_active_types(
 ):
     """فهرست نوع‌های فعال درخواست، برای فرم ثبت - بر اساس سایت خودِ کاربر."""
     employee = await _require_employee(db, current_user)
+    mapping_disabled = await db.scalar(
+        select(LeaveRequestMapping.is_disabled).where(LeaveRequestMapping.site_id == employee.site_id)
+    )
+    if mapping_disabled:
+        return []
     result = await db.execute(
         select(LeaveRequestType).where(
             LeaveRequestType.site_id == employee.site_id, LeaveRequestType.is_active.is_(True)

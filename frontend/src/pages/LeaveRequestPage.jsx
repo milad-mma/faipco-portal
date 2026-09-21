@@ -30,6 +30,7 @@ import {
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
+import { useAuth } from "../context/AuthContext";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import AccessGateDialog from "../components/AccessGateDialog";
@@ -592,7 +593,26 @@ function DecidedHistoryTable({ reloadKey }) {
   );
 }
 
+// ⚠️ طبق درخواست کاربر: اگر ماژول برای سایت این پرسنل از صفحه «تنظیمات درخواست
+// مرخصی/ماموریت» غیرفعال شده باشد، صفحه بسته است (سمت سرور هم مستقل بررسی
+// می‌شود - ثبت/حذف/لیست/تصمیم خطا می‌دهند).
 export default function LeaveRequestPage() {
+  const { user } = useAuth();
+  if (user?.leave_requests_disabled) {
+    return (
+      <Box sx={{ maxWidth: 1100, mx: "auto" }}>
+        <BackLink to="/my-dashboard" />
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
+          درخواست مرخصی/ماموریت
+        </Typography>
+        <Alert severity="warning">درخواست مرخصی/ماموریت در حال حاضر غیرفعال است.</Alert>
+      </Box>
+    );
+  }
+  return <LeaveRequestPageContent />;
+}
+
+function LeaveRequestPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = ["submit", "my-requests", "pending"].indexOf(searchParams.get("tab"));
   const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0);

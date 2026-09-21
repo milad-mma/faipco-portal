@@ -630,15 +630,28 @@ async def _send_push_to_emp_no(site_id: int, emp_no: int, url: str, body: str) -
         logger.exception("ارسال Push درخواست مرخصی/ماموریت با خطا مواجه شد")
 
 
+MODULE_DISABLED_MESSAGE = "درخواست مرخصی/ماموریت در حال حاضر غیرفعال است"
+
+
 class LeaveRequestService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def _get_mapping_and_connection(self, site_id: int) -> tuple[LeaveRequestMapping, SiteConnection]:
+    async def _get_mapping_and_connection(
+        self, site_id: int, *, user_facing: bool = False
+    ) -> tuple[LeaveRequestMapping, SiteConnection]:
+        """
+        user_facing=True برای عملیات پرسنل/سرپرست (ثبت، حذف، لیست‌ها، تصمیم) -
+        اگر ماژول برای این سایت از پنل ادمین غیرفعال شده باشد خطا می‌دهد.
+        عملیات مدیریتی (لیست همه درخواست‌ها، ویرایش ادمین، Lookupهای تنظیمات)
+        با غیرفعال بودن ماژول هم کار می‌کنند.
+        """
         mapping_result = await self.db.execute(select(LeaveRequestMapping).where(LeaveRequestMapping.site_id == site_id))
         mapping = mapping_result.scalar_one_or_none()
         if mapping is None:
             raise LeaveRequestError("قابلیت درخواست مرخصی/ماموریت برای این سایت هنوز تنظیم نشده است")
+        if user_facing and mapping.is_disabled:
+            raise LeaveRequestError(MODULE_DISABLED_MESSAGE)
 
         conn_result = await self.db.execute(select(SiteConnection).where(SiteConnection.site_id == site_id))
         site_connection = conn_result.scalar_one_or_none()
@@ -750,7 +763,7 @@ class LeaveRequestService:
         if len(punches) > 1 and len(kinds) != len(punches):
             raise LeaveRequestError("برای هر تردد فراموش‌شده باید یک درخواست جداگانه ثبت شود")
 
-        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
         if kara_names is None or not kara_names.can_write_punch:
             raise LeaveRequestError(
@@ -878,7 +891,7 @@ class LeaveRequestService:
         if leave_type.is_forgotten_punch:
             return await self._submit_forgotten_punches(employee, leave_type, punches or [], description)
 
-        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         cur_emp_no = await self._resolve_approver_emp_no(employee, mapping, site_connection)
 
         try:
@@ -1097,7 +1110,7 @@ class LeaveRequestService:
         وقتی هنوز تصمیم‌گیری نشده (IsFinalApproved هنوز NULL است) قابل
         حذف هستند - نه یک درخواستِ از قبل تائید/ردشده.
         """
-        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
         rows = await asyncio.to_thread(
             _select_requests_sync,
@@ -1170,7 +1183,7 @@ class LeaveRequestService:
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
     async def list_my_requests(self, employee: Employee) -> list[dict]:
-        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         emp_no = _to_personnel_code_int(employee)
         col = _quote(site_connection.db_type, mapping.emp_no_column)
         rows = await asyncio.to_thread(
@@ -1199,7 +1212,7 @@ class LeaveRequestService:
                 item["manager_idea"] = real_comment
 
     async def list_pending_for_approver(self, approver_employee: Employee) -> list[dict]:
-        mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id, user_facing=True)
         cur_emp_no = _to_personnel_code_int(approver_employee)
         cur_col = _quote(site_connection.db_type, mapping.cur_emp_no_column)
         approved_col = _quote(site_connection.db_type, mapping.is_final_approved_column)
@@ -1229,7 +1242,7 @@ class LeaveRequestService:
         درخواست‌های در انتظار، سوابق درخواست‌هایی که قبلاً تأیید/رد کرده
         هم نمایش داده شود (جدیدترین تصمیم بالا، با صفحه‌بندی).
         """
-        mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id, user_facing=True)
         approver_emp_no = _to_personnel_code_int(approver_employee)
         approver_col = _quote(site_connection.db_type, mapping.approval_by_manager_column)
         approved_col = _quote(site_connection.db_type, mapping.is_final_approved_column)
@@ -1403,7 +1416,7 @@ class LeaveRequestService:
     async def decide_request(
         self, site_id: int, request_id: int, approver_employee: Employee, approved: bool, manager_idea: str
     ) -> None:
-        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        mapping, site_connection = await self._get_mapping_and_connection(site_id, user_facing=True)
         request_id_col = _quote(site_connection.db_type, mapping.request_id_column)
         rows = await asyncio.to_thread(
             _select_requests_sync,

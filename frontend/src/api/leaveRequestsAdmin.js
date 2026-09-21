@@ -49,6 +49,16 @@ export async function removeLeaveRequestApprover(departmentId) {
   await apiClient.delete(`/leave-requests/departments/${departmentId}/approver`);
 }
 
+export async function fetchLeaveRequestModuleStatus(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/module-status`);
+  return data; // { has_mapping, is_disabled }
+}
+
+export async function setLeaveRequestModuleDisabled(siteId, isDisabled) {
+  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/module-status`, { is_disabled: isDisabled });
+  return data;
+}
+
 export async function fetchLeaveRequestHrOfficer(siteId) {
   const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/hr-officer`);
   return data;

@@ -27,6 +27,7 @@ class UserOut(BaseModel):
     has_photo: bool = False
     hide_birthday_in_dashboard: bool = False
     can_clock_in_out: bool = False  # آیا مجوز آزمایشی «ثبت ورود/خروج مبتنی بر GPS» را دارد
+    leave_requests_disabled: bool = False  # ماژول مرخصی/ماموریت برای سایت این پرسنل از پنل غیرفعال شده
     has_monthly_attendance: bool = False  # آیا سایت خودِ این پرسنل نگاشت تردد دستگاهی تنظیم‌شده دارد
     can_view_attendance_logs: bool = False  # آیا مجوز مشاهده گزارش «پرسنل آنلاین» (Session زنده) را دارد
     can_view_clock_records: bool = False  # آیا مجوز مشاهده گزارش ورود/خروج آزمایشی همه پرسنل را دارد

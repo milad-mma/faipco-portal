@@ -26,6 +26,7 @@ from app.schemas.leave_request import (
     LeaveRequestHrOfficerOut,
     LeaveRequestMappingIn,
     LeaveRequestMappingOut,
+    LeaveRequestModuleStatusOut,
     LeaveRequestOut,
     LeaveRequestTypeIn,
     LeaveRequestTypeOut,
@@ -33,6 +34,7 @@ from app.schemas.leave_request import (
     OperationLookupItemOut,
     SetApproverIn,
     SetHrOfficerIn,
+    SetModuleDisabledIn,
 )
 from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, LEAVE_SCHEMA_DEFAULTS
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
@@ -241,6 +243,31 @@ async def remove_approver(
         return
     await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
     await LeaveRequestStructureService(db).remove_approver(department_id)
+
+
+@router.get("/sites/{site_id}/module-status", response_model=LeaveRequestModuleStatusOut)
+async def get_module_status(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """فعال/غیرفعال بودن ماژول درخواست مرخصی/ماموریت برای این سایت."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    return await LeaveRequestStructureService(db).get_module_status(site_id)
+
+
+@router.put("/sites/{site_id}/module-status", response_model=LeaveRequestModuleStatusOut)
+async def set_module_status(
+    site_id: int,
+    payload: SetModuleDisabledIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestStructureService(db).set_module_disabled(site_id, payload.is_disabled)
+    except LeaveRequestStructureError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/sites/{site_id}/hr-officer", response_model=LeaveRequestHrOfficerOut | None)

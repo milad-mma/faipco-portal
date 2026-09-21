@@ -177,6 +177,17 @@ class SetHrOfficerIn(BaseModel):
     employee_id: int
 
 
+class LeaveRequestModuleStatusOut(BaseModel):
+    """وضعیت ماژول برای یک سایت: نگاشت دارد؟ از پنل غیرفعال شده؟"""
+
+    has_mapping: bool
+    is_disabled: bool
+
+
+class SetModuleDisabledIn(BaseModel):
+    is_disabled: bool
+
+
 class LeaveRequestHrOfficerOut(BaseModel):
     id: int
     site_id: int

@@ -38,11 +38,13 @@ import {
   fetchCardLookup,
   fetchLeaveRequestApprovers,
   fetchLeaveRequestHrOfficer,
+  fetchLeaveRequestModuleStatus,
   fetchLeaveRequestTypes,
   removeLeaveRequestApprover,
   removeLeaveRequestHrOfficer,
   setLeaveRequestApprover,
   setLeaveRequestHrOfficer,
+  setLeaveRequestModuleDisabled,
   updateLeaveRequestType,
 } from "../api/leaveRequestsAdmin";
 
@@ -433,6 +435,71 @@ function HrOfficerSection({ siteId, onError }) {
   );
 }
 
+// ⚠️ طبق درخواست کاربر: فعال/غیرفعال کردن کل ماژول برای این سایت. وقتی
+// غیرفعال است صفحه درخواست پرسنل بسته است و کارت داشبورد «غیرفعال» نشان
+// می‌دهد؛ نگاشت و تنظیمات دست‌نخورده می‌مانند و با فعال‌سازی دوباره برمی‌گردند.
+function ModuleStatusSection({ siteId, onError }) {
+  const [moduleStatus, setModuleStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setModuleStatus(null);
+    fetchLeaveRequestModuleStatus(siteId)
+      .then(setModuleStatus)
+      .catch(() => setModuleStatus(null));
+  }, [siteId]);
+
+  async function handleToggle(event) {
+    setSaving(true);
+    try {
+      setModuleStatus(await setLeaveRequestModuleDisabled(siteId, !event.target.checked));
+    } catch (err) {
+      onError(err.response?.data?.detail || "تغییر وضعیت ماژول با خطا مواجه شد.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (moduleStatus === null) return null;
+
+  if (!moduleStatus.has_mapping) {
+    return (
+      <Alert severity="warning" sx={{ mb: 2 }}>
+        برای این سایت هنوز نگاشت مرخصی/ماموریت تنظیم نشده است؛ تا تنظیم نشود، درخواست مرخصی/ماموریت در دسترس پرسنل
+        نیست.
+      </Alert>
+    );
+  }
+
+  const enabled = !moduleStatus.is_disabled;
+  return (
+    <Box
+      sx={{
+        mb: 2,
+        p: 2,
+        border: "1px solid",
+        borderColor: enabled ? "divider" : "warning.main",
+        borderRadius: 2,
+        bgcolor: enabled ? "background.paper" : "rgba(237, 108, 2, 0.06)",
+      }}
+    >
+      <FormControlLabel
+        control={<Switch checked={enabled} onChange={handleToggle} disabled={saving} />}
+        label={
+          <Typography fontWeight={700}>
+            درخواست مرخصی/ماموریت برای این سایت {enabled ? "فعال است" : "غیرفعال است"}
+          </Typography>
+        }
+      />
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {enabled
+          ? "با غیرفعال‌کردن، صفحه درخواست برای پرسنل این سایت بسته می‌شود و کارت داشبورد «غیرفعال» نشان می‌دهد. تنظیمات حفظ می‌شوند."
+          : "پرسنل این سایت نمی‌توانند درخواست ثبت کنند و سرپرستان هم از پرتال نمی‌توانند درخواست‌ها را تأیید/رد کنند. مشاهده و ویرایش مدیریتی همچنان در دسترس است."}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function LeaveRequestStructurePage() {
   const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);
@@ -483,6 +550,8 @@ export default function LeaveRequestStructurePage() {
           {error}
         </Alert>
       )}
+
+      {siteId && <ModuleStatusSection siteId={siteId} onError={setError} />}
 
       {siteId && (
         <Stack spacing={2}>

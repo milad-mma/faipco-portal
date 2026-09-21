@@ -85,6 +85,22 @@ class LeaveRequestStructureService:
 
         return mapping
 
+    # ---------- فعال/غیرفعال بودن ماژول برای سایت ----------
+
+    async def get_module_status(self, site_id: int) -> dict:
+        mapping = await self.get_mapping(site_id)
+        return {"has_mapping": mapping is not None, "is_disabled": bool(mapping and mapping.is_disabled)}
+
+    async def set_module_disabled(self, site_id: int, is_disabled: bool) -> dict:
+        mapping = await self.get_mapping(site_id)
+        if mapping is None:
+            raise LeaveRequestStructureError(
+                "برای این سایت هنوز نگاشت مرخصی/ماموریت تنظیم نشده - ماژول از قبل غیرفعال است"
+            )
+        mapping.is_disabled = is_disabled
+        await self.db.commit()
+        return await self.get_module_status(site_id)
+
     async def _seed_default_types_if_none(self, site_id: int) -> None:
         """⚠️ فقط اگر این سایت هنوز هیچ نوع درخواستی ندارد - تا نوع‌های دستیِ از قبل موجود را دوباره اضافه نکند."""
         existing_types = await self.list_types(site_id)

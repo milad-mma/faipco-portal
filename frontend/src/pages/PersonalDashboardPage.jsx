@@ -57,6 +57,17 @@ function ComingSoonChip() {
   );
 }
 
+function DisabledChip() {
+  return (
+    <Chip
+      label="غیرفعال"
+      size="small"
+      color="default"
+      sx={{ position: "absolute", top: 6, insetInlineEnd: 6, fontSize: 10, height: 18 }}
+    />
+  );
+}
+
 function ToolCard({ icon, label, comingSoon, onClick }) {
   return (
     <Card
@@ -97,6 +108,7 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
 
 export default function PersonalDashboardPage() {
   const { user } = useAuth();
+  const leaveDisabled = Boolean(user?.leave_requests_disabled);
   const navigate = useNavigate();
   const [recentNotices, setRecentNotices] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -376,9 +388,11 @@ export default function PersonalDashboardPage() {
             گزارش تردد
           </Typography>
         </Card>
+        {/* ⚠️ اگر ماژول برای سایت این پرسنل از پنل ادمین غیرفعال شده باشد،
+            کارت «غیرفعال» نشان می‌دهد و قابل کلیک نیست. */}
         <Card
           variant="outlined"
-          onClick={() => navigate("/leave-requests")}
+          onClick={leaveDisabled ? undefined : () => navigate("/leave-requests")}
           sx={{
             position: "relative",
             flex: 1,
@@ -391,16 +405,18 @@ export default function PersonalDashboardPage() {
             alignItems: "center",
             justifyContent: "center",
             textAlign: "center",
-            cursor: "pointer",
+            cursor: leaveDisabled ? "default" : "pointer",
+            opacity: leaveDisabled ? 0.55 : 1,
           }}
         >
+          {leaveDisabled && <DisabledChip />}
           {/* ⚠️ شمارنده درخواست‌های در انتظار تصمیم - مثل شمارنده ارزیابی
               عملکرد، فقط برای مدیر/سرپرستی که درخواستی منتظر اوست نمایش
               داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
           <Badge
             color="warning"
             badgeContent={pendingLeaveCount}
-            invisible={!pendingLeaveCount}
+            invisible={leaveDisabled || !pendingLeaveCount}
             sx={{ "& .MuiBadge-badge": { overflow: "visible" }, mb: 2 }}
           >
             <Box

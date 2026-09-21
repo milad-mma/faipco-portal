@@ -19,6 +19,7 @@ from app.core.security import (
 )
 from app.models.employee import Department, Employee
 from app.models.site import AttendanceMapping, Site
+from app.models.leave_request import LeaveRequestMapping
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
@@ -294,17 +295,18 @@ class AuthService:
             return base
 
         result = await self.db.execute(
-            select(Employee, Site.name, Department.name, AttendanceMapping.id)
+            select(Employee, Site.name, Department.name, AttendanceMapping.id, LeaveRequestMapping.is_disabled)
             .join(Site, Site.id == Employee.site_id)
             .outerjoin(Department, Department.id == Employee.department_id)
             .outerjoin(AttendanceMapping, AttendanceMapping.site_id == Site.id)
+            .outerjoin(LeaveRequestMapping, LeaveRequestMapping.site_id == Site.id)
             .where(Employee.id == user.employee_id)
         )
         row = result.first()
         if row is None:
             return base
 
-        employee, site_name, department_name, attendance_mapping_id = row
+        employee, site_name, department_name, attendance_mapping_id, leave_module_disabled = row
         base.employee_id = employee.id
         base.first_name = employee.first_name
         base.last_name = employee.last_name
@@ -328,4 +330,7 @@ class AuthService:
         # دارد؛ وگرنه کارت‌های داشبورد باید حالت «به‌زودی» نشان دهند، نه
         # تلاش برای اتصال و شکست با خطا.
         base.has_monthly_attendance = attendance_mapping_id is not None
+        # ⚠️ ماژول مرخصی/ماموریت از پنل ادمین برای سایت این پرسنل غیرفعال شده -
+        # صفحه درخواست بسته و کارت داشبورد «غیرفعال» نشان داده می‌شود.
+        base.leave_requests_disabled = bool(leave_module_disabled)
         return base
