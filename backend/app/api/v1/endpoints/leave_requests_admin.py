@@ -4,6 +4,7 @@ Endpoint های مدیریتی «درخواست مرخصی/ماموریت»:
     - مشاهده همه درخواست‌های یک سایت - مجوز leave_requests.view یا leave_requests.manage
     - ویرایش مدیریتی - فقط leave_requests.manage
 """
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -46,6 +47,7 @@ from app.services.leave_request_structure_service import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 SITES_MANAGE = "sites.manage"
 
@@ -376,6 +378,16 @@ async def list_all_for_site(
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        # ⚠️ قبلاً خطای دیتابیس کاراوب (ستون/جدول نگاشت‌شده‌ای که در این
+        # دیتابیس وجود ندارد، قطع اتصال و ...) به ۵۰۰ بی‌توضیح تبدیل می‌شد و
+        # صفحه فقط «دریافت درخواست‌ها با خطا مواجه شد» نشان می‌داد. این صفحه
+        # فقط برای ادمین/منابع انسانی است؛ متن خطا برای عیب‌یابی نمایش داده می‌شود.
+        logger.exception("دریافت فهرست درخواست‌های مرخصی/ماموریت سایت %s با خطا مواجه شد", site_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"خطا در خواندن درخواست‌ها از کاراوب: {str(e)[:400]}",
+        )
     if is_type_restricted:
         # ⚠️ طبق تصمیم صریح و دقیق‌شده کاربر: نقش محدود به نوع (حراست)
         # درخواست‌های «در حال بررسی» را فقط برای انواع **ساعتی** نباید

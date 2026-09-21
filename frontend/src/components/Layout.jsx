@@ -74,8 +74,14 @@ export default function Layout() {
         if (item.ownPageCheck && !item.ownPageCheck(user) && filteredChildren?.length) {
           effectivePath = filteredChildren[0].path;
         }
+        // گروه بدون صفحه مستقل (groupOnly) - همیشه اولین زیرمنوی در‌دسترس
+        if (item.groupOnly && filteredChildren?.length) {
+          effectivePath = filteredChildren[0].path;
+        }
 
-        return { ...item, path: effectivePath, children: filteredChildren };
+        // menuKey ثابت (مسیر تعریف‌شده در navItems) - برای کلید React و
+        // وضعیت باز/بسته‌بودن گروه، مستقل از effectivePath
+        return { ...item, menuKey: item.path, path: effectivePath, children: filteredChildren };
       }),
     [user]
   );
@@ -186,10 +192,10 @@ export default function Layout() {
           const isActive =
             location.pathname === item.path ||
             (hasChildren && item.children.some((child) => location.pathname === child.path));
-          const isOpen = hasChildren && (openMenus[item.path] ?? false);
+          const isOpen = hasChildren && (openMenus[item.menuKey] ?? false);
 
           return (
-            <Box key={item.path}>
+            <Box key={item.menuKey}>
               <Box sx={{ display: "flex", alignItems: "stretch" }}>
                 <ListItemButton
                   component={RouterLink}
@@ -224,7 +230,7 @@ export default function Layout() {
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      toggleMenu(item.path);
+                      toggleMenu(item.menuKey);
                     }}
                     sx={{ alignSelf: "center", mr: 0.5 }}
                   >

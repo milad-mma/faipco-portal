@@ -18,7 +18,11 @@ import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
-import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
+import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
+import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
+import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
+import DnsOutlinedIcon from "@mui/icons-material/DnsOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 
@@ -56,82 +60,109 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
  *     Layout.jsx در این حالت اگر ownPageCheck کاربر را رد کند ولی
  *     حداقل یک فرزند در دسترس باشد، کلیک روی والد را به همان اولین
  *     فرزند در‌دسترس هدایت می‌کند (نه به یک مسیر بسته).
+ *   groupOnly (اختیاری، فقط برای آیتم‌های دارای children): عنوان گروه صفحه
+ *     مستقل ندارد؛ در Layout.jsx کلیک روی آن همیشه به اولین زیرمنوی
+ *     در‌دسترس همین کاربر می‌رود (مسیر path فقط کلید باز/بسته‌بودن گروه است).
  *   children (اختیاری): آرایه‌ای از همین شکل (بدون children تودرتوی بیشتر)
  */
 export const NAV_ITEMS = [
+  // ⚠️ دسته‌بندی بر اساس «کار کاربر» (طبق درخواست کاربر): از کارهای روزمره
+  // (پرسنل، تردد، اطلاعیه) به سمت کارهای فنی و کم‌تکرار (دسترسی، سامانه).
+  // داخل هر گروه: پرکاربردترین اول، تنظیمات آخر. گروه‌ها (groupOnly) صفحه
+  // مستقل ندارند - کلیک روی عنوان گروه به اولین زیرمنوی در‌دسترس کاربر می‌رود.
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
   {
-    label: "پرسنل",
+    label: "پرسنل و سازمان",
     path: "/employees",
     icon: <GroupOutlinedIcon />,
-    check: (u) => u?.can_view_employees || u?.can_update_employees || u?.can_create_employees,
-  },
-  {
-    label: "سایت‌ها",
-    path: "/sites",
-    icon: <ApartmentOutlinedIcon />,
-    check: (u) => u?.can_view_sites,
-  },
-  {
-    label: "همگام‌سازی دیتابیس",
-    path: "/sync",
-    icon: <SyncOutlinedIcon />,
-    check: (u) => u?.can_manage_sync || u?.can_view_sync || u?.can_run_sync,
-  },
-  { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon /> },
-  {
-    label: "ثبت ورود و خروج",
-    path: "/attendance-clock",
-    icon: <FingerprintOutlinedIcon />,
-    check: (u) => u?.can_clock_in_out,
-    hiddenForAdmin: true,
-  },
-  {
-    label: "گزارش اطلاعیه‌ها",
-    path: "/notice-reports",
-    icon: <AssessmentOutlinedIcon />,
-    check: (u) => u?.can_view_site_notice_report,
-  },
-  {
-    label: "انتقادات و پیشنهادات",
-    path: "/feedback-report",
-    icon: <ForumOutlinedIcon />,
-    check: (u) => u?.can_view_feedback,
-  },
-  {
-    label: "مدیریت دسترسی",
-    path: "/access",
-    icon: <AdminPanelSettingsOutlinedIcon />,
-    ownPageCheck: (u) => u?.can_manage_users,
+    groupOnly: true,
     children: [
-      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, check: (u) => u?.can_manage_sites },
-      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, check: (u) => u?.can_manage_ip_allowlist },
       {
-        label: "انتصاب دسته‌جمعی نقش",
-        path: "/bulk-role-assignment",
-        icon: <GroupAddOutlinedIcon />,
-        check: (u) => u?.can_manage_users,
+        label: "پرسنل",
+        path: "/employees",
+        icon: <PersonOutlineIcon />,
+        check: (u) => u?.can_view_employees || u?.can_update_employees || u?.can_create_employees,
       },
-      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, check: (u) => u?.can_manage_roles },
+      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, check: (u) => u?.can_manage_sites },
       {
-        label: "تنظیمات سامانه",
-        path: "/system-settings",
-        icon: <SettingsOutlinedIcon />,
-        check: (u) => u?.can_manage_system_settings,
+        label: "خودروهای پرسنل",
+        path: "/vehicle-report",
+        icon: <DirectionsCarFilledOutlinedIcon />,
+        check: (u) => u?.can_view_vehicles_report,
       },
     ],
   },
   {
-    label: "پشتیبان‌گیری",
-    path: "/backup",
-    icon: <CloudDownloadOutlinedIcon />,
-    check: (u) => u?.can_manage_backup || u?.can_bust_cache,
+    label: "حضور و غیاب",
+    path: "/clock-in-out-report",
+    icon: <FingerprintOutlinedIcon />,
+    groupOnly: true,
+    children: [
+      {
+        label: "گزارش ورود و خروج",
+        path: "/clock-in-out-report",
+        icon: <FingerprintOutlinedIcon />,
+        check: (u) => u?.can_view_clock_records,
+      },
+      {
+        label: "پرسنل آنلاین",
+        path: "/presence-report",
+        icon: <WifiTetheringOutlinedIcon />,
+        check: (u) => u?.can_view_attendance_logs,
+      },
+      {
+        label: "ثبت ورود و خروج",
+        path: "/attendance-clock",
+        icon: <FingerprintOutlinedIcon />,
+        check: (u) => u?.can_clock_in_out,
+        hiddenForAdmin: true,
+      },
+      {
+        label: "درخواست‌های مرخصی/ماموریت",
+        path: "/leave-requests/all",
+        icon: <EventNoteOutlinedIcon />,
+        check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+      },
+      {
+        label: "تنظیمات مرخصی/ماموریت",
+        path: "/leave-requests/settings",
+        icon: <SettingsOutlinedIcon />,
+        check: (u) => u?.can_manage_sites,
+      },
+    ],
+  },
+  {
+    label: "ارتباطات",
+    path: "/notices",
+    icon: <CampaignOutlinedIcon />,
+    groupOnly: true,
+    children: [
+      { label: "اطلاعیه‌ها", path: "/notices", icon: <CampaignOutlinedIcon /> },
+      {
+        label: "گزارش اطلاعیه‌ها",
+        path: "/notice-reports",
+        icon: <AssessmentOutlinedIcon />,
+        check: (u) => u?.can_view_site_notice_report,
+      },
+      {
+        label: "انتقادات و پیشنهادات",
+        path: "/feedback-report",
+        icon: <ForumOutlinedIcon />,
+        check: (u) => u?.can_view_feedback,
+      },
+      {
+        label: "پیام‌های تبریک تولد",
+        path: "/birthday-messages",
+        icon: <CakeOutlinedIcon />,
+        check: (u) => u?.can_manage_birthday_messages,
+      },
+    ],
   },
   {
     label: "ارزیابی عملکرد",
     path: "/performance/structure",
     icon: <RateReviewOutlinedIcon />,
-    ownPageCheck: (u) => u?.can_manage_performance_structure,
+    groupOnly: true,
     children: [
       {
         label: "ساختار ارزیابی",
@@ -140,16 +171,16 @@ export const NAV_ITEMS = [
         check: (u) => u?.can_manage_performance_structure,
       },
       {
-        label: "دوره‌های ارزیابی",
-        path: "/performance/periods",
-        icon: <EventOutlinedIcon />,
-        check: (u) => u?.can_manage_performance_periods,
-      },
-      {
         label: "فرم‌های ارزیابی",
         path: "/performance/forms",
         icon: <AssignmentOutlinedIcon />,
         check: (u) => u?.can_manage_performance_forms,
+      },
+      {
+        label: "دوره‌های ارزیابی",
+        path: "/performance/periods",
+        icon: <EventOutlinedIcon />,
+        check: (u) => u?.can_manage_performance_periods,
       },
       {
         label: "گزارش‌های مدیریتی",
@@ -159,49 +190,54 @@ export const NAV_ITEMS = [
       },
     ],
   },
-  { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
   {
-    label: "پرسنل آنلاین",
-    path: "/presence-report",
-    icon: <ScienceOutlinedIcon />,
-    check: (u) => u?.can_view_attendance_logs,
-  },
-  {
-    label: "گزارش ورود و خروج",
-    path: "/clock-in-out-report",
-    icon: <FingerprintOutlinedIcon />,
-    check: (u) => u?.can_view_clock_records,
-  },
-  {
-    label: "پیام‌های تبریک تولد",
-    path: "/birthday-messages",
-    icon: <CakeOutlinedIcon />,
-    check: (u) => u?.can_manage_birthday_messages,
-  },
-  {
-    label: "خودروهای پرسنل",
-    path: "/vehicle-report",
-    icon: <DirectionsCarFilledOutlinedIcon />,
-    check: (u) => u?.can_view_vehicles_report,
-  },
-  {
-    label: "درخواست‌های مرخصی/ماموریت",
-    path: "/leave-requests/all",
-    icon: <AssignmentOutlinedIcon />,
-    ownPageCheck: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+    label: "کاربران و دسترسی",
+    path: "/access",
+    icon: <AdminPanelSettingsOutlinedIcon />,
+    groupOnly: true,
     children: [
       {
-        label: "فهرست درخواست‌ها",
-        path: "/leave-requests/all",
-        icon: <AssignmentOutlinedIcon />,
-        check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+        label: "کاربران و دسترسی‌ها",
+        path: "/access",
+        icon: <SupervisorAccountOutlinedIcon />,
+        check: (u) => u?.can_manage_users,
+      },
+      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, check: (u) => u?.can_manage_roles },
+      {
+        label: "انتصاب دسته‌جمعی نقش",
+        path: "/bulk-role-assignment",
+        icon: <GroupAddOutlinedIcon />,
+        check: (u) => u?.can_manage_users,
+      },
+      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, check: (u) => u?.can_manage_ip_allowlist },
+    ],
+  },
+  {
+    label: "سامانه",
+    path: "/sites",
+    icon: <DnsOutlinedIcon />,
+    groupOnly: true,
+    children: [
+      { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, check: (u) => u?.can_view_sites },
+      {
+        label: "همگام‌سازی دیتابیس",
+        path: "/sync",
+        icon: <SyncOutlinedIcon />,
+        check: (u) => u?.can_manage_sync || u?.can_view_sync || u?.can_run_sync,
       },
       {
-        label: "تنظیمات مرخصی/ماموریت",
-        path: "/leave-requests/settings",
+        label: "تنظیمات سامانه",
+        path: "/system-settings",
         icon: <SettingsOutlinedIcon />,
-        check: (u) => u?.can_manage_sites,
+        check: (u) => u?.can_manage_system_settings,
       },
+      {
+        label: "پشتیبان‌گیری",
+        path: "/backup",
+        icon: <CloudDownloadOutlinedIcon />,
+        check: (u) => u?.can_manage_backup || u?.can_bust_cache,
+      },
+      { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
     ],
   },
 ];
