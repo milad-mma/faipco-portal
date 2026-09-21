@@ -57,11 +57,17 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
         invisible={!summary?.pending_to_evaluate_count}
         sx={{ "& .MuiBadge-badge": { overflow: "visible" } }}
       >
-        <Box sx={{ color: "primary.main", display: "flex" }}>
+        {/* فقط دسکتاپ: آیکون و متن بزرگ‌تر - هم‌اندازه بقیه کاشی‌های داشبورد */}
+        <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>
           <SpeedOutlinedIcon />
         </Box>
       </Badge>
-      <Typography variant="caption" fontWeight={700} textAlign="center" sx={{ px: 0.5 }}>
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        textAlign="center"
+        sx={{ px: 0.5, fontSize: { xs: "0.75rem", md: "0.95rem" } }}
+      >
         ارزیابی عملکرد
       </Typography>
       {hasResult && (

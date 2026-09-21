@@ -6,7 +6,7 @@ export async function fetchMyNotices({ page = 1, pageSize = 10, noticeType, arch
   const { data } = await apiClient.get("/notices/me", {
     params: { page, page_size: pageSize, notice_type: noticeType ?? undefined, archived: archived ?? undefined },
   });
-  return data; // { items, total }
+  return data; // { items, total, unread_total }
 }
 
 export async function createNotice(payload) {
@@ -38,21 +38,21 @@ export async function unarchiveNotice(noticeId) {
 
 export async function fetchSentByMe(page = 1, pageSize = 10) {
   const { data } = await apiClient.get("/notices/sent-by-me", { params: { page, page_size: pageSize } });
-  return data; // { items, total }
+  return data; // { items, total, unread_total }
 }
 
 export async function fetchAdminReport(page = 1, pageSize = 10, siteId = null) {
   const { data } = await apiClient.get("/notices/admin-report", {
     params: { page, page_size: pageSize, site_id: siteId ?? undefined },
   });
-  return data; // { items, total }
+  return data; // { items, total, unread_total }
 }
 
 export async function fetchSiteReport(page = 1, pageSize = 10, siteId = null) {
   const { data } = await apiClient.get("/notices/site-report", {
     params: { page, page_size: pageSize, site_id: siteId ?? undefined },
   });
-  return data; // { items, total }
+  return data; // { items, total, unread_total }
 }
 
 export async function fetchNoticeStatsSummary() {

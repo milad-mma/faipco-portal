@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Avatar, Badge, Box, Card, Chip, Stack, Typography } from "@mui/material";
+import { Avatar, Badge, Box, Card, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
@@ -81,8 +81,14 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
       }}
     >
       {comingSoon && <ComingSoonChip />}
-      <Box sx={{ color: "primary.main", display: "flex" }}>{icon}</Box>
-      <Typography variant="caption" fontWeight={700} textAlign="center" sx={{ px: 0.5 }}>
+      {/* ⚠️ فقط دسکتاپ: آیکون و متن بزرگ‌تر (کاشی‌ها در دسکتاپ بلندترند) */}
+      <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        textAlign="center"
+        sx={{ px: 0.5, fontSize: { xs: "0.75rem", md: "0.95rem" } }}
+      >
         {label}
       </Typography>
     </Card>
@@ -98,6 +104,7 @@ export default function PersonalDashboardPage() {
   const [birthdays, setBirthdays] = useState(null);
   const [photoUrl, setPhotoUrl] = useState(null);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));
 
   // ⚠️ جدا شده تا بعد از ثبت/تغییر ری‌اکشن تبریک، فقط همین بخش دوباره
   // خوانده شود (نه کل داشبورد).
@@ -108,9 +115,12 @@ export default function PersonalDashboardPage() {
   }
 
   useEffect(() => {
-    fetchMyNotices({ page: 1, pageSize: 5, archived: "all" }).then((data) => {
+    // ⚠️ طبق درخواست کاربر: «اطلاعیه‌های اخیر» در دسکتاپ ۱۰ مورد، در موبایل همان ۵
+    // مورد. شمارنده «خوانده‌نشده» عدد واقعی همه اطلاعیه‌های خوانده‌نشده فرد
+    // است (unread_total از سرور)، نه فقط موارد نمایش‌داده‌شده.
+    fetchMyNotices({ page: 1, pageSize: 10, archived: "all" }).then((data) => {
       setRecentNotices(data.items);
-      setUnreadCount(data.items.filter((n) => !n.is_read).length);
+      setUnreadCount(data.unread_total ?? data.items.filter((n) => !n.is_read).length);
     });
     loadBirthdays();
     // ⚠️ شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر -
@@ -302,9 +312,11 @@ export default function PersonalDashboardPage() {
           <Stack direction="row" spacing={1} alignItems="center">
             <Box
               sx={{
-                width: 24,
+                minWidth: 24,
                 height: 24,
-                borderRadius: "50%",
+                px: 0.75,
+                boxSizing: "border-box",
+                borderRadius: 12,
                 bgcolor: "error.main",
                 color: "#fff",
                 display: "flex",
@@ -345,8 +357,9 @@ export default function PersonalDashboardPage() {
           {!user?.has_monthly_attendance && <ComingSoonChip />}
           <Box
             sx={{
-              width: 38,
-              height: 38,
+              width: { xs: 38, md: 52 },
+              height: { xs: 38, md: 52 },
+              "& svg": { fontSize: { xs: 20, md: 28 } },
               borderRadius: "50%",
               bgcolor: "secondary.main",
               color: "secondary.contrastText",
@@ -358,7 +371,7 @@ export default function PersonalDashboardPage() {
           >
             <FingerprintOutlinedIcon fontSize="small" />
           </Box>
-          <Typography fontWeight={800} fontSize={14}>
+          <Typography fontWeight={800} sx={{ fontSize: { xs: 14, md: 17 } }}>
             گزارش تردد
           </Typography>
         </Card>
@@ -390,8 +403,9 @@ export default function PersonalDashboardPage() {
           >
             <Box
               sx={{
-                width: 38,
-                height: 38,
+                width: { xs: 38, md: 52 },
+                height: { xs: 38, md: 52 },
+                "& svg": { fontSize: { xs: 20, md: 28 } },
                 borderRadius: "50%",
                 bgcolor: "primary.main",
                 color: "primary.contrastText",
@@ -403,7 +417,7 @@ export default function PersonalDashboardPage() {
               <CalendarMonthOutlinedIcon fontSize="small" />
             </Box>
           </Badge>
-          <Typography fontWeight={800} fontSize={14}>
+          <Typography fontWeight={800} sx={{ fontSize: { xs: 14, md: 17 } }}>
             درخواست مرخصی/ماموریت
           </Typography>
         </Card>
@@ -432,7 +446,7 @@ export default function PersonalDashboardPage() {
           </Typography>
         ) : (
           <Stack spacing={1}>
-            {recentNotices.map((n) => (
+            {recentNotices.slice(0, isDesktop ? 10 : 5).map((n) => (
               <Stack
                 key={n.id}
                 direction="row"

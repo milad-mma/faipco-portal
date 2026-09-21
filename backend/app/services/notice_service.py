@@ -257,7 +257,13 @@ class NoticeService:
         page_size: int = 10,
         notice_type: NoticeType | None = None,
         archived: str = "exclude",
-    ) -> tuple[list[NoticeOut], int]:
+    ) -> tuple[list[NoticeOut], int, int]:
+        """خروجی: (اطلاعیه‌های این صفحه، تعداد کل، تعداد کل خوانده‌نشده‌ها).
+
+        تعداد خوانده‌نشده‌ها روی **همه** اطلاعیه‌های مطابق فیلترها حساب
+        می‌شود، نه فقط همین صفحه - طبق درخواست کاربر، شمارنده داشبورد باید
+        عدد واقعی باشد حتی اگر فرد هزاران اطلاعیه خوانده‌نشده داشته باشد.
+        """
         now = datetime.now(timezone.utc)
 
         result = await self.db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
@@ -362,6 +368,12 @@ class NoticeService:
         count_stmt = select(func.count()).select_from(Notice).where(*base_filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
 
+        read_subquery = select(NoticeRead.notice_id).where(NoticeRead.user_id == user.id)
+        unread_stmt = (
+            select(func.count()).select_from(Notice).where(*base_filters, Notice.id.not_in(read_subquery))
+        )
+        unread_total = (await self.db.execute(unread_stmt)).scalar_one()
+
         stmt = (
             select(Notice)
             .options(selectinload(Notice.targets))
@@ -373,7 +385,7 @@ class NoticeService:
         result = await self.db.execute(stmt)
         notices = list(result.scalars().all())
         if not notices:
-            return [], total
+            return [], total, unread_total
 
         # اطلاعیه‌هایی که کاربر جاری قبلاً باز/مشاهده کرده — برای رنگ‌بندی متفاوت
         # پیام‌های خوانده‌شده در UI
@@ -451,7 +463,7 @@ class NoticeService:
             )
             for n in notices
         ]
-        return items, total
+        return items, total, unread_total
 
     # ---------- کمکی برای UI: کدام Target ها برای کاربر جاری مجازند؟ ----------
 

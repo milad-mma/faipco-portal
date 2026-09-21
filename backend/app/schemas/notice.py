@@ -116,6 +116,8 @@ class NoticePageOut(BaseModel):
 
     items: list[NoticeOut]
     total: int
+    # تعداد کل اطلاعیه‌های خوانده‌نشده کاربر با همان فیلترها (نه فقط این صفحه)
+    unread_total: int = 0
 
 
 class NoticeReaderOut(BaseModel):

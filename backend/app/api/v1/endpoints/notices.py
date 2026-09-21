@@ -123,10 +123,10 @@ async def my_notices(
     "all" هیچ فیلتری — همه (ویجت «اطلاعیه‌های اخیر» در داشبورد؛ آرشیوکردن
     نباید از آنجا محوش کند).
     """
-    items, total = await NoticeService(db).list_for_user(
+    items, total, unread_total = await NoticeService(db).list_for_user(
         current_user, page=page, page_size=page_size, notice_type=notice_type, archived=archived
     )
-    return NoticePageOut(items=items, total=total)
+    return NoticePageOut(items=items, total=total, unread_total=unread_total)
 
 
 @router.post("/{notice_id}/read", status_code=status.HTTP_204_NO_CONTENT)
