@@ -86,6 +86,9 @@ class EmployeeMappingIn(BaseModel):
     birth_date_column: str | None = None
     is_active_column: str | None = None
     is_active_inverted: bool = False
+    # اختیاری: فیلتر شعبه برای دیتابیس پرسنل مشترک بین چند سایت (مثل BranchCode)
+    branch_code_column: str | None = None
+    branch_code_value: str | None = None
     department_column: str | None = None
     # اگر جدولی مثل dbo.Sections کد واحد را به نام واقعی‌اش ترجمه می‌کند:
     department_lookup_table: str | None = None

@@ -60,7 +60,8 @@ class SyncService:
 
         try:
             columns = self._mapping_columns(mapping)
-            raw_rows = await adapter.fetch_rows(mapping.table_name, list(columns.values()))
+            raw_rows = await adapter.fetch_rows(mapping.table_name, list(dict.fromkeys(columns.values())))
+            raw_rows = self._filter_branch(mapping, raw_rows)
             department_lookup = await self._load_lookup_table(
                 adapter,
                 mapping.department_lookup_table,
@@ -201,7 +202,23 @@ class SyncService:
             columns["department_raw"] = mapping.department_column
         if mapping.position_column:
             columns["position_raw"] = mapping.position_column
+        if (mapping.branch_code_column or "").strip():
+            columns["branch_code_raw"] = mapping.branch_code_column.strip()
         return columns
+
+    @staticmethod
+    def _filter_branch(mapping: EmployeeMapping, rows: list[dict]) -> list[dict]:
+        """
+        ⚠️ طبق درخواست کاربر: اگر ستون و مقدار شعبه (مثل Employee.BranchCode)
+        برای این سایت تنظیم شده باشد، فقط پرسنل همان شعبه مال این سایت‌اند.
+        پرسنلی که قبلاً از شعبه‌های دیگر Sync شده بودند، در همین اجرا «دیگر در
+        منبع این سایت نیستند» و غیرفعال می‌شوند.
+        """
+        column = (mapping.branch_code_column or "").strip()
+        value = (mapping.branch_code_value or "").strip()
+        if not column or not value:
+            return rows
+        return [row for row in rows if row.get(column) is not None and str(row.get(column)).strip() == value]
 
     async def _load_lookup_table(
         self, adapter, table: str | None, id_column: str | None, name_column: str | None

@@ -71,6 +71,8 @@ const EMPTY_MAPPING = {
   birth_date_column: "",
   is_active_column: "",
   is_active_inverted: false,
+  branch_code_column: "",
+  branch_code_value: "",
   department_column: "",
   department_lookup_table: "",
   department_lookup_id_column: "",
@@ -365,6 +367,8 @@ export default function SiteSettingsPage() {
           birth_date_column: mapping.birth_date_column || "",
           is_active_column: mapping.is_active_column || "",
           is_active_inverted: mapping.is_active_inverted || false,
+          branch_code_column: mapping.branch_code_column || "",
+          branch_code_value: mapping.branch_code_value || "",
           department_column: mapping.department_column || "",
           department_lookup_table: mapping.department_lookup_table || "",
           department_lookup_id_column: mapping.department_lookup_id_column || "",
@@ -874,6 +878,34 @@ export default function SiteSettingsPage() {
               }
               label="منطق این ستون برعکس است (مثل IsCut: ۱=غیرفعال، ۰=فعال)"
             />
+
+            <Divider sx={{ my: 1 }} />
+
+            <Typography variant="subtitle2" fontWeight={700}>
+              شعبه (اختیاری - برای دیتابیس پرسنل مشترک بین چند سایت)
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              <TextField
+                label="ستون شعبه در جدول پرسنل"
+                value={mappingForm.branch_code_column}
+                onChange={(e) => setMappingForm({ ...mappingForm, branch_code_column: e.target.value })}
+                placeholder="BranchCode"
+                disabled={isSaving}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="کد شعبه این سایت"
+                value={mappingForm.branch_code_value}
+                onChange={(e) => setMappingForm({ ...mappingForm, branch_code_value: e.target.value })}
+                placeholder="مثلاً 1"
+                disabled={isSaving}
+                sx={{ flex: 1 }}
+              />
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              اگر هر دو پر باشند، فقط پرسنلی که مقدار این ستون برابر کد شعبه این سایت است همگام‌سازی می‌شوند؛
+              پرسنل شعبه‌های دیگر که قبلاً در این سایت بودند در همگام‌سازی بعدی غیرفعال می‌شوند.
+            </Typography>
 
             <Divider sx={{ my: 1 }} />
 

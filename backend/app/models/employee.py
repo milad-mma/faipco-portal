@@ -136,6 +136,11 @@ class EmployeeMapping(Base, TimestampMixin):
     # اگر True باشد، یعنی منطق ستون بالا برعکس است (مثل ستونی به اسم IsCut
     # که ۱=غیرفعال و ۰=فعال است، برخلاف فرض پیش‌فرض ۱=فعال و ۰=غیرفعال)
     is_active_inverted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ⚠️ اختیاری - وقتی چند سایت یک دیتابیس/جدول پرسنل مشترک دارند (مثل
+    # Employee.BranchCode در کاراوب): فقط ردیف‌هایی که مقدار این ستون برابر
+    # branch_code_value است مال این سایت‌اند و Sync می‌شوند.
+    branch_code_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    branch_code_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # اختیاری: نام ستونی در جدول پرسنل مبدأ که کد/شماره واحد سازمانی است
     # (مثلاً ستون Sec_No در جدول dbo.Employee)
