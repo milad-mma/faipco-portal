@@ -27,6 +27,7 @@ from app.models.user import User
 from app.services import kara_attendance_overlay
 from app.services.kara_schema import KaraNames
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
+from app.services.site_branch import get_site_branch_value
 from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
@@ -102,6 +103,7 @@ async def monthly_attendance_report(
             month=month,
             kara_names=kara_names,
             type_titles=type_titles,
+            branch_value=await get_site_branch_value(db, employee.site_id),
         )
     except MonthlyAttendanceError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))

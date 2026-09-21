@@ -99,6 +99,7 @@ const EMPTY_ATTENDANCE_MAPPING = {
   calendar_year_column: "",
   calendar_month_column: "",
   calendar_day_column_prefix: "",
+  calendar_branch_column: "",
   kara_schema: {},
 };
 const EMPTY_LEAVE_MAPPING = {
@@ -398,6 +399,7 @@ export default function SiteSettingsPage() {
           calendar_year_column: attendanceMapping.calendar_year_column || "",
           calendar_month_column: attendanceMapping.calendar_month_column || "",
           calendar_day_column_prefix: attendanceMapping.calendar_day_column_prefix || "",
+          calendar_branch_column: attendanceMapping.calendar_branch_column || "",
           kara_schema: attendanceMapping.kara_schema || {},
         });
         setHasExistingAttendanceMapping(true);
@@ -1257,6 +1259,15 @@ export default function SiteSettingsPage() {
               }
               disabled={isSavingAttendanceMapping}
               helperText='مثلاً "D" اگر ستون‌ها D1، D2، ... D31 نامگذاری شده‌اند'
+            />
+            <TextField
+              label="ستون شعبه تقویم (اختیاری)"
+              value={attendanceMappingForm.calendar_branch_column}
+              onChange={(e) =>
+                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_branch_column: e.target.value })
+              }
+              disabled={isSavingAttendanceMapping}
+              helperText='برای تقویم مشترک بین چند شعبه (کاراوب: "BranchCode") - مقدارش «کد شعبه این سایت» در نگاشت پرسنل است'
             />
 
             <KaraSchemaAccordion

@@ -234,7 +234,9 @@ def _normalize_enter_exit_sessions(sessions: list[dict]) -> list[dict]:
     return transits
 
 
-def _fetch_holidays_sync(conn: SiteConnection, mapping: AttendanceMapping, year: int, month: int) -> set[int]:
+def _fetch_holidays_sync(
+    conn: SiteConnection, mapping: AttendanceMapping, year: int, month: int, branch_value: str | None = None
+) -> set[int]:
     """
     فهرست شماره روزهای تعطیل این ماه شمسی را از جدول تقویم برمی‌گرداند —
     یک ستون غیرصفر (طبق داده واقعی: 500 یا 501) یعنی آن روز تعطیل است؛
@@ -251,15 +253,23 @@ def _fetch_holidays_sync(conn: SiteConnection, mapping: AttendanceMapping, year:
 
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     day_columns_sql = ", ".join(q(f"{mapping.calendar_day_column_prefix}{i}") for i in range(1, 32))
+    # ⚠️ تقویم مشترک بین چند شعبه: فقط ردیف شعبه همین سایت (وگرنه ردیف یک شعبه دیگر برمی‌گشت)
+    params = {"year": year, "month": month}
+    branch_sql = ""
+    branch_column = (getattr(mapping, "calendar_branch_column", None) or "").strip()
+    if branch_column and branch_value:
+        branch_sql = f"AND {q(branch_column)} = %(branch)s"
+        params["branch"] = int(branch_value) if str(branch_value).isdigit() else branch_value
     connection = _connect(conn)
     try:
         query = f"""
             SELECT {day_columns_sql}
             FROM {q(mapping.calendar_table_name)}
             WHERE {q(mapping.calendar_year_column)} = %(year)s AND {q(mapping.calendar_month_column)} = %(month)s
+            {branch_sql}
         """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
         with _dict_cursor(connection, conn.db_type) as cur:
-            cur.execute(query, {"year": year, "month": month})
+            cur.execute(query, params)
             row = cur.fetchone()
     finally:
         connection.close()
@@ -284,6 +294,7 @@ async def get_monthly_attendance(
     month: int,
     kara_names=None,
     type_titles: dict[int, str] | None = None,
+    branch_value: str | None = None,
 ) -> dict:
     """
     گزارش تردد ماهانه یک پرسنل مشخص - داده خام، دقیقاً همان‌طور که در
@@ -317,7 +328,7 @@ async def get_monthly_attendance(
     # ⚠️ شکست در خواندن تقویم/تعطیلات نباید کل گزارش تردد را خراب کند —
     # این یک قابلیت مکمل/اختیاری است، نه بخش اصلی گزارش.
     try:
-        holidays = await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month)
+        holidays = await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month, branch_value)
     except Exception:  # noqa: BLE001
         logger.exception("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id)
         holidays = set()

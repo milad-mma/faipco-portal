@@ -144,6 +144,9 @@ class AttendanceMapping(Base, TimestampMixin):
     calendar_month_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # پیشوند ستون‌های روز — مثلاً "D" یعنی ستون‌ها D1، D2، ...، D31 هستند
     calendar_day_column_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # ⚠️ اختیاری - جدول تقویم مشترک بین چند شعبه (کاراوب: Calen یکتا روی
+    # BranchCode+Year+Month): ستون شعبه؛ مقدارش «کد شعبه این سایت» از نگاشت پرسنل است
+    calendar_branch_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # ⚠️ ستون‌های تکمیلی جدول تردد، لاگ تغییر تردد، کارکرد روزانه، شیفت‌ها و
     # تقویم شیفت گروهی (app/services/kara_schema.py - ATTENDANCE_SCHEMA_DEFAULTS)

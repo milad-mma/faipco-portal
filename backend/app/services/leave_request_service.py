@@ -46,6 +46,7 @@ from app.models.leave_request import (
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 from app.models.user import User
 from app.services import kara_attendance_writeback as kara_wb
+from app.services import site_branch
 from app.services.kara_schema import KaraNames
 from app.services.push_service import PushService
 
@@ -113,9 +114,20 @@ def _dict_cursor(connection, db_type: DbType):
     return connection.cursor()
 
 
+def _effective_branch(mapping: LeaveRequestMapping) -> int | None:
+    """
+    کد شعبه مؤثر: مقدار خودِ نگاشت مرخصی/ماموریت، و اگر خالی است «کد شعبه این
+    سایت» از نگاشت پرسنل (در _get_mapping_and_connection روی نمونه گذاشته می‌شود).
+    """
+    if mapping.branch_code_value is not None:
+        return mapping.branch_code_value
+    return getattr(mapping, "_site_branch", None)
+
+
 def _branch_filter_sql(q, mapping: LeaveRequestMapping) -> tuple[str, dict]:
-    if mapping.branch_code_column and mapping.branch_code_value is not None:
-        return f" AND {q(mapping.branch_code_column)} = %(branch_code)s", {"branch_code": mapping.branch_code_value}
+    branch = _effective_branch(mapping)
+    if mapping.branch_code_column and branch is not None:
+        return f" AND {q(mapping.branch_code_column)} = %(branch_code)s", {"branch_code": branch}
     return "", {}
 
 
@@ -425,8 +437,8 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
         mapping.persian_start_date_column: values["persian_start_date"],
         mapping.application_id_column: mapping.application_id_value,
     }
-    if mapping.branch_code_column and mapping.branch_code_value is not None:
-        column_map[mapping.branch_code_column] = mapping.branch_code_value
+    if mapping.branch_code_column and _effective_branch(mapping) is not None:
+        column_map[mapping.branch_code_column] = _effective_branch(mapping)
     if values.get("source") is not None:
         column_map[mapping.source_column] = values["source"]
     if values.get("destination") is not None:
@@ -632,6 +644,10 @@ class LeaveRequestService:
         site_connection = conn_result.scalar_one_or_none()
         if site_connection is None or not site_connection.is_active:
             raise LeaveRequestError("اتصال دیتابیس این سایت تنظیم یا فعال نیست")
+        # ⚠️ چند سایت روی یک کاراوب: اگر نگاشت مرخصی مقدار شعبه ندارد، «کد شعبه
+        # این سایت» از نگاشت پرسنل - تا هر سایت فقط درخواست‌های شعبه خودش را ببیند
+        # و درخواست/کارکردش با شعبه درست ثبت شود. (ویژگی غیرنگاشت‌شده - ذخیره نمی‌شود)
+        mapping._site_branch = site_branch.as_int(await site_branch.get_site_branch_value(self.db, site_id))
         return mapping, site_connection
 
     async def _get_kara_names(self, site_id: int, mapping: LeaveRequestMapping, site_connection) -> KaraNames | None:
@@ -1481,7 +1497,7 @@ class LeaveRequestService:
                     request_row,
                     approver_emp_no,
                     mapping.application_id_value,
-                    mapping.branch_code_value or 1,
+                    _effective_branch(mapping) or 1,
                 )
             except Exception as e:
                 logger.exception("اعمال تأیید درخواست %s در کارکرد کاراوب شکست خورد", request_id)
@@ -1674,7 +1690,7 @@ class LeaveRequestService:
                     new_row,
                     approver,
                     mapping.application_id_value,
-                    mapping.branch_code_value or 1,
+                    _effective_branch(mapping) or 1,
                 )
             elif new_row:
                 await asyncio.to_thread(_run_kara_writeback_sync, site_connection, kara_names, kara_wb.clear_accept_code, request_id)

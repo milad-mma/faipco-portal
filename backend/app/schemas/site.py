@@ -144,6 +144,8 @@ class AttendanceMappingIn(BaseModel):
     calendar_year_column: str | None = None
     calendar_month_column: str | None = None
     calendar_day_column_prefix: str | None = None
+    # ستون شعبه تقویم (مثل BranchCode) - مقدار از «کد شعبه این سایت» در نگاشت پرسنل
+    calendar_branch_column: str | None = None
 
     # ستون‌های تکمیلی تردد، لاگ تردد، کارکرد روزانه و شیفت‌ها (کلید «گروه.نقش»)
     # - هر بخش فقط اگر نگاشت شده باشد فعال است
