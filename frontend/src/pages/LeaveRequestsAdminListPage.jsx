@@ -791,8 +791,9 @@ export default function LeaveRequestsAdminListPage() {
             فیلتر بر اساس بازه تاریخ مرخصی/ماموریت
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
-            <JalaliDateTimePicker value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
-            <JalaliDateTimePicker value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
+            {/* ⚠️ طبق درخواست کاربر: پیش‌فرض خالی (قبلاً خودکار روی امروز فیلتر می‌شد) */}
+            <JalaliDateTimePicker clearable value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
+            <JalaliDateTimePicker clearable value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
             {(dateFrom || dateTo) && (
               <Button
                 size="small"
