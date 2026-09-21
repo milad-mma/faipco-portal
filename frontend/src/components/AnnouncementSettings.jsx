@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, CircularProgress, FormControlLabel, Stack, Switch, TextField, Typography } from "@mui/material";
 import { fetchAnnouncementSettings, updateAnnouncementSettings } from "../api/announcement";
+import LinkifiedText from "./LinkifiedText";
 
 /**
  * ویرایشگر «اعلان تغییرات پرتال» برای ادمین.
@@ -105,8 +106,19 @@ export default function AnnouncementSettings() {
           multiline
           minRows={6}
           fullWidth
-          helperText="شکست خطوط حفظ می‌شود. برای فهرست‌کردن تغییرات، هر مورد را در یک خط بنویسید."
+          helperText="شکست خطوط حفظ می‌شود. برای لینک: [متن لینک](https://example.com) یا مسیر داخلی پرتال مثل [درخواست مرخصی](/leave-requests)؛ آدرس خام https://... هم خودکار لینک می‌شود."
+          inputProps={{ dir: "auto" }}
         />
+        {/[\[]|https?:\/\//.test(form.body) && (
+          <Box sx={{ p: 1.5, border: "1px dashed", borderColor: "divider", borderRadius: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              پیش‌نمایش
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 2 }}>
+              <LinkifiedText text={form.body} />
+            </Typography>
+          </Box>
+        )}
         <Box>
           <Button variant="contained" onClick={handleSave} disabled={isSaving}>
             {isSaving ? "در حال ذخیره..." : "ذخیره و انتشار"}

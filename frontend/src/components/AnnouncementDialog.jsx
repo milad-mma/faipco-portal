@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import { dismissAnnouncement, fetchCurrentAnnouncement } from "../api/announcement";
+import LinkifiedText from "./LinkifiedText";
 
 /**
  * دیالوگ «تغییرات اخیر پرتال» — هنگام ورود کاربر نمایش داده می‌شود.
@@ -65,10 +66,11 @@ export default function AnnouncementDialog() {
       </DialogTitle>
       <DialogContent dividers>
         {/* ⚠️ متن ادمین به‌صورت متن ساده رندر می‌شود (نه HTML) تا امکان
-            تزریق اسکریپت وجود نداشته باشد؛ whiteSpace شکست خطوط را حفظ
-            می‌کند. */}
+            تزریق اسکریپت وجود نداشته باشد؛ فقط لینک‌ها ([متن](آدرس) یا
+            آدرس خام) به المان لینک تبدیل می‌شوند. whiteSpace شکست خطوط را
+            حفظ می‌کند. کلیک روی لینک داخلی پرتال دیالوگ را می‌بندد. */}
         <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 2 }}>
-          {announcement.body}
+          <LinkifiedText text={announcement.body} onInternalClick={() => setOpen(false)} />
         </Typography>
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between", px: 2.5, pb: 2 }}>
