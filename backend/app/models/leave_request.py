@@ -105,9 +105,11 @@ class LeaveRequestMapping(Base, TimestampMixin):
 
     # ⚠️ طبق تأیید صریح کاربر: Card_No واقعاً از جدول Cards می‌آید (نه یک
     # مقدار ثابت ۰ که قبلاً به‌عنوان جایگزین موقت نوشته می‌شد).
-    card_lookup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Cards")
+    # ⚠️ WF_Cards.Title = عنوان سفارشی هر شعبه (همان چیزی که کاراوب نشان می‌دهد)؛
+    # Cards.DefaultTitle فقط عنوان پیش‌فرض سراسری است
+    card_lookup_table_name: Mapped[str | None] = mapped_column(String(128), nullable=True, default="WF_Cards")
     card_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Card_No")
-    card_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="DefaultTitle")
+    card_lookup_desc_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="Title")
     # ⚠️ کشف حیاتی (تأییدشده با بررسی مستقیم دیتابیس Kara): ActionId هیچ‌وقت
     # مستقل انتخاب نمی‌شود - همیشه دقیقاً برابر Cards.WF_ActionID همان
     # کارتی است که Card_No به آن اشاره می‌کند (تأییدشده با تطبیق کامل هر

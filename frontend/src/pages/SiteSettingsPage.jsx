@@ -102,6 +102,21 @@ const EMPTY_ATTENDANCE_MAPPING = {
   calendar_branch_column: "",
   kara_schema: {},
 };
+// نام‌های واقعی کاراوب برای فیلدهای اصلی تب «نگاشت تردد» - فقط برای دکمه
+// «پر کردن همه فیلدهای خالی با نام‌های کاراوب» (تا ذخیره نشود اثری ندارد)
+const KARA_ATTENDANCE_MAIN_DEFAULTS = {
+  table_name: "DataFile",
+  personnel_code_column: "Emp_No",
+  mapping_mode: "single_column",
+  date_column: "Date",
+  time_column: "Time",
+  calendar_table_name: "Calen",
+  calendar_year_column: "Year",
+  calendar_month_column: "Month",
+  calendar_day_column_prefix: "D",
+  calendar_branch_column: "BranchCode",
+};
+
 const EMPTY_LEAVE_MAPPING = {
   table_name: "WF_Requests",
   request_id_column: "RequestId",
@@ -136,9 +151,9 @@ const EMPTY_LEAVE_MAPPING = {
   operation_lookup_table_name: "WF_OperationTypes",
   operation_lookup_id_column: "OperationId",
   operation_lookup_desc_column: "Name",
-  card_lookup_table_name: "Cards",
+  card_lookup_table_name: "WF_Cards",
   card_lookup_id_column: "Card_No",
-  card_lookup_desc_column: "DefaultTitle",
+  card_lookup_desc_column: "Title",
   employee_table_name: "Employee",
   employee_emp_no_column: "Emp_No",
   employee_sec_no_column: "Sec_No",
@@ -241,6 +256,8 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {groupKeys.map((key) => {
                 const role = key.split(".")[1];
+                // برچسب: پیش‌فرض کاراوب؛ برای کلیدهای بدون پیش‌فرض (اختیاری، مثل
+                // cards.branch_code) از نام کلید تا فیلد بی‌نام نماند
                 const label =
                   role === "table"
                     ? "نام جدول"
@@ -248,7 +265,11 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
                       ? "پیشوند ستون روزها"
                       : role === "card_prefix"
                         ? "پیشوند ستون ترددها (۱ تا ۲۴)"
-                        : `ستون ${defaults[key]}`;
+                        : key === "cards.branch_code"
+                          ? "ستون شعبه (فقط WF_Cards: BranchCode)"
+                          : defaults[key]
+                            ? `ستون ${defaults[key]}`
+                            : `ستون ${role} (اختیاری)`;
                 return (
                   <TextField
                     key={key}
@@ -305,6 +326,26 @@ export default function SiteSettingsPage() {
   const [leaveMappingForm, setLeaveMappingForm] = useState(EMPTY_LEAVE_MAPPING);
   // نام‌های پیش‌فرض کاراوب - فقط برای دکمه «پر کردن با نام‌های کاراوب»
   const [karaDefaults, setKaraDefaults] = useState(null);
+
+  // ⚠️ طبق درخواست کاربر: یک دکمه که «همه» فیلدهای خالی تب (فیلدهای اصلی +
+  // ستون‌های تکمیلی) را با نام‌های واقعی کاراوب پر کند - نه فقط آکاردئون.
+  function fillEmpty(form, mainDefaults, schemaDefaults) {
+    const next = { ...form };
+    for (const [key, value] of Object.entries(mainDefaults)) {
+      if (next[key] === "" || next[key] === null || next[key] === undefined) next[key] = value;
+    }
+    const schema = { ...(next.kara_schema || {}) };
+    for (const [key, value] of Object.entries(schemaDefaults || {})) if (!schema[key] && value) schema[key] = value;
+    next.kara_schema = schema;
+    return next;
+  }
+  function fillAttendanceWithKara() {
+    setAttendanceMappingForm(fillEmpty(attendanceMappingForm, KARA_ATTENDANCE_MAIN_DEFAULTS, karaDefaults?.attendance));
+  }
+  function fillLeaveWithKara() {
+    const { kara_schema: _ignored, branch_code_value: _bv, ...mainDefaults } = EMPTY_LEAVE_MAPPING;
+    setLeaveMappingForm(fillEmpty(leaveMappingForm, mainDefaults, karaDefaults?.leave));
+  }
   useEffect(() => {
     fetchKaraSchemaDefaults()
       .then(setKaraDefaults)
@@ -1119,6 +1160,11 @@ export default function SiteSettingsPage() {
               دیتابیس») خوانده می‌شود. چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی نام جدول/ستون‌های
               متفاوتی دارند، این‌ها را دقیقاً مطابق دیتابیس واقعی این سایت وارد کنید.
             </Alert>
+            <Box>
+              <Button size="small" variant="outlined" onClick={fillAttendanceWithKara} disabled={isSavingAttendanceMapping}>
+                پر کردن همه فیلدهای خالی با نام‌های کاراوب
+              </Button>
+            </Box>
 
             <TextField
               label="نام جدول"
@@ -1326,6 +1372,11 @@ export default function SiteSettingsPage() {
               پیش‌فرض دقیقاً مطابق نمونه‌ی بررسی‌شده است؛ فقط اگر نصب شما نام‌گذاری متفاوتی دارد تغییر
               دهید.
             </Typography>
+            <Box>
+              <Button size="small" variant="outlined" onClick={fillLeaveWithKara} disabled={isSavingLeaveMapping}>
+                پر کردن همه فیلدهای خالی با نام‌های کاراوب
+              </Button>
+            </Box>
 
             <Divider textAlign="right">اتصال پایه</Divider>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
@@ -1476,12 +1527,12 @@ export default function SiteSettingsPage() {
               ))}
             </Stack>
 
-            <Divider textAlign="right">جدول مرجع Cards (اختیاری - Card_No واقعی)</Divider>
+            <Divider textAlign="right">جدول کارت‌ها (WF_Cards - عنوان سفارشی هر شعبه، مثل خودِ کاراوب)</Divider>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
-                ["card_lookup_table_name", "نام جدول مرجع (Cards)"],
+                ["card_lookup_table_name", "نام جدول مرجع (WF_Cards)"],
                 ["card_lookup_id_column", "ستون Card_No در جدول مرجع"],
-                ["card_lookup_desc_column", "ستون عنوان فارسی (DefaultTitle)"],
+                ["card_lookup_desc_column", "ستون عنوان فارسی (Title)"],
               ].map(([key, label]) => (
                 <TextField
                   key={key}
