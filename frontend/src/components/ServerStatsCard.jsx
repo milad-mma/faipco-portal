@@ -63,7 +63,43 @@ function findPeak(rawData, metricKey) {
   return peak;
 }
 
-function MetricSummary({ icon, title, currentLabel, currentValue, currentPercent, color, peakValue, peakLabel }) {
+/**
+ * روند مصرف دیسک از نمونه‌های ذخیره‌شده (حداکثر ۷ روز): افزایش در این بازه و
+ * تخمین زمان پر شدن با همان نرخ. اگر بازه کمتر از یک روز باشد یا مصرف رشد
+ * محسوسی نداشته باشد، تخمینی داده نمی‌شود.
+ */
+function diskTrend(rawData) {
+  if (!rawData || rawData.length < 2) return null;
+  const first = rawData[0];
+  const last = rawData[rawData.length - 1];
+  const days = (new Date(last.recorded_at) - new Date(first.recorded_at)) / 86400000;
+  if (days < 1) return null;
+  const growth = last.disk_used_gb - first.disk_used_gb;
+  const spanLabel = `${Math.round(days).toLocaleString("fa-IR")} روز اخیر`;
+  if (growth < 0.1) return `بدون افزایش محسوس در ${spanLabel}`;
+  const perDay = growth / days;
+  const free = last.disk_total_gb - last.disk_used_gb;
+  const daysLeft = free / perDay;
+  const leftLabel =
+    daysLeft > 730
+      ? "بیش از ۲ سال"
+      : daysLeft > 60
+        ? `حدود ${Math.round(daysLeft / 30).toLocaleString("fa-IR")} ماه`
+        : `حدود ${Math.round(daysLeft).toLocaleString("fa-IR")} روز`;
+  return `${growth.toFixed(1)} گیگابایت افزایش در ${spanLabel} — با این روند ${leftLabel} تا پر شدن`;
+}
+
+function MetricSummary({
+  icon,
+  title,
+  currentLabel,
+  currentValue,
+  currentPercent,
+  color,
+  peakValue,
+  peakLabel,
+  footnote,
+}) {
   return (
     <Card variant="outlined" sx={{ p: 2.5, borderRadius: 3, height: "100%" }}>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -84,8 +120,13 @@ function MetricSummary({ icon, title, currentLabel, currentValue, currentPercent
         sx={{ height: 6, borderRadius: 3, mb: 1.5, backgroundColor: `${color}22`, "& .MuiLinearProgress-bar": { backgroundColor: color } }}
       />
       {peakValue && (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" display="block">
           بیشترین مصرف (۷ روز اخیر): <strong>{peakValue}</strong> — {peakLabel}
+        </Typography>
+      )}
+      {footnote && (
+        <Typography variant="caption" color="text.secondary" display="block">
+          {footnote}
         </Typography>
       )}
     </Card>
@@ -174,8 +215,7 @@ export default function ServerStatsCard() {
                 currentLabel={`${latest.disk_percent}٪ پر شده — ${(latest.disk_total_gb - latest.disk_used_gb).toFixed(0)} گیگابایت آزاد`}
                 currentPercent={latest.disk_percent}
                 color="#C97A2B"
-                peakValue={peaks?.disk ? `${peaks.disk.disk_percent}٪` : null}
-                peakLabel={peaks?.disk ? formatDateTimeFa(peaks.disk.recorded_at) : ""}
+                footnote={diskTrend(rawData)}
               />
             </Grid>
           </Grid>
@@ -187,26 +227,22 @@ export default function ServerStatsCard() {
             sx={{ mb: 2 }}
           />
 
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                روند CPU (٪)
-              </Typography>
-              <UsageLineChart data={chartFor("cpu_percent")} color="#3A6EA5" />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                روند RAM (٪)
-              </Typography>
-              <UsageLineChart data={chartFor("ram_percent")} color="#2F855A" />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                روند دیسک (٪)
-              </Typography>
-              <UsageLineChart data={chartFor("disk_percent")} color="#C97A2B" />
-            </Grid>
-          </Grid>
+          {/* ⚠️ CPU و RAM هر دو درصدند - یک نمودار با محور ثابت ۰ تا ۱۰۰٪ و خط هشدار
+              ۸۰٪ (قبلاً سقف محور بیشترین مقدار بود و مصرف ۵٪ هم تا بالای کادر
+              می‌رفت). دیسک نمودار ندارد - در چند روز تقریباً خط صاف است؛ روند و
+              تخمین پر شدنش در کارت خلاصه دیسک نمایش داده می‌شود. */}
+          <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+            روند مصرف پردازنده و حافظه (میانگین {timeTab === "24h" ? "هر ساعت" : "هر روز"})
+          </Typography>
+          <UsageLineChart
+            series={[
+              { name: "پردازنده (CPU)", color: "#3A6EA5", data: chartFor("cpu_percent") || [] },
+              { name: "حافظه (RAM)", color: "#2F855A", data: chartFor("ram_percent") || [] },
+            ]}
+            yMax={100}
+            unit="٪"
+            threshold={{ value: 80, label: "۸۰٪" }}
+          />
         </>
       )}
     </Card>

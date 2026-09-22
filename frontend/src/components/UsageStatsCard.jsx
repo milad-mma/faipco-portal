@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CircularProgress, Stack, Tab, Tabs, Typography } from "@mui/material";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import { fetchUsageStats } from "../api/system";
-import UsageLineChart from "./UsageLineChart";
+import UsageBarChart from "./UsageBarChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import PillTabs from "./PillTabs";
 
@@ -108,6 +108,25 @@ export default function UsageStatsCard() {
     }
   }, [rawData, activeTab]);
 
+  // ⚠️ آخرین میله بازه جاری و ناتمام است (امروز / هفته جاری / ماه جاری) -
+  // کم‌رنگ نمایش داده می‌شود تا کمتر بودنش با افت واقعی اشتباه نشود.
+  // «بر اساس ساعت روز» تجمیع همه روزهاست و بازه ناتمام ندارد.
+  const partialLast = useMemo(() => {
+    if (!rawData || rawData.length === 0 || activeTab === "hourly") return false;
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const lastDate = rawData.reduce((max, row) => (row.date && row.date > max ? row.date : max), "");
+    if (!lastDate) return false;
+    if (activeTab === "daily") return lastDate === todayIso;
+    if (activeTab === "weekly") return toJalaliWeekKey(lastDate).key === toJalaliWeekKey(todayIso).key;
+    if (activeTab === "monthly") {
+      const a = gregorianToJalali(new Date(`${lastDate}T00:00:00`));
+      const b = gregorianToJalali(now);
+      return a.jy === b.jy && a.jm === b.jm;
+    }
+    return false;
+  }, [rawData, activeTab]);
+
   const busiestHour = useMemo(() => {
     if (!rawData || rawData.length === 0) return null;
     const buckets = aggregateByHour(rawData);
@@ -145,7 +164,12 @@ export default function UsageStatsCard() {
           <CircularProgress size={28} />
         </Stack>
       ) : (
-        <UsageLineChart data={chartData} emptyMessage="هنوز داده‌ای برای این بازه ثبت نشده" />
+        <UsageBarChart
+          data={chartData}
+          partialLast={partialLast}
+          unit=" درخواست"
+          emptyMessage="هنوز داده‌ای برای این بازه ثبت نشده"
+        />
       )}
     </Card>
   );
