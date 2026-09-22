@@ -56,9 +56,10 @@ export DATABASE_URL="$TEST_URL"
 log "alembic upgrade head (از صفر)"
 alembic upgrade head >/tmp/migtest_up.log 2>&1 || { cat /tmp/migtest_up.log; fail "upgrade head شکست خورد"; }
 
-CURRENT="$(alembic current 2>/dev/null | grep -oE '^[0-9a-f]+' | head -1 || true)"
-HEAD="$(alembic heads 2>/dev/null | grep -oE '^[0-9a-f]+' | head -1 || true)"
-[ -n "$CURRENT" ] && [ "$CURRENT" = "$HEAD" ] || fail "current=$CURRENT ولی head=$HEAD"
+# alembic current وقتی روی آخرین Migration باشد، خودش «(head)» را کنار شماره چاپ می‌کند
+CURRENT_LINE="$(alembic current 2>&1 | grep -E '\(head\)' | head -1 || true)"
+[ -n "$CURRENT_LINE" ] || { alembic current 2>&1 | tail -3; fail "دیتابیس موقت روی head نیست"; }
+HEAD="$(echo "$CURRENT_LINE" | grep -oE '[0-9a-f]+' | head -1)"
 log "✓ همه Migration ها اجرا شدند (head = $HEAD)"
 
 log "downgrade -1 و upgrade head (برگشت‌پذیری آخرین Migration)"
