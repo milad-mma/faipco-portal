@@ -353,6 +353,19 @@ EOF
   log ".env file created"
 }
 
+preflight_checks() {
+  # Stage-0 safety net for restructuring work: verifies that the set of API
+  # routes matches the committed snapshot BEFORE touching the running service.
+  # Warning-only — an update must never be blocked by a check script itself.
+  if [ -f "$INSTALL_DIR/backend/tests/api_snapshot.py" ]; then
+    if (cd "$INSTALL_DIR/backend" && python3 tests/api_snapshot.py); then
+      log "API route snapshot check passed"
+    else
+      warn "API route snapshot check reported differences (see above). Continuing — review before relying on this build."
+    fi
+  fi
+}
+
 run_migrations() {
   log "Running Alembic migrations (additive — never drops existing data)..."
   cd "$INSTALL_DIR/backend"
@@ -750,7 +763,10 @@ main() {
   stage "Step 4 - Generating .env file"
   generate_env
 
-  stage "Step 5 - Database migrations"
+  stage "Step 5 - Pre-flight checks"
+  preflight_checks
+
+  stage "Step 5b - Database migrations"
   run_migrations
 
   stage "Step 6 - Building frontend"

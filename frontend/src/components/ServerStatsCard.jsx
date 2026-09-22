@@ -69,14 +69,15 @@ function findPeak(rawData, metricKey) {
  * محسوسی نداشته باشد، تخمینی داده نمی‌شود.
  */
 function diskTrend(rawData) {
-  if (!rawData || rawData.length < 2) return null;
+  const notEnough = "روند دیسک: برای محاسبه، حداقل یک روز داده لازم است";
+  if (!rawData || rawData.length < 2) return notEnough;
   const first = rawData[0];
   const last = rawData[rawData.length - 1];
   const days = (new Date(last.recorded_at) - new Date(first.recorded_at)) / 86400000;
-  if (days < 1) return null;
+  if (days < 1) return notEnough;
   const growth = last.disk_used_gb - first.disk_used_gb;
   const spanLabel = `${Math.round(days).toLocaleString("fa-IR")} روز اخیر`;
-  if (growth < 0.1) return `بدون افزایش محسوس در ${spanLabel}`;
+  if (growth < 0.1) return `روند دیسک: بدون افزایش محسوس در ${spanLabel}`;
   const perDay = growth / days;
   const free = last.disk_total_gb - last.disk_used_gb;
   const daysLeft = free / perDay;
@@ -86,7 +87,7 @@ function diskTrend(rawData) {
       : daysLeft > 60
         ? `حدود ${Math.round(daysLeft / 30).toLocaleString("fa-IR")} ماه`
         : `حدود ${Math.round(daysLeft).toLocaleString("fa-IR")} روز`;
-  return `${growth.toFixed(1)} گیگابایت افزایش در ${spanLabel} — با این روند ${leftLabel} تا پر شدن`;
+  return `روند دیسک: ${growth.toFixed(1)} گیگابایت افزایش در ${spanLabel} — با این روند ${leftLabel} تا پر شدن`;
 }
 
 function MetricSummary({
