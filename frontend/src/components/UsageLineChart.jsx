@@ -90,11 +90,16 @@ export default function UsageLineChart({ data, color = "#16324F", emptyMessage =
 
       {hoverIndex !== null && (
         <Box
+          // ⚠️ left/transform در style (نه sx): stylis-plugin-rtl پروژه، left
+          // داخل sx را به right برمی‌گرداند و برچسب‌ها نسبت به نقاط SVG (که
+          // Mirror نمی‌شود) قرینه می‌شدند. style خطی از stylis عبور نمی‌کند.
+          style={{
+            left: `${(points[hoverIndex].x / width) * 100}%`,
+            transform: "translate(-50%, -100%)",
+          }}
           sx={{
             position: "absolute",
-            left: `${(points[hoverIndex].x / width) * 100}%`,
             top: 0,
-            transform: "translate(-50%, -100%)",
             backgroundColor: "background.paper",
             border: "1px solid",
             borderColor: "divider",
@@ -120,10 +125,10 @@ export default function UsageLineChart({ data, color = "#16324F", emptyMessage =
               key={i}
               variant="caption"
               color="text.secondary"
+              // ⚠️ همان دلیل بالا: موقعیت افقی در style تا با نقطه همان داده همراستا بماند
+              style={{ left: `${(p.x / width) * 100}%`, transform: "translateX(-50%)" }}
               sx={{
                 position: "absolute",
-                left: `${(p.x / width) * 100}%`,
-                transform: "translateX(-50%)",
                 fontSize: 10,
                 whiteSpace: "nowrap",
               }}
