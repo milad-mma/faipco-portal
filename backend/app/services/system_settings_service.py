@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.system_setting import SystemSetting
 from app.services import branding_surfaces
+from app.services.index_html_branding import write_index_html_branding
 
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
 LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"  # ISO-format UTC — برای تشخیص «الان وقتشه یا نه» مستقل از هر Worker
@@ -354,7 +355,13 @@ class SystemSettingsService:
                 await self._set_raw(key, value)
             else:
                 await self._delete_raw(key)
-        return await self.get_branding()
+        branding = await self.get_branding()
+        # ⚠️ طبق درخواست کاربر: عنوان داخل خودِ فایل dist/index.html هم نوشته شود
+        # (Service Worker نسخه استاتیک را پیش‌کش می‌کند و کاربر یک لحظه عنوان
+        # زمان Build را می‌دید).
+        if "browser_title" in fields or "manifest_short_name" in fields:
+            write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
+        return branding
 
     async def get_logo(self, which: str) -> tuple[bytes, str] | None:
         data_key, content_type_key = self._LOGO_FIELDS[which]

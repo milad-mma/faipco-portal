@@ -276,3 +276,7 @@ Build-شده بود — مرورگر آن را قبل از اجرای کامل R
 - تنظیم: `PUT /system/branding/pwa-icon` (`{values: {icon_scale, maskable_scale, background, any_background}}`)؛ UI: کارت «آیکون نصب در هر پلتفرم» با پیش‌نمایش اندروید (دایره)، iOS (گوشه‌گرد) و ویندوز.
 - Manifest آدرس این نسخه‌ها را با پارامتر `?v=<hash تنظیمات>` می‌دهد تا کش عوض شود. `BrandingContext` لینک `apple-touch-icon` را به `apple-180` و favicon را (اگر جدا آپلود نشده) به `favicon-32/16` تغییر می‌دهد.
 - SVG رَستر نمی‌شود → فایل خام برمی‌گردد (برای PWA، PNG آپلود کنید). حاشیه شفاف دور لوگو قبل از محاسبه مقیاس حذف می‌شود.
+
+## عنوان داخل خودِ index.html
+
+سرو پویای `/index.html` (جایگزینی `<title>` در Backend) کافی نبود: Service Worker (Workbox) فایل `/index.html` را پیش‌کش می‌کند و برای اپ نصب‌شده/ناوبری‌های بعدی همان نسخه استاتیک را می‌دهد، پس کاربر یک لحظه عنوان زمان Build را می‌دید. حالا `index_html_branding.py` عنوان تب و `apple-mobile-web-app-title` را **داخل خودِ فایل `frontend/dist/index.html`** می‌نویسد: هنگام ذخیره برندینگ از پنل، و در شروع سرویس (`main.py` → `sync_index_html_branding`، چون آپدیت فرانت را از نو Build می‌کند). فایل باید برای `www-data` قابل نوشتن باشد (install.sh در پایان `chown -R www-data` می‌کند)؛ در غیر این صورت فقط هشدار لاگ می‌شود.

@@ -3,6 +3,7 @@
 اجرا: uvicorn app.main:app --reload
 """
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -16,8 +17,25 @@ from app.services.usage_stats_service import record_usage
 settings = get_settings()
 
 
+async def sync_index_html_branding() -> None:
+    """هر بار سرویس بالا می‌آید (از جمله بعد از Build مجدد فرانت در آپدیت)، عنوان
+    تنظیم‌شده در پنل داخل dist/index.html نوشته می‌شود - وگرنه تا ذخیره بعدی
+    برندینگ، فایل تازه‌ساخته‌شده عنوان ثابت زمان Build را داشت."""
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.services.index_html_branding import write_index_html_branding
+        from app.services.system_settings_service import SystemSettingsService
+
+        async with AsyncSessionLocal() as db:
+            branding = await SystemSettingsService(db).get_branding()
+        write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
+    except Exception:  # noqa: BLE001 - نباید مانع بالا آمدن سرویس شود
+        logging.getLogger(__name__).exception("همگام‌سازی عنوان index.html در شروع ناموفق بود")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await sync_index_html_branding()
     await start_scheduler()
     yield
     stop_scheduler()
