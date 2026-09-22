@@ -38,6 +38,7 @@ import { fetchAppVersion } from "../api/system";
 import { modernLightTheme } from "../theme";
 import { LOGIN_BACKGROUND_URL } from "../api/system";
 import { useBranding } from "../context/BrandingContext";
+import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "../components/BrandLogo";
 
 const PROMO_FEATURES = [
   { icon: <EventNoteOutlinedIcon fontSize="small" />, label: "درخواست مرخصی" },
@@ -49,7 +50,10 @@ const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
 
 export default function LoginPage() {
   const { login, user } = useAuth();
-  const { appLogoSmallUrl, manifestShortName, loginTitle, loginSubtitle } = useBranding();
+  const { loginTitle, loginSubtitle, surfaces } = useBranding();
+  const cfg = surfaces.login;
+  const headerTitle = loginTitle;
+  const headerSubtitle = loginSubtitle;
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
@@ -373,7 +377,7 @@ export default function LoginPage() {
               display: { xs: "flex", md: "none" },
               alignItems: "center",
               gap: 1.5,
-              background: "linear-gradient(110deg, #3476ad, #2b91a5)",
+              background: cfg.background || "linear-gradient(110deg, #3476ad, #2b91a5)",
               color: "#fff",
               // ⚠️ رفع ناحیه امن: این هدر در موبایل چسبیده به بالای صفحه
               // است و با viewport-fit=cover زیر Dynamic Island / ناچ
@@ -384,36 +388,18 @@ export default function LoginPage() {
               mb: 3.5,
             }}
           >
-            <Box
-              sx={{
-                width: 56,
-                height: 56,
-                borderRadius: "50%",
-                bgcolor: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Box
-                component="img"
-                src={appLogoSmallUrl}
-                alt={manifestShortName}
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = "/faipco-logo.png";
-                }}
-                sx={{ width: 42, height: 42, objectFit: "contain" }}
-              />
-            </Box>
+            <BrandLogo surface="login" alt={headerTitle} />
             <Box sx={{ minWidth: 0 }}>
-              <Typography fontSize={15} fontWeight={800} noWrap>
-                {loginTitle}
-              </Typography>
-              <Typography fontSize={11} sx={{ opacity: 0.85 }} noWrap>
-                {loginSubtitle}
-              </Typography>
+              {cfg.show_title && (
+                <Typography noWrap sx={surfaceTitleSx(cfg, "title")}>
+                  {headerTitle}
+                </Typography>
+              )}
+              {cfg.show_subtitle && (
+                <Typography noWrap sx={surfaceTitleSx(cfg, "subtitle")}>
+                  {headerSubtitle}
+                </Typography>
+              )}
             </Box>
           </Box>
 
@@ -462,41 +448,17 @@ export default function LoginPage() {
             // شعاعی ریز (بافت) روی یک گرادیانت خطی آبی→فیروزه‌ای
             background:
               "radial-gradient(circle at 18% 15%, rgba(255,255,255,.10) 0 1px, transparent 1.5px), " +
-              "linear-gradient(145deg,#3476ad 0%,#2b91a5 100%)",
+              desktopPanelBackground(cfg.background),
             backgroundSize: "18px 18px, 100% 100%",
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                bgcolor: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Box
-                component="img"
-                src={appLogoSmallUrl}
-                alt={manifestShortName}
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = "/faipco-logo.png";
-                }}
-                sx={{ width: 48, height: 48, objectFit: "contain" }}
-              />
-            </Box>
+            <BrandLogo surface="login" alt={headerTitle} />
             <Box>
-              <Typography fontSize={16} fontWeight={800}>
-                {loginTitle}
-              </Typography>
-              <Typography fontSize={11} sx={{ opacity: 0.85, mt: 0.25 }}>
-                {loginSubtitle}
-              </Typography>
+              {cfg.show_title && <Typography sx={surfaceTitleSx(cfg, "title")}>{headerTitle}</Typography>}
+              {cfg.show_subtitle && (
+                <Typography sx={{ mt: 0.25, ...surfaceTitleSx(cfg, "subtitle") }}>{headerSubtitle}</Typography>
+              )}
             </Box>
           </Stack>
 

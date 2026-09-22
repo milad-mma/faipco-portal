@@ -1,5 +1,6 @@
 import { Box, Typography } from "@mui/material";
 import { useBranding } from "../context/BrandingContext";
+import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 
 /**
  * اسپلش‌اسکرین برند — پس‌زمینه سفید، لوگو وسط، و نام شرکت زیرش. تا وقتی اپ
@@ -19,14 +20,15 @@ import { useBranding } from "../context/BrandingContext";
  * فقط یک لحظه کوتاه (مدت خودِ درخواست شبکه) دیده می‌شود.
  */
 export default function SplashScreen({ visible }) {
-  const { appLogoUrl, splashTitle, splashSubtitle, isLoading } = useBranding();
+  const { splashTitle, splashSubtitle, isLoading, surfaces } = useBranding();
+  const cfg = surfaces.splash;
   return (
     <Box
       sx={{
         position: "fixed",
         inset: 0,
         zIndex: 9999,
-        backgroundColor: "#FFFFFF",
+        background: cfg.background || "#FFFFFF",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -39,31 +41,18 @@ export default function SplashScreen({ visible }) {
     >
       {!isLoading && (
         <>
-          <Box
-            component="img"
-            src={appLogoUrl}
-            alt={splashTitle}
-            onError={(e) => {
-              e.currentTarget.onerror = null;
-              e.currentTarget.src = "/faipco-logo.png";
-            }}
-            sx={{ width: { xs: 120, sm: 150 }, height: { xs: 120, sm: 150 }, objectFit: "contain" }}
-          />
+          <BrandLogo surface="splash" alt={splashTitle} />
           <Box sx={{ textAlign: "center" }}>
-            <Typography
-              variant="subtitle1"
-              fontWeight={700}
-              sx={{ fontFamily: "Tahoma, sans-serif", color: "#000000" }}
-            >
-              {splashTitle}
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif" }}
-            >
-              {splashSubtitle}
-            </Typography>
+            {cfg.show_title && (
+              <Typography sx={{ fontFamily: "Tahoma, sans-serif", ...surfaceTitleSx(cfg, "title") }}>
+                {splashTitle}
+              </Typography>
+            )}
+            {cfg.show_subtitle && (
+              <Typography sx={{ mt: 0.5, fontFamily: "Tahoma, sans-serif", ...surfaceTitleSx(cfg, "subtitle") }}>
+                {splashSubtitle}
+              </Typography>
+            )}
           </Box>
         </>
       )}

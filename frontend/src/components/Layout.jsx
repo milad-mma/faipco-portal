@@ -36,6 +36,7 @@ import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { usePresenceMonitor } from "../utils/presenceSocket";
 import AnnouncementDialog from "./AnnouncementDialog";
+import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { NAV_ITEMS, isItemVisible } from "../config/navItems";
@@ -45,7 +46,8 @@ const DRAWER_WIDTH = 260;
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { appLogoSmallUrl, sidebarTitle } = useBranding();
+  const { sidebarTitle, surfaces } = useBranding();
+  const sidebarCfg = surfaces.sidebar;
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
@@ -170,20 +172,11 @@ export default function Layout() {
 
   const drawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Toolbar sx={{ gap: 1.5, px: 3 }}>
-        <Box
-          component="img"
-          src={appLogoSmallUrl}
-          alt={sidebarTitle}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = "/faipco-logo.png";
-          }}
-          sx={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }}
-        />
-        <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-          {sidebarTitle}
-        </Typography>
+      <Toolbar sx={{ gap: 1.5, px: 3, background: sidebarCfg.background || undefined }}>
+        <BrandLogo surface="sidebar" alt={sidebarTitle} />
+        {sidebarCfg.show_title && (
+          <Typography sx={{ color: "primary.main", ...surfaceTitleSx(sidebarCfg, "title") }}>{sidebarTitle}</Typography>
+        )}
       </Toolbar>
       <Divider />
       <List sx={{ px: 1.5, py: 2, flexGrow: 1 }}>

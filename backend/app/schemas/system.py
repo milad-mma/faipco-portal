@@ -31,6 +31,7 @@ class IpBlockedMessageOut(BaseModel):
 
 class BrandingOut(BaseModel):
     browser_title: str
+    manifest_name: str
     manifest_short_name: str
     manifest_description: str
     splash_title: str
@@ -40,10 +41,30 @@ class BrandingOut(BaseModel):
     sidebar_title: str
     profile_title: str
     profile_subtitle: str
+    auth_title: str
+    auth_subtitle: str
     has_custom_app_logo: bool
     has_custom_app_logo_small: bool
     has_custom_pwa_icon: bool
     has_custom_favicon: bool
+    has_custom_surface_splash: bool = False
+    has_custom_surface_login: bool = False
+    has_custom_surface_auth: bool = False
+    has_custom_surface_sidebar: bool = False
+    has_custom_surface_profile: bool = False
+    # تنظیمات به تفکیک جای نمایش (branding_surfaces.py) + آیکون PWA
+    surfaces: dict[str, dict]
+    pwa_icon: dict
+
+
+class BrandingSurfaceIn(BaseModel):
+    """بخشی از تنظیمات یک جای نمایش - فقط کلیدهای ارسالی ذخیره می‌شوند."""
+
+    values: dict
+
+
+class PwaIconSettingsIn(BaseModel):
+    values: dict
 
 
 class BrandingIn(BaseModel):
@@ -52,6 +73,7 @@ class BrandingIn(BaseModel):
     """
 
     browser_title: str | None = Field(default=None, max_length=100)
+    manifest_name: str | None = Field(default=None, max_length=45)  # نام اپ نصب‌شده (PWA name)
     manifest_short_name: str | None = Field(default=None, max_length=30)  # محدودیت PWA برای short_name
     manifest_description: str | None = Field(default=None, max_length=200)
     splash_title: str | None = Field(default=None, max_length=100)
@@ -61,3 +83,5 @@ class BrandingIn(BaseModel):
     sidebar_title: str | None = Field(default=None, max_length=50)
     profile_title: str | None = Field(default=None, max_length=100)
     profile_subtitle: str | None = Field(default=None, max_length=100)
+    auth_title: str | None = Field(default=None, max_length=100)
+    auth_subtitle: str | None = Field(default=None, max_length=100)

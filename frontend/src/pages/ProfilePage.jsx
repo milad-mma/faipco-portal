@@ -35,6 +35,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
+import BrandLogo, { surfaceTitleSx } from "../components/BrandLogo";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { fetchAppVersion } from "../api/system";
@@ -74,7 +75,8 @@ const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter((item) => !item.adminOnly && (item.
  */
 export default function ProfilePage() {
   const { user, logout, refetchUser } = useAuth();
-  const { appLogoUrl, profileTitle, profileSubtitle } = useBranding();
+  const { profileTitle, profileSubtitle, surfaces } = useBranding();
+  const profileCfg = surfaces.profile;
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -146,43 +148,23 @@ export default function ProfilePage() {
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
         <Box
           sx={{
-            background: "linear-gradient(135deg, #185E95 0%, #2E84AA 100%)",
+            background: profileCfg.background || "linear-gradient(135deg, #185E95 0%, #2E84AA 100%)",
             display: "flex",
             justifyContent: "center",
             py: 3.5,
           }}
         >
-          <Box
-            sx={{
-              width: 108,
-              height: 108,
-              borderRadius: "50%",
-              bgcolor: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: 2,
-            }}
-          >
-            <Box
-              component="img"
-              src={appLogoUrl}
-              alt={profileTitle}
-              onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = "/faipco-logo.png";
-              }}
-              sx={{ width: 84, height: 84, objectFit: "contain" }}
-            />
-          </Box>
+          <BrandLogo surface="profile" alt={profileTitle} sx={{ boxShadow: 2 }} />
         </Box>
         <Stack alignItems="center" spacing={0.5} sx={{ textAlign: "center", px: 2.5, py: 2.5 }}>
-          <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-            {profileTitle}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {profileSubtitle}
-          </Typography>
+          {profileCfg.show_title && (
+            <Typography sx={{ color: "primary.main", ...surfaceTitleSx(profileCfg, "title") }}>{profileTitle}</Typography>
+          )}
+          {profileCfg.show_subtitle && (
+            <Typography sx={{ color: "text.secondary", ...surfaceTitleSx(profileCfg, "subtitle") }}>
+              {profileSubtitle}
+            </Typography>
+          )}
           {appVersion && (
             <Typography
               variant="caption"

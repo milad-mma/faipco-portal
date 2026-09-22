@@ -1,5 +1,5 @@
 {
-  "count": 248,
+  "count": 252,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -27,6 +27,7 @@
     "DELETE /api/v1/sites/{site_id}/attendance-mapping",
     "DELETE /api/v1/sites/{site_id}/connection",
     "DELETE /api/v1/sites/{site_id}/mapping",
+    "DELETE /api/v1/system/branding/surfaces/{surface}",
     "DELETE /api/v1/system/login-background",
     "DELETE /api/v1/system/logo/{slug}",
     "DELETE /api/v1/users/role-catalog/{role_id}",
@@ -125,6 +126,7 @@
     "GET /api/v1/system/login-background",
     "GET /api/v1/system/logo/{slug}",
     "GET /api/v1/system/manifest.json",
+    "GET /api/v1/system/pwa-icon/{variant}.png",
     "GET /api/v1/system/server-stats",
     "GET /api/v1/system/sms-settings",
     "GET /api/v1/system/smtp-settings",
@@ -244,6 +246,8 @@
     "PUT /api/v1/sites/{site_id}/mapping",
     "PUT /api/v1/sync/settings",
     "PUT /api/v1/system/branding",
+    "PUT /api/v1/system/branding/pwa-icon",
+    "PUT /api/v1/system/branding/surfaces/{surface}",
     "PUT /api/v1/system/ip-allowlist",
     "PUT /api/v1/system/ip-blocked-message",
     "PUT /api/v1/system/sms-settings",

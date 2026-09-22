@@ -20,6 +20,9 @@ import {
 import SmtpSettings from "../components/SmtpSettings";
 import SmsSettings from "../components/SmsSettings";
 import AccessGateSettings from "../components/AccessGateSettings";
+import BrandingSurfaceEditor from "../components/BrandingSurfaceEditor";
+import PwaIconSettings from "../components/PwaIconSettings";
+import { SURFACE_META } from "../config/brandingSurfaces";
 
 /**
  * یک کارت آپلود عکس با پیش‌نمایش + دکمه‌های انتخاب/آپلود/حذف — الگوی
@@ -228,42 +231,16 @@ const FIELD_GROUPS = [
   {
     key: "manifest",
     title: "متن‌های نصب PWA",
-    helperText: "زیر آیکون، روی صفحه اصلی گوشی بعد از نصب.",
+    helperText: "نام و توضیح اپ نصب‌شده (PWA) در ویندوز و گوشی.",
     fields: [
+      {
+        key: "manifest_name",
+        label: "نام اپ",
+        maxLength: 45,
+        helperText: "ویندوز: منوی استارت و عنوان پنجره؛ اندروید: دیالوگ نصب. حداکثر ۴۵ حرف",
+      },
       { key: "manifest_short_name", label: "نام کوتاه (زیر آیکون)", maxLength: 30, helperText: "حداکثر ۳۰ حرف — هرچه کوتاه‌تر بهتر" },
       { key: "manifest_description", label: "توضیح (در دیالوگ نصب)", maxLength: 200, multiline: true },
-    ],
-  },
-  {
-    key: "splash",
-    title: "اسپلش‌اسکرین",
-    helperText: "صفحه معرفی کوتاهی که هنگام باز‌شدن اپ دیده می‌شود.",
-    fields: [
-      { key: "splash_title", label: "عنوان", maxLength: 100 },
-      { key: "splash_subtitle", label: "زیرعنوان", maxLength: 100 },
-    ],
-  },
-  {
-    key: "login",
-    title: "صفحه ورود",
-    fields: [
-      { key: "login_title", label: "عنوان", maxLength: 100 },
-      { key: "login_subtitle", label: "زیرعنوان", maxLength: 100 },
-    ],
-  },
-  {
-    key: "sidebar",
-    title: "نوار بالای پنل",
-    helperText: "متن کنار لوگو، در نوار بالای همه صفحات داخل پنل.",
-    fields: [{ key: "sidebar_title", label: "عنوان", maxLength: 50 }],
-  },
-  {
-    key: "profile",
-    title: "پنل کاربری",
-    helperText: "زیر لوگو، در صفحه پروفایل هر کاربر.",
-    fields: [
-      { key: "profile_title", label: "عنوان", maxLength: 100 },
-      { key: "profile_subtitle", label: "زیرعنوان", maxLength: 100 },
     ],
   },
 ];
@@ -274,13 +251,16 @@ const FIELD_GROUPS = [
  */
 export default function SystemSettingsPage() {
   const [values, setValues] = useState(null); // فیلدهای متنی — یک‌جا از /system/branding
+  const [brandingData, setBrandingData] = useState(null); // پاسخ کامل (surfaces، pwa_icon، has_custom_*)
   const [savingGroup, setSavingGroup] = useState(null); // کدام گروه در حال ذخیره است
   const [groupMessages, setGroupMessages] = useState({}); // { [groupKey]: {error, success} }
 
   useEffect(() => {
     fetchBranding().then((data) => {
+      setBrandingData(data);
       setValues({
         browser_title: data.browser_title,
+        manifest_name: data.manifest_name,
         manifest_short_name: data.manifest_short_name,
         manifest_description: data.manifest_description,
         splash_title: data.splash_title,
@@ -290,6 +270,8 @@ export default function SystemSettingsPage() {
         sidebar_title: data.sidebar_title,
         profile_title: data.profile_title,
         profile_subtitle: data.profile_subtitle,
+        auth_title: data.auth_title,
+        auth_subtitle: data.auth_subtitle,
       });
     });
   }, []);
@@ -351,7 +333,7 @@ export default function SystemSettingsPage() {
           <Stack spacing={3}>
             <ImageUploadCard
               title="لوگوی درون‌برنامه‌ای (بزرگ)"
-              helperText="اسپلش‌اسکرین، پنل کاربری. هر اندازه‌ای — jpg/png/webp/svg، حداکثر ۴ مگابایت."
+              helperText="لوگوی عمومی برای جاهایی که «لوگوی بزرگ» انتخاب شده (پیش‌فرض: اسپلش‌اسکرین، پنل کاربری). هر اندازه‌ای — jpg/png/webp/svg، حداکثر ۴ مگابایت."
               currentImageUrl={APP_LOGO_URL}
               uploadFn={(file) => uploadLogo("app-logo", file)}
               deleteFn={() => deleteLogo("app-logo")}
@@ -360,7 +342,7 @@ export default function SystemSettingsPage() {
             <Divider />
             <ImageUploadCard
               title="لوگوی درون‌برنامه‌ای (کوچک)"
-              helperText="نوار بالای پنل، صفحه ورود. اگر آپلود نشود، همان لوگوی بزرگ (با اندازه کوچک‌تر) استفاده می‌شود — برای بهترین نتیجه در اندازه‌های خیلی کوچک، یک نسخه ساده‌شده/نمادین جداگانه آپلود کنید."
+              helperText="لوگوی عمومی برای جاهایی که «لوگوی کوچک» انتخاب شده (پیش‌فرض: نوار بالای پنل، صفحه ورود). اگر آپلود نشود، همان لوگوی بزرگ استفاده می‌شود. هر جای نمایش می‌تواند در بخش خودش لوگوی اختصاصی جدا داشته باشد."
               currentImageUrl={APP_LOGO_SMALL_URL}
               uploadFn={(file) => uploadLogo("app-logo-small", file)}
               deleteFn={() => deleteLogo("app-logo-small")}
@@ -369,10 +351,11 @@ export default function SystemSettingsPage() {
             <Divider />
             <ImageUploadCard
               title="آیکون نصب (PWA)"
-              helperText="آیکون روی صفحه اصلی گوشی بعد از نصب. ترجیحاً ۵۱۲×۵۱۲ و مربعی."
+              helperText="یک تصویر؛ نسخه‌های مخصوص اندروید/iOS/ویندوز خودکار از آن ساخته می‌شوند (تنظیم مقیاس در بخش «آیکون نصب در هر پلتفرم»). ترجیحاً PNG مربعی ۵۱۲×۵۱۲ با پس‌زمینه شفاف."
               currentImageUrl={PWA_ICON_URL}
               uploadFn={(file) => uploadLogo("pwa-icon", file)}
               deleteFn={() => deleteLogo("pwa-icon")}
+              reloadOnChange
             />
             <Divider />
             <ImageUploadCard
@@ -384,6 +367,23 @@ export default function SystemSettingsPage() {
             />
           </Stack>
         </Card>
+
+        {/* ⚠️ طبق درخواست کاربر: برندینگ به تفکیک جای نمایش - لوگو، اندازه، مقیاس،
+            قاب، متن‌ها با فونت و رنگ، پس‌زمینه؛ هرکدام مستقل با پیش‌نمایش. */}
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+          <PwaIconSettings initial={brandingData?.pwa_icon} hasIcon={Boolean(brandingData?.has_custom_pwa_icon)} />
+        </Card>
+
+        {SURFACE_META.map((meta) => (
+          <Card key={meta.key} variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <BrandingSurfaceEditor
+              meta={meta}
+              initialConfig={brandingData?.surfaces?.[meta.key]}
+              initialTitle={values[meta.titleKey]}
+              initialSubtitle={meta.subtitleKey ? values[meta.subtitleKey] : ""}
+            />
+          </Card>
+        ))}
 
         {FIELD_GROUPS.map((group) => (
           <Card key={group.key} variant="outlined" sx={{ borderRadius: 2, p: 3 }}>

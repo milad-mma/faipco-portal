@@ -2,6 +2,7 @@
 سرویس تنظیمات سراسری قابل‌تغییر از پنل (بدون نیاز به ویرایش .env یا Restart سرور).
 """
 import base64
+import json
 from datetime import datetime
 
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.system_setting import SystemSetting
+from app.services import branding_surfaces
 
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
 LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"  # ISO-format UTC — برای تشخیص «الان وقتشه یا نه» مستقل از هر Worker
@@ -33,6 +35,7 @@ FAVICON_DATA_KEY = "favicon_data"  # Base64 — آیکون اختصاصی تب �
 FAVICON_CONTENT_TYPE_KEY = "favicon_content_type"
 
 BROWSER_TITLE_KEY = "browser_title"  # عنوان تب مرورگر (document.title) — سراسر پروژه
+MANIFEST_NAME_KEY = "manifest_name"  # نام کامل اپ نصب‌شده (ویندوز: منوی استارت/عنوان پنجره؛ اندروید: دیالوگ نصب)
 MANIFEST_SHORT_NAME_KEY = "manifest_short_name"  # زیر آیکون، روی صفحه اصلی گوشی بعد از نصب PWA
 MANIFEST_DESCRIPTION_KEY = "manifest_description"  # توضیح داخل خودِ Manifest (فروشگاه/دیالوگ نصب)
 SPLASH_TITLE_KEY = "splash_title"
@@ -42,9 +45,14 @@ LOGIN_SUBTITLE_KEY = "login_subtitle"
 SIDEBAR_TITLE_KEY = "sidebar_title"  # نوار بالای پنل، کنار لوگو
 PROFILE_TITLE_KEY = "profile_title"  # پنل کاربری، زیر لوگو
 PROFILE_SUBTITLE_KEY = "profile_subtitle"
+AUTH_TITLE_KEY = "auth_title"  # فراموشی/بازیابی رمز - خالی = همان متن‌های صفحه ورود
+AUTH_SUBTITLE_KEY = "auth_subtitle"
+BRANDING_SURFACES_KEY = "branding_surfaces"  # JSON - تنظیمات به تفکیک جای نمایش (branding_surfaces.py)
+PWA_ICON_SETTINGS_KEY = "pwa_icon_settings"  # JSON - مقیاس/پس‌زمینه آیکون‌های تولیدشده PWA
 
 # مقادیر پیش‌فرض — همان چیزی که قبلاً همه‌جای پروژه Hard-code بود
 DEFAULT_BROWSER_TITLE = "پرتال سازمانی پرسنل فایپکو"
+DEFAULT_MANIFEST_NAME = "پرتال فایپکو"
 DEFAULT_MANIFEST_SHORT_NAME = "فایپکو"
 DEFAULT_MANIFEST_DESCRIPTION = "پرتال سازمانی مدیریت پرسنل و اطلاع‌رسانی"
 DEFAULT_SPLASH_TITLE = "شرکت تولیدی صنعتی فواد الیاف"
@@ -262,6 +270,7 @@ class SystemSettingsService:
     # تکرار ۷ متد تقریباً یکسان.
     _TEXT_FIELDS = {
         "browser_title": (BROWSER_TITLE_KEY, DEFAULT_BROWSER_TITLE),
+        "manifest_name": (MANIFEST_NAME_KEY, DEFAULT_MANIFEST_NAME),
         "manifest_short_name": (MANIFEST_SHORT_NAME_KEY, DEFAULT_MANIFEST_SHORT_NAME),
         "manifest_description": (MANIFEST_DESCRIPTION_KEY, DEFAULT_MANIFEST_DESCRIPTION),
         "splash_title": (SPLASH_TITLE_KEY, DEFAULT_SPLASH_TITLE),
@@ -271,6 +280,8 @@ class SystemSettingsService:
         "sidebar_title": (SIDEBAR_TITLE_KEY, DEFAULT_SIDEBAR_TITLE),
         "profile_title": (PROFILE_TITLE_KEY, DEFAULT_PROFILE_TITLE),
         "profile_subtitle": (PROFILE_SUBTITLE_KEY, DEFAULT_PROFILE_SUBTITLE),
+        "auth_title": (AUTH_TITLE_KEY, ""),
+        "auth_subtitle": (AUTH_SUBTITLE_KEY, ""),
     }
 
     # کلید‌های سه لوگوی مجزا — هرکدام برای یک مصرف کاملاً متفاوت
@@ -279,6 +290,11 @@ class SystemSettingsService:
         "app_logo_small": (APP_LOGO_SMALL_DATA_KEY, APP_LOGO_SMALL_CONTENT_TYPE_KEY),
         "pwa_icon": (PWA_ICON_DATA_KEY, PWA_ICON_CONTENT_TYPE_KEY),
         "favicon": (FAVICON_DATA_KEY, FAVICON_CONTENT_TYPE_KEY),
+        # لوگوی اختصاصی هر جای نمایش (logo_source=custom)
+        **{
+            f"surface_{name}": (f"surface_logo_{name}_data", f"surface_logo_{name}_content_type")
+            for name in branding_surfaces.SURFACES
+        },
     }
 
     async def get_branding(self) -> dict:
@@ -288,7 +304,42 @@ class SystemSettingsService:
         logos = {}
         for field_name, (data_key, _content_type_key) in self._LOGO_FIELDS.items():
             logos[f"has_custom_{field_name}"] = await self._get_raw(data_key) is not None
-        return {**texts, **logos}
+        surfaces = branding_surfaces.merged_surfaces(await self._get_raw(BRANDING_SURFACES_KEY))
+        pwa_icon = branding_surfaces.merged_pwa_icon(await self._get_raw(PWA_ICON_SETTINGS_KEY))
+        return {**texts, **logos, "surfaces": surfaces, "pwa_icon": pwa_icon}
+
+    async def set_surface(self, surface: str, patch: dict) -> dict:
+        """ذخیره فقط مقادیر تغییرکرده‌ی یک جای نمایش (روی JSON موجود ادغام می‌شود)."""
+        clean = branding_surfaces.sanitize_surface_patch(surface, patch)
+        raw = await self._get_raw(BRANDING_SURFACES_KEY)
+        try:
+            stored = json.loads(raw) if raw else {}
+        except (ValueError, TypeError):
+            stored = {}
+        if not isinstance(stored, dict):
+            stored = {}
+        stored.setdefault(surface, {}).update(clean)
+        await self._set_raw(BRANDING_SURFACES_KEY, json.dumps(stored, ensure_ascii=False))
+        return await self.get_branding()
+
+    async def reset_surface(self, surface: str) -> dict:
+        if surface not in branding_surfaces.SURFACES:
+            raise ValueError("جای نمایش نامعتبر است")
+        raw = await self._get_raw(BRANDING_SURFACES_KEY)
+        try:
+            stored = json.loads(raw) if raw else {}
+        except (ValueError, TypeError):
+            stored = {}
+        if isinstance(stored, dict) and surface in stored:
+            del stored[surface]
+            await self._set_raw(BRANDING_SURFACES_KEY, json.dumps(stored, ensure_ascii=False))
+        return await self.get_branding()
+
+    async def set_pwa_icon_settings(self, patch: dict) -> dict:
+        current = branding_surfaces.merged_pwa_icon(await self._get_raw(PWA_ICON_SETTINGS_KEY))
+        current.update(branding_surfaces.sanitize_pwa_patch(patch))
+        await self._set_raw(PWA_ICON_SETTINGS_KEY, json.dumps(current, ensure_ascii=False))
+        return await self.get_branding()
 
     async def set_branding(self, **fields: str | None) -> dict:
         """

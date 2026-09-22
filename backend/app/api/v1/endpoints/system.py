@@ -8,6 +8,7 @@
 /system/ip-blocked-message (GET/PUT) پیامی که به کاربر مسدودشده نمایش داده می‌شود.
 """
 import ipaddress
+import hashlib
 import json
 import logging
 import re
@@ -26,6 +27,8 @@ from app.models.ip_allowlist_entry import IpAllowlistEntry
 from app.models.user import User
 from app.schemas.system import (
     BrandingIn,
+    BrandingSurfaceIn,
+    PwaIconSettingsIn,
     BrandingOut,
     IpAllowlistStateIn,
     IpAllowlistStateOut,
@@ -39,7 +42,8 @@ from app.services.cache_service import CacheBustError, bump_app_cache_version
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
 from app.services.sms_service import SmsError, SmsNotConfiguredError, get_sms_settings, send_sms_code
 from app.core.security import decrypt_secret, encrypt_secret
-from app.services.system_settings_service import SystemSettingsService
+from app.services import branding_surfaces, pwa_icon_service
+from app.services.system_settings_service import PWA_ICON_SETTINGS_KEY, SystemSettingsService
 from app.services.usage_stats_service import get_usage_stats
 from app.services.server_stats_service import get_server_stats
 from app.services.update_service import (
@@ -362,7 +366,9 @@ MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً
 #                      تنظیم نشود، همان app_logo (با Scale کوچک‌تر) استفاده می‌شود
 #   pwa_icon        → آیکون Manifest/صفحه اصلی گوشی بعد از نصب — ترجیحاً ۵۱۲×۵۱۲ مربعی
 #   favicon         → آیکون تب مرورگر — ترجیحاً ۳۲×۳۲ یا ۱۹۲×۱۹۲ مربعی
-_VALID_LOGO_SLUGS = {"app-logo", "app-logo-small", "pwa-icon", "favicon"}
+_VALID_LOGO_SLUGS = {"app-logo", "app-logo-small", "pwa-icon", "favicon"} | {
+    f"surface-{name}" for name in branding_surfaces.SURFACES
+}
 
 
 def _logo_slug_to_key(slug: str) -> str:
@@ -392,6 +398,62 @@ async def update_branding(
     # مقادیر گروه‌های دیگر را پاک می‌کرد. exclude_unset فقط همان فیلدهایی
     # که واقعاً در درخواست حاضر بودند را نگه می‌دارد.
     return await SystemSettingsService(db).set_branding(**payload.model_dump(exclude_unset=True))
+
+
+@router.put("/branding/surfaces/{surface}", response_model=BrandingOut)
+async def update_branding_surface(
+    surface: str,
+    payload: BrandingSurfaceIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """تنظیمات یک جای نمایش (لوگو/اندازه/مقیاس/قاب/فونت/رنگ) - فقط کلیدهای ارسالی."""
+    try:
+        return await SystemSettingsService(db).set_surface(surface, payload.values)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/branding/surfaces/{surface}", response_model=BrandingOut)
+async def reset_branding_surface(
+    surface: str,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """برگرداندن یک جای نمایش به پیش‌فرض (لوگوی اختصاصی‌اش حذف نمی‌شود)."""
+    try:
+        return await SystemSettingsService(db).reset_surface(surface)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/branding/pwa-icon", response_model=BrandingOut)
+async def update_pwa_icon_settings(
+    payload: PwaIconSettingsIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """مقیاس و پس‌زمینه آیکون‌های تولیدشده PWA (اندروید/iOS/ویندوز)."""
+    return await SystemSettingsService(db).set_pwa_icon_settings(payload.values)
+
+
+@router.get("/pwa-icon/{variant}.png")
+async def get_pwa_icon_variant(variant: str, db: AsyncSession = Depends(get_db)):
+    """
+    ⚠️ بدون احراز هویت (Manifest/مرورگر بدون Header می‌گیرد). آیکون استاندارد
+    تولیدشده از آیکون PWA آپلودی: any-192/512، maskable-192/512، apple-180،
+    favicon-32/16. اگر آیکونی آپلود نشده: ۴۰۴ (فرانت به فایل‌های ثابت برمی‌گردد).
+    """
+    if variant not in pwa_icon_service.VARIANTS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع آیکون نامعتبر است")
+    service = SystemSettingsService(db)
+    result = await service.get_logo("pwa_icon")
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="آیکون PWA هنوز تنظیم نشده")
+    raw, content_type = result
+    settings = branding_surfaces.merged_pwa_icon(await service._get_raw(PWA_ICON_SETTINGS_KEY))
+    content, media_type = pwa_icon_service.render_icon(raw, content_type, variant, settings)
+    return Response(content=content, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})
 
 
 @router.get("/logo/{slug}")
@@ -439,6 +501,10 @@ async def delete_logo(
     return {"success": True}
 
 
+def _pwa_icon_version(pwa_settings: dict) -> str:
+    return hashlib.sha1(json.dumps(pwa_settings, sort_keys=True).encode()).hexdigest()[:8]
+
+
 @router.get("/manifest.json")
 async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
     """
@@ -455,14 +521,15 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
     branding = await SystemSettingsService(db).get_branding()
 
     if branding["has_custom_pwa_icon"]:
-        # ⚠️ یک محدودیت واقعی: چون فقط یک عکس (نه سه اندازه جداگانه) برای
-        # آیکون PWA ذخیره می‌شود، همان یک آدرس برای هر سه اندازه/نوع آیکون
-        # استفاده می‌شود — مرورگر/سیستم‌عامل خودش آن را Scale می‌کند. برای
-        # بهترین نتیجه، بهتر است این آیکون حداقل ۵۱۲×۵۱۲ و مربعی باشد.
+        # آیکون‌های استاندارد تولیدشده از یک تصویر (pwa_icon_service): "any" برای
+        # ویندوز/کروم دسکتاپ، "maskable" با پس‌زمینه پر و لوگو در ناحیه امن برای
+        # اندروید. یک پارامتر نسخه (هش تنظیمات) تا با تغییر مقیاس، کش مرورگر عوض شود.
+        v = _pwa_icon_version(branding["pwa_icon"])
         icons = [
-            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-            {"src": "/api/v1/system/logo/pwa-icon", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            {"src": f"/api/v1/system/pwa-icon/any-192.png?v={v}", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": f"/api/v1/system/pwa-icon/any-512.png?v={v}", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": f"/api/v1/system/pwa-icon/maskable-192.png?v={v}", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+            {"src": f"/api/v1/system/pwa-icon/maskable-512.png?v={v}", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ]
     else:
         icons = [
@@ -473,7 +540,9 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
 
     manifest = {
         "id": "/",
-        "name": branding["browser_title"],
+        # ⚠️ قبلاً name = عنوان تب مرورگر بود؛ ویندوز/اندروید همین name را
+        # به‌عنوان نام اپ نصب‌شده نشان می‌دهند - حالا فیلد جداگانه دارد.
+        "name": branding["manifest_name"],
         "short_name": branding["manifest_short_name"],
         "description": branding["manifest_description"],
         "start_url": "/",

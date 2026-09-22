@@ -4,6 +4,7 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import { LOGIN_BACKGROUND_URL } from "../api/system";
 import { useBranding } from "../context/BrandingContext";
+import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "./BrandLogo";
 import { modernLightTheme } from "../theme";
 
 const PROMO_FEATURES = [
@@ -23,7 +24,11 @@ const PROMO_FEATURES = [
  * نظر می‌رسند، دقیقاً مثل صفحه ورود.
  */
 export default function AuthPageShell({ title, subtitle, children }) {
-  const { appLogoSmallUrl, manifestShortName, loginTitle, loginSubtitle } = useBranding();
+  const { loginTitle, loginSubtitle, authTitle, authSubtitle, surfaces } = useBranding();
+  // فراموشی/بازیابی رمز: تنظیمات جای نمایش "auth"؛ متن خالی = همان متن ورود
+  const cfg = surfaces.auth;
+  const headerTitle = authTitle || loginTitle;
+  const headerSubtitle = authSubtitle || loginSubtitle;
 
   return (
     <ThemeProvider theme={modernLightTheme}>
@@ -75,7 +80,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
                 display: { xs: "flex", md: "none" },
                 alignItems: "center",
                 gap: 1.5,
-                background: "linear-gradient(110deg, #3476ad, #2b91a5)",
+                background: cfg.background || "linear-gradient(110deg, #3476ad, #2b91a5)",
                 // ⚠️ رفع ناحیه امن: این هدر در موبایل چسبیده به بالای
                 // صفحه است و با viewport-fit=cover زیر Dynamic Island /
                 // ناچ می‌افتاد. صفحات ورود/بازیابی رمز خارج از Layout
@@ -87,36 +92,18 @@ export default function AuthPageShell({ title, subtitle, children }) {
                 mb: 3.5,
               }}
             >
-              <Box
-                sx={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: "50%",
-                  bgcolor: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Box
-                  component="img"
-                  src={appLogoSmallUrl}
-                  alt={manifestShortName}
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = "/faipco-logo.png";
-                  }}
-                  sx={{ width: 42, height: 42, objectFit: "contain" }}
-                />
-              </Box>
+              <BrandLogo surface="auth" alt={headerTitle} />
               <Box sx={{ minWidth: 0 }}>
-                <Typography fontSize={15} fontWeight={800} noWrap>
-                  {loginTitle}
+                {cfg.show_title && (
+                <Typography noWrap sx={surfaceTitleSx(cfg, "title")}>
+                  {headerTitle}
                 </Typography>
-                <Typography fontSize={11} sx={{ opacity: 0.85 }} noWrap>
-                  {loginSubtitle}
+              )}
+              {cfg.show_subtitle && (
+                <Typography noWrap sx={surfaceTitleSx(cfg, "subtitle")}>
+                  {headerSubtitle}
                 </Typography>
+              )}
               </Box>
             </Box>
 
@@ -155,41 +142,17 @@ export default function AuthPageShell({ title, subtitle, children }) {
               overflow: "hidden",
               background:
                 "radial-gradient(circle at 18% 15%, rgba(255,255,255,.10) 0 1px, transparent 1.5px), " +
-                "linear-gradient(145deg,#3476ad 0%,#2b91a5 100%)",
+                desktopPanelBackground(cfg.background),
               backgroundSize: "18px 18px, 100% 100%",
             }}
           >
             <Box sx={{ display: "flex", flexDirection: "row", gap: 1.5, alignItems: "center" }}>
-              <Box
-                sx={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: "50%",
-                  bgcolor: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Box
-                  component="img"
-                  src={appLogoSmallUrl}
-                  alt={manifestShortName}
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = "/faipco-logo.png";
-                  }}
-                  sx={{ width: 48, height: 48, objectFit: "contain" }}
-                />
-              </Box>
+              <BrandLogo surface="auth" alt={headerTitle} />
               <Box>
-                <Typography fontSize={16} fontWeight={800}>
-                  {loginTitle}
-                </Typography>
-                <Typography fontSize={11} sx={{ opacity: 0.85, mt: 0.25 }}>
-                  {loginSubtitle}
-                </Typography>
+                {cfg.show_title && <Typography sx={surfaceTitleSx(cfg, "title")}>{headerTitle}</Typography>}
+              {cfg.show_subtitle && (
+                <Typography sx={{ mt: 0.25, ...surfaceTitleSx(cfg, "subtitle") }}>{headerSubtitle}</Typography>
+              )}
               </Box>
             </Box>
 

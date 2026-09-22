@@ -21,6 +21,25 @@ export async function updateBranding(payload) {
 }
 
 // slug یکی از: "app-logo"، "pwa-icon"، "favicon"
+export const SURFACE_LOGO_URL = (surface) => `${apiClient.defaults.baseURL}/system/logo/surface-${surface}`;
+export const PWA_ICON_VARIANT_URL = (variant, version = "") =>
+  `${apiClient.defaults.baseURL}/system/pwa-icon/${variant}.png${version ? `?v=${version}` : ""}`;
+
+export async function updateBrandingSurface(surface, values) {
+  const { data } = await apiClient.put(`/system/branding/surfaces/${surface}`, { values });
+  return data;
+}
+
+export async function resetBrandingSurface(surface) {
+  const { data } = await apiClient.delete(`/system/branding/surfaces/${surface}`);
+  return data;
+}
+
+export async function updatePwaIconSettings(values) {
+  const { data } = await apiClient.put("/system/branding/pwa-icon", { values });
+  return data;
+}
+
 export async function uploadLogo(slug, file) {
   const formData = new FormData();
   formData.append("file", file);

@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { APP_LOGO_SMALL_URL, APP_LOGO_URL, FAVICON_URL, fetchBranding } from "../api/system";
+import {
+  APP_LOGO_SMALL_URL,
+  APP_LOGO_URL,
+  FAVICON_URL,
+  PWA_ICON_VARIANT_URL,
+  SURFACE_LOGO_URL,
+  fetchBranding,
+} from "../api/system";
+import { SURFACE_DEFAULTS } from "../config/brandingSurfaces";
 
 const BrandingContext = createContext(null);
 
@@ -20,6 +28,13 @@ const DEFAULT_BRANDING = {
   profileSubtitle: "سامانه مدیریت پرسنل فایپکو",
   appLogoUrl: "/faipco-logo.png",
   appLogoSmallUrl: "/faipco-logo.png",
+  authTitle: "",
+  authSubtitle: "",
+  // تنظیمات به تفکیک جای نمایش (لوگو/اندازه/مقیاس/قاب/فونت/رنگ) - پیش‌فرض‌ها
+  // همان مقادیر قبلیِ ثابت در کد؛ سرور نسخه ادغام‌شده را برمی‌گرداند.
+  surfaces: SURFACE_DEFAULTS,
+  // آدرس لوگوی اختصاصی هر جای نمایش (فقط اگر آپلود شده باشد)
+  surfaceLogoUrls: {},
 };
 
 /**
@@ -54,6 +69,14 @@ export function BrandingProvider({ children }) {
           sidebarTitle: data.sidebar_title,
           profileTitle: data.profile_title,
           profileSubtitle: data.profile_subtitle,
+          authTitle: data.auth_title || "",
+          authSubtitle: data.auth_subtitle || "",
+          surfaces: { ...SURFACE_DEFAULTS, ...(data.surfaces || {}) },
+          surfaceLogoUrls: Object.fromEntries(
+            Object.keys(SURFACE_DEFAULTS)
+              .filter((name) => data[`has_custom_surface_${name}`])
+              .map((name) => [name, SURFACE_LOGO_URL(name)])
+          ),
           appLogoUrl: data.has_custom_app_logo ? APP_LOGO_URL : DEFAULT_BRANDING.appLogoUrl,
           // ⚠️ اگر لوگوی کوچک اختصاصی تنظیم نشده باشد، از همان لوگوی
           // بزرگ (نه فایل پیش‌فرض جدا) استفاده می‌شود — چون یک لوگوی
@@ -76,10 +99,21 @@ export function BrandingProvider({ children }) {
         // Favicon (تب مرورگر) — اگر سفارشی تنظیم شده، همان چهار <link>
         // آیکونِ موجود در index.html را همین‌جا با JS به آدرس Backend
         // عوض می‌کنیم؛ اگر نشده، دست‌نخورده (فایل‌های ثابت پیش‌فرض) می‌مانند.
+        // ⚠️ آیکون تب (favicon) و آیکون iOS (apple-touch-icon) جدا: iOS شفافیت را
+        // سیاه و گوشه‌ها را گرد می‌کند، پس نسخه تولیدشده apple-180 (پس‌زمینه پر،
+        // لوگو در ناحیه امن) استفاده می‌شود - نه فایل خام favicon.
         if (data.has_custom_favicon) {
-          document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((link) => {
-            link.setAttribute("href", FAVICON_URL);
+          document.querySelectorAll('link[rel="icon"]').forEach((link) => link.setAttribute("href", FAVICON_URL));
+        } else if (data.has_custom_pwa_icon) {
+          document.querySelectorAll('link[rel="icon"]').forEach((link) => {
+            const sizes = link.getAttribute("sizes") || "";
+            link.setAttribute("href", PWA_ICON_VARIANT_URL(sizes.startsWith("16") ? "favicon-16" : "favicon-32"));
           });
+        }
+        if (data.has_custom_pwa_icon) {
+          document
+            .querySelectorAll('link[rel="apple-touch-icon"]')
+            .forEach((link) => link.setAttribute("href", PWA_ICON_VARIANT_URL("apple-180")));
         }
       })
       .catch(() => {

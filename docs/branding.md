@@ -37,7 +37,7 @@ Manifest نصب PWA). این‌ها همه از پنل «تنظیمات ساما
 | نوار بالای پنل (`Layout.jsx`) | `sidebar_title` | `app-logo-small` |
 | پنل کاربری (`ProfilePage.jsx`) | `profile_title`/`profile_subtitle` | `app-logo` |
 | تب مرورگر | `browser_title` (+ `<title>` در index.html پویا) | `favicon` |
-| Manifest / صفحه اصلی گوشی | `name`=`browser_title`، `short_name`، `description` | `pwa-icon` |
+| Manifest / صفحه اصلی گوشی | `name`=`manifest_name`، `short_name`=`manifest_short_name`، `description` | `pwa-icon` |
 
 ⚠️ PDF فیش کارکرد لوگوی ثابت `backend/app/assets/images/faipco-logo.png`
 را استفاده می‌کند، نه لوگوی برندینگ (بنگرید به
@@ -113,7 +113,7 @@ Proxy می‌شود.
 | گروه | فیلدها | کجا استفاده می‌شود |
 |---|---|---|
 | تب مرورگر | `browser_title` | `document.title` — سراسر پروژه |
-| نصب PWA | `manifest_short_name`، `manifest_description` | زیر آیکون روی صفحه اصلی گوشی + دیالوگ نصب |
+| نصب PWA | `manifest_name`، `manifest_short_name`، `manifest_description` | نام اپ نصب‌شده (ویندوز: منوی استارت/عنوان پنجره؛ اندروید: دیالوگ نصب)، نام کوتاه زیر آیکون، توضیح |
 | اسپلش‌اسکرین | `splash_title`، `splash_subtitle` | صفحه معرفی هنگام باز‌شدن اپ |
 | صفحه ورود | `login_title`، `login_subtitle` | متن کنار لوگو در صفحه ورود |
 
@@ -239,3 +239,40 @@ Build-شده بود — مرورگر آن را قبل از اجرای کامل R
 ریز بهتر به‌نظر برسد.
 
 مجموع لوگوهای مستقل حالا **۴ تا**: بزرگ، کوچک، آیکون نصب PWA، Favicon.
+
+## نام اپ نصب‌شده جدا از عنوان تب (`manifest_name`)
+
+قبلاً `name` در Manifest برابر `browser_title` بود؛ ویندوز (منوی استارت، عنوان پنجره) و اندروید (دیالوگ نصب) همین `name` را نام اپ نشان می‌دهند، پس عنوان بلند تب مرورگر روی اپ نصب‌شده هم می‌نشست. حالا فیلد جداگانه `manifest_name` (حداکثر ۴۵ حرف، پیش‌فرض «پرتال فایپکو») در «تنظیمات سامانه ← متن‌های نصب PWA» دارد. تغییرش برای اپ‌های قبلاً نصب‌شده با به‌روزرسانی Manifest توسط مرورگر اعمال می‌شود (ویندوز/Chrome معمولاً پس از چند بار باز شدن؛ در غیر این صورت حذف و نصب مجدد).
+
+## برندینگ به تفکیک جای نمایش (Surfaces)
+
+طبق درخواست کاربر، هر جای نمایش تنظیمات مستقل دارد («تنظیمات سامانه» → کارت هر بخش، با پیش‌نمایش زنده):
+
+| جای نمایش | کلید | کجا |
+|---|---|---|
+| اسپلش‌اسکرین | `splash` | `SplashScreen.jsx` |
+| صفحه ورود | `login` | هدر موبایل + پنل کناری دسکتاپ (`LoginPage.jsx`) |
+| فراموشی/بازیابی رمز | `auth` | `AuthPageShell.jsx` — متن‌های خالی از ورود گرفته می‌شوند (`auth_title`/`auth_subtitle`) |
+| نوار بالای پنل ادمین | `sidebar` | `Layout.jsx` |
+| پنل کاربری | `profile` | `ProfilePage.jsx` |
+
+هر Surface: `logo_source` (default/custom/none)، `default_logo` (app_logo/app_logo_small)، `logo_size_mobile/desktop`، `logo_scale` (٪ - فقط تصویر داخل کادر، بدون به‌هم‌زدن چیدمان)، `frame` (none/circle/rounded) + `frame_color` + `frame_padding`، `title_size_*`، `subtitle_size_*`، `title_color`، `subtitle_color`، `title_weight`، `background` (رنگ/گرادیان CSS؛ `url(` و امثالش رد می‌شود)، `show_title`، `show_subtitle`.
+
+- تعریف و پیش‌فرض‌ها: `backend/app/services/branding_surfaces.py` (همتای فرانت: `config/brandingSurfaces.jsx`). پیش‌فرض‌ها همان مقادیر قبلیِ ثابت در کد هستند → بعد از آپدیت هیچ تغییر ظاهری تا وقتی ادمین چیزی را عوض نکند. بدون Migration (JSON در `system_settings` با کلید `branding_surfaces`، فقط مقادیر تغییرکرده).
+- API: `PUT /system/branding/surfaces/{surface}` (`{values: {...}}`، فقط کلیدهای ارسالی)، `DELETE .../surfaces/{surface}` (بازگشت به پیش‌فرض)، `GET /system/branding` → `surfaces` ادغام‌شده + `has_custom_surface_<name>`.
+- لوگوی اختصاصی هر Surface: `POST/DELETE /system/logo/surface-<name>`؛ رندر با `components/BrandLogo.jsx` (`surface`, `override` برای پیش‌نمایش).
+
+## آیکون نصب (PWA) در هر پلتفرم
+
+مشکل قبلی: یک فایل خام برای همه‌جا؛ اندروید آیکون maskable را دایره می‌بُرد (لبه‌های لوگوی تمام‌بوم حذف)، iOS شفافیت را سیاه می‌کند. حالا `pwa_icon_service.py` (Pillow) از یک تصویر نسخه‌های استاندارد می‌سازد:
+
+| مسیر | کاربرد | لوگو |
+|---|---|---|
+| `/system/pwa-icon/any-192.png`, `any-512.png` | Manifest purpose=any (ویندوز، کروم دسکتاپ) | `icon_scale`٪ بوم (پیش‌فرض ۱۰۰)، پس‌زمینه `any_background` (خالی=شفاف) |
+| `maskable-192.png`, `maskable-512.png` | purpose=maskable (اندروید) | `maskable_scale`٪ بوم (پیش‌فرض ۶۶ — ناحیه امن ≈۸۰٪)، پس‌زمینه `background` |
+| `apple-180.png` | `apple-touch-icon` (iOS) | مثل maskable، بدون شفافیت |
+| `favicon-32.png`, `favicon-16.png` | تب مرورگر وقتی favicon جدا آپلود نشده | مثل any |
+
+- تنظیم: `PUT /system/branding/pwa-icon` (`{values: {icon_scale, maskable_scale, background, any_background}}`)؛ UI: کارت «آیکون نصب در هر پلتفرم» با پیش‌نمایش اندروید (دایره)، iOS (گوشه‌گرد) و ویندوز.
+- Manifest آدرس این نسخه‌ها را با پارامتر `?v=<hash تنظیمات>` می‌دهد تا کش عوض شود. `BrandingContext` لینک `apple-touch-icon` را به `apple-180` و favicon را (اگر جدا آپلود نشده) به `favicon-32/16` تغییر می‌دهد.
+- SVG رَستر نمی‌شود → فایل خام برمی‌گردد (برای PWA، PNG آپلود کنید). حاشیه شفاف دور لوگو قبل از محاسبه مقیاس حذف می‌شود.
