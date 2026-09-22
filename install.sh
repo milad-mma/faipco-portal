@@ -52,6 +52,11 @@ set -euo pipefail
 REPO_URL="${FAIPCO_REPO_URL:-https://github.com/milad-mma/faipco-portal.git}"
 REPO_BRANCH="${FAIPCO_BRANCH:-main}"
 INSTALL_DIR="${FAIPCO_INSTALL_DIR:-/var/www/html}"
+# Update channel — "tag": deploy the latest Git tag (release) only; commits
+# pushed after the tag are NOT installed until the next tag.  "branch": deploy
+# the tip of REPO_BRANCH (every push).  Sticky: read from backend/.env
+# (UPDATE_CHANNEL=...) when not given explicitly, default "tag".
+UPDATE_CHANNEL="${FAIPCO_UPDATE_CHANNEL:-}"
 DOMAIN="${FAIPCO_DOMAIN:-}"
 ADMIN_USERNAME="${FAIPCO_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${FAIPCO_ADMIN_PASSWORD:-admin}"
@@ -217,7 +222,8 @@ fetch_source() {
     return
   fi
 
-  log "Fetching source from ${REPO_URL} (branch: ${REPO_BRANCH}) into ${INSTALL_DIR}..."
+  resolve_update_channel
+  log "Fetching source from ${REPO_URL} (branch: ${REPO_BRANCH}, channel: ${UPDATE_CHANNEL}) into ${INSTALL_DIR}..."
   mkdir -p "$INSTALL_DIR"
 
   # از Git 2.35.2 به بعد، اگر مالک پوشه با کاربری که git را اجرا می‌کند
@@ -234,8 +240,8 @@ fetch_source() {
     # --tags حیاتی است: بدون آن، تگ‌های Release (مثل v1.0.0-beta.1) اصلاً
     # واکشی نمی‌شوند و git describe --tags (که برای نمایش نسخه در پنل
     # استفاده می‌شود) چیزی پیدا نمی‌کند.
-    git -C "$INSTALL_DIR" fetch --tags origin "$REPO_BRANCH"
-    git -C "$INSTALL_DIR" reset --hard "origin/${REPO_BRANCH}"
+    git -C "$INSTALL_DIR" fetch --tags --force origin "$REPO_BRANCH"
+    checkout_channel_target
   else
     if [[ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
       warn "Directory ${INSTALL_DIR} already has content (e.g. Nginx's default page) — clearing it..."
@@ -244,8 +250,53 @@ fetch_source() {
     git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
     # همان دلیل بالا — Clone کم‌عمق به‌تنهایی معمولاً تگ‌ها را نمی‌آورد.
     git -C "$INSTALL_DIR" fetch --tags --depth 1 origin >/dev/null 2>&1 || true
+    checkout_channel_target
   fi
-  log "Source code ready at: ${INSTALL_DIR}"
+  log "Source code ready at: ${INSTALL_DIR} ($(git -C "$INSTALL_DIR" describe --tags --always 2>/dev/null))"
+}
+
+resolve_update_channel() {
+  # explicit env var > existing backend/.env > default "tag"
+  if [[ -z "$UPDATE_CHANNEL" && -f "$INSTALL_DIR/backend/.env" ]]; then
+    UPDATE_CHANNEL="$(grep -E '^UPDATE_CHANNEL=' "$INSTALL_DIR/backend/.env" | head -1 | cut -d= -f2- | tr -d '"'"'"'' | tr -d '[:space:]')"
+  fi
+  case "$UPDATE_CHANNEL" in
+    tag|branch) ;;
+    "") UPDATE_CHANNEL="tag" ;;
+    *) warn "Unknown UPDATE_CHANNEL '${UPDATE_CHANNEL}' — falling back to 'tag'"; UPDATE_CHANNEL="tag" ;;
+  esac
+}
+
+checkout_channel_target() {
+  # "tag": the highest version tag reachable on the remote (v1.2.0 > v1.10.0 sorted
+  # by version, not alphabetically).  "branch": tip of REPO_BRANCH.
+  local target
+  if [[ "$UPDATE_CHANNEL" == "tag" ]]; then
+    target="$(git -C "$INSTALL_DIR" tag --sort=-v:refname | head -1)"
+    if [[ -z "$target" ]]; then
+      warn "No Git tag found on the remote — deploying branch tip (origin/${REPO_BRANCH}) instead."
+      target="origin/${REPO_BRANCH}"
+    else
+      log "Deploying latest release tag: ${target}"
+    fi
+  else
+    target="origin/${REPO_BRANCH}"
+    log "Deploying branch tip: ${target}"
+  fi
+
+  # Downgrade guard: never move an existing checkout BACKWARDS.  A server that
+  # was updated on the "branch" channel is ahead of the latest tag; resetting it
+  # to that tag would deploy older code against a newer database (Alembic would
+  # then fail with an unknown revision).  Keep the current code and say so.
+  local current_head
+  current_head="$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -n "$current_head" && "$(git -C "$INSTALL_DIR" rev-parse "${target}^{commit}" 2>/dev/null)" != "$current_head" ]] \
+     && git -C "$INSTALL_DIR" merge-base --is-ancestor "$target" "$current_head" 2>/dev/null; then
+    warn "Target ${target} is OLDER than the code currently installed ($(git -C "$INSTALL_DIR" describe --tags --always))."
+    warn "Refusing to downgrade — keeping the current code. Publish a newer tag (or set UPDATE_CHANNEL=branch) and update again."
+    return
+  fi
+  git -C "$INSTALL_DIR" reset --hard "$target"
 }
 
 setup_backend() {
@@ -277,6 +328,13 @@ generate_env() {
       sed -i "s/^APP_VERSION=.*/APP_VERSION=${app_version}/" "$INSTALL_DIR/backend/.env"
     else
       echo "APP_VERSION=${app_version}" >> "$INSTALL_DIR/backend/.env"
+    fi
+    # کانال آپدیت هم چسبنده است — مقدار مؤثر همین اجرا ذخیره می‌شود تا
+    # آپدیت‌های بعدی از پنل همان را ادامه دهند.
+    if grep -q "^UPDATE_CHANNEL=" "$INSTALL_DIR/backend/.env"; then
+      sed -i "s/^UPDATE_CHANNEL=.*/UPDATE_CHANNEL=${UPDATE_CHANNEL}/" "$INSTALL_DIR/backend/.env"
+    else
+      echo "UPDATE_CHANNEL=${UPDATE_CHANNEL}" >> "$INSTALL_DIR/backend/.env"
     fi
     # حیاتی: --reverse-proxy-ip باید «چسبنده» باشد. اگر این اجرا صریحاً این
     # پرچم را نگرفته باشد (مثلاً یک آپدیت خودکار از پنل، یا صرفاً یادتان
@@ -333,6 +391,7 @@ generate_env() {
   cat > "$INSTALL_DIR/backend/.env" <<EOF
 APP_NAME=FAIPCO Portal
 APP_VERSION=${app_version}
+UPDATE_CHANNEL=${UPDATE_CHANNEL}
 REVERSE_PROXY_IP=${REVERSE_PROXY_IP}
 APP_ENV=production
 DEBUG=false

@@ -115,8 +115,9 @@ export default function ProjectChecksCard() {
             whiteSpace: "pre-wrap",
             bgcolor: "action.hover",
             borderRadius: 1,
-            textAlign: "left",
           }}
+          // ⚠️ direction/textAlign در style خطی، نه sx - stylis-plugin-rtl آن‌ها را قرینه می‌کند
+          style={{ direction: "ltr", textAlign: "left" }}
         >
           {status.log.replace(/\x1b\[[0-9;]*m/g, "")}
         </Box>

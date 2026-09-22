@@ -66,6 +66,7 @@ async def check_for_update() -> dict:
         return {
             "checked": False,
             "current_version": settings.APP_VERSION,
+            "update_channel": settings.UPDATE_CHANNEL,
             "latest_version": None,
             "has_update": False,
             "release_url": None,
@@ -75,6 +76,7 @@ async def check_for_update() -> dict:
         return {
             "checked": True,
             "current_version": settings.APP_VERSION,
+            "update_channel": settings.UPDATE_CHANNEL,
             "latest_version": None,
             "has_update": False,
             "release_url": None,
@@ -86,6 +88,7 @@ async def check_for_update() -> dict:
     return {
         "checked": True,
         "current_version": settings.APP_VERSION,
+        "update_channel": settings.UPDATE_CHANNEL,
         "latest_version": latest,
         "has_update": has_update,
         "release_url": f"https://github.com/{settings.GITHUB_REPO}/releases/tag/{latest}",

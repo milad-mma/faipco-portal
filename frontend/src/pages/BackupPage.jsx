@@ -198,12 +198,13 @@ export default function BackupPage() {
               backgroundColor: "rgba(22, 50, 79, 0.06)",
               ...monoFontSx,
               fontSize: 12,
-              direction: "ltr",
-              textAlign: "left",
               whiteSpace: "pre-wrap",
               maxHeight: 260,
               overflowY: "auto",
             }}
+            // ⚠️ direction/textAlign در style خطی، نه sx - stylis-plugin-rtl آن‌ها را قرینه می‌کند
+            dir="ltr"
+            style={{ direction: "ltr", textAlign: "left" }}
           >
             {restoreLog}
           </Box>

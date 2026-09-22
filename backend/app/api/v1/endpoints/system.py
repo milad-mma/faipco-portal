@@ -76,7 +76,7 @@ async def get_app_version():
     آخرین Deploy واقعاً روی سرور نشسته، بدون نیاز به SSH یا ورود به پنل.
     """
     settings = get_settings()
-    return {"version": settings.APP_VERSION}
+    return {"version": settings.APP_VERSION, "update_channel": settings.UPDATE_CHANNEL}
 
 
 @router.get("/usage-stats")

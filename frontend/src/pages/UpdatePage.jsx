@@ -106,6 +106,22 @@ export default function UpdatePage() {
         نسخه فعلی را با آخرین نسخه منتشرشده در GitHub مقایسه می‌کند و در صورت وجود آپدیت، امکان
         نصب آن را مستقیم از همین‌جا می‌دهد.
       </Typography>
+      {checkResult?.update_channel && (
+        <Alert severity={checkResult.update_channel === "tag" ? "info" : "warning"} sx={{ mb: 3 }}>
+          {checkResult.update_channel === "tag" ? (
+            <>
+              کانال آپدیت: <strong>ریلیز (تگ)</strong> — فقط آخرین تگ منتشرشده نصب می‌شود؛ commitهای بعد از تگ تا
+              انتشار تگ بعدی نصب نمی‌شوند.
+            </>
+          ) : (
+            <>
+              کانال آپدیت: <strong>شاخه (هر push)</strong> — آخرین commit شاخه نصب می‌شود، حتی اگر هنوز تگ/ریلیز
+              نشده باشد. مناسب سرور تست؛ برای سرور اصلی در <code>backend/.env</code> مقدار{" "}
+              <code>UPDATE_CHANNEL=tag</code> بگذارید.
+            </>
+          )}
+        </Alert>
+      )}
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         {isChecking ? (
@@ -175,12 +191,13 @@ export default function UpdatePage() {
                 backgroundColor: "rgba(22, 50, 79, 0.06)",
                 ...monoFontSx,
                 fontSize: 12,
-                direction: "ltr",
-                textAlign: "left",
                 whiteSpace: "pre-wrap",
                 maxHeight: 260,
                 overflowY: "auto",
               }}
+              // ⚠️ direction/textAlign در style خطی، نه sx - stylis-plugin-rtl آن‌ها را قرینه می‌کند
+              dir="ltr"
+              style={{ direction: "ltr", textAlign: "left" }}
             >
               {updateLog}
             </Box>
