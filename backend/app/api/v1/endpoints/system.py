@@ -46,7 +46,9 @@ from app.services.update_service import (
     UPDATE_CONFIRMATION_PHRASE,
     UpdateError,
     check_for_update,
+    get_check_status,
     get_update_status,
+    schedule_checks,
     schedule_update,
 )
 
@@ -171,6 +173,30 @@ async def apply_update(
         "message": "آپدیت شروع شد. سرویس چند لحظه (بسته به حجم تغییرات، معمولاً یک تا چند دقیقه) در دسترس "
         "نخواهد بود، سپس خودکار دوباره بالا می‌آید.",
     }
+
+
+@router.post("/run-checks")
+async def run_checks(
+    _user=Depends(require_permission("system.backup")),
+):
+    """
+    اجرای بررسی‌های سلامت پروژه (مسیرهای API، تست‌ها، Migration ها روی دیتابیس
+    موقت) از پنل - فقط خواندن/تست، بدون تغییر در پروژه یا دیتابیس واقعی؛ به
+    همین دلیل برخلاف آپدیت، رمز عبور دوباره خواسته نمی‌شود.
+    """
+    try:
+        schedule_checks()
+    except UpdateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"success": True}
+
+
+@router.get("/check-status")
+async def check_status(
+    _user=Depends(require_permission("system.backup")),
+):
+    """وضعیت زنده آخرین اجرای بررسی‌ها - همان الگوی /update-status."""
+    return get_check_status()
 
 
 @router.get("/update-status")

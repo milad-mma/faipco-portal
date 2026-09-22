@@ -38,3 +38,10 @@ cd backend && source .venv/bin/activate && python -m pytest -q tests
 ## قاعده برای مراحل بعدی بازسازی
 
 هر مرحله فقط وقتی «تمام» است که `bash scripts/check.sh` سبز باشد و مرجع مسیرها (`api_routes.snapshot.json`) بدون تغییر مانده باشد.
+
+## اجرا از پنل ادمین
+
+در صفحه «بررسی و اعمال آپدیت» کارت «بررسی سلامت پروژه» با یک کلیک `scripts/check.sh --log` را اجرا می‌کند (مجوز `system.backup`، مثل آپدیت):
+
+- `POST /system/run-checks` → `systemd-run --unit=faipco-check` به‌عنوان root (قانون sudoers در `install.sh`؛ روی نصب‌های قبلی با اولین آپدیت/اجرای install.sh اضافه می‌شود). فقط می‌خواند/تست می‌کند؛ به همین دلیل برخلاف آپدیت، رمز دوباره خواسته نمی‌شود.
+- `GET /system/check-status` → لاگ زنده از `/var/log/faipco-check.log` (هر اجرا از نو نوشته می‌شود) + `is_running` / `is_passed` / `is_failed` (بر اساس خط `[CHECK] RESULT: PASS|FAIL` در انتهای لاگ).

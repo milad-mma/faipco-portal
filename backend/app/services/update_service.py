@@ -136,6 +136,69 @@ def schedule_update(confirm_phrase: str) -> None:
         )
 
 
+_CHECK_LOG_PATH = Path("/var/log/faipco-check.log")
+
+
+def schedule_checks() -> None:
+    """
+    اجرای «بررسی‌های سلامت پروژه» (scripts/check.sh --log) از پنل - مرحله ۰
+    بازسازی ساختار. همان الگوی آپدیت: یک Scope مستقل systemd به‌عنوان root
+    (تست Migration به ساخت دیتابیس موقت با کاربر postgres نیاز دارد)؛ مجوزش
+    در sudoers (install.sh) است. خروجی در /var/log/faipco-check.log.
+    فقط می‌خواند/تست می‌کند - هیچ چیزی در پروژه یا دیتابیس واقعی تغییر نمی‌دهد.
+    """
+    install_dir = Path(__file__).resolve().parent.parent.parent.parent
+    script = install_dir / "scripts" / "check.sh"
+    if not script.exists():
+        raise UpdateError(f"اسکریپت بررسی پیدا نشد: {script}")
+    if get_check_status()["is_running"]:
+        raise UpdateError("یک بررسی هنوز در حال اجراست.")
+    result = subprocess.run(
+        [
+            "sudo",
+            "-n",
+            "/usr/bin/systemd-run",
+            "--unit=faipco-check",
+            "--collect",
+            "--setenv=HOME=/root",
+            "/bin/bash",
+            str(script),
+            "--log",
+        ],
+        capture_output=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise UpdateError(
+            "راه‌اندازی بررسی ناموفق بود (احتمالاً قانون sudoers هنوز اضافه نشده - یک بار آپدیت از پنل "
+            "یا اجرای install.sh آن را اضافه می‌کند): "
+            f"{result.stderr.decode(errors='ignore')[:500]}"
+        )
+
+
+def get_check_status() -> dict:
+    log_content = ""
+    if _CHECK_LOG_PATH.exists():
+        try:
+            log_content = _CHECK_LOG_PATH.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            log_content = ""
+    is_unit_active = False
+    try:
+        result = subprocess.run(["systemctl", "is-active", "faipco-check"], capture_output=True, timeout=5)
+        is_unit_active = result.stdout.decode().strip() in {"active", "activating"}
+    except Exception:
+        pass
+    is_passed = "[CHECK] RESULT: PASS" in log_content
+    is_failed = "[CHECK] RESULT: FAIL" in log_content
+    return {
+        "log": log_content,
+        "is_running": is_unit_active or (bool(log_content) and not is_passed and not is_failed),
+        "is_passed": is_passed,
+        "is_failed": is_failed,
+    }
+
+
 def get_update_status() -> dict:
     if not _UPDATE_OFFSET_MARKER.exists() or not _UPDATE_LOG_PATH.exists():
         return {"log": "", "is_running": False, "is_finished": False, "is_failed": False}

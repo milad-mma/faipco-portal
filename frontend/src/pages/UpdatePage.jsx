@@ -15,6 +15,7 @@ import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import { applyUpdate, checkForUpdate, fetchUpdateStatus } from "../api/system";
 import { monoFontSx } from "../theme";
 import AnnouncementSettings from "../components/AnnouncementSettings";
+import ProjectChecksCard from "../components/ProjectChecksCard";
 
 const CONFIRM_PHRASE = "UPDATE";
 const POLL_INTERVAL_MS = 3000;
@@ -239,6 +240,8 @@ export default function UpdatePage() {
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>
         <AnnouncementSettings />
       </Card>
+
+      <ProjectChecksCard />
     </Box>
   );
 }

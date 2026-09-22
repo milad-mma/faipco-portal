@@ -84,6 +84,16 @@ export async function fetchUpdateStatus() {
   return data; // { log, is_running, is_finished, is_failed }
 }
 
+export async function runProjectChecks() {
+  const { data } = await apiClient.post("/system/run-checks");
+  return data;
+}
+
+export async function fetchProjectCheckStatus() {
+  const { data } = await apiClient.get("/system/check-status", { timeout: 5000 });
+  return data; // { log, is_running, is_passed, is_failed }
+}
+
 export async function bustAppCache() {
   const { data } = await apiClient.post("/system/cache-bust");
   return data; // { success, version, message }

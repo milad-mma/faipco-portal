@@ -438,6 +438,7 @@ EOF
   cat > /etc/sudoers.d/faipco-backend-restart <<EOF
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-restore --collect /bin/sh /tmp/faipco-restore-run.sh
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-update --collect --setenv=HOME=/root /bin/bash ${INSTALL_DIR}/install.sh
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-check --collect --setenv=HOME=/root /bin/bash ${INSTALL_DIR}/scripts/check.sh --log
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {

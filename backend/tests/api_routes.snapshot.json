@@ -1,5 +1,5 @@
 {
-  "count": 246,
+  "count": 248,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -117,6 +117,7 @@
     "GET /api/v1/sync/status-summary",
     "GET /api/v1/sync/{site_id}/logs",
     "GET /api/v1/system/branding",
+    "GET /api/v1/system/check-status",
     "GET /api/v1/system/check-update",
     "GET /api/v1/system/index.html",
     "GET /api/v1/system/ip-allowlist",
@@ -201,6 +202,7 @@
     "POST /api/v1/system/cache-bust",
     "POST /api/v1/system/login-background",
     "POST /api/v1/system/logo/{slug}",
+    "POST /api/v1/system/run-checks",
     "POST /api/v1/system/sms-settings/test",
     "POST /api/v1/system/smtp-settings/test",
     "POST /api/v1/users/bulk-assign-role",
