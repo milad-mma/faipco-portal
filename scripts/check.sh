@@ -13,7 +13,10 @@ if [ "$QUICK" = "--log" ]; then
   # اجرا از پنل (systemd-run به‌عنوان root): کل خروجی در فایل لاگ، از نو
   CHECK_LOG="/var/log/faipco-check.log"
   : > "$CHECK_LOG"; chmod 644 "$CHECK_LOG"
-  exec > >(tee -a "$CHECK_LOG") 2>&1
+  # ⚠️ ریدایرکت مستقیم، نه process substitution با tee: زیر systemd-run با پایان
+  # پروسه اصلی، tee (در همان cgroup) کشته می‌شد و خط‌های آخر لاگ (نتیجه نهایی
+  # [CHECK] RESULT) از دست می‌رفت - پنل تا ابد «در حال اجرا» می‌ماند.
+  exec >>"$CHECK_LOG" 2>&1
   QUICK=""
   echo "[CHECK] START $(date '+%Y-%m-%d %H:%M:%S')"
 fi

@@ -194,9 +194,13 @@ def get_check_status() -> dict:
         pass
     is_passed = "[CHECK] RESULT: PASS" in log_content
     is_failed = "[CHECK] RESULT: FAIL" in log_content
+    # پروسه تمام شده ولی خط نتیجه در لاگ نیست (کشته شده/قطع شده) → شکست، نه «در حال اجرا» تا ابد
+    if log_content and not is_unit_active and not is_passed and not is_failed:
+        is_failed = True
+        log_content += "\n[CHECK] RESULT: FAIL (بررسی بدون خط نتیجه پایان یافت - لاگ ناقص)"
     return {
         "log": log_content,
-        "is_running": is_unit_active or (bool(log_content) and not is_passed and not is_failed),
+        "is_running": is_unit_active,
         "is_passed": is_passed,
         "is_failed": is_failed,
     }
