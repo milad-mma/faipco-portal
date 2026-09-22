@@ -337,8 +337,15 @@ async def get_monthly_attendance(
     overlay = None
     if kara_names is not None and site_connection.db_type == DbType.mssql:
         try:
+            branch_int = int(branch_value) if branch_value is not None and str(branch_value).isdigit() else None
             overlay = await asyncio.to_thread(
-                kara_attendance_overlay.fetch_overlay_sync, site_connection, kara_names, emp_no, from_date, to_date
+                kara_attendance_overlay.fetch_overlay_sync,
+                site_connection,
+                kara_names,
+                emp_no,
+                from_date,
+                to_date,
+                branch_int,
             )
         except Exception:  # noqa: BLE001
             logger.exception("خطا در دریافت مرخصی/ماموریت برای گزارش تردد (Emp_No=%s)", emp_no)

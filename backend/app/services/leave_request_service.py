@@ -225,6 +225,13 @@ def _select_card_lookup_sync(conn: SiteConnection, mapping: LeaveRequestMapping)
     را هم خودکار و درست پر کند.
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    # WF_Cards: عنوان سفارشی هر شعبه (Card_No در چند شعبه تکرار می‌شود) - فقط شعبه همین سایت
+    names = KaraNames(mapping)
+    where_sql, params = "", {}
+    branch = getattr(mapping, "_site_branch", None)
+    if names.has("cards", "branch_code") and branch is not None:
+        where_sql = f"WHERE {q(names.raw('cards', 'branch_code'))} = %(branch)s"
+        params["branch"] = branch
     connection = _connect(conn)
     try:
         query = f"""
@@ -233,10 +240,11 @@ def _select_card_lookup_sync(conn: SiteConnection, mapping: LeaveRequestMapping)
                 {q(mapping.card_lookup_desc_column)} AS {q("LookupTitle")},
                 {q(mapping.card_lookup_action_id_column)} AS {q("LinkedActionId")}
             FROM {q(mapping.card_lookup_table_name)}
+            {where_sql}
             ORDER BY {q(mapping.card_lookup_id_column)} ASC
         """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
         with _dict_cursor(connection, conn.db_type) as cur:
-            cur.execute(query)
+            cur.execute(query, params)
             return list(cur.fetchall())
     finally:
         connection.close()

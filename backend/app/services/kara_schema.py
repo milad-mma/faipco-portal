@@ -101,6 +101,10 @@ LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     # ستون‌های تکمیلی جدول کارت‌ها (جدول/شماره/عنوان در بخش Cards همین تب است)
     "cards.card_type": "CardType",
     "cards.is_day": "IsDay",
+    # ستون شعبه جدول کارت‌ها - فقط برای WF_Cards (عنوان‌های سفارشی هر شعبه، همان
+    # چیزی که خودِ کاراوب نشان می‌دهد)؛ Cards چنین ستونی ندارد → خالی بگذارید.
+    # مقدارش «کد شعبه این سایت» در نگاشت پرسنل است.
+    "cards.branch_code": "",
 }
 
 ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {

@@ -97,7 +97,9 @@ def _kind_for_card_type(card_type) -> str:
     return KIND_OTHER
 
 
-def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_date: int, to_date: int) -> dict:
+def fetch_overlay_sync(
+    conn: SiteConnection, n: KaraNames, emp_no: int, from_date: int, to_date: int, branch_value: int | None = None
+) -> dict:
     """
     خروجی:
       {
@@ -194,9 +196,15 @@ def fetch_overlay_sync(conn: SiteConnection, n: KaraNames, emp_no: int, from_dat
                 card_type_sql = (
                     f"{n.c('cards', 'card_type')} AS CardType" if n.has("cards", "card_type") else "NULL AS CardType"
                 )
+                # WF_Cards عنوان‌های سفارشی هر شعبه را دارد (Card_No در چند شعبه تکرار
+                # می‌شود) - با ستون شعبه نگاشت‌شده فقط ردیف شعبه همین سایت
+                branch_sql = ""
+                if n.has("cards", "branch_code") and branch_value is not None:
+                    branch_sql = f" AND {n.c('cards', 'branch_code')} = %(branch)s"
+                    params["branch"] = branch_value
                 cur.execute(
                     f"SELECT {n.cards_no} AS CardNo, {n.cards_title} AS Title, {card_type_sql} "
-                    f"FROM {n.cards_table} WHERE {n.cards_no} IN ({placeholders})",
+                    f"FROM {n.cards_table} WHERE {n.cards_no} IN ({placeholders}){branch_sql}",
                     params,
                 )
                 for r in cur.fetchall():
