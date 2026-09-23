@@ -58,7 +58,9 @@ function ClearableJalaliDatePicker({ value, onChange, label, align }) {
           {label}
         </Stack>
       )}
-      <Stack direction="row" spacing={1}>
+      {/* ⚠️ موبایل: سه/چهار فیلد با عرض ثابت از صفحه بیرون می‌زدند؛ حالا کش می‌آیند و در
+            عرض کم می‌شکنند (useFlexGap تا فاصله بعد از شکستن هم درست بماند) */}
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: "100%", maxWidth: 460 }}>
         <TextField
           select
           label="روز"
@@ -69,7 +71,7 @@ function ClearableJalaliDatePicker({ value, onChange, label, align }) {
             setDay(v);
             emit(year, month, v);
           }}
-          sx={{ minWidth: 80 }}
+          sx={{ flex: "1 1 72px", minWidth: 72 }}
         >
           {dayOptions.map((d) => (
             <MenuItem key={d} value={d}>
@@ -87,7 +89,7 @@ function ClearableJalaliDatePicker({ value, onChange, label, align }) {
             setMonth(v);
             emit(year, v, day);
           }}
-          sx={{ minWidth: 130 }}
+          sx={{ flex: "2 1 110px", minWidth: 110 }}
         >
           {JALALI_MONTH_NAMES.map((name, i) => (
             <MenuItem key={name} value={i + 1}>
@@ -105,7 +107,7 @@ function ClearableJalaliDatePicker({ value, onChange, label, align }) {
             setYear(v);
             emit(v, month, day);
           }}
-          sx={{ minWidth: 100 }}
+          sx={{ flex: "1 1 88px", minWidth: 88 }}
         >
           {yearOptions.map((y) => (
             <MenuItem key={y} value={y}>
@@ -161,8 +163,10 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
           {label}
         </Stack>
       )}
-      <Stack direction="row" spacing={1}>
-        <TextField select label="روز" size="small" value={day} onChange={(e) => setDay(Number(e.target.value))} sx={{ minWidth: 80 }}>
+      {/* ⚠️ موبایل: سه/چهار فیلد با عرض ثابت از صفحه بیرون می‌زدند؛ حالا کش می‌آیند و در
+            عرض کم می‌شکنند (useFlexGap تا فاصله بعد از شکستن هم درست بماند) */}
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: "100%", maxWidth: 460 }}>
+        <TextField select label="روز" size="small" value={day} onChange={(e) => setDay(Number(e.target.value))} sx={{ flex: "1 1 72px", minWidth: 72 }}>
           {dayOptions.map((d) => (
             <MenuItem key={d} value={d}>
               {d}
@@ -175,7 +179,7 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
           size="small"
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: 130 }}
+          sx={{ flex: "2 1 110px", minWidth: 110 }}
         >
           {JALALI_MONTH_NAMES.map((name, i) => (
             <MenuItem key={name} value={i + 1}>
@@ -189,7 +193,7 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
           size="small"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: 100 }}
+          sx={{ flex: "1 1 88px", minWidth: 88 }}
         >
           {Array.from({ length: 11 }, (_, i) => initialJalali.jy - 5 + i).map((y) => (
             <MenuItem key={y} value={y}>
@@ -204,7 +208,7 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
-            sx={{ minWidth: 110 }}
+            sx={{ flex: "1 1 100px", minWidth: 100 }}
             InputLabelProps={{ shrink: true }}
           />
         )}

@@ -36,7 +36,7 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
           {label}
         </Stack>
       )}
-      <Stack direction="row" spacing={1}>
+      <Stack direction="row" spacing={1} sx={{ width: "100%" }}>
         {/* ⚠️ طبق درخواست صریح کاربر: ساعت سمت چپ، دقیقه سمت راست. چون
             صفحه RTL است، اولین عنصر در DOM سمت راست رندر می‌شود - پس
             «دقیقه» عمداً اول آمده تا «ساعت» سمت چپ بیفتد. */}
@@ -46,7 +46,7 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
           label="دقیقه"
           value={minuteStr}
           onChange={(e) => handleMinuteChange(e.target.value)}
-          sx={{ minWidth: 90 }}
+          sx={{ flex: 1, minWidth: 72 }}
         >
           {MINUTES.map((m) => (
             <MenuItem key={m} value={m}>
@@ -60,7 +60,7 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
           label="ساعت"
           value={hourStr}
           onChange={(e) => handleHourChange(e.target.value)}
-          sx={{ minWidth: 90 }}
+          sx={{ flex: 1, minWidth: 72 }}
         >
           {HOURS.map((h) => (
             <MenuItem key={h} value={h}>
