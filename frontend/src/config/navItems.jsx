@@ -18,6 +18,7 @@ import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
+import HealthAndSafetyOutlinedIcon from "@mui/icons-material/HealthAndSafetyOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
@@ -89,6 +90,12 @@ export const NAV_ITEMS = [
         path: "/vehicle-report",
         icon: <DirectionsCarFilledOutlinedIcon />,
         check: (u) => u?.can_view_vehicles_report,
+      },
+      {
+        label: "بیمه تکمیلی",
+        path: "/insurance/admin",
+        icon: <HealthAndSafetyOutlinedIcon />,
+        check: (u) => u?.can_view_insurance,
       },
     ],
   },

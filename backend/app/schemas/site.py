@@ -84,6 +84,8 @@ class EmployeeMappingIn(BaseModel):
     mobile_column: str | None = None
     email_column: str | None = None
     birth_date_column: str | None = None
+    hire_date_column: str | None = None
+    gender_column: str | None = None
     is_active_column: str | None = None
     is_active_inverted: bool = False
     # اختیاری: فیلتر شعبه برای دیتابیس پرسنل مشترک بین چند سایت (مثل BranchCode)

@@ -8,7 +8,7 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
-import SupportAgentOutlinedIcon from "@mui/icons-material/SupportAgentOutlined";
+import HealthAndSafetyOutlinedIcon from "@mui/icons-material/HealthAndSafetyOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
@@ -68,11 +68,11 @@ function DisabledChip() {
   );
 }
 
-function ToolCard({ icon, label, comingSoon, onClick }) {
+function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
   return (
     <Card
       variant="outlined"
-      onClick={comingSoon ? undefined : onClick}
+      onClick={comingSoon || disabled ? undefined : onClick}
       sx={{
         position: "relative",
         // ⚠️ ارتفاع ثابت و مستقل از «متولدین امروز» (در دسکتاپ ۱۱۰). height:100%
@@ -86,12 +86,13 @@ function ToolCard({ icon, label, comingSoon, onClick }) {
         justifyContent: "center",
         gap: 0.8,
         borderRadius: 2,
-        cursor: comingSoon ? "default" : "pointer",
-        opacity: comingSoon ? 0.55 : 1,
-        "&:hover": comingSoon ? {} : { backgroundColor: "action.hover" },
+        cursor: comingSoon || disabled ? "default" : "pointer",
+        opacity: comingSoon || disabled ? 0.55 : 1,
+        "&:hover": comingSoon || disabled ? {} : { backgroundColor: "action.hover" },
       }}
     >
       {comingSoon && <ComingSoonChip />}
+      {disabled && !comingSoon && <DisabledChip />}
       {/* ⚠️ فقط دسکتاپ: آیکون و متن بزرگ‌تر (کاشی‌ها در دسکتاپ بلندترند) */}
       <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
       <Typography
@@ -505,7 +506,14 @@ export default function PersonalDashboardPage() {
         <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
         <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
-        <ToolCard icon={<SupportAgentOutlinedIcon />} label="تیکت IT" comingSoon />
+        {/* ⚠️ طبق درخواست کاربر: کاشی «بیمه تکمیلی» جایگزین «تیکت IT»؛ اگر ماژول از
+            پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
+        <ToolCard
+          icon={<HealthAndSafetyOutlinedIcon />}
+          label="بیمه تکمیلی"
+          disabled={Boolean(user?.insurance_disabled)}
+          onClick={() => navigate("/insurance")}
+        />
       </Box>
 
       {/* متولدین امروز */}

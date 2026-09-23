@@ -267,6 +267,17 @@ class AuthService:
         base.can_update_employees = user.is_superuser or "employees.update" in permission_codes
         base.can_create_employees = user.is_superuser or "employees.create" in permission_codes
         base.can_manage_vehicles = user.is_superuser or "vehicles.manage" in permission_codes
+        base.can_view_insurance = (
+            user.is_superuser or "insurance.view" in permission_codes or "insurance.manage" in permission_codes
+        )
+        base.can_manage_insurance = user.is_superuser or "insurance.manage" in permission_codes
+        # ماژول بیمه تکمیلی سراسری است (نه به‌ازای سایت)؛ خواندن سبک از تنظیمات
+        try:
+            from app.services.insurance_service import InsuranceService
+
+            base.insurance_disabled = not (await InsuranceService(self.db).get_settings())["enabled"]
+        except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
+            base.insurance_disabled = False
         base.can_view_sync = user.is_superuser or "sync.view" in permission_codes
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes

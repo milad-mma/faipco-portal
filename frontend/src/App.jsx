@@ -19,6 +19,8 @@ import SiteSettingsPage from "./pages/SiteSettingsPage";
 import SyncPage from "./pages/SyncPage";
 import NoticesPage from "./pages/NoticesPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
+import InsurancePage from "./pages/InsurancePage";
+import InsuranceAdminPage from "./pages/InsuranceAdminPage";
 import LeaveRequestPage from "./pages/LeaveRequestPage";
 import LeaveRequestsAdminListPage from "./pages/LeaveRequestsAdminListPage";
 import LeaveRequestStructurePage from "./pages/LeaveRequestStructurePage";
@@ -219,6 +221,11 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
+          <Route path="/insurance" element={<InsurancePage />} />
+          <Route
+            path="/insurance/admin"
+            element={<PermissionRoute check={(u) => u?.can_view_insurance}><InsuranceAdminPage /></PermissionRoute>}
+          />
           <Route path="/leave-requests" element={<LeaveRequestPage />} />
           <Route
             path="/leave-requests/settings"

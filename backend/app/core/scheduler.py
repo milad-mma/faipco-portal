@@ -148,6 +148,19 @@ async def _send_birthday_greetings() -> None:
             await _advisory_unlock(db, _BIRTHDAY_LOCK_KEY)
 
 
+async def _cleanup_insurance_pending_documents_job() -> None:
+    """مدارک بیمه تکمیلی که آپلود شدند ولی فرم هرگز ثبت نشد (قدیمی‌تر از ۲۴ ساعت)."""
+    from app.services.insurance_service import InsuranceService
+
+    async with AsyncSessionLocal() as db:
+        try:
+            removed = await InsuranceService(db).cleanup_pending_documents()
+            if removed:
+                logger.info("%s مدرک موقت بیمه تکمیلی پاک شد", removed)
+        except Exception:  # noqa: BLE001
+            logger.exception("پاک‌سازی مدارک موقت بیمه تکمیلی ناموفق بود")
+
+
 async def _record_server_stats_job() -> None:
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _SERVER_STATS_LOCK_KEY)
@@ -293,6 +306,14 @@ async def start_scheduler() -> None:
     logger.info(
         "Scheduler هر %s دقیقه یک‌بار مصرف CPU/RAM/دیسک سرور را نمونه‌برداری می‌کند",
         SERVER_STATS_SAMPLE_INTERVAL_MINUTES,
+    )
+
+    scheduler.add_job(
+        _cleanup_insurance_pending_documents_job,
+        trigger="interval",
+        hours=6,
+        id="insurance_pending_cleanup",
+        replace_existing=True,
     )
 
     scheduler.add_job(

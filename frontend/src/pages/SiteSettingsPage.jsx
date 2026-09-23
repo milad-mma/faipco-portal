@@ -69,6 +69,8 @@ const EMPTY_MAPPING = {
   mobile_column: "",
   email_column: "",
   birth_date_column: "",
+  hire_date_column: "",
+  gender_column: "",
   is_active_column: "",
   is_active_inverted: false,
   branch_code_column: "",
@@ -407,6 +409,8 @@ export default function SiteSettingsPage() {
           mobile_column: mapping.mobile_column || "",
           email_column: mapping.email_column || "",
           birth_date_column: mapping.birth_date_column || "",
+          hire_date_column: mapping.hire_date_column || "",
+          gender_column: mapping.gender_column || "",
           is_active_column: mapping.is_active_column || "",
           is_active_inverted: mapping.is_active_inverted || false,
           branch_code_column: mapping.branch_code_column || "",
@@ -902,6 +906,20 @@ export default function SiteSettingsPage() {
               value={mappingForm.birth_date_column}
               onChange={(e) => setMappingForm({ ...mappingForm, birth_date_column: e.target.value })}
               helperText='فرمت مورد انتظار مثل «1370/05/21» یا «13700521»'
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون تاریخ استخدام شمسی (اختیاری — برای بیمه تکمیلی)"
+              value={mappingForm.hire_date_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, hire_date_column: e.target.value })}
+              helperText="کاراوب: Emp_Date"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون جنسیت (اختیاری — برای بیمه تکمیلی)"
+              value={mappingForm.gender_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, gender_column: e.target.value })}
+              helperText="کاراوب: Gender (۱ = مرد، ۲ = زن)"
               disabled={isSaving}
             />
             <TextField

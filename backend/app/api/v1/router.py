@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     evaluation_structure,
     feedback,
     hr,
+    insurance,
     leave_requests,
     leave_requests_admin,
     mapping_suggestions,
@@ -47,6 +48,7 @@ api_router.include_router(attendance.router, prefix="/attendance", tags=["attend
 api_router.include_router(monthly_attendance.router, prefix="/monthly-attendance", tags=["monthly-attendance"])
 api_router.include_router(hr.router, prefix="/hr", tags=["hr"])
 api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
+api_router.include_router(insurance.router, prefix="/insurance", tags=["insurance"])
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
 api_router.include_router(mapping_suggestions.router, prefix="/mapping-suggestions", tags=["mapping-suggestions"])
 api_router.include_router(evaluation_structure.router, prefix="/performance", tags=["performance"])

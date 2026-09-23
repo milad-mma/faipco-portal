@@ -196,6 +196,10 @@ class SyncService:
             columns["email"] = mapping.email_column
         if mapping.birth_date_column:
             columns["birth_date_raw"] = mapping.birth_date_column
+        if (mapping.hire_date_column or "").strip():
+            columns["hire_date_raw"] = mapping.hire_date_column.strip()
+        if (mapping.gender_column or "").strip():
+            columns["gender_raw"] = mapping.gender_column.strip()
         if mapping.is_active_column:
             columns["is_active_raw"] = mapping.is_active_column
         if mapping.department_column:
@@ -276,6 +280,46 @@ class SyncService:
         if isinstance(raw_value, (int, float)):
             return bool(raw_value)
         return str(raw_value).strip().lower() not in _FALSY_ACTIVE_VALUES
+
+    @staticmethod
+    def _normalize_jalali_date(raw_value) -> str | None:
+        """
+        تاریخ شمسی خام (مثل «13700521» یا «1370/5/21») → «1370/05/21» - فرمت
+        فرم بیمه تکمیلی. نامعتبر → None (Sync شکست نمی‌خورد).
+        """
+        if raw_value is None:
+            return None
+        text = str(raw_value).strip()
+        if not text:
+            return None
+        parts: list[str] | None = None
+        for sep in ("/", "-", "."):
+            if sep in text:
+                parts = text.split(sep)
+                break
+        if parts is None and text.isdigit() and len(text) == 8:
+            parts = [text[:4], text[4:6], text[6:8]]
+        if not parts or len(parts) != 3:
+            return None
+        try:
+            year, month, day = (int(p) for p in parts)
+        except ValueError:
+            return None
+        if not (1300 <= year <= 1500 and 1 <= month <= 12 and 1 <= day <= 31):
+            return None
+        return f"{year:04d}/{month:02d}/{day:02d}"
+
+    @staticmethod
+    def _normalize_gender(raw_value) -> int | None:
+        """جنسیت: ۱=مرد، ۲=زن (کد کاراوب)؛ متن «مرد/زن» یا M/F هم پذیرفته می‌شود."""
+        if raw_value is None:
+            return None
+        text = str(raw_value).strip().lower()
+        if text in ("1", "m", "male", "مرد"):
+            return 1
+        if text in ("2", "f", "female", "زن"):
+            return 2
+        return None
 
     @staticmethod
     def _parse_birth_month_day(raw_value) -> tuple[int, int] | None:
@@ -395,10 +439,16 @@ class SyncService:
                     email = None
 
             birth_month = birth_day = None
+            birth_date_jalali = None
             if "birth_date_raw" in columns:
                 parsed_birth = self._parse_birth_month_day(row.get(columns["birth_date_raw"]))
                 if parsed_birth is not None:
                     birth_month, birth_day = parsed_birth
+                birth_date_jalali = self._normalize_jalali_date(row.get(columns["birth_date_raw"]))
+            hire_date_jalali = (
+                self._normalize_jalali_date(row.get(columns["hire_date_raw"])) if "hire_date_raw" in columns else None
+            )
+            gender = self._normalize_gender(row.get(columns["gender_raw"])) if "gender_raw" in columns else None
 
             position_title = None
             if "position_raw" in columns:
@@ -451,6 +501,9 @@ class SyncService:
                         is_active=is_active,
                         birth_month=birth_month,
                         birth_day=birth_day,
+                        birth_date_jalali=birth_date_jalali,
+                        hire_date_jalali=hire_date_jalali,
+                        gender=gender,
                         position_title=position_title,
                         # is_enabled عمداً اینجا تنظیم نمی‌شود — مقدار پیش‌فرض
                         # ستون (True) اعمال می‌شود؛ این فیلد فقط دستی از پنل تغییر می‌کند.
@@ -470,6 +523,11 @@ class SyncService:
                 if "birth_date_raw" in columns:
                     existing.birth_month = birth_month
                     existing.birth_day = birth_day
+                    existing.birth_date_jalali = birth_date_jalali
+                if "hire_date_raw" in columns:
+                    existing.hire_date_jalali = hire_date_jalali
+                if "gender_raw" in columns:
+                    existing.gender = gender
                 if "position_raw" in columns:
                     existing.position_title = position_title
                 if has_department_mapping:

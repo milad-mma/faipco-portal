@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
+from sqlalchemy import SmallInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -58,6 +58,11 @@ class Employee(Base, TimestampMixin):
     # Sync Engine استخراج و اینجا ذخیره می‌شود.
     birth_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     birth_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # برای ماژول «بیمه تکمیلی»: تاریخ تولد و استخدام کامل شمسی («1370/05/21») و
+    # جنسیت (۱=مرد، ۲=زن - همان کد کاراوب)؛ از نگاشت پرسنل Sync می‌شوند
+    birth_date_jalali: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    hire_date_jalali: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    gender: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     # نام سمت/عنوان شغلی — مستقیماً به‌صورت متن ذخیره می‌شود (نه یک جدول جدا با
     # Foreign Key مثل Department)، چون سمت فقط برای نمایش اطلاعاتی است و به آن
@@ -130,6 +135,9 @@ class EmployeeMapping(Base, TimestampMixin):
     # می‌کند (برای کارت «متولدین روز جاری» در داشبورد)، بدون نیاز به تبدیل
     # تقویم شمسی/میلادی.
     birth_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # اختیاری (بیمه تکمیلی): تاریخ استخدام شمسی و جنسیت (کاراوب: Emp_Date / Gender)
+    hire_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    gender_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری: اگر دیتابیس مبدأ ستونی برای فعال/غیرفعال بودن پرسنل داشته باشد
     is_active_column: Mapped[str | None] = mapped_column(String(128), nullable=True)

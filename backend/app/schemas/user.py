@@ -56,6 +56,9 @@ class UserOut(BaseModel):
     can_update_employees: bool = False  # employees.update — ویرایش اطلاعات پرسنل
     can_create_employees: bool = False  # employees.create — افزودن دستی پرسنل
     can_manage_vehicles: bool = False  # vehicles.manage — ویرایش/حذف خودروی هر پرسنلی
+    can_view_insurance: bool = False  # insurance.view یا insurance.manage — فهرست/خروجی بیمه تکمیلی
+    can_manage_insurance: bool = False  # insurance.manage — تنظیمات بیمه تکمیلی
+    insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت
     can_bust_cache: bool = False  # system.cache_bust — پاک‌سازی Cache سرور
