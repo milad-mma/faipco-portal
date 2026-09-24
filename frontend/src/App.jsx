@@ -3,7 +3,7 @@
  * و تعریف همه‌ی مسیرهای (Route) برنامه به همراه محافظ‌های دسترسی هر مسیر.
  * مسیرهای داخلی داخل Layout و پشت ProtectedRoute (نیازمند ورود) قرار دارند.
  */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
@@ -12,50 +12,54 @@ import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
 import SplashScreen from "./components/SplashScreen";
 import { useAuth } from "./context/AuthContext";
+import lazyPage from "./utils/lazyPage";
 import { useBranding } from "./context/BrandingContext";
 import LoginPage from "./pages/LoginPage";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
-import DashboardPage from "./pages/DashboardPage";
-import EmployeesPage from "./pages/EmployeesPage";
-import DepartmentsPage from "./pages/DepartmentsPage";
-import SitesPage from "./pages/SitesPage";
-import SiteSettingsPage from "./pages/SiteSettingsPage";
-import SyncPage from "./pages/SyncPage";
-import NoticesPage from "./pages/NoticesPage";
-import MyVehiclesPage from "./pages/MyVehiclesPage";
-import InsurancePage from "./pages/InsurancePage";
-import InsuranceAdminPage from "./pages/InsuranceAdminPage";
-import LeaveRequestPage from "./pages/LeaveRequestPage";
-import LeaveRequestsAdminListPage from "./pages/LeaveRequestsAdminListPage";
-import LeaveRequestStructurePage from "./pages/LeaveRequestStructurePage";
-import MyPerformancePage from "./pages/MyPerformancePage";
-import EvaluationFillPage from "./pages/EvaluationFillPage";
-import VehiclesReportPage from "./pages/VehiclesReportPage";
-import NewNoticePage from "./pages/NewNoticePage";
 import PersonalDashboardPage from "./pages/PersonalDashboardPage";
-import ProfilePage from "./pages/ProfilePage";
-import NoticeReportsPage from "./pages/NoticeReportsPage";
-import FeedbackReportPage from "./pages/FeedbackReportPage";
-import FeedbackSubmitPage from "./pages/FeedbackSubmitPage";
-import AccessManagementPage from "./pages/AccessManagementPage";
-import RoleManagementPage from "./pages/RoleManagementPage";
-import SystemSettingsPage from "./pages/SystemSettingsPage";
-import BulkRoleAssignmentPage from "./pages/BulkRoleAssignmentPage";
-import BackupPage from "./pages/BackupPage";
-import UpdatePage from "./pages/UpdatePage";
-import IpAllowlistPage from "./pages/IpAllowlistPage";
-import AttendanceClockPage from "./pages/AttendanceClockPage";
-import MonthlyAttendanceReportPage from "./pages/MonthlyAttendanceReportPage";
-import PresenceReportPage from "./pages/PresenceReportPage";
-import ClockInOutReportPage from "./pages/ClockInOutReportPage";
-import BirthdayMessagesPage from "./pages/BirthdayMessagesPage";
-import EvaluationStructurePage from "./pages/EvaluationStructurePage";
-import EvaluationPeriodsPage from "./pages/EvaluationPeriodsPage";
-import EvaluationFormsPage from "./pages/EvaluationFormsPage";
-import EvaluationReportsPage from "./pages/EvaluationReportsPage";
-import EvaluationFormBuilderPage from "./pages/EvaluationFormBuilderPage";
 import NotFoundPage from "./pages/NotFoundPage";
+
+// صفحه‌ها به‌صورت تنبل (هر صفحه یک chunk جدا) بارگذاری می‌شوند تا بار اول فقط کد لازم دانلود و اجرا شود؛
+// ورود و داشبورد شخصی (پرکاربردترین مسیرها) مستقیم import شده‌اند
+const ForgotPasswordPage = lazyPage(() => import("./pages/ForgotPasswordPage"));
+const ResetPasswordPage = lazyPage(() => import("./pages/ResetPasswordPage"));
+const DashboardPage = lazyPage(() => import("./pages/DashboardPage"));
+const EmployeesPage = lazyPage(() => import("./pages/EmployeesPage"));
+const DepartmentsPage = lazyPage(() => import("./pages/DepartmentsPage"));
+const SitesPage = lazyPage(() => import("./pages/SitesPage"));
+const SiteSettingsPage = lazyPage(() => import("./pages/SiteSettingsPage"));
+const SyncPage = lazyPage(() => import("./pages/SyncPage"));
+const NoticesPage = lazyPage(() => import("./pages/NoticesPage"));
+const MyVehiclesPage = lazyPage(() => import("./pages/MyVehiclesPage"));
+const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
+const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
+const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
+const LeaveRequestsAdminListPage = lazyPage(() => import("./pages/LeaveRequestsAdminListPage"));
+const LeaveRequestStructurePage = lazyPage(() => import("./pages/LeaveRequestStructurePage"));
+const MyPerformancePage = lazyPage(() => import("./pages/MyPerformancePage"));
+const EvaluationFillPage = lazyPage(() => import("./pages/EvaluationFillPage"));
+const VehiclesReportPage = lazyPage(() => import("./pages/VehiclesReportPage"));
+const NewNoticePage = lazyPage(() => import("./pages/NewNoticePage"));
+const ProfilePage = lazyPage(() => import("./pages/ProfilePage"));
+const NoticeReportsPage = lazyPage(() => import("./pages/NoticeReportsPage"));
+const FeedbackReportPage = lazyPage(() => import("./pages/FeedbackReportPage"));
+const FeedbackSubmitPage = lazyPage(() => import("./pages/FeedbackSubmitPage"));
+const AccessManagementPage = lazyPage(() => import("./pages/AccessManagementPage"));
+const RoleManagementPage = lazyPage(() => import("./pages/RoleManagementPage"));
+const SystemSettingsPage = lazyPage(() => import("./pages/SystemSettingsPage"));
+const BulkRoleAssignmentPage = lazyPage(() => import("./pages/BulkRoleAssignmentPage"));
+const BackupPage = lazyPage(() => import("./pages/BackupPage"));
+const UpdatePage = lazyPage(() => import("./pages/UpdatePage"));
+const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
+const AttendanceClockPage = lazyPage(() => import("./pages/AttendanceClockPage"));
+const MonthlyAttendanceReportPage = lazyPage(() => import("./pages/MonthlyAttendanceReportPage"));
+const PresenceReportPage = lazyPage(() => import("./pages/PresenceReportPage"));
+const ClockInOutReportPage = lazyPage(() => import("./pages/ClockInOutReportPage"));
+const BirthdayMessagesPage = lazyPage(() => import("./pages/BirthdayMessagesPage"));
+const EvaluationStructurePage = lazyPage(() => import("./pages/EvaluationStructurePage"));
+const EvaluationPeriodsPage = lazyPage(() => import("./pages/EvaluationPeriodsPage"));
+const EvaluationFormsPage = lazyPage(() => import("./pages/EvaluationFormsPage"));
+const EvaluationReportsPage = lazyPage(() => import("./pages/EvaluationReportsPage"));
+const EvaluationFormBuilderPage = lazyPage(() => import("./pages/EvaluationFormBuilderPage"));
 
 const SPLASH_FADE_MS = 400; // مدت انیمیشن محو شدن اسپلش پیش از حذف کامل آن (میلی‌ثانیه)
 
@@ -81,6 +85,8 @@ export default function App() {
   return (
     <>
       {showSplash && <SplashScreen visible={isLoading} />}
+      {/* مرز Suspense برای صفحه‌های تنبل بیرون از Layout (فراموشی/بازنشانی رمز)؛ صفحه‌های داخل Layout مرز خودشان را دارند */}
+      <Suspense fallback={null}>
       <Routes>
         {/* مسیرهای عمومی (بدون نیاز به ورود): ورود، فراموشی و بازنشانی رمز عبور */}
         <Route path="/login" element={<LoginPage />} />
@@ -288,6 +294,7 @@ export default function App() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </>
   );
 }

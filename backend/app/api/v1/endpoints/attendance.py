@@ -414,16 +414,20 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                 geofence = await check_geofence(db, data.get("site_id"), latitude, longitude)
 
                 if not geofence.is_within:
+                    # پاسخ قبل از پایان تراکنش ساخته می‌شود (بعد از rollback اشیاء منقضی می‌شوند)
+                    payload = {
+                        "status": "outside_geofence",
+                        "matched_site_name": geofence.matched_site.name if geofence.matched_site else None,
+                        "distance_meters": geofence.distance_meters,
+                        "allowed_radius_meters": geofence.matched_site.gps_radius_meters if geofence.matched_site else None,
+                    }
                     # خارج از محدوده: Session باز (اگر باشد) بسته می‌شود و چیز جدیدی ثبت نمی‌شود
                     await close_open_session()
-                    await websocket.send_json(
-                        {
-                            "status": "outside_geofence",
-                            "matched_site_name": geofence.matched_site.name if geofence.matched_site else None,
-                            "distance_meters": geofence.distance_meters,
-                            "allowed_radius_meters": geofence.matched_site.gps_radius_meters if geofence.matched_site else None,
-                        }
-                    )
+                    # کوئری check_geofence تراکنشی باز کرده بود؛ اگر commit نشد، باید بسته شود تا
+                    # اتصال دیتابیس تا Heartbeat بعدی (و در عمل تا قطع Socket) از Pool گرفته نماند
+                    if db.in_transaction():
+                        await db.rollback()
+                    await websocket.send_json(payload)
                     continue
 
                 # داخل محدوده: اگر Session بازی نیست، همین لحظه یکی ساخته می‌شود

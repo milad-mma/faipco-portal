@@ -9,6 +9,7 @@ Endpoint های پرسنل (/employees): لیست/جستجوی صفحه‌بند
 (User) نداشته باشد (چون هنوز خودش وارد نشده)، همین‌جا به‌صورت خودکار ساخته
 می‌شود — دقیقاً با همان منطقی که هنگام ورود پرسنل (employee-login) استفاده می‌شود.
 """
+import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -476,8 +477,9 @@ async def get_birthday_related_photo_thumbnail(
     viewer_employee = (
         await db.get(Employee, current_user.employee_id) if current_user.employee_id else None
     )
-    content, media_type = add_viewer_watermark(
-        employee.photo_thumbnail, viewer_label_for(current_user, viewer_employee)
+    # پردازش تصویر (Pillow) CPU-bound و همگام است؛ در thread جدا تا حلقه‌ی async بقیه‌ی درخواست‌ها را معطل نکند
+    content, media_type = await asyncio.to_thread(
+        add_viewer_watermark, employee.photo_thumbnail, viewer_label_for(current_user, viewer_employee)
     )
     return Response(
         content=content,
@@ -508,7 +510,12 @@ async def get_employee_photo_thumbnail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
 
     # ThumbnailImg در EmployeeExtendedInfo همیشه GIF است (بر اساس نمونه واقعی داده)
-    return Response(content=employee.photo_thumbnail, media_type="image/gif")
+    # Cache خصوصی مرورگر (۱۰ دقیقه): عکس با Sync دوره‌ای عوض می‌شود و هر بار باز شدن داشبورد نباید دوباره دانلود شود
+    return Response(
+        content=employee.photo_thumbnail,
+        media_type="image/gif",
+        headers={"Cache-Control": "private, max-age=600"},
+    )
 
 
 async def _require_employee_site_permission(

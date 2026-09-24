@@ -19,6 +19,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
+import { swr } from "../api/swrCache";
 import AccessGateDialog from "../components/AccessGateDialog";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
@@ -87,17 +88,42 @@ export default function MonthlyAttendanceReportPage() {
   const [tableScrollWidth, setTableScrollWidth] = useState(0); // عرض قابل‌اسکرول جدول برای هم‌عرض کردن اسکرول‌بار بالا
   const isSyncingScroll = useRef(false); // جلوگیری از حلقه بی‌نهایت بین دو onScroll
 
-  // با هر تغییر ماه/سال، گزارش را از سرور می‌گیرد و period را با پاسخ سرور همگام می‌کند
+  // وقتی period فقط برای همگام شدن با ماه برگشتی سرور عوض می‌شود، درخواست دوباره لازم نیست
+  const skipNextFetch = useRef(false);
+  const latestRequest = useRef(0); // فقط پاسخ آخرین درخواست (بعد از تغییر سریع ماه) اعمال می‌شود
+
+  // با هر تغییر ماه/سال، گزارش را از سرور می‌گیرد و period را با پاسخ سرور همگام می‌کند.
+  // اگر همین ماه قبلاً (در داشبورد یا همین صفحه) گرفته شده باشد، همان فوراً نمایش داده
+  // می‌شود و نسخه‌ی تازه در پس‌زمینه جایگزینش می‌شود.
   useEffect(() => {
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
+    const requestId = ++latestRequest.current;
+    const requested = { year: period.year, month: period.month };
+    const cacheKey = requested.year == null ? "monthly:current" : `monthly:${requested.year}-${requested.month}`;
     setIsLoading(true);
     setError("");
-    fetchMonthlyAttendanceReport({ year: period.year, month: period.month })
-      .then((data) => {
-        setReport(data);
+    const params = { ...requested };
+    let shownFromCache = false;
+    swr(cacheKey, () => fetchMonthlyAttendanceReport(params), (data, fromCache) => {
+      if (requestId !== latestRequest.current) return;
+      if (fromCache) shownFromCache = true;
+      setReport(data);
+      setIsLoading(false);
+      if (data.year !== requested.year || data.month !== requested.month) {
+        skipNextFetch.current = true; // بار اول (ماه جاری): همان گزارش دوباره گرفته نشود
         setPeriod({ year: data.year, month: data.month });
+        requested.year = data.year; // پاسخ تازه‌ی بعد از Cache دوباره period را عوض نکند
+        requested.month = data.month;
+      }
+    })
+      .catch((err) => {
+        if (requestId !== latestRequest.current || shownFromCache) return; // نسخه‌ی قبلی روی صفحه می‌ماند
+        setError(err.response?.data?.detail || "دریافت گزارش تردد با خطا مواجه شد.");
       })
-      .catch((err) => setError(err.response?.data?.detail || "دریافت گزارش تردد با خطا مواجه شد."))
-      .finally(() => setIsLoading(false));
+      .finally(() => requestId === latestRequest.current && setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period.year, period.month]);
 

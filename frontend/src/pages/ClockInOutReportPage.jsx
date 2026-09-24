@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -283,8 +283,16 @@ export default function ClockInOutReportPage() {
   const [deleteTarget, setDeleteTarget] = useState(null); // لاگ در انتظار تأیید حذف
   const [reloadKey, setReloadKey] = useState(0); // با افزایش، لیست دوباره بارگذاری می‌شود
 
+  // وقتی period فقط برای همگام شدن با ماه برگشتی سرور عوض می‌شود، درخواست دوباره لازم نیست
+  const skipNextFetch = useRef(false);
+
   // بارگذاری لاگ‌ها: ورودها و خروج‌های ماه را جداگانه می‌گیرد، ترکیب و به ازای پرسنل-روز گروه‌بندی می‌کند
   useEffect(() => {
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return undefined;
+    }
+    let cancelled = false; // پاسخ درخواست قدیمی (بعد از تغییر سریع فیلتر) نادیده گرفته می‌شود
     setGroupedRows(null);
     Promise.all([
       fetchAllAttendanceLogs({
@@ -306,10 +314,17 @@ export default function ClockInOutReportPage() {
         month: period.month,
       }),
     ]).then(([inData, outData]) => {
+      if (cancelled) return;
       const combined = groupLogsByDay([...inData.items, ...outData.items]);
       setGroupedRows(combined);
-      setPeriod({ year: inData.year, month: inData.month });
+      if (inData.year != null && (inData.year !== period.year || inData.month !== period.month)) {
+        skipNextFetch.current = true; // بار اول (ماه جاری): همان داده دوباره گرفته نشود
+        setPeriod({ year: inData.year, month: inData.month });
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [page, selectedEmployee, selectedSiteId, period.year, period.month, reloadKey]);
 
   // جستجوی پرسنل برای فیلتر بالای صفحه

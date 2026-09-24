@@ -189,6 +189,9 @@ class InsuranceService:
             select(InsuranceRegistration)
             .options(selectinload(InsuranceRegistration.members).selectinload(InsuranceMember.document))
             .where(InsuranceRegistration.employee_id == employee_id)
+            # جلسه expire_on_commit=False دارد؛ بدون populate_existing، بعد از ذخیره
+            # فهرست اعضای قبلی (حذف‌شده) از identity map برمی‌گشت و تغییرات تا رفرش دیده نمی‌شد
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 

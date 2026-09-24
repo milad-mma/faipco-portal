@@ -316,11 +316,26 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
                 </Stack>
               ) : (
                 <Box>
-                  <Button component="label" variant="outlined" startIcon={<CloudUploadOutlinedIcon />} disabled={uploadPct !== null || disabled} sx={{ borderStyle: "dashed", borderColor: err.document ? "error.main" : undefined }}>
-                    برای انتخاب فایل کلیک کنید
-                    <input ref={fileRef} type="file" hidden accept="image/*,application/pdf" onChange={handleFile} />
-                  </Button>
-                  {uploadPct !== null && <LinearProgress variant="determinate" value={uploadPct} sx={{ mt: 1 }} />}
+                  {uploadPct === null ? (
+                    <Button component="label" variant="outlined" startIcon={<CloudUploadOutlinedIcon />} disabled={disabled} sx={{ borderStyle: "dashed", borderColor: err.document ? "error.main" : undefined }}>
+                      برای انتخاب فایل کلیک کنید
+                      <input ref={fileRef} type="file" hidden accept="image/*,application/pdf" onChange={handleFile} />
+                    </Button>
+                  ) : (
+                    // وضعیت آپلود: متن «در حال بارگذاری» با درصد و نوار پیشرفت؛ بعد از ۱۰۰٪ تا پاسخ سرور «در حال ذخیره»
+                    <Box sx={{ p: 1.5, border: "1px solid", borderColor: "primary.light", borderRadius: 1, bgcolor: "#fff" }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        <CircularProgress size={18} />
+                        <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
+                          {uploadPct < 100 ? "در حال بارگذاری فایل..." : "در حال ذخیره در سرور..."}
+                        </Typography>
+                        <Typography variant="body2" fontWeight={800} color="primary.main" dir="ltr">
+                          {`${uploadPct.toLocaleString("fa-IR")}٪`}
+                        </Typography>
+                      </Stack>
+                      <LinearProgress variant={uploadPct < 100 ? "determinate" : "indeterminate"} value={uploadPct} sx={{ height: 8, borderRadius: 4 }} />
+                    </Box>
+                  )}
                   {(uploadErr || err.document) && (
                     <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
                       {uploadErr || err.document}

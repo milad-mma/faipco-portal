@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { swr } from "../api/swrCache";
 import { useSearchParams } from "react-router-dom";
 import {
   Alert,
@@ -101,7 +102,7 @@ function SubmitRequestForm({ onSubmitted }) {
 
   // بارگذاری انواع فعال درخواست
   useEffect(() => {
-    fetchActiveLeaveRequestTypes().then(setTypes);
+    swr("leave:types", fetchActiveLeaveRequestTypes, setTypes).catch(() => {});
   }, []);
 
   const selectedType = types?.find((t) => t.id === Number(typeId)); // شیء نوع انتخابی
@@ -679,23 +680,21 @@ function LeaveRequestPageContent() {
 
   // بارگذاری درخواست‌های خود کاربر
   function loadMyRequests() {
-    fetchMyLeaveRequests()
-      .then(setMyRequests)
+    // آخرین فهرست Cache شده فوراً نمایش داده و با پاسخ تازه جایگزین می‌شود
+    swr("leave:my", fetchMyLeaveRequests, setMyRequests)
       .catch((err) => setError(err.response?.data?.detail || "دریافت درخواست‌های من با خطا مواجه شد."));
   }
 
   // بارگذاری کارتابل (درخواست‌های در انتظار تصمیم کاربر)؛ در خطا لیست خالی
   function loadPending() {
-    fetchPendingLeaveRequestsForMe()
-      .then(setPending)
-      .catch(() => setPending([]));
+    swr("leave:pending", fetchPendingLeaveRequestsForMe, setPending).catch(() => setPending((prev) => prev ?? []));
   }
 
   // فقط تعداد کل سوابق تصمیم را می‌گیرد (یک آیتم درخواست می‌شود) تا نمایش تب کارتابل تعیین شود
   function loadDecidedTotal() {
-    fetchDecidedLeaveRequestsByMe(0, 1)
-      .then((data) => setDecidedTotal(data.total))
-      .catch(() => setDecidedTotal(0));
+    swr("leave:decidedTotal", () => fetchDecidedLeaveRequestsByMe(0, 1), (data) => setDecidedTotal(data.total)).catch(
+      () => setDecidedTotal((prev) => prev || 0)
+    );
   }
 
   // بارگذاری اولیه‌ی هر سه لیست

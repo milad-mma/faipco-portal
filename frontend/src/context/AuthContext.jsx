@@ -6,6 +6,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { fetchCurrentUser, loginRequest } from "../api/auth";
 import { useOnlineStatus } from "./OnlineStatusContext";
+import { setCacheOwner } from "../api/swrCache";
 
 // کانتکست نگهدارنده‌ی { user, isLoading, login, logout, refetchUser }
 const AuthContext = createContext(null);
@@ -17,6 +18,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const { isOnline } = useOnlineStatus();
+  // Cache داده‌های صفحات متعلق به همین کاربر است؛ با تغییر کاربر (خروج/ورود دیگری) پاک می‌شود.
+  // عمداً در بدنه‌ی رندر (نه useEffect) تا قبل از effect صفحات فرزند اعمال شود؛ فراخوانی تکراری بی‌اثر است.
+  setCacheOwner(user?.id);
 
   // اگر access_token ذخیره شده باشد، کاربر جاری را از سرور می‌گیرد؛ در پایان isLoading را false می‌کند
   async function tryRestoreSession() {

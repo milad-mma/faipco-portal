@@ -31,6 +31,7 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
+import { swr } from "../api/swrCache";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import EmployeeAvatar from "../components/EmployeeAvatar";
@@ -116,26 +117,27 @@ export default function PersonalDashboardPage() {
 
   // متولدین امروز را (با رعایت تنظیم حریم خصوصی) بارگذاری می‌کند؛ جدا تعریف شده تا پس از
   // ثبت/تغییر واکنش تبریک فقط همین بخش دوباره خوانده شود
+  // (آخرین داده‌ی Cache شده فوراً نمایش داده می‌شود و پاسخ تازه جایگزینش می‌شود)
   function loadBirthdays() {
-    fetchTodayBirthdays({ respectPrivacy: true })
-      .then(setBirthdays)
-      .catch(() => setBirthdays([]));
+    swr("dashboard:birthdays", () => fetchTodayBirthdays({ respectPrivacy: true }), setBirthdays).catch(() =>
+      setBirthdays((prev) => prev ?? [])
+    );
   }
 
   // بارگذاری اولیه: اطلاعیه‌های اخیر، متولدین امروز و شمارنده درخواست‌های در انتظار
   useEffect(() => {
     // ۱۰ اطلاعیه اخیر گرفته می‌شود (دسکتاپ ۱۰ و موبایل ۵ مورد نمایش می‌دهد). شمارنده
     // «خوانده‌نشده» از unread_total سرور است، یعنی همه اطلاعیه‌های خوانده‌نشده، نه فقط موارد نمایش‌داده‌شده.
-    fetchMyNotices({ page: 1, pageSize: 10, archived: "all" }).then((data) => {
+    swr("dashboard:notices", () => fetchMyNotices({ page: 1, pageSize: 10, archived: "all" }), (data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.unread_total ?? data.items.filter((n) => !n.is_read).length);
-    });
+    }).catch(() => setRecentNotices((prev) => prev ?? []));
     loadBirthdays();
     // شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر؛ برای کسی که
     // تأییدکننده نیست صفر برمی‌گردد (نه خطا).
-    fetchPendingLeaveRequestCount()
-      .then((data) => setPendingLeaveCount(data.pending_count || 0))
-      .catch(() => setPendingLeaveCount(0));
+    swr("dashboard:pendingLeaveCount", fetchPendingLeaveRequestCount, (data) =>
+      setPendingLeaveCount(data.pending_count || 0)
+    ).catch(() => {});
   }, []);
 
   // دریافت عکس پرسنلی به‌صورت Blob، فقط اگر برای کاربر عکس ثبت شده باشد (has_photo از /auth/me)
@@ -145,16 +147,24 @@ export default function PersonalDashboardPage() {
       setPhotoUrl(null);
       return;
     }
-    let objectUrl = null;
-    fetchEmployeePhotoThumbnailBlob(user.employee_id)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        setPhotoUrl(objectUrl);
-      })
-      .catch(() => setPhotoUrl(null));
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    // Blob در Cache می‌ماند تا با برگشت به داشبورد عکس فوراً نمایش داده شود؛ عکس کمتر از ۱۰ دقیقه‌ای دوباره گرفته نمی‌شود
+    const urls = [];
+    let lastBlob = null;
+    swr(
+      `photo:${user.employee_id}`,
+      () => fetchEmployeePhotoThumbnailBlob(user.employee_id),
+      (blob) => {
+        if (blob === lastBlob) return;
+        lastBlob = blob;
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        setPhotoUrl(url);
+      },
+      { maxAgeMs: 10 * 60 * 1000 }
+    ).catch(() => {
+      if (!lastBlob) setPhotoUrl(null);
+    });
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [user?.employee_id, user?.has_photo]);
 
   useEffect(() => {
@@ -166,8 +176,8 @@ export default function PersonalDashboardPage() {
       return;
     }
     const { jd: todayJalaliDay } = gregorianToJalali(new Date());
-    fetchMonthlyAttendanceReport({})
-      .then((report) => {
+    // همان کلید Cache صفحه‌ی «گزارش تردد ماهانه» (ماه جاری)؛ جابه‌جایی بین این دو صفحه فوری است
+    swr("monthly:current", () => fetchMonthlyAttendanceReport({}), (report) => {
         const todayEntry = report.days.find((d) => d.day === todayJalaliDay);
         const transits = todayEntry?.transits || [];
         if (transits.length === 0) {
@@ -180,8 +190,7 @@ export default function PersonalDashboardPage() {
           firstTransit: transits[0],
           lastTransit: transits.length > 1 ? transits[transits.length - 1] : null,
         });
-      })
-      .catch(() => setTodayAttendance("unavailable"));
+    }).catch(() => setTodayAttendance((prev) => (prev && typeof prev === "object" ? prev : "unavailable")));
   }, [user?.has_monthly_attendance]);
 
   // زمان تردد را برای نمایش برمی‌گرداند

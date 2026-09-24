@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { fetchBirthdayPhotoThumbnailBlob } from "../api/employees";
+import { swr } from "../api/swrCache";
 import DefaultPersonAvatar from "./DefaultPersonAvatar";
 
 /**
@@ -21,18 +22,28 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
       setPhotoUrl(null);
       return;
     }
-    let objectUrl = null;
+    // Blob تصویر (با واترمارک همین بیننده) ۱۰ دقیقه در Cache حافظه می‌ماند تا با برگشت به صفحه
+    // یا باز شدن دوباره‌ی فهرست، عکس‌ها فوراً نمایش داده شوند
+    const urls = [];
     let cancelled = false;
-    fetchBirthdayPhotoThumbnailBlob(employeeId)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPhotoUrl(objectUrl);
-      })
-      .catch(() => setPhotoUrl(null));
+    let lastBlob = null;
+    swr(
+      `birthdayPhoto:${employeeId}`,
+      () => fetchBirthdayPhotoThumbnailBlob(employeeId),
+      (blob) => {
+        if (cancelled || blob === lastBlob) return;
+        lastBlob = blob;
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        setPhotoUrl(url);
+      },
+      { maxAgeMs: 10 * 60 * 1000 }
+    ).catch(() => {
+      if (!cancelled && !lastBlob) setPhotoUrl(null);
+    });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      urls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [employeeId, hasPhoto]);
 

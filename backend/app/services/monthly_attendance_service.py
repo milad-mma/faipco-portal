@@ -12,8 +12,9 @@
 روی این داده، لایه‌ی اختیاری تعطیلات تقویمی و لایه‌ی کاراوب (مرخصی/ماموریت
 ساعتی و روزانه، تقویم کاری شیفت، غیبت) قرار می‌گیرد.
 
-داده هیچ‌جا Cache نمی‌شود؛ هر درخواست مستقیماً از دیتابیس سایت می‌خواند
-(مستقل از Sync Engine که پرسنل را دوره‌ای در دیتابیس پرتال ذخیره می‌کند).
+داده‌ی خام فقط ۳۰ ثانیه در حافظه‌ی همان worker نگه داشته می‌شود (برای جابه‌جایی
+داشبورد و صفحه‌ی گزارش) و سه منبع آن هم‌زمان خوانده می‌شوند؛ جدا از Sync Engine
+که پرسنل را دوره‌ای در دیتابیس پرتال ذخیره می‌کند.
 
 امنیت: personnel_code همیشه از Employee کاربر لاگین‌شده می‌آید. مقادیر
 همیشه Parameterized هستند؛ نام جدول/ستون فقط از AttendanceMapping (تنظیم
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import pymssql
 import pymysql
@@ -275,6 +277,94 @@ def _fetch_holidays_sync(
     return holidays
 
 
+# ---------- Cache کوتاه‌مدت و خواندن موازی ----------
+# داشبورد و صفحه‌ی گزارش هر دو همین داده را می‌خواهند؛ جابه‌جایی بین آن‌ها در چند ثانیه
+# نباید هر بار سه اتصال تازه به دیتابیس سایت باز کند. داده‌ی خام هر (اتصال، نگاشت،
+# پرسنل، بازه، شعبه) برای مدت کوتاهی در حافظه‌ی همین worker می‌ماند.
+_CACHE_TTL_SECONDS = 30
+_CACHE_MAX_ENTRIES = 500
+_cache: dict[tuple, tuple[float, tuple]] = {}
+
+
+def _cache_get(key: tuple):
+    """مقدار Cache شده را اگر منقضی نشده باشد برمی‌گرداند، وگرنه None."""
+    item = _cache.get(key)
+    if item is None:
+        return None
+    stored_at, value = item
+    if time.monotonic() - stored_at > _CACHE_TTL_SECONDS:
+        _cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_put(key: tuple, value: tuple) -> None:
+    """مقدار را ذخیره می‌کند؛ اگر Cache پر شد، موارد منقضی و در صورت نیاز قدیمی‌ترین‌ها حذف می‌شوند."""
+    now = time.monotonic()
+    if len(_cache) >= _CACHE_MAX_ENTRIES:
+        for k in [k for k, (t, _v) in _cache.items() if now - t > _CACHE_TTL_SECONDS]:
+            _cache.pop(k, None)
+        while len(_cache) >= _CACHE_MAX_ENTRIES:
+            _cache.pop(next(iter(_cache)))
+    _cache[key] = (now, value)
+
+
+async def _fetch_month_sources(
+    site_connection, mapping, emp_no, from_date, to_date, year, month, branch_value, branch_int, kara_names
+):
+    """
+    سه منبع مستقل گزارش را هم‌زمان (هر کدام در thread جدا) می‌خواند:
+    ترددهای خام، تعطیلات تقویمی و لایه‌ی کاراوب. قبلاً پشت سر هم اجرا می‌شدند.
+    خروجی: (raw_rows, holidays, overlay). خطای تردد خام به MonthlyAttendanceError تبدیل
+    می‌شود؛ شکست دو لایه‌ی اختیاری فقط لاگ می‌شود.
+    """
+
+    async def _raw():
+        # حالت نشستی به تردد منفرد نرمال می‌شود
+        if mapping.mapping_mode == AttendanceMappingMode.enter_exit_columns:
+            sessions = await asyncio.to_thread(
+                _fetch_raw_rows_enter_exit_sync, site_connection, mapping, emp_no, from_date, to_date
+            )
+            return _normalize_enter_exit_sessions(sessions)
+        return await asyncio.to_thread(
+            _fetch_raw_rows_single_column_sync, site_connection, mapping, emp_no, from_date, to_date
+        )
+
+    async def _holidays():
+        return await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month, branch_value)
+
+    async def _overlay():
+        if kara_names is None:
+            return None
+        return await asyncio.to_thread(
+            kara_attendance_overlay.fetch_overlay_sync,
+            site_connection,
+            kara_names,
+            emp_no,
+            from_date,
+            to_date,
+            branch_int,
+        )
+
+    raw_res, hol_res, ov_res = await asyncio.gather(_raw(), _holidays(), _overlay(), return_exceptions=True)
+
+    if isinstance(raw_res, MonthlyAttendanceError):
+        raise raw_res
+    if isinstance(raw_res, BaseException):
+        logger.error("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no, exc_info=raw_res)
+        raise MonthlyAttendanceError("اتصال به سیستم تردد با خطا مواجه شد — لطفاً بعداً دوباره تلاش کنید") from raw_res
+
+    # تعطیلات تقویمی (اختیاری): شکست آن گزارش اصلی را خراب نمی‌کند
+    if isinstance(hol_res, BaseException):
+        logger.error("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id, exc_info=hol_res)
+        hol_res = set()
+    # لایه‌ی مرخصی/ماموریت/تقویم کاری (فقط کاراوب روی SQL Server)؛ شکست آن گزارش اصلی را خراب نمی‌کند
+    if isinstance(ov_res, BaseException):
+        logger.error("خطا در دریافت مرخصی/ماموریت برای گزارش تردد (Emp_No=%s)", emp_no, exc_info=ov_res)
+        ov_res = None
+    return raw_res, hol_res, ov_res
+
+
 async def get_monthly_attendance(
     site_connection: SiteConnection,
     mapping: AttendanceMapping,
@@ -302,47 +392,26 @@ async def get_monthly_attendance(
 
     from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)  # اولین و آخرین روز ماه (YYYYMMDD)
 
-    # خواندن ترددهای خام در thread جدا (درایورها همگام هستند)؛ حالت نشستی به تردد منفرد نرمال می‌شود
-    try:
-        if mapping.mapping_mode == AttendanceMappingMode.enter_exit_columns:
-            sessions = await asyncio.to_thread(
-                _fetch_raw_rows_enter_exit_sync, site_connection, mapping, emp_no, from_date, to_date
-            )
-            raw_rows = _normalize_enter_exit_sessions(sessions)
-        else:
-            raw_rows = await asyncio.to_thread(
-                _fetch_raw_rows_single_column_sync, site_connection, mapping, emp_no, from_date, to_date
-            )
-    except MonthlyAttendanceError:
-        raise
-    except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری نباید کل درخواست را با 500 خام بترکاند
-        logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
-        raise MonthlyAttendanceError("اتصال به سیستم تردد با خطا مواجه شد — لطفاً بعداً دوباره تلاش کنید") from e
-
-    # تعطیلات تقویمی (اختیاری): شکست آن گزارش اصلی را خراب نمی‌کند
-    try:
-        holidays = await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month, branch_value)
-    except Exception:  # noqa: BLE001
-        logger.exception("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id)
-        holidays = set()
-
-    # لایه‌ی مرخصی/ماموریت/تقویم کاری (فقط کاراوب روی SQL Server)؛ شکست آن گزارش اصلی را خراب نمی‌کند
-    overlay = None
-    if kara_names is not None and site_connection.db_type == DbType.mssql:
-        try:
-            branch_int = int(branch_value) if branch_value is not None and str(branch_value).isdigit() else None  # کد شعبه به int
-            overlay = await asyncio.to_thread(
-                kara_attendance_overlay.fetch_overlay_sync,
-                site_connection,
-                kara_names,
-                emp_no,
-                from_date,
-                to_date,
-                branch_int,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("خطا در دریافت مرخصی/ماموریت برای گزارش تردد (Emp_No=%s)", emp_no)
-            overlay = None
+    branch_int = int(branch_value) if branch_value is not None and str(branch_value).isdigit() else None  # کد شعبه به int
+    use_overlay = kara_names is not None and site_connection.db_type == DbType.mssql
+    cache_key = (
+        site_connection.id,
+        mapping.id,
+        emp_no,
+        from_date,
+        to_date,
+        branch_value,
+        use_overlay,
+    )
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        raw_rows, holidays, overlay = cached
+    else:
+        raw_rows, holidays, overlay = await _fetch_month_sources(
+            site_connection, mapping, emp_no, from_date, to_date, year, month, branch_value, branch_int,
+            kara_names if use_overlay else None,
+        )
+        _cache_put(cache_key, (raw_rows, holidays, overlay))
 
     def _label(card_no: int) -> dict:
         """برای یک شماره کارت، {"code", "label", "kind"} می‌سازد؛ عنوان پرتال بر عنوان کاراوب مقدم است."""

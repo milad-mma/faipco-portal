@@ -587,6 +587,15 @@ server {
     # بزرگ می‌تواند چند مگابایت باشد) باید بیشتر باشد.
     client_max_body_size 25m;
 
+    # فشرده‌سازی: nginx.conf پیش‌فرض دبیان فقط text/html را فشرده می‌کند؛ باندل JS/CSS
+    # و پاسخ‌های JSON گزارش‌ها (جدول‌های ماهانه، فهرست‌ها) بدون فشرده‌سازی چند برابر حجم دارند.
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_types text/plain text/css application/javascript application/json application/manifest+json image/svg+xml;
+
     root ${INSTALL_DIR}/frontend/dist;
     index index.html;
 

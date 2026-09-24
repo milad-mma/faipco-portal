@@ -5,13 +5,14 @@
  * برای پرسنل غیرادمین: فقط نوار پایین (BottomNavigation) در همه‌ی اندازه‌ها.
  * صفحه‌ی جاری از طریق <Outlet /> رندر می‌شود؛ دیالوگ تغییر رمز، اطلاعیه‌ی پاپ‌آپ و Snackbar پیام‌ها هم اینجا هستند.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
   BottomNavigation,
   BottomNavigationAction,
   Box,
+  CircularProgress,
   Collapse,
   Divider,
   Drawer,
@@ -448,7 +449,16 @@ export default function Layout() {
               }),
         }}
       >
-        <Outlet />
+        {/* صفحه‌ها تنبل بارگذاری می‌شوند؛ تا آماده شدن chunk صفحه، منو و نوار بالا سر جایشان می‌مانند */}
+        <Suspense
+          fallback={
+            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+              <CircularProgress />
+            </Box>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </Box>
 
       {/* نوار پایین برای همه‌ی کاربران غیرادمین در همه‌ی اندازه‌های صفحه: داشبورد، اطلاعیه‌ها و پنل کاربری.
