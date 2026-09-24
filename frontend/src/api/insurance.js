@@ -69,6 +69,14 @@ export async function fetchInsuranceRegistration(id) {
   return data;
 }
 
+// رد مدرک کفالت یک عضو (حذف فایل + اطلاعیه برای ثبت‌نام‌کننده)؛ خروجی: { member_name, notice_id }
+export async function rejectInsuranceDocument(registrationId, memberId) {
+  const { data } = await apiClient.post(
+    `/insurance/registrations/${registrationId}/members/${memberId}/reject-document`
+  );
+  return data;
+}
+
 // حذف کامل یک ثبت‌نام (نیاز به مجوز insurance.manage)
 export async function deleteInsuranceRegistration(id) {
   await apiClient.delete(`/insurance/registrations/${id}`);

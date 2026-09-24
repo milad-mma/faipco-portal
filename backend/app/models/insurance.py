@@ -71,6 +71,8 @@ class InsuranceMember(Base):
     birth_certificate_no: Mapped[str] = mapped_column(String(20), nullable=False)
     mobile_number: Mapped[str] = mapped_column(String(11), nullable=False)
     kafala_status: Mapped[str | None] = mapped_column(String(3), nullable=True)  # yes / no / NULL (پرسیده نشده)
+    # زمانی که مدیر مدرک کفالت این عضو را رد و حذف کرد (NULL = رد نشده)؛ با ثبت دوباره‌ی فرم پاک می‌شود
+    document_rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     registration: Mapped[InsuranceRegistration] = relationship(back_populates="members")

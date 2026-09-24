@@ -1,5 +1,5 @@
 {
-  "count": 266,
+  "count": 267,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -178,6 +178,7 @@
     "POST /api/v1/hr/birthday-send-now",
     "POST /api/v1/hr/birthday-templates",
     "POST /api/v1/insurance/me/documents",
+    "POST /api/v1/insurance/registrations/{registration_id}/members/{member_id}/reject-document",
     "POST /api/v1/leave-requests/sites/{site_id}/types",
     "POST /api/v1/leave-requests/submit",
     "POST /api/v1/leave-requests/{request_id}/decide",

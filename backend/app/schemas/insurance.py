@@ -68,6 +68,7 @@ class InsuranceMemberOut(BaseModel):
     mobile_number: str
     kafala_status: str | None
     document: InsuranceDocumentOut | None = None
+    document_rejected_at: datetime | None = None  # مدرک این عضو توسط مدیر رد شده و باید دوباره آپلود شود
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -160,8 +161,17 @@ class InsuranceListItemOut(BaseModel):
     department_name: str | None
     members_count: int
     documents_count: int
+    non_dependent_count: int = 0  # اعضایی که «تحت کفالت اینجانب نمی‌باشد» زده شده‌اند
+    rejected_documents_count: int = 0  # اعضایی که مدرکشان رد شده و هنوز دوباره ثبت نشده‌اند
     created_at: datetime
     updated_at: datetime
+
+
+class InsuranceRejectDocumentOut(BaseModel):
+    """پاسخ رد مدرک یک عضو: نام عضو و شناسه اطلاعیه‌ای که برای ثبت‌نام‌کننده فرستاده شد."""
+
+    member_name: str
+    notice_id: int
 
 
 class InsuranceListOut(BaseModel):

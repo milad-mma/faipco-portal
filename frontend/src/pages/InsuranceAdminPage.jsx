@@ -13,6 +13,7 @@ import {
   FormControlLabel,
   Grid,
   IconButton,
+  MenuItem,
   Stack,
   Switch,
   Table,
@@ -42,6 +43,7 @@ import {
   fetchInsuranceRegistration,
   fetchInsuranceRegistrations,
   fetchInsuranceSettings,
+  rejectInsuranceDocument,
   updateInsuranceSettings,
 } from "../api/insurance";
 
@@ -74,17 +76,38 @@ function saveBlob(blob, name) {
  * و (برای دارنده‌ی insurance.manage) دکمه‌ی حذف کل ثبت‌نام.
  * ورودی: شناسه‌ی ثبت‌نام، تابع بستن، مجوز مدیریت و تابع اطلاع از حذف.
  */
-function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
+function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
   const [reg, setReg] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null); // عضوی که پنجره‌ی تأیید رد مدرکش باز است
+  const [notice, setNotice] = useState(""); // پیام موفقیت رد مدرک
 
-  // بارگذاری جزئیات هنگام باز شدن یا تغییر شناسه
-  useEffect(() => {
+  // بارگذاری جزئیات (هنگام باز شدن یا تغییر شناسه و بعد از رد مدرک)
+  function loadDetail() {
     fetchInsuranceRegistration(id)
       .then(setReg)
       .catch((e) => setError(e.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد."));
-  }, [id]);
+  }
+  useEffect(loadDetail, [id]);
+
+  // رد مدرک عضو انتخاب‌شده: فایل حذف و اطلاعیه برای ثبت‌نام‌کننده فرستاده می‌شود
+  async function handleReject() {
+    const member = rejectTarget;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await rejectInsuranceDocument(reg.id, member.id);
+      setNotice(`مدرک ${res.member_name} رد شد و اطلاعیه برای ${reg.first_name} ${reg.last_name} ارسال شد.`);
+      setRejectTarget(null);
+      loadDetail();
+      onChanged?.();
+    } catch (e) {
+      setError(e.response?.data?.detail || "رد مدرک با خطا مواجه شد.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // مدرک را از سرور می‌گیرد و با نام اصلی‌اش دانلود می‌کند
   async function openDoc(doc) {
@@ -116,6 +139,11 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
+          </Alert>
+        )}
+        {notice && (
+          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice("")}>
+            {notice}
           </Alert>
         )}
         {!reg ? (
@@ -188,11 +216,21 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
                         <TableCell sx={{ direction: "ltr" }}>{m.national_id}</TableCell>
                         <TableCell>{MARITAL_LABEL[m.marital_status]}</TableCell>
                         <TableCell>{m.kafala_status === "yes" ? "بله" : m.kafala_status === "no" ? "خیر" : "—"}</TableCell>
+                        {/* مدرک: دانلود و (با insurance.manage) رد؛ مدرک ردشده‌ای که هنوز جایگزین نشده با تراشه */}
                         <TableCell>
                           {m.document ? (
-                            <Button size="small" startIcon={<DownloadOutlinedIcon />} onClick={() => openDoc(m.document)}>
-                              دانلود
-                            </Button>
+                            <Stack direction="row" spacing={0.5}>
+                              <Button size="small" startIcon={<DownloadOutlinedIcon />} onClick={() => openDoc(m.document)}>
+                                دانلود
+                              </Button>
+                              {canManage && (
+                                <Button size="small" color="error" onClick={() => setRejectTarget(m)} disabled={busy}>
+                                  رد مدرک
+                                </Button>
+                              )}
+                            </Stack>
+                          ) : m.document_rejected_at ? (
+                            <Chip size="small" color="error" variant="outlined" label="مدرک رد شده" />
                           ) : (
                             "—"
                           )}
@@ -216,9 +254,40 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
         )}
         <Button onClick={onClose}>بستن</Button>
       </DialogActions>
+
+      {/* تأیید رد مدرک با متن اطلاعیه‌ای که برای ثبت‌نام‌کننده فرستاده می‌شود */}
+      <Dialog open={Boolean(rejectTarget)} onClose={() => !busy && setRejectTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>رد مدرک</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            مدرک <b>{rejectTarget?.first_name} {rejectTarget?.last_name}</b> حذف می‌شود و این اطلاعیه برای{" "}
+            {reg?.first_name} {reg?.last_name} ارسال می‌شود:
+          </Typography>
+          <Alert severity="info" icon={false}>
+            مدرک ارائه‌شده برای {rejectTarget?.first_name} {rejectTarget?.last_name} مورد تأیید نیست. لطفاً جهت ویرایش
+            ثبت‌نام به سامانه مراجعه نمائید.
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRejectTarget(null)} disabled={busy}>
+            انصراف
+          </Button>
+          <Button color="error" variant="contained" onClick={handleReject} disabled={busy}>
+            رد مدرک و ارسال اطلاعیه
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 }
+
+// گزینه‌های فیلتر فهرست بر اساس وضعیت اعضا (مقدار = پارامتر member_filter در API)
+const MEMBER_FILTERS = [
+  { value: "", label: "همه‌ی ثبت‌نام‌ها" },
+  { value: "non_dependent", label: "دارای عضو غیر تحت کفالت" },
+  { value: "with_documents", label: "دارای مدرک کفالت" },
+  { value: "rejected", label: "دارای مدرک ردشده" },
+];
 
 /**
  * تب «ثبت‌نام‌ها»: نوار جستجو و فیلتر سایت، آمار (ثبت‌نام‌شده/فعال/نکرده)،
@@ -226,6 +295,7 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
  */
 function RegistrationsTab({ canManage }) {
   const [siteId, setSiteId] = useState(null);
+  const [memberFilter, setMemberFilter] = useState(""); // فیلتر وضعیت اعضا (MEMBER_FILTERS)
   const [search, setSearch] = useState(""); // متن داخل فیلد جستجو
   const [query, setQuery] = useState(""); // عبارتی که واقعاً به سرور فرستاده شده (با Enter یا دکمه)
   const [page, setPage] = useState(0);
@@ -237,11 +307,17 @@ function RegistrationsTab({ canManage }) {
 
   // دریافت فهرست با فیلترهای فعلی؛ شماره صفحه در UI صفرمبنا و در API یک‌مبنا است
   function load() {
-    fetchInsuranceRegistrations({ search: query || undefined, site_id: siteId || undefined, page: page + 1, page_size: pageSize })
+    fetchInsuranceRegistrations({
+      search: query || undefined,
+      site_id: siteId || undefined,
+      member_filter: memberFilter || undefined,
+      page: page + 1,
+      page_size: pageSize,
+    })
       .then(setData)
       .catch((e) => setError(e.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."));
   }
-  useEffect(load, [query, siteId, page, pageSize]);
+  useEffect(load, [query, siteId, memberFilter, page, pageSize]);
 
   // دانلود Excel ثبت‌نام‌های سایت انتخاب‌شده (یا همه‌ی سایت‌های مجاز)
   async function handleExport() {
@@ -276,6 +352,20 @@ function RegistrationsTab({ canManage }) {
           </Button>
         )}
         <SiteFilterSelect value={siteId} permission="insurance.view" onChange={(v) => (setSiteId(v), setPage(0))} />
+        <TextField
+          select
+          size="small"
+          label="وضعیت اعضا"
+          value={memberFilter}
+          onChange={(e) => (setMemberFilter(e.target.value), setPage(0))}
+          sx={{ minWidth: 200 }}
+        >
+          {MEMBER_FILTERS.map((f) => (
+            <MenuItem key={f.value} value={f.value}>
+              {f.label}
+            </MenuItem>
+          ))}
+        </TextField>
         <Box sx={{ flex: 1 }} />
         <Button variant="contained" color="success" startIcon={exporting ? <CircularProgress size={16} color="inherit" /> : <DownloadOutlinedIcon />} onClick={handleExport} disabled={exporting}>
           خروجی Excel
@@ -309,6 +399,7 @@ function RegistrationsTab({ canManage }) {
                 <TableCell>سایت / واحد</TableCell>
                 <TableCell align="center">اعضا</TableCell>
                 <TableCell align="center">مدارک</TableCell>
+                <TableCell>وضعیت</TableCell>
                 <TableCell>تاریخ ثبت</TableCell>
                 <TableCell align="center">عملیات</TableCell>
               </TableRow>
@@ -316,7 +407,7 @@ function RegistrationsTab({ canManage }) {
             <TableBody>
               {data.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ color: "text.secondary", py: 4 }}>
+                  <TableCell colSpan={11} align="center" sx={{ color: "text.secondary", py: 4 }}>
                     ثبت‌نامی یافت نشد.
                   </TableCell>
                 </TableRow>
@@ -334,6 +425,17 @@ function RegistrationsTab({ canManage }) {
                   </TableCell>
                   <TableCell align="center">{r.members_count.toLocaleString("fa-IR")}</TableCell>
                   <TableCell align="center">{r.documents_count.toLocaleString("fa-IR")}</TableCell>
+                  {/* تعداد اعضای غیر تحت کفالت و مدارک ردشده */}
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      {r.non_dependent_count > 0 && (
+                        <Chip size="small" variant="outlined" label={`غیر تحت کفالت: ${r.non_dependent_count.toLocaleString("fa-IR")}`} />
+                      )}
+                      {r.rejected_documents_count > 0 && (
+                        <Chip size="small" color="error" variant="outlined" label={`مدرک ردشده: ${r.rejected_documents_count.toLocaleString("fa-IR")}`} />
+                      )}
+                    </Stack>
+                  </TableCell>
                   <TableCell>{faDate(r.created_at)}</TableCell>
                   <TableCell align="center">
                     <IconButton size="small" onClick={() => setOpenId(r.id)} aria-label="جزئیات">
@@ -362,6 +464,7 @@ function RegistrationsTab({ canManage }) {
           id={openId}
           canManage={canManage}
           onClose={() => setOpenId(null)}
+          onChanged={load}
           onDeleted={() => {
             setOpenId(null);
             load();

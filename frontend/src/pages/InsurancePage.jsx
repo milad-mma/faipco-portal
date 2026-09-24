@@ -29,6 +29,8 @@ import {
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import BackLink from "../components/BackLink";
 import InsuranceRateInfo from "../components/InsuranceRateInfo";
 import { useAuth } from "../context/AuthContext";
@@ -45,6 +47,9 @@ import {
  * اطلاعات هویتی پرسنل از سرور می‌آید و فقط نمایش داده می‌شود؛ بقیه‌ی فیلدها
  * قابل ویرایش‌اند. قبل از ارسال، اعتبارسنجی اولیه در همین صفحه انجام می‌شود و
  * اعتبارسنجی نهایی سمت سرور است. ثبت مجدد یعنی ویرایش ثبت‌نام قبلی.
+ * اگر ثبت‌نام کاملی وجود داشته باشد صفحه در حالت «نمایش» (فقط‌خواندنی) باز می‌شود
+ * و فرم فقط با دکمه‌ی «ویرایش ثبت نام» نمایش داده می‌شود. پیام نتیجه‌ی ثبت و
+ * خطاهای فرم در پنجره‌ی دیالوگ نشان داده می‌شوند.
  */
 
 // ترتیب نمایش دکمه‌های افزودن عضو و رنگ هر نوع عضو
@@ -84,6 +89,10 @@ function uploadErrorMessage(err) {
   if (err.response.status >= 500) return `خطای سرور هنگام ذخیره فایل (کد ${err.response.status})؛ لطفاً به واحد فناوری اطلاع دهید.`;
   return `آپلود فایل با خطا مواجه شد (کد ${err.response.status}).`;
 }
+
+// مدرک کفالت این عضو توسط مدیر رد شده و هنوز مدرک جدیدی جایگزین نشده است
+const isDocRejected = (m) => Boolean(m.document_rejected_at) && !m.document;
+const REJECTED_DOC_TEXT = "مدرک این عضو تأیید نشد؛ لطفاً ثبت‌نام را ویرایش و مدرک جدید آپلود کنید.";
 
 // فقط قالب تاریخ شمسی «YYYY/MM/DD» را بررسی می‌کند (درستی روز/ماه سمت سرور)
 const validateJalali = (d) => /^\d{4}\/\d{2}\/\d{2}$/.test(toEn(d).trim());
@@ -282,6 +291,11 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
               {err.kafala}
             </Typography>
           )}
+          {member.kafala_status === "yes" && isDocRejected(member) && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              {REJECTED_DOC_TEXT}
+            </Alert>
+          )}
           {member.kafala_status === "yes" && (
             <Box sx={{ mt: 1.5 }}>
               <Typography fontWeight={700} variant="body2" sx={{ mb: 1 }}>
@@ -335,52 +349,60 @@ export default function InsurancePage() {
   const [memberErrors, setMemberErrors] = useState({}); // خطاهای هر عضو، با کلید member.key
   const [reviewOpen, setReviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState(null);
-  const topRef = useRef(null); // برای اسکرول به بالای صفحه هنگام نمایش پیام
+  const [result, setResult] = useState(null); // پیام نتیجه در دیالوگ: { severity, text }
+  const [mode, setMode] = useState("edit"); // "view" = نمایش فقط‌خواندنی ثبت‌نام، "edit" = فرم
+  const topRef = useRef(null); // برای اسکرول به بالای صفحه هنگام تغییر حالت
 
-  // بارگذاری اولیه: داده‌ی سرور را می‌گیرد و فرم را پر می‌کند.
-  // اگر ثبت‌نام کاملی وجود دارد (insurance_no پر است) از آن، وگرنه فیلدهای
-  // خالی با پیش‌فرض موبایل و نام پرسنل به‌عنوان صاحب حساب.
+  // فرم و اعضا را از روی ثبت‌نام سرور (یا مقادیر خالی) پر می‌کند.
+  // ثبت‌نام کامل (insurance_no پر) مقداردهی می‌شود، وگرنه فیلدهای خالی با پیش‌فرض
+  // موبایل و نام پرسنل به‌عنوان صاحب حساب.
+  function fillForm(reg, emp) {
+    const complete = reg && reg.insurance_no;
+    setForm({
+      father_name: complete ? reg.father_name : "",
+      birth_certificate_no: complete ? reg.birth_certificate_no : "",
+      mobile_number: complete ? reg.mobile_number : emp?.mobile || "",
+      marital_status: complete ? reg.marital_status : "",
+      insurance_no: complete ? reg.insurance_no : "",
+      bank_code: complete ? reg.bank_code : "",
+      account_number: complete ? reg.account_number : "",
+      sheba: complete ? reg.sheba : "",
+      account_type: complete ? reg.account_type : "",
+      account_owner_national_id: complete ? reg.account_owner_national_id : "",
+      account_owner: complete ? reg.account_owner : emp ? `${emp.first_name} ${emp.last_name}` : "",
+    });
+    // اعضای ثبت‌نام قبلی به ساختار فرم تبدیل می‌شوند (عضو موقت نگهدارنده‌ی مدرک حذف می‌شود)
+    setMembers(
+      (complete ? reg.members : [])
+        .filter((m) => m.member_type !== "pending")
+        .map((m) => ({
+          key: ++memberSeq,
+          id: m.id,
+          member_type: m.member_type,
+          first_name: m.first_name,
+          last_name: m.last_name,
+          father_name: m.father_name,
+          birth_date: m.birth_date,
+          marital_status: m.marital_status,
+          national_id: m.national_id,
+          birth_certificate_no: m.birth_certificate_no,
+          kafala_status: m.kafala_status,
+          document: m.document,
+          document_id: m.document?.id || null,
+          document_rejected_at: m.document_rejected_at || null,
+        }))
+    );
+    setErrors({});
+    setMemberErrors({});
+    setMode(complete ? "view" : "edit");
+  }
+
+  // بارگذاری اولیه: داده‌ی سرور را می‌گیرد و فرم را پر می‌کند
   useEffect(() => {
     fetchMyInsurance()
       .then((d) => {
         setData(d);
-        const reg = d.registration;
-        const emp = d.employee;
-        const complete = reg && reg.insurance_no;
-        setForm({
-          father_name: complete ? reg.father_name : "",
-          birth_certificate_no: complete ? reg.birth_certificate_no : "",
-          mobile_number: complete ? reg.mobile_number : emp?.mobile || "",
-          marital_status: complete ? reg.marital_status : "",
-          insurance_no: complete ? reg.insurance_no : "",
-          bank_code: complete ? reg.bank_code : "",
-          account_number: complete ? reg.account_number : "",
-          sheba: complete ? reg.sheba : "",
-          account_type: complete ? reg.account_type : "",
-          account_owner_national_id: complete ? reg.account_owner_national_id : "",
-          account_owner: complete ? reg.account_owner : emp ? `${emp.first_name} ${emp.last_name}` : "",
-        });
-        // اعضای ثبت‌نام قبلی به ساختار فرم تبدیل می‌شوند (عضو موقت نگهدارنده‌ی مدرک حذف می‌شود)
-        setMembers(
-          (complete ? reg.members : [])
-            .filter((m) => m.member_type !== "pending")
-            .map((m) => ({
-              key: ++memberSeq,
-              id: m.id,
-              member_type: m.member_type,
-              first_name: m.first_name,
-              last_name: m.last_name,
-              father_name: m.father_name,
-              birth_date: m.birth_date,
-              marital_status: m.marital_status,
-              national_id: m.national_id,
-              birth_certificate_no: m.birth_certificate_no,
-              kafala_status: m.kafala_status,
-              document: m.document,
-              document_id: m.document?.id || null,
-            }))
-        );
+        fillForm(d.registration, d.employee);
       })
       .catch((e) => setLoadError(e.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
   }, []);
@@ -452,10 +474,8 @@ export default function InsurancePage() {
 
   // کلیک «بررسی و ثبت»: اگر فرم معتبر بود پنجره‌ی بررسی نهایی باز می‌شود
   function handleReview() {
-    setMessage(null);
     if (!validate()) {
-      setMessage({ severity: "error", text: "لطفاً خطاهای فرم را برطرف کنید." });
-      topRef.current?.scrollIntoView({ behavior: "smooth" });
+      setResult({ severity: "error", text: "لطفاً خطاهای فرم را برطرف کنید. فیلدها و اعضای دارای خطا با رنگ قرمز مشخص شده‌اند." });
       return;
     }
     setReviewOpen(true);
@@ -464,7 +484,6 @@ export default function InsurancePage() {
   // تأیید نهایی: فرم را به ساختار API تبدیل و ارسال می‌کند، سپس پیام موفقیت/خطا نشان می‌دهد
   async function handleSubmit() {
     setSaving(true);
-    setMessage(null);
     try {
       // کدهای انتخابی به عدد تبدیل می‌شوند؛ تاریخ تولد اعضا با ارقام انگلیسی
       const payload = {
@@ -488,12 +507,14 @@ export default function InsurancePage() {
       };
       const saved = await saveMyInsurance(payload);
       setData({ ...data, registration: saved });
+      fillForm(saved, employee); // خروج از فرم و نمایش اطلاعات ثبت‌شده
       setReviewOpen(false);
-      setMessage({ severity: "success", text: isEdit ? "ویرایش ثبت‌نام با موفقیت انجام شد." : "ثبت‌نام شما با موفقیت انجام شد." });
+      setResult({ severity: "success", text: isEdit ? "ویرایش ثبت‌نام با موفقیت انجام شد." : "ثبت‌نام شما با موفقیت انجام شد." });
       topRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
       setReviewOpen(false);
-      setMessage({ severity: "error", text: e.response?.data?.detail || "ثبت اطلاعات با خطا مواجه شد." });
+      const detail = e.response?.data?.detail;
+      setResult({ severity: "error", text: typeof detail === "string" && detail ? detail : "ثبت اطلاعات با خطا مواجه شد." });
     } finally {
       setSaving(false);
     }
@@ -561,6 +582,154 @@ export default function InsurancePage() {
     );
   }
 
+  // دیالوگ نتیجه‌ی ثبت یا خطای فرم (در هر دو حالت نمایش و فرم رندر می‌شود)
+  const resultDialog = (
+    <Dialog open={Boolean(result)} onClose={() => setResult(null)} fullWidth maxWidth="xs">
+      <DialogContent sx={{ textAlign: "center", pt: 4 }}>
+        {result?.severity === "success" ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 64 }} /> : <ErrorOutlineIcon color="error" sx={{ fontSize: 64 }} />}
+        <Typography fontWeight={700} sx={{ mt: 1.5 }}>
+          {result?.text}
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ justifyContent: "center", pb: 2.5 }}>
+        <Button variant="contained" color={result?.severity === "success" ? "success" : "primary"} onClick={() => setResult(null)} autoFocus>
+          متوجه شدم
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+
+  // نام خانوادگی نمایشی عضو (برای اعضایی که نام خانوادگی‌شان ثابت و برابر پرسنل است)
+  const memberLastName = (m) => (employee.gender === 1 && ["son", "daughter", "father"].includes(m.member_type) ? employee.last_name : m.last_name);
+
+  // حالت نمایش: خلاصه‌ی فقط‌خواندنی ثبت‌نام با دکمه‌ی «ویرایش ثبت نام»
+  if (mode === "view") {
+    const reg = data.registration;
+    const rejected = members.filter(isDocRejected);
+    return (
+      <Box sx={{ maxWidth: 1100, mx: "auto" }}>
+        {header}
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between" sx={{ mb: 2 }}>
+          <Alert severity="success" icon={<CheckCircleOutlineIcon />} sx={{ flex: 1 }}>
+            ثبت‌نام شما انجام شده است. اطلاعات ثبت‌شده در ادامه آمده است.
+          </Alert>
+          <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={() => setMode("edit")} sx={{ flexShrink: 0 }}>
+            ویرایش ثبت نام
+          </Button>
+        </Stack>
+        {rejected.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            مدرک ارائه‌شده برای {rejected.map((m) => `${m.first_name} ${memberLastName(m)}`).join("، ")} مورد تأیید نیست. لطفاً با «ویرایش ثبت نام» مدرک جدید آپلود کنید.
+          </Alert>
+        )}
+
+        <SectionCard num="۱" title="اطلاعات شخص اصلی">
+          <Grid container spacing={2}>
+            {[
+              ["کد پرسنلی", employee.personnel_code],
+              ["نام", employee.first_name],
+              ["نام خانوادگی", employee.last_name],
+              ["جنسیت", GENDER_LABEL[employee.gender]],
+              ["تاریخ استخدام", employee.employment_date],
+              ["کد ملی", employee.national_id],
+              ["تاریخ تولد", employee.birth_date],
+              ["نام پدر", reg.father_name],
+              ["شماره شناسنامه", reg.birth_certificate_no],
+              ["شماره تماس", reg.mobile_number],
+              ["وضعیت تاهل", MARITAL_LABEL[reg.marital_status]],
+              ["شماره بیمه تأمین اجتماعی", reg.insurance_no],
+            ].map(([l, v]) => (
+              <Grid item xs={6} md={3} key={l}>
+                <ReadOnlyField label={l} value={v} />
+              </Grid>
+            ))}
+          </Grid>
+        </SectionCard>
+
+        <SectionCard num="۲" title="اطلاعات بانکی">
+          <Grid container spacing={2}>
+            {[
+              ["بانک", bankName(reg.bank_code)],
+              ["شماره حساب", reg.account_number],
+              ["شماره شبا", reg.sheba ? `IR${reg.sheba}` : ""],
+              ["نوع حساب", accountTypeName(reg.account_type)],
+              ["کد ملی صاحب حساب", reg.account_owner_national_id],
+              ["نام صاحب حساب", reg.account_owner],
+            ].map(([l, v]) => (
+              <Grid item xs={12} sm={6} md={4} key={l}>
+                <ReadOnlyField label={l} value={v} />
+              </Grid>
+            ))}
+          </Grid>
+        </SectionCard>
+
+        <SectionCard num="۳" title="اعضای خانواده" subtitle={members.length ? `(${members.length.toLocaleString("fa-IR")} نفر)` : ""}>
+          {members.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              عضوی ثبت نشده است.
+            </Typography>
+          ) : (
+            <Stack spacing={1.5}>
+              {members.map((m) => {
+                const idx = members.filter((x) => x.member_type === m.member_type).indexOf(m) + 1;
+                const cfg = typeInfo[m.member_type];
+                const title = cfg ? (cfg.max_count > 1 ? `${cfg.title} ${idx}` : cfg.title) : m.member_type;
+                const bad = isDocRejected(m);
+                return (
+                  <Card key={m.key} variant="outlined" sx={{ borderRadius: 2, p: 2, borderColor: bad ? "warning.main" : "divider" }}>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+                      <Chip label={title} color={MEMBER_BUTTON_COLOR[m.member_type]} size="small" />
+                      {m.kafala_status === "yes" && <Chip size="small" variant="outlined" color="success" label="تحت کفالت" />}
+                      {m.kafala_status === "no" && <Chip size="small" variant="outlined" color="error" label="غیر تحت کفالت" />}
+                      {m.document && <Chip size="small" icon={<CheckCircleOutlineIcon />} color="success" label="مدرک آپلود شده" />}
+                      {bad && <Chip size="small" icon={<ErrorOutlineIcon />} color="warning" label="مدرک تأیید نشد" />}
+                    </Stack>
+                    <Grid container spacing={1.5}>
+                      {[
+                        ["نام و نام خانوادگی", `${m.first_name} ${memberLastName(m)}`],
+                        ["نام پدر", employee.gender === 1 && ["son", "daughter"].includes(m.member_type) ? employee.first_name : m.father_name],
+                        ["تاریخ تولد", m.birth_date],
+                        ["کد ملی", m.national_id],
+                        ["شماره شناسنامه", m.birth_certificate_no],
+                        ["وضعیت تاهل", MARITAL_LABEL[m.marital_status]],
+                      ].map(([l, v]) => (
+                        <Grid item xs={6} md={2} key={l}>
+                          <ReadOnlyField label={l} value={v} />
+                        </Grid>
+                      ))}
+                    </Grid>
+                    {bad && (
+                      <Alert severity="warning" sx={{ mt: 1.5 }}>
+                        {REJECTED_DOC_TEXT}
+                      </Alert>
+                    )}
+                  </Card>
+                );
+              })}
+            </Stack>
+          )}
+        </SectionCard>
+
+        <SectionCard num="۴" title="جدول نرخ حق بیمه تکمیلی پرسنل">
+          <InsuranceRateInfo rateTable={data.rate_table} notes={data.notes} />
+        </SectionCard>
+
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 4 }}>
+          <Button variant="contained" size="large" startIcon={<EditOutlinedIcon />} onClick={() => setMode("edit")}>
+            ویرایش ثبت نام
+          </Button>
+        </Box>
+        {resultDialog}
+      </Box>
+    );
+  }
+
+  // انصراف از ویرایش: تغییرات فرم دور ریخته می‌شود و به نمایش ثبت‌نام برمی‌گردد
+  function cancelEdit() {
+    fillForm(data.registration, employee);
+    topRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
   // سازنده‌ی onChange برای فیلدهای شخص اصلی با تبدیل اختیاری مقدار (مثلاً فقط ارقام)
   const setF = (key, transform) => (e) => setForm({ ...form, [key]: transform ? transform(e.target.value) : e.target.value });
   // پراپ‌های خطا/راهنمای هر فیلد از روی state خطاها
@@ -571,13 +740,8 @@ export default function InsurancePage() {
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
       {header}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {isEdit ? "شما قبلاً ثبت‌نام کرده‌اید؛ می‌توانید اطلاعات را ویرایش و دوباره ثبت کنید." : "اطلاعات خود و اعضای خانواده را برای بیمه تکمیلی تکمیل کنید."}
+        {isEdit ? "در حال ویرایش ثبت‌نام قبلی هستید؛ پس از تغییر، دوباره ثبت کنید." : "اطلاعات خود و اعضای خانواده را برای بیمه تکمیلی تکمیل کنید."}
       </Typography>
-      {message && (
-        <Alert severity={message.severity} sx={{ mb: 2 }}>
-          {message.text}
-        </Alert>
-      )}
 
       {/* بخش ۱: فیلدهای فقط‌خواندنی از رکورد پرسنل + فیلدهای قابل ویرایش */}
       <SectionCard num="۱" title="اطلاعات شخص اصلی">
@@ -698,7 +862,12 @@ export default function InsurancePage() {
         <InsuranceRateInfo rateTable={data.rate_table} notes={data.notes} />
       </SectionCard>
 
-      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 4 }}>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1.5, mb: 4 }}>
+        {isEdit && (
+          <Button size="large" onClick={cancelEdit}>
+            انصراف از ویرایش
+          </Button>
+        )}
         <Button variant="contained" size="large" onClick={handleReview}>
           {isEdit ? "بررسی و ثبت ویرایش" : "بررسی و ثبت نهایی"}
         </Button>
@@ -773,6 +942,7 @@ export default function InsurancePage() {
           </Button>
         </DialogActions>
       </Dialog>
+      {resultDialog}
     </Box>
   );
 }

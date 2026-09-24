@@ -21,7 +21,7 @@ Endpoint های ماژول «بیمه تکمیلی» (پیشوند /insurance).
 """
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
@@ -35,10 +35,12 @@ from app.schemas.insurance import (
     InsuranceMyStatusOut,
     InsuranceRegistrationIn,
     InsuranceRegistrationOut,
+    InsuranceRejectDocumentOut,
     InsuranceSettingsIn,
     InsuranceSettingsOut,
 )
 from app.services.insurance_service import InsuranceDisabledError, InsuranceError, InsuranceService
+from app.services.notice_service import send_publish_notifications
 
 router = APIRouter()
 
@@ -196,18 +198,22 @@ async def _accessible_sites(db: AsyncSession, user: User) -> set[int] | None:
 async def list_registrations(
     search: str | None = None,
     site_id: int | None = None,
+    member_filter: str | None = None,
     page: int = 1,
     page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """فهرست ثبت‌نام‌ها با جستجو و صفحه‌بندی، محدود به سایت‌های مجاز و فیلتر اختیاری site_id."""
+    """
+    فهرست ثبت‌نام‌ها با جستجو و صفحه‌بندی، محدود به سایت‌های مجاز و فیلتر اختیاری site_id.
+    member_filter: non_dependent (دارای عضو غیر تحت کفالت) / with_documents / rejected (مدرک ردشده).
+    """
     sites = await _accessible_sites(db, current_user)
     # فیلتر سایت درخواستی فقط داخل سایت‌های مجاز اعمال می‌شود
     if site_id is not None:
         sites = {site_id} if sites is None else (sites & {site_id})
     page_size = min(max(page_size, 1), 200)  # اندازه صفحه بین ۱ تا ۲۰۰
-    return await InsuranceService(db).list_registrations(sites, search, max(page, 1), page_size)
+    return await InsuranceService(db).list_registrations(sites, search, max(page, 1), page_size, member_filter)
 
 
 @router.get("/registrations/{registration_id}", response_model=InsuranceRegistrationOut)
@@ -220,6 +226,34 @@ async def get_registration(
     if registration is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ثبت‌نام یافت نشد")
     return registration
+
+
+@router.post(
+    "/registrations/{registration_id}/members/{member_id}/reject-document",
+    response_model=InsuranceRejectDocumentOut,
+)
+async def reject_member_document(
+    registration_id: int,
+    member_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("insurance.manage")),
+):
+    """
+    مدرک کفالت یک عضو را رد می‌کند: فایل حذف و اطلاعیه («مدرک ارائه‌شده برای ... مورد تأیید نیست») همراه
+    Push برای ثبت‌نام‌کننده فرستاده می‌شود. مجوز: insurance.manage برای سایت آن پرسنل.
+    خطاها: 404 ثبت‌نام/عضو یافت نشد یا خارج از سایت‌ها، 400 عضو مدرک ندارد.
+    """
+    sites = await get_sites_with_permission(db, current_user, "insurance.manage")
+    try:
+        result = await InsuranceService(db).reject_document(registration_id, member_id, sites, current_user)
+    except InsuranceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ثبت‌نام یا عضو یافت نشد")
+    member_name, notice_id = result
+    background_tasks.add_task(send_publish_notifications, notice_id)  # Push بعد از پاسخ
+    return InsuranceRejectDocumentOut(member_name=member_name, notice_id=notice_id)
 
 
 @router.delete("/registrations/{registration_id}", status_code=status.HTTP_204_NO_CONTENT)

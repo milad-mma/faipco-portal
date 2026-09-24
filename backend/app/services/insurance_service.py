@@ -23,8 +23,10 @@ from sqlalchemy.orm import selectinload
 from app.core import insurance_rules as rules
 from app.models.employee import Department, Employee
 from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration
+from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.site import Site
 from app.models.system_setting import SystemSetting
+from app.models.user import User
 from app.schemas.insurance import (
     InsuranceEmployeeOut,
     InsuranceListItemOut,
@@ -386,11 +388,17 @@ class InsuranceService:
     # ---------- مدیریت ----------
 
     async def list_registrations(
-        self, site_ids: set[int] | None, search: str | None, page: int, page_size: int
+        self,
+        site_ids: set[int] | None,
+        search: str | None,
+        page: int,
+        page_size: int,
+        member_filter: str | None = None,
     ) -> InsuranceListOut:
         """
         فهرست صفحه‌بندی‌شده‌ی ثبت‌نام‌ها برای صفحه‌ی مدیریت.
-        ورودی: مجموعه سایت‌های مجاز (None = همه)، عبارت جستجو، شماره و اندازه صفحه.
+        ورودی: مجموعه سایت‌های مجاز (None = همه)، عبارت جستجو، شماره و اندازه صفحه و فیلتر اعضا
+        (non_dependent = دارای عضو غیر تحت کفالت، with_documents = دارای مدرک، rejected = دارای مدرک ردشده).
         خروجی: آیتم‌ها + total (با جستجو) + registered (کل ثبت‌نام‌ها) +
         eligible (پرسنل فعال) برای نمایش آمار.
         """
@@ -423,6 +431,11 @@ class InsuranceService:
             )
             base = base.where(cond)
             count_q = count_q.where(cond)
+        # فیلتر بر اساس وضعیت اعضا (عضو موقت نگهدارنده‌ی مدرک حساب نمی‌شود)
+        member_cond = self._member_filter_condition(member_filter)
+        if member_cond is not None:
+            base = base.where(member_cond)
+            count_q = count_q.where(member_cond)
         total = (await self.db.execute(count_q)).scalar_one()
         # جدیدترین ویرایش اول؛ صفحه‌بندی با limit/offset
         base = base.order_by(InsuranceRegistration.updated_at.desc()).limit(page_size).offset((page - 1) * page_size)
@@ -431,7 +444,25 @@ class InsuranceService:
         reg_ids = [r[0].id for r in rows]
         members_count: dict[int, int] = {}
         docs_count: dict[int, int] = {}
+        non_dependent_count: dict[int, int] = {}
+        rejected_count: dict[int, int] = {}
         if reg_ids:
+            # اعضای غیر تحت کفالت و اعضای دارای مدرک ردشده در هر ثبت‌نام
+            nd = await self.db.execute(
+                select(InsuranceMember.registration_id, func.count())
+                .where(InsuranceMember.registration_id.in_(reg_ids), InsuranceMember.kafala_status == "no")
+                .group_by(InsuranceMember.registration_id)
+            )
+            non_dependent_count = {rid: c for rid, c in nd.all()}
+            rj = await self.db.execute(
+                select(InsuranceMember.registration_id, func.count())
+                .where(
+                    InsuranceMember.registration_id.in_(reg_ids),
+                    InsuranceMember.document_rejected_at.is_not(None),
+                )
+                .group_by(InsuranceMember.registration_id)
+            )
+            rejected_count = {rid: c for rid, c in rj.all()}
             mc = await self.db.execute(
                 select(InsuranceMember.registration_id, func.count())
                 .where(InsuranceMember.registration_id.in_(reg_ids), InsuranceMember.member_type != "pending")
@@ -459,12 +490,83 @@ class InsuranceService:
                 department_name=department_name,
                 members_count=members_count.get(reg.id, 0),
                 documents_count=docs_count.get(reg.id, 0),
+                non_dependent_count=non_dependent_count.get(reg.id, 0),
+                rejected_documents_count=rejected_count.get(reg.id, 0),
                 created_at=reg.created_at,
                 updated_at=reg.updated_at,
             )
             for reg, emp, site_id, site_name, department_name in rows
         ]
         return InsuranceListOut(items=items, total=total, registered=registered, eligible=eligible)
+
+    @staticmethod
+    def _member_filter_condition(member_filter: str | None):
+        """
+        شرط SQL فیلتر فهرست ثبت‌نام‌ها بر اساس اعضا؛ مقدار ناشناخته یا خالی → None (بدون فیلتر).
+        non_dependent: حداقل یک عضو «غیر تحت کفالت»؛ with_documents: حداقل یک عضو دارای مدرک؛
+        rejected: حداقل یک عضو که مدرکش رد شده است.
+        """
+        member_exists = (
+            select(InsuranceMember.id)
+            .where(
+                InsuranceMember.registration_id == InsuranceRegistration.id,
+                InsuranceMember.member_type != "pending",
+            )
+        )
+        if member_filter == "non_dependent":
+            return member_exists.where(InsuranceMember.kafala_status == "no").exists()
+        if member_filter == "with_documents":
+            return member_exists.where(
+                select(InsuranceDocument.id).where(InsuranceDocument.member_id == InsuranceMember.id).exists()
+            ).exists()
+        if member_filter == "rejected":
+            return member_exists.where(InsuranceMember.document_rejected_at.is_not(None)).exists()
+        return None
+
+    async def reject_document(
+        self, registration_id: int, member_id: int, site_ids: set[int] | None, sender: User
+    ) -> tuple[str, int] | None:
+        """
+        مدرک یک عضو را رد می‌کند: فایل حذف، زمان رد روی عضو ثبت و یک اطلاعیه‌ی منتشرشده برای پرسنل
+        ثبت‌نام‌کننده ساخته می‌شود. ورودی: شناسه ثبت‌نام و عضو، سایت‌های مجاز مدیر (None = همه) و فرستنده.
+        خروجی: (نام عضو، شناسه اطلاعیه) برای ارسال Push؛ ثبت‌نام/عضو ناموجود یا خارج از سایت‌ها → None؛
+        عضو بدون مدرک → InsuranceError.
+        """
+        registration = await self.get_registration_by_id(registration_id, site_ids)
+        if registration is None:
+            return None
+        member = next((m for m in registration.members if m.id == member_id and m.member_type != "pending"), None)
+        if member is None:
+            return None
+        if member.document is None:
+            raise InsuranceError("این عضو مدرکی برای رد کردن ندارد.")
+
+        member_name = f"{member.first_name} {member.last_name}".strip()
+        await self.db.delete(member.document)
+        member.document_rejected_at = datetime.now(timezone.utc)
+
+        # اطلاعیه‌ی شخصی برای ثبت‌نام‌کننده (مثل پیام تبریک تولد: هدف فقط همان پرسنل)
+        notice = Notice(
+            sender_id=sender.id,
+            title="مدرک بیمه تکمیلی تأیید نشد",
+            body=(
+                f"مدرک ارائه‌شده برای {member_name} مورد تأیید نیست. "
+                "لطفاً جهت ویرایش ثبت‌نام به سامانه مراجعه نمائید."
+            ),
+            priority=NoticePriority.high,
+            status=NoticeStatus.published,
+            notice_type=NoticeType.normal,
+            publish_at=datetime.now(timezone.utc),
+        )
+        self.db.add(notice)
+        await self.db.flush()  # برای گرفتن notice.id
+        self.db.add(
+            NoticeTarget(
+                notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=registration.employee_id
+            )
+        )
+        await self.db.commit()
+        return member_name, notice.id
 
     async def get_registration_by_id(self, registration_id: int, site_ids: set[int] | None):
         """
