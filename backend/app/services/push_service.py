@@ -22,10 +22,16 @@ settings = get_settings()
 
 
 class PushService:
+    """ثبت/حذف اشتراک‌های Web Push و ارسال اعلان به مجموعه‌ای از کاربران."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def save_subscription(self, user_id: int, payload: PushSubscriptionIn) -> None:
+        """
+        اشتراک یک دستگاه را برای کاربر ذخیره می‌کند. اگر همان endpoint از قبل ثبت شده باشد،
+        مالک و کلیدهایش به‌روز می‌شود (مثلاً ورود کاربر دیگر روی همان مرورگر).
+        """
         result = await self.db.execute(
             select(PushSubscription).where(PushSubscription.endpoint == payload.endpoint)
         )
@@ -45,8 +51,12 @@ class PushService:
             )
         await self.db.commit()
 
-    async def remove_subscription(self, endpoint: str) -> None:
-        result = await self.db.execute(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
+    async def remove_subscription(self, endpoint: str, user_id: int | None = None) -> None:
+        """اشتراک با endpoint داده‌شده را (در صورت وجود) حذف می‌کند؛ با user_id فقط اگر متعلق به همان کاربر باشد."""
+        query = select(PushSubscription).where(PushSubscription.endpoint == endpoint)
+        if user_id is not None:
+            query = query.where(PushSubscription.user_id == user_id)
+        result = await self.db.execute(query)
         sub = result.scalar_one_or_none()
         if sub is not None:
             await self.db.delete(sub)
@@ -61,17 +71,14 @@ class PushService:
         body: str | None = None,
     ) -> None:
         """
-        ⚠️ رفع یک نقص واقعی: متن اعلان قبلاً کاملاً هاردکد و مخصوص
-        «اطلاعیه‌ها» بود؛ وقتی ماژول‌های دیگر (ارزیابی عملکرد، درخواست
-        مرخصی/ماموریت) هم از همین سرویس استفاده کردند، کاربر پیام
-        گمراه‌کننده «یک اطلاعیه جدید برای شما ارسال شده است» می‌گرفت -
-        در حالی که موضوع اصلاً اطلاعیه نبود. حالا هر فراخوان می‌تواند متن
-        مخصوص خودش را بدهد؛ اگر ندهد، همان متن پیش‌فرض اطلاعیه‌ها
-        استفاده می‌شود (سازگاری کامل با رفتار قبلی).
+        به همه دستگاه‌های کاربران user_ids یک اعلان Push می‌فرستد (موازی، حداکثر ۲۰ هم‌زمان).
+        ورودی: آدرس مقصد کلیک، اولویت، نوع اطلاعیه و متن اختیاری body؛ اگر body داده نشود،
+        متن پیش‌فرض «اطلاعیه جدید» استفاده می‌شود. اشتراک‌های منقضی (404/410) حذف می‌شوند.
         """
         if not settings.VAPID_PRIVATE_KEY or not user_ids:
             return  # Push هنوز پیکربندی نشده یا مخاطبی وجود ندارد
 
+        # همه اشتراک‌های ثبت‌شده برای کاربران هدف
         result = await self.db.execute(select(PushSubscription).where(PushSubscription.user_id.in_(user_ids)))
         subscriptions = list(result.scalars().all())
         if not subscriptions:
@@ -90,35 +97,23 @@ class PushService:
         )
         name_by_user_id = {row[0]: f"{row[1]} {row[2]}" for row in name_result.all()}
 
-        # طبق درخواست، صرف‌نظر از اولویت اطلاعیه، اعلان باید همیشه سریع و
-        # قابل‌اعتماد برسد (نه فقط برای اولویت بالا/فوری) — پس Urgency همیشه
-        # high فرستاده می‌شود تا FCM حتی در حالت Doze/کم‌مصرف گوشی هم آن را
-        # فوری تحویل بدهد، نه با تأخیر یا Batch شده با بقیه.
+        # صرف‌نظر از اولویت اطلاعیه، Urgency همیشه high فرستاده می‌شود تا FCM
+        # حتی در حالت Doze/کم‌مصرف گوشی هم آن را فوری (بدون Batch) تحویل بدهد.
 
-        # ⚠️ رفع یک باگ واقعی («وقتی تعداد گیرندگان زیاد است، ارسال مجدد
-        # اعلان ناموفق بود»): قبلاً webpush() — که یک تابع کاملاً همزمان/
-        # مسدودکننده است، نه Async — داخل یک حلقه ساده و پشت‌سرهم صدا زده
-        # می‌شد؛ یعنی برای هر گیرنده، کل درخواست باید صبر می‌کرد تا پاسخ
-        # درخواست HTTP قبلی (به سرویس Push مرورگر/FCM) کامل برگردد. با چند
-        # صد گیرنده، این مجموع زمان به‌راحتی از مهلت Timeout درخواست HTTP
-        # (چه در خودِ مرورگر کاربر، چه Nginx) عبور می‌کرد و کل درخواست با
-        # خطای عمومی شکست می‌خورد — نه به این خاطر که واقعاً ارسال‌ها ناموفق
-        # بودند، بلکه چون کل فرآیند بیش‌ازحد طول می‌کشید. حالا با
-        # asyncio.gather + یک Semaphore (حداکثر ۲۰ ارسال هم‌زمان — برای
-        # جلوگیری از فشار بیش‌ازحد روی سرویس Push/شبکه)، ارسال‌ها موازی
-        # انجام می‌شوند؛ برای صدها گیرنده هم کل فرآیند چند ثانیه طول
-        # می‌کشد، نه دقیقه‌ها.
+        # ارسال‌ها با asyncio.gather به‌صورت موازی انجام می‌شوند و یک Semaphore
+        # تعداد ارسال هم‌زمان را به ۲۰ محدود می‌کند تا فشار روی سرویس Push/شبکه
+        # کنترل شود؛ به این ترتیب ارسال به صدها گیرنده از Timeout درخواست HTTP عبور نمی‌کند.
         sent_count = 0
         failed_count = 0
-        stale_ids: list[int] = []
+        stale_ids: list[int] = []  # شناسه اشتراک‌های منقضی برای حذف
         semaphore = asyncio.Semaphore(20)
 
         async def send_one(sub: PushSubscription) -> None:
+            """اعلان را برای یک اشتراک می‌سازد و ارسال می‌کند و شمارنده‌های نتیجه را به‌روز می‌کند."""
             nonlocal sent_count, failed_count
             recipient_name = name_by_user_id.get(sub.user_id)
-            # ⚠️ طبق درخواست صریح: دیگر عنوان/متن واقعی اطلاعیه در اعلان
-            # نمایش داده نمی‌شود - یک پیام استاندارد و ثابت، فقط با نام
-            # مخاطب شخصی‌سازی می‌شود.
+            # عنوان/متن واقعی اطلاعیه در اعلان نمایش داده نمی‌شود؛ یک پیام
+            # استاندارد و ثابت که فقط با نام مخاطب شخصی‌سازی می‌شود.
             notification_title = f"{recipient_name} عزیز،" if recipient_name else "پرتال سازمانی"
             notification_body = body or (
                 "یک اطلاعیه جدید برای شما ارسال شده است.\n"
@@ -168,13 +163,13 @@ class PushService:
 
         await asyncio.gather(*(send_one(sub) for sub in subscriptions))
 
+        # حذف اشتراک‌های منقضی از دیتابیس
         if stale_ids:
             await self.db.execute(delete(PushSubscription).where(PushSubscription.id.in_(stale_ids)))
             await self.db.commit()
 
-        # این خط عمداً همیشه (حتی موفقیت کامل) لاگ می‌شود — قبلاً هیچ ردی از
-        # نتیجه ارسال Push در لاگ نبود و اگر چیزی شکست می‌خورد کاملاً بی‌صدا
-        # گم می‌شد؛ حالا هر انتشار اطلاعیه یک خط قابل‌جستجو در لاگ دارد.
+        # خلاصه نتیجه ارسال همیشه (حتی در موفقیت کامل) لاگ می‌شود تا هر
+        # ارسال یک خط قابل‌جستجو در لاگ داشته باشد.
         logger.info(
             "ارسال Push اطلاعیه به %s مخاطب هدف: %s موفق، %s ناموفق، %s اشتراک منقضی حذف شد",
             len(user_ids),

@@ -2,10 +2,9 @@ import { useAuth } from "../context/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 
 /**
- * در سطح ریشه (کنار Layout/صفحات) نصب می‌شود — هر بار user.must_change_password
- * را چک می‌کند (بعد از ورود، یا بعد از هر Refresh که /auth/me دوباره خوانده
- * می‌شود) و در صورت True بودن، Dialog اجباری تغییر رمز را نشان می‌دهد؛ کاربر
- * تا رمز را عوض نکند به بقیه پنل دسترسی ندارد.
+ * نگهبان تغییر رمز اجباری؛ در سطح ریشه (کنار Layout/صفحات) نصب می‌شود. بدون ورودی (props).
+ * اگر user.must_change_password درست باشد (پس از ورود یا هر بار خواندن /auth/me)، دیالوگ اجباری
+ * تغییر رمز را بدون امکان بستن نمایش می‌دهد تا کاربر رمز را عوض کند؛ در غیر این صورت null برمی‌گرداند.
  */
 export default function MandatoryPasswordChangeGuard() {
   const { user } = useAuth();

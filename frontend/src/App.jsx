@@ -1,3 +1,8 @@
+/**
+ * کامپوننت ریشه‌ی برنامه: نمایش اسپلش تا آماده شدن احراز هویت و برندینگ،
+ * و تعریف همه‌ی مسیرهای (Route) برنامه به همراه محافظ‌های دسترسی هر مسیر.
+ * مسیرهای داخلی داخل Layout و پشت ProtectedRoute (نیازمند ورود) قرار دارند.
+ */
 import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -52,22 +57,21 @@ import EvaluationReportsPage from "./pages/EvaluationReportsPage";
 import EvaluationFormBuilderPage from "./pages/EvaluationFormBuilderPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
-const SPLASH_FADE_MS = 400;
+const SPLASH_FADE_MS = 400; // مدت انیمیشن محو شدن اسپلش پیش از حذف کامل آن (میلی‌ثانیه)
 
+/**
+ * کامپوننت اصلی برنامه؛ ورودی ندارد.
+ * اسپلش را تا پایان بارگذاری احراز هویت و برندینگ نشان می‌دهد و سپس جدول مسیرها را رندر می‌کند.
+ */
 export default function App() {
-  // به‌جای یک تایمر ثابت دلخواه (که قبلاً همیشه ۲ ثانیه صبر می‌کرد، حتی
-  // وقتی اپ زودتر آماده بود، و باعث می‌شد هر صفحه‌ای — از جمله «اطلاعیه
-  // جدید» اگر کاربر رویش Refresh می‌زد — با یک تأخیر ثابت و بی‌دلیل باز
-  // شود)، اسپلش دقیقاً تا وقتی isLoading واقعی احراز هویت (چک اولیه
-  // Session) تمام شود نمایش داده می‌شود — نه بیشتر، نه کمتر.
+  // اسپلش دقیقاً تا پایان چک اولیه‌ی Session (احراز هویت) و بارگذاری برندینگ نمایش داده می‌شود
   const { isLoading: authIsLoading } = useAuth();
   const { isLoading: brandingIsLoading } = useBranding();
-  // ⚠️ طبق درخواست صریح: اسپلش تا وقتی *هم* احراز هویت *هم* برندینگ واقعاً
-  // آماده نشده‌اند، کنار نمی‌رود — وگرنه صفحه ورود/داشبورد یک لحظه با
-  // مقادیر پیش‌فرض ظاهر می‌شد و بعد با مقادیر واقعی جایگزین می‌شد.
+  // تا هر دو آماده نشوند اسپلش کنار نمی‌رود تا صفحه با مقادیر پیش‌فرض ظاهر نشود
   const isLoading = authIsLoading || brandingIsLoading;
   const [showSplash, setShowSplash] = useState(true);
 
+  // پس از پایان بارگذاری، اسپلش را بعد از اتمام انیمیشن محو شدن از DOM حذف می‌کند
   useEffect(() => {
     if (isLoading) return;
     const removeTimer = setTimeout(() => setShowSplash(false), SPLASH_FADE_MS);
@@ -78,10 +82,12 @@ export default function App() {
     <>
       {showSplash && <SplashScreen visible={isLoading} />}
       <Routes>
+        {/* مسیرهای عمومی (بدون نیاز به ورود): ورود، فراموشی و بازنشانی رمز عبور */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
+        {/* مسیرهای داخلی: نیازمند ورود و نمایش داخل Layout اصلی (منو و نوار بالا) */}
         <Route
           element={
             <ProtectedRoute>
@@ -89,7 +95,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          {/* فقط Admin واقعی — این‌ها مفهوم «تفویض به یک نقش دیگر» ندارند: */}
+          {/* داشبورد مدیریتی و به‌روزرسانی فقط برای Admin؛ گزارش حضور برای دارندگان مجوز لاگ تردد */}
           <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
           <Route
@@ -97,6 +103,7 @@ export default function App() {
             element={<PermissionRoute check={(u) => u?.can_view_attendance_logs}><PresenceReportPage /></PermissionRoute>}
           />
 
+          {/* فهرست پرسنل: برای هر کاربری که مجوز مشاهده، ویرایش یا ایجاد پرسنل دارد */}
           <Route
             path="/employees"
             element={
@@ -106,9 +113,7 @@ export default function App() {
             }
           />
 
-          {/* Admin یا هر نقشی با مجوز متناظر — طبق درخواست صریح، اگر یک
-              مجوز به یک نقش داده شود، صفحه/منوی متناظرش هم واقعاً برای آن
-              نقش باز می‌شود، نه فقط برای Admin: */}
+          {/* صفحات مدیریتی: برای Admin یا هر نقشی که مجوز متناظر آن صفحه را دارد (بررسی با PermissionRoute) */}
           <Route
             path="/departments"
             element={<PermissionRoute check={(u) => u?.can_manage_sites}><DepartmentsPage /></PermissionRoute>}
@@ -214,7 +219,7 @@ export default function App() {
             }
           />
 
-          {/* برای همه کاربران لاگین‌شده: */}
+          {/* صفحات شخصی و عمومی برای همه‌ی کاربران واردشده؛ زیرصفحه‌های مدیریتی آن‌ها با مجوز جداگانه */}
           <Route path="/notices" element={<NoticesPage />} />
           <Route path="/notices/new" element={<NewNoticePage />} />
           <Route path="/my-dashboard" element={<PersonalDashboardPage />} />

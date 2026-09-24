@@ -1,3 +1,7 @@
+/**
+ * کمک‌تابع‌های اعلان Push مرورگر: بررسی پشتیبانی و وضعیت اجازه،
+ * فعال‌سازی (درخواست اجازه، ساخت اشتراک با کلید VAPID و ثبت در سرور) و لغو اشتراک.
+ */
 import { fetchVapidPublicKey, subscribePush, unsubscribePush } from "../api/push";
 
 /** تبدیل کلید عمومی VAPID (Base64URL) به Uint8Array مورد نیاز pushManager.subscribe */
@@ -8,15 +12,17 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
+// خروجی: true اگر مرورگر Service Worker، PushManager و Notification را پشتیبانی کند
 export function isPushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+// خروجی: وضعیت اجازه‌ی اعلان ("granted" / "denied" / "default") یا "unsupported"
 export function getNotificationPermission() {
   return isPushSupported() ? Notification.permission : "unsupported";
 }
 
-/** درخواست اجازه اعلان از کاربر و ثبت اشتراک Push در سرور. */
+/** درخواست اجازه‌ی اعلان از کاربر، گرفتن یا ساخت اشتراک Push و ثبت آن در سرور؛ خروجی: شیء اشتراک. در خطا پیام فارسی throw می‌کند. */
 export async function enablePushNotifications() {
   if (!isPushSupported()) {
     throw new Error("این مرورگر از اعلان Push پشتیبانی نمی‌کند.");
@@ -29,6 +35,7 @@ export async function enablePushNotifications() {
 
   const registration = await navigator.serviceWorker.ready;
 
+  // استفاده از اشتراک موجود؛ در نبود آن ساخت اشتراک جدید با کلید عمومی VAPID سرور
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     const vapidPublicKey = await fetchVapidPublicKey();
@@ -36,7 +43,7 @@ export async function enablePushNotifications() {
       throw new Error("سرور هنوز برای ارسال اعلان پیکربندی نشده است.");
     }
     subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
+      userVisibleOnly: true, // الزام مرورگر: هر Push باید اعلان قابل مشاهده نمایش دهد
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
   }

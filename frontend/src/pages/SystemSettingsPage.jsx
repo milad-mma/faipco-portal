@@ -1,3 +1,6 @@
+// صفحه‌ی تنظیمات سامانه (تنظیمات سراسری پرتال).
+// آپلود لوگوها، آیکون PWA، Favicon و پس‌زمینه‌ی ورود؛ برندینگ هر جای نمایش؛ متن‌های تب مرورگر و نصب PWA؛
+// و تنظیمات SMTP، پیامک و دروازه‌ی دسترسی.
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, Card, CircularProgress, Divider, Stack, TextField, Typography } from "@mui/material";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
@@ -25,20 +28,22 @@ import PwaIconSettings from "../components/PwaIconSettings";
 import { SURFACE_META } from "../config/brandingSurfaces";
 
 /**
- * یک کارت آپلود عکس با پیش‌نمایش + دکمه‌های انتخاب/آپلود/حذف — الگوی
- * مشترک بین هر سه لوگو و عکس پس‌زمینه ورود، برای جلوگیری از تکرار.
+ * کارت آپلود عکس با پیش‌نمایش و دکمه‌های انتخاب/آپلود/حذف (مشترک بین لوگوها، آیکون‌ها و پس‌زمینه‌ی ورود).
+ * ورودی: عنوان، راهنما، URL عکس فعلی، نسبت ابعاد، حداکثر عرض، توابع آپلود/حذف و reloadOnChange
+ * (بازخوانی کل صفحه پس از تغییر تا BrandingContext عکس جدید را بگیرد).
  */
 function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 / 1", maxWidth = 200, uploadFn, deleteFn, reloadOnChange }) {
   const fileInputRef = useRef(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);  // URL موقت پیش‌نمایش فایل انتخاب‌شده
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [imageVersion, setImageVersion] = useState(0);
-  const [currentImageExists, setCurrentImageExists] = useState(true); // خوش‌بینانه — اگر ۴۰۴ بخورد، false می‌شود
+  const [imageVersion, setImageVersion] = useState(0);  // پارامتر ?v= برای دور زدن کش مرورگر پس از آپلود
+  const [currentImageExists, setCurrentImageExists] = useState(true); // پیش‌فرض true؛ اگر بارگذاری عکس خطا دهد (۴۰۴) false می‌شود
 
+  // فایل انتخاب‌شده را نگه می‌دارد و پیش‌نمایش آن را می‌سازد
   function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -48,6 +53,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
     setSuccess("");
   }
 
+  // فایل انتخاب‌شده را آپلود می‌کند، پیش‌نمایش را پاک و نسخه‌ی عکس را افزایش می‌دهد
   async function handleUpload() {
     if (!selectedFile) return;
     setIsUploading(true);
@@ -61,9 +67,8 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
       setCurrentImageExists(true);
       setImageVersion((v) => v + 1);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      // ⚠️ BrandingContext فقط یک‌بار در بارگذاری اپ فچ می‌شود — بدون این
-      // Reload، بقیه صفحات (اسپلش، صفحه ورود، نوار بالا، ...) تا Refresh
-      // بعدی همچنان عکس قبلی را نشان می‌دادند.
+      // BrandingContext فقط یک‌بار هنگام بارگذاری اپ خوانده می‌شود، پس صفحه بازخوانی می‌شود
+      // تا بقیه‌ی بخش‌ها (اسپلش، صفحه‌ی ورود، نوار بالا و...) عکس جدید را نشان دهند
       if (reloadOnChange) window.location.reload();
     } catch (err) {
       setError(err.response?.data?.detail || "آپلود عکس با خطا مواجه شد.");
@@ -72,6 +77,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
     }
   }
 
+  // عکس سفارشی را حذف می‌کند تا مقدار پیش‌فرض استفاده شود
   async function handleDelete() {
     setIsDeleting(true);
     setError("");
@@ -97,6 +103,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
         {helperText}
       </Typography>
 
+      {/* قاب پیش‌نمایش: فایل انتخاب‌شده، عکس فعلی یا حالت «تنظیم نشده» */}
       <Box
         sx={{
           width: "100%",
@@ -129,6 +136,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
             </Typography>
           </Stack>
         )}
+        {/* img پنهان فقط برای تشخیص وجود عکس فعلی از طریق onError */}
         {!previewUrl && currentImageExists && (
           <img
             src={`${currentImageUrl}?v=${imageVersion}`}
@@ -150,6 +158,7 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
         </Alert>
       )}
 
+      {/* دکمه‌های انتخاب، آپلود و حذف */}
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button component="label" size="small" variant="outlined" startIcon={<CloudUploadOutlinedIcon />}>
           انتخاب
@@ -175,8 +184,8 @@ function ImageUploadCard({ title, helperText, currentImageUrl, aspectRatio = "1 
 }
 
 /**
- * یک گروه از فیلدهای متنی مرتبط + دکمه ذخیره مستقل خودشان — هر گروه
- * (Manifest، اسپلش‌اسکرین، صفحه ورود) کاملاً مستقل ذخیره می‌شود.
+ * گروهی از فیلدهای متنی مرتبط با دکمه‌ی ذخیره‌ی مستقل خودشان.
+ * ورودی: عنوان، راهنما، تعریف فیلدها، مقادیر، onChange(key, value)، onSave و وضعیت ذخیره/پیام‌ها.
  */
 function TextFieldGroup({ title, helperText, fields, values, onChange, onSave, isSaving, error, success }) {
   return (
@@ -222,6 +231,7 @@ function TextFieldGroup({ title, helperText, fields, values, onChange, onSave, i
   );
 }
 
+// تعریف گروه‌های فیلد متنی برندینگ؛ هر گروه جداگانه ذخیره می‌شود (key فیلد = نام فیلد در /system/branding)
 const FIELD_GROUPS = [
   {
     key: "browser",
@@ -246,8 +256,8 @@ const FIELD_GROUPS = [
 ];
 
 /**
- * تنظیمات سامانه — تنظیمات سراسری کل پرتال، قابل‌تغییر بدون نیاز به
- * کد‌نویسی یا Restart سرور.
+ * کامپوننت صفحه‌ی تنظیمات سامانه؛ ورودی ندارد.
+ * داده‌های برندینگ را یک‌جا بارگذاری می‌کند و کارت‌های تنظیمات را رندر می‌کند؛ تغییرات بدون Restart سرور اعمال می‌شوند.
  */
 export default function SystemSettingsPage() {
   const [values, setValues] = useState(null); // فیلدهای متنی — یک‌جا از /system/branding
@@ -255,6 +265,7 @@ export default function SystemSettingsPage() {
   const [savingGroup, setSavingGroup] = useState(null); // کدام گروه در حال ذخیره است
   const [groupMessages, setGroupMessages] = useState({}); // { [groupKey]: {error, success} }
 
+  // بارگذاری برندینگ و استخراج فیلدهای متنی در values
   useEffect(() => {
     fetchBranding().then((data) => {
       setBrandingData(data);
@@ -276,10 +287,12 @@ export default function SystemSettingsPage() {
     });
   }, []);
 
+  // مقدار یک فیلد متنی را به‌روز می‌کند
   function handleFieldChange(key, value) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  // فیلدهای یک گروه را (خالی = null) ذخیره و پیام نتیجه را برای همان گروه ثبت می‌کند
   async function handleSaveGroup(group) {
     setSavingGroup(group.key);
     setGroupMessages((prev) => ({ ...prev, [group.key]: {} }));
@@ -289,8 +302,7 @@ export default function SystemSettingsPage() {
         payload[field.key] = values[field.key]?.trim() || null;
       }
       const updated = await updateBranding(payload);
-      // مقادیر واقعی برگشتی از سرور را جایگزین می‌کنیم (اگر خالی فرستاده
-      // بودیم، سرور مقدار پیش‌فرض را برگردانده — این‌جا هم باید دیده شود)
+      // مقادیر برگشتی سرور جایگزین می‌شوند (برای فیلد خالی، سرور مقدار پیش‌فرض را برمی‌گرداند)
       setValues((prev) => ({ ...prev, ...Object.fromEntries(group.fields.map((f) => [f.key, updated[f.key]])) }));
       setGroupMessages((prev) => ({ ...prev, [group.key]: { success: "ذخیره شد." } }));
     } catch (err) {
@@ -303,6 +315,7 @@ export default function SystemSettingsPage() {
     }
   }
 
+  // نشانگر بارگذاری تا رسیدن داده‌ها
   if (values === null) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -326,6 +339,7 @@ export default function SystemSettingsPage() {
       </Alert>
 
       <Stack spacing={3}>
+        {/* کارت لوگوها: لوگوی بزرگ، لوگوی کوچک، آیکون PWA و Favicon */}
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
             لوگوها
@@ -368,12 +382,12 @@ export default function SystemSettingsPage() {
           </Stack>
         </Card>
 
-        {/* ⚠️ طبق درخواست کاربر: برندینگ به تفکیک جای نمایش - لوگو، اندازه، مقیاس،
-            قاب، متن‌ها با فونت و رنگ، پس‌زمینه؛ هرکدام مستقل با پیش‌نمایش. */}
+        {/* تنظیم آیکون نصب PWA برای هر پلتفرم */}
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <PwaIconSettings initial={brandingData?.pwa_icon} hasIcon={Boolean(brandingData?.has_custom_pwa_icon)} />
         </Card>
 
+        {/* ویرایشگر برندینگ هر جای نمایش (لوگو، اندازه، مقیاس، قاب، متن‌ها با فونت و رنگ، پس‌زمینه) با پیش‌نمایش مستقل */}
         {SURFACE_META.map((meta) => (
           <Card key={meta.key} variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
             <BrandingSurfaceEditor
@@ -385,6 +399,7 @@ export default function SystemSettingsPage() {
           </Card>
         ))}
 
+        {/* گروه‌های فیلد متنی (عنوان تب مرورگر، متن‌های نصب PWA) */}
         {FIELD_GROUPS.map((group) => (
           <Card key={group.key} variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
             <TextFieldGroup
@@ -401,6 +416,7 @@ export default function SystemSettingsPage() {
           </Card>
         ))}
 
+        {/* عکس پس‌زمینه‌ی صفحه‌ی ورود */}
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <ImageUploadCard
             title="عکس پس‌زمینه صفحه ورود"
@@ -413,6 +429,7 @@ export default function SystemSettingsPage() {
           />
         </Card>
 
+        {/* تنظیمات ایمیل (SMTP)، پیامک و دروازه‌ی دسترسی */}
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <SmtpSettings />
         </Card>

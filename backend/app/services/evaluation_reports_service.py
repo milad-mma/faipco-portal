@@ -1,11 +1,9 @@
 """
-سرویس «گزارش‌های مدیریتی ارزیابی عملکرد» - میانگین واحد/سایت برای یک
-دوره، و مقایسه بین دو دوره. برخلاف evaluation_process_service.py که
-دیدگاه فردی (خودِ کاربر) دارد، این سرویس دیدگاه تجمیعی/مدیریتی دارد.
+سرویس «گزارش‌های مدیریتی ارزیابی عملکرد»: آمار واحد/سایت برای یک دوره، مقایسه دو دوره،
+روند فردی یک پرسنل، جزئیات سوال‌به‌سوال یک ارزیابی و ریز پاسخ‌های یک دوره برای Excel.
+برخلاف evaluation_process_service.py (دیدگاه فردی کاربر)، این سرویس دیدگاه تجمیعی/مدیریتی دارد.
 
-⚠️ همه Query ها فقط از Evaluation های status=submitted استفاده
-می‌کنند - ارزیابی‌های Draft هنوز نهایی نشده‌اند و نباید در میانگین‌های
-مدیریتی حساب شوند.
+همه کوئری‌ها فقط Evaluationهای status=submitted را حساب می‌کنند؛ پیش‌نویس‌ها در آمار نمی‌آیند.
 """
 from __future__ import annotations
 
@@ -19,11 +17,12 @@ from app.models.site import Site
 
 
 class EvaluationReportError(Exception):
+    """خطای قابل نمایش به کاربر در گزارش‌ها (مثلاً سایت/دوره/ارزیابی یافت نشد)."""
     pass
 
 
 def _format_answer_value(answer: dict) -> str:
-    """⚠️ همان منطق نمایش در UI - تا Excel و صفحه یک چیز نشان دهند."""
+    """ورودی: پاسخ غنی‌شده (dict). متن نمایشی پاسخ را با همان منطق UI برمی‌گرداند (متن، عدد، تاریخ یا برچسب گزینه‌ها)."""
     if answer.get("text_value"):
         return answer["text_value"]
     if answer.get("number_value") is not None:
@@ -36,10 +35,15 @@ def _format_answer_value(answer: dict) -> str:
 
 
 class EvaluationReportsService:
+    """سرویس گزارش‌های تجمیعی ارزیابی برای مدیران."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: نشست async دیتابیس."""
         self.db = db
 
     async def _department_stats(self, department_id: int, period_id: int) -> dict:
+        """میانگین، تعداد، کمینه و بیشینه امتیاز ارزیابی‌های ثبت‌شده پرسنل یک واحد در یک دوره (dict)."""
+        # تجمیع روی ارزیابی‌های submitted که هدفشان پرسنل این واحد است
         result = await self.db.execute(
             select(
                 func.avg(Evaluation.total_score),
@@ -64,6 +68,8 @@ class EvaluationReportsService:
         }
 
     async def _department_employee_scores(self, department_id: int, period_id: int) -> list[dict]:
+        """فهرست امتیاز پرسنل یک واحد در یک دوره (بیشترین اول)، همراه evaluation_id برای Drill-down."""
+        # امتیاز هر ارزیابی submitted پرسنل واحد، مرتب بر اساس امتیاز نزولی
         result = await self.db.execute(
             select(
                 Employee.first_name,
@@ -81,8 +87,7 @@ class EvaluationReportsService:
             )
             .order_by(Evaluation.total_score.desc())
         )
-        # ⚠️ evaluation_id برای Drill-down جزئیات سوال‌به‌سوال در گزارش
-        # مدیریتی لازم است (کارت/دیالوگ جزئیات) - قبلاً برگردانده نمی‌شد.
+        # evaluation_id برای نمایش جزئیات سوال‌به‌سوال در گزارش مدیریتی لازم است
         return [
             {
                 "first_name": r[0],
@@ -96,12 +101,10 @@ class EvaluationReportsService:
 
     async def get_evaluation_answers(self, site_id: int, evaluation_id: int) -> list[EvaluationAnswer]:
         """
-        ⚠️ جزئیات سوال‌به‌سوال یک ارزیابی برای گزارش مدیریتی.
-
-        ⚠️ امنیت: بررسی می‌شود که این ارزیابی واقعاً متعلق به همان سایتی
-        باشد که کاربر برایش مجوز گزارش‌گیری دارد - وگرنه با دانستن یک
-        evaluation_id دلخواه می‌شد جزئیات ارزیابی سایت دیگری را خواند.
+        جزئیات سوال‌به‌سوال یک ارزیابی ثبت‌شده برای گزارش مدیریتی (پاسخ‌های غنی‌شده با گزینه‌ها).
+        ابتدا بررسی می‌شود ارزیابی متعلق به پرسنلِ همین سایت باشد؛ در غیر این صورت EvaluationReportError.
         """
+        # بررسی تعلق ارزیابی به سایت (تا با evaluation_id دلخواه نتوان سایت دیگری را خواند)
         owner = await self.db.execute(
             select(Evaluation.id)
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
@@ -120,9 +123,7 @@ class EvaluationReportsService:
             .where(EvaluationAnswer.evaluation_id == evaluation_id)
             .order_by(EvaluationAnswer.id)
         )
-        # ⚠️ از همان تابع غنی‌سازی evaluation_process_service استفاده می‌شود
-        # (نه یک کپی دوم) - تا برچسب گزینه‌ها و فهرست گزینه‌های ممکن در
-        # گزارش مدیریتی و نمای پرسنلی دقیقاً یکسان ساخته شوند.
+        # غنی‌سازی با تابع مشترک evaluation_process_service تا برچسب/فهرست گزینه‌ها با نمای پرسنلی یکسان باشد
         from app.services.evaluation_process_service import EvaluationProcessService
 
         return await EvaluationProcessService(self.db)._enrich_answers_with_options(
@@ -131,14 +132,10 @@ class EvaluationReportsService:
 
     async def get_employee_trend(self, site_id: int, personnel_code: str) -> dict:
         """
-        ⚠️ طبق درخواست صریح کاربر: گزارش روند فردی - امتیاز یک نفر در طول
-        همه دوره‌های ارزیابی، به‌ترتیب زمانی، تا بشود سیر صعودی/نزولی
-        عملکردش را دید (قبلاً فقط مقایسه سطح واحد وجود داشت).
-
-        ⚠️ امنیت: فقط پرسنل همان سایتی که کاربر برایش مجوز گزارش‌گیری
-        دارد - تا با دانستن یک کد پرسنلی دلخواه نشود روند فرد دیگری در
-        سایت دیگر را خواند.
+        روند فردی: امتیاز یک پرسنل (با کد پرسنلی) در همه دوره‌ها به ترتیب زمان ثبت، همراه میانگین،
+        بهترین و بدترین امتیاز. فقط پرسنل همین سایت؛ در غیر این صورت EvaluationReportError.
         """
+        # جست‌وجوی پرسنل فقط در همین سایت
         employee_result = await self.db.execute(
             select(Employee).where(Employee.site_id == site_id, Employee.personnel_code == personnel_code)
         )
@@ -146,6 +143,7 @@ class EvaluationReportsService:
         if employee is None:
             raise EvaluationReportError("پرسنل موردنظر در این سایت یافت نشد")
 
+        # همه ارزیابی‌های submitted این پرسنل، به ترتیب زمان ثبت
         result = await self.db.execute(
             select(
                 EvaluationPeriod.id,
@@ -185,17 +183,14 @@ class EvaluationReportsService:
 
     async def get_period_answers(self, site_id: int, period_id: int) -> list[dict]:
         """
-        ⚠️ طبق گزارش کاربر: ریز سوال/جواب‌ها در خروجی Excel نبود.
-        این متد همه پاسخ‌های یک دوره را - برای همه پرسنل آن سایت - در یک
-        Query جمع می‌کند تا در شیت جداگانه Excel بیاید.
-
-        ⚠️ برچسب گزینه‌ها از همان تابع مشترک غنی‌سازی می‌آید (نه یک
-        پیاده‌سازی دوم) تا خروجی Excel دقیقاً با آنچه در UI دیده می‌شود
-        یکسان باشد.
+        ریز پاسخ‌های همه ارزیابی‌های ثبت‌شده یک دوره برای پرسنل یک سایت، برای شیت «سوال و پاسخ» Excel.
+        خروجی: لیست dict (واحد، نام، کد، امتیاز کل، سوال، پاسخ، گزینه‌ها، امتیاز سوال، نظر).
+        برچسب گزینه‌ها از همان تابع غنی‌سازی مشترک می‌آید تا با UI یکسان باشد.
         """
         from app.models.evaluation_process import EvaluationAnswer
         from app.services.evaluation_process_service import EvaluationProcessService
 
+        # ارزیابی‌های submitted دوره برای پرسنل سایت، همراه نام واحد (مرتب بر اساس واحد و نام خانوادگی)
         result = await self.db.execute(
             select(
                 Employee.first_name,
@@ -219,6 +214,7 @@ class EvaluationReportsService:
         if not rows:
             return []
 
+        # همه پاسخ‌های این ارزیابی‌ها در یک کوئری، سپس غنی‌سازی با گزینه‌ها
         evaluation_ids = [r[4] for r in rows]
         answers_result = await self.db.execute(
             select(EvaluationAnswer)
@@ -228,10 +224,12 @@ class EvaluationReportsService:
         all_answers = list(answers_result.scalars().all())
         enriched = await EvaluationProcessService(self.db)._enrich_answers_with_options(all_answers)
 
+        # گروه‌بندی پاسخ‌های غنی‌شده بر اساس evaluation_id (ترتیب enriched با all_answers یکی است)
         by_evaluation: dict[int, list] = {}
         for answer, raw in zip(enriched, all_answers):
             by_evaluation.setdefault(raw.evaluation_id, []).append(answer)
 
+        # یک سطر خروجی برای هر پاسخ هر ارزیابی
         out = []
         for first_name, last_name, personnel_code, dept_name, evaluation_id, total_score in rows:
             for answer in by_evaluation.get(evaluation_id, []):
@@ -254,7 +252,10 @@ class EvaluationReportsService:
         return out
 
     async def get_site_period_report(self, site_id: int, period_id: int) -> dict:
-        """گزارش کامل یک سایت برای یک دوره - میانگین کل + شکسته‌شده به هر واحد."""
+        """
+        گزارش کامل یک سایت برای یک دوره: میانگین و تعداد کل، و آمار + امتیاز پرسنل هر واحد.
+        اگر سایت/دوره نباشد EvaluationReportError.
+        """
         site = await self.db.get(Site, site_id)
         if site is None:
             raise EvaluationReportError("سایت موردنظر یافت نشد")
@@ -265,6 +266,7 @@ class EvaluationReportsService:
         departments_result = await self.db.execute(select(Department).where(Department.site_id == site_id))
         departments = departments_result.scalars().all()
 
+        # آمار و امتیاز پرسنل برای هر واحد سایت
         department_entries = []
         for department in departments:
             stats = await self._department_stats(department.id, period_id)
@@ -280,6 +282,7 @@ class EvaluationReportsService:
                 }
             )
 
+        # میانگین و تعداد کل ارزیابی‌های submitted سایت در این دوره
         overall_result = await self.db.execute(
             select(func.avg(Evaluation.total_score), func.count(Evaluation.id))
             .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
@@ -306,16 +309,14 @@ class EvaluationReportsService:
         self, department_id: int, period_id_a: int, period_id_b: int
     ) -> list[dict]:
         """
-        ⚠️ طبق درخواست صریح کاربر: زیر هر واحد در «مقایسه دوره‌ها»، لیست
-        پرسنل با امتیاز هر دو دوره و میزان تغییر.
-
-        پرسنلی که فقط در یکی از دو دوره ارزیابی شده هم می‌آید (امتیاز
-        دوره دیگرش None می‌شود) - چون حذفشان تصویر ناقصی از واحد می‌داد.
-        کلید تطبیق، کد پرسنلی است (نه نام، که ممکن است تکراری باشد).
+        فهرست پرسنل یک واحد با امتیاز هر دو دوره (مرتب بر اساس نام خانوادگی).
+        پرسنلی که فقط در یکی از دوره‌ها ارزیابی شده هم می‌آید (امتیاز دیگر None).
+        کلید تطبیق کد پرسنلی است، نه نام.
         """
         scores_a = await self._department_employee_scores(department_id, period_id_a)
         scores_b = await self._department_employee_scores(department_id, period_id_b)
 
+        # ادغام دو فهرست بر اساس کد پرسنلی
         merged: dict[str, dict] = {}
         for row in scores_a:
             merged[row["personnel_code"]] = {
@@ -339,14 +340,17 @@ class EvaluationReportsService:
                     "period_b_score": None,
                     "period_b_evaluation_id": None,
                 },
-            )
+            )  # اگر در دوره اول نبود، رکورد خالی ساخته می‌شود
             entry["period_b_score"] = row["score"]
             entry["period_b_evaluation_id"] = row["evaluation_id"]
 
         return sorted(merged.values(), key=lambda e: e["last_name"])
 
     async def get_period_comparison(self, site_id: int, period_id_a: int, period_id_b: int) -> dict:
-        """مقایسه میانگین یک سایت بین دو دوره - کل سایت + شکسته‌شده به هر واحد."""
+        """
+        مقایسه یک سایت بین دو دوره: میانگین کل هر دوره و برای هر واحد میانگین/تعداد دو دوره و مقایسه پرسنل.
+        اگر سایت یا یکی از دوره‌ها نباشد EvaluationReportError.
+        """
         site = await self.db.get(Site, site_id)
         if site is None:
             raise EvaluationReportError("سایت موردنظر یافت نشد")
@@ -356,6 +360,7 @@ class EvaluationReportsService:
             raise EvaluationReportError("یکی از دو دوره ارزیابی یافت نشد")
 
         async def overall_average(period_id: int) -> float | None:
+            """میانگین امتیاز ارزیابی‌های submitted پرسنل سایت در یک دوره (یا None)."""
             result = await self.db.execute(
                 select(func.avg(Evaluation.total_score))
                 .join(EvaluationAssignment, EvaluationAssignment.id == Evaluation.assignment_id)
@@ -375,6 +380,7 @@ class EvaluationReportsService:
         departments_result = await self.db.execute(select(Department).where(Department.site_id == site_id))
         departments = departments_result.scalars().all()
 
+        # آمار هر واحد در دو دوره؛ واحدی که در هیچ‌کدام ارزیابی ندارد حذف می‌شود
         department_entries = []
         for department in departments:
             stats_a = await self._department_stats(department.id, period_id_a)

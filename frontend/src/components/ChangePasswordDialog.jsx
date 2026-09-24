@@ -18,8 +18,9 @@ import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import { changePasswordRequest } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 
-const MIN_LENGTH = 10;
+const MIN_LENGTH = 10; // حداقل طول رمز عبور جدید
 
+// فهرست شرایط قدرت رمز عبور؛ هر مورد: {label, ok} برای نمایش چک‌لیست زیر فرم
 function getStrengthChecks(password) {
   return [
     { label: `حداقل ${MIN_LENGTH} کاراکتر`, ok: password.length >= MIN_LENGTH },
@@ -30,9 +31,11 @@ function getStrengthChecks(password) {
 }
 
 /**
- * mandatory=true: برای وقتی که کاربر با یک رمز ضعیف/پیش‌فرض وارد شده و
- * سیستم مجبورش می‌کند قبل از هر کار دیگری رمزش را عوض کند — بدون دکمه
- * انصراف، بدون امکان بستن با کلیک بیرون از Dialog یا کلید Esc.
+ * دیالوگ تغییر رمز عبور کاربر جاری با چک‌لیست زنده‌ی قدرت رمز.
+ * ورودی: open، onClose و mandatory.
+ * mandatory=true برای وقتی است که کاربر با رمز ضعیف/پیش‌فرض وارد شده و باید قبل از هر کاری
+ * رمزش را عوض کند: دکمه‌ی انصراف ندارد و با کلیک بیرون یا کلید Esc بسته نمی‌شود.
+ * خروجی: Dialog شامل فیلدهای رمز فعلی/جدید/تکرار و پیام‌های راهنما، موفقیت و خطا.
  */
 export default function ChangePasswordDialog({ open, onClose, mandatory = false }) {
   const { user, refetchUser } = useAuth();
@@ -43,10 +46,11 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const usesNationalCode = user && !user.has_custom_password;
+  const usesNationalCode = user && !user.has_custom_password; // کاربر هنوز رمز اختصاصی ندارد و با اطلاعات پیش‌فرض ورود وارد می‌شود
   const strengthChecks = getStrengthChecks(newPassword);
   const isStrongEnough = strengthChecks.every((c) => c.ok);
 
+  // پاک کردن همه‌ی فیلدها و پیام‌ها
   function reset() {
     setCurrentPassword("");
     setNewPassword("");
@@ -55,12 +59,14 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
     setSuccess(false);
   }
 
+  // بستن دیالوگ (در حالت اجباری غیرفعال است)
   function handleClose() {
     if (mandatory) return; // اصلاً قابل بستن نیست تا رمز عوض شود
     reset();
     onClose();
   }
 
+  // اعتبارسنجی تطابق و قدرت رمز، ارسال به سرور و در حالت اجباری به‌روزرسانی اطلاعات کاربر
   async function handleSubmit() {
     setError("");
     if (newPassword !== confirmPassword) {
@@ -98,6 +104,7 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
     >
       <DialogTitle>{mandatory ? "لازم است رمز عبور خود را تغییر دهید" : "تغییر رمز عبور"}</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        {/* هشدار حالت اجباری */}
         {mandatory && !success && (
           <Alert severity="warning">
             رمز عبور فعلی حساب شما ضعیف یا پیش‌فرض است. برای ادامه استفاده از پرتال، ابتدا باید یک
@@ -110,6 +117,7 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
             دیگر معتبر نیست.
           </Alert>
         )}
+        {/* فرم تغییر رمز و چک‌لیست قدرت رمز (پس از موفقیت پنهان می‌شود) */}
         {!success && (
           <>
             {usesNationalCode && (
@@ -162,10 +170,10 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
             </List>
           </>
         )}
-        {/* پیام خطا عمداً درست بالای دکمه‌های عملیات (نه بالای فرم) قرار
-            می‌گیرد - چون طبیعی‌ترین محل برای واکنش به کلیک روی دکمه است. */}
+        {/* پیام خطا درست بالای دکمه‌های عملیات (نه بالای فرم) نمایش داده می‌شود */}
         {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
+      {/* دکمه‌ی انصراف/بستن فقط در حالت غیراجباری */}
       <DialogActions sx={{ p: 2.5 }}>
         {!mandatory && <Button onClick={handleClose}>{success ? "بستن" : "انصراف"}</Button>}
         {!success && (

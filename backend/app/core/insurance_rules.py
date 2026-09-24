@@ -1,14 +1,13 @@
 """
-قوانین خالص ماژول «بیمه تکمیلی» - بازسازی دقیق منطق سامانه قدیمی
-(insurance.faipco.ir: save.php + assets/js/form.js + config/constants.php).
-⚠️ طبق درخواست کاربر: منطق عیناً حفظ شده؛ فقط اعتبارسنجی سمت سرور کامل‌تر
-است (در سامانه قدیمی بخشی از اعتبارسنجی فقط در مرورگر بود).
+قوانین ماژول «بیمه تکمیلی» - توابع خالص (بدون دیتابیس) که فرم ثبت‌نام را
+اعتبارسنجی و نرمال می‌کنند: مقادیر ثابت بیمه‌گر، فهرست بانک‌ها و نوع حساب‌ها،
+کد ملی/شبا/موبایل/تاریخ، و قواعد اعضای خانواده (نسبت، تکفل، جنسیت، مدرک).
 """
 from __future__ import annotations
 
 import re
 
-# ---------- مقادیر ثابت بیمه‌گر (constants.php) ----------
+# مقادیر ثابتی که بیمه‌گر برای همه ردیف‌های خروجی Excel می‌خواهد
 GROUP_CODE = 3
 BASE_INSURANCE_CODE = 144
 REQUEST_REASON = 23
@@ -25,7 +24,8 @@ GENDER_FEMALE = 2
 MARITAL_SINGLE = 2
 MARITAL_MARRIED = 3
 
-# member_type → (عنوان، حداکثر تعداد، کد نسبت، کد تکفل، جنسیت ثابت یا None)
+# انواع عضو خانواده: عنوان نمایشی، حداکثر تعداد مجاز، کد نسبت و کد تکفل
+# بیمه‌گر، و جنسیت ثابت (None = جنسیت همسر برعکس فرد اصلی تعیین می‌شود)
 MEMBER_TYPES: dict[str, dict] = {
     "spouse": {"title": "همسر", "max_count": 1, "relation_code": 2, "dependency_code": 1, "gender": None},
     "son": {"title": "فرزند پسر", "max_count": 99, "relation_code": 7, "dependency_code": 1, "gender": GENDER_MALE},
@@ -45,13 +45,13 @@ BANK_CODES = {
     34: "گردشگری", 35: "انصارالمجاهدین", 36: "مهراقتصاد", 37: "مرکزی",
 }  # fmt: skip
 
-# مدرک کفالت: تصویر/PDF تا ۱۰ مگابایت (upload_doc.php)
+# مدرک کفالت/حضانت: فقط تصویر یا PDF، حداکثر ۱۰ مگابایت
 DOCUMENT_ALLOWED_TYPES = {
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff", "application/pdf",
 }  # fmt: skip
 DOCUMENT_MAX_BYTES = 10 * 1024 * 1024
 
-# پیش‌فرض بخش ۴ فرم (قابل ویرایش از پنل - تنظیمات بیمه تکمیلی)
+# مقادیر اولیه بخش ۴ فرم (جدول نرخ + توضیحات)؛ نسخه فعلی از تنظیمات پنل خوانده می‌شود
 DEFAULT_RATE_TABLE = {
     "unit": "تومان",
     "age_header": "سن",
@@ -80,27 +80,30 @@ class InsuranceRuleError(ValueError):
 
 
 def to_english_digits(value: str) -> str:
+    """ارقام فارسی/عربی را به انگلیسی تبدیل می‌کند تا اعتبارسنجی عددی یکنواخت باشد."""
     return (value or "").translate(_PERSIAN_DIGITS)
 
 
 def normalize_national_id(value: str) -> str:
-    """۹ رقمی → با صفر ابتدایی (normalizeNationalId)."""
+    """کد ملی ۹ رقمی (صفر ابتدایی افتاده) را ۱۰ رقمی می‌کند."""
     text = to_english_digits(value).strip()
     return "0" + text if len(text) == 9 else text
 
 
 def normalize_mobile(value: str) -> str:
+    """شماره موبایل ۱۰ رقمی بدون صفر را با صفر ابتدایی برمی‌گرداند."""
     text = to_english_digits(value).strip()
     return "0" + text if len(text) == 10 and not text.startswith("0") else text
 
 
 def normalize_sheba(value: str) -> str:
+    """پیشوند IR را از شبا حذف می‌کند و ۲۴ رقم خالص برمی‌گرداند."""
     text = to_english_digits(value).strip().upper()
     return re.sub(r"^IR", "", text)
 
 
 def is_valid_national_id(value: str) -> bool:
-    """الگوریتم کد ملی (validateNationalId در form.js)."""
+    """صحت کد ملی را با الگوریتم رقم کنترل (وزن ۱۰ تا ۲، باقی‌مانده بر ۱۱) بررسی می‌کند؛ کدهای تک‌رقمی تکراری رد می‌شوند."""
     nid = normalize_national_id(value)
     if len(nid) != 10 or not nid.isdigit() or len(set(nid)) == 1:
         return False
@@ -111,15 +114,17 @@ def is_valid_national_id(value: str) -> bool:
 
 
 def is_valid_jalali_date(value: str) -> bool:
+    """قالب تاریخ شمسی «۱۳۷۰/۰۱/۰۱» (چهار رقم/دو رقم/دو رقم) را بررسی می‌کند."""
     return bool(re.fullmatch(r"\d{4}/\d{2}/\d{2}", to_english_digits(value).strip()))
 
 
 def is_valid_mobile(value: str) -> bool:
+    """موبایل ایرانی: ۹ + ۹ رقم، با یا بدون صفر ابتدایی."""
     return bool(re.fullmatch(r"0?9\d{9}", to_english_digits(value).strip()))
 
 
 def format_jalali_compact(value: str | None) -> str:
-    """«13700521» → «1370/05/21» (formatDate)؛ بقیه بدون تغییر."""
+    """تاریخ شمسی فشرده «13700521» را به «1370/05/21» تبدیل می‌کند؛ بقیه قالب‌ها بدون تغییر برمی‌گردند."""
     text = to_english_digits(value or "").strip()
     if len(text) == 8 and text.isdigit():
         return f"{text[:4]}/{text[4:6]}/{text[6:8]}"
@@ -127,15 +132,17 @@ def format_jalali_compact(value: str | None) -> str:
 
 
 def needs_kafala(employee_gender: int, member_type: str) -> bool:
-    """مدرک کفالت: پرسنل زن → همه اعضا؛ پرسنل مرد → فقط پدر و مادر."""
+    """آیا برای این عضو باید وضعیت تکفل پرسیده شود؟ پرسنل زن: همه اعضا؛ پرسنل مرد: فقط پدر و مادر."""
     return employee_gender == GENDER_FEMALE or member_type in ("father", "mother")
 
 
 def validate_main(data: dict, employee_national_id: str) -> dict:
     """
-    اعتبارسنجی شخص اصلی (save.php + validateForm). خروجی: مقادیر نرمال‌شده.
+    فیلدهای شخص اصلی را اعتبارسنجی و نرمال می‌کند. همه خطاها جمع می‌شوند و
+    یک‌جا (جداشده با «|») خطا داده می‌شود. خروجی: دیکشنری مقادیر آماده ذخیره.
     """
     errors: list[str] = []
+    # ۱) فیلدهای اجباری
     required = {
         "father_name": "نام پدر",
         "birth_certificate_no": "شماره شناسنامه",
@@ -153,6 +160,7 @@ def validate_main(data: dict, employee_national_id: str) -> dict:
         if str(data.get(key) or "").strip() == "":
             errors.append(f"فیلد {label} اجباری است.")
 
+    # ۲) قواعد اختصاصی: صاحب حساب باید خود پرسنل باشد؛ شبا ۲۴ رقم؛ شماره بیمه ۱۰ رقم؛ موبایل معتبر
     owner_nid = normalize_national_id(str(data.get("account_owner_national_id") or ""))
     if owner_nid != normalize_national_id(employee_national_id or ""):
         errors.append("کد ملی صاحب حساب باید با کد ملی شخص اصلی یکسان باشد.")
@@ -169,6 +177,7 @@ def validate_main(data: dict, employee_national_id: str) -> dict:
     if not is_valid_mobile(mobile):
         errors.append("شماره موبایل معتبر نیست.")
 
+    # ۳) مقادیر انتخابی باید یکی از گزینه‌های مجاز باشند
     try:
         marital = int(data.get("marital_status"))
     except (TypeError, ValueError):
@@ -191,6 +200,7 @@ def validate_main(data: dict, employee_national_id: str) -> dict:
     if errors:
         raise InsuranceRuleError(" | ".join(errors))
 
+    # ۴) مقادیر نرمال‌شده و بریده به طول ستون‌های دیتابیس
     return {
         "father_name": str(data["father_name"]).strip()[:100],
         "birth_certificate_no": to_english_digits(str(data["birth_certificate_no"])).strip()[:20],
@@ -208,12 +218,12 @@ def validate_main(data: dict, employee_national_id: str) -> dict:
 
 def validate_members(members: list[dict], employee: dict, main_marital: int, main_mobile: str) -> list[dict]:
     """
-    اعضای خانواده - همان قواعد form.js/save.php:
-    - همسر فقط اگر متاهل؛ حداکثر ۱ همسر، ۱ پدر، ۱ مادر
-    - جنسیت همسر برعکس فرد اصلی؛ تاهل همسر = متاهل
-    - فرد اصلی مرد: نام پدر فرزندان = نام او؛ نام خانوادگی فرزندان و پدر = نام خانوادگی او
-    - شماره تماس همه اعضا = شماره تماس فرد اصلی
-    - کفالت (needs_kafala): انتخاب اجباری؛ «بله» → مدرک اجباری (در سرویس با وجود فایل چک می‌شود)
+    اعضای خانواده را اعتبارسنجی و نرمال می‌کند و کدهای بیمه‌گر را به هر عضو می‌دهد.
+    قواعد: همسر فقط برای متاهل و حداکثر یکی؛ پدر و مادر حداکثر یکی؛ جنسیت همسر
+    برعکس فرد اصلی و تاهلش «متاهل»؛ برای پرسنل مرد نام پدر فرزندان = نام خودش و
+    نام خانوادگی فرزندان و پدر = نام خانوادگی خودش؛ شماره تماس همه اعضا = شماره
+    تماس فرد اصلی؛ جایی که تکفل لازم است انتخاب «بله/خیر» اجباری است (وجود مدرک
+    در سرویس بررسی می‌شود). خروجی: فهرست دیکشنری‌های آماده ذخیره به ترتیب فرم.
     """
     emp_gender = int(employee["gender"])
     counts: dict[str, int] = {}
@@ -229,7 +239,7 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
         if mtype == "spouse" and main_marital != MARITAL_MARRIED:
             raise InsuranceRuleError("برای افراد مجرد امکان ثبت همسر وجود ندارد.")
 
-        # جنسیت و تاهل
+        # جنسیت و تاهل: همسر خودکار، بقیه جنسیت ثابت نوع عضو و تاهل از فرم
         if mtype == "spouse":
             gender = GENDER_FEMALE if emp_gender == GENDER_MALE else GENDER_MALE
             marital = MARITAL_MARRIED
@@ -242,7 +252,7 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
             if marital not in (MARITAL_SINGLE, MARITAL_MARRIED):
                 raise InsuranceRuleError(f"وضعیت تاهل {cfg['title']} را انتخاب کنید.")
 
-        # نام پدر / نام خانوادگی ثابت برای فرد اصلی مرد
+        # برای پرسنل مرد، نام پدر و نام خانوادگی اعضا از خودش گرفته می‌شود (در فرم مخفی است)
         father_name = str(m.get("father_name") or "").strip()
         last_name = str(m.get("last_name") or "").strip()
         if emp_gender == GENDER_MALE and mtype in ("son", "daughter"):
@@ -256,6 +266,7 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
         national_id = normalize_national_id(str(m.get("national_id") or ""))
         birth_cert = to_english_digits(str(m.get("birth_certificate_no") or "")).strip()
 
+        # فیلدهای اجباری، قالب تاریخ و صحت کد ملی؛ برچسب خطا شامل شماره عضو (مثلاً «فرزند پسر ۲»)
         label = cfg["title"] if cfg["max_count"] == 1 else f"{cfg['title']} {counts[mtype]}"
         if not first_name or not last_name or not father_name or not birth_cert:
             raise InsuranceRuleError(f"همه فیلدهای {label} را کامل کنید.")
@@ -264,6 +275,7 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
         if not is_valid_national_id(national_id):
             raise InsuranceRuleError(f"کد ملی {label} معتبر نیست.")
 
+        # وضعیت تکفل فقط برای اعضایی که لازم است؛ برای بقیه None ذخیره می‌شود
         kafala = None
         if needs_kafala(emp_gender, mtype):
             kafala = str(m.get("kafala_status") or "").strip()

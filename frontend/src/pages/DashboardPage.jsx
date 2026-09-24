@@ -1,3 +1,8 @@
+/**
+ * داشبورد مدیریتی: کارت‌های آماری (پرسنل فعال، سایت‌های فعال، واحدها و سرپرست،
+ * وضعیت همگام‌سازی امروز، اطلاعیه‌های هفته، پرسنل بدون دسترسی پرتال)،
+ * فهرست متولدین امروز و برای Admin کارت‌های آمار استفاده و وضعیت سرور.
+ */
 import { useEffect, useState } from "react";
 import { Avatar, Box, Card, Chip, Grid, Skeleton, Stack, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -17,6 +22,10 @@ import { useAuth } from "../context/AuthContext";
 import UsageStatsCard from "../components/UsageStatsCard";
 import ServerStatsCard from "../components/ServerStatsCard";
 
+/**
+ * کارت یک شاخص آماری.
+ * ورودی: آیکون، عنوان، مقدار (null = اسکلتون در حال بارگذاری)، رنگ و متن/رنگ برچسب کمکی اختیاری.
+ */
 function StatCard({ icon, label, value, color, helperText, helperColor }) {
   return (
     <Card variant="outlined" sx={{ p: 3, borderRadius: 3, height: "100%" }}>
@@ -29,7 +38,7 @@ function StatCard({ icon, label, value, color, helperText, helperColor }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: `${color}1A`,
+            backgroundColor: `${color}1A`,  // همان رنگ با شفافیت حدود ۱۰٪ (آلفای هگز 1A)
             color: color,
             flexShrink: 0,
           }}
@@ -58,17 +67,19 @@ function StatCard({ icon, label, value, color, helperText, helperColor }) {
   );
 }
 
+// کامپوننت صفحه؛ آمارها را یک‌بار هنگام ورود از سرور می‌گیرد و کارت‌ها را رندر می‌کند
 export default function DashboardPage() {
   const { user } = useAuth();
   const theme = useTheme();
   const [employeeCount, setEmployeeCount] = useState(null);
   const [activeSiteCount, setActiveSiteCount] = useState(null);
   const [departmentStats, setDepartmentStats] = useState(null); // { total, withoutSupervisor }
-  const [syncSummary, setSyncSummary] = useState(null);
+  const [syncSummary, setSyncSummary] = useState(null);  // خلاصه همگام‌سازی امروز: success_today / failed_today / not_run_today / total_sites
   const [weeklyNoticeCount, setWeeklyNoticeCount] = useState(null);
   const [portalDisabledCount, setPortalDisabledCount] = useState(null);
-  const [birthdays, setBirthdays] = useState([]);
+  const [birthdays, setBirthdays] = useState([]);  // پرسنلی که امروز تولدشان است
 
+  // بارگذاری هم‌زمان همه آمارهای داشبورد هنگام نمایش صفحه
   useEffect(() => {
     fetchEmployeeCount().then(setEmployeeCount);
     fetchSites().then((data) => setActiveSiteCount(data.filter((s) => s.is_active).length));
@@ -93,6 +104,7 @@ export default function DashboardPage() {
         نمای کلی وضعیت پرتال سازمانی
       </Typography>
 
+      {/* شبکه کارت‌های آماری */}
       <Grid container spacing={2.5} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={4}>
           <StatCard icon={<GroupOutlinedIcon />} label="پرسنل فعال" value={employeeCount} color={theme.palette.primary.main} />
@@ -101,6 +113,7 @@ export default function DashboardPage() {
           <StatCard icon={<ApartmentOutlinedIcon />} label="سایت‌های فعال" value={activeSiteCount} color={theme.palette.primary.light} />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
+          {/* واحدها؛ برچسب کمکی تعداد واحدهای بدون سرپرست را هشدار می‌دهد */}
           <StatCard
             icon={<CorporateFareOutlinedIcon />}
             label="واحدهای سازمانی"
@@ -117,6 +130,7 @@ export default function DashboardPage() {
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
+          {/* همگام‌سازی امروز: تعداد سایت‌های موفق از کل؛ برچسب کمکی ناموفق/اجرانشده را نشان می‌دهد */}
           <StatCard
             icon={<SyncOutlinedIcon />}
             label="همگام‌سازی امروز"
@@ -152,6 +166,7 @@ export default function DashboardPage() {
         </Grid>
       </Grid>
 
+      {/* کارت متولدین امروز */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: user?.is_superuser ? 3 : 0 }}>
         <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
           🎂 متولدین روز جاری

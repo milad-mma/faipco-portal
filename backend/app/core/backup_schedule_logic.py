@@ -1,33 +1,31 @@
 """
-منطق «آیا الان وقت اجرای بکاپ زمان‌بندی‌شده است؟» - کاملاً مستقل از
-دیتابیس/Scheduler، فقط توابع خالص (Pure Functions) قابل‌تست.
+منطق تشخیص «آیا الان وقت اجرای بکاپ زمان‌بندی‌شده است؟» به‌صورت توابع خالص
+(Pure Functions)، مستقل از دیتابیس و Scheduler و قابل‌تست.
 
-⚠️ چرا یک Cron Trigger مستقیم استفاده نشد (برخلاف پیام تبریک تولد): چون
-این سرویس با چند Worker جدا (uvicorn --workers) اجرا می‌شود و هر Worker
-APScheduler مستقل خودش را دارد، وقتی Admin زمان‌بندی را از پنل تغییر
-می‌دهد، فقط همان Worker ای که درخواست HTTP را گرفته Reschedule می‌شود -
-Worker های دیگر با زمان‌بندی قدیمی می‌مانند تا Restart بعدی. به‌جای این،
-دقیقاً همان الگوی اثبات‌شده Sync Engine (app/core/scheduler.py) دنبال
-می‌شود: یک تیک ثابت و کوتاه (هر چند دقیقه)، که هر بار خودش از دیتابیس
-می‌پرسد «طبق تنظیمات فعلی، وقتش رسیده یا نه» - هر Worker مستقل به یک
-نتیجه یکسان می‌رسد، بدون نیاز به Reschedule کردن هیچ Job ای.
+به‌جای Cron Trigger مستقیم، یک تیک ثابت و کوتاه در Scheduler هر بار is_backup_due
+را با تنظیمات فعلی دیتابیس صدا می‌زند؛ چون سرویس با چند Worker مستقل اجرا
+می‌شود، این روش باعث می‌شود همه Workerها بدون نیاز به Reschedule به نتیجه
+یکسان برسند (همان الگوی Sync Engine در app/core/scheduler.py).
 
-⚠️ منطقهٔ زمانی: schedule_hour/schedule_minute بر اساس ساعت محلی ایران
-(Asia/Tehran) تفسیر می‌شوند - همان‌طور که کاربر پنل انتظار دارد (نه UTC)
-- ولی last_run_at در دیتابیس همیشه UTC ذخیره می‌شود؛ همه محاسبات این
-ماژول این تبدیل را به‌درستی انجام می‌دهند.
+منطقه زمانی: schedule_hour/schedule_minute به وقت محلی Asia/Tehran تفسیر
+می‌شوند، ولی last_run_at در دیتابیس همیشه UTC است؛ توابع این ماژول تبدیل را
+انجام می‌دهند.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-_TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+_TEHRAN_TZ = ZoneInfo("Asia/Tehran")  # منطقه زمانی تفسیر ساعت/دقیقه زمان‌بندی
 
 
 def _most_recent_daily_occurrence(now_tehran: datetime, hour: int, minute: int) -> datetime:
-    """آخرین لحظه‌ای (تا این لحظه) که ساعت hour:minute امروز یا دیروز رخ داده - به وقت تهران."""
+    """
+    ورودی: زمان فعلی به وقت تهران و ساعت/دقیقه زمان‌بندی روزانه.
+    خروجی: آخرین لحظه (تا الان) که hour:minute امروز یا دیروز رخ داده، به وقت تهران.
+    """
     candidate = now_tehran.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # اگر ساعت امروز هنوز نرسیده، همان ساعتِ دیروز ملاک است
     if candidate > now_tehran:
         candidate -= timedelta(days=1)
     return candidate
@@ -35,13 +33,14 @@ def _most_recent_daily_occurrence(now_tehran: datetime, hour: int, minute: int) 
 
 def _most_recent_weekly_occurrence(now_tehran: datetime, weekday: int, hour: int, minute: int) -> datetime:
     """
-    آخرین لحظه‌ای که «روز هفته weekday، ساعت hour:minute» رخ داده - به وقت
-    تهران. قرارداد weekday: ۰=دوشنبه ... ۶=یکشنبه (همان datetime.weekday()
-    استاندارد پایتون، مطابق مقداری که Frontend می‌فرستد).
+    ورودی: زمان فعلی به وقت تهران، روز هفته و ساعت/دقیقه زمان‌بندی هفتگی.
+    خروجی: آخرین لحظه‌ای که «روز weekday، ساعت hour:minute» رخ داده، به وقت تهران.
+    قرارداد weekday: ۰=دوشنبه ... ۶=یکشنبه (همان datetime.weekday() پایتون، مطابق مقدار Frontend).
     """
-    days_since_target = (now_tehran.weekday() - weekday) % 7
+    days_since_target = (now_tehran.weekday() - weekday) % 7  # چند روز از آخرین weekday گذشته
     candidate_date = now_tehran - timedelta(days=days_since_target)
     candidate = candidate_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # اگر امروز همان روز است ولی ساعتش نرسیده، هفته قبل ملاک است
     if candidate > now_tehran:
         candidate -= timedelta(days=7)
     return candidate
@@ -49,20 +48,13 @@ def _most_recent_weekly_occurrence(now_tehran: datetime, weekday: int, hour: int
 
 def _most_recent_interval_occurrence(now_tehran: datetime, interval_hours: int) -> datetime:
     """
-    ⚠️ رفع باگ گزارش‌شده (بکاپ‌های نامنظم به‌جای دقیقاً هر N ساعت):
-    نسخه قبلی این تابع فاصله را از لحظه *تکمیل* اجرای قبلی (last_run_at)
-    می‌سنجید؛ چون هر اجرا (ساخت بکاپ + آپلود SMB/FTP/ایمیل) مدت متغیری
-    طول می‌کشد، فاصله واقعی بین اجراها به‌جای «هر N ساعت»، به «N ساعت +
-    مدت اجرای قبلی» تبدیل می‌شد و به‌مرور کاملاً نامنظم می‌شد.
-
-    راه‌حل: یک شبکه زمانی ثابت (نیمه‌شب امروز به وقت تهران، دقیقاً همان
-    الگوی daily/weekly) - برای interval_hours=1 یعنی همیشه دقیقاً در
-    ابتدای هر ساعت (۰۰:۰۰، ۰۱:۰۰، ...) به وقت تهران، کاملاً مستقل از
-    این‌که اجرای قبلی چقدر طول کشیده بود.
+    ورودی: زمان فعلی به وقت تهران و فاصله اجرا بر حسب ساعت.
+    خروجی: آخرین نقطه از یک شبکه زمانی ثابت که از نیمه‌شب امروز (تهران) هر interval_hours ساعت تکرار می‌شود.
+    بنابراین اجراها دقیقاً روی مرز این شبکه‌اند و به مدت‌زمان اجرای قبلی وابسته نیستند.
     """
     midnight = now_tehran.replace(hour=0, minute=0, second=0, microsecond=0)
     hours_since_midnight = (now_tehran - midnight).total_seconds() / 3600
-    slots_passed = int(hours_since_midnight // interval_hours)
+    slots_passed = int(hours_since_midnight // interval_hours)  # تعداد بازه‌های کامل سپری‌شده از نیمه‌شب
     return midnight + timedelta(hours=slots_passed * interval_hours)
 
 
@@ -78,8 +70,9 @@ def is_backup_due(
     now_utc: datetime | None = None,
 ) -> bool:
     """
-    now_utc اختیاری است (پیش‌فرض: همین لحظه) - فقط برای قابل‌تست‌بودن
-    قطعی (بدون وابستگی به ساعت واقعی سیستم) در تست‌های واحد پاس داده می‌شود.
+    ورودی: تنظیمات زمان‌بندی بکاپ (نوع daily/weekly/interval، ساعت، روز هفته، فاصله) و زمان آخرین اجرا (UTC).
+    خروجی: True اگر آخرین موعد زمان‌بندی‌شده بعد از آخرین اجرا باشد، یعنی الان باید بکاپ گرفته شود.
+    now_utc اختیاری است (پیش‌فرض: همین لحظه) و در تست‌ها برای نتیجه قطعی پاس داده می‌شود.
     """
     if not schedule_enabled:
         return False
@@ -87,6 +80,7 @@ def is_backup_due(
     now_utc = now_utc or datetime.now(timezone.utc)
     now_tehran = now_utc.astimezone(_TEHRAN_TZ)
 
+    # محاسبه آخرین موعد اجرا بر اساس نوع زمان‌بندی؛ تنظیمات ناقص یا نوع ناشناخته یعنی اجرا نشود
     if schedule_type == "interval":
         if not schedule_interval_hours:
             return False
@@ -101,6 +95,7 @@ def is_backup_due(
         return False
 
     due_at_utc = due_at_tehran.astimezone(timezone.utc)
+    # اگر هیچ اجرای قبلی ثبت نشده، بلافاصله موعد است
     if last_run_at is None:
         return True
     return last_run_at < due_at_utc

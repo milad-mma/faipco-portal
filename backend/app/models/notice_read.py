@@ -11,6 +11,7 @@ from app.db.session import Base
 
 
 class NoticeRead(Base):
+    """یک ردیف مشاهده: کاربر user_id اطلاعیه notice_id را دیده است (هر جفت فقط یک بار)."""
     __tablename__ = "notice_reads"
     __table_args__ = (UniqueConstraint("notice_id", "user_id", name="uq_notice_read_once"),)
 
@@ -18,6 +19,7 @@ class NoticeRead(Base):
     notice_id: Mapped[int] = mapped_column(ForeignKey("notices.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
+    # زمان اولین مشاهده
     read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

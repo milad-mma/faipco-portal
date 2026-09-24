@@ -1,25 +1,19 @@
 """
-سرویس «ساختار ارزیابی عملکرد» - مدیریت انتساب‌های سرپرست/مدیر/سرشیفت،
-و منطق Resolve کردن «این پرسنل چه کسانی را می‌تواند ارزیابی کند» بر
-اساس همان انتساب‌ها (نه بر اساس نقش/مجوز RBAC).
+سرویس «ساختار ارزیابی عملکرد»: مدیریت انتساب‌های سرپرست/مدیر/سرشیفت، فهرست کاندیدها و
+ساختار کامل سایت، و Resolve کردن «این پرسنل چه کسانی را می‌تواند ارزیابی کند» بر اساس همین
+انتساب‌ها (نه نقش/مجوز RBAC).
 
-سلسله‌مراتب (بازطراحی‌شده، منعطف - طبق بازخورد صریح کاربر):
-    مدیر (هر تعداد، هر عنوانی مثل «مدیر سایت»/«مدیر تولید»)
-                                →  ارزیابی: هر لیستی از افراد که صریحاً
-                                   به او تخصیص داده شده - نه یک قانون
-                                   خودکار؛ چون چارت سازمانی واقعی ممکن
-                                   است چندسطحی باشد (مثلاً یک مدیر میانی
-                                   فقط بخشی از سرپرست‌ها را ارزیابی کند)،
-                                   یا نیاز باشد یک فرد خاص از هر واحد/سایتی
-                                   مستقیم به یک مدیر تخصیص داده شود.
-    سرپرست واحد                 →  اگر آن واحد سرشیفت دارد: فقط سرشیفت‌ها
+سلسله‌مراتب:
+    مدیر (هر تعداد، با هر عنوانی مثل «مدیر سایت»/«مدیر تولید»)
+                                →  هر پرسنلی که صریحاً به او تخصیص داده شده
+                                   (از هر واحد/سایتی؛ برای چارت‌های چندسطحی)
+    سرپرست واحد                 →  اگر واحد سرشیفت دارد: سرشیفت‌ها + پرسنلِ بدون سرشیفت
                                    وگرنه: همه پرسنل آن واحد
     سرشیفت واحد                  →  فقط زیرمجموعه‌ی اختصاصی خودش
                                    (پرسنل بین سرشیفت‌های یک واحد تقسیم می‌شوند)
 
-⚠️ یک نفر می‌تواند هم‌زمان چند نقش داشته باشد (مثلاً هم مدیر هم سرپرست
-یک واحد) - نتیجه نهایی، اجتماع (Union) همه اهداف همه نقش‌هایش است.
-هیچ‌کس هرگز جزو اهداف خودش قرار نمی‌گیرد.
+یک نفر می‌تواند هم‌زمان چند نقش داشته باشد؛ نتیجه نهایی اجتماع (Union) اهداف همه نقش‌هایش است.
+هیچ‌کس جزو اهداف خودش قرار نمی‌گیرد.
 """
 from __future__ import annotations
 
@@ -41,20 +35,24 @@ from app.repositories.user_repository import UserRepository
 
 
 class EvaluationStructureError(Exception):
+    """خطای قابل نمایش به کاربر در عملیات ساختار ارزیابی."""
     pass
 
 
 class EvaluationStructureService:
+    """سرویس مدیریت ساختار ارزیابی و تعیین اهداف ارزیابی هر پرسنل."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: نشست async دیتابیس."""
         self.db = db
 
     # ---------- کمک‌تابع مشترک: اطمینان از وجود حساب کاربری ----------
 
     async def _ensure_employee_and_user(self, employee_id: int, expected_site_id: int | None = None) -> Employee:
         """
-        پرسنل را برمی‌گرداند و مطمئن می‌شود حساب کاربری دارد (طبق تصمیم
-        صریح کاربر: اگر نداشت، خودکار ساخته می‌شود - دقیقاً همان مکانیزم
-        اولین ورود با کد پرسنلی/کد ملی).
+        ورودی: شناسه پرسنل و (اختیاری) سایت مورد انتظار. پرسنل را برمی‌گرداند و اگر حساب کاربری
+        نداشته باشد، با همان مکانیزم اولین ورود (کد پرسنلی/کد ملی) می‌سازد.
+        اگر پرسنل نباشد یا متعلق به سایت دیگری باشد EvaluationStructureError.
         """
         employee = await self.db.get(Employee, employee_id)
         if employee is None:
@@ -67,11 +65,16 @@ class EvaluationStructureService:
     # ---------- سرپرست واحد ----------
 
     async def set_department_supervisor(self, department_id: int, employee_id: int) -> EvaluationDepartmentSupervisor:
+        """
+        سرپرست ارزیابی واحد را تعیین یا جایگزین می‌کند (پرسنل باید از همان سایت باشد).
+        خروجی: رکورد سرپرست همراه employee؛ واحد/پرسنل نامعتبر: EvaluationStructureError.
+        """
         department = await self.db.get(Department, department_id)
         if department is None:
             raise EvaluationStructureError("واحد سازمانی موردنظر یافت نشد")
         await self._ensure_employee_and_user(employee_id, expected_site_id=department.site_id)
 
+        # اگر واحد سرپرست دارد جایگزین می‌شود، وگرنه رکورد جدید ساخته می‌شود
         result = await self.db.execute(
             select(EvaluationDepartmentSupervisor).where(
                 EvaluationDepartmentSupervisor.department_id == department_id
@@ -84,6 +87,7 @@ class EvaluationStructureService:
             existing = EvaluationDepartmentSupervisor(department_id=department_id, employee_id=employee_id)
             self.db.add(existing)
         await self.db.commit()
+        # بارگذاری مجدد همراه employee برای خروجی
         result = await self.db.execute(
             select(EvaluationDepartmentSupervisor)
             .options(selectinload(EvaluationDepartmentSupervisor.employee))
@@ -92,6 +96,7 @@ class EvaluationStructureService:
         return result.scalar_one()
 
     async def remove_department_supervisor(self, department_id: int) -> None:
+        """سرپرست ارزیابی واحد را (در صورت وجود) حذف می‌کند."""
         result = await self.db.execute(
             select(EvaluationDepartmentSupervisor).where(
                 EvaluationDepartmentSupervisor.department_id == department_id
@@ -102,11 +107,16 @@ class EvaluationStructureService:
             await self.db.delete(existing)
             await self.db.commit()
 
-    # ---------- مدیر (عمومی - سایت، تولید، فنی، هرچی) ----------
+    # ---------- مدیر (عمومی: سایت، تولید، فنی و ...) ----------
 
     async def add_manager(self, site_id: int, employee_id: int, title: str | None) -> EvaluationManager:
+        """
+        پرسنلی از همین سایت را با عنوان اختیاری به‌عنوان مدیر ارزیابی ثبت می‌کند.
+        خروجی: مدیر همراه اهداف؛ تکراری یا پرسنل نامعتبر: EvaluationStructureError.
+        """
         await self._ensure_employee_and_user(employee_id, expected_site_id=site_id)
 
+        # جلوگیری از ثبت تکراری مدیر در همین سایت
         result = await self.db.execute(
             select(EvaluationManager).where(
                 EvaluationManager.site_id == site_id, EvaluationManager.employee_id == employee_id
@@ -123,6 +133,7 @@ class EvaluationStructureService:
         return await self._get_manager_with_targets(manager_id)
 
     async def update_manager_title(self, manager_id: int, title: str | None) -> EvaluationManager:
+        """عنوان نمایشی مدیر را تغییر می‌دهد و مدیر را همراه اهداف برمی‌گرداند."""
         manager = await self.db.get(EvaluationManager, manager_id)
         if manager is None:
             raise EvaluationStructureError("مدیر موردنظر یافت نشد")
@@ -131,12 +142,14 @@ class EvaluationStructureService:
         return await self._get_manager_with_targets(manager_id)
 
     async def remove_manager(self, manager_id: int) -> None:
+        """مدیر را (در صورت وجود) همراه اهدافش حذف می‌کند."""
         manager = await self.db.get(EvaluationManager, manager_id)
         if manager is not None:
             await self.db.delete(manager)  # CASCADE - انتساب‌های اهداف این مدیر هم پاک می‌شوند
             await self.db.commit()
 
     async def _get_manager_with_targets(self, manager_id: int) -> EvaluationManager:
+        """مدیر را همراه employee و اهدافش (با selectinload) برای خروجی ManagerOut می‌خواند."""
         result = await self.db.execute(
             select(EvaluationManager)
             .options(
@@ -147,15 +160,13 @@ class EvaluationStructureService:
         )
         return result.scalar_one()
 
-    # ---------- اهداف هر مدیر (کاملاً دستی - جایگزین «سرپرست‌های خودکار» و «سایر مدیران») ----------
+    # ---------- اهداف هر مدیر (کاملاً دستی) ----------
 
     async def add_manager_target(self, manager_id: int, target_employee_id: int) -> EvaluationManager:
         """
-        ⚠️ برخلاف طراحی قبلی، هدف می‌تواند *هر* پرسنلی باشد - سرپرست یک
-        واحد، مدیر دیگر، یا حتی یک فرد عادی از هر واحد/سایتی (طبق درخواست
-        صریح کاربر) - هیچ محدودیتی روی site_id هدف اعمال نمی‌شود، چون
-        ممکن است لازم باشد یک فرد از سایت دیگر هم مستقیم به این مدیر
-        تخصیص داده شود.
+        یک پرسنل را به فهرست ارزیابی‌شوندگان مدیر اضافه می‌کند؛ هدف می‌تواند هر پرسنلی از هر
+        واحد/سایتی باشد (روی site_id هدف محدودیتی نیست). هر فرد فقط زیر یک مدیر می‌تواند باشد.
+        خروجی: مدیر همراه اهداف؛ مدیر/هدف نامعتبر، خودِ مدیر یا تخصیص تکراری: EvaluationStructureError.
         """
         manager = await self.db.get(EvaluationManager, manager_id)
         if manager is None:
@@ -166,6 +177,7 @@ class EvaluationStructureService:
         if target_employee_id == manager.employee_id:
             raise EvaluationStructureError("یک مدیر نمی‌تواند خودش را هدف بگیرد")
 
+        # تخصیص تکراری به همین مدیر
         result = await self.db.execute(
             select(EvaluationManagerAssignment).where(
                 EvaluationManagerAssignment.manager_id == manager_id,
@@ -175,9 +187,8 @@ class EvaluationStructureService:
         if result.scalar_one_or_none() is not None:
             raise EvaluationStructureError("این فرد قبلاً به این مدیر تخصیص داده شده است")
 
-        # ⚠️ طبق درخواست صریح: هر فرد فقط می‌تواند هم‌زمان زیر ارزیابی
-        # یک مدیر باشد - اگر از قبل به مدیر دیگری تخصیص داده شده، ابتدا
-        # باید از همان‌جا حذف شود.
+        # هر فرد هم‌زمان فقط زیر ارزیابی یک مدیر است؛ اگر به مدیر دیگری تخصیص داده شده،
+        # ابتدا باید از فهرست آن مدیر حذف شود
         existing_elsewhere_result = await self.db.execute(
             select(EvaluationManagerAssignment)
             .options(selectinload(EvaluationManagerAssignment.manager).selectinload(EvaluationManager.employee))
@@ -196,6 +207,7 @@ class EvaluationStructureService:
         return await self._get_manager_with_targets(manager_id)
 
     async def remove_manager_target(self, manager_id: int, target_employee_id: int) -> EvaluationManager:
+        """پرسنل را (در صورت وجود) از فهرست مدیر حذف می‌کند و مدیر را همراه اهداف برمی‌گرداند."""
         result = await self.db.execute(
             select(EvaluationManagerAssignment).where(
                 EvaluationManagerAssignment.manager_id == manager_id,
@@ -211,6 +223,10 @@ class EvaluationStructureService:
     # ---------- سرشیفت واحد ----------
 
     async def add_shift_lead(self, department_id: int, employee_id: int) -> EvaluationShiftLead:
+        """
+        پرسنلی از همان واحد را سرشیفت آن واحد می‌کند. پرسنلی که زیرمجموعه سرشیفت دیگری است یا
+        از قبل سرشیفت همین واحد است مجاز نیست (EvaluationStructureError). خروجی: سرشیفت همراه employee.
+        """
         department = await self.db.get(Department, department_id)
         if department is None:
             raise EvaluationStructureError("واحد سازمانی موردنظر یافت نشد")
@@ -221,9 +237,7 @@ class EvaluationStructureService:
         if employee.department_id != department_id:
             raise EvaluationStructureError("سرشیفت باید از پرسنل همان واحد انتخاب شود")
 
-        # ⚠️ یک پرسنل که خودش زیرمجموعه یک سرشیفت دیگر است، نمی‌تواند
-        # هم‌زمان خودش هم سرشیفت باشد - وگرنه می‌شد سرشیفتی که هم‌زمان
-        # زیرِ سرشیفت دیگری در همان واحد است (تناقض سلسله‌مراتبی).
+        # پرسنلی که زیرمجموعه یک سرشیفت است نمی‌تواند هم‌زمان سرشیفت باشد (تناقض سلسله‌مراتبی)
         assignment_result = await self.db.execute(
             select(EvaluationShiftAssignment).where(EvaluationShiftAssignment.employee_id == employee_id)
         )
@@ -234,6 +248,7 @@ class EvaluationStructureService:
 
         await self._ensure_employee_and_user(employee_id, expected_site_id=department.site_id)
 
+        # جلوگیری از ثبت تکراری سرشیفت در همین واحد
         result = await self.db.execute(
             select(EvaluationShiftLead).where(
                 EvaluationShiftLead.department_id == department_id, EvaluationShiftLead.employee_id == employee_id
@@ -244,7 +259,7 @@ class EvaluationStructureService:
 
         shift_lead = EvaluationShiftLead(department_id=department_id, employee_id=employee_id)
         self.db.add(shift_lead)
-        await self.db.flush()
+        await self.db.flush()  # برای گرفتن shift_lead.id پیش از commit
         shift_lead_id = shift_lead.id
         await self.db.commit()
         result = await self.db.execute(
@@ -256,11 +271,9 @@ class EvaluationStructureService:
 
     async def remove_shift_lead(self, shift_lead_id: int) -> None:
         """
-        ⚠️ حذف یک سرشیفت، انتساب‌های پرسنل زیرمجموعه‌اش را هم پاک می‌کند
-        (ondelete=CASCADE در دیتابیس) - یعنی آن پرسنل تا وقتی به سرشیفت
-        دیگری اختصاص داده نشوند، اصلاً کسی ارزیابی‌شان نمی‌کند (نه سرپرست
-        مستقیم، چون تا وقتی حداقل یک سرشیفت برای آن واحد باقی مانده،
-        سرپرست فقط سرشیفت‌ها را می‌بیند نه پرسنل عادی را).
+        سرشیفت را (در صورت وجود) حذف می‌کند؛ تخصیص‌های زیرمجموعه‌اش هم با ondelete=CASCADE پاک
+        می‌شوند و آن پرسنل «بدون سرشیفت» می‌شوند، که در get_evaluation_targets مستقیماً زیر نظر
+        سرپرست واحد قرار می‌گیرند.
         """
         shift_lead = await self.db.get(EvaluationShiftLead, shift_lead_id)
         if shift_lead is not None:
@@ -270,6 +283,10 @@ class EvaluationStructureService:
     # ---------- تعیین زیرمجموعه هر سرشیفت ----------
 
     async def set_shift_assignment(self, employee_id: int, shift_lead_id: int) -> EvaluationShiftAssignment:
+        """
+        پرسنل را زیر سرشیفت داده‌شده قرار می‌دهد (یا از سرشیفت قبلی جابه‌جا می‌کند). پرسنل باید عضو همان
+        واحد باشد و خودش سرشیفت نباشد؛ در غیر این صورت EvaluationStructureError. خروجی: تخصیص همراه employee.
+        """
         shift_lead = await self.db.get(EvaluationShiftLead, shift_lead_id)
         if shift_lead is None:
             raise EvaluationStructureError("سرشیفت موردنظر یافت نشد")
@@ -282,7 +299,7 @@ class EvaluationStructureService:
         if employee_id == shift_lead.employee_id:
             raise EvaluationStructureError("سرشیفت نمی‌تواند زیرمجموعه خودش باشد")
 
-        # ⚠️ سرشیفت‌های یک واحد هرگز نباید بتوانند یکدیگر را ارزیابی کنند
+        # سرشیفت‌های یک واحد نمی‌توانند زیرمجموعه (و ارزیاب) یکدیگر باشند
         shift_lead_check = await self.db.execute(
             select(EvaluationShiftLead.id).where(
                 EvaluationShiftLead.department_id == shift_lead.department_id,
@@ -294,6 +311,7 @@ class EvaluationStructureService:
                 "این پرسنل خودش سرشیفت همین واحد است - سرشیفت‌ها نمی‌توانند زیرمجموعه هم باشند"
             )
 
+        # هر پرسنل حداکثر یک تخصیص دارد: به‌روزرسانی تخصیص موجود یا ساخت جدید
         result = await self.db.execute(
             select(EvaluationShiftAssignment).where(EvaluationShiftAssignment.employee_id == employee_id)
         )
@@ -312,6 +330,7 @@ class EvaluationStructureService:
         return refreshed_result.scalar_one()
 
     async def remove_shift_assignment(self, employee_id: int) -> None:
+        """پرسنل را (در صورت وجود تخصیص) از زیرمجموعه سرشیفتش خارج می‌کند."""
         result = await self.db.execute(
             select(EvaluationShiftAssignment).where(EvaluationShiftAssignment.employee_id == employee_id)
         )
@@ -320,27 +339,19 @@ class EvaluationStructureService:
             await self.db.delete(existing)
             await self.db.commit()
 
-    # ---------- نمایش کامل ساختار یک سایت ----------
-
     # ---------- کاندیدهای انتخاب برای «افزودن به فهرست یک مدیر» ----------
 
     async def get_manager_candidates(self, site_id: int) -> list[dict]:
         """
-        فهرست همه پرسنل این سایت، به‌همراه اطلاعات کمکی برای انتخابگر
-        فرانت‌اند:
-            - آیا سرپرست یک واحد است (و کدام واحد) - برای بخش «سرپرستان
-              بدون مدیر»
-            - اگر از قبل زیر ارزیابی یک مدیر دیگر است، نام آن مدیر - تا
-              فرانت‌اند بتواند این افراد را غیرفعال/برچسب‌گذاری کند
-              («تحت ارزیابی فلانی») به‌جای اینکه کاملاً پنهانشان کند.
-            - آیا خودش هم یک «مدیر» ثبت‌شده است - طبق درخواست صریح: کسی
-              که خودش در سطح مدیر است (حتی اگر هم‌زمان سرپرست یک واحد هم
-              باشد)، نباید در میان‌بر «سرپرستان بدون مدیر» به‌عنوان یک
-              سرپرست ساده و آماده‌واگذاری پیشنهاد شود.
+        فهرست همه پرسنل سایت (لیست dict) با اطلاعات کمکی برای انتخابگر فرانت‌اند:
+            - supervisor_department_name: نام واحدی که سرپرست ارزیابی آن است (برای «سرپرستان بدون مدیر»)
+            - evaluated_by_name: نام مدیری که از قبل او را ارزیابی می‌کند (برای برچسب‌گذاری، نه پنهان‌کردن)
+            - is_manager: آیا خودش مدیر ثبت‌شده است (تا در میان‌بر «سرپرستان بدون مدیر» پیشنهاد نشود)
         """
         employees_result = await self.db.execute(select(Employee).where(Employee.site_id == site_id))
         employees = employees_result.scalars().all()
 
+        # نگاشت پرسنل سرپرست → نام واحدش (فقط واحدهای این سایت)
         supervisors_result = await self.db.execute(
             select(EvaluationDepartmentSupervisor.employee_id, Department.name)
             .join(Department, Department.id == EvaluationDepartmentSupervisor.department_id)
@@ -348,6 +359,7 @@ class EvaluationStructureService:
         )
         supervisor_department_name_by_employee_id = {row[0]: row[1] for row in supervisors_result.all()}
 
+        # نگاشت پرسنل هدف → نام مدیرش (در همه سایت‌ها، چون هدف می‌تواند از سایت دیگر باشد)
         assignments_result = await self.db.execute(
             select(EvaluationManagerAssignment.target_employee_id, Employee.first_name, Employee.last_name)
             .join(EvaluationManager, EvaluationManager.id == EvaluationManagerAssignment.manager_id)
@@ -357,6 +369,7 @@ class EvaluationStructureService:
             row[0]: f"{row[1]} {row[2]}" for row in assignments_result.all()
         }
 
+        # پرسنلی که خودشان مدیر این سایت‌اند
         managers_result = await self.db.execute(
             select(EvaluationManager.employee_id).where(EvaluationManager.site_id == site_id)
         )
@@ -378,15 +391,15 @@ class EvaluationStructureService:
 
     async def get_site_structure(self, site_id: int) -> dict:
         """
-        ⚠️ همه Query های این متد عمداً با selectinload(...) رابطه‌ی
-        employee (و مشابه) را از قبل بار می‌کنند - دسترسی به یک رابطه
-        Lazy-load نشده در یک Session ناهمگام (Async)، بدون Greenlet فعال،
-        خطای MissingGreenlet می‌دهد.
+        ساختار کامل ارزیابی سایت (dict): مدیران با اهدافشان و برای هر واحد سرپرست، سرشیفت‌ها و
+        زیرمجموعه‌ها. روابط با selectinload از قبل بار می‌شوند، چون Lazy-load در Session ناهمگام
+        خطای MissingGreenlet می‌دهد. سایت ناموجود: EvaluationStructureError.
         """
         site = await self.db.get(Site, site_id)
         if site is None:
             raise EvaluationStructureError("سایت موردنظر یافت نشد")
 
+        # مدیران سایت همراه employee و اهداف
         managers_result = await self.db.execute(
             select(EvaluationManager)
             .options(
@@ -400,6 +413,7 @@ class EvaluationStructureService:
         departments_result = await self.db.execute(select(Department).where(Department.site_id == site_id))
         departments = departments_result.scalars().all()
 
+        # برای هر واحد: سرپرست، سرشیفت‌ها و تخصیص‌های زیرمجموعه
         department_entries = []
         for department in departments:
             supervisor_result = await self.db.execute(
@@ -447,6 +461,12 @@ class EvaluationStructureService:
     # ---------- Resolve: این پرسنل چه کسانی را می‌تواند ارزیابی کند ----------
 
     async def get_evaluation_targets(self, evaluator_employee_id: int) -> dict:
+        """
+        ورودی: شناسه پرسنل ارزیاب. نقش‌های او (مدیر/سرپرست/سرشیفت) و داده‌های لازم را از دیتابیس
+        جمع می‌کند و با الگوریتم خالص resolve_evaluation_target_ids اهدافش را تعیین می‌کند.
+        خروجی: {"is_manager", "is_department_supervisor", "is_shift_lead", "targets": list[Employee]}.
+        """
+        # نقش‌های ارزیاب: مدیر، سرپرست کدام واحدها، سرشیفت (کدام رکوردها)
         manager_result = await self.db.execute(
             select(EvaluationManager.id).where(EvaluationManager.employee_id == evaluator_employee_id)
         )
@@ -464,9 +484,9 @@ class EvaluationStructureService:
         )
         shift_lead_ids = [row[0] for row in shift_lead_result.all()]
 
-        # داده خام موردنیاز الگوریتم خالص (resolve_evaluation_target_ids) -
-        # فقط برای همان manager_id/department_id هایی که واقعاً نیاز است
-        # می‌خوانیم، نه کل جدول‌ها.
+        # داده خام موردنیاز الگوریتم خالص (resolve_evaluation_target_ids)؛ فقط برای
+        # manager_id/department_idهای همین ارزیاب خوانده می‌شود، نه کل جدول‌ها.
+        # اهداف هر مدیری که ارزیاب است:
         manager_targets_by_manager_id: dict[int, list[int]] = {}
         for manager_id in manager_ids:
             targets_result = await self.db.execute(
@@ -476,6 +496,7 @@ class EvaluationStructureService:
             )
             manager_targets_by_manager_id[manager_id] = [row[0] for row in targets_result.all()]
 
+        # برای هر واحدی که ارزیاب سرپرست آن است: سرشیفت‌ها، همه پرسنل و پرسنل بدون سرشیفت
         shift_lead_employees_by_department: dict[int, list[int]] = {}
         all_employees_by_department: dict[int, list[int]] = {}
         unassigned_employees_by_department: dict[int, list[int]] = {}
@@ -490,13 +511,12 @@ class EvaluationStructureService:
                 select(Employee.id).where(
                     Employee.department_id == department_id, Employee.id != evaluator_employee_id
                 )
-            )
+            )  # همه پرسنل واحد به‌جز خود ارزیاب
             department_employee_ids = [row[0] for row in employees_result.all()]
             all_employees_by_department[department_id] = department_employee_ids
 
-            # ⚠️ رفع نقص واقعی: پرسنلی که به هیچ سرشیفتی تخصیص داده
-            # نشده‌اند، نباید بی‌ارزیاب بمانند - مستقیماً زیر نظر سرپرست
-            # باقی می‌مانند.
+            # در واحد دارای سرشیفت، پرسنلی که به هیچ سرشیفتی تخصیص داده نشده‌اند
+            # مستقیماً زیر نظر سرپرست می‌مانند تا بی‌ارزیاب نباشند
             if shift_lead_employee_ids:
                 shift_lead_ids_for_department_result = await self.db.execute(
                     select(EvaluationShiftLead.id).where(EvaluationShiftLead.department_id == department_id)
@@ -515,6 +535,7 @@ class EvaluationStructureService:
                     if eid not in assigned_employee_ids and eid not in shift_lead_employee_id_set
                 ]
 
+        # زیرمجموعه هر سرشیفتی که ارزیاب است
         shift_assignments_by_shift_lead: dict[int, list[int]] = {}
         for shift_lead_id in shift_lead_ids:
             assignments_result = await self.db.execute(
@@ -536,6 +557,7 @@ class EvaluationStructureService:
             unassigned_employees_by_department=unassigned_employees_by_department,
         )
 
+        # تبدیل شناسه‌های هدف به اشیای Employee
         targets: list[Employee] = []
         if target_ids:
             targets_result = await self.db.execute(select(Employee).where(Employee.id.in_(target_ids)))

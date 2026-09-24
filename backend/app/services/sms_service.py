@@ -25,14 +25,17 @@ _IPPANEL_SEND_URL = "https://edge.ippanel.com/v1/api/send"
 
 
 class SmsError(Exception):
+    """خطای عمومی ارسال پیامک (پاسخ ناموفق ippanel یا خطای اتصال)."""
     pass
 
 
 class SmsNotConfiguredError(SmsError):
+    """سرویس پیامک غیرفعال است یا تنظیمات آن ناقص است."""
     pass
 
 
 async def get_sms_settings(db: AsyncSession) -> SmsSettings:
+    """ردیف تنظیمات پیامک (id=1) را برمی‌گرداند؛ اگر وجود نداشته باشد با مقادیر پیش‌فرض می‌سازد."""
     settings = await db.get(SmsSettings, _SETTINGS_ID)
     if settings is None:
         settings = SmsSettings(id=_SETTINGS_ID)
@@ -44,7 +47,7 @@ async def get_sms_settings(db: AsyncSession) -> SmsSettings:
 
 def _to_e164(mobile: str) -> str:
     """۰۹۱۲۳۴۵۶۷۸۹ (فرمت داخلی این پروژه) -> +989123456789 (فرمت مورد نیاز ippanel)."""
-    digits = "".join(ch for ch in mobile if ch.isdigit())
+    digits = "".join(ch for ch in mobile if ch.isdigit())  # حذف هر کاراکتر غیررقمی
     if digits.startswith("0"):
         digits = "98" + digits[1:]
     elif not digits.startswith("98"):
@@ -53,6 +56,10 @@ def _to_e164(mobile: str) -> str:
 
 
 async def send_sms_code(db: AsyncSession, *, to_mobile: str, code: str) -> None:
+    """
+    کد تأیید را از طریق ippanel به شماره موبایل داده‌شده پیامک می‌کند (حالت pattern یا webservice).
+    خطا: SmsNotConfiguredError اگر تنظیمات ناقص باشد، SmsError اگر ارسال شکست بخورد.
+    """
     settings = await get_sms_settings(db)
     if not settings.enabled:
         raise SmsNotConfiguredError("سرویس پیامک هنوز در پنل ادمین فعال/تنظیم نشده است")
@@ -62,6 +69,7 @@ async def send_sms_code(db: AsyncSession, *, to_mobile: str, code: str) -> None:
     api_key = decrypt_secret(settings.api_key_encrypted)
     recipient = _to_e164(to_mobile)
 
+    # ساخت payload بر اساس نوع ارسال: الگو (کد به‌عنوان پارامتر) یا متن آزاد
     if settings.sending_type.value == "pattern":
         if not settings.pattern_code:
             raise SmsNotConfiguredError("کد الگوی پیامک (Pattern Code) تنظیم نشده است")
@@ -74,6 +82,7 @@ async def send_sms_code(db: AsyncSession, *, to_mobile: str, code: str) -> None:
         }
     else:
         template = settings.webservice_message_template or "کد تأیید بازنشانی رمز عبور شما: {code}"
+        # اگر قالب جای‌گذار {code} ندارد، کد به انتهای متن اضافه می‌شود
         message = template.replace("{code}", code) if "{code}" in template else f"{template} {code}"
         payload = {
             "sending_type": "webservice",
@@ -90,6 +99,7 @@ async def send_sms_code(db: AsyncSession, *, to_mobile: str, code: str) -> None:
                 headers={"Authorization": api_key, "Content-Type": "application/json"},
             )
         body = response.json()
+        # موفقیت فقط وقتی است که هم کد HTTP 200 باشد و هم meta.status برابر True
         if not (response.status_code == 200 and body.get("meta", {}).get("status") is True):
             error_message = body.get("meta", {}).get("message", "خطای نامشخص")
             raise SmsError(f"ارسال پیامک ناموفق بود: {error_message}")

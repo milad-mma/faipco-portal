@@ -1,25 +1,32 @@
+/**
+ * پلاک خودروی ایرانی: ورودی گرافیکی (IranianLicensePlateInput)، تابع بررسی کامل بودن
+ * (isPlateComplete) و نمایش فشرده‌ی فقط‌خواندنی (PlateDisplay).
+ * چون stylis-plugin-rtl مقدار direction در sx را برمی‌گرداند، ترتیب چپ‌به‌راست پلاک با
+ * flexDirection: "row-reverse" (که در سند RTL عناصر را از چپ به راست می‌چیند) تثبیت می‌شود.
+ */
 import { Box, MenuItem, Select, TextField } from "@mui/material";
 
-// حروف مجاز روی پلاک خودروهای شخصی ایران — مجموعه رایج/استاندارد (بدون
-// حروفی که فقط مخصوص دسته‌های خاص‌اند مثل تاکسی/معلولین/نیروی انتظامی).
-// طبق درخواست صریح کارفرما — فقط همین ۱۶ حرف مجاز پلاک، نه فهرست کامل
-// حروف الفبا (بقیه حروف اصلاً روی پلاک خودروی ایران دیده نمی‌شوند).
+// ۱۶ حرف مجاز روی پلاک خودروهای شخصی ایران (بدون حروف مخصوص دسته‌های خاص مثل تاکسی،
+// معلولین و نیروی انتظامی)
 const PLATE_LETTERS = ["ب", "ج", "د", "س", "ص", "ط", "ق", "ل", "م", "ن", "و", "ه", "ی", "ت", "ع", "ا"];
 
+// فقط ارقام لاتین را نگه می‌دارد و به حداکثر طول مشخص کوتاه می‌کند
 function onlyDigits(value, maxLen) {
   return value.replace(/[^0-9]/g, "").slice(0, maxLen);
 }
 
 /**
- * ورودی گرافیکی پلاک خودروی ایرانی — دقیقاً مطابق فرمت واقعی:
+ * ورودی گرافیکی پلاک خودروی ایرانی مطابق فرمت واقعی:
  * [۲ رقم] [حرف] [۳ رقم]  |  ایران [۲ رقم]
  *
  * value: { digits1, letter, digits2, iranCode } (رشته‌های خام، بدون اعتبارسنجی)
  * onChange: (nextValue) => void — کل شیء را با تغییر یک فیلد پس می‌دهد.
+ * disabled: غیرفعال کردن همه‌ی فیلدها.
  */
 export default function IranianLicensePlateInput({ value, onChange, disabled }) {
   const { digits1 = "", letter = "", digits2 = "", iranCode = "" } = value || {};
 
+  // ارسال کل شیء پلاک به والد با مقدار جدید یک فیلد
   function update(field, val) {
     onChange({ digits1, letter, digits2, iranCode, [field]: val });
   }
@@ -36,9 +43,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
         width: "100%",
         maxWidth: 380,
         height: 74,
-        // ⚠️ همان رفع باگ PlateDisplay: به‌خاطر stylis-plugin-rtl، مقدار
-        // `direction: "ltr"` در زمان build به rtl بازنویسی می‌شد و بی‌اثر
-        // بود. ترتیب صریحاً با row-reverse تثبیت می‌شود.
+        // ترتیب چپ‌به‌راست با row-reverse تثبیت می‌شود (direction: "ltr" در sx توسط stylis-plugin-rtl برگردانده می‌شود)
         flexDirection: "row-reverse",
       }}
     >
@@ -51,10 +56,11 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           justifyContent: "center",
           gap: 1,
           px: 1,
-          // همان دلیل بالا - ترتیب ورودی‌ها هم باید تثبیت شود.
+          // ترتیب چپ‌به‌راست ورودی‌ها هم به همان دلیل با row-reverse تثبیت می‌شود
           flexDirection: "row-reverse",
         }}
       >
+        {/* دو رقم اول */}
         <TextField
           value={digits1}
           onChange={(e) => update("digits1", onlyDigits(e.target.value, 2))}
@@ -68,6 +74,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
           variant="standard"
           InputProps={{ disableUnderline: true }}
         />
+        {/* انتخاب حرف پلاک */}
         <Select
           value={letter}
           onChange={(e) => update("letter", e.target.value)}
@@ -87,6 +94,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
             </MenuItem>
           ))}
         </Select>
+        {/* سه رقم وسط */}
         <TextField
           value={digits2}
           onChange={(e) => update("digits2", onlyDigits(e.target.value, 3))}
@@ -146,7 +154,10 @@ export function isPlateComplete(value) {
   );
 }
 
-/** نمایش فقط‌خواندنی/فشرده همان پلاک — برای لیست خودروهای من و جدول گزارش Admin/حراست. */
+/**
+ * نمایش فقط‌خواندنی و فشرده‌ی پلاک با ابعاد ثابت — برای فهرست خودروهای من و جدول گزارش Admin/حراست.
+ * ورودی: digits1، letter، digits2 و iranCode.
+ */
 export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
   return (
     <Box
@@ -157,18 +168,11 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
         borderRadius: 1,
         overflow: "hidden",
         bgcolor: "#fff",
-        // ⚠️ رفع باگ جهت (گزارش کاربر: پلاک برعکس دیده می‌شد). کل برنامه
-        // با stylis-plugin-rtl رندر می‌شود که خصوصیت‌های جهت‌دار را در
-        // زمان build برعکس می‌کند - یعنی `direction: "ltr"` اینجا به rtl
-        // بازنویسی می‌شد و بی‌اثر بود. به‌جای تکیه بر direction، ترتیب
-        // چیدمان صریحاً با row-reverse تثبیت می‌شود (چون خودِ plugin هم
-        // row را به row-reverse برمی‌گرداند، نتیجه نهایی چپ‌به‌راست است).
+        // stylis-plugin-rtl خصوصیت‌های جهت‌دار sx را برعکس می‌کند و direction: "ltr" در اینجا بی‌اثر است؛
+        // بنابراین ترتیب چپ‌به‌راست بخش‌های پلاک با row-reverse تثبیت می‌شود.
         flexDirection: "row-reverse",
         flexShrink: 0,
-        // ⚠️ طبق گزارش کاربر: اندازه پلاک بین ردیف‌ها متغیر بود. علت این
-        // بود که عرض از روی محتوا محاسبه می‌شد - مثلاً «۱۱» باریک‌تر از
-        // «۸۸» رندر می‌شد و پلاک ناقص از پلاک کامل کوچک‌تر. حالا ابعاد
-        // ثابت است تا همه پلاک‌ها دقیقاً یک اندازه باشند.
+        // ابعاد ثابت تا همه‌ی پلاک‌ها (مستقل از عرض ارقام یا ناقص بودن) هم‌اندازه باشند
         width: 168,
         height: 38,
       }}
@@ -184,15 +188,15 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
           fontSize: 16,
           fontWeight: 800,
           color: "#16324F",
-          // همان دلیل بالا - ترتیب ارقام هم باید تثبیت شود.
+          // ترتیب چپ‌به‌راست ارقام هم به همان دلیل با row-reverse تثبیت می‌شود
           flexDirection: "row-reverse",
-          // ⚠️ اعداد با عرض یکسان رندر می‌شوند تا جابه‌جایی رقم‌ها باعث
-          // تکان‌خوردن چیدمان نشود.
+          // ارقام با عرض یکسان رندر می‌شوند تا تغییر ارقام چیدمان را جابه‌جا نکند
           fontVariantNumeric: "tabular-nums",
           lineHeight: 1,
           whiteSpace: "nowrap",
         }}
       >
+        {/* دو رقم، حرف و سه رقم با حداقل عرض ثابت برای هر بخش */}
         <Box component="span" sx={{ minWidth: 26, textAlign: "center" }}>
           {digits1}
         </Box>
@@ -211,11 +215,12 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          // عرض ثابت - وگرنه کد استان تک‌رقمی بلوک را باریک‌تر می‌کرد.
+          // عرض ثابت تا کد استان تک‌رقمی بلوک را باریک‌تر نکند
           width: 38,
           flexShrink: 0,
         }}
       >
+        {/* بخش «ایران» و کد استان */}
         <Box sx={{ fontSize: 8, fontWeight: 800, color: "#16324F" }}>ایران</Box>
         <Box sx={{ fontSize: 13, fontWeight: 800, color: "#16324F" }}>{iranCode}</Box>
       </Box>

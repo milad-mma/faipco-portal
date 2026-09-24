@@ -1,9 +1,12 @@
 """
-سرویس «حضور مبتنی بر موقعیت مکانی» و «ثبت ورود/خروج آزمایشی».
+سرویس «حضور مبتنی بر موقعیت مکانی» (GPS) و ثبت ورود/خروج با موبایل.
 
-⚠️ این قابلیت آزمایشی است. ثبت ورود/خروج رسمی باید از طریق دستگاه‌های
-تعبیه‌شده در کارخانه انجام شود؛ این فقط یک لاگ مکمل دیجیتال است — نه
-جایگزین سامانه حضور و غیاب رسمی.
+شامل بررسی محدوده‌ی جغرافیایی (geofence) سایت‌ها، ثبت ورود/خروج پرسنل با
+جلوگیری از رکورد تکراری، افزودن/ویرایش/حذف دستی لاگ توسط Admin و
+گزارش‌های صفحه‌بندی‌شده‌ی لاگ‌ها و نشست‌های حضور آنلاین.
+
+ثبت ورود/خروج رسمی از طریق دستگاه‌های حضور و غیاب کارخانه انجام می‌شود؛
+این لاگ یک منبع مکمل دیجیتال است، نه جایگزین سامانه‌ی رسمی.
 """
 from __future__ import annotations
 
@@ -19,14 +22,16 @@ from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
 
-DUPLICATE_WINDOW_MINUTES = 2
+DUPLICATE_WINDOW_MINUTES = 2  # فاصله‌ی حداقلی بین دو ثبت هم‌نوع یک پرسنل
 
 
 class GpsAttendanceError(Exception):
+    """خطای منطقی ثبت GPS با پیام فارسی قابل‌نمایش به کاربر (خارج از محدوده، ثبت تکراری)."""
     pass
 
 
 class GeofenceCheckResult:
+    """نتیجه‌ی بررسی محدوده: سایت منطبق (یا None)، فاصله به متر و اینکه داخل شعاع مجاز است یا نه."""
     def __init__(self, matched_site: Site | None, distance_meters: float | None, is_within: bool):
         self.matched_site = matched_site
         self.distance_meters = distance_meters
@@ -35,12 +40,11 @@ class GeofenceCheckResult:
 
 async def check_geofence(db: AsyncSession, site_id: int | None, latitude: float, longitude: float) -> GeofenceCheckResult:
     """
-    اگر site_id مشخص شده باشد، فقط همان سایت چک می‌شود؛ وگرنه نزدیک‌ترین
-    سایتی که موقعیت GPS برایش تنظیم شده، در نظر گرفته می‌شود. اگر هیچ سایتی
-    اصلاً موقعیت GPS تنظیم‌شده نداشته باشد، هیچ محدودیتی اعمال نمی‌شود
-    (is_within=True، بدون سایت مطابق) — تا این قابلیت هرگز به‌خاطر نبود
-    تنظیمات، کسی را مسدود نکند.
+    مختصات داده‌شده را با محدوده‌ی GPS سایت‌ها مقایسه می‌کند.
+    اگر site_id مشخص باشد فقط همان سایت، وگرنه نزدیک‌ترین سایتِ دارای موقعیت GPS بررسی می‌شود.
+    اگر هیچ سایتی موقعیت تنظیم‌شده نداشته باشد، بدون محدودیت (is_within=True، بدون سایت منطبق) برمی‌گردد.
     """
+    # انتخاب سایت‌های کاندید
     if site_id is not None:
         sites = [await db.get(Site, site_id)]
         sites = [s for s in sites if s is not None]
@@ -52,10 +56,12 @@ async def check_geofence(db: AsyncSession, site_id: int | None, latitude: float,
         )
         sites = list(result.scalars().all())
 
-    configured_sites = [s for s in sites if s.gps_latitude is not None and s.gps_longitude is not None and s.gps_radius_meters]
+    configured_sites = [s for s in sites if s.gps_latitude is not None and s.gps_longitude is not None and s.gps_radius_meters]  # فقط سایت‌های با موقعیت و شعاع
+    # بدون تنظیمات GPS، هیچ محدودیتی اعمال نمی‌شود
     if not configured_sites:
         return GeofenceCheckResult(matched_site=None, distance_meters=None, is_within=True)
 
+    # نزدیک‌ترین سایت با فاصله‌ی کروی (haversine)
     best_site = None
     best_distance = None
     for site in configured_sites:
@@ -69,6 +75,8 @@ async def check_geofence(db: AsyncSession, site_id: int | None, latitude: float,
 
 
 class GpsAttendanceService:
+    """عملیات ثبت و گزارش لاگ‌های GPS و نشست‌های حضور روی یک AsyncSession."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -82,6 +90,10 @@ class GpsAttendanceService:
         accuracy_meters: float | None,
         site_id: int | None,
     ) -> GpsActivityLog:
+        """
+        یک لاگ GPS با نتیجه‌ی بررسی محدوده ذخیره و commit می‌کند و رکورد تازه‌شده را برمی‌گرداند.
+        محدوده فقط ثبت می‌شود و جلوی ذخیره را نمی‌گیرد.
+        """
         geofence = await check_geofence(self.db, site_id, latitude, longitude)
         log = GpsActivityLog(
             employee_id=employee_id,
@@ -110,13 +122,11 @@ class GpsAttendanceService:
         site_id: int | None,
     ) -> GpsActivityLog:
         """
-        برخلاف log_presence، اینجا اگر خارج از محدوده مجاز باشد، عملاً ثبت
-        رد می‌شود (Exception) — چون ورود/خروج باید واقعاً از محل کارخانه باشد.
-
-        همچنین اگر همین پرسنل کمتر از ۲ دقیقه پیش از همین نوع (فقط ورود با
-        ورود، یا فقط خروج با خروج — نه ورود با خروج) ثبت کرده باشد، رد
-        می‌شود — جلوگیری از رکورد تکراری با کلیک‌های پیاپی/تصادفی.
+        ورود یا خروج یک پرسنل را با مختصات فعلی ثبت می‌کند و لاگ ذخیره‌شده را برمی‌گرداند.
+        اگر خارج از محدوده‌ی مجاز سایت باشد یا همین پرسنل کمتر از DUPLICATE_WINDOW_MINUTES دقیقه پیش
+        ثبتی از همین نوع (ورود با ورود، خروج با خروج) داشته باشد، GpsAttendanceError می‌دهد.
         """
+        # جلوگیری از ثبت تکراری با کلیک‌های پیاپی: آخرین ثبت هم‌نوع در پنجره‌ی زمانی
         recent_duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
         result = await self.db.execute(
             select(GpsActivityLog.id)
@@ -134,6 +144,7 @@ class GpsAttendanceService:
                 f"تکراری، هر {DUPLICATE_WINDOW_MINUTES} دقیقه فقط یک بار امکان ثبت {action_fa} وجود دارد."
             )
 
+        # ورود/خروج باید از داخل محدوده‌ی سایت باشد
         geofence = await check_geofence(self.db, site_id, latitude, longitude)
         if not geofence.is_within and geofence.matched_site is not None:
             distance_text = f"{int(geofence.distance_meters)} متر" if geofence.distance_meters else "نامشخص"
@@ -160,9 +171,10 @@ class GpsAttendanceService:
         created_at: datetime,
         site_id: int | None,
     ) -> GpsActivityLog:
-        """Admin/hr-manager یک رکورد را دستی اضافه می‌کند — بدون مختصات GPS
-        واقعی (چون خودِ پرسنل آنجا نبوده)، با is_manual=True تا در گزارش با
-        یک ستاره مشخص شود."""
+        """
+        یک رکورد ورود/خروج را دستی (توسط Admin/hr-manager) با زمان اعلام‌شده ثبت می‌کند.
+        بدون مختصات GPS و با is_manual=True ذخیره می‌شود تا در گزارش مشخص باشد.
+        """
         log = GpsActivityLog(
             employee_id=employee_id,
             log_type=log_type,
@@ -188,12 +200,14 @@ class GpsAttendanceService:
         created_at: datetime | None = None,
         site_id: int | None = None,
     ) -> GpsActivityLog | None:
-        """ویرایش دستی یک رکورد موجود (توسط خودِ پرسنل ثبت‌شده باشد یا از قبل
-        دستی) — همیشه بعد از ویرایش is_manual=True می‌شود تا مشخص باشد این
-        رکورد دیگر عیناً همان چیزی نیست که خودِ پرسنل فرستاده."""
+        """
+        فیلدهای داده‌شده‌ی یک لاگ موجود را تغییر می‌دهد و رکورد را برمی‌گرداند (None اگر پیدا نشود).
+        بعد از ویرایش همیشه is_manual=True می‌شود تا مشخص باشد رکورد عیناً ثبت خودِ پرسنل نیست.
+        """
         log = await self.db.get(GpsActivityLog, log_id)
         if log is None:
             return None
+        # فقط فیلدهایی که مقدار دارند تغییر می‌کنند
         if log_type is not None:
             log.log_type = log_type
         if created_at is not None:
@@ -206,6 +220,7 @@ class GpsAttendanceService:
         return log
 
     async def delete_log(self, log_id: int) -> bool:
+        """یک لاگ را حذف می‌کند؛ True اگر وجود داشت و حذف شد."""
         log = await self.db.get(GpsActivityLog, log_id)
         if log is None:
             return False
@@ -216,7 +231,11 @@ class GpsAttendanceService:
     async def get_my_logs(
         self, employee_id: int, *, year: int, month: int, limit: int = 200
     ) -> list[GpsActivityLog]:
-        start, end = jalali_month_range_utc(year, month)
+        """
+        لاگ‌های ورود/خروج خودِ پرسنل در یک ماه شمسی را (جدیدترین اول، حداکثر limit) برمی‌گرداند.
+        لاگ‌های «حضور دوره‌ای» (presence) شامل نمی‌شوند.
+        """
+        start, end = jalali_month_range_utc(year, month)  # بازه‌ی ماه شمسی به UTC
         result = await self.db.execute(
             select(GpsActivityLog)
             .where(
@@ -242,29 +261,27 @@ class GpsAttendanceService:
         site_ids: set[int] | None = None,
     ) -> tuple[list[GpsActivityLog], int]:
         """
-        گزارش کامل Admin/hr-manager — همه لاگ‌ها (حضور دوره‌ای + ورود/خروج)
-        برای همه پرسنل، همیشه محدود به یک ماه شمسی مشخص. چون «حضور دوره‌ای»
-        هر ۱۰ دقیقه به‌ازای هر پرسنل آزمایش ثبت می‌شود، این جدول می‌تواند
-        خیلی سریع بزرگ شود — همیشه هم به یک ماه محدود است هم Paginated.
-
-        site_ids (اختیاری): اگر داده شود، فقط لاگ‌های پرسنل همین سایت‌ها —
-        برای ایزوله‌سازی چندسایتی (مثلاً hr-manager سایت‌محور نباید گزارش
-        حضور سایت دیگری را ببیند). None یعنی بدون محدودیت.
+        یک صفحه از همه‌ی لاگ‌ها (حضور دوره‌ای + ورود/خروج) برای گزارش Admin/hr-manager و تعداد کل را برمی‌گرداند.
+        همیشه به یک ماه شمسی محدود و صفحه‌بندی‌شده است، چون حضور دوره‌ای جدول را سریع بزرگ می‌کند.
+        site_ids: اگر داده شود فقط لاگ‌های پرسنل همین سایت‌ها (ایزوله‌سازی چندسایتی)؛ None یعنی بدون محدودیت.
         """
         start, end = jalali_month_range_utc(year, month)
+        # فیلترهای اختیاری روی بازه‌ی ماه
         filters = [GpsActivityLog.created_at >= start, GpsActivityLog.created_at < end]
         if employee_id is not None:
             filters.append(GpsActivityLog.employee_id == employee_id)
         if log_type is not None:
             filters.append(GpsActivityLog.log_type == log_type)
-        if site_ids is not None:
+        if site_ids is not None:  # محدود به پرسنل سایت‌های مجاز (زیرکوئری)
             filters.append(
                 GpsActivityLog.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
             )
 
+        # تعداد کل برای صفحه‌بندی
         count_stmt = select(func.count()).select_from(GpsActivityLog).where(*filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
 
+        # صفحه‌ی درخواستی، جدیدترین اول
         stmt = (
             select(GpsActivityLog)
             .where(*filters)
@@ -284,23 +301,27 @@ class GpsAttendanceService:
         only_online: bool = False,
         site_ids: set[int] | None = None,
     ) -> tuple[list[PresenceSession], int]:
-        """گزارش «آنلاین/آفلاین» زنده مبتنی بر WebSocket — هر ردیف یک Session
-        واقعی با شروع/پایان دقیق است، نه یک لاگ نقطه‌ای.
-
-        site_ids: مثل get_all_logs_page — برای ایزوله‌سازی چندسایتی."""
+        """
+        یک صفحه از نشست‌های حضور آنلاین (مبتنی بر WebSocket) و تعداد کل را برمی‌گرداند.
+        هر ردیف یک نشست واقعی با زمان اتصال/قطع است؛ only_online فقط نشست‌های باز را می‌دهد.
+        site_ids: مثل get_all_logs_page برای ایزوله‌سازی چندسایتی.
+        """
+        # فیلترهای اختیاری
         filters = []
         if employee_id is not None:
             filters.append(PresenceSession.employee_id == employee_id)
         if only_online:
-            filters.append(PresenceSession.disconnected_at.is_(None))
+            filters.append(PresenceSession.disconnected_at.is_(None))  # نشست باز = بدون زمان قطع
         if site_ids is not None:
             filters.append(
                 PresenceSession.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
             )
 
+        # تعداد کل برای صفحه‌بندی
         count_stmt = select(func.count()).select_from(PresenceSession).where(*filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
 
+        # صفحه‌ی درخواستی، جدیدترین اتصال اول
         stmt = (
             select(PresenceSession)
             .where(*filters)

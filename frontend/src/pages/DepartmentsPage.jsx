@@ -1,3 +1,6 @@
+// صفحه‌ی واحدهای سازمانی.
+// فهرست همه‌ی واحدها (به همراه سایت و سرپرست فعلی) را در جدولی مرتب‌پذیر نشان می‌دهد
+// و امکان جستجوی پرسنل و تعیین/تغییر سرپرست هر واحد را فراهم می‌کند.
 import { useEffect, useMemo, useState } from "react";
 import {
   Autocomplete,
@@ -23,6 +26,7 @@ import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
 import { sortRows } from "../utils/tableSort";
 
+// ستون‌های مرتب‌پذیر جدول واحدها (key همان فیلد ردیف است)
 const COLUMNS = [
   { key: "site_name", label: "سایت" },
   { key: "name", label: "واحد سازمانی" },
@@ -30,14 +34,16 @@ const COLUMNS = [
   { key: "supervisor_name", label: "سرپرست فعلی" },
 ];
 
+// سلول تعیین سرپرست یک واحد: جستجوی پرسنل همان سایت با Autocomplete و دکمه‌ی ذخیره.
+// ورودی: واحد، نام سایت و تابع onSaved که پس از ذخیره با واحد به‌روزشده و پیام موفقیت صدا زده می‌شود.
 function SupervisorCell({ department, siteName, onSaved }) {
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(null);  // گزینه‌ی انتخاب‌شده؛ برای سرپرست فعلی یک placeholder با isPlaceholder
   const [inputValue, setInputValue] = useState("");
-  const [options, setOptions] = useState([]);
+  const [options, setOptions] = useState([]);  // نتایج جستجوی پرسنل
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // اگر سرپرست فعلی وجود دارد، به‌عنوان مقدار اولیه Autocomplete نمایش داده شود
+  // با تغییر واحد یا سرپرست، سرپرست فعلی به‌عنوان مقدار اولیه‌ی Autocomplete تنظیم می‌شود
   // (فقط برای نمایش نام؛ برای ارسال واقعی به سرور همیشه از employee_id استفاده می‌شود)
   useEffect(() => {
     setSelected(
@@ -50,6 +56,7 @@ function SupervisorCell({ department, siteName, onSaved }) {
   }, [department.id, department.supervisor_user_id, department.supervisor_name]);
 
   useEffect(() => {
+    // جستجوی پرسنل سایت واحد با تأخیر ۳۰۰ میلی‌ثانیه (debounce) پس از تایپ
     if (!inputValue) {
       setOptions([]);
       return;
@@ -63,8 +70,9 @@ function SupervisorCell({ department, siteName, onSaved }) {
     return () => clearTimeout(timer);
   }, [inputValue, department.site_id]);
 
-  const hasPendingChange = selected && !selected.isPlaceholder;
+  const hasPendingChange = selected && !selected.isPlaceholder;  // فقط وقتی شخص جدیدی انتخاب شده ذخیره فعال است
 
+  // سرپرست انتخاب‌شده را برای واحد ثبت می‌کند و نتیجه را به والد اطلاع می‌دهد
   async function handleSave() {
     if (!hasPendingChange) return;
     setIsSaving(true);
@@ -112,19 +120,23 @@ function SupervisorCell({ department, siteName, onSaved }) {
   );
 }
 
+// کامپوننت صفحه‌ی واحدهای سازمانی؛ ورودی ندارد.
+// واحدها و سایت‌ها را بارگذاری می‌کند و جدول مرتب‌پذیر را با سلول تعیین سرپرست رندر می‌کند.
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState([]);
   const [sites, setSites] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [order, setOrder] = useState("asc");
-  const [orderBy, setOrderBy] = useState(null);
-  const [snackbar, setSnackbar] = useState("");
+  const [orderBy, setOrderBy] = useState(null);  // کلید ستون مرتب‌سازی؛ null = بدون مرتب‌سازی
+  const [snackbar, setSnackbar] = useState("");  // متن پیام Snackbar؛ خالی = بسته
 
   useEffect(() => {
+    // بارگذاری اولیه‌ی سایت‌ها و واحدها
     fetchSites().then(setSites);
     loadDepartments();
   }, []);
 
+  // فهرست واحدها را از سرور می‌گیرد و در state می‌گذارد
   function loadDepartments() {
     setIsLoading(true);
     return fetchDepartments()
@@ -132,6 +144,7 @@ export default function DepartmentsPage() {
       .finally(() => setIsLoading(false));
   }
 
+  // کلیک روی سرستون: جهت مرتب‌سازی همان ستون را برعکس می‌کند یا ستون جدید را صعودی مرتب می‌کند
   function handleSort(columnKey) {
     if (orderBy === columnKey) {
       setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -141,13 +154,16 @@ export default function DepartmentsPage() {
     }
   }
 
+  // واحد به‌روزشده را در فهرست جایگزین می‌کند و پیام موفقیت را نشان می‌دهد
   function handleSupervisorSaved(updatedDepartment, message) {
     setDepartments((prev) => prev.map((d) => (d.id === updatedDepartment.id ? updatedDepartment : d)));
     setSnackbar(message);
   }
 
+  // نگاشت شناسه‌ی سایت به نام سایت
   const siteNameById = useMemo(() => Object.fromEntries(sites.map((s) => [s.id, s.name])), [sites]);
 
+  // افزودن نام سایت به هر ردیف و مرتب‌سازی ردیف‌ها
   const rows = departments.map((dept) => ({
     ...dept,
     site_name: siteNameById[dept.site_id] || null,
@@ -167,6 +183,7 @@ export default function DepartmentsPage() {
         </Typography>
       </Box>
 
+      {/* جدول واحدها */}
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
         <TableContainer>
           <Table>
@@ -187,6 +204,7 @@ export default function DepartmentsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
+              {/* ردیف خالی وقتی واحدی وجود ندارد */}
               {!isLoading && sortedRows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={COLUMNS.length + 1}>

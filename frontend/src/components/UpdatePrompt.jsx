@@ -4,15 +4,15 @@ import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutl
 import { applyPendingUpdate, UPDATE_READY_EVENT } from "../utils/serviceWorker";
 
 /**
- * یک پیام کوچک و غیرمزاحم — فقط دقیقاً همان لحظه‌ای ظاهر می‌شود که واقعاً
- * یک نسخه جدید Deploy شده و آماده است، نه به‌طور اتفاقی/دوره‌ای. تا کاربر
- * خودش کلیک نکند، هیچ Reload ای اتفاق نمی‌افتد — پس اگر وسط پرکردن یک فرم
- * باشد، می‌تواند اول کارش را تمام کند.
+ * پیام کوچک «نسخه جدید پرتال آماده است» که فقط وقتی نسخه‌ی جدید Deploy و آماده شده ظاهر می‌شود
+ * (با رویداد UPDATE_READY_EVENT از serviceWorker). بدون ورودی (props).
+ * تا کاربر روی «بارگذاری» کلیک نکند Reload انجام نمی‌شود، پس کار نیمه‌تمام (مثلاً فرم) از دست نمی‌رود.
  */
 export default function UpdatePrompt() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);  // در حال اعمال نسخه‌ی جدید (دکمه غیرفعال و اسپینر)
 
+  // گوش دادن به رویداد آماده بودن نسخه‌ی جدید و نمایش پیام
   useEffect(() => {
     function handleUpdateReady() {
       setIsOpen(true);
@@ -21,15 +21,12 @@ export default function UpdatePrompt() {
     return () => window.removeEventListener(UPDATE_READY_EVENT, handleUpdateReady);
   }, []);
 
+  // اعمال به‌روزرسانی با کلیک کاربر
   async function handleReloadClick() {
-    // «بارگذاری» بین‌بین از کاربر جلوگیری می‌کند دوباره روی دکمه بزند —
-    // پاک‌سازی Cache Storage معمولاً خیلی سریع است، ولی همین چند لحظه
-    // بازخورد بصری بهتر از یک دکمه بی‌واکنش است.
+    // حالت «در حال بارگذاری» از کلیک دوباره جلوگیری می‌کند و بازخورد بصری می‌دهد
     setIsApplying(true);
-    // خودِ Reload توسط controllerchange (در serviceWorker.js) بعد از این
-    // انجام می‌شود — این تابع صبر می‌کند تا Cache Storage کاملاً پاک شود
-    // (نه localStorage/ورود کاربر — کاملاً مجزا و دست‌نخورده می‌ماند) و
-    // بعد نسخه جدید را فعال می‌کند.
+    // applyPendingUpdate صبر می‌کند تا Cache Storage پاک شود (localStorage و ورود کاربر دست‌نخورده می‌مانند)
+    // و سپس نسخه‌ی جدید را فعال می‌کند؛ Reload توسط controllerchange در serviceWorker.js انجام می‌شود.
     await applyPendingUpdate();
   }
 

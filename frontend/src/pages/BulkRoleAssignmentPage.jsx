@@ -1,3 +1,7 @@
+/**
+ * صفحه انتصاب دسته‌جمعی نقش: یک نقش را هم‌زمان به همه پرسنل یک سایت
+ * و/یا یک واحد سازمانی اختصاص می‌دهد و پیش از ثبت، تعداد پرسنل منطبق با فیلتر را نشان می‌دهد.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -16,26 +20,29 @@ import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
 
+// کامپوننت صفحه؛ ورودی ندارد. فرم انتخاب نقش/سایت/واحد و دکمه انتصاب را رندر می‌کند
 export default function BulkRoleAssignmentPage() {
-  const [roles, setRoles] = useState(null);
+  const [roles, setRoles] = useState(null);  // فهرست نقش‌ها (بدون superadmin)؛ null = در حال بارگذاری
   const [sites, setSites] = useState(null);
-  const [departments, setDepartments] = useState([]);
+  const [departments, setDepartments] = useState([]);  // واحدهای سایت انتخاب‌شده
 
   const [roleId, setRoleId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
 
-  const [matchingCount, setMatchingCount] = useState(null);
+  const [matchingCount, setMatchingCount] = useState(null);  // تعداد پرسنل منطبق با فیلتر فعلی؛ null = فیلتری انتخاب نشده
   const [isLoadingCount, setIsLoadingCount] = useState(false);
 
   const [isAssigning, setIsAssigning] = useState(false);
   const [result, setResult] = useState(null); // { success, message } | null
 
+  // بارگذاری اولیه نقش‌ها (به‌جز superadmin) و سایت‌ها
   useEffect(() => {
     fetchRoles().then((data) => setRoles(data.filter((r) => r.name !== "superadmin")));
     fetchSites().then(setSites);
   }, []);
 
+  // با تغییر سایت، واحدهای همان سایت بارگذاری و انتخاب واحد پاک می‌شود
   useEffect(() => {
     if (!siteId) {
       setDepartments([]);
@@ -46,6 +53,7 @@ export default function BulkRoleAssignmentPage() {
     setDepartmentId("");
   }, [siteId]);
 
+  // شمارش پرسنل منطبق با فیلتر؛ با pageSize=1 فقط مقدار total از سرور خوانده می‌شود
   useEffect(() => {
     if (!siteId && !departmentId) {
       setMatchingCount(null);
@@ -61,6 +69,8 @@ export default function BulkRoleAssignmentPage() {
       .finally(() => setIsLoadingCount(false));
   }, [siteId, departmentId]);
 
+  // اعتبارسنجی (نقش و حداقل یک فیلتر الزامی است) و ارسال درخواست انتصاب دسته‌جمعی؛
+  // خروجی: پیام موفقیت با تعداد تازه‌منصوب/از قبل دارا/کل منطبق، یا پیام خطا در result
   async function handleAssign() {
     setResult(null);
     if (!roleId) {
@@ -105,6 +115,7 @@ export default function BulkRoleAssignmentPage() {
           <CircularProgress size={20} />
         ) : (
           <Stack spacing={2.5}>
+            {/* انتخاب نقش */}
             <TextField select label="نقش" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
               {roles.map((r) => (
                 <MenuItem key={r.id} value={r.id}>
@@ -113,6 +124,7 @@ export default function BulkRoleAssignmentPage() {
               ))}
             </TextField>
 
+            {/* انتخاب سایت (اختیاری؛ «همه سایت‌ها» = بدون فیلتر سایت) */}
             <TextField select label="سایت" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
               <MenuItem value="">همه سایت‌ها</MenuItem>
               {sites.map((s) => (
@@ -122,6 +134,7 @@ export default function BulkRoleAssignmentPage() {
               ))}
             </TextField>
 
+            {/* انتخاب واحد؛ فقط بعد از انتخاب سایت فعال می‌شود */}
             <TextField
               select
               label="واحد سازمانی (اختیاری)"
@@ -138,6 +151,7 @@ export default function BulkRoleAssignmentPage() {
               ))}
             </TextField>
 
+            {/* نمایش تعداد پرسنل منطبق با فیلتر فعلی */}
             {(siteId || departmentId) && (
               <Alert severity="info">
                 {isLoadingCount ? (
@@ -148,6 +162,7 @@ export default function BulkRoleAssignmentPage() {
               </Alert>
             )}
 
+            {/* پیام نتیجه و دکمه ثبت انتصاب */}
             <Box>
               {result && (
                 <Alert severity={result.success ? "success" : "error"} sx={{ mb: 2 }}>

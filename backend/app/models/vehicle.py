@@ -18,6 +18,7 @@ from app.db.session import Base
 
 
 class Vehicle(Base):
+    """یک خودروی ثبت‌شده توسط پرسنل با نوع، رنگ و پلاک چهاربخشی."""
     __tablename__ = "vehicles"
 
     id: Mapped[int] = mapped_column(primary_key=True)

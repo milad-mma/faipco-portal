@@ -1,3 +1,6 @@
+// صفحه‌ی مدیریت سایت‌ها (کارخانه/شعبه).
+// سایت‌ها را به‌صورت کارت نشان می‌دهد و برای کاربر دارای مجوز مدیریت امکان ساخت سایت،
+// فعال/غیرفعال‌کردن، رفتن به تنظیمات اتصال و Mapping، و حذف قطعی سایت را فراهم می‌کند.
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -26,30 +29,36 @@ import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { createSite, deleteSite, fetchSites, setSiteActive } from "../api/sites";
 
+// کامپوننت صفحه‌ی سایت‌ها؛ ورودی ندارد.
+// فهرست سایت‌ها، دیالوگ ساخت سایت و دیالوگ‌های تأیید غیرفعال‌سازی و حذف را مدیریت می‌کند.
 export default function SitesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canManage = Boolean(user?.can_manage_sites);
-  const [sites, setSites] = useState(null);
+  const canManage = Boolean(user?.can_manage_sites);  // دکمه‌های مدیریتی فقط با این مجوز نمایش داده می‌شوند
+  const [sites, setSites] = useState(null);  // null = در حال بارگذاری
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
 
   const [newSite, setNewSite] = useState({ name: "", code: "", description: "" });
   const [error, setError] = useState("");
   const [snackbar, setSnackbar] = useState("");
-  const [togglingId, setTogglingId] = useState(null);
-  const [deleteDialogSite, setDeleteDialogSite] = useState(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [togglingId, setTogglingId] = useState(null);  // شناسه‌ی سایتی که تغییر وضعیتش در جریان است
+  const [deleteDialogSite, setDeleteDialogSite] = useState(null);  // سایتی که دیالوگ حذفش باز است
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");  // باید دقیقاً DELETE باشد
   const [isDeleting, setIsDeleting] = useState(false);
-  const [deactivateDialogSite, setDeactivateDialogSite] = useState(null);
+  const [deactivateDialogSite, setDeactivateDialogSite] = useState(null);  // سایتی که دیالوگ تأیید غیرفعال‌سازی‌اش باز است
 
+  // فهرست سایت‌ها را از سرور می‌گیرد
   function loadSites() {
     fetchSites().then(setSites);
   }
 
+  // بارگذاری اولیه‌ی سایت‌ها
   useEffect(() => {
     loadSites();
   }, []);
 
+  // وضعیت فعال بودن سایت را روی سرور تغییر می‌دهد، سایت را در فهرست جایگزین و پیام نتیجه را نشان می‌دهد.
+  // ورودی: سایت و وضعیت جدید.
   async function applyToggleActive(site, nextActive) {
     setTogglingId(site.id);
     try {
@@ -67,16 +76,17 @@ export default function SitesPage() {
     }
   }
 
+  // کلید فعال/غیرفعال: فعال‌سازی مستقیم انجام می‌شود، غیرفعال‌سازی ابتدا دیالوگ تأیید را باز می‌کند
   function handleToggleActive(site) {
     if (site.is_active) {
-      // غیرفعال‌کردن سایت اثر جانبی مهم دارد (خاموش‌شدن خودکار Sync)، پس با
-      // یک Dialog صریح و دکمه‌های تأیید/انصراف از Admin تأییدیه گرفته می‌شود.
+      // غیرفعال‌کردن سایت Sync خودکار آن را هم خاموش می‌کند، پس ابتدا از Admin تأیید گرفته می‌شود
       setDeactivateDialogSite(site);
     } else {
       applyToggleActive(site, true);
     }
   }
 
+  // پس از تأیید در دیالوگ، سایت را غیرفعال می‌کند
   function handleConfirmDeactivate() {
     if (!deactivateDialogSite) return;
     const site = deactivateDialogSite;
@@ -84,11 +94,13 @@ export default function SitesPage() {
     applyToggleActive(site, false);
   }
 
+  // دیالوگ حذف را برای سایت باز و متن تأیید را خالی می‌کند
   function openDeleteDialog(site) {
     setDeleteDialogSite(site);
     setDeleteConfirmText("");
   }
 
+  // در صورت تایپ DELETE، سایت را به‌همراه واحدها و پرسنلش حذف و فهرست را بازخوانی می‌کند
   async function handleDeleteSite() {
     if (deleteConfirmText.trim() !== "DELETE" || !deleteDialogSite) return;
     setIsDeleting(true);
@@ -104,6 +116,7 @@ export default function SitesPage() {
     }
   }
 
+  // سایت جدید را از روی فرم می‌سازد، دیالوگ را می‌بندد و فهرست را بازخوانی می‌کند
   async function handleCreateSite() {
     setError("");
     try {
@@ -134,6 +147,7 @@ export default function SitesPage() {
         )}
       </Box>
 
+      {/* شبکه‌ی کارت‌های سایت (یا نشانگر بارگذاری) */}
       <Grid container spacing={2.5}>
         {sites === null ? (
           <Grid item xs={12}>
@@ -172,6 +186,7 @@ export default function SitesPage() {
                 </Stack>
               </Stack>
 
+              {/* توضیحات سایت */}
               {site.description && (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
                   {site.description}
@@ -180,6 +195,7 @@ export default function SitesPage() {
 
               <Divider sx={{ my: 2 }} />
 
+              {/* دکمه‌های مدیریتی سایت: اتصال دیتابیس، Mapping ستون‌ها، حذف */}
               {canManage && (
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <Button
@@ -249,8 +265,7 @@ export default function SitesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: تأیید غیرفعال‌کردن سایت — چون این کار خودکار Sync آن را هم
-          خاموش می‌کند، Admin باید صریحاً این اثر جانبی را تأیید کند. */}
+      {/* Dialog: تأیید غیرفعال‌کردن سایت؛ غیرفعال‌سازی Sync خودکار آن را هم خاموش می‌کند */}
       <Dialog
         open={Boolean(deactivateDialogSite)}
         onClose={() => setDeactivateDialogSite(null)}
@@ -273,8 +288,7 @@ export default function SitesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: حذف قطعی سایت — با تأییدیه قوی (تایپ‌کردن DELETE) چون این عملیات
-          کل واحدهای سازمانی، پرسنل، اتصال دیتابیس و Mapping این سایت را هم حذف می‌کند */}
+      {/* Dialog: حذف قطعی سایت با تایپ DELETE؛ واحدها، پرسنل، اتصال دیتابیس و Mapping سایت هم حذف می‌شوند */}
       <Dialog open={Boolean(deleteDialogSite)} onClose={() => !isDeleting && setDeleteDialogSite(null)} fullWidth maxWidth="xs">
         <DialogTitle color="error.main">حذف قطعی سایت «{deleteDialogSite?.name}»</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>

@@ -1,11 +1,9 @@
 """
-سرویس «فرم‌های ارزیابی عملکرد» - مدیریت فرم، دسته‌بندی، سوال و گزینه.
+سرویس «فرم‌های ارزیابی عملکرد»: مدیریت فرم، دسته‌بندی، سوال و گزینه، فعال‌سازی فرم
+(با اعتبارسنجی وزن‌ها) و ساخت نسخه جدید از فرم.
 
-⚠️ Historical Integrity: تا وقتی فرمی هنوز در وضعیت draft است، آزادانه
-قابل‌ویرایش/حذف است. بعد از فعال‌شدن (active)، دیگر Hard-Delete مجاز
-نیست - چون ممکن است ارزیابی واقعی به آن مرتبط شده باشد (آن بخش در
-مرحله بعدی این ماژول ساخته می‌شود)؛ به‌جای حذف، باید نسخه جدید
-(Versioning) ساخته شود یا به archived تغییر وضعیت دهد.
+فرم در وضعیت draft آزادانه قابل ویرایش/حذف است. پس از فعال‌شدن Hard-Delete مجاز نیست،
+چون ممکن است ارزیابی واقعی به آن وصل باشد؛ به‌جای آن نسخه جدید ساخته یا فرم archived می‌شود.
 """
 from __future__ import annotations
 
@@ -24,10 +22,12 @@ from app.models.evaluation_content import (
 
 
 class EvaluationFormError(Exception):
+    """خطای قابل نمایش به کاربر در عملیات فرم‌ساز."""
     pass
 
 
 def _full_form_query():
+    """کوئری select فرم همراه با بارگذاری کامل دسته‌بندی‌ها، سوالات و گزینه‌ها (selectinload) را برمی‌گرداند."""
     return select(EvaluationForm).options(
         selectinload(EvaluationForm.categories)
         .selectinload(EvaluationCategory.questions)
@@ -36,19 +36,31 @@ def _full_form_query():
 
 
 class EvaluationFormService:
+    """سرویس CRUD فرم‌ها، دسته‌بندی‌ها و سوالات ارزیابی."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: نشست async دیتابیس."""
         self.db = db
 
     # ---------- فرم ----------
 
-    async def list_forms(self, site_id: int | None = None) -> list[EvaluationForm]:
+    async def list_forms(
+        self, site_id: int | None = None, allowed_site_ids: set[int] | None = None
+    ) -> list[EvaluationForm]:
+        """
+        فهرست فرم‌ها (جدیدترین اول)؛ با site_id، فرم‌های آن سایت به‌علاوه فرم‌های سراسری.
+        allowed_site_ids: فقط فرم‌های این سایت‌ها به‌علاوه‌ی فرم‌های سراسری (None = بدون محدودیت).
+        """
         query = select(EvaluationForm).order_by(EvaluationForm.created_at.desc())
         if site_id is not None:
             query = query.where((EvaluationForm.site_id == site_id) | (EvaluationForm.site_id.is_(None)))
+        if allowed_site_ids is not None:
+            query = query.where(EvaluationForm.site_id.in_(allowed_site_ids) | EvaluationForm.site_id.is_(None))
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def get_full_form(self, form_id: int) -> EvaluationForm:
+        """فرم را با همه دسته‌بندی‌ها/سوالات/گزینه‌ها برمی‌گرداند؛ اگر نباشد EvaluationFormError."""
         result = await self.db.execute(_full_form_query().where(EvaluationForm.id == form_id))
         form = result.scalar_one_or_none()
         if form is None:
@@ -56,6 +68,7 @@ class EvaluationFormService:
         return form
 
     async def create_form(self, data: dict, created_by_user_id: int | None) -> EvaluationForm:
+        """ورودی: فیلدهای فرم و شناسه سازنده. فرم جدید (draft) را ذخیره و برمی‌گرداند."""
         form = EvaluationForm(**data, created_by_user_id=created_by_user_id)
         self.db.add(form)
         await self.db.commit()
@@ -63,6 +76,7 @@ class EvaluationFormService:
         return form
 
     async def update_form(self, form_id: int, data: dict) -> EvaluationForm:
+        """فیلدهای فرم را به‌روز می‌کند؛ فقط برای فرم draft، در غیر این صورت EvaluationFormError."""
         form = await self.db.get(EvaluationForm, form_id)
         if form is None:
             raise EvaluationFormError("فرم ارزیابی موردنظر یافت نشد")
@@ -76,10 +90,8 @@ class EvaluationFormService:
 
     async def update_title(self, form_id: int, title: str) -> EvaluationForm:
         """
-        ⚠️ طبق درخواست صریح: برخلاف update_form (فقط برای فرم‌های Draft)،
-        عنوان یک فرم - صرف‌نظر از وضعیتش - همیشه قابل‌ویرایش است؛ چون
-        ارزیابی‌های قبلی از form_title_snapshot استفاده می‌کنند (نه ارجاع
-        زنده)، تغییر عنوان فرم فعلی هیچ گزارش تاریخی‌ای را خراب نمی‌کند.
+        عنوان فرم را در هر وضعیتی تغییر می‌دهد (برخلاف update_form که فقط برای draft است).
+        ارزیابی‌های قبلی از form_title_snapshot استفاده می‌کنند، پس گزارش‌های تاریخی تغییر نمی‌کنند.
         """
         form = await self.db.get(EvaluationForm, form_id)
         if form is None:
@@ -91,12 +103,11 @@ class EvaluationFormService:
 
     async def activate_form(self, form_id: int) -> EvaluationForm:
         """
-        فرم را از draft به active می‌برد - فقط اگر مجموع وزن‌ها معتبر
-        باشد (validate_form_weights). این تنها لحظه‌ای است که وزن‌ها
-        اعتبارسنجی می‌شوند - نه هنگام ذخیره تک‌تک سوالات (که هنوز ممکن
-        است فرم ناقص باشد).
+        فرم را active می‌کند، به شرط معتبر بودن وزن‌ها (validate_form_weights)؛ در غیر این صورت
+        EvaluationFormError با فهرست خطاها. وزن‌ها فقط در همین لحظه اعتبارسنجی می‌شوند.
         """
         form = await self.get_full_form(form_id)
+        # تبدیل ساختار فرم به dict ساده برای تابع اعتبارسنجی وزن‌ها
         categories_data = [
             {
                 "title": c.title,
@@ -117,6 +128,7 @@ class EvaluationFormService:
         return form
 
     async def update_form_status(self, form_id: int, status: str) -> EvaluationForm:
+        """وضعیت فرم را تغییر می‌دهد؛ active از مسیر activate_form می‌رود. وضعیت نامعتبر: EvaluationFormError."""
         if status == EvaluationFormStatus.active.value:
             return await self.activate_form(form_id)
         form = await self.db.get(EvaluationForm, form_id)
@@ -131,6 +143,7 @@ class EvaluationFormService:
         return form
 
     async def delete_form(self, form_id: int) -> None:
+        """فرم draft را حذف می‌کند؛ برای فرم غیر draft EvaluationFormError (باید بایگانی شود)."""
         form = await self.db.get(EvaluationForm, form_id)
         if form is None:
             return
@@ -143,10 +156,8 @@ class EvaluationFormService:
 
     async def duplicate_as_new_version(self, form_id: int) -> EvaluationForm:
         """
-        Form Versioning: از یک فرم فعال/بایگانی، یک نسخه جدید (Draft، با
-        version افزایش‌یافته و parent_form_id به این فرم) می‌سازد - فرم
-        اصلی دست‌نخورده باقی می‌ماند (تاریخچه ارزیابی‌های قبلی‌اش سالم
-        می‌ماند)، ویرایش‌های بعدی روی نسخه جدید انجام می‌شود.
+        از فرم داده‌شده یک نسخه جدید draft (version+1، parent_form_id=فرم اصلی) با کپی کامل
+        دسته‌بندی‌ها، سوالات و گزینه‌ها می‌سازد؛ فرم اصلی دست‌نخورده می‌ماند. خروجی: فرم کامل جدید.
         """
         original = await self.get_full_form(form_id)
         new_form = EvaluationForm(
@@ -159,8 +170,9 @@ class EvaluationFormService:
             created_by_user_id=original.created_by_user_id,
         )
         self.db.add(new_form)
-        await self.db.flush()
+        await self.db.flush()  # برای گرفتن new_form.id
 
+        # کپی دسته‌بندی‌ها، و درون هر کدام سوالات و گزینه‌ها
         for category in original.categories:
             new_category = EvaluationCategory(
                 form_id=new_form.id,
@@ -170,7 +182,7 @@ class EvaluationFormService:
                 is_active=category.is_active,
             )
             self.db.add(new_category)
-            await self.db.flush()
+            await self.db.flush()  # برای گرفتن new_category.id
 
             for question in category.questions:
                 new_question = EvaluationQuestion(
@@ -184,7 +196,7 @@ class EvaluationFormService:
                     is_active=question.is_active,
                 )
                 self.db.add(new_question)
-                await self.db.flush()
+                await self.db.flush()  # برای گرفتن new_question.id
 
                 for option in question.options:
                     self.db.add(
@@ -202,6 +214,7 @@ class EvaluationFormService:
     # ---------- دسته‌بندی ----------
 
     async def add_category(self, form_id: int, data: dict) -> EvaluationCategory:
+        """دسته‌بندی جدید به فرم draft اضافه می‌کند و آن را همراه سوالات برمی‌گرداند؛ فرم غیر draft: EvaluationFormError."""
         form = await self.db.get(EvaluationForm, form_id)
         if form is None:
             raise EvaluationFormError("فرم ارزیابی موردنظر یافت نشد")
@@ -215,6 +228,7 @@ class EvaluationFormService:
         return await self._get_category_with_questions(category_id)
 
     async def update_category(self, category_id: int, data: dict) -> EvaluationCategory:
+        """فیلدهای دسته‌بندی را به‌روز می‌کند و آن را همراه سوالات برمی‌گرداند؛ اگر نباشد EvaluationFormError."""
         category = await self.db.get(EvaluationCategory, category_id)
         if category is None:
             raise EvaluationFormError("دسته‌بندی موردنظر یافت نشد")
@@ -225,11 +239,8 @@ class EvaluationFormService:
 
     async def _get_category_with_questions(self, category_id: int) -> EvaluationCategory:
         """
-        ⚠️ EvaluationCategoryOut شامل questions تودرتو است - بدون
-        selectinload صریح، دسترسی به آن در یک Session ناهمگام خطای
-        MissingGreenlet می‌دهد (دقیقاً همان باگی که باعث صفحه سفید در
-        «ساختار ارزیابی» شده بود - همان دسته اشتباه، این‌جا هم تکرار
-        شده بود).
+        دسته‌بندی را همراه سوالات و گزینه‌ها با selectinload صریح می‌خواند؛ EvaluationCategoryOut
+        شامل questions تودرتو است و بارگذاری تنبل در Session ناهمگام خطای MissingGreenlet می‌دهد.
         """
         result = await self.db.execute(
             select(EvaluationCategory)
@@ -239,6 +250,7 @@ class EvaluationFormService:
         return result.scalar_one()
 
     async def delete_category(self, category_id: int) -> None:
+        """دسته‌بندی (همراه سوالاتش) را حذف می‌کند؛ فقط اگر فرم draft باشد، وگرنه EvaluationFormError."""
         category = await self.db.get(EvaluationCategory, category_id)
         if category is None:
             return
@@ -251,15 +263,17 @@ class EvaluationFormService:
     # ---------- سوال ----------
 
     async def add_question(self, category_id: int, data: dict, options: list[dict]) -> EvaluationQuestion:
+        """ورودی: دسته‌بندی، فیلدهای سوال و فهرست گزینه‌ها. سوال و گزینه‌ها را ذخیره و سوال را همراه گزینه‌ها برمی‌گرداند."""
         category = await self.db.get(EvaluationCategory, category_id)
         if category is None:
             raise EvaluationFormError("دسته‌بندی موردنظر یافت نشد")
         question = EvaluationQuestion(category_id=category_id, **data)
         self.db.add(question)
-        await self.db.flush()
+        await self.db.flush()  # برای گرفتن question.id
         for option_data in options:
             self.db.add(EvaluationQuestionOption(question_id=question.id, **option_data))
         await self.db.commit()
+        # بارگذاری مجدد سوال همراه گزینه‌ها برای خروجی
         result = await self.db.execute(
             select(EvaluationQuestion)
             .options(selectinload(EvaluationQuestion.options))
@@ -268,11 +282,16 @@ class EvaluationFormService:
         return result.scalar_one()
 
     async def update_question(self, question_id: int, data: dict, options: list[dict] | None) -> EvaluationQuestion:
+        """
+        فیلدهای سوال را به‌روز می‌کند؛ اگر options داده شود، همه گزینه‌های قبلی حذف و گزینه‌های جدید جایگزین می‌شوند.
+        خروجی: سوال همراه گزینه‌ها؛ اگر سوال نباشد EvaluationFormError.
+        """
         question = await self.db.get(EvaluationQuestion, question_id)
         if question is None:
             raise EvaluationFormError("سوال موردنظر یافت نشد")
         for key, value in data.items():
             setattr(question, key, value)
+        # جایگزینی کامل گزینه‌ها: حذف قبلی‌ها، flush (برای رهایی از UniqueConstraint روی sort_order)، سپس درج جدیدها
         if options is not None:
             existing_result = await self.db.execute(
                 select(EvaluationQuestionOption).where(EvaluationQuestionOption.question_id == question_id)
@@ -283,6 +302,7 @@ class EvaluationFormService:
             for option_data in options:
                 self.db.add(EvaluationQuestionOption(question_id=question_id, **option_data))
         await self.db.commit()
+        # بارگذاری مجدد سوال همراه گزینه‌ها برای خروجی
         result = await self.db.execute(
             select(EvaluationQuestion)
             .options(selectinload(EvaluationQuestion.options))
@@ -291,6 +311,7 @@ class EvaluationFormService:
         return result.scalar_one()
 
     async def delete_question(self, question_id: int) -> None:
+        """سوال را (همراه گزینه‌ها) حذف می‌کند؛ سوال ناموجود بی‌اثر است."""
         question = await self.db.get(EvaluationQuestion, question_id)
         if question is None:
             return

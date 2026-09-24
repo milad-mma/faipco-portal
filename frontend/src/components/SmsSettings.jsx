@@ -15,22 +15,21 @@ import SmsOutlinedIcon from "@mui/icons-material/SmsOutlined";
 import { fetchSmsSettings, testSmsSettings, updateSmsSettings } from "../api/system";
 
 /**
- * تنظیمات پیامک (ippanel Edge API) - برای «فراموشی رمز عبور از طریق
- * پیامک» (کد تأیید ۶ رقمی).
- *
- * API Key هرگز از سرور برنمی‌گردد (فقط has_api_key بولی) - خالی‌گذاشتن
- * فیلد در فرم یعنی «مقدار قبلی حفظ شود».
+ * فرم تنظیمات پیامک (ippanel Edge API) برای «فراموشی رمز عبور از طریق پیامک» (کد تأیید ۶ رقمی).
+ * بدون ورودی (props)؛ تنظیمات را از سرور می‌خواند، ذخیره می‌کند و امکان ارسال پیامک آزمایشی دارد.
+ * API Key هرگز از سرور برنمی‌گردد (فقط has_api_key بولی)؛ خالی گذاشتن فیلد یعنی مقدار قبلی حفظ شود.
  */
 export default function SmsSettings() {
-  const [settings, setSettings] = useState(null);
-  const [form, setForm] = useState(null);
-  const [error, setError] = useState("");
-  const [saveResult, setSaveResult] = useState(null);
+  const [settings, setSettings] = useState(null);  // آخرین تنظیمات ذخیره‌شده‌ی سرور (برای has_api_key)
+  const [form, setForm] = useState(null);  // مقادیر در حال ویرایش؛ null = هنوز بارگذاری نشده
+  const [error, setError] = useState("");  // خطای دریافت اولیه؛ در صورت وجود فقط همین نمایش داده می‌شود
+  const [saveResult, setSaveResult] = useState(null);  // نتیجه‌ی ذخیره: { success, message } | null
   const [isSaving, setIsSaving] = useState(false);
-  const [testMobile, setTestMobile] = useState("");
-  const [testResult, setTestResult] = useState(null);
+  const [testMobile, setTestMobile] = useState("");  // شماره موبایل مقصد پیامک آزمایشی
+  const [testResult, setTestResult] = useState(null);  // نتیجه‌ی ارسال آزمایشی: { success, message } | null
   const [isTesting, setIsTesting] = useState(false);
 
+  // دریافت تنظیمات هنگام mount؛ فیلد API Key در فرم خالی شروع می‌شود
   useEffect(() => {
     fetchSmsSettings()
       .then((data) => {
@@ -40,10 +39,12 @@ export default function SmsSettings() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }, []);
 
+  // ادغام تغییرات جزئی در فرم
   function updateForm(patch) {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  // ذخیره‌ی تنظیمات؛ اگر API Key خالی باشد از payload حذف می‌شود تا مقدار قبلی سرور بماند
   async function handleSave() {
     setIsSaving(true);
     setSaveResult(null);
@@ -61,6 +62,7 @@ export default function SmsSettings() {
     }
   }
 
+  // ارسال پیامک آزمایشی به شماره‌ی واردشده و نمایش نتیجه
   async function handleTest() {
     setIsTesting(true);
     setTestResult(null);
@@ -93,11 +95,13 @@ export default function SmsSettings() {
         برای «فراموشی رمز عبور از طریق پیامک» استفاده می‌شود.
       </Typography>
 
+      {/* فعال/غیرفعال کردن ارسال پیامک */}
       <FormControlLabel
         control={<Checkbox checked={form.enabled} onChange={(e) => updateForm({ enabled: e.target.checked })} />}
         label="ارسال پیامک فعال باشد"
       />
 
+      {/* فیلدهای تنظیمات فقط در حالت فعال */}
       {form.enabled && (
         <Stack spacing={2} sx={{ pr: 3 }}>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
@@ -120,6 +124,7 @@ export default function SmsSettings() {
             />
           </Stack>
 
+          {/* روش ارسال: الگو (Pattern) یا متن آزاد (Webservice) */}
           <TextField
             select
             size="small"
@@ -132,6 +137,7 @@ export default function SmsSettings() {
             <MenuItem value="webservice">متن آزاد (Webservice)</MenuItem>
           </TextField>
 
+          {/* در حالت الگو کد الگو، در حالت متن آزاد قالب متن پیام با {code} */}
           {form.sending_type === "pattern" ? (
             <TextField
               size="small"
@@ -153,6 +159,7 @@ export default function SmsSettings() {
             />
           )}
 
+          {/* ارسال پیامک آزمایشی */}
           {testResult && <Alert severity={testResult.success ? "success" : "error"}>{testResult.message}</Alert>}
           <Stack direction="row" spacing={1.5} alignItems="center">
             <TextField
@@ -176,6 +183,7 @@ export default function SmsSettings() {
         </Stack>
       )}
 
+      {/* نتیجه‌ی ذخیره و دکمه‌ی ذخیره */}
       {saveResult && <Alert severity={saveResult.success ? "success" : "error"}>{saveResult.message}</Alert>}
 
       <Box>

@@ -2,19 +2,20 @@ import { Box } from "@mui/material";
 import { useBranding } from "../context/BrandingContext";
 
 /**
- * لوگوی یک «جای نمایش» طبق تنظیمات همان جا (تنظیمات سامانه ← برندینگ):
- * منبع لوگو (پیش‌فرض/اختصاصی/هیچ)، اندازه موبایل و دسکتاپ، مقیاس، و قاب.
- *
- * مقیاس (logo_scale) فقط خودِ تصویر را داخل کادرش بزرگ/کوچک می‌کند و چیدمان
- * صفحه را به هم نمی‌زند (برای لوگوهایی با حاشیه سفید زیاد یا خیلی فشرده).
- *
- * override: برای پیش‌نمایش زنده در صفحه تنظیمات (مقادیر ذخیره‌نشده).
+ * لوگوی یک «جای نمایش» (surface) طبق تنظیمات برندینگ همان جا:
+ * منبع لوگو (پیش‌فرض/اختصاصی/هیچ)، اندازه‌ی موبایل و دسکتاپ، مقیاس و قاب.
+ * ورودی: surface (کلید جای نمایش)، alt، override (مقادیر ذخیره‌نشده برای پیش‌نمایش زنده)،
+ * previewLogoUrl (آدرس موقت لوگوی انتخاب‌شده برای پیش‌نمایش) و sx (استایل اضافه روی کادر بیرونی).
+ * خروجی: تصویر لوگو (با یا بدون قاب)، یا null اگر منبع لوگو «هیچ» باشد.
+ * مقیاس (logo_scale) فقط خود تصویر را داخل کادرش بزرگ/کوچک می‌کند و چیدمان صفحه را تغییر نمی‌دهد.
+ * این فایل توابع کمکی surfaceTitleSx و desktopPanelBackground را هم export می‌کند.
  */
 export default function BrandLogo({ surface, alt = "", override, previewLogoUrl, sx }) {
   const branding = useBranding();
-  const cfg = { ...(branding.surfaces?.[surface] || {}), ...(override || {}) };
+  const cfg = { ...(branding.surfaces?.[surface] || {}), ...(override || {}) }; // تنظیمات ذخیره‌شده + مقادیر پیش‌نمایش
   if (cfg.logo_source === "none") return null;
 
+  // انتخاب آدرس تصویر: پیش‌نمایش ← لوگوی اختصاصی این جای نمایش ← لوگوی پیش‌فرض (کوچک یا اصلی)
   let src = previewLogoUrl;
   if (!src) {
     if (cfg.logo_source === "custom" && branding.surfaceLogoUrls?.[surface]) {
@@ -25,7 +26,8 @@ export default function BrandLogo({ surface, alt = "", override, previewLogoUrl,
   }
 
   const size = { xs: cfg.logo_size_mobile, md: cfg.logo_size_desktop };
-  const scale = (cfg.logo_scale || 100) / 100;
+  const scale = (cfg.logo_scale || 100) / 100; // درصد مقیاس به ضریب
+  // تصویر لوگو؛ در صورت خطای بارگذاری یک‌بار به لوگوی پیش‌فرض /faipco-logo.png برمی‌گردد
   const img = (
     <Box
       component="img"
@@ -47,9 +49,11 @@ export default function BrandLogo({ surface, alt = "", override, previewLogoUrl,
     />
   );
 
+  // بدون قاب: فقط کادر ساده دور تصویر
   if (cfg.frame === "none") return <Box sx={{ flexShrink: 0, ...sx }}>{img}</Box>;
 
-  const pad = cfg.frame_padding || 0;
+  const pad = cfg.frame_padding || 0; // فاصله‌ی داخلی قاب که به اندازه‌ی لوگو اضافه می‌شود
+  // قاب دایره یا مربع گردگوشه با رنگ پس‌زمینه‌ی قابل‌تنظیم
   return (
     <Box
       sx={{
@@ -82,7 +86,7 @@ export function surfaceTitleSx(cfg, kind = "title") {
   };
 }
 
-/** پس‌زمینه پنل کناری دسکتاپ ورود: یک رنگ ساده هم به‌شکل gradient تا کنار بافت نقطه‌ای بنشیند */
+/** پس‌زمینه‌ی پنل کناری دسکتاپ ورود؛ رنگ ساده هم به شکل gradient برگردانده می‌شود تا در کنار لایه‌ی بافت نقطه‌ای (چند لایه background) معتبر باشد */
 export function desktopPanelBackground(background) {
   const value = background || "linear-gradient(145deg,#3476ad 0%,#2b91a5 100%)";
   return value.includes("gradient") ? value : `linear-gradient(${value}, ${value})`;

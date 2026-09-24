@@ -2,26 +2,21 @@
 سرویس «اطلاعیه فیش حقوقی» (Payroll Notice).
 
 جریان کار create_payroll_notice:
-1. فایل آپلودشده Parse می‌شود — بر اساس پسوند فایل، Parser مناسب انتخاب
-   می‌شود (XML یا XLSX؛ هر دو کاملاً Generic و مستقل از نام فایل/ساختار
-   دقیق سازمانی). خروجی هر دو یکسان است (ParsedReceiptItem از
-   payroll_common.py) پس بقیه این فایل کاملاً مستقل از فرمت ورودی است.
+1. فایل آپلودشده Parse می‌شود؛ Parser بر اساس پسوند انتخاب می‌شود (XML یا XLSX).
+   خروجی هر دو ParsedReceiptItem (payroll_common.py) است، پس بقیه‌ی این فایل
+   مستقل از فرمت ورودی است.
 2. کد هر رکورد با Employee.personnel_code در کل سیستم تطبیق داده می‌شود
-   (نه فقط یک Site خاص — چون فایل ورودی اطلاعاتی از Site ندارد).
-3. فقط پرسنلی که کدشان پیدا شود، هدف اطلاعیه (NoticeTarget از نوع employee)
-   می‌شوند — دقیقاً طبق درخواست: انتخاب مخاطب کاملاً خودکار و از روی فایل
-   است، نه دستی.
-4. برای هر پرسنل منطبق، یک PayrollReceipt جداگانه (فقط فیلدهای خودش) ذخیره
-   می‌شود — هیچ پرسنلی به رکورد پرسنل دیگر دسترسی ندارد (GET .../payroll/mine
-   در notices.py همیشه بر اساس employee_id خودِ کاربر لاگین‌شده فیلتر می‌کند).
-5. کدهایی که در فایل بودند ولی در سیستم پیدا نشدند، در پاسخ گزارش می‌شوند
-   (ارسال نمی‌شوند، نه حذف و نه نادیده گرفته می‌شوند — Admin/acc_manager باید
-   از آن‌ها مطلع شود).
+   (نه یک Site خاص، چون فایل ورودی اطلاعات Site ندارد).
+3. فقط پرسنلی که کدشان پیدا شود هدف اطلاعیه (NoticeTarget از نوع employee) می‌شوند؛
+   مخاطبان به‌صورت خودکار از روی فایل تعیین می‌شوند، نه دستی.
+4. برای هر پرسنل منطبق یک PayrollReceipt جداگانه (فقط فیلدهای خودش) ذخیره می‌شود؛
+   GET .../payroll/mine در notices.py همیشه با employee_id کاربر لاگین‌شده فیلتر می‌کند.
+5. کدهایی که در فایل بودند ولی در سیستم پیدا نشدند در پاسخ گزارش می‌شوند
+   تا Admin/acc_manager از آن‌ها مطلع شود.
 
-نکته طراحی مهم: بر خلاف create_notice معمولی، اینجا از _can_target عبور
-نمی‌کنیم — مجوز یکتای notices.payroll (چک‌شده در Endpoint) برای ارسال به
-هر پرسنلی که در فایل باشد کافی است؛ چون کل فلسفه این قابلیت «مخاطب از روی
-داده، نه انتخاب دستی Site/Department» است.
+برخلاف create_notice معمولی، اینجا _can_target بررسی نمی‌شود: مجوز notices.payroll
+(که در Endpoint چک می‌شود) برای ارسال به هر پرسنلی که در فایل باشد کافی است،
+چون مخاطبان از روی داده تعیین می‌شوند نه انتخاب دستی Site/Department.
 """
 from __future__ import annotations
 
@@ -40,14 +35,17 @@ from app.services.payroll_common import ParsedReceiptItem, PayrollParseError
 from app.services.payroll_xlsx import parse_salary_receipt_items_xlsx
 from app.services.payroll_xml import parse_salary_receipt_items
 
-# سازگاری با کدهای قدیمی‌تر که مستقیماً PayrollXmlError را از این فایل Import می‌کردند
+# نام مستعار PayrollParseError برای کدهایی که PayrollXmlError را از این ماژول Import می‌کنند
 PayrollXmlError = PayrollParseError
 
-_XLSX_EXTENSIONS = (".xlsx", ".xlsm")
+_XLSX_EXTENSIONS = (".xlsx", ".xlsm")  # پسوندهایی که با Parser اکسل خوانده می‌شوند
 
 
 def parse_payroll_file(filename: str, file_bytes: bytes) -> list[ParsedReceiptItem]:
-    """بر اساس پسوند فایل، Parser مناسب را انتخاب می‌کند. اگر پسوند ناشناخته بود، XML امتحان می‌شود (فرمت پیش‌فرض)."""
+    """
+    ورودی: نام و بایت‌های فایل. Parser را بر اساس پسوند انتخاب می‌کند (پسوند ناشناخته = XML).
+    خروجی: لیست ParsedReceiptItem؛ در خطای پارس PayrollParseError.
+    """
     lower_name = (filename or "").lower()
     if lower_name.endswith(_XLSX_EXTENSIONS):
         return parse_salary_receipt_items_xlsx(file_bytes)
@@ -56,14 +54,18 @@ def parse_payroll_file(filename: str, file_bytes: bytes) -> list[ParsedReceiptIt
 
 @dataclass
 class PayrollNoticeResult:
+    """نتیجه‌ی ساخت اطلاعیه فیش: اطلاعیه، تعداد پرسنل منطبق، کدهای پیدانشده و تعداد ردیف‌های بدون کد."""
     notice: Notice
     matched_employee_count: int
-    missing_codes: list[str] = field(default_factory=list)
+    missing_codes: list[str] = field(default_factory=list)  # کدهای موجود در فایل که پرسنلی با آن‌ها پیدا نشد
     invalid_row_count: int = 0  # ردیف‌هایی که اصلاً کد پرسنلی نداشتند
+    out_of_scope_codes: list[str] = field(default_factory=list)  # کدهایی که فقط در سایت‌های غیرمجاز فرستنده پرسنل دارند
 
 
 class PayrollNoticeService:
+    """ساخت اطلاعیه‌ی فیش حقوقی از روی فایل و واکشی فیش خودِ پرسنل."""
     def __init__(self, db: AsyncSession):
+        """ورودی: Session دیتابیس async."""
         self.db = db
 
     async def create_payroll_notice(
@@ -74,21 +76,38 @@ class PayrollNoticeService:
         priority: NoticePriority,
         file_bytes: bytes,
         filename: str = "",
+        site_ids: set[int] | None = None,
     ) -> PayrollNoticeResult:
+        """
+        ورودی: فرستنده، عنوان، متن، اولویت و فایل فیش. اطلاعیه منتشرشده می‌سازد و برای هر
+        پرسنل منطبق یک NoticeTarget و یک PayrollReceipt ثبت می‌کند.
+        site_ids: سایت‌هایی که فرستنده مجوز ارسال فیش برایشان دارد (None = همه)؛ پرسنل بقیه‌ی سایت‌ها فیش نمی‌گیرند.
+        خروجی: PayrollNoticeResult.
+        """
+        # پارس فایل ورودی
         try:
             items = parse_payroll_file(filename, file_bytes)
         except PayrollParseError:
             raise  # پیام قابل‌نمایش همان است — Endpoint مستقیماً 400 برمی‌گرداند
 
+        # کدهای یکتا و شمارش ردیف‌های بدون کد
         codes = {item.code for item in items if item.code}
         invalid_row_count = sum(1 for item in items if not item.code)
 
+        # واکشی یکجای پرسنل‌های منطبق؛ یک کد ممکن است به چند پرسنل برسد
         code_to_employees: dict[str, list[Employee]] = {}
+        out_of_scope: set[str] = set()
         if codes:
             result = await self.db.execute(select(Employee).where(Employee.personnel_code.in_(codes)))
             for emp in result.scalars().all():
+                # پرسنل سایت‌هایی که فرستنده مجوزشان را ندارد کنار گذاشته می‌شوند
+                if site_ids is not None and emp.site_id not in site_ids:
+                    out_of_scope.add(emp.personnel_code)
+                    continue
                 code_to_employees.setdefault(emp.personnel_code, []).append(emp)
+        out_of_scope -= set(code_to_employees)  # کدی که در سایت مجاز هم پرسنل دارد «خارج از محدوده» نیست
 
+        # ساخت اطلاعیه منتشرشده از نوع payroll
         notice = Notice(
             sender_id=sender.id,
             title=title,
@@ -103,29 +122,25 @@ class PayrollNoticeService:
 
         now = datetime.now(timezone.utc)
         missing_codes: list[str] = []
-        # employee_id -> (code, fields) — اگر کدی در چند ردیف XML تکرار شده
-        # باشد، آخرین ردیف جایگزین قبلی می‌شود (به‌جای این‌که دو رکورد PayrollReceipt
-        # با همان notice_id+employee_id بسازیم که Unique Constraint را نقض می‌کند).
+        # employee_id -> (code, fields) — اگر کدی در چند ردیف فایل تکرار شده باشد،
+        # آخرین ردیف جایگزین قبلی می‌شود تا Unique Constraint (notice_id, employee_id) نقض نشود.
         employee_receipt_data: dict[int, tuple[str, list[dict]]] = {}
 
+        # تطبیق هر ردیف با پرسنل و ثبت کدهای پیدانشده
         for item in items:
             if not item.code:
                 continue
             employees = code_to_employees.get(item.code)
             if not employees:
-                missing_codes.append(item.code)
+                if item.code not in out_of_scope:
+                    missing_codes.append(item.code)
                 continue
             for employee in employees:
                 employee_receipt_data[employee.id] = (item.code, item.fields)
 
         for employee_id, (code, fields) in employee_receipt_data.items():
-            # نکته مهم: مستقیماً notice.targets.append(...) استفاده نمی‌شود —
-            # در AsyncSession، دسترسی به یک Relationship که هنوز در حافظه
-            # Load نشده (حتی روی یک شیء تازه‌ساخته‌شده بعد از flush) می‌تواند
-            # باعث خطای MissingGreenlet شود (چون SQLAlchemy async نمی‌تواند
-            # Lazy-Load را بیرون از یک Await مدیریت‌شده انجام دهد). به‌جایش
-            # مستقیماً یک NoticeTarget با notice_id مشخص به Session اضافه
-            # می‌شود — کاملاً معادل، ولی هیچ Relationship ای را Touch نمی‌کند.
+            # NoticeTarget مستقیماً با notice_id به Session اضافه می‌شود (نه notice.targets.append)
+            # چون دسترسی به Relationship بارگذاری‌نشده در AsyncSession باعث MissingGreenlet می‌شود.
             self.db.add(
                 NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=employee_id)
             )
@@ -146,13 +161,13 @@ class PayrollNoticeService:
             matched_employee_count=len(employee_receipt_data),
             missing_codes=sorted(set(missing_codes)),
             invalid_row_count=invalid_row_count,
+            out_of_scope_codes=sorted(out_of_scope),
         )
 
     async def get_my_receipt(self, notice_id: int, employee_id: int) -> PayrollReceipt | None:
         """
-        فقط رکورد متعلق به همین employee_id را برمی‌گرداند — این تنها نقطه‌ی
-        دسترسی به PayrollReceipt در کل برنامه است و همیشه با employee_id
-        خودِ کاربر لاگین‌شده فراخوانی می‌شود (هرگز با ورودی از کاربر دیگر).
+        ورودی: شناسه اطلاعیه و employee_id کاربر لاگین‌شده.
+        خروجی: فیش همان پرسنل در آن اطلاعیه یا None؛ این تنها نقطه‌ی دسترسی به PayrollReceipt است.
         """
         result = await self.db.execute(
             select(PayrollReceipt).where(

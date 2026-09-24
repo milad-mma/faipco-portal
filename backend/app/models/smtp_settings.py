@@ -1,9 +1,9 @@
 """
 مدل تنظیمات SMTP (ارسال ایمیل) - یک ردیف واحد (Singleton، id همیشه ۱)،
-چون این یک تنظیم سراسری سرور است، دقیقاً مثل BackupSettings.
+چون این یک تنظیم سراسری سرور است، مثل BackupSettings.
 
 کاربرد: «فراموشی رمز عبور» (ارسال لینک بازنشانی) و «ارسال بکاپ به ایمیل».
-رمز عبور SMTP هرگز خام ذخیره نمی‌شود - فقط رمزنگاری‌شده، با همان
+رمز عبور SMTP هرگز خام ذخیره نمی‌شود - فقط رمزنگاری‌شده، با
 app.core.security.encrypt_secret/decrypt_secret.
 """
 from __future__ import annotations
@@ -17,12 +17,14 @@ from app.db.session import Base
 
 
 class SmtpEncryptionMode(str, enum.Enum):
+    """نوع رمزنگاری اتصال به سرور SMTP."""
     none = "none"  # بدون رمزنگاری (فقط برای سرورهای داخلی/محلی توصیه می‌شود)
     starttls = "starttls"  # رایج‌ترین حالت - معمولاً پورت ۵۸۷
     ssl = "ssl"  # اتصال مستقیم رمزنگاری‌شده - معمولاً پورت ۴۶۵
 
 
 class SmtpSettings(Base):
+    """تنظیمات سراسری سرور SMTP و قالب ایمیل بازنشانی رمز (تک‌ردیفی)."""
     __tablename__ = "smtp_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -31,7 +33,7 @@ class SmtpSettings(Base):
     host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     port: Mapped[int] = mapped_column(Integer, default=587, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    password_encrypted: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    password_encrypted: Mapped[str | None] = mapped_column(String(500), nullable=True)  # رمز SMTP به‌صورت رمزنگاری‌شده
     from_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     encryption_mode: Mapped[SmtpEncryptionMode] = mapped_column(
@@ -40,6 +42,6 @@ class SmtpSettings(Base):
 
     # قالب‌های قابل‌شخصی‌سازی ایمیل «فراموشی رمز عبور» - {reset_link} در متن
     # با لینک واقعی (حاوی توکن) جایگزین می‌شود؛ اگر خالی باشند، یک قالب
-    # پیش‌فرض معقول در password_reset_service.py استفاده می‌شود.
+    # پیش‌فرض در password_reset_service.py استفاده می‌شود.
     password_reset_email_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_reset_email_body: Mapped[str | None] = mapped_column(String(4000), nullable=True)

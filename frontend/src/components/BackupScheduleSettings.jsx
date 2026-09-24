@@ -21,33 +21,35 @@ import {
   updateBackupSettings,
 } from "../api/backup";
 
+// نام روزهای هفته به ترتیب اندیس مورد انتظار Backend
 const WEEKDAY_LABELS = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]; // ۰=دوشنبه...۶=یکشنبه
 
 /**
- * تنظیمات «زمان‌بندی بکاپ + ارسال خودکار به سرور راه‌دور (SMB/FTP)» -
- * بخشی مستقل از صفحه پشتیبان‌گیری (که خودش دستی export/restore است).
- *
- * رمزهای عبور SMB/FTP هرگز از سرور برنمی‌گردند (فقط smb_has_password/
- * ftp_has_password بولی) - در فرم، خالی‌گذاشتن فیلد رمز یعنی «رمز قبلی
- * حفظ شود»؛ برای وارد‌کردن رمز جدید، باید صریحاً تایپ شود.
+ * تنظیمات «زمان‌بندی بکاپ خودکار و ارسال به مقصد راه‌دور (SMB / FTP / ایمیل)»؛
+ * بخشی مستقل در صفحه‌ی پشتیبان‌گیری (کنار export/restore دستی).
+ * بدون ورودی (props). فرم زمان‌بندی، مقصدها، سیاست نگهداری و دکمه‌های ذخیره/اجرای فوری را رسم می‌کند.
+ * رمزهای SMB/FTP هرگز از سرور برنمی‌گردند (فقط smb_has_password/ftp_has_password بولی)؛
+ * خالی گذاشتن فیلد رمز یعنی رمز قبلی حفظ شود.
  */
 export default function BackupScheduleSettings() {
-  const [settings, setSettings] = useState(null);
-  const [form, setForm] = useState(null);
-  const [error, setError] = useState("");
-  const [saveResult, setSaveResult] = useState(null);
+  const [settings, setSettings] = useState(null); // آخرین تنظیمات ذخیره‌شده در سرور (برای وضعیت آخرین اجرا و has_password)
+  const [form, setForm] = useState(null); // مقادیر در حال ویرایش فرم (رمزها همیشه خالی شروع می‌شوند)
+  const [error, setError] = useState(""); // خطای بارگذاری اولیه
+  const [saveResult, setSaveResult] = useState(null); // {success, message} نتیجه‌ی ذخیره
   const [isSaving, setIsSaving] = useState(false);
-  const [smbTestResult, setSmbTestResult] = useState(null);
-  const [ftpTestResult, setFtpTestResult] = useState(null);
+  const [smbTestResult, setSmbTestResult] = useState(null); // {success, message} نتیجه‌ی تست SMB
+  const [ftpTestResult, setFtpTestResult] = useState(null); // {success, message} نتیجه‌ی تست FTP
   const [isTestingSmb, setIsTestingSmb] = useState(false);
   const [isTestingFtp, setIsTestingFtp] = useState(false);
   const [isRunningNow, setIsRunningNow] = useState(false);
-  const [runNowResult, setRunNowResult] = useState(null);
+  const [runNowResult, setRunNowResult] = useState(null); // {success, message} نتیجه‌ی اجرای فوری
 
+  // بارگذاری تنظیمات هنگام mount
   useEffect(() => {
     loadSettings();
   }, []);
 
+  // دریافت تنظیمات از سرور و مقداردهی فرم با رمزهای خالی
   function loadSettings() {
     fetchBackupSettings()
       .then((data) => {
@@ -57,10 +59,12 @@ export default function BackupScheduleSettings() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }
 
+  // ادغام تغییرات جزئی در فرم
   function updateForm(patch) {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  // ذخیره‌ی تنظیمات؛ فیلدهای رمز خالی از payload حذف می‌شوند تا رمز قبلی در سرور حفظ شود
   async function handleSave() {
     setIsSaving(true);
     setSaveResult(null);
@@ -79,6 +83,7 @@ export default function BackupScheduleSettings() {
     }
   }
 
+  // تست اتصال SMB با مقادیر فعلی فرم؛ رمز خالی ارسال نمی‌شود (undefined) تا سرور از رمز ذخیره‌شده استفاده کند
   async function handleTestSmb() {
     setIsTestingSmb(true);
     setSmbTestResult(null);
@@ -99,6 +104,7 @@ export default function BackupScheduleSettings() {
     }
   }
 
+  // تست اتصال FTP با مقادیر فعلی فرم؛ رمز خالی ارسال نمی‌شود (undefined)
   async function handleTestFtp() {
     setIsTestingFtp(true);
     setFtpTestResult(null);
@@ -119,6 +125,7 @@ export default function BackupScheduleSettings() {
     }
   }
 
+  // اجرای فوری بکاپ و ارسال به مقصدها؛ سپس تنظیمات دوباره خوانده می‌شود تا وضعیت آخرین اجرا به‌روز شود
   async function handleRunNow() {
     setIsRunningNow(true);
     setRunNowResult(null);
@@ -133,6 +140,7 @@ export default function BackupScheduleSettings() {
     }
   }
 
+  // خطای بارگذاری یا لودر تا آماده شدن فرم
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!form) {
     return (
@@ -149,6 +157,7 @@ export default function BackupScheduleSettings() {
         زمان‌بندی بکاپ خودکار و ارسال به سرور راه‌دور
       </Typography>
 
+      {/* وضعیت آخرین اجرای بکاپ */}
       {settings?.last_run_at && (
         <Alert severity={settings.last_run_success ? "success" : "error"}>
           آخرین اجرا: {new Date(settings.last_run_at).toLocaleString("fa-IR")} —{" "}
@@ -156,6 +165,7 @@ export default function BackupScheduleSettings() {
         </Alert>
       )}
 
+      {/* بخش زمان‌بندی: روزانه/هفتگی (ساعت و دقیقه، و روز هفته) یا هر چند ساعت یک‌بار */}
       <Stack spacing={2}>
         <FormControlLabel
           control={
@@ -238,6 +248,7 @@ export default function BackupScheduleSettings() {
 
       <Divider />
 
+      {/* مقصد SMB Share: آدرس، Share، مسیر، اعتبارنامه و تست اتصال */}
       <Stack spacing={2}>
         <FormControlLabel
           control={
@@ -316,6 +327,7 @@ export default function BackupScheduleSettings() {
 
       <Divider />
 
+      {/* مقصد FTP/FTPS: آدرس، پورت، مسیر، اعتبارنامه، TLS و تست اتصال */}
       <Stack spacing={2}>
         <FormControlLabel
           control={
@@ -397,6 +409,7 @@ export default function BackupScheduleSettings() {
 
       <Divider />
 
+      {/* سیاست نگهداری بکاپ‌ها روی سرور راه‌دور: بر اساس تعداد یا تعداد روز */}
       <Stack spacing={2}>
         <Typography variant="body2" fontWeight={700}>
           نگهداری بکاپ‌های قدیمی روی سرور راه‌دور
@@ -439,6 +452,7 @@ export default function BackupScheduleSettings() {
 
       <Divider />
 
+      {/* مقصد ایمیل: فهرست گیرندگان (هر خط یک آدرس) */}
       <Stack spacing={2}>
         <FormControlLabel
           control={
@@ -469,9 +483,11 @@ export default function BackupScheduleSettings() {
         )}
       </Stack>
 
+      {/* نتیجه‌ی ذخیره و اجرای فوری */}
       {saveResult && <Alert severity={saveResult.success ? "success" : "error"}>{saveResult.message}</Alert>}
       {runNowResult && <Alert severity={runNowResult.success ? "success" : "error"}>{runNowResult.message}</Alert>}
 
+      {/* دکمه‌ها؛ اجرای فوری فقط وقتی حداقل یک مقصد فعال باشد */}
       <Stack direction="row" spacing={1.5}>
         <Button
           variant="contained"

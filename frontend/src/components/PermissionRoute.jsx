@@ -2,12 +2,10 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 /**
- * مثل AdminRoute، ولی به‌جای فقط چک‌کردن is_superuser، یک شرط دلخواه
- * (check) روی user می‌گیرد — برای مسیرهایی که مجوزشان مخصوص is_superuser
- * نیست (مثلاً بین چند نقش مشترک است، مثل hr-manager). این هم فقط یک لایه
- * محافظتی در UI است؛ بررسی واقعی امنیتی همیشه در Backend انجام می‌شود —
- * ولی همین لایه UI باعث می‌شود بدون دسترسی، خودِ صفحه اصلاً رندر/باز نشود
- * (نه این‌که باز شود و فقط درخواست‌های API‌اش خطا بدهند).
+ * محافظ مسیر بر اساس یک شرط دلخواه روی کاربر (مشابه AdminRoute ولی نه فقط is_superuser).
+ * ورودی: check (تابعی که user را می‌گیرد و true/false برمی‌گرداند) و children.
+ * خروجی: اگر شرط برقرار باشد children، وگرنه هدایت به /notices؛ بنابراین صفحه‌ی بدون دسترسی اصلاً رندر نمی‌شود.
+ * این فقط لایه‌ی UI است؛ بررسی امنیتی واقعی در Backend انجام می‌شود.
  */
 export default function PermissionRoute({ check, children }) {
   const { user } = useAuth();

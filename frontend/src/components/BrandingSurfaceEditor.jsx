@@ -1,3 +1,9 @@
+/**
+ * ویرایشگر برندینگ یک «جای نمایش» (splash، login، auth، sidebar، profile) در تنظیمات سامانه:
+ * لوگو (پیش‌فرض/اختصاصی/هیچ)، اندازه‌ی موبایل/دسکتاپ، مقیاس، قاب، عنوان و زیرعنوان با اندازه
+ * و رنگ جداگانه، پس‌زمینه و پیش‌نمایش زنده.
+ * شامل کامپوننت‌های کمکی ColorField، SliderField و SurfacePreview.
+ */
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -22,18 +28,15 @@ import { deleteLogo, resetBrandingSurface, updateBranding, updateBrandingSurface
 import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 
-/**
- * ویرایشگر برندینگ یک «جای نمایش» (تنظیمات سامانه) - طبق درخواست کاربر:
- * لوگو (پیش‌فرض/اختصاصی/هیچ)، اندازه موبایل/دسکتاپ، مقیاس، قاب، عنوان و
- * زیرعنوان با اندازه فونت و رنگ جداگانه، پس‌زمینه، و پیش‌نمایش زنده.
- *
- * ذخیره در دو مرحله: متن‌ها با PUT /system/branding (کلیدهای قبلی حفظ شده‌اند)
- * و بقیه با PUT /system/branding/surfaces/{surface}. بعد از ذخیره صفحه رفرش
- * می‌شود تا BrandingContext (که یک‌بار در شروع فچ می‌شود) مقادیر جدید را بگیرد.
- */
+// حداکثر اندازه‌ی لوگو (px) در اسلایدرها به تفکیک جای نمایش
 const SIZE_MAX = { splash: 300, login: 120, auth: 120, sidebar: 80, profile: 160 };
 
+/**
+ * فیلد رنگ: انتخابگر رنگ مرورگر + فیلد متنی برای مقدار دلخواه (hex یا rgba).
+ * ورودی: label، value، onChange و allowEmpty (خالی = رنگ پیش‌فرض تم).
+ */
 function ColorField({ label, value, onChange, allowEmpty }) {
+  // انتخابگر رنگ فقط hex شش‌رقمی می‌پذیرد؛ برای مقادیر دیگر سفید نشان داده می‌شود
   const isHex = /^#[0-9a-fA-F]{6}$/.test(value || "");
   return (
     <Stack direction="row" spacing={1} alignItems="center">
@@ -51,12 +54,13 @@ function ColorField({ label, value, onChange, allowEmpty }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={allowEmpty ? "پیش‌فرض تم" : "#RRGGBB یا rgba(...)"}
         fullWidth
-        inputProps={{ dir: "ltr", style: { textAlign: "left" } }}
+        inputProps={{ dir: "ltr", style: { textAlign: "left" } }} // style درون‌خطی عمداً استفاده شده تا stylis-plugin-rtl آن را برنگرداند و مقدار چپ‌چین بماند
       />
     </Stack>
   );
 }
 
+// اسلایدر عددی با برچسب و نمایش مقدار فعلی به‌همراه واحد
 function SliderField({ label, value, min, max, unit = "px", onChange }) {
   return (
     <Box>
@@ -73,8 +77,13 @@ function SliderField({ label, value, min, max, unit = "px", onChange }) {
   );
 }
 
+/**
+ * پیش‌نمایش زنده‌ی جای نمایش با مقادیر ذخیره‌نشده.
+ * ورودی: surface، cfg (تنظیمات در حال ویرایش)، title، subtitle و previewLogoUrl.
+ * برای login/auth/sidebar لوگو و متن کنار هم (ردیفی) و برای بقیه زیر هم و وسط‌چین نمایش داده می‌شوند.
+ */
 function SurfacePreview({ surface, cfg, title, subtitle, previewLogoUrl }) {
-  const dark = cfg.title_color && cfg.title_color.toLowerCase().startsWith("#f");
+  const dark = cfg.title_color && cfg.title_color.toLowerCase().startsWith("#f"); // رنگ عنوان روشن (#f...) = پس‌زمینه‌ی پیش‌فرض تیره لازم است
   const isRow = surface === "login" || surface === "auth" || surface === "sidebar";
   return (
     <Box
@@ -110,23 +119,33 @@ function SurfacePreview({ surface, cfg, title, subtitle, previewLogoUrl }) {
   );
 }
 
+/**
+ * ویرایشگر اصلی یک جای نمایش.
+ * ورودی: meta (key، label، hint، titleKey و subtitleKey برای کلیدهای متن در تنظیمات برندینگ)،
+ * initialConfig (تنظیمات فعلی جای نمایش)، initialTitle و initialSubtitle.
+ * ذخیره در دو مرحله است: متن‌ها با updateBranding و بقیه با updateBrandingSurface؛ سپس صفحه
+ * رفرش می‌شود تا BrandingContext (که فقط یک‌بار در شروع دریافت می‌شود) مقادیر جدید را بگیرد.
+ */
 export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitle, initialSubtitle }) {
   const branding = useBranding();
-  const [cfg, setCfg] = useState(initialConfig);
+  const [cfg, setCfg] = useState(initialConfig); // تنظیمات در حال ویرایش جای نمایش
   const [title, setTitle] = useState(initialTitle || "");
   const [subtitle, setSubtitle] = useState(initialSubtitle || "");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [logoFile, setLogoFile] = useState(null);
-  const [logoPreview, setLogoPreview] = useState(null);
+  const [message, setMessage] = useState(null); // {severity, text} پیام نتیجه
+  const [logoFile, setLogoFile] = useState(null); // فایل لوگوی انتخاب‌شده که هنوز آپلود نشده
+  const [logoPreview, setLogoPreview] = useState(null); // object URL فایل انتخاب‌شده برای پیش‌نمایش
   const [logoBusy, setLogoBusy] = useState(false);
   const fileRef = useRef(null);
-  const hasCustomLogo = Boolean(branding.surfaceLogoUrls?.[meta.key]);
+  const hasCustomLogo = Boolean(branding.surfaceLogoUrls?.[meta.key]); // آیا لوگوی اختصاصی برای این جای نمایش آپلود شده است
 
+  // همگام‌سازی فرم با تنظیمات اولیه در صورت تغییر آن از والد
   useEffect(() => setCfg(initialConfig), [initialConfig]);
 
+  // سازنده‌ی setter برای یک کلید تنظیمات: set("frame")(value)
   const set = (key) => (value) => setCfg((prev) => ({ ...prev, [key]: value }));
 
+  // ذخیره‌ی متن‌ها (خالی = null یعنی مقدار پیش‌فرض) و تنظیمات جای نمایش، سپس رفرش صفحه
   async function handleSave() {
     setSaving(true);
     setMessage(null);
@@ -144,6 +163,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
     }
   }
 
+  // بازگرداندن تنظیمات این جای نمایش به پیش‌فرض و رفرش صفحه
   async function handleReset() {
     setSaving(true);
     setMessage(null);
@@ -157,6 +177,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
     }
   }
 
+  // آپلود لوگوی اختصاصی، تنظیم منبع لوگو روی custom و رفرش صفحه
   async function handleLogoUpload() {
     if (!logoFile) return;
     setLogoBusy(true);
@@ -172,6 +193,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
     }
   }
 
+  // حذف لوگوی اختصاصی، برگرداندن منبع لوگو به default و رفرش صفحه
   async function handleLogoDelete() {
     setLogoBusy(true);
     try {
@@ -184,7 +206,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
     }
   }
 
-  const sizeMax = SIZE_MAX[meta.key] || 200;
+  const sizeMax = SIZE_MAX[meta.key] || 200; // سقف اسلایدرهای اندازه‌ی لوگو
 
   return (
     <Box>
@@ -195,11 +217,13 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
         {meta.hint}
       </Typography>
 
+      {/* پیش‌نمایش زنده */}
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
         پیش‌نمایش (اندازه دسکتاپ؛ در موبایل اندازه‌های موبایل اعمال می‌شوند)
       </Typography>
       <SurfacePreview surface={meta.key} cfg={cfg} title={title} subtitle={subtitle} previewLogoUrl={logoPreview} />
 
+      {/* بخش لوگو: منبع، آپلود/حذف لوگوی اختصاصی، اندازه‌ها، مقیاس و قاب */}
       <Divider sx={{ my: 2.5 }}>
         <Typography variant="caption">لوگو</Typography>
       </Divider>
@@ -231,6 +255,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
                 accept="image/jpeg,image/png,image/webp,image/svg+xml"
                 hidden
                 onChange={(e) => {
+                  // انتخاب فایل: پیش‌نمایش فوری و تغییر منبع لوگو به custom (آپلود با دکمه‌ی «آپلود»)
                   const f = e.target.files?.[0];
                   if (!f) return;
                   setLogoFile(f);
@@ -249,6 +274,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
             )}
           </Stack>
         </Grid>
+        {/* تنظیمات اندازه و قاب فقط وقتی لوگو نمایش داده می‌شود */}
         {cfg.logo_source !== "none" && (
           <>
             <Grid item xs={12} sm={4}>
@@ -281,6 +307,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
         )}
       </Grid>
 
+      {/* بخش متن‌ها: عنوان و زیرعنوان با نمایش، اندازه، ضخامت و رنگ */}
       <Divider sx={{ my: 2.5 }}>
         <Typography variant="caption">متن‌ها</Typography>
       </Divider>
@@ -298,11 +325,13 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
           <SliderField label="اندازه عنوان (دسکتاپ)" value={cfg.title_size_desktop} min={8} max={64} onChange={set("title_size_desktop")} />
         </Grid>
         <Grid item xs={12} sm={4}>
+          {/* ضخامت فونت به نزدیک‌ترین مضرب ۱۰۰ گرد می‌شود */}
           <SliderField label="ضخامت عنوان" value={cfg.title_weight} min={300} max={900} unit="" onChange={(v) => set("title_weight")(Math.round(v / 100) * 100)} />
         </Grid>
         <Grid item xs={12} sm={6}>
           <ColorField label="رنگ عنوان" value={cfg.title_color} onChange={set("title_color")} allowEmpty />
         </Grid>
+        {/* فیلدهای زیرعنوان فقط برای جای نمایش‌هایی که زیرعنوان دارند */}
         {meta.subtitleKey && (
           <>
             <Grid item xs={12} sm={8}>
@@ -324,6 +353,7 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
         )}
       </Grid>
 
+      {/* بخش پس‌زمینه: مقدار CSS دلخواه (رنگ یا gradient) */}
       <Divider sx={{ my: 2.5 }}>
         <Typography variant="caption">پس‌زمینه</Typography>
       </Divider>
@@ -334,9 +364,10 @@ export default function BrandingSurfaceEditor({ meta, initialConfig, initialTitl
         value={cfg.background || ""}
         onChange={(e) => set("background")(e.target.value)}
         placeholder="مثلاً #1468A7 یا linear-gradient(110deg, #3476ad, #2b91a5) — خالی = پیش‌فرض"
-        inputProps={{ dir: "ltr", style: { textAlign: "left" }, maxLength: 300 }}
+        inputProps={{ dir: "ltr", style: { textAlign: "left" }, maxLength: 300 }} // style درون‌خطی عمداً برای چپ‌چین ماندن (بدون برگردان RTL)
       />
 
+      {/* پیام نتیجه و دکمه‌های ذخیره/بازنشانی */}
       {message && (
         <Alert severity={message.severity} sx={{ mt: 2 }}>
           {message.text}

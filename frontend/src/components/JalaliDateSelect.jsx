@@ -1,25 +1,27 @@
 import { MenuItem, Stack, TextField } from "@mui/material";
 import { gregorianToJalali, jalaliMonthLength, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 
-// چند سال اخیر تا سال جاری شمسی - همان بازه استفاده‌شده در JalaliMonthYearFilter.jsx
+// گزینه‌های سال: چند سال اخیر تا سال جاری شمسی (همان بازه‌ی JalaliMonthYearFilter.jsx)
 const YEARS_BACK = 3;
-const { jy: CURRENT_JALALI_YEAR } = gregorianToJalali(new Date());
+const { jy: CURRENT_JALALI_YEAR } = gregorianToJalali(new Date()); // سال جاری شمسی، یک‌بار هنگام بارگذاری ماژول
 const YEAR_OPTIONS = Array.from({ length: YEARS_BACK + 1 }, (_, i) => CURRENT_JALALI_YEAR - YEARS_BACK + i);
 
 /**
- * انتخاب تاریخ شمسی با سه دراپ‌داون مستقل (روز/ماه/سال) - برای فیلترهای
- * گزارش که یک تاریخ کامل (نه فقط ماه/سال) لازم دارند. مقدار خروجی
- * ({year, month, day}) فقط وقتی هر سه مقدار پر باشند «کامل» تلقی می‌شود؛
- * فراخوان مسئول تصمیم‌گیری درباره مقادیر ناقص است.
+ * انتخاب تاریخ شمسی با سه دراپ‌داون مستقل (روز/ماه/سال) برای فیلترهای گزارش که تاریخ کامل لازم دارند.
+ * ورودی: year، month، day (عدد یا null)، onChange و disabled.
+ * خروجی از طریق onChange: شیء {year, month, day}؛ هر بخش می‌تواند null (—) باشد و
+ * تصمیم درباره‌ی مقادیر ناقص با فراخوان است.
  */
 export default function JalaliDateSelect({ year, month, day, onChange, disabled }) {
-  const dayCount = year && month ? jalaliMonthLength(year, month) : 31;
+  const dayCount = year && month ? jalaliMonthLength(year, month) : 31; // تعداد روزهای ماه انتخابی؛ تا انتخاب سال و ماه ۳۱
   const dayOptions = Array.from({ length: dayCount }, (_, i) => i + 1);
 
+  // تغییر سال با حفظ ماه و روز
   function handleYearChange(newYear) {
     onChange({ year: newYear, month, day });
   }
 
+  // تغییر ماه
   function handleMonthChange(newMonth) {
     // اگر روز انتخاب‌شده از تعداد روزهای ماه جدید بیشتر باشد (مثلاً ۳۱ در
     // ماهی که فقط ۳۰ روز دارد)، به آخرین روز معتبر همان ماه محدود می‌شود.
@@ -27,12 +29,14 @@ export default function JalaliDateSelect({ year, month, day, onChange, disabled 
     onChange({ year, month: newMonth, day: day && day > maxDay ? maxDay : day });
   }
 
+  // تغییر روز
   function handleDayChange(newDay) {
     onChange({ year, month, day: newDay });
   }
 
   return (
     <Stack direction="row" spacing={1}>
+      {/* دراپ‌داون‌های روز، ماه و سال؛ گزینه‌ی «—» مقدار را null می‌کند */}
       <TextField
         select
         size="small"

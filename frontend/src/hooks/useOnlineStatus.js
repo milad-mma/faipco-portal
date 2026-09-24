@@ -1,35 +1,27 @@
+/**
+ * هوک useOnlineStatus: تشخیص وضعیت واقعی اتصال به سرور.
+ * علاوه بر رویدادهای online/offline مرورگر، به صورت دوره‌ای با زمان‌بندی تطبیقی /api/health را بررسی می‌کند
+ * و فقط پس از چند شکست پشت‌سرهم وضعیت آفلاین اعلام می‌شود.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const HEALTH_CHECK_URL = "/api/health";
-const HEALTH_CHECK_INTERVAL_MS = 20_000; // هر ۲۰ ثانیه، وقتی مرورگر می‌گوید آنلاین است، یک‌بار واقعی تأیید می‌شود
-const HEALTH_CHECK_TIMEOUT_MS = 5_000;
+const HEALTH_CHECK_URL = "/api/health"; // مسیر سبک سلامت سرور برای سنجش اتصال واقعی
+const HEALTH_CHECK_INTERVAL_MS = 20_000; // فاصله‌ی بررسی در حالت سالم (وقتی مرورگر آنلاین است)
+const HEALTH_CHECK_TIMEOUT_MS = 5_000; // حداکثر زمان انتظار هر درخواست سلامت
 
-// ⚠️ رفع باگ واقعی (گزارش کاربر: «وسط آپدیت سامانه یکدفعه می‌گوید اتصال
-// اینترنت قطع شده»): یک شکستِ تکیِ درخواست هرگز نباید بلافاصله به معنای
-// «آفلاین» گرفته شود. هنگام آپدیت، install.sh خودِ سرویس بک‌اند را
-// Restart می‌کند و /api/health برای چند ثانیه در دسترس نیست - در حالی که
-// اینترنت کاربر کاملاً سالم است. حالا فقط بعد از چند شکستِ پشت‌سرهم،
-// وضعیت آفلاین اعلام می‌شود.
+// تعداد شکست پشت‌سرهم لازم برای اعلام آفلاین؛ یک شکست تکی (مثلاً هنگام Restart بک‌اند در به‌روزرسانی
+// که /api/health چند ثانیه در دسترس نیست) آفلاین حساب نمی‌شود
 const FAILURES_BEFORE_OFFLINE = 3;
-// ⚠️ وقتی مشکوک به قطعی هستیم، به‌جای صبر ۲۰ ثانیه‌ای، سریع‌تر دوباره
-// تلاش می‌کنیم - هم قطعی واقعی زودتر تشخیص داده می‌شود، هم بازگشت سرور
-// بعد از Restart سریع‌تر دیده می‌شود.
+// فاصله‌ی تلاش مجدد پس از یک شکست (مشکوک به قطعی) تا قطعی واقعی یا بازگشت سرور زودتر دیده شود
 const RETRY_INTERVAL_MS = 3_000;
-// ⚠️ وقتی آفلاین هستیم هم باید مرتب تلاش کنیم - چون رویداد `online`
-// مرورگر در بعضی حالت‌ها (مثل بازگشت خودِ سرور، بدون تغییر رابط شبکه)
-// اصلاً شلیک نمی‌شود و کاربر تا رفرش دستی در حالت آفلاین گیر می‌کرد.
+// فاصله‌ی بررسی در حالت آفلاین مرورگر؛ چون رویداد `online` در برخی حالت‌ها (مثل بازگشت سرور بدون
+// تغییر رابط شبکه) شلیک نمی‌شود، بررسی دوره‌ای ادامه پیدا می‌کند
 const OFFLINE_RECHECK_INTERVAL_MS = 5_000;
 
 /**
- * فقط `navigator.onLine` به‌تنهایی کافی نیست — این فقط یعنی «یک رابط شبکه
- * فعال است» (مثلاً وای‌فای وصل است)، نه اینکه واقعاً اینترنت/سرور در دسترس
- * است (مثلاً پشت یک Captive Portal، یا خودِ سرور پرتال از کار افتاده). برای
- * همین، علاوه بر رویدادهای فوری مرورگر (`online`/`offline`)، به‌صورت دوره‌ای
- * هم یک درخواست واقعی و سبک به `/api/health` زده می‌شود.
- *
- * این Endpoint در Service Worker (سطح NetworkOnly برای همه مسیرهای /api/)
- * از قبل هرگز از Cache پاسخ داده نمی‌شود — پس این چک همیشه وضعیت واقعی
- * لحظه را می‌سنجد، نه یک پاسخ قدیمی.
+ * یک درخواست GET واقعی به /api/health با Timeout می‌زند؛ خروجی: true اگر پاسخ موفق باشد.
+ * navigator.onLine فقط فعال بودن رابط شبکه را نشان می‌دهد (نه دسترسی واقعی به سرور، مثلاً پشت Captive Portal).
+ * Service Worker مسیرهای /api/ را NetworkOnly می‌کند، پس این پاسخ هرگز از Cache نمی‌آید.
  */
 async function checkRealConnectivity() {
   const controller = new AbortController();
@@ -48,17 +40,19 @@ async function checkRealConnectivity() {
   }
 }
 
+/**
+ * هوک وضعیت اتصال؛ ورودی ندارد. خروجی: { isOnline, isChecking, recheck }.
+ */
 export function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isChecking, setIsChecking] = useState(false);
-  const isMounted = useRef(true);
-  const failureCountRef = useRef(0);
-  const timerRef = useRef(null);
+  const isMounted = useRef(true); // برای جلوگیری از setState پس از unmount
+  const failureCountRef = useRef(0); // تعداد شکست‌های پشت‌سرهم بررسی سلامت
+  const timerRef = useRef(null); // شناسه‌ی تایمر بررسی بعدی
 
   /**
-   * چک واقعی وضعیت. `force` برای وقتی است که کاربر خودش دکمه «تلاش
-   * دوباره» را می‌زند - در آن حالت نتیجه بلافاصله اعمال می‌شود و منتظر
-   * چند شکست پشت‌سرهم نمی‌مانیم.
+   * بررسی واقعی اتصال و به‌روزرسانی وضعیت؛ خروجی: نتیجه‌ی بررسی (boolean).
+   * با `force` (دکمه‌ی «تلاش دوباره» کاربر) نتیجه‌ی منفی بلافاصله اعمال می‌شود و منتظر چند شکست نمی‌ماند.
    */
   const recheck = useCallback(async ({ force = false } = {}) => {
     setIsChecking(true);
@@ -70,9 +64,8 @@ export function useOnlineStatus() {
       setIsOnline(true);
     } else {
       failureCountRef.current += 1;
-      // ⚠️ فقط بعد از چند شکست پشت‌سرهم (یا وقتی کاربر خودش درخواست کرده)
-      // آفلاین اعلام کن - تا یک وقفه کوتاه (مثل Restart بک‌اند هنگام
-      // آپدیت) باعث پیام گمراه‌کننده «اینترنت قطع شد» نشود.
+      // آفلاین فقط پس از چند شکست پشت‌سرهم یا درخواست صریح کاربر اعلام می‌شود
+      // تا یک وقفه‌ی کوتاه (مثل Restart بک‌اند) پیام گمراه‌کننده‌ی قطع اینترنت نشان ندهد
       if (force || failureCountRef.current >= FAILURES_BEFORE_OFFLINE) {
         setIsOnline(false);
       }
@@ -81,18 +74,17 @@ export function useOnlineStatus() {
     return reallyOnline;
   }, []);
 
+  // ثبت listenerهای online/offline مرورگر و شروع حلقه‌ی بررسی دوره‌ای؛ پاک‌سازی هنگام unmount
   useEffect(() => {
     isMounted.current = true;
 
     function handleBrowserOffline() {
-      // سیگنال «آفلاین» خودِ مرورگر فوری و قابل‌اعتماد است — نیازی به تأیید
-      // با درخواست شبکه نیست (که خودش هم شکست می‌خورد).
+      // سیگنال «آفلاین» مرورگر قابل اعتماد است و بدون تأیید شبکه فوراً اعمال می‌شود
       failureCountRef.current = FAILURES_BEFORE_OFFLINE;
       setIsOnline(false);
     }
     function handleBrowserOnline() {
-      // سیگنال «آنلاین» مرورگر به‌تنهایی کافی نیست (فقط یعنی رابط شبکه‌ای
-      // فعال شد) — باید با یک درخواست واقعی تأیید شود.
+      // سیگنال «آنلاین» فقط یعنی رابط شبکه فعال شده و با یک درخواست واقعی تأیید می‌شود
       failureCountRef.current = 0;
       recheck();
     }
@@ -100,11 +92,10 @@ export function useOnlineStatus() {
     window.addEventListener("offline", handleBrowserOffline);
     window.addEventListener("online", handleBrowserOnline);
 
-    // ⚠️ به‌جای یک setInterval ثابت، زمان‌بندی تطبیقی: در حالت سالم هر ۲۰
-    // ثانیه؛ وقتی مشکوک یا آفلاین هستیم، خیلی سریع‌تر - تا بازگشت سرور
-    // (که ممکن است هیچ رویداد `online` مرورگری تولید نکند) خودکار و
-    // بدون نیاز به رفرش دستی تشخیص داده شود.
+    // زمان‌بندی تطبیقی با setTimeout زنجیره‌ای: در حالت سالم هر ۲۰ ثانیه، پس از شکست هر ۳ ثانیه
+    // و در حالت آفلاین مرورگر هر ۵ ثانیه، تا بازگشت سرور بدون رفرش دستی تشخیص داده شود
     let cancelled = false;
+    // یک دور بررسی (فقط وقتی مرورگر آنلاین است) و زمان‌بندی دور بعد بر اساس وضعیت فعلی
     async function tick() {
       if (cancelled || !isMounted.current) return;
       if (navigator.onLine) await recheck();

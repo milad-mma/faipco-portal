@@ -1,7 +1,13 @@
+/**
+ * تعریف تم‌های Material UI برنامه (RTL).
+ * تایپوگرافی مشترک با فونت وزیرمتن، تم روشن و تیره‌ی «مدرن» با پالت آبی/فیروزه‌ای و override کامپوننت‌ها،
+ * و خروجی‌های lightTheme/darkTheme و استایل کمکی فونت مونو‌اسپیس.
+ */
 import { createTheme } from "@mui/material/styles";
 
-const FONT_FAMILY = "'Vazirmatn', 'Tahoma', sans-serif";
+const FONT_FAMILY = "'Vazirmatn', 'Tahoma', sans-serif"; // وزیرمتن (محلی) با Tahoma به عنوان جایگزین
 
+// وزن فونت عنوان‌ها و دکمه‌ها؛ دکمه‌ها بدون تبدیل حروف (textTransform: none)
 const sharedTypography = {
   fontFamily: FONT_FAMILY,
   h1: { fontWeight: 700 },
@@ -13,12 +19,8 @@ const sharedTypography = {
   button: { fontWeight: 600, textTransform: "none" },
 };
 
-// ⚠️ فقط برای طراحی جدید (modernLightTheme/modernDarkTheme) — عمداً از
-// sharedTypography بالا جداست تا تِم قدیمی (Legacy، برای راه برگشت) دست‌نخورده
-// بماند. طبق بازخورد: اندازه فونت همه صفحه‌ها باید با داشبورد شخصی پرسنل
-// (PersonalDashboardPage.jsx که از ابتدا با اندازه‌های کوچک‌تر، مثلاً
-// fontSize={14}/{12}/{11}/{10}، طراحی شده بود) یکی شود — به‌جای اندازه‌های
-// نسبتاً بزرگ‌تر پیش‌فرض MUI (که بقیه صفحات، مثل جداول Admin، هنوز داشتند).
+// تایپوگرافی تم‌های مدرن: sharedTypography با اندازه‌های فونت کوچک‌تر از پیش‌فرض MUI
+// (هم‌اندازه با داشبورد شخصی پرسنل PersonalDashboardPage.jsx) تا اندازه‌ی متن در همه‌ی صفحات یکسان باشد
 const modernTypography = {
   ...sharedTypography,
   h1: { ...sharedTypography.h1, fontSize: "2.25rem" },
@@ -36,14 +38,14 @@ const modernTypography = {
 };
 
 // ============================================================
-// طراحی جدید — بر اساس personnel_portal.html (نمونه ارسالی کاربر)
+// تم روشن مدرن — بر اساس طرح personnel_portal.html
 // ============================================================
-// رنگ‌ها و نسبت‌ها دقیقاً از همان فایل کپی شده‌اند (نه حدسی) — کارت‌های
-// خیلی گرد (۲۰px+)، سایه نرم، دکمه/برچسب‌های Pill-شکل، آبی/فیروزه‌ای.
-const NEW_LIGHT_BLUE = "#1468A7";
-const NEW_LIGHT_TEAL = "#2F9CAC";
-const NEW_LIGHT_DANGER = "#E53347";
+// رنگ‌های اصلی: آبی و فیروزه‌ای، سایه‌ی نرم و برچسب‌های Pill-شکل
+const NEW_LIGHT_BLUE = "#1468A7"; // رنگ اصلی (primary) تم روشن
+const NEW_LIGHT_TEAL = "#2F9CAC"; // رنگ ثانویه (secondary) تم روشن
+const NEW_LIGHT_DANGER = "#E53347"; // رنگ خطا تم روشن
 
+// تم روشن: پالت، تایپوگرافی و override ظاهر کامپوننت‌های MUI
 export const modernLightTheme = createTheme({
   direction: "rtl",
   palette: {
@@ -120,10 +122,7 @@ export const modernLightTheme = createTheme({
   },
 });
 
-// نسخه تیره طراحی جدید — چون نمونه HTML کاربر فقط حالت روشن داشت، این
-// نسخه با همان زبان طراحی (کارت‌های گرد، آبی/فیروزه‌ای) برای پس‌زمینه
-// تیره طراحی شد — همان تناسب رنگ‌ها، روشن‌تر شده برای کنتراست کافی روی
-// زمینه تیره.
+// تم تیره‌ی مدرن: همان زبان طراحی تم روشن (آبی/فیروزه‌ای) با رنگ‌های روشن‌تر برای کنتراست کافی روی زمینه‌ی تیره
 export const modernDarkTheme = createTheme({
   direction: "rtl",
   palette: {
@@ -198,12 +197,8 @@ export const modernDarkTheme = createTheme({
         root: { fontWeight: 700, borderRadius: 999 },
       },
     },
-    // ⚠️ این سه مورد (Dialog/Popover/Autocomplete) در نسخه اول طراحی جدید
-    // فراموش شده بودند — legacyDarkTheme این‌ها را داشت (پس‌زمینه کدر
-    // مشخص، برای خوانایی روی هر محتوایی که زیرش باز می‌شوند)، ولی
-    // modernDarkTheme نداشت؛ بدون این override ها، این عناصر روی پس‌زمینه
-    // سفارشی تیره این پروژه (#0F1824) از رنگ‌های پیش‌فرض MUI استفاده
-    // می‌کردند که می‌توانست کنتراست/خوانایی پایینی داشته باشد.
+    // پس‌زمینه‌ی کدر و حاشیه‌ی مشخص برای Dialog/Popover/Autocomplete تا روی زمینه‌ی تیره (#0F1824)
+    // و هر محتوایی که زیرشان باز می‌شوند خوانا باشند
     MuiDialog: {
       styleOverrides: {
         paper: {
@@ -234,11 +229,11 @@ export const modernDarkTheme = createTheme({
   },
 });
 
-// خروجی نهایی که همه‌جای پروژه import می‌کنند.
+// تم‌های روشن و تیره‌ای که ThemeModeContext و بقیه‌ی پروژه import می‌کنند
 export const lightTheme = modernLightTheme;
 export const darkTheme = modernDarkTheme;
 
-/** کلاس CSS کمکی برای نمایش اعداد/کدها با فونت مونو‌اسپیس (خوانایی بهتر در جداول) */
+/** شیء sx کمکی برای نمایش اعداد/کدها با فونت مونو‌اسپیس و ارقام هم‌عرض (خوانایی بهتر در جداول) */
 export const monoFontSx = {
   fontFamily: "'JetBrains Mono', 'Consolas', monospace",
   fontFeatureSettings: '"tnum"',

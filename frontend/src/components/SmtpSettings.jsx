@@ -15,22 +15,21 @@ import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import { fetchSmtpSettings, testSmtpSettings, updateSmtpSettings } from "../api/system";
 
 /**
- * تنظیمات SMTP سراسری - برای «فراموشی رمز عبور» (ارسال لینک بازنشانی)
- * و «ارسال بکاپ به ایمیل».
- *
- * رمز عبور هرگز از سرور برنمی‌گردد (فقط has_password بولی) - خالی‌گذاشتن
- * فیلد رمز در فرم یعنی «رمز قبلی حفظ شود».
+ * فرم تنظیمات SMTP سراسری برای «فراموشی رمز عبور» (ارسال لینک بازنشانی) و «ارسال بکاپ به ایمیل».
+ * بدون ورودی (props)؛ تنظیمات را از سرور می‌خواند، ذخیره می‌کند و امکان ارسال ایمیل آزمایشی دارد.
+ * رمز عبور هرگز از سرور برنمی‌گردد (فقط has_password بولی)؛ خالی گذاشتن فیلد رمز یعنی رمز قبلی حفظ شود.
  */
 export default function SmtpSettings() {
-  const [settings, setSettings] = useState(null);
-  const [form, setForm] = useState(null);
-  const [error, setError] = useState("");
-  const [saveResult, setSaveResult] = useState(null);
+  const [settings, setSettings] = useState(null);  // آخرین تنظیمات ذخیره‌شده‌ی سرور (برای has_password و enabled)
+  const [form, setForm] = useState(null);  // مقادیر در حال ویرایش؛ null = هنوز بارگذاری نشده
+  const [error, setError] = useState("");  // خطای دریافت اولیه؛ در صورت وجود فقط همین نمایش داده می‌شود
+  const [saveResult, setSaveResult] = useState(null);  // نتیجه‌ی ذخیره: { success, message } | null
   const [isSaving, setIsSaving] = useState(false);
-  const [testAddress, setTestAddress] = useState("");
-  const [testResult, setTestResult] = useState(null);
+  const [testAddress, setTestAddress] = useState("");  // آدرس ایمیل گیرنده‌ی آزمایشی
+  const [testResult, setTestResult] = useState(null);  // نتیجه‌ی ارسال آزمایشی: { success, message } | null
   const [isTesting, setIsTesting] = useState(false);
 
+  // دریافت تنظیمات هنگام mount؛ فیلد رمز در فرم خالی شروع می‌شود
   useEffect(() => {
     fetchSmtpSettings()
       .then((data) => {
@@ -40,10 +39,12 @@ export default function SmtpSettings() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }, []);
 
+  // ادغام تغییرات جزئی در فرم
   function updateForm(patch) {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  // ذخیره‌ی تنظیمات؛ اگر رمز خالی باشد از payload حذف می‌شود تا رمز قبلی سرور بماند
   async function handleSave() {
     setIsSaving(true);
     setSaveResult(null);
@@ -61,6 +62,7 @@ export default function SmtpSettings() {
     }
   }
 
+  // ارسال ایمیل آزمایشی با تنظیمات ذخیره‌شده و نمایش نتیجه
   async function handleTest() {
     setIsTesting(true);
     setTestResult(null);
@@ -93,13 +95,16 @@ export default function SmtpSettings() {
         برای «فراموشی رمز عبور» و «ارسال بکاپ به ایمیل» استفاده می‌شود.
       </Typography>
 
+      {/* فعال/غیرفعال کردن سرویس ایمیل */}
       <FormControlLabel
         control={<Checkbox checked={form.enabled} onChange={(e) => updateForm({ enabled: e.target.checked })} />}
         label="سرویس ایمیل فعال باشد"
       />
 
+      {/* فیلدهای تنظیمات فقط در حالت فعال */}
       {form.enabled && (
         <Stack spacing={2} sx={{ pr: 3 }}>
+          {/* سرور، پورت و نوع رمزنگاری */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <TextField
               size="small"
@@ -130,6 +135,7 @@ export default function SmtpSettings() {
             </TextField>
           </Stack>
 
+          {/* نام کاربری و رمز عبور SMTP */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <TextField
               size="small"
@@ -149,6 +155,7 @@ export default function SmtpSettings() {
             />
           </Stack>
 
+          {/* آدرس و نام نمایشی فرستنده */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <TextField
               size="small"
@@ -168,6 +175,7 @@ export default function SmtpSettings() {
             />
           </Stack>
 
+          {/* قالب ایمیل فراموشی رمز؛ {reset_link} با لینک واقعی جایگزین می‌شود */}
           <Typography variant="body2" fontWeight={700} sx={{ mt: 1 }}>
             متن ایمیل «فراموشی رمز عبور»
           </Typography>
@@ -200,6 +208,7 @@ export default function SmtpSettings() {
         </Stack>
       )}
 
+      {/* نتیجه‌ی ذخیره و دکمه‌ی ذخیره */}
       {saveResult && <Alert severity={saveResult.success ? "success" : "error"}>{saveResult.message}</Alert>}
 
       <Box>
@@ -213,6 +222,7 @@ export default function SmtpSettings() {
         </Button>
       </Box>
 
+      {/* ارسال ایمیل آزمایشی؛ فقط وقتی سرویس در تنظیمات ذخیره‌شده فعال باشد */}
       {settings?.enabled && (
         <Stack spacing={1.5}>
           <Typography variant="body2" fontWeight={700}>

@@ -1,7 +1,7 @@
 """
 Schema های تنظیمات SMTP - همان الگوی امنیتی BackupSettingsIn/Out
 (app/schemas/backup.py): رمز عبور هرگز در پاسخ برنمی‌گردد؛ در ورودی
-اختیاری است - خالی یعنی رمز قبلی حفظ شود.
+اختیاری است - خالی یعنی رمز قبلی حفظ شود. مورد استفاده در endpointهای /system/smtp-settings.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.models.smtp_settings import SmtpEncryptionMode
 
 
 class SmtpSettingsIn(BaseModel):
+    """ورودی PUT /system/smtp-settings."""
     enabled: bool = False
     host: str | None = None
     port: int = Field(default=587, ge=1, le=65535)
@@ -28,12 +29,14 @@ class SmtpSettingsIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_required_when_enabled(self) -> "SmtpSettingsIn":
+        """در حالت فعال، آدرس سرور و آدرس فرستنده را الزامی می‌کند."""
         if self.enabled and not (self.host and self.from_address):
             raise ValueError("برای فعال‌کردن SMTP، آدرس سرور و آدرس ایمیل فرستنده الزامی‌اند")
         return self
 
 
 class SmtpSettingsOut(BaseModel):
+    """خروجی GET/PUT /system/smtp-settings؛ به‌جای رمز فقط has_password برمی‌گردد."""
     enabled: bool
     host: str | None
     port: int
@@ -47,4 +50,5 @@ class SmtpSettingsOut(BaseModel):
 
 
 class SmtpTestEmailIn(BaseModel):
+    """ورودی POST /system/smtp-settings/test (آدرس مقصد ایمیل آزمایشی)."""
     to_address: EmailStr

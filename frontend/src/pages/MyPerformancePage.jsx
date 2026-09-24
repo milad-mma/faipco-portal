@@ -1,3 +1,9 @@
+/**
+ * صفحه‌ی «ارزیابی عملکرد من» برای پرسنل.
+ * سه تب دارد: نتایج ارزیابی خود کاربر (با میانگین سالانه و جزئیات سؤال‌به‌سؤال)، ارزیابی پرسنلی که کاربر باید
+ * ارزیابی کند، و ارزیابی‌های سرشیفت‌های واحد (برای سرپرست). تب فعال در پارامتر ?tab= آدرس نگه داشته می‌شود
+ * و دسترسی به تب نتایج با دیالوگ AccessGate کنترل می‌شود.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -39,14 +45,18 @@ import PillTabs from "../components/PillTabs";
 import AccessGateDialog from "../components/AccessGateDialog";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
-const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };
-const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
+const STATUS_LABELS = { not_started: "شروع‌نشده", draft: "پیش‌نویس", submitted: "ثبت‌شده" };  // برچسب فارسی وضعیت هر ارزیابی
+const STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };  // رنگ Chip وضعیت ارزیابی
 
+// رنگ Chip امتیاز: ≥۷۰ سبز، ≥۵۰ نارنجی، کمتر قرمز؛ بدون امتیاز پیش‌فرض
 function scoreColor(score) {
   if (score == null) return "default";
   return score >= 70 ? "success" : score >= 50 ? "warning" : "error";
 }
 
+/**
+ * کارت میانگین امتیاز سالانه‌ی کاربر؛ اگر داده یا ارزیابی‌ای نباشد چیزی رندر نمی‌شود.
+ */
 function YearlyAverageCard({ yearlyAverage }) {
   if (!yearlyAverage || yearlyAverage.count === 0) return null;
   return (
@@ -70,24 +80,21 @@ function YearlyAverageCard({ yearlyAverage }) {
   );
 }
 
-// ⚠️ نمایش پاسخ ارزیاب به هر سوال - بسته به نوع سوال، مقدار در فیلد
-// متفاوتی ذخیره شده (همان ساختار EvaluationAnswer در بک‌اند).
+// متن قابل‌نمایش پاسخ ارزیاب به یک سؤال را برمی‌گرداند؛ بسته به نوع سؤال، مقدار در فیلد
+// متفاوتی ذخیره شده است (همان ساختار EvaluationAnswer در بک‌اند).
 function formatAnswerValue(answer) {
   if (answer.text_value) return answer.text_value;
   if (answer.number_value != null) return String(answer.number_value);
   if (answer.date_value) return new Date(answer.date_value).toLocaleDateString("fa-IR");
-  // ⚠️ قبلاً فقط تعداد گزینه‌ها نمایش داده می‌شد و معلوم نبود کدام
-  // انتخاب شده - حالا برچسب واقعی گزینه(های) انتخاب‌شده نشان داده می‌شود.
+  // برای سؤال‌های گزینه‌ای برچسب گزینه(های) انتخاب‌شده؛ اگر برچسب نباشد فقط تعداد گزینه‌ها
   if (answer.selected_option_labels?.length) return answer.selected_option_labels.join("، ");
   if (answer.selected_option_ids?.length) return `${answer.selected_option_ids.length} گزینه انتخاب شده`;
   return "—";
 }
 
 /**
- * ⚠️ طبق گزارش کاربر: کاربر باید بفهمد «از بین چه گزینه‌هایی» انتخاب
- * شده - نه فقط کدام. همه گزینه‌های ممکن نمایش داده می‌شوند و انتخاب‌شده‌ها
- * برجسته‌اند. برای ارزیابی‌های قدیمی که گزینه‌هایشان دیگر موجود نیست،
- * فهرست خالی است و چیزی رندر نمی‌شود (بدون خطا).
+ * همه‌ی گزینه‌های ممکن یک سؤال را با امتیازشان به‌صورت Chip نمایش می‌دهد و گزینه‌های انتخاب‌شده را برجسته می‌کند.
+ * ورودی: options (هر گزینه با is_selected)؛ اگر فهرست خالی باشد (مثلاً گزینه‌ها دیگر موجود نیستند) چیزی رندر نمی‌شود.
  */
 function AnswerOptionsList({ options }) {
   if (!options?.length) return null;
@@ -106,10 +113,15 @@ function AnswerOptionsList({ options }) {
   );
 }
 
+/**
+ * دیالوگ جزئیات سؤال‌به‌سؤال یک نتیجه‌ی ارزیابی کاربر (امتیاز و پاسخ هر سؤال؛ نظر ارزیاب نمایش داده نمی‌شود).
+ * ورودی: result و onClose.
+ */
 function ResultDetailsDialog({ result, onClose }) {
-  const [answers, setAnswers] = useState(null);
+  const [answers, setAnswers] = useState(null);  // پاسخ‌ها؛ null = در حال بارگذاری
   const [error, setError] = useState("");
 
+  // دریافت پاسخ‌های این نتیجه؛ در خطا فهرست خالی می‌شود
   useEffect(() => {
     fetchMyEvaluationResultAnswers(result.id)
       .then(setAnswers)
@@ -133,6 +145,7 @@ function ResultDetailsDialog({ result, onClose }) {
             {error}
           </Alert>
         )}
+        {/* حالت‌ها: در حال بارگذاری، بدون جزئیات، یا فهرست پاسخ‌ها */}
         {answers === null ? (
           <Stack alignItems="center" sx={{ py: 3 }}>
             <CircularProgress size={28} />
@@ -169,6 +182,9 @@ function ResultDetailsDialog({ result, onClose }) {
   );
 }
 
+/**
+ * کارت خلاصه‌ی یک نتیجه‌ی ارزیابی (دوره، ارزیاب، تاریخ، امتیاز کل و توضیح)؛ با کلیک جزئیات باز می‌شود.
+ */
 function ResultCard({ result, onClick }) {
   return (
     <Card
@@ -197,22 +213,26 @@ function ResultCard({ result, onClick }) {
   );
 }
 
+/**
+ * جدول صفحه‌بندی‌شده‌ی پرسنلی که کاربر باید ارزیابی کند، با فیلتر بر اساس عنوان دوره.
+ * ورودی: items، periodFilter/setPeriodFilter و کال‌بک‌های onStart (شروع/ادامه) و onEdit (ویرایش یک‌باره‌ی ارزیابی ثبت‌شده).
+ */
 function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdit }) {
-  const periodTitles = useMemo(() => [...new Set(items.map((i) => i.period_title))], [items]);
+  const periodTitles = useMemo(() => [...new Set(items.map((i) => i.period_title))], [items]);  // عناوین یکتای دوره‌ها برای گزینه‌های فیلتر
   const filteredItems = periodFilter ? items.filter((i) => i.period_title === periodFilter) : items;
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
-  // ⚠️ با تغییر فیلتر دوره، به صفحه اول برگرد - وگرنه ممکن است کاربر
-  // روی صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  // با تغییر فیلتر دوره، صفحه‌بندی به صفحه‌ی اول برمی‌گردد تا جدول روی صفحه‌ی بدون ردیف نماند
   useEffect(() => {
     setPage(0);
   }, [periodFilter]);
 
-  const visibleItems = filteredItems.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const visibleItems = filteredItems.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);  // ردیف‌های صفحه‌ی جاری
 
   return (
     <Box>
+      {/* فیلتر دوره */}
       <TextField
         select
         size="small"
@@ -229,6 +249,7 @@ function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdi
         ))}
       </TextField>
 
+      {/* جدول پرسنل با وضعیت، امتیاز و دکمه‌های شروع/ادامه یا ویرایش، به‌همراه صفحه‌بندی */}
       <TableContainer component={Card} variant="outlined">
         <Table size="small">
           <TableHead>
@@ -292,6 +313,10 @@ function MyPersonnelTable({ items, periodFilter, setPeriodFilter, onStart, onEdi
   );
 }
 
+/**
+ * جدول ارزیابی‌هایی که سرشیفت‌های واحد انجام داده‌اند، با دکمه‌ی ویرایش (فقط یک‌بار برای هر ارزیابی).
+ * ورودی: items و onEdit.
+ */
 function ShiftLeadEvaluationsTable({ items, onEdit }) {
   return (
     <TableContainer component={Card} variant="outlined">
@@ -333,56 +358,59 @@ function ShiftLeadEvaluationsTable({ items, onEdit }) {
   );
 }
 
-const TAB_KEYS = ["results", "personnel", "shift-leads"];
+const TAB_KEYS = ["results", "personnel", "shift-leads"];  // کلید تب‌ها به ترتیب ایندکس؛ همان مقدار پارامتر ?tab= در آدرس
 
+/**
+ * صفحه‌ی اصلی «ارزیابی عملکرد من».
+ */
 export default function MyPerformancePage() {
   const navigate = useNavigate();
-  // ⚠️ طبق اصل کلی بازگشت به مبدأ درست: تب فعال هم در آدرس صفحه ذخیره
-  // می‌شود (?tab=personnel و...) - هم رفرش صفحه تب را گم نمی‌کند، هم
-  // وقتی از صفحه ارزیابی برمی‌گردیم، دقیقاً همان تبی که رفته بودیم باز
-  // می‌شود، نه همیشه تب پیش‌فرض.
+  // تب فعال در آدرس صفحه (?tab=personnel و...) ذخیره می‌شود تا با رفرش یا بازگشت از صفحه‌ی ارزیابی
+  // همان تب باز شود
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = TAB_KEYS.indexOf(searchParams.get("tab"));
-  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0);
+  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0);  // ایندکس تب فعال در TAB_KEYS
 
+  // تب را عوض می‌کند و کلید آن را در پارامتر tab آدرس می‌نویسد
   function handleTabChange(newIndex) {
     setTab(newIndex);
     setSearchParams({ tab: TAB_KEYS[newIndex] });
   }
 
-  const [results, setResults] = useState(null);
-  const [detailsResult, setDetailsResult] = useState(null);
-  // ⚠️ Hook مشترک - وضعیت با برگشت به صفحه (مثلاً پس از تکمیل ارزیابی
-  // در صفحه فرم) یا بازگشت فوکوس، خودکار تازه می‌شود.
+  const [results, setResults] = useState(null);  // نتایج ارزیابی کاربر؛ null = در حال بارگذاری
+  const [detailsResult, setDetailsResult] = useState(null);  // نتیجه‌ای که دیالوگ جزئیاتش باز است
+  // وضعیت محدودیت دسترسی (AccessGate)؛ با برگشت به صفحه یا بازگشت فوکوس خودکار تازه می‌شود
   const { status: gateStatus } = useAccessGateStatus();
-  const [gateOpen, setGateOpen] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false);  // باز بودن دیالوگ محدودیت دسترسی
 
   // دیالوگ فقط وقتی کاربر روی تب «نتایج» است باز می‌شود.
   useEffect(() => {
     if (!gateStatus) return;
-    // ⚠️ دو طرفه: هم باز می‌کند، هم وقتی پیش‌نیاز برطرف شد خودکار
-    // می‌بندد - وگرنه هشدار قدیمی تا رفرش دستی باقی می‌ماند.
+    // دوطرفه: با مسدود بودن evaluation_result باز و با رفع پیش‌نیاز خودکار بسته می‌شود
     setGateOpen(tab === 0 && Boolean(gateStatus.blocked_features?.["evaluation_result"]));
   }, [tab, gateStatus]);
 
-  const [pending, setPending] = useState(null);
-  const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);
-  const [periodFilter, setPeriodFilter] = useState("");
+  const [pending, setPending] = useState(null);  // ارزیابی‌هایی که کاربر باید انجام دهد؛ null = در حال بارگذاری
+  const [shiftLeadEvaluations, setShiftLeadEvaluations] = useState(null);  // ارزیابی‌های انجام‌شده توسط سرشیفت‌های واحد کاربر
+  const [periodFilter, setPeriodFilter] = useState("");  // عنوان دوره‌ی فیلتر جدول پرسنل؛ خالی = همه
   const [yearlyAverage, setYearlyAverage] = useState(null);
   const [error, setError] = useState("");
 
+  // ارزیابی‌هایی که کاربر باید انجام دهد را دریافت می‌کند
   function loadPending() {
     fetchMyEvaluations()
       .then(setPending)
       .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌های من با خطا مواجه شد."));
   }
 
+  // ارزیابی‌های سرشیفت‌ها را دریافت می‌کند؛ در خطا فهرست خالی می‌شود
   function loadShiftLeadEvaluations() {
     fetchMyShiftLeadEvaluations()
       .then(setShiftLeadEvaluations)
       .catch(() => setShiftLeadEvaluations([]));
   }
 
+  // بارگذاری اولیه: نتایج، میانگین سالانه، ارزیابی‌های در انتظار و ارزیابی‌های سرشیفت‌ها
   useEffect(() => {
     fetchMyEvaluationResults()
       .then(setResults)
@@ -394,10 +422,12 @@ export default function MyPerformancePage() {
     loadShiftLeadEvaluations();
   }, []);
 
+  // به صفحه‌ی پر کردن ارزیابی برای این تخصیص می‌رود
   function handleStart(item) {
     navigate(`/my-performance/evaluate/${item.assignment_id}`);
   }
 
+  // ارزیابی ثبت‌شده را برای ویرایش باز می‌کند و به صفحه‌ی پر کردن آن می‌رود
   async function handleEdit(item) {
     setError("");
     try {
@@ -409,6 +439,7 @@ export default function MyPerformancePage() {
     }
   }
 
+  // ارزیابی سرشیفت را باز می‌کند و با evaluationId به صفحه‌ی ویرایش می‌رود
   async function handleEditShiftLeadEvaluation(item) {
     setError("");
     try {
@@ -420,11 +451,12 @@ export default function MyPerformancePage() {
     }
   }
 
-  const pendingCount = pending?.filter((p) => p.status !== "submitted").length || 0;
-  const hasShiftLeadEvaluations = shiftLeadEvaluations && shiftLeadEvaluations.length > 0;
+  const pendingCount = pending?.filter((p) => p.status !== "submitted").length || 0;  // تعداد ارزیابی‌های ثبت‌نشده (در برچسب تب)
+  const hasShiftLeadEvaluations = shiftLeadEvaluations && shiftLeadEvaluations.length > 0;  // تب سرشیفت‌ها فقط در صورت وجود داده نمایش داده می‌شود
 
   return (
     <Box>
+      {/* سربرگ: بازگشت به داشبورد و عنوان صفحه */}
       <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         ارزیابی عملکرد من
@@ -436,8 +468,8 @@ export default function MyPerformancePage() {
         </Alert>
       )}
 
-      {/* ⚠️ کلیدها همان TAB_KEYS صفحه‌اند تا با پارامتر ?tab= در URL
-          هم‌راستا بمانند (لینک «انجام ارزیابی‌ها» در دیالوگ اجبار). */}
+      {/* تب‌ها: کلیدها همان TAB_KEYS هستند تا با پارامتر ?tab= در URL هم‌راستا بمانند
+          (لینک «انجام ارزیابی‌ها» در دیالوگ محدودیت دسترسی از آن استفاده می‌کند) */}
       <PillTabs
         value={TAB_KEYS[tab]}
         onChange={(k) => handleTabChange(TAB_KEYS.indexOf(k))}
@@ -451,6 +483,7 @@ export default function MyPerformancePage() {
         ]}
       />
 
+      {/* تب نتایج: میانگین سالانه و کارت هر نتیجه */}
       {tab === 0 && (
         <Box>
           <YearlyAverageCard yearlyAverage={yearlyAverage} />
@@ -466,6 +499,7 @@ export default function MyPerformancePage() {
         </Box>
       )}
 
+      {/* تب ارزیابی پرسنل من */}
       {tab === 1 && (
         <Box>
           {pending === null ? null : pending.length === 0 ? (
@@ -484,6 +518,7 @@ export default function MyPerformancePage() {
         </Box>
       )}
 
+      {/* تب ارزیابی‌های سرشیفت‌ها */}
       {tab === 2 && hasShiftLeadEvaluations && (
         <Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -494,12 +529,11 @@ export default function MyPerformancePage() {
         </Box>
       )}
 
+      {/* دیالوگ جزئیات نتیجه‌ی انتخاب‌شده */}
       {detailsResult && <ResultDetailsDialog result={detailsResult} onClose={() => setDetailsResult(null)} />}
 
-      {/* ⚠️ فقط تب «نتایج» مشروط است - تب «پرسنل من» (انجام ارزیابی)
-          همیشه باز می‌ماند، وگرنه کاربری که به‌خاطر ارزیابی
-          انجام‌نشده قفل شده، نمی‌توانست همان ارزیابی را انجام دهد
-          و قفل خودش را باز کند. */}
+      {/* دیالوگ محدودیت دسترسی: فقط تب «نتایج» مشروط است؛ تب «پرسنل من» همیشه باز می‌ماند
+          تا کاربر بتواند ارزیابی‌های انجام‌نشده را تکمیل کند و محدودیت برطرف شود */}
       <AccessGateDialog
         open={gateOpen}
         gate={gateStatus?.blocked_features?.["evaluation_result"]}

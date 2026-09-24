@@ -1,14 +1,15 @@
+/**
+ * نمونه‌ی مشترک axios برای همه‌ی درخواست‌های API.
+ * توکن دسترسی را به هر درخواست اضافه می‌کند و در پاسخ 401 یک‌بار توکن را رفرش کرده
+ * و درخواست را تکرار می‌کند؛ درخواست‌های هم‌زمان در صف منتظر نتیجه‌ی رفرش می‌مانند.
+ */
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  // بدون Timeout، اگر بک‌اند از دسترس خارج بشه یا در حال Restart گیر کنه،
-  // درخواست‌ها (مثلاً همون GET /auth/me موقع باز شدن اپ) می‌تونن برای همیشه
-  // معلق بمونن و کل پنل فقط روی «در حال بارگذاری» گیر کنه، بدون هیچ خطای
-  // قابل‌مشاهده‌ای. با این Timeout، حداکثر بعد از ۲۰ ثانیه با خطا Reject
-  // می‌شه و برنامه می‌تونه به‌درستی به صفحه ورود برگرده.
+  // اگر بک‌اند پاسخ ندهد، درخواست حداکثر پس از ۲۰ ثانیه با خطا رد می‌شود تا برنامه در حالت بارگذاری معلق نماند
   timeout: 20_000,
 });
 
@@ -21,9 +22,10 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-let isRefreshing = false;
-let pendingQueue = [];
+let isRefreshing = false; // آیا یک درخواست رفرش توکن در جریان است
+let pendingQueue = []; // درخواست‌های 401 که منتظر پایان رفرش جاری هستند
 
+// همه‌ی درخواست‌های صف را با توکن جدید resolve یا با خطا reject می‌کند و صف را خالی می‌کند
 function resolvePendingQueue(error, token) {
   pendingQueue.forEach(({ resolve, reject }) => {
     if (error) reject(error);
@@ -43,12 +45,8 @@ apiClient.interceptors.response.use(
     }
 
     const refreshToken = localStorage.getItem("refresh_token");
-    // فقط خودِ اندپوینت‌های ورود (که ۴۰۱ یعنی رمز/کد ملی اشتباه است، نه توکن
-    // منقضی) و رفرش (برای جلوگیری از حلقه بی‌نهایت اگر رفرش‌توکن هم نامعتبر
-    // باشد) از تلاش مجدد با Refresh معاف‌اند. قبلاً هر مسیری که شامل "/auth/"
-    // بود معاف می‌شد — که یعنی GET /auth/me (که هر بار باز شدن اپ صدا زده
-    // می‌شود) هرگز فرصت Refresh نمی‌گرفت و کاربر با هر انقضای معمولی
-    // access_token (یا هر Reload خودکار بعد از Deploy) کامل Logout می‌شد.
+    // فقط اندپوینت ورود (401 یعنی رمز اشتباه، نه توکن منقضی) و خود رفرش (جلوگیری از حلقه‌ی بی‌نهایت)
+    // از تلاش مجدد معاف‌اند؛ بقیه‌ی مسیرها از جمله GET /auth/me رفرش می‌شوند
     if (
       !refreshToken ||
       originalRequest.url?.includes("/auth/login") ||
@@ -57,6 +55,7 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // اگر رفرش دیگری در جریان است، درخواست در صف می‌ماند و پس از گرفتن توکن جدید تکرار می‌شود
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         pendingQueue.push({ resolve, reject });
@@ -66,9 +65,11 @@ apiClient.interceptors.response.use(
       });
     }
 
+    // علامت‌گذاری درخواست تا فقط یک‌بار دوباره تلاش شود
     originalRequest._retry = true;
     isRefreshing = true;
 
+    // گرفتن توکن‌های جدید، ذخیره در localStorage، آزاد کردن صف و تکرار درخواست اصلی
     try {
       const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
         refresh_token: refreshToken,
@@ -80,11 +81,8 @@ apiClient.interceptors.response.use(
       return apiClient(originalRequest);
     } catch (refreshError) {
       resolvePendingQueue(refreshError, null);
-      // فقط اگر سرور واقعاً رفرش‌توکن را رد کرد (۴۰۱، یعنی واقعاً منقضی/باطل
-      // شده) پاک کن و به صفحه ورود بفرست — نه برای خطای شبکه (آفلاین بودن)،
-      // چون در آن حالت رفرش‌توکن هنوز کاملاً معتبر است، فقط همین لحظه
-      // قابل‌تأیید نیست. AuthContext همین که اینترنت برگردد، دوباره تلاش
-      // می‌کند؛ پاک‌کردن توکن اینجا آن تلاش بعدی را هم خراب می‌کرد.
+      // توکن‌ها فقط وقتی پاک می‌شوند و کاربر به صفحه‌ی ورود می‌رود که سرور رفرش‌توکن را با 401 رد کند؛
+      // در خطای شبکه (آفلاین) توکن‌ها می‌مانند تا AuthContext پس از وصل شدن اینترنت دوباره تلاش کند
       if (refreshError.response?.status === 401) {
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");

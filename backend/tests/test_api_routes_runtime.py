@@ -1,5 +1,5 @@
 """
-مرحله ۰ بازسازی ساختار: مسیرهای واقعی FastAPI باید دقیقاً با مرجع
+تست تطابق مسیرهای واقعی FastAPI با مرجع: مسیرهای واقعی باید دقیقاً با مرجع
 api_routes.snapshot.json یکی باشند. این تست در محیطی اجرا می‌شود که
 وابستگی‌ها نصب‌اند (venv سرور / محیط توسعه)؛ بدون FastAPI رد نمی‌شود، Skip می‌شود.
 """
@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fastapi")
+pytest.importorskip("fastapi")  # بدون FastAPI کل ماژول Skip می‌شود
 
 SNAPSHOT_FILE = Path(__file__).resolve().parent / "api_routes.snapshot.json"
 
 
 def _runtime_routes() -> set[str]:
+    """اپ واقعی را import می‌کند و خروجی: مجموعه "METHOD path" همه مسیرهای HTTP و WebSocket (بدون HEAD/OPTIONS)."""
     from fastapi.routing import APIRoute, APIWebSocketRoute
 
     from app.main import app
@@ -31,6 +32,7 @@ def _runtime_routes() -> set[str]:
 
 
 def test_runtime_routes_match_snapshot():
+    """مسیرهای /api/ اپ واقعی را با فایل مرجع مقایسه می‌کند؛ هیچ مسیر گم‌شده یا اضافه‌ای نباید باشد."""
     expected = set(json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))["routes"])
     actual = _runtime_routes()
     # مسیرهای غیر-API (استاتیک، docs) بیرون از مقایسه

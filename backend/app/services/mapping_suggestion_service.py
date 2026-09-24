@@ -1,19 +1,18 @@
 """
-سرویس «پیشنهاد نگاشت بر اساس نام ستون» - مرحله دوم از طرح سه‌مرحله‌ای
-نگاشت داینامیک (کشف ساختار -> پیشنهاد بر اساس نام -> پیشنهاد بر اساس
-نمونه داده واقعی).
+سرویس پیشنهاد نگاشت ستون‌ها در نگاشت داینامیک سه‌مرحله‌ای
+(کشف ساختار -> پیشنهاد بر اساس نام ستون -> پیشنهاد بر اساس نمونه داده واقعی).
 
-⚠️ این سرویس هیچ تصمیمی «قطعی» نمی‌گیرد و هیچ داده‌ای نمی‌خواند/نمی‌نویسد
-- فقط یک الگوریتم خالص (بدون I/O) است که روی نام ستون‌هایی که از قبل
-کشف شده‌اند (مرحله اول) اجرا می‌شود. خروجی همیشه فقط «پیشنهاد» است؛
-تأیید نهایی همیشه دستی و توسط مدیر در فرم Mapping انجام می‌شود.
+بخش «نام ستون» (suggest_column_for_field / suggest_mapping) یک الگوریتم خالص
+بدون I/O روی نام ستون‌های کشف‌شده است. بخش «نمونه داده» (suggest_mapping_with_samples)
+از طریق Adapter چند مقدار واقعی از ستون‌ها می‌خواند و الگوی آن‌ها را بررسی می‌کند.
+خروجی همیشه فقط «پیشنهاد» است؛ تأیید نهایی دستی و توسط مدیر در فرم Mapping انجام می‌شود.
 """
 from __future__ import annotations
 
 import re
 
-_HIGH = "بالا"
-_MEDIUM = "متوسط"
+_HIGH = "بالا"  # برچسب سطح اطمینان «بالا» در خروجی
+_MEDIUM = "متوسط"  # برچسب سطح اطمینان «متوسط» در خروجی
 
 # هر مفهوم موردنیاز Mapping ها (EmployeeMapping/AttendanceMapping)، با دو
 # سطح کلیدواژه: «بالا» (نام‌های رایج و اختصاصی، شانس تطبیق تصادفی کم) و
@@ -108,10 +107,8 @@ FIELD_KEYWORDS: dict[str, dict[str, list[str]]] = {
         _HIGH: ["thumbnail", "photo_thumb", "photothumb", "عکس_پرسنلی", "عکسپرسنلی"],
         _MEDIUM: ["photo", "image", "picture", "pic", "عکس", "تصویر"],
     },
-    # ⚠️ این دو مفهوم عمداً «عمومی» تعریف شده‌اند - چون هم برای جدول مرجع
-    # دپارتمان و هم جدول مرجع سمت شغلی (و هر جدول مرجع مشابه دیگری در
-    # آینده) به‌طور یکسان قابل‌استفاده‌اند؛ نیازی به یک مفهوم جداگانه
-    # به‌ازای هر جدول مرجع نیست.
+    # این دو مفهوم «عمومی»اند و برای هر جدول مرجع (Lookup) مثل دپارتمان یا
+    # سمت شغلی به‌طور یکسان استفاده می‌شوند.
     "lookup_id": {
         _HIGH: ["id", "code", "pk", "شناسه", "کد"],
         _MEDIUM: [],
@@ -132,6 +129,7 @@ FIELD_KEYWORDS: dict[str, dict[str, list[str]]] = {
 
 
 def _normalize(name: str) -> str:
+    """زیرخط و فاصله را حذف و نام را کوچک‌حرف می‌کند تا مقایسه نام‌ها یکسان شود."""
     return re.sub(r"[_\s]+", "", name).strip().lower()
 
 
@@ -140,12 +138,13 @@ def suggest_column_for_field(column_names: list[str], concept: str) -> dict | No
     برای یک مفهوم مشخص (کلیدهای FIELD_KEYWORDS، مثلاً "personnel_code")،
     بین لیست نام ستون‌های خام یک جدول، بهترین ستون کاندید را پیشنهاد
     می‌دهد - یا None اگر هیچ‌کدام حتی با کلیدواژه‌های سطح «متوسط» هم‌خوانی
-    نداشتند.
+    نداشتند. خروجی: {"column", "confidence", "matched_keyword"} یا None.
     """
     patterns = FIELD_KEYWORDS.get(concept)
     if not patterns:
         return None
 
+    # هر کاندید: (اختلاف طول، سطح، نام ستون، کلیدواژه)
     candidates: list[tuple[int, str, str, str]] = []
     for level in (_HIGH, _MEDIUM):
         for keyword in patterns[level]:
@@ -156,6 +155,7 @@ def suggest_column_for_field(column_names: list[str], concept: str) -> dict | No
                 normalized_column = _normalize(column)
                 if not normalized_column:
                     continue
+                # تطبیق کامل: اختلاف صفر؛ تطبیق جزئی: اختلاف = طول اضافه نام ستون
                 if normalized_keyword == normalized_column:
                     candidates.append((0, level, column, keyword))
                 elif normalized_keyword in normalized_column:
@@ -179,11 +179,8 @@ def suggest_mapping(column_names: list[str], concepts: list[str]) -> dict[str, d
     ["personnel_code", "email", "mobile"])، برای هرکدام یک پیشنهاد (یا
     None اگر چیزی پیدا نشد) برمی‌گرداند.
 
-    ⚠️ عمداً یک ستون می‌تواند برای چند مفهوم مختلف هم‌زمان پیشنهاد شود
-    (مثلاً اگر دو مفهوم هر دو با یک ستون مبهم هم‌خوانی داشته باشند) -
-    این تابع هیچ تلاشی برای حذف این‌گونه تداخل نمی‌کند؛ تشخیص و رفع آن
-    هم به عهده مدیر (در همان فرم Mapping، با دیدن پیشنهادها) گذاشته
-    شده است.
+    یک ستون ممکن است هم‌زمان برای چند مفهوم پیشنهاد شود؛ این تابع تداخل را
+    حذف نمی‌کند و رفع آن با مدیر در فرم Mapping است.
     """
     return {concept: suggest_column_for_field(column_names, concept) for concept in concepts}
 
@@ -195,6 +192,7 @@ def suggest_mapping(column_names: list[str], concepts: list[str]) -> dict[str, d
 
 
 def _to_int_or_none(value) -> int | None:
+    """مقدار را به int تبدیل می‌کند؛ اگر ممکن نباشد None."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -207,7 +205,7 @@ def _looks_like_persian_date(values: list) -> bool:
     if not numbers:
         return False
     for n in numbers:
-        if not (13000101 <= n <= 14501231):
+        if not (13000101 <= n <= 14501231):  # بازه منطقی سال شمسی ۱۳۰۰ تا ۱۴۵۰
             return False
         month, day = (n // 100) % 100, n % 100
         if not (1 <= month <= 12 and 1 <= day <= 31):
@@ -222,6 +220,7 @@ def _looks_like_compressed_time(values: list) -> bool:
         return False
     for n in numbers:
         s = str(n)
+        # جداکردن ساعت و دقیقه بر اساس تعداد ارقام (HMM یا HHMM؛ دو رقم = فقط دقیقه)
         if len(s) <= 2:
             hour, minute = 0, n
         elif len(s) == 3:
@@ -236,6 +235,7 @@ def _looks_like_compressed_time(values: list) -> bool:
 
 
 def _looks_like_email(values: list) -> bool:
+    """آیا همه مقادیر غیرخالی شکل ایمیل (دارای @ و دامنه نقطه‌دار) دارند؟"""
     strings = [str(v).strip() for v in values if v is not None and str(v).strip()]
     if not strings:
         return False
@@ -243,6 +243,7 @@ def _looks_like_email(values: list) -> bool:
 
 
 def _looks_like_mobile(values: list) -> bool:
+    """آیا همه مقادیر (پس از حذف غیرارقام) شماره موبایل ۱۱ رقمی شروع‌شونده با ۰ هستند؟"""
     strings = [re.sub(r"\D", "", str(v)) for v in values if v is not None and str(v).strip()]
     strings = [s for s in strings if s]
     if not strings:
@@ -250,10 +251,8 @@ def _looks_like_mobile(values: list) -> bool:
     return all(len(s) == 11 and s.startswith("0") for s in strings)
 
 
-# ⚠️ عمداً "personnel_code" اینجا نیست - یک عدد صحیح ساده (مثلاً کد
-# پرسنلی) از روی مقادیرش به‌تنهایی از هر ستون عددی دیگری (مثلاً سن،
-# کد واحد سازمانی) قابل‌تشخیص نیست؛ هیچ الگوی قابل‌اتکایی برای آن وجود
-# ندارد، پس تلاش برای حدس‌زدنش از روی نمونه فقط ریسک پیشنهاد غلط دارد.
+# تشخیص‌دهنده الگوی داده برای هر مفهوم. "personnel_code" اینجا نیست، چون یک
+# عدد صحیح ساده از روی مقادیرش از ستون‌های عددی دیگر (سن، کد واحد) قابل‌تشخیص نیست.
 _PATTERN_DETECTORS = {
     "email": _looks_like_email,
     "mobile": _looks_like_mobile,
@@ -273,6 +272,7 @@ def suggest_column_from_samples(columns_with_samples: dict[str, list], concept: 
     columns_with_samples: {نام ستون خام: [چند مقدار نمونه واقعی]}. برای
     مفاهیمی که تشخیص از روی نام ستون کافی نبوده، بررسی می‌کند آیا مقادیر
     واقعی یکی از ستون‌ها با الگوی مورد انتظار همان مفهوم هم‌خوانی دارد.
+    خروجی: اولین ستون منطبق (با source="نمونه داده") یا None.
     """
     detector = _PATTERN_DETECTORS.get(concept)
     if detector is None:
@@ -299,6 +299,7 @@ async def suggest_mapping_with_samples(adapter, table_name: str, column_names: l
     نحوه ساختنش).
     """
     name_based = suggest_mapping(column_names, concepts)
+    # مفاهیمی که از روی نام پیدا نشدند و تشخیص‌دهنده الگو دارند
     missing_concepts = [c for c in concepts if name_based[c] is None and c in _PATTERN_DETECTORS]
     if not missing_concepts:
         return name_based
@@ -307,6 +308,7 @@ async def suggest_mapping_with_samples(adapter, table_name: str, column_names: l
     already_suggested_columns = {s["column"] for s in name_based.values() if s is not None}
     candidate_columns = [c for c in column_names if c not in already_suggested_columns][:_MAX_COLUMNS_TO_SAMPLE]
 
+    # خواندن ۵ نمونه از هر ستون کاندید
     samples: dict[str, list] = {}
     for column in candidate_columns:
         try:
@@ -314,6 +316,7 @@ async def suggest_mapping_with_samples(adapter, table_name: str, column_names: l
         except Exception:  # noqa: BLE001 - خطای یک ستون نباید کل فرایند پیشنهاد را متوقف کند
             samples[column] = []
 
+    # ادغام: پیشنهادهای نام‌محور + پیشنهادهای نمونه‌محور برای مفاهیم بی‌پاسخ
     result = dict(name_based)
     for concept in missing_concepts:
         result[concept] = suggest_column_from_samples(samples, concept)

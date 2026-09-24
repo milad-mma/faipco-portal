@@ -46,14 +46,16 @@ import {
   submitLeaveRequest,
 } from "../api/leaveRequests";
 
+// برچسب و رنگ چیپ هر وضعیت درخواست
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
 const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
 
-// تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
+// برچسب وضعیت یک درخواست؛ تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است برچسب جدا دارد
 function statusLabel(item) {
   return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
 }
 
+// ساعت فشرده‌ی عددی (مثلاً 830) را به رشته‌ی «08:30» تبدیل می‌کند؛ null -> خط تیره
 function formatCompactTime(compact) {
   if (compact == null) return "—";
   const hour = Math.floor(compact / 100);
@@ -61,6 +63,7 @@ function formatCompactTime(compact) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+// متن مدت یک درخواست: ساعت تردد (تردد فراموش‌شده)، بازه‌ی ساعتی (مرخصی ساعتی) یا تعداد روز
 function formatDuration(item) {
   if (item.is_forgotten_punch) return `تردد ساعت ${formatCompactTime(item.start_hour)}`;
   return item.start_hour != null
@@ -68,42 +71,52 @@ function formatDuration(item) {
     : `${item.duration} روز`;
 }
 
+// رشته‌ی «HH:MM» را به عدد فشرده‌ی HHMM تبدیل می‌کند (فرمت ذخیره‌ی ساعت در سرور)
 function timeStringToCompact(timeStr) {
   if (!timeStr) return null;
   const [h, m] = timeStr.split(":").map(Number);
   return h * 100 + m;
 }
 
+/**
+ * فرم ثبت درخواست جدید مرخصی/ماموریت/تردد فراموش‌شده.
+ * ورودی: onSubmitted(isForgottenPunch) که بعد از ثبت موفق صدا زده می‌شود.
+ * فیلدها بسته به نوع انتخابی (روزانه/ساعتی/ماموریت/تردد فراموش‌شده) تغییر می‌کنند.
+ */
 function SubmitRequestForm({ onSubmitted }) {
-  const [types, setTypes] = useState(null);
-  const [typeId, setTypeId] = useState("");
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
-  const [startTimeStr, setStartTimeStr] = useState("08:00");
-  const [endTimeStr, setEndTimeStr] = useState("10:00");
+  const [types, setTypes] = useState(null); // انواع فعال درخواست؛ null = هنوز بارگذاری نشده
+  const [typeId, setTypeId] = useState(""); // شناسه‌ی نوع انتخابی
+  const [startDate, setStartDate] = useState(new Date()); // تاریخ شروع مرخصی/ماموریت
+  const [endDate, setEndDate] = useState(new Date()); // تاریخ پایان (فقط انواع روزانه)
+  const [startTimeStr, setStartTimeStr] = useState("08:00"); // ساعت شروع (فقط انواع ساعتی)
+  const [endTimeStr, setEndTimeStr] = useState("10:00"); // ساعت پایان (فقط انواع ساعتی)
   const [description, setDescription] = useState("");
-  const [source, setSource] = useState("");
-  const [destination, setDestination] = useState("");
+  const [source, setSource] = useState(""); // مبدأ (فقط ماموریت)
+  const [destination, setDestination] = useState(""); // مقصد (فقط ماموریت)
   // تردد فراموش‌شده: هر درخواست فقط یک تردد (تاریخ + ساعت)
   const [punchDate, setPunchDate] = useState(new Date());
   const [punchTime, setPunchTime] = useState("07:00");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // بارگذاری انواع فعال درخواست
   useEffect(() => {
     fetchActiveLeaveRequestTypes().then(setTypes);
   }, []);
 
-  const selectedType = types?.find((t) => t.id === Number(typeId));
+  const selectedType = types?.find((t) => t.id === Number(typeId)); // شیء نوع انتخابی
 
+  // اعتبارسنجی و ارسال درخواست: برای تردد فراموش‌شده payload با punches، در غیر این صورت با بازه‌ی تاریخ/ساعت
   async function handleSubmit() {
     setError("");
     if (!selectedType) {
       setError("لطفاً نوع درخواست را انتخاب کنید");
       return;
     }
+    // تبدیل Date به رشته‌ی YYYY-MM-DD به وقت محلی
     const toDateOnly = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    // مسیر تردد فراموش‌شده
     if (selectedType.is_forgotten_punch) {
       const punches = [{ punch_date: toDateOnly(punchDate), time: timeStringToCompact(punchTime) }];
       setIsSubmitting(true);
@@ -123,6 +136,7 @@ function SubmitRequestForm({ onSubmitted }) {
       }
       return;
     }
+    // مسیر مرخصی/ماموریت: فیلدهای ساعتی و ماموریت فقط در صورت نیاز پر می‌شوند
     setIsSubmitting(true);
     try {
       await submitLeaveRequest({
@@ -146,8 +160,9 @@ function SubmitRequestForm({ onSubmitted }) {
     }
   }
 
-  if (types === null) return null;
+  if (types === null) return null; // هنوز بارگذاری نشده
 
+  // هیچ نوعی برای سایت کاربر تعریف نشده
   if (types.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -160,6 +175,7 @@ function SubmitRequestForm({ onSubmitted }) {
     <Card variant="outlined" sx={{ p: 2, maxWidth: 480 }}>
       <Stack spacing={2}>
         {error && <Alert severity="error">{error}</Alert>}
+        {/* انتخاب نوع درخواست */}
         <TextField select label="نوع درخواست" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
           {types.map((t) => (
             <MenuItem key={t.id} value={t.id}>
@@ -168,6 +184,7 @@ function SubmitRequestForm({ onSubmitted }) {
           ))}
         </TextField>
 
+        {/* فرم تردد فراموش‌شده: تاریخ و ساعت یک تردد، توضیحات و دکمه‌ی ثبت */}
         {selectedType?.is_forgotten_punch && (
           <>
             <Stack spacing={2} alignItems="center" sx={{ width: "100%" }}>
@@ -202,6 +219,7 @@ function SubmitRequestForm({ onSubmitted }) {
           </>
         )}
 
+        {/* فرم مرخصی/ماموریت: تاریخ شروع، بازه‌ی ساعتی یا تاریخ پایان، مبدأ/مقصد برای ماموریت، توضیحات و دکمه‌ی ثبت */}
         {selectedType && !selectedType.is_forgotten_punch && (
           <>
             <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
@@ -249,11 +267,17 @@ function SubmitRequestForm({ onSubmitted }) {
   );
 }
 
+/**
+ * لیست درخواست‌های خودِ کاربر.
+ * ورودی: آیتم‌ها و onDeleted که بعد از حذف موفق صدا زده می‌شود.
+ * در موبایل به صورت کارت و در دسکتاپ به صورت جدول؛ درخواست‌های در حال بررسی قابل حذف‌اند.
+ */
 function MyRequestsTable({ items, onDeleted }) {
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
-  const [deletingId, setDeletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null); // شناسه‌ی درخواستی که در حال حذف است
   const [error, setError] = useState("");
 
+  // حذف یک درخواست پس از تأیید کاربر و اطلاع به والد
   async function handleDelete(requestId) {
     if (!window.confirm("این درخواست حذف شود؟")) return;
     setError("");
@@ -276,15 +300,13 @@ function MyRequestsTable({ items, onDeleted }) {
     );
   }
 
-  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت) -
-  // بدون برجسته‌سازی «امروز» (آن فقط در صفحات گزارشی/ادمین لازم است، نه
-  // اینجا).
+  // مرتب‌سازی: جدیدترین‌ها (بر اساس تاریخ ثبت) بالا
   const sortedItems = [...items].sort(
     (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
   );
 
+  // نمایش کارتی در موبایل: عنوان نوع، تاریخ‌ها، چیپ وضعیت، دکمه‌ی حذف، توضیحات، مدت و نظر تأییدکننده
   if (isMobile) {
-    // نمایش کارتی — موبایل
     return (
       <Stack spacing={1.5}>
         {error && <Alert severity="error">{error}</Alert>}
@@ -335,6 +357,7 @@ function MyRequestsTable({ items, onDeleted }) {
     );
   }
 
+  // نمایش جدولی در دسکتاپ
   return (
     <Stack spacing={1.5}>
       {error && <Alert severity="error">{error}</Alert>}
@@ -387,13 +410,18 @@ function MyRequestsTable({ items, onDeleted }) {
   );
 }
 
+/**
+ * دیالوگ تصمیم تأییدکننده روی یک درخواست.
+ * ورودی: درخواست، onClose و onDecided(approved) که بعد از ثبت موفق تصمیم صدا زده می‌شود.
+ * نظر اختیاری را می‌گیرد و با دکمه‌ی تأیید یا رد تصمیم را به سرور می‌فرستد.
+ */
 function DecideDialog({ item, onClose, onDecided }) {
-  const [managerIdea, setManagerIdea] = useState("");
-  // null | "approve" | "reject" - کدام دکمه در حال ارسال است (برای نمایش لودینگ روی همان دکمه)
-  const [pendingAction, setPendingAction] = useState(null);
+  const [managerIdea, setManagerIdea] = useState(""); // نظر اختیاری تأییدکننده
+  const [pendingAction, setPendingAction] = useState(null); // null | "approve" | "reject": کدام دکمه در حال ارسال است (لودینگ روی همان دکمه)
   const [error, setError] = useState("");
   const isSubmitting = pendingAction !== null;
 
+  // ثبت تصمیم (تأیید یا رد) به همراه نظر و اطلاع به والد
   async function handleDecide(approved) {
     setError("");
     setPendingAction(approved ? "approve" : "reject");
@@ -420,6 +448,7 @@ function DecideDialog({ item, onClose, onDecided }) {
             {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} — {formatDuration(item)}
           </Typography>
         )}
+        {/* برای تردد فراموش‌شده در مرحله‌ی سرپرست: یادآوری تأیید نهایی توسط نیروی انسانی */}
         {item.is_forgotten_punch && !item.awaiting_hr && (
           <Alert severity="info">
             پس از تأیید شما، درخواست برای تأیید نهایی به مسئول نیروی انسانی ارسال می‌شود.
@@ -460,6 +489,10 @@ function DecideDialog({ item, onClose, onDecided }) {
   );
 }
 
+/**
+ * جدول درخواست‌های در انتظار تصمیم کاربر جاری (کارتابل).
+ * ورودی: آیتم‌ها و onDecide(item) برای باز کردن دیالوگ تصمیم.
+ */
 function PendingApprovalTable({ items, onDecide }) {
   if (items.length === 0) {
     return (
@@ -469,9 +502,7 @@ function PendingApprovalTable({ items, onDecide }) {
     );
   }
 
-  // ⚠️ طبق درخواست صریح کاربر: جدیدترین‌ها بالا (بر اساس تاریخ ثبت) -
-  // بدون بخش جدای «امروز» (آن فقط در صفحات گزارشی/ادمین لازم است، نه
-  // اینجا).
+  // مرتب‌سازی: جدیدترین‌ها (بر اساس تاریخ ثبت) بالا
   const sorted = [...items].sort(
     (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
   );
@@ -517,15 +548,18 @@ function PendingApprovalTable({ items, onDecide }) {
 }
 
 
-// ⚠️ طبق درخواست صریح کاربر: سوابق درخواست‌هایی که همین تأییدکننده قبلاً
-// تأیید/رد کرده، زیر درخواست‌های در انتظار - جدیدترین تصمیم بالا، با
-// صفحه‌بندی سمت سرور (سوابق با گذشت زمان زیاد می‌شود).
+/**
+ * جدول سوابق درخواست‌هایی که کاربر جاری قبلاً تأیید/رد کرده است.
+ * ورودی: reloadKey که با تغییر آن داده دوباره از سرور گرفته می‌شود.
+ * جدیدترین تصمیم بالا، با صفحه‌بندی سمت سرور.
+ */
 function DecidedHistoryTable({ reloadKey }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(0); // صفحه‌ی جاری (از صفر)
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null); // پاسخ سرور: { items, total }؛ null = هنوز بارگذاری نشده
   const [error, setError] = useState("");
 
+  // بارگذاری صفحه‌ی جاری سوابق با هر تغییر صفحه/اندازه/reloadKey
   useEffect(() => {
     setError("");
     fetchDecidedLeaveRequestsByMe(page, rowsPerPage)
@@ -593,9 +627,11 @@ function DecidedHistoryTable({ reloadKey }) {
   );
 }
 
-// ⚠️ طبق درخواست کاربر: اگر ماژول برای سایت این پرسنل از صفحه «تنظیمات درخواست
-// مرخصی/ماموریت» غیرفعال شده باشد، صفحه بسته است (سمت سرور هم مستقل بررسی
-// می‌شود - ثبت/حذف/لیست/تصمیم خطا می‌دهند).
+/**
+ * صفحه‌ی درخواست مرخصی/ماموریت (نقطه‌ی ورود).
+ * اگر ماژول برای سایت این پرسنل از صفحه‌ی «تنظیمات درخواست مرخصی/ماموریت» غیرفعال شده باشد،
+ * فقط یک هشدار نشان می‌دهد (سرور هم مستقل بررسی می‌کند)؛ وگرنه محتوای اصلی را رندر می‌کند.
+ */
 export default function LeaveRequestPage() {
   const { user } = useAuth();
   if (user?.leave_requests_disabled) {
@@ -612,60 +648,64 @@ export default function LeaveRequestPage() {
   return <LeaveRequestPageContent />;
 }
 
+/**
+ * محتوای اصلی صفحه‌ی درخواست مرخصی/ماموریت با سه تب:
+ * ثبت درخواست جدید، درخواست‌های من و کارتابل تأیید (فقط برای کسی که درخواست در انتظار یا سابقه‌ی تصمیم دارد).
+ * تب جاری در query string نگه داشته می‌شود.
+ */
 function LeaveRequestPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabFromUrl = ["submit", "my-requests", "pending"].indexOf(searchParams.get("tab"));
-  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0);
-  const [myRequests, setMyRequests] = useState(null);
-  const [pending, setPending] = useState(null);
-  const [decidingItem, setDecidingItem] = useState(null);
+  const tabFromUrl = ["submit", "my-requests", "pending"].indexOf(searchParams.get("tab")); // ایندکس تب از URL؛ -1 اگر نامعتبر
+  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0); // ایندکس تب فعال
+  const [myRequests, setMyRequests] = useState(null); // درخواست‌های خود کاربر؛ null = هنوز بارگذاری نشده
+  const [pending, setPending] = useState(null); // درخواست‌های در انتظار تصمیم کاربر
+  const [decidingItem, setDecidingItem] = useState(null); // درخواستی که دیالوگ تصمیم برایش باز است
   const [error, setError] = useState("");
-  // پیام موفقیت پس از ثبت/تأیید/رد/حذف - قبلاً هیچ بازخوردی نمایش داده نمی‌شد
-  const [toast, setToast] = useState("");
-  // تعداد کل سوابق تصمیم این فرد - فقط برای اینکه تب کارتابل برای کسی که
-  // درخواست در انتظار ندارد ولی قبلاً تصمیم گرفته هم نمایش داده شود
+  const [toast, setToast] = useState(""); // پیام موفقیت پس از ثبت/تأیید/رد/حذف
+  // تعداد کل سوابق تصمیم این فرد؛ تب کارتابل برای کسی که درخواست در انتظار ندارد ولی قبلاً تصمیم گرفته هم نمایش داده می‌شود
   const [decidedTotal, setDecidedTotal] = useState(0);
-  const [historyReloadKey, setHistoryReloadKey] = useState(0);
-  // ⚠️ وضعیت پیش‌نیازهای دسترسی - برای هشدار پیش از کلیک (سمت سرور هم
-  // مستقل بررسی می‌شود؛ این فقط تجربه کاربری است).
-  // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
-  // بازگشت فوکوس خودکار تازه شود - بدون نیاز به رفرش دستی.
+  const [historyReloadKey, setHistoryReloadKey] = useState(0); // با افزایش، جدول سوابق دوباره بارگذاری می‌شود
+  // وضعیت پیش‌نیازهای دسترسی برای هشدار پیش از کلیک (سرور هم مستقل بررسی می‌کند)؛
+  // از Hook مشترک تا با برگشت به صفحه یا بازگشت فوکوس خودکار تازه شود
   const { status: gateStatus } = useAccessGateStatus();
-  const [gateOpen, setGateOpen] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false); // باز بودن دیالوگ محدودیت دسترسی
 
-  // ⚠️ با هر تغییر وضعیت، دیالوگ هم‌گام می‌شود: اگر کاربر پیش‌نیاز را
-  // انجام داد و برگشت، دیالوگ خودکار بسته می‌شود (نه اینکه هشدار
-  // قدیمی تا رفرش دستی باقی بماند).
+  // با هر تغییر وضعیت، دیالوگ همگام می‌شود: اگر کاربر پیش‌نیاز را انجام داد و برگشت، دیالوگ خودکار بسته می‌شود
   useEffect(() => {
     if (!gateStatus) return;
     setGateOpen(Boolean(gateStatus.blocked_features?.["leave_request"]));
   }, [gateStatus]);
 
 
+  // بارگذاری درخواست‌های خود کاربر
   function loadMyRequests() {
     fetchMyLeaveRequests()
       .then(setMyRequests)
       .catch((err) => setError(err.response?.data?.detail || "دریافت درخواست‌های من با خطا مواجه شد."));
   }
 
+  // بارگذاری کارتابل (درخواست‌های در انتظار تصمیم کاربر)؛ در خطا لیست خالی
   function loadPending() {
     fetchPendingLeaveRequestsForMe()
       .then(setPending)
       .catch(() => setPending([]));
   }
 
+  // فقط تعداد کل سوابق تصمیم را می‌گیرد (یک آیتم درخواست می‌شود) تا نمایش تب کارتابل تعیین شود
   function loadDecidedTotal() {
     fetchDecidedLeaveRequestsByMe(0, 1)
       .then((data) => setDecidedTotal(data.total))
       .catch(() => setDecidedTotal(0));
   }
 
+  // بارگذاری اولیه‌ی هر سه لیست
   useEffect(() => {
     loadMyRequests();
     loadPending();
     loadDecidedTotal();
   }, []);
 
+  // تغییر تب و همگام کردن آن با query string
   function handleTabChange(newIndex) {
     setTab(newIndex);
     setSearchParams({ tab: ["submit", "my-requests", "pending"][newIndex] });
@@ -673,7 +713,7 @@ function LeaveRequestPageContent() {
 
   const pendingCount = pending?.length || 0;
   const hasPending = pendingCount > 0;
-  const showInbox = hasPending || decidedTotal > 0;
+  const showInbox = hasPending || decidedTotal > 0; // نمایش تب کارتابل
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
@@ -688,8 +728,7 @@ function LeaveRequestPageContent() {
         </Alert>
       )}
 
-      {/* ⚠️ کلید رشته‌ای است نه ایندکس - چون تب سوم شرطی است و با
-          ایندکس عددی، پنهان‌شدنش شماره‌ها را جابه‌جا می‌کرد. */}
+      {/* تب‌ها با کلید رشته‌ای (نه ایندکس)، چون تب سوم شرطی است و پنهان شدنش نباید شماره‌ها را جابه‌جا کند */}
       <PillTabs
         value={["new", "mine", "pending"][tab]}
         onChange={(k) => handleTabChange(["new", "mine", "pending"].indexOf(k))}
@@ -702,6 +741,7 @@ function LeaveRequestPageContent() {
         ]}
       />
 
+      {/* تب ثبت درخواست: بعد از ثبت، پیام موفقیت و انتقال به تب «درخواست‌های من» */}
       {tab === 0 && (
         <SubmitRequestForm
           onSubmitted={(isForgottenPunch) => {
@@ -716,6 +756,7 @@ function LeaveRequestPageContent() {
         />
       )}
 
+      {/* تب درخواست‌های من */}
       {tab === 1 && myRequests !== null && <MyRequestsTable
           items={myRequests}
           onDeleted={() => {
@@ -724,6 +765,7 @@ function LeaveRequestPageContent() {
           }}
         />}
 
+      {/* تب کارتابل: درخواست‌های در انتظار تصمیم و زیر آن سوابق تصمیم‌های قبلی */}
       {tab === 2 && showInbox && (
         <Stack spacing={3}>
           <Box>
@@ -741,6 +783,7 @@ function LeaveRequestPageContent() {
         </Stack>
       )}
 
+      {/* دیالوگ تصمیم: بعد از تصمیم همه‌ی لیست‌ها تازه می‌شوند */}
       {decidingItem && (
         <DecideDialog
           item={decidingItem}
@@ -756,6 +799,7 @@ function LeaveRequestPageContent() {
         />
       )}
 
+      {/* دیالوگ محدودیت دسترسی: ارزیابی‌های معوق یا اطلاعیه‌های نخوانده */}
       <AccessGateDialog
         open={gateOpen}
         gate={gateStatus?.blocked_features?.["leave_request"]}
@@ -768,6 +812,7 @@ function LeaveRequestPageContent() {
         onClose={() => setGateOpen(false)}
       />
 
+      {/* پیام موفقیت */}
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={4000}

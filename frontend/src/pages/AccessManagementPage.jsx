@@ -1,3 +1,8 @@
+/**
+ * صفحه مدیریت دسترسی: جست‌وجوی پرسنل (محدود به سایت‌هایی که کاربر روی آن‌ها
+ * مجوز users.manage دارد) و باز کردن دیالوگ اختصاص نقش/سرپرستی واحد، به‌همراه
+ * جدول نمای کلی همه پرسنلی که نقش سازمانی یا سرپرستی واحد دارند.
+ */
 import { useEffect, useState } from "react";
 import {
   Box,
@@ -25,33 +30,37 @@ import { fetchAccessOverview } from "../api/users";
 import { monoFontSx } from "../theme";
 import { roleDisplayName } from "../utils/roleLabels";
 import AssignAccessDialog from "../components/AssignAccessDialog";
+import SiteTransferReviewCard from "../components/SiteTransferReviewCard";
 
+// کامپوننت صفحه؛ ورودی ندارد. داده سایت‌ها، نمای کلی دسترسی و نتایج جست‌وجو را مدیریت می‌کند
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
-  const [overview, setOverview] = useState(null);
+  const [overview, setOverview] = useState(null);  // فهرست دارندگان نقش/سرپرستی؛ null = در حال بارگذاری
   const [mySiteIds, setMySiteIds] = useState(undefined); // undefined = هنوز لود نشده، null = نامحدود
 
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState([]);
-  const [accessEmployee, setAccessEmployee] = useState(null);
+  const [results, setResults] = useState([]);  // نتایج جست‌وجوی پرسنل
+  const [accessEmployee, setAccessEmployee] = useState(null);  // پرسنلی که دیالوگ دسترسی برایش باز است؛ null = دیالوگ بسته
+  const [transfersRefreshKey, setTransfersRefreshKey] = useState(0); // افزایش آن فهرست جابه‌جایی‌ها را تازه می‌کند
 
+  // بارگذاری اولیه: فهرست سایت‌ها، نمای کلی دسترسی‌ها و سایت‌های مجاز کاربر
   useEffect(() => {
     fetchSites().then(setSites);
     loadOverview();
-    // ⚠️ رفع یک نقص واقعی امنیتی/UX: قبلاً جست‌وجوی پرسنل اینجا هیچ
-    // محدودیت سایتی نداشت — کسی با users.manage فقط برای یک سایت،
-    // می‌توانست پرسنل *همه* سایت‌های دیگر را هم جست‌وجو/پیدا کند (که
-    // البته حالا Backend اختصاص نقش برایشان را رد می‌کند، ولی همچنان
-    // گیج‌کننده بود که اصلاً در نتایج جست‌وجو ظاهر شوند).
+    // سایت‌هایی که کاربر روی آن‌ها users.manage دارد گرفته می‌شود تا جست‌وجوی
+    // پرسنل فقط به همین سایت‌ها محدود شود (null = دسترسی نامحدود)
     fetchMyAccessibleSites("users.manage").then(({ unrestricted, sites: accessibleSites }) => {
       setMySiteIds(unrestricted ? null : accessibleSites.map((s) => s.id));
     });
   }, []);
 
+  // نمای کلی دسترسی‌ها را از سرور می‌گیرد و در overview می‌گذارد
   function loadOverview() {
     fetchAccessOverview().then(setOverview);
   }
 
+  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه (debounce) بعد از تغییر عبارت؛
+  // تا وقتی سایت‌های مجاز لود نشده‌اند جست‌وجو انجام نمی‌شود
   useEffect(() => {
     if (!search || mySiteIds === undefined) {
       setResults([]);
@@ -72,11 +81,14 @@ export default function AccessManagementPage() {
     return () => clearTimeout(timer);
   }, [search, mySiteIds]);
 
+  // نام سایت را از روی id برمی‌گرداند؛ در صورت نبودن «—»
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
 
+  // دیالوگ دسترسی را می‌بندد و جدول نمای کلی را دوباره بارگذاری می‌کند
   function closeAccessDialog() {
     setAccessEmployee(null);
     loadOverview(); // بعد از تغییر احتمالی، جدول نمای کلی را تازه کن
+    setTransfersRefreshKey((k) => k + 1); // نقش‌های نمایش‌داده‌شده در کارت جابه‌جایی‌ها هم تازه شوند
   }
 
   return (
@@ -89,6 +101,10 @@ export default function AccessManagementPage() {
         یا سرپرستی یک یا چند واحد را به او اختصاص دهید.
       </Typography>
 
+      {/* جابه‌جایی‌های بین سایت‌ها که نقش‌هایشان هنوز بازبینی نشده (فقط اگر موردی باشد) */}
+      <SiteTransferReviewCard onOpenAccess={setAccessEmployee} refreshKey={transfersRefreshKey} />
+
+      {/* کارت جست‌وجوی پرسنل و جدول نتایج */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <TextField
           fullWidth
@@ -104,6 +120,7 @@ export default function AccessManagementPage() {
           }}
         />
 
+        {/* جدول نتایج جست‌وجو با دکمه «دسترسی» برای هر پرسنل */}
         {results.length > 0 && (
           <TableContainer sx={{ mt: 2 }}>
             <Table size="small">
@@ -186,6 +203,7 @@ export default function AccessManagementPage() {
                       </TableCell>
                     </TableRow>
                   )}
+                  {/* یک ردیف برای هر پرسنل: نقش‌ها (با سایت یا «سراسری») و واحدهای تحت سرپرستی */}
                   {overview.map((entry) => (
                 <TableRow key={entry.employee_id} hover>
                   <TableCell sx={monoFontSx}>{entry.personnel_code}</TableCell>
@@ -235,6 +253,7 @@ export default function AccessManagementPage() {
         </TableContainer>
       </Card>
 
+      {/* دیالوگ اختصاص دسترسی؛ فقط سایت‌های مجاز کاربر به آن داده می‌شود */}
       <AssignAccessDialog
         employee={accessEmployee}
         sites={mySiteIds === null || mySiteIds === undefined ? sites : sites.filter((s) => mySiteIds.includes(s.id))}

@@ -1,8 +1,9 @@
 """
-مدل‌های ماژول «بیمه تکمیلی» - بازسازی جدول insurance_registration سامانه
-قدیمی داخل پرتال. یک ثبت‌نام برای هر پرسنل (شخص اصلی) + اعضای خانواده +
-مدرک کفالت هر عضو. مقادیر ثابت بیمه‌گر (کد گروه و ...) در خروجی Excel از
-core/insurance_rules.py اضافه می‌شوند و ذخیره نمی‌شوند.
+جدول‌های ماژول «بیمه تکمیلی»:
+- InsuranceRegistration: یک ثبت‌نام برای هر پرسنل (اطلاعات شخص اصلی + بانکی)
+- InsuranceMember: اعضای خانواده یک ثبت‌نام (همسر/فرزند/پدر/مادر)
+- InsuranceDocument: مدرک کفالت/حضانت یک عضو (محتوای فایل داخل دیتابیس)
+مقادیر ثابت بیمه‌گر ذخیره نمی‌شوند و هنگام خروجی Excel اضافه می‌شوند.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ class InsuranceRegistration(Base, TimestampMixin):
     employee_id: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, unique=True
     )
-    # عکس‌برداری از پرسنل در لحظه ثبت
+    # نسخه‌ای از اطلاعات پرسنل در لحظه ثبت (تا خروجی Excel با تغییرات بعدی Sync عوض نشود)
     personnel_code: Mapped[str] = mapped_column(String(64), nullable=False)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -49,6 +50,8 @@ class InsuranceRegistration(Base, TimestampMixin):
 
 
 class InsuranceMember(Base):
+    """یک عضو خانواده؛ member_type='pending' یعنی نگهدارنده موقت مدرکی که هنوز به عضو واقعی وصل نشده."""
+
     __tablename__ = "insurance_members"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -67,7 +70,7 @@ class InsuranceMember(Base):
     national_id: Mapped[str] = mapped_column(String(10), nullable=False)
     birth_certificate_no: Mapped[str] = mapped_column(String(20), nullable=False)
     mobile_number: Mapped[str] = mapped_column(String(11), nullable=False)
-    kafala_status: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    kafala_status: Mapped[str | None] = mapped_column(String(3), nullable=True)  # yes / no / NULL (پرسیده نشده)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     registration: Mapped[InsuranceRegistration] = relationship(back_populates="members")
@@ -77,6 +80,8 @@ class InsuranceMember(Base):
 
 
 class InsuranceDocument(Base):
+    """فایل مدرک یک عضو؛ هر عضو حداکثر یک مدرک دارد."""
+
     __tablename__ = "insurance_documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)

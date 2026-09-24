@@ -14,6 +14,7 @@ from app.db.session import Base
 
 
 class UsageStat(Base):
+    """تعداد درخواست‌های پرتال در یک ساعت از یک روز (یکتا بر اساس date و hour)."""
     __tablename__ = "usage_stats"
     __table_args__ = (UniqueConstraint("date", "hour", name="uq_usage_stats_date_hour"),)
 

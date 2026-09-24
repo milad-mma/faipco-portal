@@ -7,6 +7,7 @@ import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "./BrandLogo";
 import { modernLightTheme } from "../theme";
 
+// آیتم‌های معرفی قابلیت‌ها در پنل گرادیانتی دسکتاپ
 const PROMO_FEATURES = [
   { icon: <EventNoteOutlinedIcon fontSize="small" />, label: "درخواست مرخصی" },
   { icon: <DescriptionOutlinedIcon fontSize="small" />, label: "فیش حقوق و کارکرد" },
@@ -14,24 +15,22 @@ const PROMO_FEATURES = [
 ];
 
 /**
- * قالب مشترک صفحات احراز هویت (ورود، فراموشی رمز عبور، بازنشانی رمز
- * عبور) - عیناً همان طرح دوپانلی LoginPage.jsx: پس‌زمینه قابل‌تنظیم از
- * پنل ادمین، کارت با موقعیت مطلق در دسکتاپ، پنل فرم (راست) + پنل معرفی
- * با گرادیانت (چپ، فقط دسکتاپ).
- *
- * title/subtitle/children فقط محتوای داخل پنل فرم را مشخص می‌کنند - همه
- * صفحاتی که از این قالب استفاده می‌کنند، از نظر ظاهری کاملاً یکسان به
- * نظر می‌رسند، دقیقاً مثل صفحه ورود.
+ * قالب مشترک صفحات احراز هویت (فراموشی و بازنشانی رمز عبور) با همان طرح دوپانلی LoginPage.jsx:
+ * پس‌زمینه‌ی قابل‌تنظیم از پنل ادمین، کارت با موقعیت مطلق در دسکتاپ، پنل فرم (راست) و
+ * پنل معرفی گرادیانتی (چپ، فقط دسکتاپ). در موبایل به‌جای پنل معرفی یک هدر برند بالای فرم نمایش داده می‌شود.
+ * ورودی: title و subtitle (عنوان و زیرعنوان فرم) و children (محتوای فرم).
+ * خروجی: کل صفحه داخل ThemeProvider با تم روشن ثابت (modernLightTheme).
  */
 export default function AuthPageShell({ title, subtitle, children }) {
   const { loginTitle, loginSubtitle, authTitle, authSubtitle, surfaces } = useBranding();
-  // فراموشی/بازیابی رمز: تنظیمات جای نمایش "auth"؛ متن خالی = همان متن ورود
+  // تنظیمات ظاهری جای نمایش "auth" (لوگو، پس‌زمینه، نمایش عنوان)؛ عنوان/زیرعنوان خالی = همان متن صفحه‌ی ورود
   const cfg = surfaces.auth;
   const headerTitle = authTitle || loginTitle;
   const headerSubtitle = authSubtitle || loginSubtitle;
 
   return (
     <ThemeProvider theme={modernLightTheme}>
+      {/* پس‌زمینه‌ی تمام‌صفحه با تصویر قابل‌تنظیم ورود */}
       <Box
         sx={{
           minHeight: "100vh",
@@ -46,6 +45,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
           p: 0,
         }}
       >
+        {/* کارت اصلی: در موبایل تمام‌صفحه، در دسکتاپ کارت شناور با موقعیت مطلق */}
         <Paper
           elevation={0}
           sx={{
@@ -57,7 +57,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
             borderRadius: { xs: 0, md: 4 },
             position: { md: "absolute" },
             top: { md: "50%" },
-            left: { md: "200px" },
+            left: { md: "200px" }, // داخل sx است و stylis-plugin-rtl آن را به right تبدیل می‌کند
             transform: { md: "translateY(-50%)" },
             boxShadow: { xs: "none", md: "0 24px 55px rgba(33,67,91,.13)" },
             overflow: "hidden",
@@ -81,10 +81,8 @@ export default function AuthPageShell({ title, subtitle, children }) {
                 alignItems: "center",
                 gap: 1.5,
                 background: cfg.background || "linear-gradient(110deg, #3476ad, #2b91a5)",
-                // ⚠️ رفع ناحیه امن: این هدر در موبایل چسبیده به بالای
-                // صفحه است و با viewport-fit=cover زیر Dynamic Island /
-                // ناچ می‌افتاد. صفحات ورود/بازیابی رمز خارج از Layout
-                // اصلی رندر می‌شوند، پس رفع سراسری آنجا شاملشان نمی‌شود.
+                // فاصله‌ی ناحیه‌ی امن بالای صفحه (ناچ/Dynamic Island با viewport-fit=cover)؛
+                // این صفحات خارج از Layout اصلی رندر می‌شوند و باید خودشان این فاصله را اعمال کنند.
                 pt: "env(safe-area-inset-top, 0px)",
                 color: "#fff",
                 px: 2.5,
@@ -107,6 +105,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
               </Box>
             </Box>
 
+            {/* عنوان، زیرعنوان و محتوای فرم */}
             <Box
               sx={{
                 px: { xs: 2.5, md: 0 },
@@ -146,6 +145,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
               backgroundSize: "18px 18px, 100% 100%",
             }}
           >
+            {/* لوگو و عنوان برند */}
             <Box sx={{ display: "flex", flexDirection: "row", gap: 1.5, alignItems: "center" }}>
               <BrandLogo surface="auth" alt={headerTitle} />
               <Box>
@@ -156,6 +156,7 @@ export default function AuthPageShell({ title, subtitle, children }) {
               </Box>
             </Box>
 
+            {/* متن معرفی و فهرست قابلیت‌ها */}
             <Box>
               <Typography variant="h5" fontWeight={800} sx={{ mb: 2, lineHeight: 1.8 }}>
                 همه خدمات پرسنلی،

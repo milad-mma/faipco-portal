@@ -1,7 +1,7 @@
 """
 مدل‌های سیستم اطلاعیه سازمانی.
 
-Notice: خود اطلاعیه
+Notice: خود اطلاعیه (عنوان، متن، اولویت، وضعیت، نوع، زمان انتشار/انقضا).
 NoticeTarget: مخاطب اطلاعیه — یک اطلاعیه می‌تواند چند Target داشته باشد
   (مثلاً هم به یک Site و هم به یک Role خاص ارسال شود).
   target_id بسته به target_type به یکی از جداول sites/departments/roles/employees اشاره دارد
@@ -20,6 +20,7 @@ from app.models.base import TimestampMixin
 
 
 class NoticePriority(str, enum.Enum):
+    """سطح اولویت اطلاعیه."""
     low = "low"
     normal = "normal"
     high = "high"
@@ -27,12 +28,14 @@ class NoticePriority(str, enum.Enum):
 
 
 class NoticeStatus(str, enum.Enum):
+    """وضعیت چرخه عمر اطلاعیه: پیش‌نویس، منتشرشده، منقضی."""
     draft = "draft"
     published = "published"
     expired = "expired"
 
 
 class NoticeTargetType(str, enum.Enum):
+    """نوع مخاطب اطلاعیه؛ مشخص می‌کند target_id به کدام جدول اشاره دارد."""
     all = "all"
     site = "site"
     department = "department"
@@ -42,7 +45,7 @@ class NoticeTargetType(str, enum.Enum):
 
 class NoticeType(str, enum.Enum):
     """
-    normal          → اطلاعیه متنی معمولی (رفتار همیشگی).
+    normal          → اطلاعیه متنی معمولی.
     payroll         → اطلاعیه فیش حقوقی: هر مخاطب فقط PDF فیش خودش را می‌بیند
                       (payroll_receipts)، نه متن یکسان برای همه.
     attendance_card → اطلاعیه فیش کارکرد (کارت ماهانه کارکرد پرسنل): مثل
@@ -56,6 +59,7 @@ class NoticeType(str, enum.Enum):
 
 
 class Notice(Base, TimestampMixin):
+    """یک اطلاعیه سازمانی به همراه فهرست مخاطبانش (targets)."""
     __tablename__ = "notices"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -65,9 +69,8 @@ class Notice(Base, TimestampMixin):
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
     # فقط برای اطلاعیه‌های نوع attendance_card: زیرعنوان ماه/سال که روی خودِ
-    # کارت PDF چاپ می‌شود (مثلاً «تیر ماه 1405») — عمداً از title جدا است،
-    # چون title برای نمایش در لیست اطلاعیه‌های دریافتی است، نه لزوماً همان
-    # متنی که روی خودِ کارت باید بیاید.
+    # کارت PDF چاپ می‌شود (مثلاً «تیر ماه 1405») — از title جدا است،
+    # چون title برای نمایش در لیست اطلاعیه‌های دریافتی است.
     card_subtitle: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     priority: Mapped[NoticePriority] = mapped_column(
@@ -80,6 +83,7 @@ class Notice(Base, TimestampMixin):
         Enum(NoticeType, name="notice_type_enum"), default=NoticeType.normal, nullable=False
     )
 
+    # زمان شروع نمایش و زمان انقضا؛ NULL یعنی بدون محدودیت
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -95,6 +99,7 @@ class Notice(Base, TimestampMixin):
 
 
 class NoticeTarget(Base):
+    """یک مخاطب اطلاعیه (همه / سایت / دپارتمان / نقش / پرسنل)."""
     __tablename__ = "notice_targets"
 
     id: Mapped[int] = mapped_column(primary_key=True)

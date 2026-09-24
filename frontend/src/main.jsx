@@ -1,14 +1,14 @@
+/**
+ * نقطه‌ی ورود برنامه: ثبت Service Worker، بارگذاری فونت‌های محلی وزیرمتن
+ * و رندر درخت Providerها (کش RTL، تم، وضعیت اتصال، برندینگ، مسیریاب، احراز هویت) به همراه App.
+ */
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { CacheProvider } from "@emotion/react";
-// فونت وزیرمتن — کاملاً محلی/آفلاین با @fontsource/vazirmatn به‌عنوان یک
-// وابستگی معمولی npm نصب و در زمان Build (نه در زمان اجرا) دانلود می‌شود؛
-// خروجی نهایی (frontend/dist) کاملاً خودکفاست، بدون هیچ درخواست به بیرون.
-// ⚠️ وزن ۸۰۰ (Extra-Bold) هم لازم است — چند جای پروژه (مثلاً عنوان صفحه
-// ورود) صریحاً fontWeight={800} استفاده می‌کنند؛ بدون این فایل، مرورگر
-// یا از یک Bold ساختگی (Synthetic Bold با کیفیت پایین‌تر) استفاده می‌کرد،
-// یا (بدتر) دوباره وسوسه می‌شد از یک CDN بیرونی این وزن را بگیرد.
+// فونت وزیرمتن به صورت محلی از پکیج @fontsource/vazirmatn؛ فایل‌ها در زمان Build در خروجی قرار می‌گیرند
+// و برنامه به هیچ منبع بیرونی درخواست نمی‌دهد.
+// وزن ۸۰۰ برای جاهایی که fontWeight={800} دارند (مثل عنوان صفحه‌ی ورود) لازم است تا مرورگر Bold ساختگی نسازد.
 import "@fontsource/vazirmatn/400.css";
 import "@fontsource/vazirmatn/500.css";
 import "@fontsource/vazirmatn/600.css";
@@ -26,21 +26,19 @@ import MandatoryPasswordChangeGuard from "./components/MandatoryPasswordChangeGu
 import OfflineBanner from "./components/OfflineBanner";
 import App from "./App";
 
-registerServiceWorker();
+registerServiceWorker(); // ثبت Service Worker برای Precache و Push
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <CacheProvider value={rtlCache}>
       <ThemeModeProvider>
-        {/* بیرون از BrowserRouter/AuthProvider — چون AuthContext هم به همین
-            وضعیت اتصال نیاز دارد (برای تلاش خودکار دوباره وقتی اینترنت
-            برمی‌گردد)، و این یک نگرانی کاملاً سراسری/مستقل از مسیر است. */}
+        {/* وضعیت اتصال بیرون از BrowserRouter/AuthProvider است چون AuthContext برای تلاش دوباره پس از وصل شدن اینترنت به آن نیاز دارد */}
         <OnlineStatusProvider>
           <BrandingProvider>
             <BrowserRouter>
               <AuthProvider>
                 <App />
-                {/* در سطح ریشه (نه داخل Layout) تا حتی توی صفحه ورود هم دیده شود */}
+                {/* اعلان نسخه‌ی جدید، الزام تغییر رمز و بنر آفلاین در سطح ریشه (نه داخل Layout) تا در صفحه‌ی ورود هم دیده شوند */}
                 <UpdatePrompt />
                 <MandatoryPasswordChangeGuard />
                 <OfflineBanner />

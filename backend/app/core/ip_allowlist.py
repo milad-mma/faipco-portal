@@ -1,7 +1,8 @@
 """
-منطق واقعی «محدودکردن ورود به رنج‌های IP مجاز» — استفاده در auth_service.py.
+منطق «محدودکردن ورود به رنج‌های IP مجاز» که در auth_service.py استفاده می‌شود:
+تشخیص IP واقعی کاربر، نرمال‌سازی IP، بررسی فعال بودن محدودیت و تطبیق IP با رنج‌های CIDR.
 
-نکته مهم درباره تشخیص IP واقعی کاربر: این سرور پشت Nginx است (که خودش هم
+نکته درباره تشخیص IP واقعی کاربر: این سرور پشت Nginx است (که خودش هم
 ممکن است پشت یک Reverse Proxy خارجی برای SSL باشد — یعنی دو لایه Proxy).
 چون uvicorn با فلگ --proxy-headers اجرا نمی‌شود، Request.client.host همیشه
 127.0.0.1 (اتصال محلی از Nginx) خواهد بود، نه IP واقعی کاربر. Nginx با
@@ -24,6 +25,7 @@ from app.models.ip_allowlist_entry import IpAllowlistEntry
 
 
 def get_client_ip(request: Request) -> str:
+    """ورودی: Request. خروجی: IP واقعی کاربر (اولین مقدار X-Forwarded-For یا client.host، در غیر این صورت "unknown")."""
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         first_ip = forwarded_for.split(",")[0].strip()
@@ -33,6 +35,7 @@ def get_client_ip(request: Request) -> str:
 
 
 def _normalize_ip(ip: str) -> str:
+    """ورودی: رشته IP. خروجی: فرم استاندارد IP؛ رشته نامعتبر بدون تغییر برمی‌گردد."""
     # اگر IP به‌صورت IPv4-mapped IPv6 باشد (مثل ::ffff:192.168.1.10)، برای
     # مقایسه درست با رنج‌های IPv4 ثبت‌شده، به فرم ساده IPv4 تبدیل می‌شود
     try:
@@ -46,7 +49,8 @@ def _normalize_ip(ip: str) -> str:
 
 async def is_ip_allowlist_enforced(db: AsyncSession) -> bool:
     """
-    محدودیت واقعاً فعال است فقط اگر هر دو شرط برقرار باشند:
+    خروجی: True اگر محدودیت IP باید اعمال شود.
+    محدودیت فعال است فقط اگر هر دو شرط برقرار باشند:
     ۱) کلید فعال/غیرفعال (که از پنل، مستقل از تعداد رنج‌ها، کنترل می‌شود) روشن باشد
     ۲) حداقل یک رنج هم واقعاً ثبت شده باشد
 
@@ -55,20 +59,22 @@ async def is_ip_allowlist_enforced(db: AsyncSession) -> bool:
     """
     from app.services.system_settings_service import SystemSettingsService
 
-    enabled = await SystemSettingsService(db).get_ip_allowlist_enabled()
+    enabled = await SystemSettingsService(db).get_ip_allowlist_enabled()  # کلید فعال/غیرفعال از تنظیمات سیستم
     if not enabled:
         return False
 
+    # وجود حداقل یک رنج ثبت‌شده
     result = await db.execute(select(IpAllowlistEntry.id).limit(1))
     return result.first() is not None
 
 
 async def is_ip_allowed(db: AsyncSession, client_ip: str) -> bool:
     """
-    True اگر:
+    ورودی: session دیتابیس و IP کاربر. خروجی: True اگر:
     - هیچ رنجی اصلاً ثبت نشده (محدودیت غیرفعال است)، یا
     - client_ip داخل حداقل یکی از رنج‌های ثبت‌شده باشد
     """
+    # خواندن همه رنج‌های CIDR ثبت‌شده
     result = await db.execute(select(IpAllowlistEntry.cidr))
     cidrs = [row[0] for row in result.all()]
     if not cidrs:
@@ -79,6 +85,7 @@ async def is_ip_allowed(db: AsyncSession, client_ip: str) -> bool:
     except ValueError:
         return False  # IP نامعتبر/ناشناس — با محدودیت فعال، اجازه داده نمی‌شود
 
+    # تطبیق IP با هر رنج؛ اولین تطابق کافی است
     for cidr in cidrs:
         try:
             network = ipaddress.ip_network(cidr, strict=False)

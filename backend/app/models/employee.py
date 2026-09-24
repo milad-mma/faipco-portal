@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import SmallInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
+from sqlalchemy import JSON, SmallInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -18,13 +18,15 @@ from app.models.base import TimestampMixin
 
 
 class Department(Base, TimestampMixin):
+    """واحد سازمانی یک Site؛ کد واحد در هر سایت یکتاست و از Sync یا دستی ساخته می‌شود."""
+
     __tablename__ = "departments"
     __table_args__ = (UniqueConstraint("site_id", "code", name="uq_department_site_code"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)  # کد واحد در سیستم منبع (مثلاً Sec_No)
 
     # سرپرست این واحد — می‌تواند برای پرسنل همین واحد اطلاعیه ارسال کند
     # (بدون نیاز به هیچ نقش RBAC جداگانه‌ای؛ صرفاً همین اتصال کافی است)
@@ -45,33 +47,28 @@ class Employee(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    personnel_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    personnel_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # کلید تطبیق با منبع (همراه site_id)
     national_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # فقط روز/ماه تولد (شمسی) — بدون سال، چون فقط برای کارت «متولدین روز
-    # جاری» در داشبورد استفاده می‌شود، نه محاسبه سن. مقدار خام از دیتابیس
-    # مبدأ (طبق EmployeeMapping.birth_date_column، در صورت تعریف) توسط
-    # Sync Engine استخراج و اینجا ذخیره می‌شود.
+    # فقط روز/ماه تولد (شمسی)، بدون سال؛ برای کارت «متولدین روز جاری» در داشبورد.
+    # Sync Engine آن را از ستون EmployeeMapping.birth_date_column (در صورت تعریف) استخراج می‌کند.
     birth_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     birth_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # برای ماژول «بیمه تکمیلی»: تاریخ تولد و استخدام کامل شمسی («1370/05/21») و
-    # جنسیت (۱=مرد، ۲=زن - همان کد کاراوب)؛ از نگاشت پرسنل Sync می‌شوند
+    # جنسیت (۱=مرد، ۲=زن، همان کد کاراوب)؛ از نگاشت پرسنل Sync می‌شوند
     birth_date_jalali: Mapped[str | None] = mapped_column(String(10), nullable=True)
     hire_date_jalali: Mapped[str | None] = mapped_column(String(10), nullable=True)
     gender: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
-    # نام سمت/عنوان شغلی — مستقیماً به‌صورت متن ذخیره می‌شود (نه یک جدول جدا با
-    # Foreign Key مثل Department)، چون سمت فقط برای نمایش اطلاعاتی است و به آن
-    # نیازی مثل هدف‌گیری اطلاعیه یا تعیین سرپرست ندارد.
+    # نام سمت/عنوان شغلی به‌صورت متن (بدون جدول و Foreign Key جدا)، چون فقط برای نمایش است.
     position_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # تصویر بندانگشتی پرسنل (از جدول جدا EmployeeExtendedInfo، ستون ThumbnailImg
-    # — معمولاً GIF) — فقط برای نمایش آواتار کوچک؛ تصویر اصلی با کیفیت بالا
-    # عمداً همگام‌سازی/ذخیره نمی‌شود.
+    # تصویر بندانگشتی پرسنل (از جدول EmployeeExtendedInfo، ستون ThumbnailImg، معمولاً GIF)
+    # برای نمایش آواتار کوچک؛ تصویر اصلی با کیفیت بالا همگام‌سازی نمی‌شود.
     photo_thumbnail: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
@@ -79,7 +76,7 @@ class Employee(Base, TimestampMixin):
         ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # وضعیت فعال/کات در منبع؛ توسط Sync تعیین می‌شود
 
     # کاملاً مجزا از is_active: فقط و فقط از پنل «پرسنل» توسط Admin تغییر می‌کند.
     # Sync Engine هرگز این ستون را نمی‌خواند/نمی‌نویسد — پس با هیچ Sync جدیدی
@@ -87,19 +84,12 @@ class Employee(Base, TimestampMixin):
     # است: is_active (وضعیت در منبع) AND is_enabled (تصمیم دستی Admin).
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # کاملاً خودانتخاب و شخصی — فقط از پنل «پرسنل من» توسط خودِ کاربر تغییر
-    # می‌کند (نه Admin). دقیقاً مثل is_enabled، Sync Engine هرگز این ستون
-    # را نمی‌خواند/نمی‌نویسد. فقط روی کارت «متولدین امروز» در داشبورد
-    # شخصی پرسنل اثر دارد — نه پنل Admin، نه ابزار ارسال پیام تبریک تولد
-    # (که هردو باید همچنان همه پرسنل را ببینند).
+    # تنظیم شخصی که فقط خودِ کاربر از پنل «پرسنل من» تغییر می‌دهد؛ Sync Engine به آن دست نمی‌زند.
+    # فقط روی کارت «متولدین امروز» داشبورد شخصی پرسنل اثر دارد، نه پنل Admin و نه ارسال پیام تبریک.
     hide_birthday_in_dashboard: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # ⚠️ استثنای عمدی روی قاعده «همه رکوردها فقط از Sync می‌آیند» بالا —
-    # طبق قابلیت «افزودن دستی پرسنل» (مجوز employees.create)، این فقط
-    # برای شفافیت/گزارش‌گیری است تا Admin بداند این رکورد از کجا آمده. اگر
-    # بعداً همان personnel_code در منبع Sync واقعی هم ظاهر شود، طبق منطق
-    # موجود Sync Engine (Upsert بر اساس personnel_code+site_id) به‌طور
-    # طبیعی به‌روزرسانی/ادغام می‌شود، نه خطا یا رکورد تکراری.
+    # True یعنی رکورد از «افزودن دستی پرسنل» (مجوز employees.create) آمده، نه از Sync؛ فقط برای گزارش.
+    # اگر همان personnel_code بعداً در منبع ظاهر شود، Sync با Upsert بر اساس personnel_code+site_id آن را به‌روز می‌کند.
     is_manually_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # آخرین باری که این رکورد توسط Sync Engine از منبع دیده و به‌روزرسانی شده
@@ -121,7 +111,7 @@ class EmployeeMapping(Base, TimestampMixin):
         ForeignKey("sites.id", ondelete="CASCADE"), unique=True, nullable=False
     )
 
-    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)  # جدول پرسنل در دیتابیس منبع (مثلاً dbo.Employee)
 
     personnel_code_column: Mapped[str] = mapped_column(String(128), nullable=False)
     national_code_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -130,10 +120,8 @@ class EmployeeMapping(Base, TimestampMixin):
     mobile_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     email_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # اختیاری: نام ستون تاریخ تولد شمسی خام در دیتابیس مبدأ (فرمت رایج
-    # «۱۳۷۰/۰۵/۲۱» یا مشابه) — Sync Engine فقط روز/ماه را از آن استخراج
-    # می‌کند (برای کارت «متولدین روز جاری» در داشبورد)، بدون نیاز به تبدیل
-    # تقویم شمسی/میلادی.
+    # اختیاری: ستون تاریخ تولد شمسی خام در مبدأ (مثل «۱۳۷۰/۰۵/۲۱»)؛ Sync Engine از آن
+    # روز/ماه تولد و تاریخ کامل را بدون تبدیل تقویم استخراج می‌کند.
     birth_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # اختیاری (بیمه تکمیلی): تاریخ استخدام شمسی و جنسیت (کاراوب: Emp_Date / Gender)
     hire_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -144,7 +132,7 @@ class EmployeeMapping(Base, TimestampMixin):
     # اگر True باشد، یعنی منطق ستون بالا برعکس است (مثل ستونی به اسم IsCut
     # که ۱=غیرفعال و ۰=فعال است، برخلاف فرض پیش‌فرض ۱=فعال و ۰=غیرفعال)
     is_active_inverted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # ⚠️ اختیاری - وقتی چند سایت یک دیتابیس/جدول پرسنل مشترک دارند (مثل
+    # اختیاری: وقتی چند سایت یک دیتابیس/جدول پرسنل مشترک دارند (مثل
     # Employee.BranchCode در کاراوب): فقط ردیف‌هایی که مقدار این ستون برابر
     # branch_code_value است مال این سایت‌اند و Sync می‌شوند.
     branch_code_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -160,6 +148,12 @@ class EmployeeMapping(Base, TimestampMixin):
     department_lookup_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
     department_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     department_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # اختیاری: ستون «واحد بالادست» در همان جدول Lookup (کاراوب: Sections.TFather)؛
+    # برای تقسیم درخت واحدها بین چند سایتی که یک دیتابیس منبع مشترک دارند.
+    department_lookup_parent_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # کد واحدهای ریشه‌ی این سایت. هر واحد متعلق به سایتی است که نزدیک‌ترین ریشه‌ی
+    # بالادستش را دارد (core/org_tree.py). فهرست خالی = بدون فیلتر درختی (همه‌ی پرسنل).
+    root_department_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
     # اختیاری: نام ستونی در جدول پرسنل مبدأ که کد سمت/عنوان شغلی است (مثلاً
     # ستون Pos_No). اگر تعریف شود، Sync Engine نام واقعی سمت را از جدول

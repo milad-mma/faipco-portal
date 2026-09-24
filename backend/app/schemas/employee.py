@@ -1,8 +1,13 @@
-"""Schema های Employee — خروجی (فقط از طریق Sync Engine ساخته می‌شود) + ورودی «افزودن دستی پرسنل»."""
+"""
+Schema های Pydantic پرسنل: خروجی پرسنل و صفحه‌بندی، ورودی «افزودن دستی پرسنل»،
+کارت «متولدین امروز» و ری‌اکشن تبریک، و ورودی‌های تغییر وضعیت/رمز/نمایش تولد.
+"""
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class EmployeeOut(BaseModel):
+    """خروجی یک پرسنل در Endpoint های /employees (فهرست، ایجاد و ویرایش)."""
+
     id: int
     personnel_code: str
     national_code: str | None
@@ -15,9 +20,8 @@ class EmployeeOut(BaseModel):
     is_active: bool  # وضعیت در منبع (فقط توسط Sync Engine تعیین می‌شود؛ غیرقابل‌ویرایش دستی)
     is_enabled: bool  # تصمیم دستی Admin — کاملاً مستقل از Sync، با آن بازنویسی نمی‌شود
     has_custom_password: bool = False  # آیا رمز عبور اختصاصی دارد (یعنی دیگر با کد ملی وارد نمی‌شود)
-    # این دو فیلد اختیاری‌اند: فقط GET /employees (که Join با Site/Department دارد)
-    # آن‌ها را پر می‌کند؛ Endpoint های دیگر (مثل PATCH) خالی می‌گذارند و فرانت‌اند
-    # در آن حالت‌ها از roی lookup محلی خودش (نام سایت/واحد از فهرست جداگانه) استفاده می‌کند.
+    # این دو فیلد را فقط GET /employees (با Join روی Site/Department) پر می‌کند؛ Endpoint های دیگر
+    # (مثل PATCH) خالی می‌گذارند و فرانت‌اند نام سایت/واحد را از فهرست محلی خودش پیدا می‌کند.
     site_name: str | None = None
     department_name: str | None = None
     is_manually_created: bool = False  # آیا از طریق «افزودن دستی پرسنل» ثبت شده (نه Sync)
@@ -54,8 +58,7 @@ class BirthdayReactorOut(BaseModel):
     name: str
     department: str | None = None
     emoji: str
-    # ⚠️ مثل داشبورد شخصی: فقط اگر واقعاً عکس دارد، فرانت‌اند درخواست
-    # تصویر می‌زند - وگرنه برای هر نفر یک ۴۰۴ اضافه به سرور می‌خورد.
+    # فرانت‌اند فقط وقتی True است درخواست تصویر می‌زند تا برای افراد بدون عکس درخواست ۴۰۴ ارسال نشود
     has_photo: bool = False
 
 
@@ -67,17 +70,18 @@ class BirthdayEmployeeOut(BaseModel):
     last_name: str
     site_name: str | None = None
     department_name: str | None = None
-    # ⚠️ ری‌اکشن‌های تبریک - همیشه برگردانده می‌شوند (طبق تصمیم صریح
-    # کاربر، فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است).
-    reaction_counts: dict[str, int] = {}
+    # ری‌اکشن‌های تبریک همیشه برگردانده می‌شوند؛ فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است
+    reaction_counts: dict[str, int] = {}  # تعداد هر ایموجی
     reactors: list[BirthdayReactorOut] = []
-    my_reaction: str | None = None
+    my_reaction: str | None = None  # ایموجی ثبت‌شده توسط کاربر جاری (در صورت وجود)
     # آیا کاربر جاری خودش همین متولد است؟ (نباید بتواند ری‌اکشن بزند)
     is_self: bool = False
     has_photo: bool = False
 
 
 class SetBirthdayReactionIn(BaseModel):
+    """ورودی ثبت ری‌اکشن (ایموجی) تبریک تولد روی یک پرسنل متولد امروز."""
+
     emoji: str
 
 

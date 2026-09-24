@@ -1,3 +1,7 @@
+/**
+ * کارت مصرف منابع سرور (CPU، RAM، دیسک) در پنل مدیریت سیستم.
+ * شامل توابع کمکی تجمیع ساعتی/روزانه، یافتن بیشینه و روند دیسک، کامپوننت داخلی MetricSummary و کامپوننت اصلی ServerStatsCard.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Box, Card, CircularProgress, Grid, LinearProgress, Stack, Tab, Tabs, Typography } from "@mui/material";
 import MemoryOutlinedIcon from "@mui/icons-material/MemoryOutlined";
@@ -8,6 +12,7 @@ import UsageLineChart from "./UsageLineChart";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import PillTabs from "./PillTabs";
 
+// زمان ISO را به «روز ماه شمسی، ساعت hh:mm» تبدیل می‌کند
 function formatDateTimeFa(isoString) {
   const d = new Date(isoString);
   const { jd, jm } = gregorianToJalali(d);
@@ -15,6 +20,8 @@ function formatDateTimeFa(isoString) {
   return `${jd} ${JALALI_MONTH_NAMES[jm - 1]}، ساعت ${time}`;
 }
 
+// نمونه‌ها را در بازه‌ی hoursBack ساعت اخیر به دسته‌های ساعتی تقسیم و میانگین metricKey هر ساعت را برمی‌گرداند.
+// خروجی: [{label (ساعت), value (میانگین با یک رقم اعشار)}] مرتب بر اساس زمان
 function aggregateHourly(rawData, metricKey, hoursBack) {
   const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
   const buckets = new Map(); // key: "YYYY-MM-DDTHH", value: {sum, count, timestamp}
@@ -36,6 +43,8 @@ function aggregateHourly(rawData, metricKey, hoursBack) {
     });
 }
 
+// نمونه‌ها را در بازه‌ی daysBack روز اخیر به دسته‌های روز شمسی تقسیم و میانگین metricKey هر روز را برمی‌گرداند.
+// خروجی: [{label (روز ماه شمسی), value}] مرتب بر اساس کلید تاریخ
 function aggregateDaily(rawData, metricKey, daysBack) {
   const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
   const buckets = new Map();
@@ -57,6 +66,7 @@ function aggregateDaily(rawData, metricKey, daysBack) {
     }));
 }
 
+// نمونه‌ای که بیشترین مقدار metricKey را دارد؛ برای آرایه‌ی خالی null
 function findPeak(rawData, metricKey) {
   if (rawData.length === 0) return null;
   const peak = rawData.reduce((max, cur) => (cur[metricKey] > max[metricKey] ? cur : max), rawData[0]);
@@ -64,9 +74,9 @@ function findPeak(rawData, metricKey) {
 }
 
 /**
- * روند مصرف دیسک از نمونه‌های ذخیره‌شده (حداکثر ۷ روز): افزایش در این بازه و
- * تخمین زمان پر شدن با همان نرخ. اگر بازه کمتر از یک روز باشد یا مصرف رشد
- * محسوسی نداشته باشد، تخمینی داده نمی‌شود.
+ * روند مصرف دیسک از نمونه‌های ذخیره‌شده (حداکثر ۷ روز): میزان افزایش در این بازه و
+ * تخمین زمان پر شدن با همان نرخ. خروجی: یک رشته‌ی توضیحی.
+ * اگر بازه کمتر از یک روز باشد یا رشد کمتر از ۰٫۱ گیگابایت باشد، تخمینی داده نمی‌شود.
  */
 function diskTrend(rawData) {
   const notEnough = "روند دیسک: برای محاسبه، حداقل یک روز داده لازم است";
@@ -90,6 +100,10 @@ function diskTrend(rawData) {
   return `روند دیسک: ${growth.toFixed(1)} گیگابایت افزایش در ${spanLabel} — با این روند ${leftLabel} تا پر شدن`;
 }
 
+/**
+ * کارت خلاصه‌ی یک شاخص: عنوان و آیکون، مقدار فعلی، نوار درصد، بیشینه‌ی ۷ روز اخیر و پانویس اختیاری.
+ * ورودی: icon، title، currentLabel، currentValue، currentPercent (برای نوار)، color، peakValue، peakLabel، footnote.
+ */
 function MetricSummary({
   icon,
   title,
@@ -134,23 +148,30 @@ function MetricSummary({
   );
 }
 
-const TIME_TABS = [
+const TIME_TABS = [  // بازه‌های زمانی قابل انتخاب برای نمودار
   { key: "24h", label: "۲۴ ساعت اخیر" },
   { key: "7d", label: "۷ روز اخیر" },
 ];
 
+/**
+ * کارت اصلی مصرف منابع سرور؛ بدون ورودی (props).
+ * نمونه‌های ذخیره‌شده را از سرور می‌گیرد و سه کارت خلاصه (CPU، RAM، دیسک) و نمودار خطی روند CPU/RAM
+ * (ساعتی برای ۲۴ ساعت یا روزانه برای ۷ روز) نمایش می‌دهد.
+ */
 export default function ServerStatsCard() {
-  const [rawData, setRawData] = useState(null);
-  const [timeTab, setTimeTab] = useState("24h");
+  const [rawData, setRawData] = useState(null);  // نمونه‌های مصرف منابع؛ null = در حال بارگذاری
+  const [timeTab, setTimeTab] = useState("24h");  // بازه‌ی نمودار: 24h یا 7d
 
+  // دریافت نمونه‌ها هنگام mount؛ در صورت خطا آرایه‌ی خالی
   useEffect(() => {
     fetchServerStats()
       .then(setRawData)
       .catch(() => setRawData([]));
   }, []);
 
-  const latest = rawData && rawData.length > 0 ? rawData[rawData.length - 1] : null;
+  const latest = rawData && rawData.length > 0 ? rawData[rawData.length - 1] : null;  // آخرین نمونه = وضعیت همین لحظه
 
+  // بیشینه‌ی مصرف هر شاخص در کل نمونه‌ها
   const peaks = useMemo(() => {
     if (!rawData || rawData.length === 0) return null;
     const cpuPeak = findPeak(rawData, "cpu_percent");
@@ -159,6 +180,7 @@ export default function ServerStatsCard() {
     return { cpu: cpuPeak, ram: ramPeak, disk: diskPeak };
   }, [rawData]);
 
+  // داده‌ی نمودار یک شاخص بر اساس بازه‌ی انتخاب‌شده (تجمیع ساعتی یا روزانه)
   function chartFor(metricKey) {
     if (!rawData) return null;
     return timeTab === "24h" ? aggregateHourly(rawData, metricKey, 24) : aggregateDaily(rawData, metricKey, 7);
@@ -173,6 +195,7 @@ export default function ServerStatsCard() {
         </Typography>
       </Stack>
 
+      {/* بارگذاری / بدون داده / محتوای اصلی */}
       {rawData === null ? (
         <Stack alignItems="center" justifyContent="center" sx={{ height: 160 }}>
           <CircularProgress size={28} />
@@ -183,6 +206,7 @@ export default function ServerStatsCard() {
         </Typography>
       ) : (
         <>
+          {/* سه کارت خلاصه: CPU، RAM و دیسک (دیسک به‌جای بیشینه، روند پر شدن را نشان می‌دهد) */}
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid item xs={12} sm={4}>
               <MetricSummary
@@ -221,6 +245,7 @@ export default function ServerStatsCard() {
             </Grid>
           </Grid>
 
+          {/* انتخاب بازه‌ی زمانی نمودار */}
 <PillTabs
             value={timeTab}
             onChange={setTimeTab}
@@ -228,10 +253,8 @@ export default function ServerStatsCard() {
             sx={{ mb: 2 }}
           />
 
-          {/* ⚠️ CPU و RAM هر دو درصدند - یک نمودار با محور ثابت ۰ تا ۱۰۰٪ و خط هشدار
-              ۸۰٪ (قبلاً سقف محور بیشترین مقدار بود و مصرف ۵٪ هم تا بالای کادر
-              می‌رفت). دیسک نمودار ندارد - در چند روز تقریباً خط صاف است؛ روند و
-              تخمین پر شدنش در کارت خلاصه دیسک نمایش داده می‌شود. */}
+          {/* نمودار مشترک CPU و RAM (هر دو درصد) با محور ثابت ۰ تا ۱۰۰٪ و خط هشدار ۸۰٪.
+              دیسک نمودار ندارد؛ روند و تخمین پر شدنش در کارت خلاصه‌ی دیسک نمایش داده می‌شود. */}
           <Typography variant="caption" color="text.secondary" gutterBottom display="block">
             روند مصرف پردازنده و حافظه (میانگین {timeTab === "24h" ? "هر ساعت" : "هر روز"})
           </Typography>

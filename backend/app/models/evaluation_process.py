@@ -1,17 +1,15 @@
 """
-مدل‌های «جریان انجام ارزیابی» - سومین لایه سیستم ارزیابی عملکرد، روی دو
-لایه قبلی سوار می‌شود:
+مدل‌های «جریان انجام ارزیابی»؛ لایه سوم سیستم ارزیابی عملکرد:
     app/models/evaluation.py         -> چه کسی مجاز به ارزیابی چه کسی است
     app/models/evaluation_content.py -> چه چیزی پرسیده می‌شود، در چه دوره‌ای
     app/models/evaluation_process.py -> همین فایل: خودِ عمل ارزیابی‌کردن
 
 سه مدل:
-    EvaluationAssignment: «X باید Y را برای دوره P با فرم F ارزیابی کند»
-        - تولید می‌شود از get_evaluation_targets (مرحله اول) + دوره فعال
-    Evaluation: خودِ فرم پرشده - با Historical Snapshot کامل (طبق اصل
-        غیرقابل‌مذاکره این پروژه: تغییرات بعدی پرسنل/واحد/فرم نباید
-        ارزیابی‌های قبلی را خراب کند)
-    EvaluationAnswer: پاسخ هر سوال - با Snapshot متن/نوع سوال (طبق همان اصل)
+    EvaluationAssignment: «X باید Y را برای دوره P با فرم F ارزیابی کند»؛
+        از روی get_evaluation_targets و دوره انتخاب‌شده تولید می‌شود.
+    Evaluation: فرم پرشده، همراه با Snapshot اطلاعات لحظه ثبت تا تغییرات بعدی
+        پرسنل/واحد/فرم روی ارزیابی‌های قبلی اثر نگذارد.
+    EvaluationAnswer: پاسخ هر سوال، همراه با Snapshot متن و نوع سوال.
 """
 from __future__ import annotations
 
@@ -37,19 +35,16 @@ from app.models.base import TimestampMixin
 
 
 class EvaluationAssignmentStatus(str, enum.Enum):
+    """وضعیت یک انتساب ارزیابی: در انتظار یا انجام‌شده."""
     pending = "pending"
     completed = "completed"
 
 
 class EvaluationAssignment(Base, TimestampMixin):
     """
-    «فلان کارمند باید فلان کارمند دیگر را برای این دوره، با این فرم،
-    ارزیابی کند» - تولید خودکار از get_evaluation_targets (مرحله اول)
-    برای دوره‌ای که Admin مشخص کرده (POST .../generate-assignments).
-
-    ⚠️ جلوگیری از Duplicate: طبق اصل صریح پروژه (بخش ۲۸ طرح اولیه)، یک
-    ارزیاب نباید یک فرد را در یک ترکیب دوره+فرم بیش از یک‌بار ارزیابی
-    کند - با UniqueConstraint تضمین می‌شود.
+    «ارزیاب X باید پرسنل Y را برای این دوره با این فرم ارزیابی کند»؛ به‌صورت خودکار از
+    get_evaluation_targets برای دوره انتخابی تولید می‌شود (POST .../generate-assignments).
+    UniqueConstraint مانع ارزیابی تکراری یک فرد در یک ترکیب دوره+فرم توسط یک ارزیاب می‌شود.
     """
 
     __tablename__ = "evaluation_assignments"
@@ -64,8 +59,8 @@ class EvaluationAssignment(Base, TimestampMixin):
     form_id: Mapped[int] = mapped_column(ForeignKey("evaluation_forms.id", ondelete="CASCADE"), nullable=False)
     evaluator_employee_id: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
-    )
-    target_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    )  # ارزیاب
+    target_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)  # ارزیابی‌شونده
     status: Mapped[EvaluationAssignmentStatus] = mapped_column(
         Enum(EvaluationAssignmentStatus, name="evaluation_assignment_status"),
         default=EvaluationAssignmentStatus.pending,
@@ -79,19 +74,16 @@ class EvaluationAssignment(Base, TimestampMixin):
 
 
 class EvaluationStatus(str, enum.Enum):
+    """وضعیت فرم پرشده: پیش‌نویس یا ثبت نهایی."""
     draft = "draft"
     submitted = "submitted"
 
 
 class Evaluation(Base, TimestampMixin):
     """
-    خودِ فرم پرشده برای یک Assignment مشخص - حداکثر یکی به‌ازای هر
-    Assignment (assignment_id یکتا).
-
-    ⚠️ Historical Snapshot (اصل غیرقابل‌مذاکره این پروژه): چون Employee
-    توسط Sync Engine مرتب تغییر می‌کند (واحد/سمت/حتی نام)، اطلاعات لحظه
-    Submit همیشه جداگانه نگه داشته می‌شوند - گزارش یک ارزیابی قدیمی هرگز
-    نباید بر اثر تغییرات بعدی سازمانی خراب شود.
+    فرم پرشده برای یک Assignment؛ حداکثر یکی به‌ازای هر Assignment (assignment_id یکتا).
+    چون Employee توسط Sync Engine تغییر می‌کند، نام‌ها/کدها/عناوین در ستون‌های *_snapshot
+    نگه داشته می‌شوند تا گزارش ارزیابی‌های قدیمی ثابت بماند.
     """
 
     __tablename__ = "evaluations"
@@ -103,12 +95,12 @@ class Evaluation(Base, TimestampMixin):
     status: Mapped[EvaluationStatus] = mapped_column(
         Enum(EvaluationStatus, name="evaluation_status"), default=EvaluationStatus.draft, nullable=False
     )
-    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # امتیاز نهایی وزن‌دار (۰ تا ۱۰۰)
     comment: Mapped[str | None] = mapped_column(Text(), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    was_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    was_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # پس از ثبت نهایی ویرایش شده است
 
-    # --- Historical Snapshot - در لحظه شروع/Submit پر می‌شود، بعداً تغییر نمی‌کند ---
+    # --- Historical Snapshot: در لحظه شروع/Submit پر می‌شود و بعداً تغییر نمی‌کند ---
     evaluator_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
     evaluator_personnel_code_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
     target_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -126,24 +118,17 @@ class Evaluation(Base, TimestampMixin):
     @property
     def form_id(self) -> int:
         """
-        ⚠️ برای اینکه Frontend بعد از start_evaluation بداند کدام فرم
-        (با چه دسته‌بندی/سوال/گزینه‌هایی) را باید رندر کند - بدون این،
-        مجبور بود جداگانه Assignment را هم Query کند. این یک ستون
-        دیتابیسی جدید نیست - فقط یک میان‌بر پایتونی به assignment.form_id
-        (که باید از قبل selectinload شده باشد، وگرنه همان خطای
-        MissingGreenlet را می‌دهد).
+        شناسه فرم این ارزیابی را برمی‌گرداند (میان‌بر به assignment.form_id، ستون دیتابیسی نیست)
+        تا Frontend بداند کدام فرم را رندر کند. assignment باید از قبل selectinload شده باشد،
+        وگرنه در حالت async خطای MissingGreenlet رخ می‌دهد.
         """
         return self.assignment.form_id
 
 
 class EvaluationAnswer(Base, TimestampMixin):
     """
-    پاسخ یک سوال مشخص درون یک Evaluation.
-
-    ⚠️ Question Versioning ساده (طبق تصمیم قبلی پروژه - بخش ۴۶ طرح
-    اولیه): به‌جای یک سیستم Versioning جداگانه برای سوالات، متن/نوع سوال
-    در لحظه پاسخ‌دادن Snapshot می‌شود - اگر بعداً متن سوال تغییر کند،
-    این ارزیابی قبلی همچنان متن قدیمی را نشان می‌دهد.
+    پاسخ یک سوال درون یک Evaluation.
+    متن و نوع سوال در لحظه پاسخ Snapshot می‌شود تا تغییر بعدی سوال، ارزیابی‌های قبلی را تغییر ندهد.
     """
 
     __tablename__ = "evaluation_answers"
@@ -153,7 +138,7 @@ class EvaluationAnswer(Base, TimestampMixin):
     evaluation_id: Mapped[int] = mapped_column(ForeignKey("evaluations.id", ondelete="CASCADE"), nullable=False)
     question_id: Mapped[int] = mapped_column(
         ForeignKey("evaluation_questions.id", ondelete="SET NULL"), nullable=True
-    )
+    )  # با حذف سوال NULL می‌شود؛ snapshot باقی می‌ماند
 
     question_text_snapshot: Mapped[str] = mapped_column(Text(), nullable=False)
     question_type_snapshot: Mapped[str] = mapped_column(String(32), nullable=False)

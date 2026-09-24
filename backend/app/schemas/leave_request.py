@@ -1,4 +1,10 @@
-"""Schema های Pydantic برای «درخواست مرخصی/ماموریت»."""
+"""
+Schema های Pydantic ماژول «درخواست مرخصی/ماموریت».
+
+شامل ورودی/خروجی endpoint های ادمین (نگاشت کاراوب، نوع‌های درخواست، فهرست‌های مرجع،
+تأییدکننده واحد، مسئول نیروی انسانی، وضعیت ماژول)، ثبت درخواست توسط پرسنل،
+نمایش نرمالایزشده یک درخواست، تصمیم تأییدکننده و ویرایش مدیریتی.
+"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -9,6 +15,8 @@ from app.services.kara_schema import LEAVE_SCHEMA_DEFAULTS, validate_schema
 
 
 class EmployeeBrief(BaseModel):
+    """خلاصه یک پرسنل - داخل خروجی تأییدکننده واحد و مسئول نیروی انسانی استفاده می‌شود."""
+
     id: int
     personnel_code: str
     first_name: str
@@ -21,6 +29,8 @@ class EmployeeBrief(BaseModel):
 
 
 class LeaveRequestMappingIn(BaseModel):
+    """ورودی PUT /sites/{site_id}/mapping - نام جدول/ستون‌های کاراوب؛ مقادیر پیش‌فرض همان نام‌های کاراوب هستند."""
+
     table_name: str = "WF_Requests"
     request_id_column: str = "RequestId"
     emp_no_column: str = "Emp_No"
@@ -82,16 +92,20 @@ class LeaveRequestMappingIn(BaseModel):
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
+        """کلیدهای kara_schema ورودی را با فهرست مجاز LEAVE_SCHEMA_DEFAULTS اعتبارسنجی می‌کند."""
         return validate_schema(value, LEAVE_SCHEMA_DEFAULTS)
 
 
 class LeaveRequestMappingOut(LeaveRequestMappingIn):
+    """خروجی GET/PUT /sites/{site_id}/mapping - همان فیلدهای ورودی به‌علاوه شناسه‌ها."""
+
     id: int
     site_id: int
 
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
+        """در خروجی، مقدار ذخیره‌شده بدون اعتبارسنجی مجدد برگردانده می‌شود (None به دیکشنری خالی)."""
         return dict(value or {})
 
     model_config = ConfigDict(from_attributes=True)
@@ -101,6 +115,8 @@ class LeaveRequestMappingOut(LeaveRequestMappingIn):
 
 
 class LeaveRequestTypeIn(BaseModel):
+    """ورودی POST /sites/{site_id}/types - ساخت یک نوع درخواست جدید."""
+
     title: str
     is_mission: bool = False
     is_hourly: bool = False
@@ -111,6 +127,8 @@ class LeaveRequestTypeIn(BaseModel):
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
+    """ورودی PUT /types/{type_id} - ویرایش جزئی؛ فقط فیلدهای غیر None اعمال می‌شوند."""
+
     title: str | None = None
     is_mission: bool | None = None
     is_hourly: bool | None = None
@@ -122,6 +140,8 @@ class LeaveRequestTypeUpdateIn(BaseModel):
 
 
 class LeaveRequestTypeOut(BaseModel):
+    """خروجی نوع درخواست - در فهرست نوع‌های ادمین و فهرست نوع‌های فعال فرم پرسنل."""
+
     id: int
     site_id: int
     title: str
@@ -136,33 +156,43 @@ class LeaveRequestTypeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ---------- جدول مرجع WF_Action (فقط‌خواندنی) ----------
+# ---------- جدول‌های مرجع کاراوب (فقط‌خواندنی) ----------
 
 
 class ActionLookupItemOut(BaseModel):
+    """یک ردیف WF_Action - خروجی GET /sites/{site_id}/action-lookup."""
+
     action_id: int
     title: str
 
 
 class OperationLookupItemOut(BaseModel):
+    """یک ردیف WF_OperationTypes - خروجی GET /sites/{site_id}/operation-lookup."""
+
     operation_id: int
     title: str
 
 
 class CardLookupItemOut(BaseModel):
+    """یک کارت کاراوب - خروجی GET /sites/{site_id}/card-lookup."""
+
     card_no: int
     title: str
-    action_id: int | None = None
+    action_id: int | None = None  # ActionId متصل به کارت؛ برای پرکردن خودکار action_id نوع
 
 
 # ---------- تنظیمات ادمین: تأییدکننده هر واحد ----------
 
 
 class SetApproverIn(BaseModel):
+    """ورودی PUT /departments/{department_id}/approver."""
+
     approver_employee_id: int
 
 
 class LeaveRequestApproverOut(BaseModel):
+    """خروجی تأییدکننده یک واحد - در فهرست تأییدکننده‌های سایت و پاسخ set_approver."""
+
     id: int
     department_id: int
     approver_employee: EmployeeBrief
@@ -174,21 +204,27 @@ class LeaveRequestApproverOut(BaseModel):
 
 
 class SetHrOfficerIn(BaseModel):
+    """ورودی PUT /sites/{site_id}/hr-officer."""
+
     employee_id: int
 
 
 class LeaveRequestModuleStatusOut(BaseModel):
-    """وضعیت ماژول برای یک سایت: نگاشت دارد؟ از پنل غیرفعال شده؟"""
+    """خروجی GET/PUT /sites/{site_id}/module-status - نگاشت دارد؟ از پنل غیرفعال شده؟"""
 
     has_mapping: bool
     is_disabled: bool
 
 
 class SetModuleDisabledIn(BaseModel):
+    """ورودی PUT /sites/{site_id}/module-status."""
+
     is_disabled: bool
 
 
 class LeaveRequestHrOfficerOut(BaseModel):
+    """خروجی GET/PUT /sites/{site_id}/hr-officer."""
+
     id: int
     site_id: int
     employee: EmployeeBrief
@@ -200,35 +236,41 @@ class LeaveRequestHrOfficerOut(BaseModel):
 
 
 class ForgottenPunchIn(BaseModel):
-    """یک تردد فراموش‌شده - ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)."""
+    """یک تردد فراموش‌شده داخل SubmitLeaveRequestIn - ورود و خروج هر کدام تاریخ خودشان را دارند (شیفت شب)."""
 
-    kind: str | None = None  # in | out | None (فرم فعلی پرتال: فقط یک تردد بدون تعیین ورود/خروج)
+    kind: str | None = None  # in | out | None (فرم پرتال یک تردد بدون تعیین ورود/خروج می‌فرستد)
     punch_date: date
     time: int  # فرمت فشرده HHMM - مثلاً 700
 
 
 class SubmitLeaveRequestIn(BaseModel):
+    """ورودی POST /submit - ثبت درخواست توسط پرسنل."""
+
     leave_type_id: int
     start_date: date
-    end_date: date | None = None
-    start_hour: int | None = None  # فرمت فشرده مثل گزارش تردد - مثلاً 1236
+    end_date: date | None = None  # فقط برای نوع روزانه
+    start_hour: int | None = None  # فرمت فشرده HHMM مثل گزارش تردد - مثلاً 1236؛ فقط نوع ساعتی
     end_hour: int | None = None
     description: str = ""
-    source: str | None = None
+    source: str | None = None  # مبدأ/مقصد فقط برای مأموریت
     destination: str | None = None
     # فقط برای نوع «تردد فراموش‌شده» (یک یا دو تردد)
     punches: list[ForgottenPunchIn] | None = None
 
 
 class SubmitLeaveRequestOut(BaseModel):
+    """خروجی POST /submit - شناسه ردیف(های) ساخته‌شده در WF_Requests."""
+
     request_id: int
-    request_ids: list[int] = []
+    request_ids: list[int] = []  # تردد فراموش‌شده با دو تردد، دو ردیف می‌سازد
 
 
 # ---------- نمایش یک درخواست (نرمالایز‌شده) ----------
 
 
 class LeaveRequestOut(BaseModel):
+    """یک درخواست نرمالایزشده از WF_Requests - خروجی فهرست‌های پرسنل، تأییدکننده و گزارش مدیریتی."""
+
     request_id: int
     emp_no: int | None
     submitted_at: datetime | None
@@ -246,9 +288,9 @@ class LeaveRequestOut(BaseModel):
     manager_idea: str | None
     source: str | None
     destination: str | None
-    type_id: int | None = None
+    type_id: int | None = None  # نوع پورتال که از روی ActionId/OperationsID/Card_No تشخیص داده شده
     type_title: str | None = None
-    requester_name: str | None = None
+    requester_name: str | None = None  # از جدول پرسنل پورتال بر اساس کد پرسنلی
     requester_department: str | None = None
     is_forgotten_punch: bool = False
     # تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
@@ -256,22 +298,32 @@ class LeaveRequestOut(BaseModel):
 
 
 class DecidedLeaveRequestsPage(BaseModel):
+    """یک صفحه از سوابق تصمیم‌گیری - خروجی GET /decided-by-me."""
+
     items: list[LeaveRequestOut]
-    total: int
+    total: int  # تعداد کل برای صفحه‌بندی
 
 
 # ---------- تصمیم‌گیری (تأییدکننده) ----------
 
 
 class DecideRequestIn(BaseModel):
+    """ورودی POST /{request_id}/decide - تأیید یا رد توسط تأییدکننده."""
+
     approved: bool
-    manager_idea: str = ""
+    manager_idea: str = ""  # نظر تأییدکننده؛ در WF_Reviews ذخیره می‌شود
 
 
 # ---------- ویرایش مدیریتی (منابع انسانی) ----------
 
 
 class AdminUpdateRequestIn(BaseModel):
+    """
+    ورودی PUT /sites/{site_id}/requests/{request_id} - ویرایش مدیریتی.
+    فقط فیلدهای ارسال‌شده اعمال می‌شوند (exclude_unset)؛ None عمدی معنادار است
+    (مثلاً is_final_approved=None یعنی برگرداندن به «در حال بررسی»).
+    """
+
     is_final_approved: bool | None = None
     start_date: datetime | None = None
     end_date: datetime | None = None

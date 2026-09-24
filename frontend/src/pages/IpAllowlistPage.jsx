@@ -1,3 +1,8 @@
+/**
+ * صفحه تنظیم رنج‌های IP مجاز برای ورود به پرتال.
+ * شامل کلید فعال/غیرفعال، ویرایشگر متنی فهرست رنج‌ها (با دکمه پاک‌سازی که فقط IP/CIDR معتبر را نگه می‌دارد)
+ * و ویرایش متن پیامی که به کاربر مسدودشده در صفحه ورود نمایش داده می‌شود.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -22,9 +27,11 @@ import {
 } from "../api/system";
 import { monoFontSx } from "../theme";
 
-// همون منطق سمت سرور، برای پاک‌سازی/پیش‌نمایش فوری سمت مرورگر (بدون رفت‌وبرگشت به سرور)
+// الگوی IPv4 با CIDR اختیاری؛ همان منطق سمت سرور، برای پاک‌سازی فوری متن در مرورگر بدون درخواست به سرور
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g;
 
+// ورودی: متن خام (مثلاً خروجی کامل فایروال). همه IPv4ها را استخراج، IP تکی را به /32 تبدیل،
+// تکراری‌ها را حذف و مرتب می‌کند. خروجی: یک رنج در هر خط
 function cleanExtractText(rawText) {
   const matches = rawText.match(IPV4_PATTERN) || [];
   const normalized = new Set();
@@ -34,17 +41,19 @@ function cleanExtractText(rawText) {
   return Array.from(normalized).sort().join("\n");
 }
 
+// کامپوننت صفحه؛ وضعیت فهرست IP و متن پیام مسدودسازی را بارگذاری و ذخیره می‌کند
 export default function IpAllowlistPage() {
   const [enabled, setEnabled] = useState(false);
   const [text, setText] = useState(null); // null = هنوز بارگذاری نشده
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState(0);  // تعداد رنج‌های ذخیره‌شده در سرور
   const [isSaving, setIsSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState(null);
+  const [saveResult, setSaveResult] = useState(null);  // { success, message } نتیجه ذخیره فهرست | null
 
-  const [message, setMessage] = useState(null);
+  const [message, setMessage] = useState(null);  // متن پیام کاربر مسدودشده؛ null = در حال بارگذاری
   const [isSavingMessage, setIsSavingMessage] = useState(false);
-  const [messageResult, setMessageResult] = useState(null);
+  const [messageResult, setMessageResult] = useState(null);  // { success, text } نتیجه ذخیره متن پیام | null
 
+  // بارگذاری اولیه وضعیت فهرست IP و متن پیام مسدودسازی
   useEffect(() => {
     fetchIpAllowlistState().then((state) => {
       setEnabled(state.enabled);
@@ -54,10 +63,12 @@ export default function IpAllowlistPage() {
     fetchIpBlockedMessage().then(setMessage);
   }, []);
 
+  // متن ویرایشگر را با خروجی cleanExtractText جایگزین می‌کند
   function handleClean() {
     setText((current) => cleanExtractText(current));
   }
 
+  // وضعیت کلید و متن رنج‌ها را ذخیره می‌کند و مقادیر نرمال‌شده برگشتی از سرور را جایگزین می‌کند
   async function handleSave() {
     setSaveResult(null);
     setIsSaving(true);
@@ -74,6 +85,7 @@ export default function IpAllowlistPage() {
     }
   }
 
+  // متن پیام مسدودسازی را ذخیره می‌کند
   async function handleSaveMessage() {
     setIsSavingMessage(true);
     setMessageResult(null);
@@ -104,6 +116,7 @@ export default function IpAllowlistPage() {
         </Box>
       ) : (
         <>
+          {/* کارت فهرست رنج‌ها: کلید فعال‌سازی، هشدار، ویرایشگر و دکمه‌ها */}
           <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }} flexWrap="wrap" rowGap={1}>
               <FormControlLabel
@@ -115,6 +128,7 @@ export default function IpAllowlistPage() {
               </Typography>
             </Stack>
 
+            {/* هشدار: کلید روشن است ولی فهرست خالی است، پس محدودیت عملاً اعمال نمی‌شود */}
             {enabled && count === 0 && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 کلید فعال است ولی هنوز هیچ رنجی ذخیره نشده — تا وقتی حداقل یک رنج پایین اضافه و ذخیره
@@ -131,6 +145,7 @@ export default function IpAllowlistPage() {
               تا فقط IP/رنج‌های معتبر باقی بمانند.
             </Typography>
 
+            {/* ویرایشگر چپ‌به‌راست با فونت monospace، یک رنج در هر خط */}
             <TextField
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -171,6 +186,7 @@ export default function IpAllowlistPage() {
             </Stack>
           </Card>
 
+          {/* کارت ویرایش متن پیام کاربر مسدودشده */}
           <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               متنی که به کاربر مسدودشده نمایش داده می‌شود

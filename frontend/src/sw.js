@@ -1,71 +1,54 @@
 /*
- * Service Worker پرتال FAIPCO — با vite-plugin-pwa (استراتژی injectManifest)
- * ساخته و به‌روزرسانی می‌شود.
+ * Service Worker پرتال FAIPCO؛ با vite-plugin-pwa (استراتژی injectManifest) ساخته می‌شود.
  *
- * سه وظیفه دارد:
+ * وظایف:
  *   ۱. Precache دارایی‌های اصلی برنامه (App Shell: JS/CSS/HTML خروجی Vite)
- *      — تا در صورت قطعی لحظه‌ای اینترنت، بارگذاری مجدد صفحه با
- *      ChunkLoadError/صفحه سفید مواجه نشود.
- *   ۲. Fallback ناوبری به‌سمت index.html وقتی آفلاین هستید (چون این یک SPA
- *      با مسیریابی سمت کلاینت است — مسیرهایی مثل /notices در واقعیت روی
- *      سرور وجود ندارند، همیشه باید همان index.html برگردد).
- *   ۳. دریافت و نمایش پیام‌های Push از سرور.
+ *      تا با قطعی لحظه‌ای اینترنت، بارگذاری مجدد صفحه با ChunkLoadError/صفحه‌ی سفید مواجه نشود.
+ *   ۲. Fallback ناوبری به index.html (برنامه SPA است و مسیرهایی مثل /notices روی سرور وجود ندارند).
+ *   ۳. دریافت و نمایش پیام‌های Push از سرور و باز کردن مقصد با کلیک روی اعلان.
+ *   ۴. به‌روزرسانی کنترل‌شده: نسخه‌ی جدید تا تأیید کاربر (پیام SKIP_WAITING) در حالت waiting می‌ماند.
  *
- * عمداً یک اپلیکیشن کاملاً Offline-first نیست (این یک پرتال مدیریتی است که
- * برای کارکردن واقعی به اتصال زنده به API نیاز دارد) — فقط App Shell (پوسته
- * برنامه) Precache می‌شود تا لااقل خودِ برنامه بدون خطای سفید بالا بیاید،
- * نه اینکه داده‌های API هم آفلاین در دسترس باشند.
+ * برنامه Offline-first نیست: فقط پوسته‌ی برنامه Precache می‌شود و داده‌های API همیشه از شبکه خوانده می‌شوند.
  */
 import { precacheAndRoute, createHandlerBoundToURL } from "workbox-precaching";
 import { registerRoute, NavigationRoute } from "workbox-routing";
 import { NetworkOnly } from "workbox-strategies";
 
-// self.__WB_MANIFEST نقطه‌ای است که vite-plugin-pwa موقع Build، فهرست
-// واقعی فایل‌های خروجی (با Hash نسخه، برای رفع باگ Cache شدید Chrome روی
-// اندروید) را جایگزینش می‌کند — دستی نگه‌داشتن این فهرست ممکن نیست چون نام
-// فایل‌های Vite با هر Build عوض می‌شود.
+// Precache پوسته‌ی برنامه: vite-plugin-pwa هنگام Build به‌جای self.__WB_MANIFEST فهرست فایل‌های خروجی
+// (با Hash نسخه) را قرار می‌دهد؛ با هر Build نام فایل‌ها عوض می‌شود و فایل‌های قدیمی از کش خارج می‌شوند
 precacheAndRoute(self.__WB_MANIFEST);
 
-// تضمین صریح (نه فقط اتفاقی از نبود Route دیگری): درخواست‌های API هرگز از
-// Cache پاسخ داده نمی‌شوند — همیشه مستقیم از سرور. این پرتال یک اپلیکیشن
-// مدیریتی زنده است؛ داده قدیمی/کش‌شده (مثلاً لیست اطلاعیه‌ها یا وضعیت
-// پرسنل) هرگز نباید نشان داده شود، فقط App Shell (خودِ کد برنامه) باید
-// برای تحمل قطعی آنی اینترنت Cache شود، نه محتوای API.
+// درخواست‌های API (/api/) با NetworkOnly همیشه مستقیم از سرور پاسخ داده می‌شوند و هرگز از Cache نمی‌آیند
+// تا داده‌ی قدیمی (مثل لیست اطلاعیه‌ها یا وضعیت پرسنل) نمایش داده نشود
 registerRoute(({ url }) => url.pathname.startsWith("/api/"), new NetworkOnly());
 
-// درخواست‌های ناوبری (مثلاً کاربر مستقیم /notices را در نوار آدرس بزند یا
-// Refresh کند) به همان index.html پیش‌کش‌شده هدایت می‌شوند — استاندارد
-// Workbox برای پشتیبانی SPA.
+// درخواست‌های ناوبری (باز کردن مستقیم یا Refresh یک مسیر مثل /notices) با index.html پیش‌کش‌شده پاسخ داده می‌شوند
 const navigationHandler = createHandlerBoundToURL("/index.html");
 registerRoute(new NavigationRoute(navigationHandler));
 
+// رویداد نصب نسخه‌ی جدید Service Worker
 self.addEventListener("install", () => {
-  // ⚠️ عمداً دیگر self.skipWaiting() خودکار اینجا صدا زده نمی‌شود — نسخه
-  // جدید در حالت "waiting" می‌ماند تا کاربر خودش با دکمه «بارگذاری» در پنل
-  // تأیید کند. این‌طوری اگر دقیقاً همان لحظه یک فرم طولانی (مثلاً نوشتن یک
-  // اطلاعیه) باز باشد، Reload خودکار میانش نمی‌آید و چیزی از دست نمی‌رود.
+  // skipWaiting خودکار صدا زده نمی‌شود: نسخه‌ی جدید در حالت waiting می‌ماند تا کاربر با دکمه‌ی «بارگذاری»
+  // تأیید کند، تا Reload ناخواسته وسط پر کردن یک فرم (مثل نوشتن اطلاعیه) رخ ندهد
 });
 
-// از frontend/src/utils/serviceWorker.js صدا زده می‌شود — وقتی کاربر خودش
-// دکمه «بارگذاری نسخه جدید» را می‌زند.
+// دریافت پیام SKIP_WAITING از utils/serviceWorker.js (وقتی کاربر دکمه‌ی «بارگذاری نسخه جدید» را می‌زند)
+// و فعال کردن فوری نسخه‌ی در انتظار
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 });
 
+// پس از فعال شدن، کنترل همه‌ی تب‌های باز فوراً به همین نسخه سپرده می‌شود
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// دریافت پیام Push از سرور و نمایش آن به‌عنوان Notification سیستمی — طبق
-// درخواست، صرف‌نظر از اولویت اطلاعیه، همیشه با صدا + ویبره محسوس (مثل
-// یک آلارم واقعی) نمایش داده می‌شود، نه فقط برای اولویت‌های بالا.
-// ⚠️ عنوان پیش‌فرض زیر عمداً کلی/بدون نام شرکت است — Service Worker (بر
-// خلاف بقیه پروژه) نمی‌تواند به BrandingContext یا نام قابل‌تغییر از پنل
-// «تنظیمات سامانه» دسترسی داشته باشد؛ این فقط یک شبکه ایمنی برای حالتی
-// است که سرور اصلاً عنوانی نفرستد (در عمل تقریباً هرگز رخ نمی‌دهد، چون
-// Backend همیشه یک عنوان واقعی در Payload می‌گذارد).
+// دریافت پیام Push از سرور و نمایش آن به صورت Notification سیستمی؛ برای هر اولویتی با صدا و ویبره نمایش داده می‌شود.
+// سپس به تب‌های باز برنامه پیام می‌دهد تا لیست اطلاعیه‌ها را بدون Reload تازه کنند.
+// عنوان پیش‌فرض کلی و بدون نام شرکت است چون Service Worker به BrandingContext دسترسی ندارد؛
+// فقط وقتی استفاده می‌شود که Payload سرور عنوانی نداشته باشد.
 self.addEventListener("push", (event) => {
   let payload = { title: "اطلاعیه جدید", body: "یک اطلاعیه جدید دریافت شد", url: "/notices", priority: "normal" };
   try {
@@ -82,28 +65,26 @@ self.addEventListener("push", (event) => {
         body: payload.body,
         // icon: تصویر رنگی بزرگ لوگو — داخل بدنه اعلان (وقتی باز می‌شود) دیده می‌شود
         icon: "/icons/icon-192.png",
-        // badge: نسخه تک‌رنگ (سفید روی شفاف) لوگو — مخصوص نوار وضعیت اندروید؛
-        // اگر همان آیکون رنگی اینجا داده شود، اندروید آن را به یک لکه نامفهوم
-        // تبدیل می‌کند، چون badge را همیشه یک‌رنگ/Silhouette رندر می‌کند.
+        // badge: نسخه‌ی تک‌رنگ (سفید روی شفاف) لوگو برای نوار وضعیت اندروید؛
+        // اندروید badge را همیشه تک‌رنگ (Silhouette) رندر می‌کند و آیکون رنگی به لکه‌ای نامفهوم تبدیل می‌شود
         badge: "/icons/badge-96.png",
-        dir: "rtl",
-        lang: "fa",
-        data: { url: payload.url || "/notices" },
+        dir: "rtl", // جهت متن اعلان راست‌به‌چپ
+        lang: "fa", // زبان متن اعلان
+        data: { url: payload.url || "/notices" }, // مسیر مقصد برای استفاده در رویداد notificationclick
         requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
         silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
         vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
         tag: `faipco-notice-${Date.now()}`, // هر Push جدا نمایش داده شود، نه جایگزین قبلی
       });
 
-      // به هر تب بازِ اپلیکیشن پیام می‌دهیم تا لیست اطلاعیه‌ها را خودش
-      // (بدون Reload صفحه) دوباره از سرور بخواند — تجربه Real-time.
+      // ارسال پیام faipco-notice-push به همه‌ی تب‌های باز برنامه تا لیست اطلاعیه‌ها را بدون Reload دوباره بخوانند
       const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       clientsList.forEach((client) => client.postMessage({ type: "faipco-notice-push", ...payload }));
     })()
   );
 });
 
-// کلیک روی Notification: تب باز موجود را فوکوس کن، وگرنه یک تب جدید باز کن
+// کلیک روی Notification: اعلان بسته می‌شود؛ اولین تب باز برنامه به مسیر مقصد می‌رود و فوکوس می‌گیرد، وگرنه تب جدید باز می‌شود
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/notices";

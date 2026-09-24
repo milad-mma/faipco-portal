@@ -1,3 +1,8 @@
+/**
+ * صفحه تنظیم پیام‌های تبریک تولد (مشترک بین ادمین و مدیر منابع انسانی).
+ * شامل فهرست متولدین امروز با دکمه ارسال فوری، تنظیمات ارسال خودکار (فعال/غیرفعال و ساعت روزانه)
+ * و مدیریت فهرست متن‌های تبریک که هر بار یکی به‌صورت تصادفی ارسال می‌شود.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -33,29 +38,32 @@ import {
 import { fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const MINUTES = [0, 15, 30, 45];
+const HOURS = Array.from({ length: 24 }, (_, i) => i);  // گزینه‌های ساعت ۰ تا ۲۳
+const MINUTES = [0, 15, 30, 45];  // گزینه‌های دقیقه با گام ۱۵ دقیقه
 
+// کامپوننت صفحه؛ داده متن‌ها، تنظیمات ارسال و متولدین امروز را بارگذاری و مدیریت می‌کند
 export default function BirthdayMessagesPage() {
-  const [templates, setTemplates] = useState(null);
+  const [templates, setTemplates] = useState(null);  // فهرست متن‌های تبریک؛ null = در حال بارگذاری
   const [newText, setNewText] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [templateError, setTemplateError] = useState("");
 
   const [sendTime, setSendTime] = useState(null); // { hour, minute }
-  const [enabled, setEnabled] = useState(null);
+  const [enabled, setEnabled] = useState(null);  // فعال بودن ارسال خودکار؛ null = در حال بارگذاری
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [settingsResult, setSettingsResult] = useState(null);
+  const [settingsResult, setSettingsResult] = useState(null);  // { success, message } نتیجه ذخیره تنظیمات | null
 
-  const [todayBirthdays, setTodayBirthdays] = useState(null);
+  const [todayBirthdays, setTodayBirthdays] = useState(null);  // پرسنل متولد امروز؛ null = در حال بارگذاری
 
   const [isSendingNow, setIsSendingNow] = useState(false);
-  const [sendNowResult, setSendNowResult] = useState(null);
+  const [sendNowResult, setSendNowResult] = useState(null);  // { success, message } نتیجه ارسال فوری | null
 
+  // فهرست متن‌های تبریک را از سرور می‌گیرد
   function loadTemplates() {
     fetchBirthdayTemplates().then(setTemplates);
   }
 
+  // بارگذاری اولیه متن‌ها، ساعت ارسال، وضعیت فعال بودن و متولدین امروز
   useEffect(() => {
     loadTemplates();
     fetchBirthdaySendTime().then(setSendTime);
@@ -63,6 +71,7 @@ export default function BirthdayMessagesPage() {
     fetchTodayBirthdays().then(setTodayBirthdays);
   }, []);
 
+  // متن جدید (غیرخالی، trim شده) را به فهرست اضافه و فهرست را تازه می‌کند
   async function handleAddTemplate() {
     setTemplateError("");
     if (!newText.trim()) {
@@ -81,12 +90,14 @@ export default function BirthdayMessagesPage() {
     }
   }
 
+  // پس از تأیید کاربر، متن را حذف و فهرست را تازه می‌کند
   async function handleDeleteTemplate(id) {
     if (!window.confirm("این متن حذف شود؟")) return;
     await deleteBirthdayTemplate(id);
     loadTemplates();
   }
 
+  // ساعت ارسال و وضعیت فعال بودن را هم‌زمان ذخیره و مقادیر برگشتی سرور را جایگزین می‌کند
   async function handleSaveSettings() {
     setSettingsResult(null);
     setIsSavingSettings(true);
@@ -105,6 +116,7 @@ export default function BirthdayMessagesPage() {
     }
   }
 
+  // ارسال فوری تبریک برای متولدین امروز؛ پیام نتیجه سرور نمایش داده می‌شود
   async function handleSendNow() {
     setSendNowResult(null);
     setIsSendingNow(true);
@@ -197,10 +209,12 @@ export default function BirthdayMessagesPage() {
           <CircularProgress size={20} />
         ) : (
           <Stack spacing={2.5}>
+            {/* کلید فعال/غیرفعال ارسال خودکار */}
             <FormControlLabel
               control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
               label={enabled ? "ارسال خودکار فعال است" : "ارسال خودکار غیرفعال است"}
             />
+            {/* انتخاب ساعت و دقیقه ارسال روزانه */}
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Typography variant="body2" color="text.secondary">
                 ساعت ارسال روزانه:
@@ -251,7 +265,7 @@ export default function BirthdayMessagesPage() {
         )}
       </Card>
 
-      {/* ---------- پول متن‌ها ---------- */}
+      {/* ---------- فهرست متن‌های تبریک: افزودن متن جدید و حذف متن‌های موجود ---------- */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2 }}>
           فهرست متن‌های تبریک (هر بار یکی به‌صورت تصادفی انتخاب می‌شود)
@@ -279,6 +293,7 @@ export default function BirthdayMessagesPage() {
           </Box>
         </Stack>
 
+        {/* فهرست متن‌ها؛ اگر خالی باشد هیچ پیامی ارسال نمی‌شود */}
         {templates === null ? (
           <CircularProgress size={20} />
         ) : templates.length === 0 ? (

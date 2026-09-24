@@ -1,8 +1,12 @@
 """
-Endpoint های مدیریتی «درخواست مرخصی/ماموریت»:
-    - تنظیمات ادمین (Mapping/نوع‌ها/تأییدکننده) - مجوز sites.manage
-    - مشاهده همه درخواست‌های یک سایت - مجوز leave_requests.view یا leave_requests.manage
-    - ویرایش مدیریتی - فقط leave_requests.manage
+Endpoint های مدیریتی «درخواست مرخصی/ماموریت» (پیشوند /leave-requests-admin).
+
+    - تنظیمات ادمین سایت (نگاشت کاراوب، نوع‌ها، فهرست‌های مرجع، تأییدکننده واحد، مسئول نیروی
+      انسانی، وضعیت ماژول): مجوز sites.manage روی همان سایت
+    - گزارش همه درخواست‌های یک سایت و خروجی Excel: leave_requests.view یا leave_requests.manage،
+      یا مجوز به‌تفکیک نوع (leave_requests.view.type.<عنوان>) با محدودیت‌های خاص
+    - ویرایش/حذف مدیریتی یک درخواست: فقط leave_requests.manage
+خطاهای منطقی سرویس‌ها به 400 و نبود مجوز به 403 تبدیل می‌شوند.
 """
 import logging
 from datetime import date
@@ -15,7 +19,7 @@ from app.core.deps import get_current_user
 from app.core.site_access import get_sites_with_permission, get_sites_with_permission_prefix
 from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
-from app.models.employee import Department
+from app.models.employee import Department, Employee
 from app.models.leave_request import LeaveRequestType
 from app.models.site import Site
 from app.models.user import User
@@ -49,7 +53,7 @@ from app.services.leave_request_structure_service import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SITES_MANAGE = "sites.manage"
+SITES_MANAGE = "sites.manage"  # مجوز لازم برای همه‌ی endpoint های تنظیمات سایت
 
 
 @router.get("/sites/{site_id}/mapping", response_model=LeaveRequestMappingOut | None)
@@ -58,6 +62,7 @@ async def get_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """نگاشت کاراوب یک سایت (null اگر تنظیم نشده). مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).get_mapping(site_id)
 
@@ -65,8 +70,8 @@ async def get_mapping(
 @router.get("/kara-schema-defaults")
 async def get_kara_schema_defaults(current_user: User = Depends(get_current_user)):
     """
-    نام‌های پیش‌فرض کاراوب - فقط برای دکمه «پر کردن با نام‌های کاراوب» در
-    تب‌های نگاشت تردد و مرخصی/ماموریت. تا ادمین ذخیره نکند، استفاده نمی‌شوند.
+    نام‌های پیش‌فرض جدول/ستون‌های کاراوب برای تردد و مرخصی/ماموریت.
+    فقط برای دکمه «پر کردن با نام‌های کاراوب» در فرم نگاشت؛ هر کاربر واردشده می‌تواند بخواند.
     """
     return {"attendance": ATTENDANCE_SCHEMA_DEFAULTS, "leave": LEAVE_SCHEMA_DEFAULTS}
 
@@ -78,6 +83,7 @@ async def upsert_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """ساخت یا به‌روزرسانی نگاشت کاراوب سایت (اولین ساخت، نوع‌های پیش‌فرض را هم می‌سازد). مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).upsert_mapping(site_id, payload.model_dump())
 
@@ -88,6 +94,7 @@ async def delete_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """حذف نگاشت سایت (ماژول برای سایت غیرفعال می‌شود). مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     await LeaveRequestStructureService(db).delete_mapping(site_id)
 
@@ -99,9 +106,8 @@ async def get_action_lookup(
     current_user: User = Depends(get_current_user),
 ):
     """
-    فهرست رسمی WF_Action (ActionId + عنوان فارسی) - برای کمک به فرم
-    «افزودن نوع درخواست» تا ادمین به‌جای حدس‌زدن، از فهرست واقعی انتخاب
-    کند.
+    فهرست WF_Action کاراوب (ActionId + عنوان فارسی) برای فهرست کمکی فرم «افزودن نوع درخواست».
+    مجوز: sites.manage. 400 اگر نگاشت یا اتصال کاراوب سایت مشکل داشته باشد.
     """
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     try:
@@ -116,7 +122,7 @@ async def get_operation_lookup(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """فهرست رسمی WF_OperationTypes (OperationId + عنوان فارسی) - برای کمک به فرم «افزودن نوع درخواست»."""
+    """فهرست WF_OperationTypes کاراوب (OperationId + عنوان) برای فرم «افزودن نوع درخواست». مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     try:
         return await LeaveRequestService(db).list_operation_lookup(site_id)
@@ -130,7 +136,7 @@ async def get_card_lookup(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """فهرست رسمی Cards (Card_No + عنوان فارسی) - برای کمک به فرم «افزودن نوع درخواست»."""
+    """فهرست کارت‌های کاراوب (Card_No + عنوان + ActionId کارت) برای فرم «افزودن نوع درخواست». مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     try:
         return await LeaveRequestService(db).list_card_lookup(site_id)
@@ -145,17 +151,13 @@ async def list_types(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ رفع باگ واقعی: این Endpoint قبلاً فقط sites.manage را می‌پذیرفت،
-    برای همین کاربر منابع انسانی (leave_requests.manage) فهرست نوع‌ها را
-    نمی‌گرفت و دراپ‌داون «نوع درخواست» در صفحه گزارش برایش اصلاً نمایش
-    داده نمی‌شد - یعنی نمی‌توانست نوع را ویرایش کند، در حالی که ادمین
-    می‌توانست. حالا دارندگان مجوز ویرایش درخواست‌ها هم می‌توانند فهرست
-    نوع‌ها را بخوانند (خواندن فهرست نوع‌ها اطلاعات حساسی نیست و برای
-    ویرایش/فیلتر لازم است).
+    همه نوع‌های درخواست یک سایت (فعال و غیرفعال).
+    مجوز: sites.manage یا leave_requests.manage (منابع انسانی برای فیلتر/ویرایش نوع در صفحه گزارش به آن نیاز دارد).
     """
+    # دارنده leave_requests.manage روی این سایت (یا سراسری) بدون sites.manage هم می‌تواند بخواند
     if not current_user.is_superuser:
         manage_sites = await get_sites_with_permission(db, current_user, "leave_requests.manage")
-        has_leave_manage = manage_sites is None or site_id in manage_sites
+        has_leave_manage = manage_sites is None or site_id in manage_sites  # None = مجوز سراسری
         if not has_leave_manage:
             await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).list_types(site_id)
@@ -168,6 +170,7 @@ async def add_type(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """ساخت یک نوع درخواست جدید برای سایت (مجوز مشاهده‌ی عنوانش هم ساخته می‌شود). مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).add_type(
         site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no,
@@ -182,13 +185,15 @@ async def update_type(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """ویرایش جزئی یک نوع درخواست (فقط فیلدهای غیر None). مجوز: sites.manage روی سایتِ نوع. 404 اگر نوع نباشد."""
+    # سایت از روی خودِ نوع تعیین می‌شود چون مسیر site_id ندارد
     leave_type = await db.get(LeaveRequestType, type_id)
     if leave_type is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع درخواست موردنظر یافت نشد")
     await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
     try:
         return await LeaveRequestStructureService(db).update_type(
-            type_id, {k: v for k, v in payload.model_dump().items() if v is not None}
+            type_id, {k: v for k, v in payload.model_dump().items() if v is not None}  # فیلدهای خالی اعمال نمی‌شوند
         )
     except LeaveRequestStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -200,6 +205,7 @@ async def delete_type(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """حذف یک نوع درخواست (نوع ناموجود بی‌صدا 204 می‌دهد). مجوز: sites.manage روی سایتِ نوع."""
     leave_type = await db.get(LeaveRequestType, type_id)
     if leave_type is None:
         return
@@ -213,6 +219,7 @@ async def list_approvers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """تأییدکننده‌های دستی واحدهای یک سایت. مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).list_approvers(site_id)
 
@@ -224,10 +231,18 @@ async def set_approver(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    تعیین/جایگزینی تأییدکننده دستی یک واحد. مجوز: sites.manage روی سایتِ واحد، و اگر تأییدکننده از پرسنل
+    سایت دیگری است روی سایت او هم. 404 اگر واحد نباشد، 403 سایت غیرمجاز، 400 اگر پرسنل نباشد.
+    """
+    # سایت از روی واحد تعیین می‌شود چون مسیر site_id ندارد
     department = await db.get(Department, department_id)
     if department is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="واحد سازمانی موردنظر یافت نشد")
     await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
+    approver = await db.get(Employee, payload.approver_employee_id)
+    if approver is not None and approver.site_id != department.site_id:
+        await require_site_permission(db, current_user, approver.site_id, SITES_MANAGE)
     try:
         return await LeaveRequestStructureService(db).set_approver(department_id, payload.approver_employee_id)
     except LeaveRequestStructureError as e:
@@ -240,6 +255,7 @@ async def remove_approver(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """حذف تأییدکننده دستی یک واحد (واحد ناموجود بی‌صدا 204 می‌دهد). مجوز: sites.manage روی سایتِ واحد."""
     department = await db.get(Department, department_id)
     if department is None:
         return
@@ -253,7 +269,7 @@ async def get_module_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """فعال/غیرفعال بودن ماژول درخواست مرخصی/ماموریت برای این سایت."""
+    """وضعیت ماژول برای سایت: نگاشت دارد؟ از پنل غیرفعال شده؟ مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).get_module_status(site_id)
 
@@ -265,6 +281,7 @@ async def set_module_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """فعال/غیرفعال‌کردن موقت ماژول برای سایت. مجوز: sites.manage. 400 اگر سایت نگاشت نداشته باشد."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     try:
         return await LeaveRequestStructureService(db).set_module_disabled(site_id, payload.is_disabled)
@@ -278,7 +295,7 @@ async def get_hr_officer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """مسئول نیروی انسانی سایت - تأییدکننده نهایی «تردد فراموش‌شده» (بعد از سرپرست)."""
+    """مسئول نیروی انسانی سایت (تأییدکننده نهایی «تردد فراموش‌شده»)؛ null اگر تعیین نشده. مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).get_hr_officer(site_id)
 
@@ -290,6 +307,7 @@ async def set_hr_officer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """تعیین/جایگزینی مسئول نیروی انسانی سایت. مجوز: sites.manage. 400 اگر پرسنل از این سایت نباشد یا کد پرسنلی عددی نداشته باشد."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     try:
         return await LeaveRequestStructureService(db).set_hr_officer(site_id, payload.employee_id)
@@ -303,6 +321,7 @@ async def remove_hr_officer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """حذف مسئول نیروی انسانی سایت. مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     await LeaveRequestStructureService(db).remove_hr_officer(site_id)
 
@@ -312,19 +331,13 @@ async def remove_hr_officer(
 
 async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list | None:
     """
-    ⚠️ طبق تصمیم صریح کاربر: مجوز به‌تفکیک نوع از طریق همان سیستم
-    نقش/مجوز (RBAC) موجود پروژه انجام می‌شود - نه یک جدول اختصاصی جدا.
-    هر «عنوان» نوع (نه هر ردیف/سایت) یک Permission مشترک دارد
-    (leave_requests.view.type.<عنوان‌با‌زیرخط>) - سایت‌بندی از طریق
-    UserRole.site_id هنگام تخصیص نقش انجام می‌شود، نه از طریق خودِ کد
-    مجوز (دقیقاً مثل leave_requests.view/leave_requests.manage).
-
-    خروجی: None یعنی دسترسی کامل و بی‌قید (سراسری)؛ یک لیست یعنی فقط
-    همین شناسه‌های نوع (برای این سایت خاص)؛ اگر هیچ دسترسی‌ای نباشد (نه
-    سراسری، نه محدود به حداقل یک نوع)، خطای 403 می‌دهد.
+    سطح دسترسی کاربر به گزارش درخواست‌های یک سایت را تعیین می‌کند.
+    خروجی: None = دسترسی کامل (superuser یا leave_requests.view/manage روی سایت)؛
+    لیست شناسه نوع = فقط همین نوع‌ها (مجوزهای leave_requests.view.type.<عنوان>)؛ بدون هیچ دسترسی، 403.
     """
     if user.is_superuser:
         return None
+    # مجوز کامل مشاهده یا مدیریت روی این سایت (None = مجوز سراسری روی همه سایت‌ها)
     view_sites = await get_sites_with_permission(db, user, "leave_requests.view")
     manage_sites = await get_sites_with_permission(db, user, "leave_requests.manage")
     has_view = view_sites is None or site_id in view_sites
@@ -332,6 +345,7 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
     if has_view or has_manage:
         return None
 
+    # مجوزهای به‌تفکیک نوع که برای این سایت معتبرند
     type_permission_map = await get_sites_with_permission_prefix(db, user, "leave_requests.view.type.")
     allowed_codes = {code for code, sites in type_permission_map.items() if sites is None or site_id in sites}
     if not allowed_codes:
@@ -340,11 +354,13 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
             detail="دسترسی لازم برای مشاهده درخواست‌های این سایت را ندارید",
         )
 
+    # تبدیل کد مجوز (بر اساس عنوان) به شناسه نوع‌های همین سایت
     site_types = await db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == site_id))
     allowed_type_ids = [t.id for t in site_types.scalars().all() if permission_code_for_type_title(t.title) in allowed_codes]
     if allowed_type_ids:
         return allowed_type_ids
 
+    # مجوز نوع دارد ولی هیچ نوعی با آن عنوان در این سایت نیست
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="دسترسی لازم برای مشاهده درخواست‌های این سایت را ندارید",
@@ -362,12 +378,13 @@ async def list_all_for_site(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    گزارش همه درخواست‌های یک سایت با فیلترهای اختیاری (بازه تاریخ، وضعیت، نوع، واحد).
+    مجوز: leave_requests.view/manage یا مجوز به‌تفکیک نوع (با محدودیت‌های زیر)؛ وگرنه 403.
+    خطاها: 400 برای خطای منطقی سرویس، 500 با متن خطا برای مشکل دیتابیس کاراوب.
+    """
     allowed_type_ids = await _get_view_access(db, current_user, site_id)
-    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (نقشی
-    # مثل «حراست» - یعنی allowed_type_ids لیست است نه None) حق دیدن
-    # درخواست‌های «در حال بررسی» را ندارد؛ فقط تصمیم‌گیری‌شده‌ها. همچنین
-    # اجازه فیلتر بر اساس بازه تاریخ را هم ندارد (پارامترهای تاریخ
-    # نادیده گرفته می‌شوند، نه اینکه خطا بدهند).
+    # نقش محدود به نوع (مثل «حراست»): فیلتر بازه تاریخ نادیده گرفته می‌شود (بدون خطا)
     is_type_restricted = allowed_type_ids is not None
     if is_type_restricted:
         date_from = None
@@ -379,21 +396,16 @@ async def list_all_for_site(
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
-        # ⚠️ قبلاً خطای دیتابیس کاراوب (ستون/جدول نگاشت‌شده‌ای که در این
-        # دیتابیس وجود ندارد، قطع اتصال و ...) به ۵۰۰ بی‌توضیح تبدیل می‌شد و
-        # صفحه فقط «دریافت درخواست‌ها با خطا مواجه شد» نشان می‌داد. این صفحه
-        # فقط برای ادمین/منابع انسانی است؛ متن خطا برای عیب‌یابی نمایش داده می‌شود.
+        # خطای دیتابیس کاراوب (ستون/جدول نگاشت‌شده ناموجود، قطع اتصال و ...): چون این صفحه
+        # فقط برای ادمین/منابع انسانی است، متن خطا برای عیب‌یابی در پاسخ برگردانده می‌شود
         logger.exception("دریافت فهرست درخواست‌های مرخصی/ماموریت سایت %s با خطا مواجه شد", site_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"خطا در خواندن درخواست‌ها از کاراوب: {str(e)[:400]}",
         )
     if is_type_restricted:
-        # ⚠️ طبق تصمیم صریح و دقیق‌شده کاربر: نقش محدود به نوع (حراست)
-        # درخواست‌های «در حال بررسی» را فقط برای انواع **ساعتی** نباید
-        # ببیند؛ برای انواع **روزانه** دیدن در حال بررسی اشکالی ندارد.
-        # ملاک ساعتی‌بودن، پرشدن start_hour است (دقیقاً همان چیزی که در
-        # WF_Requests برای انواع ساعتی مقدار می‌گیرد و برای روزانه NULL است).
+        # نقش محدود به نوع، درخواست‌های «در حال بررسی» انواع ساعتی را نمی‌بیند (روزانه اشکالی ندارد).
+        # ملاک ساعتی‌بودن، پربودن start_hour است که برای انواع روزانه در WF_Requests خالی است.
         items = [
             item
             for item in items
@@ -413,12 +425,12 @@ async def export_leave_requests(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """⚠️ خروجی Excel - دقیقاً همان فیلترهای لیست را می‌پذیرد، تا آنچه کاربر می‌بیند همان چیزی باشد که خروجی می‌گیرد."""
+    """
+    خروجی Excel گزارش درخواست‌های سایت با همان فیلترهای list_all_for_site (آنچه کاربر می‌بیند، همان را می‌گیرد).
+    مجوز: فقط دسترسی کامل (leave_requests.view/manage)؛ نقش محدود به نوع 403 می‌گیرد.
+    """
     allowed_type_ids = await _get_view_access(db, current_user, site_id)
-    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (نقشی
-    # مثل «حراست») اصلاً حق خروجی Excel ندارد - دکمه‌اش در UI هم پنهان
-    # است، ولی این بررسی سمت سرور تضمین می‌کند حتی با فراخوانی مستقیم
-    # Endpoint هم نتواند خروجی بگیرد.
+    # نقش محدود به نوع حق خروجی Excel ندارد؛ این بررسی سمت سرور جلوی فراخوانی مستقیم را می‌گیرد
     if allowed_type_ids is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="شما مجاز به تهیه خروجی Excel نیستید"
@@ -430,6 +442,7 @@ async def export_leave_requests(
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    # ساخت فایل و برگرداندن به‌صورت دانلود
     site = await db.get(Site, site_id)
     content = build_leave_requests_xlsx(items, site.name if site else "")
     return Response(
@@ -447,9 +460,9 @@ async def admin_delete_request(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ حذف مدیریتی - هر درخواستی در هر مرحله‌ای (برخلاف حذف پرسنلی که فقط
-    درخواست خودِ فرد و فقط تا قبل از تصمیم‌گیری را حذف می‌کند). ردیف
-    متناظر در WF_Reviews هم حذف می‌شود.
+    حذف مدیریتی یک درخواست در هر مرحله‌ای (برخلاف حذف پرسنلی که فقط درخواست خودِ فرد و
+    قبل از تصمیم‌گیری است)؛ ردیف‌های وابسته در WF_Reviews و جدول‌های فرزند هم حذف می‌شوند.
+    مجوز: leave_requests.manage. 400 اگر درخواست پیدا نشود.
     """
     await require_site_permission(db, current_user, site_id, "leave_requests.manage")
     try:
@@ -466,16 +479,13 @@ async def admin_update_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    ویرایش مدیریتی فیلدهای یک درخواست (وضعیت نهایی، تاریخ/ساعت، نوع، نظر تأییدکننده، توضیحات).
+    مجوز: leave_requests.manage. 400 برای خطای منطقی سرویس.
+    """
     await require_site_permission(db, current_user, site_id, "leave_requests.manage")
-    # ⚠️ رفع باگ واقعی (گزارش کاربر: «وضعیت و نظر تأییدکننده تغییر
-    # نمی‌کند»): قبلاً هر مقدار None از payload حذف می‌شد. اما None اینجا
-    # یک مقدار معنادار است، نه «داده نشده» - برگرداندن وضعیت به «در حال
-    # بررسی» یعنی is_final_approved=None، که دقیقاً همان چیزی بود که
-    # فیلتر حذفش می‌کرد و در نتیجه هیچ تغییری اعمال نمی‌شد.
-    #
-    # exclude_unset=True فقط فیلدهایی را نگه می‌دارد که کلاینت واقعاً
-    # فرستاده - پس None عمدی حفظ می‌شود، ولی فیلدهای دست‌نخورده هم
-    # بی‌دلیل بازنویسی نمی‌شوند.
+    # exclude_unset فقط فیلدهایی را می‌فرستد که کلاینت واقعاً داده؛ None عمدی معنادار است
+    # (is_final_approved=None یعنی برگرداندن به «در حال بررسی») و نباید فیلتر شود
     try:
         await LeaveRequestService(db).admin_update_request(
             site_id, request_id, payload.model_dump(exclude_unset=True)

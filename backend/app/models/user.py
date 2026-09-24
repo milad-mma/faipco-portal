@@ -1,13 +1,10 @@
 """
-مدل‌های سیستم Authentication و RBAC.
-
-طراحی:
-- User: حساب ورود به Portal. می‌تواند (اختیاری) به یک رکورد Employee سینک‌شده وصل باشد.
-- Role: نقش (مثلاً "مدیر منابع انسانی سایت ۲")
-- Permission: مجوز اتمی (مثلاً "employees.view")
-- UserRole: نقش هر کاربر - با site_id اختیاری تا بشود یک نقش را فقط برای یک Site
-  به کاربر داد (مثلاً "HR Manager فقط در سایت A"). اگر site_id خالی باشد یعنی نقش سراسری است.
-- RolePermission: مجوزهای هر نقش
+مدل‌های سیستم احراز هویت و RBAC.
+- User: حساب ورود به پرتال؛ می‌تواند (اختیاری) به یک رکورد Employee سینک‌شده وصل باشد.
+- Role: نقش (مثلاً «مدیر منابع انسانی سایت ۲»).
+- Permission: مجوز اتمی (مثلاً "employees.view").
+- UserRole: انتساب نقش به کاربر، با site_id اختیاری برای محدود کردن نقش به یک سایت (site_id خالی = نقش سراسری).
+- RolePermission: مجوزهای هر نقش.
 """
 from __future__ import annotations
 
@@ -21,6 +18,7 @@ from app.models.base import TimestampMixin
 
 
 class User(Base, TimestampMixin):
+    """حساب کاربری ورود به پرتال (جدول users)."""
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -34,31 +32,26 @@ class User(Base, TimestampMixin):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # دسترسی کامل بدون نیاز به نقش
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # اگر True باشد یعنی این کاربر (یا Admin به‌جایش) یک رمز عبور واقعی تعیین
-    # کرده — از این پس ورود پرسنل با «کد پرسنلی + کد ملی» دیگر کار نمی‌کند و
-    # فقط «کد پرسنلی + همین رمز عبور» معتبر است. تا وقتی False است، password_hash
-    # یک مقدار تصادفی غیرقابل‌حدس است (نه چیزی که کسی واقعاً بداند) و ورود
-    # همچنان از مسیر کد ملی انجام می‌شود.
+    # True: کاربر (یا Admin به‌جای او) رمز واقعی تعیین کرده و ورود پرسنل فقط با «کد پرسنلی + همین رمز» ممکن است.
+    # False: password_hash یک مقدار تصادفی غیرقابل‌حدس است و ورود پرسنل با «کد پرسنلی + کد ملی» انجام می‌شود.
     has_custom_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # ⚠️ آخرین نسخه اعلان تغییرات که این کاربر «دیگر نمایش نده» زده است.
-    # روی خودِ کاربر ذخیره می‌شود (نه localStorage) تا با عوض‌کردن مرورگر
-    # یا دستگاه، اعلانِ قبلاً ردشده دوباره ظاهر نشود.
+    # آخرین نسخه‌ی اعلان تغییرات که کاربر «دیگر نمایش نده» زده؛ روی کاربر ذخیره می‌شود (نه localStorage)
+    # تا با عوض کردن مرورگر یا دستگاه، اعلان ردشده دوباره نمایش داده نشود.
     dismissed_announcement_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # اگر True باشد، کاربر بعد از ورود موفق، تا وقتی رمز عبورش را عوض نکند
-    # (طبق قانون قدرت رمز — حداقل ۱۰ کاراکتر + حرف کوچک + حرف بزرگ + عدد)
-    # به بقیه پنل دسترسی ندارد. موقع ساخت حساب Admin (اگر رمز داده‌شده این
-    # قانون را رعایت نکند، مثلاً رمز پیش‌فرض نصب) یا وقتی Admin برای یک
-    # پرسنل رمز تعیین می‌کند، True تنظیم می‌شود.
+    # True: کاربر پس از ورود تا تعویض رمز (مطابق قانون قدرت رمز: حداقل ۱۰ کاراکتر + حرف کوچک + حرف بزرگ + عدد)
+    # به بقیه‌ی پنل دسترسی ندارد. هنگام ساخت حساب Admin با رمز ضعیف (مثل رمز پیش‌فرض نصب)
+    # یا وقتی Admin برای پرسنل رمز تعیین می‌کند، True می‌شود.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Role(Base, TimestampMixin):
+    """تعریف یک نقش و مجوزهای آن (جدول roles)."""
     __tablename__ = "roles"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -73,6 +66,7 @@ class Role(Base, TimestampMixin):
 
 
 class Permission(Base):
+    """یک مجوز اتمی با کد یکتا (جدول permissions)."""
     __tablename__ = "permissions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -111,7 +105,7 @@ class UserRole(Base):
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
     site_id: Mapped[int | None] = mapped_column(
         ForeignKey("sites.id", ondelete="CASCADE"), nullable=True
-    )
+    )  # None = نقش سراسری
 
     user: Mapped["User"] = relationship(back_populates="roles")
     role: Mapped["Role"] = relationship()

@@ -1,3 +1,9 @@
+/**
+ * صفحه «پنل کاربری» (تب پنل کاربری در نوار پایین موبایل).
+ * شامل کارت برند و نسخه برنامه، میان‌بر مقصدهایی که کاربر طبق مجوزهایش به آن‌ها دسترسی دارد،
+ * انتخاب حالت نمایش (سیستم/روشن/تیره)، تنظیم مخفی‌سازی تولد، فعال‌سازی اعلان Push،
+ * ویرایش مشخصات، تغییر رمز و خروج از حساب.
+ */
 import { useEffect, useState } from "react";
 import {
   Box,
@@ -45,18 +51,11 @@ import EditContactInfoDialog from "../components/EditContactInfoDialog";
 import { NAV_ITEMS } from "../config/navItems";
 
 /**
- * «دسترسی‌های ویژه» این صفحه - مقصدهایی که کاربر غیر-Admin (که فقط نوار
- * پایین را می‌بیند، نه منوی کناری Admin) طبق مجوزهایش به آن‌ها دسترسی
- * دارد. ⚠️ این لیست دیگر جداگانه و دستی نگه‌داری نمی‌شود - مستقیماً از
- * همان NAV_ITEMS مشترک (navItems.jsx) ساخته می‌شود؛ دقیقاً همین
- * دوگانگیِ قبلی (دو لیست جدا) بود که باعث شد «ارزیابی عملکرد» برای
- * کاربران غیر-Admin هیچ راه دسترسی نداشته باشد - از این به بعد هر مقصد
- * جدیدی که به NAV_ITEMS اضافه شود، خودکار همین‌جا هم ظاهر می‌شود.
- *
- * ⚠️ برخلاف قبل، اینجا دیگر children را مسطح (Flatten) نمی‌کنیم - آیتم‌های
- * دارای زیرمنو (مثل «ارزیابی عملکرد») به‌صورت یک گروه قابل‌جمع‌شدن
- * (دقیقاً مثل منوی کناری Admin در Layout.jsx) نمایش داده می‌شوند، نه
- * چند خط جدا و بی‌ربط به هم.
+ * «دسترسی‌های ویژه» این صفحه: مقصدهایی که کاربر غیر-Admin (که فقط نوار پایین را می‌بیند،
+ * نه منوی کناری Admin) طبق مجوزهایش به آن‌ها دسترسی دارد.
+ * مستقیماً از NAV_ITEMS مشترک (navItems.jsx) ساخته می‌شود، پس هر مقصد جدید در NAV_ITEMS
+ * خودکار اینجا هم ظاهر می‌شود. آیتم‌های دارای زیرمنو (مثل «ارزیابی عملکرد») به‌صورت یک گروه
+ * قابل‌جمع‌شدن (مثل منوی کناری Admin در Layout.jsx) نگه داشته می‌شوند و فقط زیرآیتم‌های دارای check می‌مانند.
  */
 const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter((item) => !item.adminOnly && (item.check || item.children?.length)).map(
   (item) => ({
@@ -69,25 +68,25 @@ const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter((item) => !item.adminOnly && (item.
 );
 
 /**
- * پنل کاربری — قبلاً محتوای این صفحه فقط داخل منوی حساب کاربری (بالای
- * صفحه) بود؛ حالا به یک صفحه مستقل (تب «پنل کاربری» در نوار پایین موبایل)
- * تبدیل شده — همان قابلیت‌ها، فقط جای متفاوت.
+ * کامپوننت صفحه پنل کاربری؛ ورودی ندارد.
+ * اطلاعات کاربر، برندینگ و حالت تم را از Contextها می‌گیرد و کارت‌های تنظیمات و میان‌برها را رندر می‌کند.
  */
 export default function ProfilePage() {
   const { user, logout, refetchUser } = useAuth();
   const { profileTitle, profileSubtitle, surfaces } = useBranding();
-  const profileCfg = surfaces.profile;
+  const profileCfg = surfaces.profile;  // تنظیمات برندینگ سطح «profile» (پس‌زمینه، نمایش عنوان/زیرعنوان)
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [contactInfoDialogOpen, setContactInfoDialogOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
-  const [snackbar, setSnackbar] = useState("");
+  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());  // "default" | "granted" | "denied"
+  const [snackbar, setSnackbar] = useState("");  // متن Snackbar؛ رشته خالی = بسته
   const [appVersion, setAppVersion] = useState("");
-  const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null);
-  const [birthdaySaving, setBirthdaySaving] = useState(false);
+  const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null);  // عنصر لنگر Popover توضیح گزینه تولد؛ null = بسته
+  const [birthdaySaving, setBirthdaySaving] = useState(false);  // در حال ذخیره تنظیم نمایش تولد
 
+  // تنظیم مخفی‌سازی تولد در داشبورد را ذخیره و اطلاعات کاربر را دوباره از سرور می‌خواند
   async function handleToggleBirthdayVisibility(e) {
     const hide = e.target.checked;
     setBirthdaySaving(true);
@@ -102,12 +101,14 @@ export default function ProfilePage() {
   }
 
   useEffect(() => {
-    // بی‌صدا — مثل صفحه ورود، اگر شکست بخورد فقط شماره نسخه نشان داده نمی‌شود
+    // دریافت شماره نسخه برنامه؛ خطا بی‌صدا نادیده گرفته می‌شود و فقط نسخه نمایش داده نمی‌شود
     fetchAppVersion()
       .then(setAppVersion)
       .catch(() => {});
   }, []);
 
+  // فیلتر مقصدها بر اساس مجوز کاربر: گروه دارای زیرمنو فقط با زیرآیتم‌های مجاز می‌ماند
+  // (و اگر هیچ‌کدام مجاز نباشد حذف می‌شود)؛ آیتم ساده با check(user) سنجیده می‌شود
   const extraAccessGroups = EXTRA_ACCESS_GROUPS.map((group) => {
     if (group.children) {
       const visibleChildren = group.children.filter((child) => child.check(user));
@@ -116,14 +117,14 @@ export default function ProfilePage() {
     return group.check(user) ? group : null;
   }).filter(Boolean);
 
-  // ⚠️ طبق درخواست صریح: پنل موبایل هم مثل پنل ادمین، برای گروه‌های
-  // وابسته‌به‌هم (مثل «ارزیابی عملکرد» با چند زیرمقصد) دراپ‌داون
-  // (باز/بسته‌شدنی) دارد - نه چند خط جدا و بی‌ربط.
+  // وضعیت باز/بسته بودن گروه‌های دارای زیرمنو، به‌صورت { [label]: boolean }
   const [expandedGroups, setExpandedGroups] = useState({});
+  // باز/بسته کردن یک گروه بر اساس label
   function toggleGroup(label) {
     setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   }
 
+  // مجوز و اشتراک اعلان Push را فعال می‌کند و وضعیت مجوز و پیام نتیجه را به‌روز می‌کند
   async function handleEnableNotifications() {
     try {
       await enablePushNotifications();
@@ -135,6 +136,7 @@ export default function ProfilePage() {
     }
   }
 
+  // انتخاب «system» حالت دستی را پاک می‌کند؛ در غیر این صورت حالت روشن/تیره را ثابت می‌کند
   function handleThemeChange(value) {
     if (value === "system") {
       resetToSystem();
@@ -145,6 +147,7 @@ export default function ProfilePage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
+      {/* کارت برند: لوگو، عنوان/زیرعنوان (طبق تنظیمات برندینگ) و نسخه برنامه */}
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
         <Box
           sx={{
@@ -177,6 +180,7 @@ export default function ProfilePage() {
         </Stack>
       </Card>
 
+      {/* میان‌بر مقصدهای مجاز؛ گروه‌های دارای زیرمنو به‌صورت قابل‌جمع‌شدن */}
       {extraAccessGroups.length > 0 && (
         <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
           <List disablePadding>
@@ -210,6 +214,7 @@ export default function ProfilePage() {
         </Card>
       )}
 
+      {/* انتخاب حالت نمایش: پیروی از سیستم، روشن یا تیره */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           حالت نمایش
@@ -251,6 +256,7 @@ export default function ProfilePage() {
         </RadioGroup>
       </Card>
 
+      {/* تنظیم مخفی‌سازی تولد (فقط برای کاربرانی که به پرسنل متصل‌اند) با Popover توضیح */}
       {user?.employee_id && (
         <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 2 }}>
           <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -288,6 +294,7 @@ export default function ProfilePage() {
         </Card>
       )}
 
+      {/* فهرست عملیات حساب: اعلان‌ها، مشخصات کاربری، تغییر رمز و خروج */}
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
         <List disablePadding>
           {isPushSupported() && (
@@ -327,9 +334,11 @@ export default function ProfilePage() {
         </List>
       </Card>
 
+      {/* دیالوگ‌های تغییر رمز و ویرایش مشخصات */}
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
       <EditContactInfoDialog open={contactInfoDialogOpen} onClose={() => setContactInfoDialogOpen(false)} />
 
+      {/* دیالوگ تأیید خروج از حساب */}
       <Dialog open={logoutConfirmOpen} onClose={() => setLogoutConfirmOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>خروج از حساب کاربری</DialogTitle>
         <DialogContent>

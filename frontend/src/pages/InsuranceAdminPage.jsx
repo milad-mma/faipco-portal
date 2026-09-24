@@ -45,11 +45,21 @@ import {
   updateInsuranceSettings,
 } from "../api/insurance";
 
+/**
+ * صفحه‌ی مدیریت بیمه تکمیلی (مسیر /insurance/admin).
+ * دو تب دارد: «ثبت‌نام‌ها» (فهرست، جستجو، جزئیات، حذف، خروجی Excel) برای
+ * دارندگان insurance.view و «تنظیمات» (فعال/غیرفعال، جدول نرخ، نکات) برای
+ * دارندگان insurance.manage.
+ */
+
+// برچسب کدهای عددی جنسیت/تأهل و عنوان فارسی انواع عضو
 const GENDER_LABEL = { 1: "مرد", 2: "زن" };
 const MARITAL_LABEL = { 2: "مجرد", 3: "متاهل" };
 const RELATION_LABEL = { spouse: "همسر", son: "فرزند پسر", daughter: "فرزند دختر", father: "پدر", mother: "مادر" };
+// تاریخ ISO را به تاریخ شمسی کوتاه تبدیل می‌کند؛ خالی → «—»
 const faDate = (iso) => (iso ? new Date(iso).toLocaleDateString("fa-IR") : "—");
 
+// یک Blob را با نام داده‌شده در مرورگر دانلود می‌کند (لینک موقت ساخته و کلیک می‌شود)
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -59,18 +69,24 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/** جزئیات یک ثبت‌نام + اعضا + مدارک (بازسازی نمای جزئیات admin/index.php) */
+/**
+ * پنجره‌ی جزئیات یک ثبت‌نام: مشخصات شخص اصلی، جدول اعضا با دکمه‌ی دانلود مدرک
+ * و (برای دارنده‌ی insurance.manage) دکمه‌ی حذف کل ثبت‌نام.
+ * ورودی: شناسه‌ی ثبت‌نام، تابع بستن، مجوز مدیریت و تابع اطلاع از حذف.
+ */
 function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
   const [reg, setReg] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // بارگذاری جزئیات هنگام باز شدن یا تغییر شناسه
   useEffect(() => {
     fetchInsuranceRegistration(id)
       .then(setReg)
       .catch((e) => setError(e.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد."));
   }, [id]);
 
+  // مدرک را از سرور می‌گیرد و با نام اصلی‌اش دانلود می‌کند
   async function openDoc(doc) {
     try {
       const blob = await downloadInsuranceDocument(doc.id);
@@ -80,6 +96,7 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
     }
   }
 
+  // حذف ثبت‌نام پس از تأیید کاربر؛ در موفقیت به والد اطلاع می‌دهد تا فهرست تازه شود
   async function handleDelete() {
     if (!window.confirm(`ثبت‌نام «${reg.first_name} ${reg.last_name}» و همه اعضا و مدارکش حذف شود؟`)) return;
     setBusy(true);
@@ -105,6 +122,7 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
           <CircularProgress size={24} />
         ) : (
           <>
+            {/* مشخصات شخص اصلی به‌صورت جفت برچسب/مقدار */}
             <Grid container spacing={1.5} sx={{ mb: 2 }}>
               {[
                 ["کد پرسنلی", reg.personnel_code],
@@ -202,10 +220,14 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted }) {
   );
 }
 
+/**
+ * تب «ثبت‌نام‌ها»: نوار جستجو و فیلتر سایت، آمار (ثبت‌نام‌شده/فعال/نکرده)،
+ * جدول صفحه‌بندی‌شده و دکمه‌ی خروجی Excel. کلیک روی هر سطر پنجره‌ی جزئیات را باز می‌کند.
+ */
 function RegistrationsTab({ canManage }) {
   const [siteId, setSiteId] = useState(null);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState(""); // متن داخل فیلد جستجو
+  const [query, setQuery] = useState(""); // عبارتی که واقعاً به سرور فرستاده شده (با Enter یا دکمه)
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [data, setData] = useState(null);
@@ -213,6 +235,7 @@ function RegistrationsTab({ canManage }) {
   const [openId, setOpenId] = useState(null);
   const [exporting, setExporting] = useState(false);
 
+  // دریافت فهرست با فیلترهای فعلی؛ شماره صفحه در UI صفرمبنا و در API یک‌مبنا است
   function load() {
     fetchInsuranceRegistrations({ search: query || undefined, site_id: siteId || undefined, page: page + 1, page_size: pageSize })
       .then(setData)
@@ -220,6 +243,7 @@ function RegistrationsTab({ canManage }) {
   }
   useEffect(load, [query, siteId, page, pageSize]);
 
+  // دانلود Excel ثبت‌نام‌های سایت انتخاب‌شده (یا همه‌ی سایت‌های مجاز)
   async function handleExport() {
     setExporting(true);
     try {
@@ -257,6 +281,7 @@ function RegistrationsTab({ canManage }) {
           خروجی Excel
         </Button>
       </Stack>
+      {/* آمار کلی (مستقل از جستجو) */}
       {data && (
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
           <Chip label={`ثبت‌نام‌شده: ${data.registered.toLocaleString("fa-IR")}`} color="success" size="small" />
@@ -347,6 +372,11 @@ function RegistrationsTab({ canManage }) {
   );
 }
 
+/**
+ * تب «تنظیمات»: کلید فعال/غیرفعال (ذخیره‌ی فوری)، ویرایشگر جدول نرخ
+ * (عناوین ستون‌ها و سطرها با جابه‌جایی/حذف/افزودن)، ویرایشگر نکات و پیش‌نمایش
+ * زنده؛ جدول و نکات با دکمه‌ی ذخیره ارسال می‌شوند.
+ */
 function SettingsTab() {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -358,6 +388,7 @@ function SettingsTab() {
       .catch(() => setMessage({ severity: "error", text: "دریافت تنظیمات با خطا مواجه شد." }));
   }, []);
 
+  // بخشی از تنظیمات را به سرور می‌فرستد و state را با پاسخ کامل سرور جایگزین می‌کند
   async function save(patch, successText) {
     setSaving(true);
     setMessage(null);
@@ -372,9 +403,11 @@ function SettingsTab() {
   }
 
   if (!settings) return <CircularProgress size={24} />;
+  // توابع کمکی ویرایش جدول نرخ و نکات در state محلی (بدون ارسال به سرور)
   const table = settings.rate_table;
   const setTable = (next) => setSettings({ ...settings, rate_table: next });
   const setRow = (i, key, value) => setTable({ ...table, rows: table.rows.map((r, j) => (j === i ? { ...r, [key]: value } : r)) });
+  // جابه‌جایی سطر i با سطر قبلی (dir=-1) یا بعدی (dir=+1)
   const moveRow = (i, dir) => {
     const rows = [...table.rows];
     const j = i + dir;
@@ -396,6 +429,7 @@ function SettingsTab() {
     <Stack spacing={3}>
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
 
+      {/* کلید فعال/غیرفعال ماژول؛ هر تغییر بلافاصله ذخیره می‌شود */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         <FormControlLabel
           control={<Switch checked={settings.enabled} disabled={saving} onChange={(e) => save({ enabled: e.target.checked }, e.target.checked ? "ماژول فعال شد." : "ماژول غیرفعال شد.")} />}
@@ -407,6 +441,7 @@ function SettingsTab() {
         </Typography>
       </Card>
 
+      {/* ویرایشگر جدول نرخ: عناوین ستون‌ها + یک ردیف ورودی به ازای هر بازه‌ی سنی */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         <Typography fontWeight={700} sx={{ mb: 0.5 }}>
           جدول نرخ حق بیمه تکمیلی پرسنل
@@ -451,6 +486,7 @@ function SettingsTab() {
         </Button>
       </Card>
 
+      {/* ویرایشگر نکات: هر نکته یک فیلد چندخطی با جابه‌جایی و حذف */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         <Typography fontWeight={700} sx={{ mb: 0.5 }}>
           توضیحات زیر جدول (باکس آبی)
@@ -479,6 +515,7 @@ function SettingsTab() {
         </Button>
       </Card>
 
+      {/* پیش‌نمایش زنده با همان کامپوننتی که در فرم پرسنل استفاده می‌شود */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         <Typography fontWeight={700} sx={{ mb: 1.5 }}>
           پیش‌نمایش (همان‌طور که پرسنل می‌بینند)
@@ -495,6 +532,7 @@ function SettingsTab() {
   );
 }
 
+// صفحه‌ی اصلی: انتخاب تب؛ تب تنظیمات فقط برای دارنده‌ی insurance.manage نمایش داده می‌شود
 export default function InsuranceAdminPage() {
   const { user } = useAuth();
   const canManage = Boolean(user?.can_manage_insurance);

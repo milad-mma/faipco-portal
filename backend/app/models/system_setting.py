@@ -14,7 +14,8 @@ from app.db.session import Base
 
 
 class SystemSetting(Base):
+    """یک تنظیم سراسری به صورت کلید/مقدار متنی."""
     __tablename__ = "system_settings"
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
-    value: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # همیشه متن؛ تبدیل نوع در سرویس انجام می‌شود

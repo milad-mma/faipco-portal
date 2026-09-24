@@ -1,3 +1,6 @@
+// صفحه‌ی مدیریت نقش‌ها و مجوزها.
+// فهرست نقش‌ها را نشان می‌دهد و امکان ساخت، ویرایش و حذف نقش با انتخاب از مجوزهای موجود
+// (درخت مجوزها گروه‌بندی‌شده بر اساس پیشوند) را فراهم می‌کند.
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -17,6 +20,7 @@ import {
   IconButton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
@@ -35,53 +39,56 @@ import {
 } from "../api/users";
 import { useAuth } from "../context/AuthContext";
 
-const EMPTY_FORM = { name: "", description: "", permissionIds: [] };
+const EMPTY_FORM = { name: "", description: "", permissionIds: [] };  // مقدار اولیه‌ی فرم نقش
 
-// طبق قرارداد نام‌گذاری استفاده‌شده در کدِ Backend، مجوزهایی که با
-// «.manage» تمام می‌شوند یا با «system.» شروع می‌شوند، همیشه سطح
-// دسترسی گسترده/ادمینی دارند (مثل sites.manage، vehicles.manage،
-// system.backup) — این فقط برای نمایش یک برچسب هشدار است، تصمیم واقعی
-// (آیا این مجوز به این نقش داده شود یا نه) کاملاً دست خودِ Admin است.
+// ورودی: کد مجوز؛ خروجی: true اگر مجوز سطح ادمین باشد (پایان با «.manage» یا شروع با «system.»،
+// مثل sites.manage یا system.backup). فقط برای نمایش برچسب هشدار کنار مجوز استفاده می‌شود.
 function isAdminLevelPermission(code) {
   return code.endsWith(".manage") || code.startsWith("system.");
 }
 
+// مجوزهایی که اثرشان به یک سایت محدود نمی‌شود و روی کل سیستم است، حتی اگر نقش فقط برای یک سایت
+// داده شود؛ باید فقط به افراد مورد اعتماد داده شوند. مقدار = توضیح نمایش‌داده‌شده در Tooltip.
+const SYSTEM_WIDE_PERMISSIONS = {
+  "roles.manage": "تعریف نقش‌ها بین همه‌ی سایت‌ها مشترک است؛ تغییر آن روی دسترسی همه اثر دارد.",
+  "system.settings": "تنظیمات کلی سامانه (برندینگ، ظاهر و ...) برای همه‌ی سایت‌ها یکی است.",
+  "sync.manage": "فاصله‌ی همگام‌سازی خودکار برای همه‌ی سایت‌ها مشترک است.",
+  "hr.birthday_messages": "متن‌ها و ساعت پیام تبریک تولد برای همه‌ی سایت‌ها یکی است.",
+  "feedback.view_all": "انتقادات و پیشنهادات پرسنل همه‌ی سایت‌ها را نشان می‌دهد.",
+};
+
 /**
- * پنل مدیریت نقش/مجوز — ساخت نقش‌های جدید از ترکیب مجوزهای *موجود*
- * (بدون نیاز به هیچ تغییر کد یا Migration، برای ترکیب‌های تازه از همان
- * مجوزهایی که از قبل در سیستم وجود دارند).
- *
- * ⚠️ هر مجوز جدید (که هنوز در سیستم وجود ندارد) همچنان فقط با یک تغییر
- * کد ممکن است — چون یک مجوز فقط وقتی معنا دارد که جایی از Backend واقعاً
- * همان Code را چک کند. این صفحه فقط اجازه می‌دهد از مجوزهای موجود، نقش‌های
- * تازه بسازید یا نقش‌های موجود را ویرایش کنید — نه ساخت مجوز کاملاً جدید.
+ * کامپوننت پنل مدیریت نقش/مجوز؛ ورودی ندارد.
+ * نقش‌های جدید را از ترکیب مجوزهای موجود در سیستم می‌سازد یا نقش‌های موجود را ویرایش/حذف می‌کند.
+ * ساخت مجوز جدید در این صفحه ممکن نیست، چون هر مجوز باید در Backend با همان Code بررسی شود.
  */
 export default function RoleManagementPage() {
   const { refetchUser } = useAuth();
-  const [roles, setRoles] = useState(null);
-  const [permissions, setPermissions] = useState(null);
+  const [roles, setRoles] = useState(null);  // null = در حال بارگذاری
+  const [permissions, setPermissions] = useState(null);  // همه‌ی مجوزهای موجود؛ null = در حال بارگذاری
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRoleId, setEditingRoleId] = useState(null); // null = ساخت نقش جدید
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
-  const [roleToDelete, setRoleToDelete] = useState(null);
-  const [expandedGroups, setExpandedGroups] = useState({});
+  const [roleToDelete, setRoleToDelete] = useState(null);  // نقشی که دیالوگ تأیید حذفش باز است
+  const [expandedGroups, setExpandedGroups] = useState({});  // وضعیت باز/بسته‌ی هر گروه مجوز؛ پیش‌فرض باز
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  // فهرست نقش‌ها را از سرور می‌گیرد
   function loadRoles() {
     fetchRoles().then(setRoles);
   }
 
+  // بارگذاری اولیه‌ی نقش‌ها و مجوزها
   useEffect(() => {
     loadRoles();
     fetchPermissions().then(setPermissions);
   }, []);
 
-  // گروه‌بندی مجوزها بر اساس پیشوند قبل از نقطه (مثلاً "notices.view" →
-  // گروه "notices") — فقط برای خواناتر شدن چک‌باکس‌لیست طولانی، هیچ اثر
-  // دیگری روی داده ندارد.
+  // گروه‌بندی مجوزها بر اساس پیشوند قبل از نقطه (مثلاً "notices.view" → گروه "notices")؛
+  // خروجی: آرایه‌ی [نام گروه، مجوزها] مرتب‌شده بر اساس نام گروه
   const groupedPermissions = useMemo(() => {
     if (!permissions) return [];
     const groups = {};
@@ -93,6 +100,7 @@ export default function RoleManagementPage() {
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [permissions]);
 
+  // دیالوگ را برای ساخت نقش جدید با فرم خالی باز می‌کند
   async function openCreateDialog() {
     setEditingRoleId(null);
     setForm(EMPTY_FORM);
@@ -100,13 +108,13 @@ export default function RoleManagementPage() {
     setDialogOpen(true);
   }
 
+  // دیالوگ ویرایش نقش را باز می‌کند و جزئیات نقش (شامل مجوزها) را از سرور در فرم می‌گذارد
   async function openEditDialog(role) {
     setEditingRoleId(role.id);
     setError("");
     setDialogOpen(true);
-    // فرم را با یک وضعیت موقت خالی/در‌حال‌بارگذاری باز می‌کنیم، بعد جزئیات
-    // واقعی (شامل فهرست دقیق مجوزهای همین نقش) را می‌گیریم — چون لیست
-    // خلاصه نقش‌ها (fetchRoles) خودِ مجوزها را ندارد.
+    // ابتدا فرم با نام/توضیح و بدون مجوز پر می‌شود، سپس جزئیات کامل گرفته می‌شود
+    // چون فهرست خلاصه‌ی نقش‌ها (fetchRoles) مجوزها را ندارد
     setForm({ name: role.name, description: role.description || "", permissionIds: [] });
     const detail = await fetchRoleDetail(role.id);
     setForm({
@@ -116,6 +124,7 @@ export default function RoleManagementPage() {
     });
   }
 
+  // یک مجوز را در فرم انتخاب یا لغو انتخاب می‌کند
   function togglePermission(permissionId) {
     setForm((prev) => ({
       ...prev,
@@ -125,8 +134,7 @@ export default function RoleManagementPage() {
     }));
   }
 
-  // انتخاب/لغوِ‌انتخاب یک‌جای کل یک گروه (شاخه درخت) — اگر همه فرزندان
-  // انتخاب‌شده باشند، همه را لغو می‌کند؛ وگرنه همه را انتخاب می‌کند.
+  // انتخاب/لغو انتخاب یک‌جای کل یک گروه؛ اگر همه‌ی مجوزهای گروه انتخاب‌شده باشند همه را لغو، وگرنه همه را انتخاب می‌کند
   function toggleGroup(items) {
     const ids = items.map((p) => p.id);
     const allSelected = ids.every((id) => form.permissionIds.includes(id));
@@ -138,12 +146,14 @@ export default function RoleManagementPage() {
     }));
   }
 
+  // باز/بسته‌کردن یک گروه در درخت مجوزها
   function toggleGroupExpanded(group) {
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
   }
 
   const canSave = form.name.trim().length > 0 && !isSaving;
 
+  // نقش را (ساخت یا ویرایش) ذخیره می‌کند، فهرست را بازخوانی و اطلاعات کاربر جاری را تازه می‌کند
   async function handleSave() {
     if (!canSave) return;
     setError("");
@@ -161,11 +171,7 @@ export default function RoleManagementPage() {
       }
       setDialogOpen(false);
       loadRoles();
-      // ⚠️ اگر خودِ کاربر جاری نقشش تغییر کرده باشد (مثلاً مجوز جدیدی به
-      // نقش خودش اضافه کرده)، بدون این فراخوانی، فلگ‌های can_* در Session
-      // فعلی (که فقط یک‌بار موقع ورود خوانده می‌شوند) به‌روز نمی‌شدند - و
-      // کاربر تا خروج/ورود دوباره، منوی مربوطه را نمی‌دید، با اینکه واقعاً
-      // مجوز را داشت.
+      // فلگ‌های can_* کاربر جاری دوباره خوانده می‌شوند تا اگر نقش خودش تغییر کرده، منوها بی‌درنگ به‌روز شوند
       refetchUser().catch(() => {});
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره نقش با خطا مواجه شد.");
@@ -174,6 +180,7 @@ export default function RoleManagementPage() {
     }
   }
 
+  // نقش انتخاب‌شده را حذف و از فهرست برمی‌دارد؛ خطای سرور در دیالوگ نمایش داده می‌شود
   async function handleConfirmDelete() {
     if (!roleToDelete) return;
     setDeleteError("");
@@ -200,6 +207,7 @@ export default function RoleManagementPage() {
         </Button>
       </Stack>
 
+      {/* فهرست کارت‌های نقش (یا نشانگر بارگذاری) */}
       {roles === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
@@ -214,12 +222,8 @@ export default function RoleManagementPage() {
                     <Typography variant="body1" fontWeight={700}>
                       {role.name}
                     </Typography>
-                    {/* ⚠️ طبق درخواست صریح، is_system دیگر مانع ویرایش یا
-                        حذف نیست — فقط برای این‌که Admin بداند این نقش یکی
-                        از نقش‌های پیش‌فرض (ساخته‌شده هنگام نصب) بوده، نه
-                        اینکه ذاتاً غیرقابل‌تغییر/حذف باشد. فقط خودِ
-                        «superadmin» کاملاً مستثناست (چون جای دیگری از کد
-                        دقیقاً همین نام را چک می‌کند). */}
+                    {/* برچسب نقش: superadmin کاملاً غیرقابل‌تغییر است (نامش در کد بررسی می‌شود)؛
+                        is_system فقط نشان می‌دهد نقش پیش‌فرضِ نصب است و مانع ویرایش/حذف نیست */}
                     {role.name === "superadmin" ? (
                       <Chip
                         size="small"
@@ -237,6 +241,7 @@ export default function RoleManagementPage() {
                     </Typography>
                   )}
                 </Box>
+                {/* دکمه‌های ویرایش و حذف (برای superadmin نمایش داده نمی‌شوند) */}
                 <Stack direction="row" sx={{ flexShrink: 0 }}>
                   {role.name !== "superadmin" && (
                     <IconButton size="small" onClick={() => openEditDialog(role)} aria-label="ویرایش">
@@ -284,9 +289,15 @@ export default function RoleManagementPage() {
               minRows={2}
             />
             <Box>
+              {/* درخت مجوزها: هر گروه یک گره والد با چک‌باکس کل گروه و فرزندان قابل باز/بسته‌شدن */}
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
                 مجوزهای این نقش
               </Typography>
+              {/* راهنمای برچسب مجوزهای حساس */}
+              <Alert severity="warning" sx={{ mb: 1 }}>
+                مجوزهای «کل سیستم» حتی اگر نقش فقط برای یک سایت داده شود روی همه‌ی سایت‌ها اثر دارند؛ آن‌ها را فقط به
+                افراد مورد اعتماد بدهید.
+              </Alert>
               {permissions === null ? (
                 <CircularProgress size={20} />
               ) : (
@@ -340,6 +351,16 @@ export default function RoleManagementPage() {
                                   <Box>
                                     <Stack direction="row" spacing={0.75} alignItems="center">
                                       <Typography variant="body2">{p.code}</Typography>
+                                      {SYSTEM_WIDE_PERMISSIONS[p.code] && (
+                                        <Tooltip title={SYSTEM_WIDE_PERMISSIONS[p.code]} arrow>
+                                          <Chip
+                                            size="small"
+                                            color="error"
+                                            label="کل سیستم — فقط افراد مورد اعتماد"
+                                            sx={{ height: 18, fontSize: 10 }}
+                                          />
+                                        </Tooltip>
+                                      )}
                                       {isAdminLevelPermission(p.code) && (
                                         <Chip
                                           size="small"

@@ -1,3 +1,6 @@
+// صفحه‌ی بررسی و اعمال آپدیت پرتال.
+// نسخه‌ی فعلی را با آخرین نسخه‌ی GitHub مقایسه می‌کند، در صورت وجود آپدیت با تأیید رمز عبور
+// آن را اعمال و لاگ نصب را زنده نمایش می‌دهد؛ ویرایشگر اعلان تغییرات و کارت بررسی‌های پروژه هم در همین صفحه است.
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -17,10 +20,12 @@ import { monoFontSx } from "../theme";
 import AnnouncementSettings from "../components/AnnouncementSettings";
 import ProjectChecksCard from "../components/ProjectChecksCard";
 
-const CONFIRM_PHRASE = "UPDATE";
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 120; // تا ۶ دقیقه صبر می‌کنیم (Build فرانت‌اند ممکن است طول بکشد)
+const CONFIRM_PHRASE = "UPDATE";  // عبارتی که کاربر باید برای تأیید آپدیت تایپ کند
+const POLL_INTERVAL_MS = 3000;  // فاصله‌ی پرسیدن وضعیت آپدیت از سرور
+const MAX_POLL_ATTEMPTS = 120; // حداکثر تعداد پرسش وضعیت (حدود ۶ دقیقه، چون Build فرانت‌اند زمان‌بر است)
 
+// کامپوننت صفحه‌ی آپدیت؛ ورودی ندارد.
+// هنگام بارگذاری وجود آپدیت را بررسی می‌کند و فرم اعمال آپدیت را فقط در صورت وجود نسخه‌ی جدید نشان می‌دهد.
 export default function UpdatePage() {
   const [checkResult, setCheckResult] = useState(null); // خروجی checkForUpdate | null
   const [isChecking, setIsChecking] = useState(true);
@@ -29,8 +34,9 @@ export default function UpdatePage() {
   const [password, setPassword] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState(null); // { success, message } | null
-  const [updateLog, setUpdateLog] = useState("");
+  const [updateLog, setUpdateLog] = useState("");  // خروجی زنده‌ی اسکریپت نصب
 
+  // وجود نسخه‌ی جدید را از سرور می‌پرسد؛ در صورت خطا نتیجه را checked=false می‌گذارد
   function runCheck() {
     setIsChecking(true);
     checkForUpdate()
@@ -40,9 +46,12 @@ export default function UpdatePage() {
   }
 
   useEffect(() => {
+    // بررسی آپدیت هنگام باز شدن صفحه
     runCheck();
   }, []);
 
+  // وضعیت آپدیت را هر چند ثانیه می‌پرسد و لاگ را نمایش می‌دهد.
+  // ورودی: تعداد تلاش‌های باقی‌مانده. با موفقیت صفحه را بازخوانی می‌کند؛ با خطا یا اتمام تلاش‌ها نتیجه را نشان می‌دهد.
   async function pollUpdateStatus(attemptsLeft) {
     if (attemptsLeft <= 0) {
       setUpdateResult({
@@ -68,12 +77,13 @@ export default function UpdatePage() {
       }
       setTimeout(() => pollUpdateStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
     } catch {
-      // طبیعی است: دقیقاً همان چند ثانیه‌ای که سرویس Stop/Start می‌شود، این
-      // درخواست هم موقتاً جواب نمی‌دهد — فقط دوباره امتحان می‌کنیم.
+      // در زمان Stop/Start سرویس، درخواست موقتاً پاسخ نمی‌گیرد؛ بدون نمایش خطا دوباره تلاش می‌شود
       setTimeout(() => pollUpdateStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
     }
   }
 
+  // عبارت تأیید و رمز عبور را بررسی می‌کند، درخواست آپدیت را می‌فرستد و پیگیری وضعیت را شروع می‌کند؛
+  // رمز عبور در هر حالت از فرم پاک می‌شود
   async function handleUpdate() {
     setUpdateResult(null);
     setUpdateLog("");
@@ -106,6 +116,7 @@ export default function UpdatePage() {
         نسخه فعلی را با آخرین نسخه منتشرشده در GitHub مقایسه می‌کند و در صورت وجود آپدیت، امکان
         نصب آن را مستقیم از همین‌جا می‌دهد.
       </Typography>
+      {/* کانال آپدیت فعال سرور (تگ یا شاخه) */}
       {checkResult?.update_channel && (
         <Alert severity={checkResult.update_channel === "tag" ? "info" : "warning"} sx={{ mb: 3 }}>
           {checkResult.update_channel === "tag" ? (
@@ -123,6 +134,7 @@ export default function UpdatePage() {
         </Alert>
       )}
 
+      {/* کارت نتیجه‌ی بررسی: در حال بررسی / خطای اتصال / نسخه‌ی جدید / به‌روز بودن */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         {isChecking ? (
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -167,6 +179,7 @@ export default function UpdatePage() {
         )}
       </Card>
 
+      {/* کارت اعمال آپدیت؛ فقط وقتی نسخه‌ی جدید وجود دارد */}
       {checkResult?.has_update && (
         <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
           {updateResult?.success && (
@@ -182,6 +195,7 @@ export default function UpdatePage() {
             </Alert>
           )}
 
+          {/* لاگ زنده‌ی نصب (چپ‌چین) */}
           {updateLog && (
             <Box
               sx={{
@@ -195,7 +209,7 @@ export default function UpdatePage() {
                 maxHeight: 260,
                 overflowY: "auto",
               }}
-              // ⚠️ direction/textAlign در style خطی، نه sx - stylis-plugin-rtl آن‌ها را قرینه می‌کند
+              // direction/textAlign در style خطی تعریف می‌شوند چون stylis-plugin-rtl مقادیر sx را قرینه می‌کند
               dir="ltr"
               style={{ direction: "ltr", textAlign: "left" }}
             >
@@ -203,6 +217,7 @@ export default function UpdatePage() {
             </Box>
           )}
 
+          {/* فرم تأیید آپدیت؛ پس از آپدیت موفق پنهان می‌شود */}
           {!updateResult?.success && (
             <>
               <Alert severity="warning" sx={{ mb: 2 }}>
@@ -251,13 +266,12 @@ export default function UpdatePage() {
         </Card>
       )}
 
-      {/* ⚠️ طبق درخواست صریح کاربر: ویرایشگر اعلان تغییرات در همین صفحه
-          بررسی و اعمال آپدیت قرار می‌گیرد - چون معمولاً بلافاصله پس از
-          اعمال یک آپدیت، ادمین می‌خواهد تغییرات را به کاربران اطلاع دهد. */}
+      {/* ویرایشگر اعلان تغییرات برای اطلاع‌رسانی تغییرات نسخه به کاربران پس از آپدیت */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>
         <AnnouncementSettings />
       </Card>
 
+      {/* کارت بررسی‌های وضعیت پروژه */}
       <ProjectChecksCard />
     </Box>
   );

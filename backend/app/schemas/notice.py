@@ -1,4 +1,8 @@
-"""Schema های Pydantic برای سیستم اطلاعیه سازمانی."""
+"""
+Schema های Pydantic برای سیستم اطلاعیه سازمانی (مورد استفاده در endpointهای /notices).
+شامل ورودی ایجاد اطلاعیه، خروجی اطلاعیه برای مخاطب، گزارش‌های فرستنده/Admin،
+فهرست بازدیدکنندگان و نتیجه آپلود فیش حقوقی/کارکرد.
+"""
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -7,12 +11,14 @@ from app.models.notice import NoticePriority, NoticeStatus, NoticeTargetType, No
 
 
 class NoticeTargetIn(BaseModel):
+    """یک مخاطب در ورودی NoticeCreate (POST /notices)."""
     target_type: NoticeTargetType
     # برای target_type == "all" باید None باشد؛ در غیر این‌صورت شناسه Site/Department/Role/Employee مقصد
     target_id: int | None = None
 
     @model_validator(mode="after")
     def validate_target_id(self) -> "NoticeTargetIn":
+        """سازگاری target_id با target_type را بررسی می‌کند (برای all خالی، برای بقیه الزامی)."""
         if self.target_type == NoticeTargetType.all and self.target_id is not None:
             raise ValueError("برای مخاطب 'all' نباید target_id مقداردهی شود")
         if self.target_type != NoticeTargetType.all and self.target_id is None:
@@ -21,6 +27,7 @@ class NoticeTargetIn(BaseModel):
 
 
 class NoticeTargetOut(BaseModel):
+    """یک مخاطب خام (نوع + شناسه) در خروجی NoticeOut."""
     target_type: NoticeTargetType
     target_id: int | None
 
@@ -28,6 +35,7 @@ class NoticeTargetOut(BaseModel):
 
 
 class NoticeCreate(BaseModel):
+    """ورودی POST /notices برای ایجاد اطلاعیه متنی معمولی."""
     title: str
     body: str
     priority: NoticePriority = NoticePriority.normal
@@ -37,15 +45,16 @@ class NoticeCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_targets(self) -> "NoticeCreate":
+        """حداقل یک مخاطب را الزامی می‌کند."""
         if not self.targets:
             raise ValueError("حداقل یک مخاطب برای اطلاعیه الزامی است")
         return self
 
     @model_validator(mode="after")
     def validate_title_and_body(self) -> "NoticeCreate":
-        # عمداً بعد از strip() چک می‌شود — چون یک رشته فقط شامل فاصله
-        # (مثلاً کاربر چندبار Space زده) نباید معتبر حساب شود، ولی خودِ
-        # مقدار ذخیره‌شده دست‌نخورده (بدون strip) می‌ماند.
+        """خالی نبودن عنوان و متن را بررسی می‌کند."""
+        # بررسی روی مقدار strip‌شده انجام می‌شود تا رشته فقط‌فاصله معتبر نباشد؛
+        # مقدار ذخیره‌شده بدون strip باقی می‌ماند.
         if not self.title.strip():
             raise ValueError("عنوان اطلاعیه الزامی است")
         if not self.body.strip():
@@ -54,6 +63,7 @@ class NoticeCreate(BaseModel):
 
 
 class NoticeOut(BaseModel):
+    """خروجی اطلاعیه در POST /notices، GET /notices و GET /notices/me (با وضعیت شخصی کاربر)."""
     id: int
     sender_id: int
     sender_name: str = "—"  # فقط در /notices/me پر می‌شود (نام فرستنده برای اطلاعیه‌های دریافتی)
@@ -76,7 +86,7 @@ class NoticeOut(BaseModel):
 
 
 class NoticeTargetDescription(BaseModel):
-    """توصیف قابل‌فهم یک Target — مثلاً «کارخانه ۱» به‌جای site_id=۱."""
+    """توصیف قابل‌فهم یک Target — مثلاً «کارخانه ۱» به‌جای site_id=۱؛ در NoticeDetailOut استفاده می‌شود."""
     target_type: NoticeTargetType
     target_id: int | None
     label: str
@@ -95,24 +105,23 @@ class NoticeDetailOut(BaseModel):
     created_at: datetime
     publish_at: datetime | None
     targets: list[NoticeTargetDescription]
-    audience_count: int
-    read_count: int
+    audience_count: int  # تعداد کل مخاطبان محاسبه‌شده از روی targets
+    read_count: int  # تعداد مخاطبانی که اطلاعیه را دیده‌اند
     is_deleted: bool = False
     deleted_at: datetime | None = None
 
 
 class NoticeDetailPageOut(BaseModel):
-    """یک صفحه از گزارش اطلاعیه‌ها — برای Pagination سمت سرور (به‌جای واکشی و
-    پردازش همه اطلاعیه‌های سیستم در یک درخواست، که با رشد تعداد اطلاعیه‌ها
-    به‌شدت کند می‌شود)."""
+    """یک صفحه از گزارش اطلاعیه‌ها (Pagination سمت سرور)؛ خروجی
+    /notices/sent-by-me، /notices/admin-report و /notices/site-report."""
 
     items: list[NoticeDetailOut]
     total: int
 
 
 class NoticePageOut(BaseModel):
-    """یک صفحه از اطلاعیه‌های دریافتی خودِ کاربر جاری (GET /notices/me) —
-    همان الگوی Pagination سمت سرور."""
+    """یک صفحه از اطلاعیه‌های دریافتی خودِ کاربر جاری (GET /notices/me)
+    با Pagination سمت سرور."""
 
     items: list[NoticeOut]
     total: int
@@ -121,7 +130,7 @@ class NoticePageOut(BaseModel):
 
 
 class NoticeReaderOut(BaseModel):
-    """یک نفر که یک اطلاعیه مشخص را دیده — برای درون‌رفت (Drill-down) به جزئیات."""
+    """یک نفر که اطلاعیه را دیده؛ خروجی GET /notices/{notice_id}/readers (Drill-down گزارش)."""
     user_id: int
     employee_id: int | None
     first_name: str | None
@@ -131,16 +140,18 @@ class NoticeReaderOut(BaseModel):
 
 
 class PayrollNoticeResultOut(BaseModel):
-    """پاسخ آپلود فیش حقوقی — برای اطلاع فوری acc_manager از نتیجه تطبیق کدها."""
+    """پاسخ POST /notices/payroll — نتیجه تطبیق کدهای پرسنلی فایل فیش حقوقی برای acc_manager."""
     notice_id: int
     matched_employee_count: int
     missing_codes: list[str]
     invalid_row_count: int
+    out_of_scope_codes: list[str] = []  # کدهایی که فقط در سایت‌های خارج از مجوز فرستنده پرسنل دارند (ارسال نشد)
 
 
 class AttendanceCardResultOut(BaseModel):
-    """پاسخ آپلود فیش کارکرد — برای اطلاع فوری hr-manager از نتیجه تطبیق کدها."""
+    """پاسخ POST /notices/attendance-card — نتیجه تطبیق کدهای پرسنلی فایل کارکرد برای hr-manager."""
     notice_id: int
     matched_employee_count: int
     missing_codes: list[str]
     invalid_row_count: int
+    out_of_scope_codes: list[str] = []  # کدهایی که فقط در سایت‌های خارج از مجوز فرستنده پرسنل دارند (ارسال نشد)

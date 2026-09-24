@@ -1,3 +1,14 @@
+/**
+ * داشبورد شخصی پرسنل (برخلاف DashboardPage.jsx که آمار سراسری مخصوص Admin است).
+ * شامل: کارت پروفایل (با عکس پرسنلی)، تردد امروز از «گزارش تردد ماهانه»، شمارنده اطلاعیه‌های
+ * خوانده‌نشده، میان‌برهای گزارش تردد و درخواست مرخصی/ماموریت (با شمارنده درخواست‌های در انتظار)،
+ * اطلاعیه‌های اخیر، شبکه ابزارها و متولدین امروز با نوار تبریک.
+ *
+ * چیدمان با CSS Grid و gridTemplateAreas پیاده شده تا ترتیب موبایل با دسکتاپ متفاوت باشد:
+ * در موبایل «اطلاعیه‌های اخیر» بعد از دکمه‌های میان‌بر و پیش از ابزارها می‌آید، در دسکتاپ در
+ * ستون کناری است؛ با یک ساختار DOM واحد (order در MUI Grid فقط بین فرزندان یک Container کار می‌کند).
+ * قابلیت‌های پیاده‌نشده با برچسب «به‌زودی» و ماژول‌های غیرفعال‌شده با برچسب «غیرفعال» نمایش داده می‌شوند.
+ */
 import { useEffect, useState } from "react";
 import { Avatar, Badge, Box, Card, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
@@ -25,28 +36,7 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import EmployeeAvatar from "../components/EmployeeAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
-/**
- * داشبورد شخصی پرسنل — بر اساس نمونه HTML ارسالی کاربر (personnel_portal.html).
- * برخلاف DashboardPage.jsx (که آمار سراسری فقط برای Admin است)، این صفحه
- * مخصوص خودِ هر پرسنل است: اطلاعات پروفایل، تردد امروز، اطلاعیه‌های اخیر،
- * و دسترسی سریع به قابلیت‌های مختلف.
- *
- * قابلیت‌هایی که در طرح هستند ولی هنوز در پروژه پیاده نشده‌اند (تیکت IT،
- * نظرسنجی، درخواست مرخصی) با برچسب «به‌زودی» غیرفعال نمایش داده می‌شوند —
- * طبق دستور صریح کارفرما. «خودروهای من» از این لیست خارج شد چون واقعاً
- * پیاده‌سازی و به /my-vehicles وصل شد؛ «انتقادات و پیشنهادات» هم همین‌طور —
- * به FeedbackSubmitPage.jsx (مسیر /feedback) وصل شد؛ «ارزیابی عملکرد» هم
- * همین‌طور — به MyPerformancePage.jsx (مسیر /my-performance) وصل شد.
- *
- * ⚠️ چیدمان با CSS Grid + gridTemplateAreas پیاده شده (نه MUI Grid ساده) —
- * چون طبق بازخورد، ترتیب موبایل باید با دسکتاپ فرق داشته باشد: در موبایل
- * «اطلاعیه‌های اخیر» درست بعد از دکمه‌های «گزارش تردد»/«درخواست مرخصی»
- * می‌آید (قبل از شبکه ابزارها)؛ در دسکتاپ همان ستون کناری قبلی (کنار
- * پروفایل/تردد/ابزارها) باقی می‌ماند. MUI Grid ساده نمی‌تواند این را با
- * یک ساختار DOM واحد پوشش دهد (Order فقط بین Siblingهای همان Container
- * کار می‌کند)، ولی gridTemplateAreas دقیقاً برای همین ساخته شده.
- */
-
+// برچسب «به‌زودی» در گوشه کارت برای قابلیت‌هایی که هنوز در دسترس نیستند
 function ComingSoonChip() {
   return (
     <Chip
@@ -57,6 +47,7 @@ function ComingSoonChip() {
   );
 }
 
+// برچسب «غیرفعال» در گوشه کارت برای ماژول‌هایی که از پنل ادمین غیرفعال شده‌اند
 function DisabledChip() {
   return (
     <Chip
@@ -68,6 +59,10 @@ function DisabledChip() {
   );
 }
 
+/**
+ * کاشی یک ابزار در شبکه ابزارها.
+ * ورودی: آیکون، عنوان، comingSoon/disabled (غیرقابل کلیک و کم‌رنگ با برچسب مربوط) و onClick.
+ */
 function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
   return (
     <Card
@@ -75,9 +70,8 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
       onClick={comingSoon || disabled ? undefined : onClick}
       sx={{
         position: "relative",
-        // ⚠️ ارتفاع ثابت و مستقل از «متولدین امروز» (در دسکتاپ ۱۱۰). height:100%
-        // فقط برای هم‌قد ماندن کاشی‌های یک ردیف است (مثلاً وقتی کاشی «ارزیابی
-        // عملکرد» شمارنده دارد).
+        // حداقل ارتفاع ثابت و مستقل از «متولدین امروز» (دسکتاپ ۱۱۰)؛ height:100% برای
+        // هم‌قد ماندن کاشی‌های یک ردیف است (مثلاً وقتی کاشی «ارزیابی عملکرد» شمارنده دارد).
         minHeight: { xs: 82, md: 110 },
         height: "100%",
         display: "flex",
@@ -93,7 +87,7 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
     >
       {comingSoon && <ComingSoonChip />}
       {disabled && !comingSoon && <DisabledChip />}
-      {/* ⚠️ فقط دسکتاپ: آیکون و متن بزرگ‌تر (کاشی‌ها در دسکتاپ بلندترند) */}
+      {/* در دسکتاپ آیکون و متن بزرگ‌تر است (کاشی‌ها در دسکتاپ بلندترند) */}
       <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
       <Typography
         variant="caption"
@@ -107,45 +101,45 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
   );
 }
 
+// کامپوننت صفحه؛ داده‌های داشبورد شخصی را بارگذاری و چیدمان Grid را رندر می‌کند
 export default function PersonalDashboardPage() {
   const { user } = useAuth();
-  const leaveDisabled = Boolean(user?.leave_requests_disabled);
+  const leaveDisabled = Boolean(user?.leave_requests_disabled);  // ماژول مرخصی برای سایت این پرسنل غیرفعال است
   const navigate = useNavigate();
   const [recentNotices, setRecentNotices] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);  // تعداد کل اطلاعیه‌های خوانده‌نشده
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
-  const [birthdays, setBirthdays] = useState(null);
-  const [photoUrl, setPhotoUrl] = useState(null);
-  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
-  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));
+  const [birthdays, setBirthdays] = useState(null);  // متولدین امروز؛ null = در حال بارگذاری
+  const [photoUrl, setPhotoUrl] = useState(null);  // Object URL عکس پرسنلی؛ null = بدون عکس
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);  // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
+  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));  // برای تعیین تعداد اطلاعیه‌های اخیر
 
-  // ⚠️ جدا شده تا بعد از ثبت/تغییر ری‌اکشن تبریک، فقط همین بخش دوباره
-  // خوانده شود (نه کل داشبورد).
+  // متولدین امروز را (با رعایت تنظیم حریم خصوصی) بارگذاری می‌کند؛ جدا تعریف شده تا پس از
+  // ثبت/تغییر واکنش تبریک فقط همین بخش دوباره خوانده شود
   function loadBirthdays() {
     fetchTodayBirthdays({ respectPrivacy: true })
       .then(setBirthdays)
       .catch(() => setBirthdays([]));
   }
 
+  // بارگذاری اولیه: اطلاعیه‌های اخیر، متولدین امروز و شمارنده درخواست‌های در انتظار
   useEffect(() => {
-    // ⚠️ طبق درخواست کاربر: «اطلاعیه‌های اخیر» در دسکتاپ ۱۰ مورد، در موبایل همان ۵
-    // مورد. شمارنده «خوانده‌نشده» عدد واقعی همه اطلاعیه‌های خوانده‌نشده فرد
-    // است (unread_total از سرور)، نه فقط موارد نمایش‌داده‌شده.
+    // ۱۰ اطلاعیه اخیر گرفته می‌شود (دسکتاپ ۱۰ و موبایل ۵ مورد نمایش می‌دهد). شمارنده
+    // «خوانده‌نشده» از unread_total سرور است، یعنی همه اطلاعیه‌های خوانده‌نشده، نه فقط موارد نمایش‌داده‌شده.
     fetchMyNotices({ page: 1, pageSize: 10, archived: "all" }).then((data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.unread_total ?? data.items.filter((n) => !n.is_read).length);
     });
     loadBirthdays();
-    // ⚠️ شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر -
-    // برای کسی که تأییدکننده نیست همیشه صفر برمی‌گردد (نه خطا).
+    // شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر؛ برای کسی که
+    // تأییدکننده نیست صفر برمی‌گردد (نه خطا).
     fetchPendingLeaveRequestCount()
       .then((data) => setPendingLeaveCount(data.pending_count || 0))
       .catch(() => setPendingLeaveCount(0));
   }, []);
 
-  // عکس پرسنلی — مثل تم قبلی، فقط اگر واقعاً برای این کاربر ثبت شده باشد
-  // (has_photo از /auth/me)، تا برای اکثر افراد که هنوز عکسشان Sync نشده،
-  // یک درخواست ۴۰۴ اضافه به سرور نزنیم.
+  // دریافت عکس پرسنلی به‌صورت Blob، فقط اگر برای کاربر عکس ثبت شده باشد (has_photo از /auth/me)
+  // تا برای افراد بدون عکس درخواست ۴۰۴ اضافه ارسال نشود؛ Object URL هنگام پاک‌سازی آزاد می‌شود.
   useEffect(() => {
     if (!user?.employee_id || !user?.has_photo) {
       setPhotoUrl(null);
@@ -164,10 +158,9 @@ export default function PersonalDashboardPage() {
   }, [user?.employee_id, user?.has_photo]);
 
   useEffect(() => {
-    // ⚠️ طبق درخواست صریح: این کارت دیگر به سیستم آزمایشی GPS وصل نیست —
-    // کاملاً با «گزارش تردد ماهانه» (از دستگاه‌های حضور و غیاب واقعی
-    // کارخانه) جایگزین شده. اگر سایت این پرسنل نگاشت تردد تنظیم‌شده
-    // نداشته باشد (has_monthly_attendance=false)، این کارت حالت «به‌زودی» نشان می‌دهد.
+    // تردد امروز از «گزارش تردد ماهانه» (داده دستگاه‌های حضور و غیاب) خوانده می‌شود: ردیف روز
+    // جاری شمسی پیدا و اولین/آخرین تردد آن استخراج می‌شود. اگر سایت پرسنل نگاشت تردد نداشته
+    // باشد (has_monthly_attendance=false)، کارت حالت «به‌زودی» نشان می‌دهد.
     if (!user?.has_monthly_attendance) {
       setTodayAttendance("unavailable");
       return;
@@ -181,9 +174,8 @@ export default function PersonalDashboardPage() {
           setTodayAttendance({ firstTransit: null, lastTransit: null });
           return;
         }
-        // ⚠️ عمداً «اولین/آخرین تردد» نه «ورود/خروج» — برای پرسنل شب‌کار/
-        // گردشی، تشخیص قطعی این‌که کدام تردد واقعاً ورود و کدام خروج بوده
-        // بدون دانستن برنامه دقیق شیفت هر نفر ممکن نیست.
+        // «اولین/آخرین تردد» (نه «ورود/خروج») نمایش داده می‌شود، چون برای پرسنل شب‌کار/گردشی
+        // بدون برنامه دقیق شیفت نمی‌توان ورود یا خروج بودن تردد را قطعی تشخیص داد.
         setTodayAttendance({
           firstTransit: transits[0],
           lastTransit: transits.length > 1 ? transits[transits.length - 1] : null,
@@ -192,9 +184,9 @@ export default function PersonalDashboardPage() {
       .catch(() => setTodayAttendance("unavailable"));
   }, [user?.has_monthly_attendance]);
 
+  // زمان تردد را برای نمایش برمی‌گرداند
   function formatTime(value) {
-    // ⚠️ منبع جدید (گزارش تردد ماهانه) خودش رشته HH:MM آماده برمی‌گرداند —
-    // نه یک شیء Date مثل سیستم قدیمی GPS — پس دیگر نیازی به toLocaleTimeString نیست.
+    // مقدار از گزارش تردد ماهانه رشته آماده HH:MM است و بدون تبدیل نمایش داده می‌شود؛ خالی = «—»
     return value || "—";
   }
 
@@ -203,16 +195,12 @@ export default function PersonalDashboardPage() {
       sx={{
         display: "grid",
         gap: 2.5,
-        // چون دیگر Drawer/AppBar کنارش نیست (نوار پایین همه‌جا)، این صفحه
-        // ممکن است روی دسکتاپ‌های خیلی عریض تمام پهنا را بگیرد — یک
-        // maxWidth منطقی، وسط‌چین، خوانایی را روی مانیتورهای بزرگ حفظ می‌کند.
+        // حداکثر عرض وسط‌چین برای حفظ خوانایی روی مانیتورهای عریض
         maxWidth: 1100,
         mx: "auto",
         gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
-        // ⚠️ طبق تصمیم کاربر (فقط دسکتاپ): کارت‌های ستون اصلی ارتفاع طبیعی
-        // و ثابت خودشان را دارند و با بلندشدن «متولدین امروز» کشیده نمی‌شوند؛
-        // برعکس، کارت متولدین هم‌قد ردیف میانبرها + ابزارها می‌شود و اگر
-        // متولدین زیاد بودند، لیست داخل خودِ کارت اسکرول می‌خورد.
+        // دسکتاپ: کارت‌های ستون اصلی ارتفاع طبیعی خود را دارند و با بلند شدن «متولدین امروز»
+        // کشیده نمی‌شوند؛ کارت متولدین هم‌قد ردیف‌های میان‌برها + ابزارها است و فهرستش داخل کارت اسکرول می‌خورد.
         gridTemplateRows: { md: "auto auto auto auto" },
         gridTemplateAreas: {
           xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
@@ -253,6 +241,7 @@ export default function PersonalDashboardPage() {
           </Avatar>
         </Box>
         <Stack sx={{ px: 1.75, py: 1 }}>
+          {/* ردیف‌های سایت/واحد/سمت؛ ردیف‌های بدون مقدار حذف می‌شوند */}
           {[
             { icon: <ApartmentOutlinedIcon fontSize="small" />, label: "سایت", value: user?.site_name },
             { icon: <AccountTreeOutlinedIcon fontSize="small" />, label: "واحد سازمانی", value: user?.department_name },
@@ -286,6 +275,7 @@ export default function PersonalDashboardPage() {
             <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
             <Typography variant="caption">تردد امروز</Typography>
           </Stack>
+          {/* اولین/آخرین تردد امروز؛ اگر سایت نگاشت تردد ندارد برچسب «به‌زودی» */}
           {user?.has_monthly_attendance ? (
             <>
               <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
@@ -313,6 +303,7 @@ export default function PersonalDashboardPage() {
             <Chip label="به‌زودی" size="small" />
           )}
         </Card>
+        {/* کارت شمارنده اطلاعیه‌های خوانده‌نشده؛ کلیک به صفحه اطلاعیه‌ها می‌رود */}
         <Card
           variant="outlined"
           onClick={() => navigate("/notices")}
@@ -350,6 +341,7 @@ export default function PersonalDashboardPage() {
 
       {/* دکمه‌های میانبر: گزارش تردد + درخواست مرخصی */}
       <Stack direction="row" spacing={1.5} sx={{ gridArea: "actions" }}>
+        {/* میان‌بر گزارش تردد؛ بدون نگاشت تردد غیرقابل کلیک با برچسب «به‌زودی» */}
         <Card
           variant="outlined"
           onClick={user?.has_monthly_attendance ? () => navigate("/monthly-attendance") : undefined}
@@ -389,8 +381,8 @@ export default function PersonalDashboardPage() {
             گزارش تردد
           </Typography>
         </Card>
-        {/* ⚠️ اگر ماژول برای سایت این پرسنل از پنل ادمین غیرفعال شده باشد،
-            کارت «غیرفعال» نشان می‌دهد و قابل کلیک نیست. */}
+        {/* میان‌بر درخواست مرخصی/ماموریت؛ اگر ماژول برای سایت این پرسنل از پنل ادمین غیرفعال
+            شده باشد، کارت برچسب «غیرفعال» دارد و قابل کلیک نیست. */}
         <Card
           variant="outlined"
           onClick={leaveDisabled ? undefined : () => navigate("/leave-requests")}
@@ -411,9 +403,8 @@ export default function PersonalDashboardPage() {
           }}
         >
           {leaveDisabled && <DisabledChip />}
-          {/* ⚠️ شمارنده درخواست‌های در انتظار تصمیم - مثل شمارنده ارزیابی
-              عملکرد، فقط برای مدیر/سرپرستی که درخواستی منتظر اوست نمایش
-              داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
+          {/* شمارنده درخواست‌های در انتظار تصمیم؛ فقط برای مدیر/سرپرستی که درخواستی منتظر
+              اوست نمایش داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
           <Badge
             color="warning"
             badgeContent={pendingLeaveCount}
@@ -455,6 +446,7 @@ export default function PersonalDashboardPage() {
             sx={{ fontSize: 10, height: 20, cursor: "pointer" }}
           />
         </Stack>
+        {/* فهرست اطلاعیه‌های اخیر: دسکتاپ ۱۰ و موبایل ۵ مورد؛ کلیک روی هر مورد به صفحه اطلاعیه‌ها می‌رود */}
         {recentNotices === null ? (
           <Typography variant="caption" color="text.secondary">
             در حال بارگذاری...
@@ -496,7 +488,7 @@ export default function PersonalDashboardPage() {
           gridArea: "tools",
           display: "grid",
           gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)", md: "repeat(3, 1fr)" },
-          // ردیف‌های کاشی هم‌اندازه، و با کشیده‌شدن این ناحیه همه با هم بزرگ می‌شوند
+          // ردیف‌های کاشی هم‌اندازه‌اند و با کشیده شدن این ناحیه همه با هم بزرگ می‌شوند
           gridAutoRows: "1fr",
           gap: 1.25,
         }}
@@ -506,8 +498,7 @@ export default function PersonalDashboardPage() {
         <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
         <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
-        {/* ⚠️ طبق درخواست کاربر: کاشی «بیمه تکمیلی» جایگزین «تیکت IT»؛ اگر ماژول از
-            پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
+        {/* کاشی «بیمه تکمیلی»؛ اگر ماژول از پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
         <ToolCard
           icon={<HealthAndSafetyOutlinedIcon />}
           label="بیمه تکمیلی"
@@ -516,7 +507,7 @@ export default function PersonalDashboardPage() {
         />
       </Box>
 
-      {/* متولدین امروز */}
+      {/* متولدین امروز؛ اگر امروز تولدی نباشد کارت نمایش داده نمی‌شود */}
       {(birthdays === null || birthdays.length > 0) && (
         <Card
           variant="outlined"
@@ -524,9 +515,8 @@ export default function PersonalDashboardPage() {
             gridArea: "birthdays",
             borderRadius: 2,
             p: 1.75,
-            // ⚠️ فقط دسکتاپ: contain:size یعنی محتوای این کارت در تعیین ارتفاع
-            // ردیف‌های Grid نقشی ندارد؛ کارت فقط تا ته ناحیه‌اش کشیده می‌شود
-            // (هم‌قد میانبرها + ابزارها) و لیست داخلش اسکرول می‌خورد.
+            // دسکتاپ: contain:size یعنی محتوای این کارت در تعیین ارتفاع ردیف‌های Grid نقشی ندارد؛
+            // کارت تا انتهای ناحیه‌اش (هم‌قد میان‌برها + ابزارها) کشیده می‌شود و فهرست داخلش اسکرول می‌خورد.
             contain: { md: "size" },
             display: { md: "flex" },
             flexDirection: { md: "column" },
@@ -554,13 +544,10 @@ export default function PersonalDashboardPage() {
               {birthdays.map((e) => (
                 <Box key={e.id}>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
-                    {/* ⚠️ اگر این پرسنل در کاراوب عکس داشته باشد (که هنگام
-                        Sync ذخیره شده)، همان نمایش داده می‌شود - مثل آواتار
-                        خودِ کاربر در بالای همین داشبورد. */}
+                    {/* آواتار پرسنل؛ اگر عکس او هنگام Sync از کاراوب ذخیره شده باشد همان نمایش داده می‌شود */}
                     <EmployeeAvatar employeeId={e.id} hasPhoto={e.has_photo} size={30} />
-                    {/* ⚠️ طبق درخواست صریح کاربر: واحد سازمانی کنار نام باشد،
-                        نه زیر آن. noWrap روی خودِ ردیف است تا اگر نام و واحد
-                        با هم جا نشدند، به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
+                    {/* نام و واحد سازمانی در یک خط؛ noWrap روی کل ردیف است تا در صورت جا نشدن
+                        به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
                     <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, flex: 1 }} noWrap>
                       {e.first_name} {e.last_name}
                       {e.department_name && (
@@ -575,9 +562,7 @@ export default function PersonalDashboardPage() {
                       )}
                     </Typography>
                   </Stack>
-                  {/* ⚠️ نوار تبریک - هر متولد نوار مستقل خودش را دارد تا
-                      وقتی چند نفر در یک روز تولد دارند، هیچ‌کدام از قلم
-                      نیفتد (طبق تصمیم صریح کاربر: گزینه «الف»). */}
+                  {/* نوار تبریک مستقل برای هر متولد؛ پس از ثبت واکنش فهرست متولدین دوباره خوانده می‌شود */}
                   <BirthdayReactionBar person={e} onChanged={loadBirthdays} />
                 </Box>
               ))}

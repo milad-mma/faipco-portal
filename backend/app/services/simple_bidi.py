@@ -1,19 +1,17 @@
 """
-Reshape/Bidi حداقلی و بدون هیچ وابستگی خارجی — Fallback برای وقتی که
-arabic-reshaper و/یا python-bidi روی سرور نصب نشده باشند (یا نصبشان به هر
-دلیلی شکست بخورد). کتابخانه‌های واقعی (در requirements.txt) دقیق‌تر و
-استانداردند و همیشه اول امتحان می‌شوند؛ این پیاده‌سازی فقط شبکه ایمنی است.
+Reshape/Bidi حداقلی و بدون وابستگی خارجی — جایگزین (Fallback) وقتی arabic-reshaper
+و/یا python-bidi روی سرور نصب نیستند یا بارگذاری‌شان شکست می‌خورد. کتابخانه‌های
+استاندارد (در requirements.txt) همیشه اول امتحان می‌شوند.
 
 پیاده‌سازی می‌کند:
-1. Presentation-Form Shaping: هر حرف عربی/فارسی بسته به همسایه‌هایش (شروع/میانی/
-   پایانی/مجزا) به Codepoint شکل‌گرفته خودش (بازه U+FE70..U+FEFF و بخشی از
-   U+FB50..U+FDFF) تبدیل می‌شود تا در فونت‌هایی مثل DejaVu Sans (که این
-   Codepoint ها را دارد ولی خودش Shaping انجام نمی‌دهد) متصل نمایش داده شود.
-2. Bidi حداقلی: بخش‌های متوالی راست‌به‌چپ (فارسی/عربی) در رشته را معکوس
-   می‌کند تا وقتی موتور رسم متن (ReportLab) فقط چپ‌به‌راست رسم می‌کند، ترتیب
-   خواندن درست باشد. این پیاده‌سازی الگوریتم کامل Unicode Bidi (UAX #9)
-   نیست؛ اعداد/لاتین داخل یک بخش فارسی به‌درستی مدیریت می‌شوند ولی حالت‌های
-   بسیار تودرتوی چندزبانه ممکن است دقیق نباشند.
+1. simple_reshape (Presentation-Form Shaping): هر حرف فارسی/عربی بسته به همسایه‌هایش
+   (شروع/میانی/پایانی/مجزا) به Codepoint شکل‌گرفته‌اش (بازه U+FE70..U+FEFF و بخشی از
+   U+FB50..U+FDFF) تبدیل می‌شود تا در فونت‌هایی مثل DejaVu Sans (که این Codepointها را
+   دارند ولی خودشان Shaping انجام نمی‌دهند) متصل نمایش داده شود.
+2. simple_bidi (Bidi حداقلی): بخش‌های متوالی راست‌به‌چپ را معکوس می‌کند تا موتور رسم
+   چپ‌به‌راست (ReportLab) ترتیب خواندن درست را نشان دهد. این الگوریتم کامل Unicode Bidi
+   (UAX #9) نیست؛ اعداد/لاتین داخل متن فارسی درست مدیریت می‌شوند ولی حالت‌های بسیار
+   تودرتوی چندزبانه ممکن است دقیق نباشند.
 """
 from __future__ import annotations
 
@@ -62,6 +60,7 @@ _SHAPES: dict[str, tuple[str, str, str, str]] = {
 # حروف غیرمتصل‌شونده به حرف بعدی (بعد از این حروف، حرف بعدی همیشه با شکل «شروع» خودش می‌آید)
 _NON_JOINING_NEXT = {"\u0627", "\u062F", "\u0630", "\u0631", "\u0632", "\u0698", "\u0648"}
 
+# بازه‌های یونیکد حروف عربی/فارسی و فرم‌های نمایشی (Presentation Forms A/B)
 _RTL_CHAR_RANGES = ((0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
 
 # رشته اعداد (فارسی یا لاتین، با جداکننده هزارگان/اعشار) — این‌ها با این‌که در
@@ -71,6 +70,7 @@ _DIGIT_RUN_RE = re.compile(r"[0-9۰-۹]+([.,٫٬][0-9۰-۹]+)*")
 
 
 def _is_rtl_letter(ch: str) -> bool:
+    """ورودی: یک کاراکتر. خروجی: True اگر در بازه‌های RTL یا جدول _SHAPES باشد."""
     cp = ord(ch)
     return any(lo <= cp <= hi for lo, hi in _RTL_CHAR_RANGES) or ch in _SHAPES
 
@@ -80,16 +80,18 @@ def simple_reshape(text: str) -> str:
     chars = list(text)
     out: list[str] = []
     n = len(chars)
+    # برای هر حرف، اتصال به حرف قبلی و بعدی بررسی و شکل مناسب انتخاب می‌شود
     for i, ch in enumerate(chars):
         shapes = _SHAPES.get(ch)
         if shapes is None:
-            out.append(ch)
+            out.append(ch)  # حرف غیرفارسی یا بدون فرم نمایشی: بدون تغییر
             continue
         prev_ch = chars[i - 1] if i > 0 else None
         next_ch = chars[i + 1] if i + 1 < n else None
-        joins_prev = prev_ch in _SHAPES and prev_ch not in _NON_JOINING_NEXT
+        joins_prev = prev_ch in _SHAPES and prev_ch not in _NON_JOINING_NEXT  # حرف قبلی باید اتصال‌پذیر به بعد باشد
         joins_next = next_ch in _SHAPES
         isolated, initial, medial, final = shapes
+        # انتخاب شکل بر اساس وضعیت اتصال دوطرفه
         if joins_prev and joins_next:
             out.append(medial)
         elif joins_prev and not joins_next:
@@ -103,12 +105,13 @@ def simple_reshape(text: str) -> str:
 
 def _reverse_rtl_chunk(chunk: str) -> str:
     """
-    داخل یک بخش RTL، حروف را حرف‌به‌حرف معکوس می‌کند — به‌جز رشته‌های عددی
-    (فارسی یا لاتین) که به‌صورت یک بلوک دست‌نخورده جابه‌جا می‌شوند تا مثلاً
-    «۳۱» به‌غلط به «۱۳» تبدیل نشود.
+    ورودی: یک بخش RTL. حروف را حرف‌به‌حرف معکوس می‌کند، به‌جز رشته‌های عددی
+    (فارسی یا لاتین) که به‌صورت یک بلوک دست‌نخورده جابه‌جا می‌شوند (تا «۳۱» به «۱۳» تبدیل نشود).
+    خروجی: رشته‌ی معکوس‌شده.
     """
     segments: list[tuple[str, bool]] = []  # (متن, آیا عدد است)
     last = 0
+    # تقسیم بخش به قطعه‌های عددی و غیرعددی
     for m in _DIGIT_RUN_RE.finditer(chunk):
         if m.start() > last:
             segments.append((chunk[last : m.start()], False))
@@ -116,14 +119,16 @@ def _reverse_rtl_chunk(chunk: str) -> str:
         last = m.end()
     if last < len(chunk):
         segments.append((chunk[last:], False))
+    # ترتیب قطعه‌ها معکوس می‌شود؛ فقط قطعه‌های غیرعددی از داخل هم معکوس می‌شوند
     segments.reverse()
     return "".join(seg if is_num else seg[::-1] for seg, is_num in segments)
 
 
 def simple_bidi(text: str) -> str:
     """
-    بخش‌های متوالی راست‌به‌چپ را معکوس می‌کند (اعداد داخل هر بخش دست‌نخورده
-    می‌مانند چون رشته‌های عددی نباید حرف‌به‌حرف معکوس شوند).
+    ورودی: متن (معمولاً reshape‌شده). بخش‌های متوالی راست‌به‌چپ را معکوس می‌کند
+    (اعداد داخل هر بخش دست‌نخورده می‌مانند) و ترتیب بخش‌ها را هم برعکس می‌کند.
+    خروجی: متن به ترتیب بصری برای رسم چپ‌به‌راست؛ متن بدون حرف RTL بدون تغییر برمی‌گردد.
     """
     if not any(_is_rtl_letter(ch) for ch in text):
         return text
@@ -133,15 +138,18 @@ def simple_bidi(text: str) -> str:
     current_ltr: list[str] = []
 
     def flush_rtl():
+        """کاراکترهای جمع‌شده‌ی RTL را به‌عنوان یک Token ثبت و بافر را خالی می‌کند."""
         if current_rtl:
             tokens.append((True, "".join(current_rtl)))
             current_rtl.clear()
 
     def flush_ltr():
+        """کاراکترهای جمع‌شده‌ی LTR را به‌عنوان یک Token ثبت و بافر را خالی می‌کند."""
         if current_ltr:
             tokens.append((False, "".join(current_ltr)))
             current_ltr.clear()
 
+    # تقسیم متن به Tokenهای متوالی RTL و LTR
     for ch in text:
         if _is_rtl_letter(ch) or ch in " \u200c،؛؟٫٬:()[]«»":
             # فاصله و علائم رایج فارسی به بخش RTL جاری می‌چسبند تا از هم نپاشد
@@ -156,8 +164,9 @@ def simple_bidi(text: str) -> str:
     flush_ltr()
 
     result: list[str] = []
+    # معکوس‌کردن داخلی فقط برای Tokenهای RTL
     for is_rtl, chunk in tokens:
         result.append(_reverse_rtl_chunk(chunk) if is_rtl else chunk)
-    # کل دنباله Token ها هم باید معکوس شود چون بخش‌های RTL باید از سمت راست شروع شوند
+    # کل دنباله‌ی Tokenها هم معکوس می‌شود چون متن RTL از سمت راست شروع می‌شود
     result.reverse()
     return "".join(result)

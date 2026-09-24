@@ -22,13 +22,18 @@ from app.models.usage_stat import UsageStat
 
 logger = logging.getLogger("faipco.usage")
 
-_TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+_TEHRAN_TZ = ZoneInfo("Asia/Tehran")  # تاریخ و ساعت شمارنده‌ها به وقت ایران است
 
 
 async def record_usage() -> None:
+    """
+    شمارنده درخواست‌های ساعت جاری (به وقت تهران) را یکی زیاد می‌کند.
+    با Session جدا اجرا می‌شود و هر خطا فقط لاگ می‌شود.
+    """
     try:
         now = datetime.now(_TEHRAN_TZ)
         async with AsyncSessionLocal() as db:
+            # UPSERT: ساخت ردیف (date, hour) با مقدار ۱ یا افزایش شمارنده ردیف موجود
             stmt = (
                 pg_insert(UsageStat)
                 .values(date=now.date(), hour=now.hour, request_count=1)
@@ -50,6 +55,7 @@ async def get_usage_stats(db: AsyncSession, days: int = 90) -> list[UsageStat]:
     شبانه‌روز پرترافیک‌تر است» عمداً در فرانت‌اند انجام می‌شود (چون حجم داده
     برای این بازه — حداکثر ۹۰×۲۴ ردیف — به‌قدر کافی کوچک است)، نه با چند
     Query تجمیعی جدا برای هر بازه زمانی.
+    خروجی: ردیف‌های UsageStat مرتب بر اساس تاریخ و ساعت.
     """
     cutoff = datetime.now(_TEHRAN_TZ).date() - timedelta(days=days)
     result = await db.execute(

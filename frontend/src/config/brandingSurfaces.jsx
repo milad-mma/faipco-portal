@@ -1,12 +1,15 @@
 /**
- * تعریف «جای‌های نمایش» برندینگ - همتای backend/app/services/branding_surfaces.py.
- * پیش‌فرض‌ها باید دقیقاً با سرور یکی باشند (فقط برای حالت آفلاین/قبل از پاسخ سرور).
+ * تعریف «جای‌های نمایش» (surface) برندینگ: اسپلش، ورود، بازیابی رمز، نوار کناری و پروفایل.
+ * همتای backend/app/services/branding_surfaces.py؛ پیش‌فرض‌ها باید دقیقاً با سرور یکی باشند
+ * و فقط در حالت آفلاین یا پیش از رسیدن پاسخ سرور استفاده می‌شوند.
+ * SURFACE_DEFAULTS مقادیر پیش‌فرض هر جای نمایش و SURFACE_META برچسب‌های صفحه‌ی تنظیمات است.
  */
+// پیش‌فرض‌های مشترک صفحه‌ی ورود و صفحات بازیابی رمز (چیدمان یکسان)
 const LOGIN_LIKE = {
   logo_source: "default",
   default_logo: "app_logo_small",
-  logo_size_mobile: 42,
-  logo_size_desktop: 48,
+  logo_size_mobile: 42, // اندازه‌ی لوگو به پیکسل در موبایل
+  logo_size_desktop: 48, // اندازه‌ی لوگو به پیکسل در دسکتاپ
   logo_scale: 100,
   frame: "circle",
   frame_color: "#FFFFFF",
@@ -23,6 +26,7 @@ const LOGIN_LIKE = {
   show_subtitle: true,
 };
 
+// مقادیر پیش‌فرض تنظیمات ظاهری هر جای نمایش؛ رنگ یا پس‌زمینه‌ی خالی یعنی استفاده از رنگ تم
 export const SURFACE_DEFAULTS = {
   splash: {
     logo_source: "default",

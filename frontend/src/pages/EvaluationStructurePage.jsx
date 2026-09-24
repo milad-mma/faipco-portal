@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی ساختار ارزیابی عملکرد یک سایت: تعیین می‌کند چه کسی چه کسی را ارزیابی می‌کند.
+ * شامل مدیران (با فهرست صریح ارزیابی‌شوندگان)، سرپرست هر واحد، سرشیفت‌های واحد و تخصیص پرسنل به سرشیفت‌ها.
+ * این انتساب‌ها مستقل از نقش‌ها و مجوزهای عمومی سیستم هستند.
+ */
 import { useEffect, useState } from "react";
 import {
   Accordion,
@@ -44,6 +49,7 @@ import {
   updateManagerTitle,
 } from "../api/evaluationStructure";
 
+// Chip نام و کد پرسنلی یک فرد با دکمه‌ی حذف (onRemove)
 function PersonChip({ employee, onRemove }) {
   return (
     <Chip
@@ -54,9 +60,14 @@ function PersonChip({ employee, onRemove }) {
   );
 }
 
+/**
+ * کارت Accordion یک مدیر: عنوان قابل‌ویرایش، تعداد و فهرست افراد تحت ارزیابی، افزودن/حذف فرد و حذف مدیر.
+ * ورودی: siteId، manager، onChanged (بارگذاری مجدد ساختار) و onError.
+ */
 function ManagerCard({ siteId, manager, onChanged, onError }) {
-  const targetEmployeeIds = manager.assignments.map((a) => a.target_employee.id);
+  const targetEmployeeIds = manager.assignments.map((a) => a.target_employee.id);  // شناسه‌ی افراد فعلی تحت ارزیابی، برای حذف از گزینه‌های انتخابگر
 
+  // عنوان مدیر را ذخیره می‌کند
   async function handleUpdateTitle(newTitle) {
     try {
       await updateManagerTitle(manager.id, newTitle);
@@ -66,6 +77,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
     }
   }
 
+  // فرد انتخاب‌شده را به فهرست ارزیابی‌شوندگان مدیر اضافه می‌کند
   async function handleAddTarget(employee) {
     try {
       await addManagerTarget(manager.id, employee.id);
@@ -75,6 +87,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
     }
   }
 
+  // فرد را از فهرست ارزیابی‌شوندگان مدیر حذف می‌کند
   async function handleRemoveTarget(targetEmployeeId) {
     try {
       await removeManagerTarget(manager.id, targetEmployeeId);
@@ -84,6 +97,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
     }
   }
 
+  // مدیر را حذف می‌کند؛ stopPropagation مانع باز/بسته شدن Accordion می‌شود
   async function handleRemoveManager(e) {
     e.stopPropagation();
     try {
@@ -101,6 +115,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
           <Typography fontWeight={700}>
             {manager.employee.first_name} {manager.employee.last_name}
           </Typography>
+          {/* کلیک روی ویرایش عنوان، Accordion را باز/بسته نمی‌کند */}
           <Box onClick={(e) => e.stopPropagation()}>
             <InlineTitleEdit
               title={manager.title || "بدون عنوان (کلیک برای تعیین، مثلاً «مدیر تولید»)"}
@@ -121,6 +136,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
           واحدی، حتی سرپرست یک واحد یا یک مدیر دیگر) اضافه کنید.
         </Typography>
         <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+          {/* فهرست افراد تحت ارزیابی مدیر */}
           {manager.assignments.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               هنوز هیچ‌کس به این مدیر تخصیص داده نشده است.
@@ -135,6 +151,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
             ))
           )}
         </Stack>
+        {/* انتخابگر افزودن فرد از کل پرسنل سایت */}
         <ManagerTargetPicker
           siteId={siteId}
           managerEmployeeId={manager.employee.id}
@@ -146,10 +163,15 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
   );
 }
 
+/**
+ * فرم افزودن مدیر جدید: ابتدا فقط یک دکمه، با باز شدن فیلد عنوان اختیاری و انتخابگر پرسنل.
+ * ورودی: siteId، onAdded و onError.
+ */
 function AddManagerForm({ siteId, onAdded, onError }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);  // آیا فرم باز است (در غیر این صورت فقط دکمه نمایش داده می‌شود)
   const [title, setTitle] = useState("");
 
+  // فرد انتخاب‌شده را با عنوان واردشده به‌عنوان مدیر اضافه می‌کند و فرم را می‌بندد
   async function handleSelect(employee) {
     try {
       await addManager(siteId, employee.id, title.trim() || null);
@@ -185,11 +207,16 @@ function AddManagerForm({ siteId, onAdded, onError }) {
   );
 }
 
+/**
+ * جدول تخصیص پرسنل یک واحد به سرشیفت‌ها (سرشیفت‌ها و سرپرست از فهرست کنار گذاشته می‌شوند).
+ * ورودی: siteId، department و onAssign(employeeId, shiftLeadId)؛ مقدار خالی یعنی حذف تخصیص.
+ */
 function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
-  const [employees, setEmployees] = useState(null);
+  const [employees, setEmployees] = useState(null);  // پرسنل قابل تخصیص؛ null = در حال بارگذاری
   const shiftLeadEmployeeIds = department.shift_leads.map((sl) => sl.employee.id);
   const supervisorId = department.supervisor?.id;
 
+  // دریافت پرسنل واحد (حداکثر ۲۰۰ نفر) و حذف سرشیفت‌ها و سرپرست از فهرست
   useEffect(() => {
     fetchEmployees({ siteId, departmentIds: [department.id], pageSize: 200 }).then((data) =>
       setEmployees(
@@ -199,6 +226,7 @@ function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, department.id]);
 
+  // شناسه‌ی سرشیفت فعلی پرسنل را برمی‌گرداند؛ رشته‌ی خالی = تخصیص‌نیافته
   function currentShiftLeadFor(employeeId) {
     const assignment = department.shift_assignments.find((a) => a.employee.id === employeeId);
     return assignment ? assignment.shift_lead_id : "";
@@ -245,10 +273,15 @@ function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
   );
 }
 
+/**
+ * کارت Accordion یک واحد سازمانی: تعیین/حذف سرپرست، مدیریت سرشیفت‌ها و تخصیص پرسنل به سرشیفت‌ها.
+ * ورودی: siteId، department، onChanged و onError.
+ */
 function DepartmentCard({ siteId, department, onChanged, onError }) {
-  const hasShiftLeads = department.shift_leads.length > 0;
-  const assignedEmployeeIds = department.shift_leads.map((sl) => sl.employee.id);
+  const hasShiftLeads = department.shift_leads.length > 0;  // با وجود سرشیفت، بخش تخصیص پرسنل نمایش داده می‌شود
+  const assignedEmployeeIds = department.shift_leads.map((sl) => sl.employee.id);  // شناسه‌ی سرشیفت‌های فعلی، برای حذف از انتخابگر
 
+  // فرد انتخاب‌شده را سرپرست واحد می‌کند
   async function handleSetSupervisor(employee) {
     try {
       await setDepartmentSupervisor(department.id, employee.id);
@@ -258,6 +291,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
     }
   }
 
+  // سرپرست واحد را برمی‌دارد
   async function handleRemoveSupervisor() {
     try {
       await removeDepartmentSupervisor(department.id);
@@ -267,6 +301,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
     }
   }
 
+  // فرد انتخاب‌شده را سرشیفت واحد می‌کند
   async function handleAddShiftLead(employee) {
     try {
       await addShiftLead(department.id, employee.id);
@@ -276,6 +311,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
     }
   }
 
+  // سرشیفت را حذف می‌کند
   async function handleRemoveShiftLead(shiftLeadId) {
     try {
       await removeShiftLead(shiftLeadId);
@@ -285,6 +321,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
     }
   }
 
+  // پرسنل را به سرشیفت تخصیص می‌دهد؛ مقدار خالی تخصیص را حذف می‌کند
   async function handleAssignShift(employeeId, shiftLeadId) {
     try {
       if (shiftLeadId === "") {
@@ -300,6 +337,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
 
   return (
     <Accordion disableGutters variant="outlined">
+      {/* خلاصه‌ی واحد: نام، سرپرست و تعداد سرشیفت‌ها */}
       <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Typography fontWeight={700}>{department.name}</Typography>
@@ -316,6 +354,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={3}>
+          {/* بخش سرپرست واحد */}
           <Box>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               سرپرست واحد
@@ -334,6 +373,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
             />
           </Box>
 
+          {/* بخش سرشیفت‌ها: فهرست و افزودن از پرسنل همین واحد */}
           <Box>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               سرشیفت‌های واحد (اختیاری)
@@ -356,6 +396,7 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
             />
           </Box>
 
+          {/* بخش تخصیص پرسنل به سرشیفت‌ها (فقط وقتی سرشیفت وجود دارد) */}
           {hasShiftLeads && (
             <Box>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
@@ -374,12 +415,16 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی ساختار ارزیابی: انتخاب سایت و نمایش مدیران و واحدهای آن.
+ */
 export default function EvaluationStructurePage() {
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState("");
-  const [structure, setStructure] = useState(null);
+  const [structure, setStructure] = useState(null);  // ساختار ارزیابی سایت: { managers, departments }
   const [error, setError] = useState("");
 
+  // دریافت سایت‌ها و انتخاب اولین سایت به‌صورت پیش‌فرض
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
@@ -387,6 +432,7 @@ export default function EvaluationStructurePage() {
     });
   }, []);
 
+  // ساختار ارزیابی سایت انتخاب‌شده را از سرور می‌گیرد
   function loadStructure() {
     if (!siteId) return;
     setError("");
@@ -395,10 +441,12 @@ export default function EvaluationStructurePage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت ساختار ارزیابی با خطا مواجه شد."));
   }
 
+  // بارگذاری مجدد ساختار با تغییر سایت
   useEffect(loadStructure, [siteId]);
 
   return (
     <Box>
+      {/* سربرگ صفحه و توضیح کوتاه */}
       <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
         ساختار ارزیابی عملکرد
       </Typography>
@@ -407,6 +455,7 @@ export default function EvaluationStructurePage() {
         انتساب‌ها مخصوص همین قابلیت ارزیابی هستند.
       </Typography>
 
+      {/* راهنمای قوانین ارزیابی و مراحل شروع */}
       <Accordion variant="outlined" sx={{ mb: 3 }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -465,6 +514,7 @@ export default function EvaluationStructurePage() {
         </AccordionDetails>
       </Accordion>
 
+      {/* انتخاب سایت */}
       <TextField
         select
         label="سایت"
@@ -487,6 +537,7 @@ export default function EvaluationStructurePage() {
 
       {structure && (
         <Stack spacing={3}>
+          {/* بخش مدیران: کارت هر مدیر و فرم افزودن مدیر */}
           <Box>
             <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
               مدیران
@@ -509,6 +560,7 @@ export default function EvaluationStructurePage() {
             <AddManagerForm siteId={siteId} onAdded={loadStructure} onError={setError} />
           </Box>
 
+          {/* بخش واحدهای سازمانی: کارت هر واحد */}
           <Box>
             <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
               واحدهای سازمانی

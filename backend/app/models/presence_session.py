@@ -4,7 +4,7 @@
 قطع‌شدن (بستن تب، قطعی شبکه، هرچیز دیگر) = پایان Session، و duration_seconds
 دقیقاً محاسبه‌شده است — نه یک لاگ نقطه‌ای دوره‌ای مثل GpsActivityLog.
 
-⚠️ فقط تا زمانی کار می‌کند که اپ/تب باز و WebSocket برقرار باشد؛ وقتی اپ
+فقط تا زمانی کار می‌کند که اپ/تب باز و WebSocket برقرار باشد؛ وقتی اپ
 کاملاً بسته شود، همان لحظه به‌عنوان «پایان Session» ثبت می‌شود — نمی‌تواند
 چیزی را برای زمانی که واقعاً بسته بوده رصد کند (محدودیت پلتفرم مرورگر است).
 """
@@ -19,6 +19,7 @@ from app.db.session import Base
 
 
 class PresenceSession(Base):
+    """یک بازه اتصال WebSocket پرسنل با آخرین موقعیت و وضعیت محدوده سایت."""
     __tablename__ = "presence_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -29,8 +30,9 @@ class PresenceSession(Base):
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # تا وقتی NULL است یعنی همین الان آنلاین است
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # هنگام قطع اتصال محاسبه می‌شود
 
+    # آخرین موقعیت گزارش‌شده در طول Session و نتیجه بررسی محدوده
     last_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_accuracy_meters: Mapped[float | None] = mapped_column(Float, nullable=True)

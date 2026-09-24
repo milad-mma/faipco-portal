@@ -1,3 +1,8 @@
+/**
+ * صفحه گزارش اطلاعیه‌ها برای مدیران.
+ * Admin (is_superuser) گزارش همه اطلاعیه‌های سیستم را می‌بیند و site_manager
+ * گزارش اطلاعیه‌های رسیده به سایت(های) تحت مدیریتش را؛ با فیلتر سایت.
+ */
 import { useState } from "react";
 import { Box, Card, Stack, Typography } from "@mui/material";
 import { fetchAdminReport, fetchSiteReport } from "../api/notices";
@@ -5,9 +10,10 @@ import NoticeReportTable from "../components/NoticeReportTable";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { useAuth } from "../context/AuthContext";
 
+// کامپوننت صفحه؛ بر اساس نقش کاربر منبع گزارش (ادمین/سایت) را انتخاب و جدول را رندر می‌کند
 export default function NoticeReportsPage() {
   const { user } = useAuth();
-  const [siteId, setSiteId] = useState(null);
+  const [siteId, setSiteId] = useState(null);  // سایت انتخاب‌شده در فیلتر؛ null = همه سایت‌ها
   // Admin واقعی همه اطلاعیه‌های سیستم را می‌بیند؛ site_manager فقط
   // اطلاعیه‌هایی که به سایت(های) تحت مدیریتش رسیده — از هر فرستنده‌ای، نه
   // فقط اطلاعیه‌های خودش (که آن یکی در تب «ارسالی» داخل صفحه اطلاعیه‌ها است).
@@ -24,10 +30,12 @@ export default function NoticeReportsPage() {
           : "همه اطلاعیه‌هایی که به سایت(های) تحت مدیریت شما رسیده — از هر فرستنده‌ای، نه فقط اطلاعیه‌های خودتان"}
       </Typography>
 
+      {/* فیلتر سایت */}
       <Stack direction="row" sx={{ mb: 2 }}>
         <SiteFilterSelect value={siteId} permission="notices.site_report" onChange={setSiteId} />
       </Stack>
 
+      {/* جدول صفحه‌بندی‌شده گزارش؛ با تغییر سایت (reloadKey) دوباره بارگذاری می‌شود */}
       <Card variant="outlined" sx={{ borderRadius: 3, p: 1 }}>
         <NoticeReportTable
           fetchPage={(page, pageSize) =>

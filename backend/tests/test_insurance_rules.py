@@ -1,9 +1,11 @@
-"""تست‌های قوانین بیمه تکمیلی - مطابق سامانه قدیمی (save.php / form.js)."""
+"""تست‌های واحد قواعد ماژول بیمه تکمیلی (app/core/insurance_rules.py):
+اعتبارسنجی کد ملی، نرمال‌سازها، فیلدهای شخص اصلی و قواعد اعضای خانواده."""
 import pytest
 
 from app.core import insurance_rules as r
 
 
+# کد ملی: الگوریتم رقم کنترل، تکمیل صفر ابتدایی، رد ارقام تکراری و تبدیل ارقام فارسی
 def test_national_id():
     assert r.is_valid_national_id("0499370899")
     assert r.is_valid_national_id("499370899")  # ۹ رقمی → صفر ابتدایی
@@ -12,6 +14,7 @@ def test_national_id():
     assert r.normalize_national_id("۰۴۹۹۳۷۰۸۹۹") == "0499370899"
 
 
+# نرمال‌سازها: حذف IR از شبا، افزودن صفر به موبایل، تبدیل تاریخ فشرده به YYYY/MM/DD
 def test_normalizers():
     assert r.normalize_sheba("IR123456789012345678901234") == "123456789012345678901234"
     assert r.normalize_mobile("9121234567") == "09121234567"
@@ -19,6 +22,7 @@ def test_normalizers():
     assert r.is_valid_jalali_date("1370/05/21") and not r.is_valid_jalali_date("13700521")
 
 
+# داده‌ی معتبر شخص اصلی که با over می‌توان فیلدهایش را برای هر تست تغییر داد
 def _main(**over):
     base = {
         "father_name": "علی", "birth_certificate_no": "123", "mobile_number": "09121234567",
@@ -30,6 +34,7 @@ def _main(**over):
     return base
 
 
+# validate_main: ورودی معتبر می‌گذرد و هر فیلد نادرست خطای مربوط به خودش را می‌دهد
 def test_validate_main_ok_and_errors():
     out = r.validate_main(_main(), "0499370899")
     assert out["sheba"] == "123456789012345678901234" and out["marital_status"] == 3
@@ -41,10 +46,12 @@ def test_validate_main_ok_and_errors():
         r.validate_main(_main(insurance_no="12"), "0499370899")
 
 
+# پرسنل نمونه با جنسیت داده‌شده
 def _emp(gender):
     return {"gender": gender, "first_name": "رضا", "last_name": "احمدی"}
 
 
+# عضو خانواده‌ی معتبر که با over قابل تغییر است
 def _member(**over):
     m = {
         "member_type": "son", "first_name": "امیر", "last_name": "", "father_name": "", "birth_date": "1395/01/01",
@@ -54,6 +61,7 @@ def _member(**over):
     return m
 
 
+# پرسنل مرد: نام خانوادگی/نام پدر فرزندان از پرسنل پر می‌شود و کفالت پرسیده نمی‌شود
 def test_members_rules_for_male_employee():
     out = r.validate_members([_member()], _emp(r.GENDER_MALE), r.MARITAL_MARRIED, "09121234567")
     m = out[0]
@@ -62,6 +70,7 @@ def test_members_rules_for_male_employee():
     assert m["kafala_status"] is None  # مرد: فرزند بدون کفالت
 
 
+# قواعد کفالت، محدودیت تعداد هر نوع عضو و قواعد همسر
 def test_members_kafala_and_limits():
     # زن: همه اعضا کفالت می‌خواهند
     with pytest.raises(r.InsuranceRuleError, match="تکفل"):

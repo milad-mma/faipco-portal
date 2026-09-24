@@ -14,22 +14,20 @@ import { dismissAnnouncement, fetchCurrentAnnouncement } from "../api/announceme
 import LinkifiedText from "./LinkifiedText";
 
 /**
- * دیالوگ «تغییرات اخیر پرتال» — هنگام ورود کاربر نمایش داده می‌شود.
- *
- * ⚠️ دو دکمه با رفتار متفاوت (طبق درخواست صریح کاربر):
- *   - «بستن»: فقط دیالوگ را می‌بندد؛ دفعه بعد دوباره نمایش داده می‌شود.
- *   - «دیگر نمایش نده»: نسخه فعلی را روی کاربر ثبت می‌کند تا دیگر
- *     نمایش داده نشود - ولی اگر ادمین اعلان **جدیدی** منتشر کند، نسخه
- *     بالا می‌رود و دوباره ظاهر می‌شود.
- *
- * ⚠️ تصمیم نمایش سمت سرور گرفته می‌شود (فیلد should_show)، نه اینجا -
- * تا منطق در یک جا بماند و با دستکاری کلاینت دور زدنی نباشد.
+ * دیالوگ «تغییرات اخیر پرتال» که هنگام ورود کاربر نمایش داده می‌شود.
+ * بدون ورودی (props). اعلان جاری را از سرور می‌گیرد و فقط اگر should_show درست باشد نمایش می‌دهد؛
+ * در غیر این صورت null برمی‌گرداند. تصمیم نمایش کاملاً سمت سرور گرفته می‌شود.
+ * دو دکمه دارد:
+ *   - «بستن»: فقط دیالوگ را می‌بندد و دفعه‌ی بعد دوباره نمایش داده می‌شود.
+ *   - «دیگر نمایش نده»: نسخه‌ی فعلی اعلان را برای کاربر ثبت می‌کند؛ با انتشار نسخه‌ی
+ *     جدید توسط ادمین، اعلان دوباره ظاهر می‌شود.
  */
 export default function AnnouncementDialog() {
-  const [announcement, setAnnouncement] = useState(null);
+  const [announcement, setAnnouncement] = useState(null); // اعلان دریافتی {title, body, should_show, ...}
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false); // در حال ثبت «دیگر نمایش نده»
 
+  // دریافت اعلان جاری هنگام mount و باز کردن دیالوگ در صورت نیاز
   useEffect(() => {
     fetchCurrentAnnouncement()
       .then((data) => {
@@ -37,17 +35,17 @@ export default function AnnouncementDialog() {
         setAnnouncement(data);
         setOpen(true);
       })
-      // ⚠️ خطا بی‌صدا نادیده گرفته می‌شود: اعلان یک قابلیت جانبی است و
-      // نباید ورود کاربر به پرتال را مختل کند.
+      // خطا بی‌صدا نادیده گرفته می‌شود تا قابلیت جانبی اعلان ورود کاربر را مختل نکند
       .catch(() => {});
   }, []);
 
+  // «دیگر نمایش نده»: نسخه‌ی فعلی را روی کاربر ثبت می‌کند و دیالوگ را می‌بندد
   async function handleDismissForever() {
     setBusy(true);
     try {
       await dismissAnnouncement();
     } catch {
-      // حتی اگر ثبت نشد، دیالوگ بسته می‌شود - کاربر نباید گیر کند.
+      // حتی اگر ثبت ناموفق باشد، دیالوگ در finally بسته می‌شود
     } finally {
       setBusy(false);
       setOpen(false);
@@ -65,14 +63,14 @@ export default function AnnouncementDialog() {
         </Stack>
       </DialogTitle>
       <DialogContent dividers>
-        {/* ⚠️ متن ادمین به‌صورت متن ساده رندر می‌شود (نه HTML) تا امکان
-            تزریق اسکریپت وجود نداشته باشد؛ فقط لینک‌ها ([متن](آدرس) یا
-            آدرس خام) به المان لینک تبدیل می‌شوند. whiteSpace شکست خطوط را
-            حفظ می‌کند. کلیک روی لینک داخلی پرتال دیالوگ را می‌بندد. */}
+        {/* متن اعلان به‌صورت متن ساده (نه HTML) رندر می‌شود تا تزریق اسکریپت ممکن نباشد؛ فقط لینک‌ها
+            ([متن](آدرس) یا آدرس خام) به المان لینک تبدیل می‌شوند. whiteSpace شکست خطوط را
+            حفظ می‌کند و کلیک روی لینک داخلی پرتال دیالوگ را می‌بندد. */}
         <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 2 }}>
           <LinkifiedText text={announcement.body} onInternalClick={() => setOpen(false)} />
         </Typography>
       </DialogContent>
+      {/* دکمه‌ها: «دیگر نمایش نده» در یک سمت و «بستن» در سمت دیگر */}
       <DialogActions sx={{ justifyContent: "space-between", px: 2.5, pb: 2 }}>
         <Button size="small" color="inherit" disabled={busy} onClick={handleDismissForever}>
           دیگر نمایش نده

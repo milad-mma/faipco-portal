@@ -12,20 +12,21 @@ import {
 const VIEW_WIDTH = 1000; // عرض منطقی SVG؛ با preserveAspectRatio="none" کش می‌آید
 
 /**
- * نمودار خطی روند زمانی - SVG خالص، بدون کتابخانه خارجی.
+ * نمودار خطی روند زمانی با SVG خالص، بدون کتابخانه‌ی خارجی.
  *
  * props:
- *   data + color: یک سری (حالت قدیمی)
- *   series: [{ name, color, data: [{label, value}] }] - چند سری با برچسب‌های
- *     یکسان (مثلاً CPU و RAM)؛ راهنمای رنگ خودکار نمایش داده می‌شود
- *   yMax: سقف ثابت محور عمودی (مثلاً ۱۰۰ برای درصد) - بدون آن، سقف گرد‌شده
- *     بیشترین مقدار است
+ *   data + color: یک سری تکی
+ *   series: [{ name, color, data: [{label, value}] }]؛ چند سری با برچسب‌های یکسان
+ *     (مثلاً CPU و RAM)؛ راهنمای رنگ خودکار نمایش داده می‌شود
+ *   yMax: سقف ثابت محور عمودی (مثلاً ۱۰۰ برای درصد)؛ بدون آن، سقف گرد‌شده‌ی بیشترین مقدار است
  *   unit: پسوند اعداد (مثلاً «٪»)
- *   threshold: { value, label } - خط‌چین هشدار
+ *   threshold: { value, label }؛ خط‌چین قرمز هشدار
+ *   emptyMessage: پیام نمایش‌داده‌شده وقتی داده‌ای نیست
  *
- * ⚠️ خطوط با vectorEffect="non-scaling-stroke" کشیده می‌شوند و نقطه‌ها به‌صورت
- * المان HTML روی SVG قرار می‌گیرند تا با کش‌آمدن عرض، بیضی نشوند. Tooltip با
- * Hover (دسکتاپ) و لمس (موبایل) روی ستون هر نقطه باز می‌شود.
+ * خطوط با vectorEffect="non-scaling-stroke" کشیده می‌شوند و نقطه‌ها به‌صورت المان HTML روی SVG قرار
+ * می‌گیرند تا با کش‌آمدن عرض، بیضی نشوند. نمودار با dir="ltr" رسم می‌شود و موقعیت‌های افقی
+ * (left/right/marginLeft/textAlign) عمداً در style خطی آمده‌اند نه sx، چون stylis-plugin-rtl مقادیر sx را قرینه می‌کند.
+ * Tooltip با Hover (دسکتاپ) و لمس (موبایل) روی ستون هر نقطه باز می‌شود.
  */
 export default function UsageLineChart({
   data,
@@ -36,9 +37,9 @@ export default function UsageLineChart({
   threshold,
   emptyMessage = "داده‌ای برای نمایش نیست",
 }) {
-  const [hoverIndex, setHoverIndex] = useState(null);
-  const allSeries = series || [{ name: null, color, data: data || [] }];
-  const labels = allSeries[0]?.data?.map((d) => d.label) || [];
+  const [hoverIndex, setHoverIndex] = useState(null);  // ایندکس نقطه‌ی انتخاب‌شده برای Tooltip؛ null = هیچ
+  const allSeries = series || [{ name: null, color, data: data || [] }];  // حالت تک‌سری به قالب series تبدیل می‌شود
+  const labels = allSeries[0]?.data?.map((d) => d.label) || [];  // برچسب‌های محور افقی از سری اول
   const count = labels.length;
 
   if (count === 0) {
@@ -52,16 +53,17 @@ export default function UsageLineChart({
   }
 
   const dataMax = Math.max(...allSeries.flatMap((s) => s.data.map((d) => d.value)), 0);
-  const maxValue = yMax ?? niceMax(dataMax);
-  const ticks = [0, maxValue / 2, maxValue];
-  const fractionX = (i) => (count === 1 ? 0.5 : i / (count - 1));
-  const yPx = (value) => PLOT_HEIGHT - (Math.min(value, maxValue) / maxValue) * PLOT_HEIGHT;
-  const step = count === 1 ? 1 : 1 / (count - 1);
-  const labelStep = labelStepFor(count);
-  const single = allSeries.length === 1;
+  const maxValue = yMax ?? niceMax(dataMax);  // سقف محور: yMax ثابت یا بیشترین مقدار گرد‌شده
+  const ticks = [0, maxValue / 2, maxValue];  // خطوط راهنمای افقی: صفر، نصف و سقف
+  const fractionX = (i) => (count === 1 ? 0.5 : i / (count - 1));  // موقعیت افقی نقطه‌ی i به‌صورت کسری از عرض (تک‌نقطه در وسط)
+  const yPx = (value) => PLOT_HEIGHT - (Math.min(value, maxValue) / maxValue) * PLOT_HEIGHT;  // تبدیل مقدار به فاصله از بالای ناحیه‌ی رسم (px)؛ مقادیر بیش از سقف بریده می‌شوند
+  const step = count === 1 ? 1 : 1 / (count - 1);  // فاصله‌ی کسری بین دو نقطه (عرض ناحیه‌ی Hover هر نقطه)
+  const labelStep = labelStepFor(count);  // هر چند برچسب یک برچسب روی محور افقی نمایش داده شود
+  const single = allSeries.length === 1;  // در حالت تک‌سری ناحیه‌ی زیر خط گرادیان می‌گیرد و راهنمای رنگ نمایش داده نمی‌شود
 
   return (
     <Box dir="ltr" onMouseLeave={() => setHoverIndex(null)}>
+      {/* راهنمای رنگ سری‌ها (فقط چندسری)، راست‌به‌چپ */}
       {!single && (
         <Stack direction="row" spacing={2} justifyContent="center" sx={{ mb: 1 }} dir="rtl">
           {allSeries.map((s) => (
@@ -75,6 +77,7 @@ export default function UsageLineChart({
         </Stack>
       )}
 
+      {/* ناحیه‌ی رسم؛ به اندازه‌ی عرض محور از چپ فاصله دارد */}
       <Box sx={{ position: "relative", height: PLOT_HEIGHT }} style={{ marginLeft: AXIS_WIDTH }}>
         {/* اعداد محور عمودی */}
         {ticks.map((t) => (
@@ -97,6 +100,7 @@ export default function UsageLineChart({
           preserveAspectRatio="none"
           style={{ position: "absolute", inset: 0, overflow: "visible" }}
         >
+          {/* تعریف گرادیان زیر خط برای حالت تک‌سری */}
           {single && (
             <defs>
               <linearGradient id={`grad-${allSeries[0].color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
@@ -105,6 +109,7 @@ export default function UsageLineChart({
               </linearGradient>
             </defs>
           )}
+          {/* خطوط راهنمای افقی (خط صفر پررنگ‌تر، بقیه خط‌چین) */}
           {ticks.map((t) => (
             <line
               key={t}
@@ -118,6 +123,7 @@ export default function UsageLineChart({
               vectorEffect="non-scaling-stroke"
             />
           ))}
+          {/* خط‌چین هشدار (اگر در بازه‌ی محور باشد) */}
           {threshold && threshold.value <= maxValue && (
             <line
               x1={0}
@@ -130,6 +136,7 @@ export default function UsageLineChart({
               vectorEffect="non-scaling-stroke"
             />
           )}
+          {/* مسیر هر سری؛ در حالت تک‌سری ناحیه‌ی زیر خط هم با گرادیان پر می‌شود */}
           {allSeries.map((s) => {
             const pts = s.data.map((d, i) => `${fractionX(i) * VIEW_WIDTH} ${yPx(d.value)}`);
             const line = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p}`).join(" ");
@@ -155,6 +162,7 @@ export default function UsageLineChart({
           })}
         </svg>
 
+        {/* برچسب خط هشدار در سمت راست ناحیه‌ی رسم */}
         {threshold && threshold.value <= maxValue && threshold.label && (
           <Typography
             variant="caption"
@@ -173,7 +181,7 @@ export default function UsageLineChart({
           />
         )}
 
-        {/* نقطه‌ها - HTML تا با کش‌آمدن SVG بیضی نشوند */}
+        {/* نقطه‌ها به‌صورت HTML تا با کش‌آمدن SVG بیضی نشوند؛ با بیش از ۳۰ نقطه فقط نقطه‌ی انتخاب‌شده دیده می‌شود */}
         {allSeries.map((s) =>
           s.data.map((d, i) => {
             const active = hoverIndex === i;
@@ -197,7 +205,7 @@ export default function UsageLineChart({
           })
         )}
 
-        {/* ناحیه‌های Hover/لمس - یک ستون تمام‌ارتفاع به‌ازای هر نقطه */}
+        {/* ناحیه‌های Hover/لمس: یک ستون تمام‌ارتفاع به‌ازای هر نقطه */}
         {labels.map((_, i) => (
           <Box
             key={`hit-${i}`}
@@ -211,6 +219,7 @@ export default function UsageLineChart({
           />
         ))}
 
+        {/* Tooltip نقطه‌ی انتخاب‌شده با مقدار همه‌ی سری‌ها؛ edgeAwareTranslate از بیرون‌زدن آن از لبه‌ها جلوگیری می‌کند */}
         {hoverIndex !== null && (
           <Box
             dir="rtl"
@@ -250,7 +259,7 @@ export default function UsageLineChart({
         )}
       </Box>
 
-      {/* برچسب‌های محور افقی - دقیقاً زیر نقطه متناظر */}
+      {/* برچسب‌های محور افقی دقیقاً زیر نقطه‌ی متناظر؛ فقط هر labelStep برچسب و آخرین برچسب */}
       <Box sx={{ position: "relative", height: 18, mt: 0.75 }} style={{ marginLeft: AXIS_WIDTH }}>
         {labels.map((label, i) =>
           i % labelStep === 0 || i === count - 1 ? (

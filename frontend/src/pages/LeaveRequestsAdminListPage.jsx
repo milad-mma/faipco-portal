@@ -37,9 +37,11 @@ import {
   fetchLeaveRequestTypes,
 } from "../api/leaveRequestsAdmin";
 
+// برچسب و رنگ چیپ هر وضعیت درخواست
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
 const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
 
+// ساعت فشرده‌ی عددی (مثلاً 830) را به رشته‌ی «08:30» تبدیل می‌کند؛ null -> خط تیره
 function formatCompactTime(compact) {
   if (compact == null) return "—";
   const hour = Math.floor(compact / 100);
@@ -47,10 +49,8 @@ function formatCompactTime(compact) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-// ⚠️ طبق درخواست صریح کاربر: «امروز» یعنی امروز جزو بازه‌ی خودِ
-// مرخصی/ماموریت است (نه تاریخ ثبت درخواست) - حراست باید بداند امروز
-// چه کسانی مرخصی/ماموریت هستند، نه چه کسانی امروز برای روزی دیگر
-// درخواست ثبت کرده‌اند. درخواست‌های رد‌شده هرگز «امروز فعال» نیستند.
+// آیا امروز جزو بازه‌ی خودِ مرخصی/ماموریت است (نه تاریخ ثبت)؛ ساعتی: تاریخ شروع = امروز، روزانه: امروز بین شروع و پایان.
+// درخواست‌های رد/ابطال‌شده هرگز «امروز فعال» نیستند.
 function isRequestActiveToday(item) {
   if (item.status === "rejected" || item.status === "cancelled" || !item.start_date) return false;
   const today = new Date();
@@ -67,12 +67,14 @@ function isRequestActiveToday(item) {
   return today.getTime() >= start.getTime() && today.getTime() <= end.getTime();
 }
 
+// رشته‌ی «HH:MM» را به عدد فشرده‌ی HHMM تبدیل می‌کند (فرمت ذخیره‌ی ساعت در سرور)
 function timeStringToCompact(timeStr) {
   if (!timeStr) return null;
   const [h, m] = timeStr.split(":").map(Number);
   return h * 100 + m;
 }
 
+// عدد فشرده‌ی HHMM را به رشته‌ی «HH:MM» تبدیل می‌کند؛ null -> رشته‌ی خالی (برای مقدار اولیه‌ی فرم)
 function compactTimeToString(compact) {
   if (compact == null) return "";
   const hour = Math.floor(compact / 100);
@@ -80,15 +82,14 @@ function compactTimeToString(compact) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+// Date را به رشته‌ی YYYY-MM-DD به وقت محلی تبدیل می‌کند؛ null -> null
 function toDateOnly(date) {
   if (!date) return null;
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// ⚠️ طبق درخواست صریح کاربر: «مدت» دیگر یک فیلد خام نیست - همیشه از
-// روی ساعت/تاریخ شروع و پایان محاسبه و نمایش داده می‌شود (نه ویرایش
-// مستقیم) - ساعتی: به ساعت و دقیقه؛ روزانه: به تعداد روز.
+// متن «مدت» که همیشه از شروع/پایان محاسبه می‌شود: ساعتی به ساعت و دقیقه، روزانه به تعداد روز؛ تردد فراموش‌شده مدت ندارد
 function formatDuration(item) {
   if (item.is_forgotten_punch) return "—";
   if (item.start_hour != null && item.end_hour != null) {
@@ -109,9 +110,13 @@ function formatDuration(item) {
   return "—";
 }
 
+/**
+ * متن قابل ویرایش درجا: با کلیک به فیلد متنی تبدیل می‌شود.
+ * ورودی: مقدار فعلی، onSave(متن جدید) و multiline. Enter (تک‌خطی) ذخیره و Escape انصراف است.
+ */
 function EditableText({ value, onSave, multiline }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value || "");
+  const [editing, setEditing] = useState(false); // حالت ویرایش
+  const [draft, setDraft] = useState(value || ""); // متن در حال ویرایش
   const [saving, setSaving] = useState(false);
 
   if (!editing) {
@@ -149,6 +154,7 @@ function EditableText({ value, onSave, multiline }) {
     </Stack>
   );
 
+  // ذخیره‌ی متن پیش‌نویس و خروج از حالت ویرایش
   async function handleSave() {
     setSaving(true);
     await onSave(draft);
@@ -157,6 +163,10 @@ function EditableText({ value, onSave, multiline }) {
   }
 }
 
+/**
+ * انتخاب‌گر قابل ویرایش درجا: با کلیک به Select تبدیل می‌شود و با انتخاب گزینه بلافاصله ذخیره می‌کند.
+ * ورودی: مقدار فعلی، گزینه‌ها ({ value, label })، onSave(مقدار جدید) و renderValue برای نمایش حالت غیرویرایش.
+ */
 function EditableSelect({ value, options, onSave, renderValue }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -196,7 +206,7 @@ function EditableSelect({ value, options, onSave, renderValue }) {
   );
 }
 
-// بازه هر درخواست؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد) است
+// متن بازه‌ی یک درخواست: ساعتی «شروع تا پایان»، روزانه «تاریخ تا تاریخ»؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد)
 function rangeLabel(item) {
   const fa = (d) => (d ? new Date(d).toLocaleDateString("fa-IR") : "—");
   if (item.is_forgotten_punch) return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
@@ -205,13 +215,19 @@ function rangeLabel(item) {
     : `${fa(item.start_date)} تا ${fa(item.end_date)}`;
 }
 
+// برچسب چیپ وضعیت؛ تردد فراموش‌شده‌ی منتظر مسئول نیروی انسانی برچسب جدا دارد
 function statusChipLabel(item) {
   return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
 }
 
+/**
+ * بازه‌ی زمانی قابل ویرایش درجا؛ فیلدها بسته به نوع درخواست:
+ * تردد فراموش‌شده (تاریخ + ساعت)، ساعتی (تاریخ + شروع + پایان)، روزانه (تاریخ شروع + پایان).
+ * ورودی: درخواست و onSave(payload) با کلیدهای start_date/end_date/start_hour/end_hour.
+ */
 function EditableTimeRange({ item, onSave }) {
-  const isHourly = item.start_hour != null;
-  const isPunch = Boolean(item.is_forgotten_punch);
+  const isHourly = item.start_hour != null; // درخواست ساعتی
+  const isPunch = Boolean(item.is_forgotten_punch); // تردد فراموش‌شده
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [startDate, setStartDate] = useState(item.start_date ? new Date(item.start_date) : new Date());
@@ -231,6 +247,7 @@ function EditableTimeRange({ item, onSave }) {
     );
   }
 
+  // ساخت payload متناسب با نوع درخواست و ذخیره
   async function handleSave() {
     setSaving(true);
     const payload = { start_date: toDateOnly(startDate) };
@@ -276,38 +293,41 @@ function EditableTimeRange({ item, onSave }) {
   );
 }
 
+// گزینه‌های تغییر وضعیت توسط مدیر (ابطال‌شده قابل انتخاب نیست)
 const STATUS_OPTIONS = [
   { value: "pending", label: "در حال بررسی" },
   { value: "approved", label: "تائید شده" },
   { value: "rejected", label: "رد شده" },
 ];
 
+/**
+ * صفحه‌ی مدیریتی لیست همه‌ی درخواست‌های مرخصی/ماموریت یک سایت.
+ * شامل کارت «امروز» (بدون فیلتر)، فیلترهای سمت سرور (وضعیت/نوع/واحد/بازه‌ی تاریخ)، جست‌وجو و مرتب‌سازی سمت کلاینت،
+ * ویرایش درجا و حذف (با مجوز مدیریت) و خروجی Excel. نقش محدود به نوع (مثل حراست) خروجی Excel و فیلتر تاریخ ندارد.
+ */
 export default function LeaveRequestsAdminListPage() {
   const { user } = useAuth();
   const [sites, setSites] = useState([]);
-  const [siteId, setSiteId] = useState("");
-  const [requests, setRequests] = useState(null);
-  // ⚠️ داده‌ی مستقل و بدون فیلترِ کارت «امروز» - جدا از requests که
-  // فیلترهای انتخابی کاربر روی آن اعمال شده است.
-  const [todaySourceRequests, setTodaySourceRequests] = useState(null);
-  const [types, setTypes] = useState([]);
+  const [siteId, setSiteId] = useState(""); // سایت انتخابی
+  const [requests, setRequests] = useState(null); // درخواست‌های سایت با فیلترهای سرور؛ null = هنوز بارگذاری نشده
+  const [todaySourceRequests, setTodaySourceRequests] = useState(null); // داده‌ی بدون فیلتر برای کارت «امروز»، جدا از requests
+  const [types, setTypes] = useState([]); // نوع‌های درخواست سایت (برای فیلتر و ویرایش نوع)
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState("submitted_at");
-  const [sortDir, setSortDir] = useState("desc");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState(null);
-  const [dateTo, setDateTo] = useState(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
-  const [toast, setToast] = useState("");
-  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState(""); // جست‌وجوی متنی سمت کلاینت
+  const [sortField, setSortField] = useState("submitted_at"); // ستون مرتب‌سازی
+  const [sortDir, setSortDir] = useState("desc"); // جهت مرتب‌سازی
+  const [statusFilter, setStatusFilter] = useState(""); // فیلتر وضعیت (سرور)
+  const [typeFilter, setTypeFilter] = useState(""); // فیلتر نوع (سرور)
+  const [departmentFilter, setDepartmentFilter] = useState(""); // فیلتر واحد (سرور)
+  const [dateFrom, setDateFrom] = useState(null); // فیلتر بازه‌ی تاریخ مرخصی: از
+  const [dateTo, setDateTo] = useState(null); // فیلتر بازه‌ی تاریخ مرخصی: تا
+  const [isExporting, setIsExporting] = useState(false); // در حال تهیه‌ی خروجی Excel
+  const [deletingId, setDeletingId] = useState(null); // شناسه‌ی درخواست در حال حذف
+  const [toast, setToast] = useState(""); // پیام موفقیت
+  const [page, setPage] = useState(0); // صفحه‌ی جاری (صفحه‌بندی سمت کلاینت)
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
-  // ⚠️ فیلترهایی که سمت سرور اعمال می‌شوند (نه فقط روی داده‌ی لودشده) -
-  // تا خروجی Excel هم دقیقاً همان چیزی باشد که کاربر روی صفحه می‌بیند.
+  // فیلترهایی که سمت سرور اعمال می‌شوند، تا خروجی Excel دقیقاً همان چیزی باشد که کاربر روی صفحه می‌بیند
   const serverFilters = useMemo(() => {
     const f = {};
     if (statusFilter) f.status_filter = statusFilter;
@@ -318,6 +338,7 @@ export default function LeaveRequestsAdminListPage() {
     return f;
   }, [statusFilter, typeFilter, departmentFilter, dateFrom, dateTo]);
 
+  // بارگذاری سایت‌ها و انتخاب اولین سایت
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
@@ -325,21 +346,11 @@ export default function LeaveRequestsAdminListPage() {
     });
   }, []);
 
+  // بارگذاری درخواست‌های سایت: دو درخواست هم‌زمان، یکی بدون فیلتر برای کارت «امروز» و یکی با فیلترهای سرور برای جدول.
+  // کارت «امروز» باید همیشه تصویر کامل روز را نشان دهد؛ سطح دسترسی (از جمله محدودیت نوع) سمت سرور اعمال می‌شود.
   function load() {
     if (!siteId) return;
     setError("");
-    // ⚠️ کارت «درخواست‌های مرخصی و ماموریت امروز» عمداً داده‌ی خودش را
-    // جداگانه و بدون هیچ فیلتری می‌گیرد - وگرنه با انتخاب هر فیلتری
-    // (مثلاً وضعیت یا واحد) بی‌صدا کوچک می‌شد، در حالی که این کارت باید
-    // همیشه تصویر کاملِ «امروز چه کسانی مرخصی/ماموریت هستند» را نشان
-    // دهد. سطح دسترسی (از جمله محدودیت به‌تفکیک نوع برای حراست) همچنان
-    // سمت سرور اعمال می‌شود، پس هرکس فقط نوع‌های مجاز خودش را می‌بیند.
-    //
-    // ⚠️ رفع باگ واقعی: این درخواست قبلاً خطای ۴۰۳ را بی‌صدا می‌بلعید و
-    // آرایه خالی می‌گذاشت. برای نقشی مثل حراست که فقط روی یک سایت خاص
-    // مجوز دارد، سایت پیش‌فرض ۴۰۳ می‌داد و کارت «امروز» هیچ‌وقت نمایش
-    // داده نمی‌شد - حتی بعد از اینکه منطق زیر خودکار به سایت درست سوئیچ
-    // می‌کرد. حالا هر دو درخواست با هم مدیریت می‌شوند تا همیشه هم‌راستا بمانند.
     Promise.all([
       fetchAllLeaveRequestsForSite(siteId),
       fetchAllLeaveRequestsForSite(siteId, serverFilters),
@@ -349,11 +360,8 @@ export default function LeaveRequestsAdminListPage() {
         setRequests(filteredData);
       })
       .catch((err) => {
-        // ⚠️ طبق تصمیم صریح کاربر: سایت پیش‌فرض (اولین سایت لیست) لزوماً
-        // همان سایتی نیست که این کاربر مجوز مشاهده‌اش را دارد (مثلاً
-        // نقشی مثل «حراست» فقط برای یک نوع در یک سایت خاص مجوز دارد) -
-        // اگر همین سایت ۴۰۳ داد، خودکار سراغ سایت بعدیِ لیست می‌رویم، به‌
-        // جای اینکه کاربر با صفحه خالی/خطا بماند.
+        // اگر کاربر برای این سایت مجوز ندارد (403)، خودکار سراغ سایت بعدی لیست می‌رود
+        // (مثلاً نقش حراست فقط برای یک سایت خاص مجوز دارد)
         if (err.response?.status === 403 && sites.length > 1) {
           const currentIndex = sites.findIndex((s) => s.id === siteId);
           const nextSite = sites[currentIndex + 1];
@@ -369,6 +377,7 @@ export default function LeaveRequestsAdminListPage() {
 
   useEffect(load, [siteId, serverFilters]);
 
+  // حذف مدیریتی یک درخواست پس از تأیید کاربر؛ هر درخواستی در هر مرحله‌ای قابل حذف است
   async function handleDelete(item) {
     const who = item.requester_name || item.emp_no;
     if (!window.confirm(`درخواست «${item.type_title || "—"}» برای ${who} حذف شود؟ این عمل قابل بازگشت نیست.`)) {
@@ -387,6 +396,7 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
+  // دریافت فایل Excel با همان فیلترهای سرور و دانلود آن در مرورگر
   async function handleExport() {
     setError("");
     setIsExporting(true);
@@ -407,12 +417,11 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
-  const canEdit = Boolean(user?.can_manage_leave_requests);
-  // ⚠️ نقشی مثل «حراست» - فقط مجوز به‌تفکیک نوع دارد، نه مجوز سراسری.
-  // برای این افراد: بدون درخواست‌های در حال بررسی، بدون خروجی Excel،
-  // بدون فیلتر بازه تاریخ (همه این محدودیت‌ها سمت سرور هم اعمال می‌شوند).
+  const canEdit = Boolean(user?.can_manage_leave_requests); // مجوز ویرایش/حذف درجا
+  // نقش محدود به نوع (مثل حراست): فقط مجوز به‌تفکیک نوع دارد؛ بدون خروجی Excel و بدون فیلتر بازه‌ی تاریخ (سرور هم اعمال می‌کند)
   const isTypeRestricted = Boolean(user?.leave_requests_type_restricted);
 
+  // بارگذاری نوع‌های درخواست سایت (فقط برای کاربر دارای مجوز ویرایش)
   useEffect(() => {
     if (!siteId || !canEdit) return;
     fetchLeaveRequestTypes(siteId)
@@ -420,6 +429,7 @@ export default function LeaveRequestsAdminListPage() {
       .catch(() => setTypes([]));
   }, [siteId, canEdit]);
 
+  // ذخیره‌ی ویرایش درجای یک فیلد درخواست و بارگذاری مجدد لیست
   async function handleFieldSave(requestId, payload) {
     setError("");
     try {
@@ -431,6 +441,7 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
+  // کلیک روی سرستون: همان ستون جهت را برعکس می‌کند، ستون جدید صعودی شروع می‌شود
   function handleSort(field) {
     if (sortField === field) {
       setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -440,24 +451,24 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
-  // ⚠️ فهرست واحدها از خودِ داده‌ی لودشده ساخته می‌شود (نه یک درخواست
-  // اضافه) - فقط واحدهایی که واقعاً درخواستی دارند در فیلتر ظاهر می‌شوند.
+  // فهرست واحدها از خودِ داده‌ی بارگذاری‌شده ساخته می‌شود؛ فقط واحدهایی که درخواست دارند در فیلتر ظاهر می‌شوند
   const availableDepartments = useMemo(() => {
     if (!requests) return [];
     return [...new Set(requests.map((item) => item.requester_department).filter(Boolean))].sort();
   }, [requests]);
 
+  // درخواست‌هایی که امروز جزو بازه‌ی آن‌هاست (برای کارت «امروز»)
   const todayRequests = useMemo(() => {
     if (!todaySourceRequests) return [];
     return todaySourceRequests.filter((item) => isRequestActiveToday(item));
   }, [todaySourceRequests]);
 
-  // ⚠️ با تغییر جست‌وجو/فیلترها، به صفحه اول برگرد - وگرنه ممکن است
-  // کاربر روی صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  // با تغییر جست‌وجو/فیلترها/سایت به صفحه‌ی اول برمی‌گردد تا کاربر روی صفحه‌ای بدون ردیف نماند
   useEffect(() => {
     setPage(0);
   }, [search, statusFilter, typeFilter, departmentFilter, dateFrom, dateTo, siteId]);
 
+  // ردیف‌های جدول: اعمال جست‌وجوی متنی (نام، نوع، توضیحات، شماره پرسنلی) و سپس مرتب‌سازی
   const visibleRequests = useMemo(() => {
     if (!requests) return [];
     const term = search.trim().toLowerCase();
@@ -469,6 +480,7 @@ export default function LeaveRequestsAdminListPage() {
           .some((field) => String(field).toLowerCase().includes(term))
       );
     }
+    // ستون‌های تاریخ به‌صورت عددی (timestamp) و بقیه به‌صورت رشته مقایسه می‌شوند
     const sorted = [...filtered].sort((a, b) => {
       let av = a[sortField];
       let bv = b[sortField];
@@ -493,6 +505,7 @@ export default function LeaveRequestsAdminListPage() {
         درخواست‌های مرخصی/ماموریت
       </Typography>
 
+      {/* نوار فیلتر: سایت، جست‌وجو، وضعیت، نوع، واحد و دکمه‌ی خروجی Excel */}
       <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
         <TextField select label="سایت" value={siteId} onChange={(e) => setSiteId(e.target.value)} sx={{ minWidth: 240 }}>
           {sites.map((site) => (
@@ -516,9 +529,7 @@ export default function LeaveRequestsAdminListPage() {
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="">همه</MenuItem>
-          {/* ⚠️ گزینه «در حال بررسی» برای همه در دسترس است - محدودیت نقشِ
-              محدود به نوع (حراست) فقط شامل انواع **ساعتی** است و سمت
-              سرور اعمال می‌شود؛ انواع روزانه در حال بررسی را می‌بیند. */}
+          {/* گزینه‌ی «در حال بررسی» برای همه هست؛ محدودیت نقش محدود به نوع فقط شامل انواع ساعتی است و سمت سرور اعمال می‌شود */}
           <MenuItem value="pending">در حال بررسی</MenuItem>
           <MenuItem value="approved">تائید شده</MenuItem>
           <MenuItem value="rejected">رد شده</MenuItem>
@@ -570,10 +581,7 @@ export default function LeaveRequestsAdminListPage() {
         </Alert>
       )}
 
-      {/* ⚠️ طبق درخواست صریح کاربر: این کارت همیشه نمایش داده می‌شود -
-          حتی وقتی خالی است. قبلاً وقتی موردی نبود کاملاً ناپدید می‌شد و
-          کاربر نمی‌دانست سیستم درست کار می‌کند یا چیزی خراب است. حالا در
-          حالت خالی، پیام روشن نشان داده می‌شود. */}
+      {/* کارت «امروز»: همیشه نمایش داده می‌شود، در حالت خالی با پیام روشن */}
       {todaySourceRequests !== null && (
         <Card variant="outlined" sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
           <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
@@ -616,12 +624,14 @@ export default function LeaveRequestsAdminListPage() {
         </Card>
       )}
 
+      {/* پیام نبودن درخواست */}
       {requests !== null && requests.length === 0 && (
         <Typography variant="body2" color="text.secondary">
           هیچ درخواستی برای این سایت یافت نشد.
         </Typography>
       )}
 
+      {/* جدول اصلی با سرستون‌های قابل مرتب‌سازی، سلول‌های قابل ویرایش درجا (با مجوز) و صفحه‌بندی */}
       {requests !== null && requests.length > 0 && (
         <TableContainer component={Card} variant="outlined">
           <Table size="small">
@@ -719,7 +729,7 @@ export default function LeaveRequestsAdminListPage() {
                   </TableCell>
                   <TableCell>{formatDuration(item)}</TableCell>
                   <TableCell>
-                    {/* ابطال‌شده در کاراوب قابل‌تغییر از پرتال نیست */}
+                    {/* وضعیت: قابل تغییر با مجوز، به جز ابطال‌شده که در کاراوب ثبت شده و از پرتال قابل تغییر نیست */}
                     {canEdit && item.status !== "cancelled" ? (
                       <EditableSelect
                         value={item.status}
@@ -746,8 +756,7 @@ export default function LeaveRequestsAdminListPage() {
                       item.manager_idea || "—"
                     )}
                   </TableCell>
-                  {/* ⚠️ حذف مدیریتی - برخلاف حذف پرسنلی، هر درخواستی در هر
-                      مرحله‌ای قابل‌حذف است (ردیف WF_Reviews هم پاک می‌شود). */}
+                  {/* حذف مدیریتی: هر درخواستی در هر مرحله‌ای قابل حذف است (ردیف WF_Reviews هم پاک می‌شود) */}
                   {canEdit && (
                     <TableCell>
                       <IconButton
@@ -782,16 +791,14 @@ export default function LeaveRequestsAdminListPage() {
         </TableContainer>
       )}
 
-      {/* ⚠️ طبق درخواست صریح کاربر: فیلتر بازه تاریخ زیر جدول قرار گرفت
-          (نه بالای آن). برای نقش محدود به نوع (حراست) اصلاً نمایش داده
-          نمی‌شود - همان محدودیت سمت سرور هم اعمال می‌شود. */}
+      {/* فیلتر بازه‌ی تاریخ مرخصی/ماموریت زیر جدول؛ برای نقش محدود به نوع نمایش داده نمی‌شود */}
       {!isTypeRestricted && (
         <Card variant="outlined" sx={{ mt: 2, p: 2, borderRadius: 2 }}>
           <Typography variant="body2" fontWeight={700} sx={{ mb: 1.5 }}>
             فیلتر بر اساس بازه تاریخ مرخصی/ماموریت
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
-            {/* ⚠️ طبق درخواست کاربر: پیش‌فرض خالی (قبلاً خودکار روی امروز فیلتر می‌شد) */}
+            {/* پیش‌فرض هر دو تاریخ خالی است (بدون فیلتر) */}
             <JalaliDateTimePicker clearable value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
             <JalaliDateTimePicker clearable value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
             {(dateFrom || dateTo) && (
@@ -809,6 +816,7 @@ export default function LeaveRequestsAdminListPage() {
         </Card>
       )}
 
+      {/* پیام موفقیت */}
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={4000}

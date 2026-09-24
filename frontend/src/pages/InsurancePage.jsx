@@ -40,32 +40,39 @@ import {
 } from "../api/insurance";
 
 /**
- * فرم ثبت‌نام بیمه تکمیلی پرسنل - بازسازی دقیق dashboard.php + form.js سامانه
- * قدیمی (insurance.faipco.ir). ⚠️ طبق درخواست کاربر، رفتار فیلدها عیناً حفظ
- * شده: فیلدهای پرسنلی فقط‌نمایشی، «شماره تماس» و «نام صاحب حساب» با پیش‌فرض ولی
- * قابل ویرایش، قواعد اعضای خانواده و مدرک کفالت مثل قبل. اعتبارسنجی نهایی سمت
- * سرور (core/insurance_rules.py) است.
+ * صفحه‌ی فرم ثبت‌نام بیمه تکمیلی پرسنل (مسیر /insurance).
+ * چهار بخش دارد: اطلاعات شخص اصلی، اطلاعات بانکی، اعضای خانواده، جدول نرخ.
+ * اطلاعات هویتی پرسنل از سرور می‌آید و فقط نمایش داده می‌شود؛ بقیه‌ی فیلدها
+ * قابل ویرایش‌اند. قبل از ارسال، اعتبارسنجی اولیه در همین صفحه انجام می‌شود و
+ * اعتبارسنجی نهایی سمت سرور است. ثبت مجدد یعنی ویرایش ثبت‌نام قبلی.
  */
 
+// ترتیب نمایش دکمه‌های افزودن عضو و رنگ هر نوع عضو
 const MEMBER_ORDER = ["spouse", "son", "daughter", "father", "mother"];
 const MEMBER_BUTTON_COLOR = { spouse: "primary", son: "success", daughter: "info", father: "warning", mother: "error" };
+// برچسب کدهای عددی جنسیت و تأهل (کدها همان مقادیر ذخیره‌شده در سرور هستند)
 const GENDER_LABEL = { 1: "مرد", 2: "زن" };
 const MARITAL_LABEL = { 2: "مجرد", 3: "متاهل" };
+// تبدیل ارقام فارسی/عربی به انگلیسی
 const toEn = (v) => String(v ?? "").replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+// فقط ارقام را نگه می‌دارد و به max کاراکتر محدود می‌کند
 const digitsOnly = (v, max) => toEn(v).replace(/\D/g, "").slice(0, max);
 
+// صحت کد ملی ایرانی را با الگوریتم رقم کنترل بررسی می‌کند (کد ۹ رقمی با صفر ابتدایی تکمیل می‌شود)
 function validateNationalId(raw) {
   let id = toEn(raw).trim();
   if (id.length === 9) id = "0" + id;
-  if (!/^\d{10}$/.test(id) || /^(\d)\1{9}$/.test(id)) return false;
+  if (!/^\d{10}$/.test(id) || /^(\d)\1{9}$/.test(id)) return false; // غیر ۱۰ رقمی یا همه‌ی ارقام یکسان
   let sum = 0;
   for (let i = 0; i < 9; i++) sum += parseInt(id[i], 10) * (10 - i);
   const rem = sum % 11;
   const check = parseInt(id[9], 10);
   return rem < 2 ? check === rem : check === 11 - rem;
 }
+// فقط قالب تاریخ شمسی «YYYY/MM/DD» را بررسی می‌کند (درستی روز/ماه سمت سرور)
 const validateJalali = (d) => /^\d{4}\/\d{2}\/\d{2}$/.test(toEn(d).trim());
 
+// نمایش یک مقدار فقط‌خواندنی با برچسب کوچک بالای آن؛ مقدار خالی به‌صورت «—»
 function ReadOnlyField({ label, value }) {
   return (
     <Box>
@@ -79,6 +86,7 @@ function ReadOnlyField({ label, value }) {
   );
 }
 
+// کارت هر بخش فرم: سربرگ با شماره‌ی دایره‌ای و عنوان، محتوای بخش در بدنه
 function SectionCard({ num, title, subtitle, children }) {
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, mb: 2.5, overflow: "hidden" }}>
@@ -100,22 +108,32 @@ function SectionCard({ num, title, subtitle, children }) {
   );
 }
 
+/**
+ * کارت ویرایش یک عضو خانواده.
+ * ورودی: داده‌ی عضو، شماره‌ی ترتیبی (برای «فرزند پسر ۲»)، تعریف انواع عضو،
+ * اطلاعات پرسنل، موبایل شخص اصلی، خطاهای اعتبارسنجی و توابع تغییر/حذف.
+ * بسته به نوع عضو و جنسیت پرسنل، برخی فیلدها مقدار ثابت دارند و نمایش داده
+ * نمی‌شوند؛ برای برخی اعضا بخش کفالت و آپلود مدرک نشان داده می‌شود.
+ */
 function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, onRemove, errors, disabled }) {
   const cfg = typeInfo[member.member_type];
   const type = member.member_type;
   const empMale = employee.gender === 1;
-  // قواعد form.js
+  // فیلدهای ثابت: جنسیت عضو از نوع عضو (همسر = مخالف پرسنل)، همسر همیشه متأهل،
+  // فرزندان پرسنل مرد نام پدر = نام پرسنل، فرزندان و پدرِ پرسنل مرد نام خانوادگی = پرسنل
   const genderFixed = type === "spouse" ? (empMale ? 2 : 1) : type === "son" || type === "father" ? 1 : 2;
   const maritalFixed = type === "spouse" ? 3 : null;
   const fatherFixed = empMale && (type === "son" || type === "daughter") ? employee.first_name : null;
   const familyFixed = empMale && (type === "son" || type === "daughter" || type === "father") ? employee.last_name : null;
+  // وضعیت کفالت برای پدر/مادر و برای همه‌ی اعضای پرسنل زن پرسیده می‌شود
   const needsKafala = employee.gender === 2 || type === "father" || type === "mother";
-  const [uploadPct, setUploadPct] = useState(null);
+  const [uploadPct, setUploadPct] = useState(null); // درصد آپلود؛ null = آپلودی در جریان نیست
   const [uploadErr, setUploadErr] = useState("");
   const fileRef = useRef(null);
   const set = (key) => (e) => onChange({ ...member, [key]: e.target.value });
   const err = errors || {};
 
+  // فایل انتخاب‌شده را (پس از بررسی حجم) آپلود می‌کند و شناسه‌ی مدرک را روی عضو می‌گذارد
   async function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -132,21 +150,23 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
       setUploadErr(e2.response?.data?.detail || "آپلود فایل با خطا مواجه شد.");
     } finally {
       setUploadPct(null);
-      if (fileRef.current) fileRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = ""; // تا انتخاب دوباره‌ی همان فایل هم رویداد بدهد
     }
   }
 
+  // مدرک را از سرور حذف و از عضو جدا می‌کند
   async function handleRemoveDoc() {
     if (member.document?.id) {
       try {
         await deleteMyInsuranceDocument(member.document.id);
       } catch {
-        // مدرک قبلاً به ثبت‌نام وصل شده (ویرایش) - فقط از فرم جدا می‌شود
+        // حذف سمت سرور ناموفق (مثلاً مدرک به عضو ثبت‌شده‌ی قبلی وصل است)؛ فقط از فرم جدا می‌شود
       }
     }
     onChange({ ...member, document: null, document_id: null });
   }
 
+  // عنوان کارت: برای انواعی که چند عضو مجازند شماره هم اضافه می‌شود
   const title = cfg.max_count > 1 ? `${cfg.title} ${index}` : cfg.title;
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, p: 2, borderColor: Object.keys(err).length ? "error.main" : "divider" }}>
@@ -222,6 +242,7 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
           />
         </Grid>
       </Grid>
+      {/* خلاصه‌ی مقادیر ثابتی که کاربر نمی‌تواند تغییر دهد */}
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
         جنسیت: {GENDER_LABEL[genderFixed]}
         {maritalFixed ? " — وضعیت تاهل: متاهل" : ""}
@@ -230,6 +251,7 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
         {` — شماره تماس: ${mainMobile || "—"}`}
       </Typography>
 
+      {/* بخش کفالت: انتخاب بله/خیر؛ با «بله» آپلود مدرک اجباری می‌شود، با «خیر» مدرک قبلی پاک می‌شود */}
       {needsKafala && (
         <Box sx={{ mt: 2, p: 2, borderRadius: 2, border: "1px solid", borderColor: err.kafala ? "error.main" : "#f1dfa8", bgcolor: "#fffbf0" }}>
           <Typography fontWeight={700} sx={{ mb: 1 }}>
@@ -284,21 +306,25 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
   );
 }
 
+// شمارنده‌ی کلید یکتای اعضا در فرم (کلید React، مستقل از id دیتابیس)
 let memberSeq = 0;
 
 export default function InsurancePage() {
   const { user } = useAuth();
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null); // پاسخ کامل /insurance/me
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [errors, setErrors] = useState({});
-  const [memberErrors, setMemberErrors] = useState({});
+  const [form, setForm] = useState(null); // فیلدهای قابل ویرایش شخص اصلی + بانک
+  const [members, setMembers] = useState([]); // اعضای خانواده در فرم
+  const [errors, setErrors] = useState({}); // خطاهای فیلدهای شخص اصلی
+  const [memberErrors, setMemberErrors] = useState({}); // خطاهای هر عضو، با کلید member.key
   const [reviewOpen, setReviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
-  const topRef = useRef(null);
+  const topRef = useRef(null); // برای اسکرول به بالای صفحه هنگام نمایش پیام
 
+  // بارگذاری اولیه: داده‌ی سرور را می‌گیرد و فرم را پر می‌کند.
+  // اگر ثبت‌نام کاملی وجود دارد (insurance_no پر است) از آن، وگرنه فیلدهای
+  // خالی با پیش‌فرض موبایل و نام پرسنل به‌عنوان صاحب حساب.
   useEffect(() => {
     fetchMyInsurance()
       .then((d) => {
@@ -319,6 +345,7 @@ export default function InsurancePage() {
           account_owner_national_id: complete ? reg.account_owner_national_id : "",
           account_owner: complete ? reg.account_owner : emp ? `${emp.first_name} ${emp.last_name}` : "",
         });
+        // اعضای ثبت‌نام قبلی به ساختار فرم تبدیل می‌شوند (عضو موقت نگهدارنده‌ی مدرک حذف می‌شود)
         setMembers(
           (complete ? reg.members : [])
             .filter((m) => m.member_type !== "pending")
@@ -344,15 +371,18 @@ export default function InsurancePage() {
 
   const employee = data?.employee;
   const typeInfo = data?.member_types || {};
-  const isEdit = Boolean(data?.registration?.insurance_no);
+  const isEdit = Boolean(data?.registration?.insurance_no); // ثبت‌نام کامل قبلی وجود دارد
+  // غیرفعال: یا برای این کاربر خاص، یا کل ماژول از پنل
   const disabled = Boolean(user?.insurance_disabled) || data?.enabled === false;
 
+  // تعداد اعضای هر نوع، برای غیرفعال کردن دکمه‌ی افزودن وقتی به سقف رسید
   const memberCounts = useMemo(() => {
     const c = {};
     for (const m of members) c[m.member_type] = (c[m.member_type] || 0) + 1;
     return c;
   }, [members]);
 
+  // یک عضو خالی از نوع داده‌شده اضافه می‌کند (اگر به سقف آن نوع نرسیده باشد)
   function addMember(type) {
     const cfg = typeInfo[type];
     if (!cfg || (memberCounts[type] || 0) >= cfg.max_count) return;
@@ -362,21 +392,25 @@ export default function InsurancePage() {
     ]);
   }
 
+  // تغییر وضعیت تأهل شخص اصلی؛ انتخاب «مجرد» عضو همسر را از فرم حذف می‌کند
   function setMarital(value) {
     setForm({ ...form, marital_status: value });
-    // مجرد → همسر حذف می‌شود و دکمه‌اش پنهان (form.js)
     if (String(value) === "2") setMembers(members.filter((m) => m.member_type !== "spouse"));
   }
 
+  // اعتبارسنجی سمت کلاینت کل فرم؛ خطاها را در state می‌گذارد و true/false برمی‌گرداند
   function validate() {
     const e = {};
-    const norm = (v) => (toEn(v).length === 9 ? "0" + toEn(v) : toEn(v));
+    const norm = (v) => (toEn(v).length === 9 ? "0" + toEn(v) : toEn(v)); // کد ملی ۹ رقمی → صفر ابتدایی
+    // فیلدهای اجباری شخص اصلی
     const req = ["father_name", "birth_certificate_no", "mobile_number", "marital_status", "insurance_no", "bank_code", "account_number", "sheba", "account_type", "account_owner", "account_owner_national_id"];
     for (const k of req) if (String(form[k] ?? "").trim() === "") e[k] = "این فیلد الزامی است.";
+    // قواعد قالب: کد ملی صاحب حساب = کد ملی پرسنل، شبا ۲۴ رقم، شماره بیمه ۱۰ رقم، موبایل معتبر
     if (norm(form.account_owner_national_id) !== norm(employee.national_id || "")) e.account_owner_national_id = "کد ملی صاحب حساب باید با کد ملی شخص اصلی یکسان باشد.";
     if (!/^\d{24}$/.test(toEn(form.sheba).replace(/^IR/i, ""))) e.sheba = "شماره شبا باید دقیقاً ۲۴ رقم باشد (بدون IR).";
     if (!/^\d{10}$/.test(toEn(form.insurance_no))) e.insurance_no = "شماره بیمه تامین اجتماعی باید دقیقاً ۱۰ رقم باشد.";
     if (!/^0?9\d{9}$/.test(toEn(form.mobile_number).trim())) e.mobile_number = "شماره موبایل معتبر نیست.";
+    // اعتبارسنجی هر عضو؛ فیلدهایی که مقدار ثابت دارند بررسی نمی‌شوند
     const me = {};
     members.forEach((m) => {
       const err = {};
@@ -400,6 +434,7 @@ export default function InsurancePage() {
     return Object.keys(e).length === 0 && Object.keys(me).length === 0;
   }
 
+  // کلیک «بررسی و ثبت»: اگر فرم معتبر بود پنجره‌ی بررسی نهایی باز می‌شود
   function handleReview() {
     setMessage(null);
     if (!validate()) {
@@ -410,10 +445,12 @@ export default function InsurancePage() {
     setReviewOpen(true);
   }
 
+  // تأیید نهایی: فرم را به ساختار API تبدیل و ارسال می‌کند، سپس پیام موفقیت/خطا نشان می‌دهد
   async function handleSubmit() {
     setSaving(true);
     setMessage(null);
     try {
+      // کدهای انتخابی به عدد تبدیل می‌شوند؛ تاریخ تولد اعضا با ارقام انگلیسی
       const payload = {
         ...form,
         marital_status: Number(form.marital_status),
@@ -446,9 +483,12 @@ export default function InsurancePage() {
     }
   }
 
+  // نام بانک و نوع حساب از روی کد (برای پنجره‌ی بررسی)
   const bankName = (code) => data?.bank_codes?.[code] || "—";
   const accountTypeName = (code) => data?.account_types?.[code] || "—";
 
+  // حالت‌های ویژه به ترتیب: خطای بارگذاری، در حال بارگذاری، ماژول غیرفعال،
+  // کاربر بدون پرسنل، اطلاعات پرسنلی ناقص
   if (loadError) {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
@@ -505,9 +545,11 @@ export default function InsurancePage() {
     );
   }
 
+  // سازنده‌ی onChange برای فیلدهای شخص اصلی با تبدیل اختیاری مقدار (مثلاً فقط ارقام)
   const setF = (key, transform) => (e) => setForm({ ...form, [key]: transform ? transform(e.target.value) : e.target.value });
+  // پراپ‌های خطا/راهنمای هر فیلد از روی state خطاها
   const fieldProps = (key) => ({ error: Boolean(errors[key]), helperText: errors[key] || "" });
-  const showSpouseBtn = String(form.marital_status) !== "2";
+  const showSpouseBtn = String(form.marital_status) !== "2"; // دکمه‌ی همسر برای مجرد پنهان است
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
@@ -521,6 +563,7 @@ export default function InsurancePage() {
         </Alert>
       )}
 
+      {/* بخش ۱: فیلدهای فقط‌خواندنی از رکورد پرسنل + فیلدهای قابل ویرایش */}
       <SectionCard num="۱" title="اطلاعات شخص اصلی">
         <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={6} md={3}><ReadOnlyField label="کد پرسنلی" value={employee.personnel_code} /></Grid>
@@ -555,6 +598,7 @@ export default function InsurancePage() {
         </Grid>
       </SectionCard>
 
+      {/* بخش ۲: بانک، شماره حساب، شبا، نوع حساب و صاحب حساب */}
       <SectionCard num="۲" title="اطلاعات بانکی">
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={4}>
@@ -592,6 +636,7 @@ export default function InsurancePage() {
         </Grid>
       </SectionCard>
 
+      {/* بخش ۳: دکمه‌های افزودن عضو (تا سقف هر نوع) و کارت هر عضو */}
       <SectionCard num="۳" title="اعضای خانواده" subtitle="(اختیاری)">
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
           {MEMBER_ORDER.filter((t) => typeInfo[t]).map((t) => {
@@ -612,7 +657,8 @@ export default function InsurancePage() {
         ) : (
           <Stack spacing={2}>
             {members.map((m) => {
-              const idx = members.filter((x) => x.member_type === m.member_type).indexOf(m) + 1;
+              const idx = members.filter((x) => x.member_type === m.member_type).indexOf(m) + 1; // شماره‌ی عضو بین هم‌نوع‌ها
+
               return (
                 <MemberCard
                   key={m.key}
@@ -631,6 +677,7 @@ export default function InsurancePage() {
         )}
       </SectionCard>
 
+      {/* بخش ۴: جدول نرخ و نکات (محتوا از تنظیمات پنل) */}
       <SectionCard num="۴" title="جدول نرخ حق بیمه تکمیلی پرسنل">
         <InsuranceRateInfo rateTable={data.rate_table} notes={data.notes} />
       </SectionCard>
@@ -641,6 +688,7 @@ export default function InsurancePage() {
         </Button>
       </Box>
 
+      {/* پنجره‌ی بررسی نهایی: خلاصه‌ی شخص اصلی و اعضا قبل از ارسال به سرور */}
       <Dialog open={reviewOpen} onClose={() => !saving && setReviewOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>بررسی نهایی اطلاعات</DialogTitle>
         <DialogContent dividers>

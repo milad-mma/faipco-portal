@@ -5,22 +5,24 @@ import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 
 /**
- * ویرایش inline عنوان (کلیک روی آیکون مداد → تبدیل به TextField → ذخیره
- * یا انصراف) - برای «دوره‌های ارزیابی»/«فرم‌های ارزیابی»، طبق تصمیم صریح
- * پروژه، عنوان صرف‌نظر از وضعیت (حتی بعد از فعال‌شدن) همیشه قابل‌ویرایش
- * است - این کامپوننت هیچ محدودیتی خودش اعمال نمی‌کند، فقط UI ویرایش را
- * فراهم می‌کند؛ منطق مجاز/غیرمجاز بودن کاملاً سمت Backend است.
+ * ویرایش درجای عنوان: کلیک روی آیکون مداد، عنوان را به TextField تبدیل می‌کند (ذخیره با Enter یا تیک،
+ * انصراف با Escape یا ضربدر). برای عنوان «دوره‌های ارزیابی» و «فرم‌های ارزیابی» استفاده می‌شود.
+ * ورودی: title، onSave (async، با عنوان trim‌شده صدا زده می‌شود)، variant و fontWeight متن.
+ * این کامپوننت محدودیتی اعمال نمی‌کند؛ مجاز بودن ویرایش سمت Backend بررسی می‌شود.
  */
 export default function InlineTitleEdit({ title, onSave, variant = "body1", fontWeight }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [value, setValue] = useState(title);
+  const [value, setValue] = useState(title); // مقدار در حال ویرایش
   const [isSaving, setIsSaving] = useState(false);
 
+  // ورود به حالت ویرایش با مقدار فعلی عنوان
   function startEdit() {
     setValue(title);
     setIsEditing(true);
   }
 
+  // ذخیره‌ی عنوان؛ مقدار خالی یا بدون تغییر فقط حالت ویرایش را می‌بندد.
+  // در صورت خطای onSave حالت ویرایش باز می‌ماند
   async function handleSave() {
     if (!value.trim() || value === title) {
       setIsEditing(false);
@@ -35,6 +37,7 @@ export default function InlineTitleEdit({ title, onSave, variant = "body1", font
     }
   }
 
+  // حالت ویرایش: فیلد متن و دکمه‌های تأیید/انصراف
   if (isEditing) {
     return (
       <Stack direction="row" spacing={0.5} alignItems="center">
@@ -59,6 +62,7 @@ export default function InlineTitleEdit({ title, onSave, variant = "body1", font
     );
   }
 
+  // حالت نمایش: عنوان و آیکون مداد
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">
       <Typography variant={variant} fontWeight={fontWeight}>

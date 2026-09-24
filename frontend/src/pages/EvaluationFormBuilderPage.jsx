@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی ساخت و ویرایش فرم ارزیابی عملکرد.
+ * دسته‌بندی‌ها و سؤال‌های فرم (با وزن، نوع و گزینه‌ها) را مدیریت می‌کند، راهنمای وزن‌دهی را نشان می‌دهد
+ * و امکان فعال‌سازی فرم را می‌دهد. فرم فقط در وضعیت پیش‌نویس (draft) قابل‌ویرایش است.
+ */
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -34,6 +39,7 @@ import {
   updateEvaluationQuestion,
 } from "../api/evaluationForms";
 
+// برچسب فارسی انواع سؤال (کلید = question_type)
 const QUESTION_TYPE_LABELS = {
   single_choice: "تک‌انتخابی",
   multiple_choice: "چندانتخابی",
@@ -44,11 +50,16 @@ const QUESTION_TYPE_LABELS = {
   date: "تاریخ",
 };
 
-const OPTION_REQUIRED_TYPES = ["single_choice", "multiple_choice", "rating", "yes_no"];
+const OPTION_REQUIRED_TYPES = ["single_choice", "multiple_choice", "rating", "yes_no"];  // انواع سؤالی که گزینه‌ی پاسخ با امتیاز لازم دارند
 
-const STATUS_LABELS = { draft: "پیش‌نویس", active: "فعال", inactive: "غیرفعال", archived: "بایگانی‌شده" };
-const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning", archived: "default" };
+const STATUS_LABELS = { draft: "پیش‌نویس", active: "فعال", inactive: "غیرفعال", archived: "بایگانی‌شده" };  // برچسب فارسی وضعیت فرم
+const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning", archived: "default" };  // رنگ Chip هر وضعیت فرم
 
+/**
+ * ویرایشگر یک سؤال (جدید یا موجود) شامل متن، توضیح، نوع، وزن، اجباری/فعال و گزینه‌ها.
+ * ورودی: سؤال، شناسه‌ی دسته، کال‌بک‌های onSaved/onDeleted و disabled (فرم غیرپیش‌نویس).
+ * اگر question.id داشته باشد ویرایش، وگرنه سؤال جدید در دسته ایجاد می‌کند.
+ */
 function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) {
   const [text, setText] = useState(question.text);
   const [description, setDescription] = useState(question.description || "");
@@ -56,26 +67,31 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
   const [weight, setWeight] = useState(question.weight);
   const [required, setRequired] = useState(question.required);
   const [isActive, setIsActive] = useState(question.is_active);
-  const [options, setOptions] = useState(question.options.map((o) => ({ label: o.label, score: o.score })));
+  const [options, setOptions] = useState(question.options.map((o) => ({ label: o.label, score: o.score })));  // گزینه‌ها به شکل { label, score }
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const needsOptions = OPTION_REQUIRED_TYPES.includes(questionType);
+  const needsOptions = OPTION_REQUIRED_TYPES.includes(questionType);  // آیا نوع فعلی سؤال بخش گزینه‌ها را لازم دارد
 
+  // یک گزینه‌ی خالی به انتهای فهرست گزینه‌ها اضافه می‌کند
   function addOption() {
     setOptions([...options, { label: "", score: 0 }]);
   }
 
+  // یک فیلد (label یا score) از گزینه‌ی index را تغییر می‌دهد
   function updateOption(index, field, value) {
     const next = [...options];
     next[index] = { ...next[index], [field]: value };
     setOptions(next);
   }
 
+  // گزینه‌ی index را حذف می‌کند
   function removeOption(index) {
     setOptions(options.filter((_, i) => i !== index));
   }
 
+  // payload سؤال را می‌سازد (گزینه‌ها فقط برای انواع گزینه‌دار، با sort_order به ترتیب نمایش)
+  // و بسته به وجود id، سؤال را ویرایش یا ایجاد می‌کند؛ سپس onSaved را صدا می‌زند
   async function handleSave() {
     setError("");
     setIsSaving(true);
@@ -108,6 +124,7 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
   return (
     <Box sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 1.5 }}>
       <Stack spacing={1.5}>
+        {/* متن و توضیح تکمیلی سؤال */}
         <TextField
           label="متن سوال"
           value={text}
@@ -122,6 +139,7 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
           disabled={disabled}
           size="small"
         />
+        {/* نوع، وزن و کلیدهای اجباری/فعال سؤال */}
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
           <TextField
             select
@@ -157,6 +175,7 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
           />
         </Stack>
 
+        {/* فهرست گزینه‌های پاسخ با متن و امتیاز (فقط برای انواع گزینه‌دار) */}
         {needsOptions && (
           <Box>
             <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 1 }}>
@@ -200,6 +219,7 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
 
         {error && <Alert severity="error">{error}</Alert>}
 
+        {/* دکمه‌های ذخیره و حذف سؤال */}
         {!disabled && (
           <Stack direction="row" spacing={1}>
             <Button size="small" variant="contained" onClick={handleSave} disabled={isSaving || !text.trim()}>
@@ -217,13 +237,18 @@ function QuestionEditor({ question, categoryId, onSaved, onDeleted, disabled }) 
   );
 }
 
+/**
+ * ویرایشگر یک دسته‌بندی به‌صورت Accordion: عنوان، وزن، وضعیت فعال و فهرست سؤال‌های دسته.
+ * ورودی: دسته، کال‌بک onChanged (بارگذاری مجدد فرم) و disabled.
+ */
 function CategoryEditor({ category, onChanged, disabled }) {
   const [title, setTitle] = useState(category.title);
   const [weight, setWeight] = useState(category.weight);
   const [isActive, setIsActive] = useState(category.is_active);
   const [error, setError] = useState("");
-  const [addingQuestion, setAddingQuestion] = useState(false);
+  const [addingQuestion, setAddingQuestion] = useState(false);  // آیا ویرایشگر سؤال جدید باز است
 
+  // عنوان، وزن و وضعیت دسته را ذخیره و فرم را دوباره بارگذاری می‌کند
   async function handleSaveCategory() {
     setError("");
     try {
@@ -239,6 +264,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
     }
   }
 
+  // دسته را حذف و فرم را دوباره بارگذاری می‌کند
   async function handleDeleteCategory() {
     try {
       await deleteEvaluationCategory(category.id);
@@ -248,6 +274,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
     }
   }
 
+  // سؤال را حذف و فرم را دوباره بارگذاری می‌کند
   async function handleDeleteQuestion(questionId) {
     try {
       await deleteEvaluationQuestion(questionId);
@@ -259,6 +286,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
 
   return (
     <Accordion disableGutters variant="outlined" sx={{ mb: 1.5 }}>
+      {/* خلاصه‌ی دسته: عنوان، وزن، تعداد سؤال و وضعیت */}
       <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Typography fontWeight={700}>{category.title}</Typography>
@@ -269,6 +297,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={2}>
+          {/* فیلدهای ویرایش دسته و دکمه‌های ذخیره/حذف */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
             <TextField
               label="عنوان دسته‌بندی"
@@ -306,6 +335,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
 
           <Divider />
 
+          {/* ویرایشگر سؤال‌های موجود دسته */}
           {category.questions.map((question) => (
             <QuestionEditor
               key={question.id}
@@ -317,6 +347,7 @@ function CategoryEditor({ category, onChanged, disabled }) {
             />
           ))}
 
+          {/* ویرایشگر سؤال جدید یا دکمه‌ی «افزودن سوال» */}
           {addingQuestion ? (
             <QuestionEditor
               question={{
@@ -351,13 +382,17 @@ function CategoryEditor({ category, onChanged, disabled }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی سازنده‌ی فرم؛ formId را از مسیر می‌خواند و فرم را بارگذاری می‌کند.
+ */
 export default function EvaluationFormBuilderPage() {
   const { formId } = useParams();
   const [form, setForm] = useState(null);
   const [error, setError] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
-  const [newCategoryTitle, setNewCategoryTitle] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");  // پیام موفقیت فعال‌سازی فرم
+  const [newCategoryTitle, setNewCategoryTitle] = useState("");  // عنوان دسته‌ی جدید در فیلد پایین صفحه
 
+  // فرم را از سرور می‌گیرد و در state می‌گذارد
   function loadForm() {
     setError("");
     fetchEvaluationForm(formId)
@@ -365,10 +400,12 @@ export default function EvaluationFormBuilderPage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت فرم ارزیابی با خطا مواجه شد."));
   }
 
+  // بارگذاری فرم با تغییر formId
   useEffect(loadForm, [formId]);
 
-  const disabled = form && form.status !== "draft";
+  const disabled = form && form.status !== "draft";  // فرم غیرپیش‌نویس فقط‌خواندنی است
 
+  // دسته‌ی جدید با وزن ۰ در انتهای فرم اضافه می‌کند و فرم را دوباره بارگذاری می‌کند
   async function handleAddCategory() {
     setError("");
     try {
@@ -385,6 +422,7 @@ export default function EvaluationFormBuilderPage() {
     }
   }
 
+  // وضعیت فرم را active می‌کند (سرور مجموع وزن‌ها را بررسی می‌کند)
   async function handleActivate() {
     setError("");
     setStatusMessage("");
@@ -403,6 +441,7 @@ export default function EvaluationFormBuilderPage() {
 
   return (
     <Box>
+      {/* سربرگ: عنوان قابل‌ویرایش، نسخه، وضعیت و دکمه‌ی فعال‌سازی */}
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2 }}>
         <Box>
           <InlineTitleEdit
@@ -428,6 +467,7 @@ export default function EvaluationFormBuilderPage() {
         </Stack>
       </Stack>
 
+      {/* راهنمای ساخت فرم: دسته‌بندی، انواع سؤال، گزینه‌ها و وزن‌دهی */}
       <Accordion variant="outlined" sx={{ mb: 2 }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -556,6 +596,7 @@ export default function EvaluationFormBuilderPage() {
         </AccordionDetails>
       </Accordion>
 
+      {/* هشدار فقط‌خواندنی بودن فرم غیرپیش‌نویس */}
       {disabled && (
         <Alert severity="info" sx={{ mb: 2 }}>
           این فرم دیگر در وضعیت پیش‌نویس نیست - برای حفظ یکپارچگی تاریخچه ارزیابی‌ها، قابل‌ویرایش نیست.
@@ -563,6 +604,7 @@ export default function EvaluationFormBuilderPage() {
         </Alert>
       )}
 
+      {/* پیام‌های موفقیت و خطا */}
       {statusMessage && (
         <Alert severity="success" sx={{ mb: 2 }}>
           {statusMessage}
@@ -574,10 +616,12 @@ export default function EvaluationFormBuilderPage() {
         </Alert>
       )}
 
+      {/* فهرست ویرایشگرهای دسته‌بندی */}
       {form.categories.map((category) => (
         <CategoryEditor key={category.id} category={category} onChanged={loadForm} disabled={disabled} />
       ))}
 
+      {/* افزودن دسته‌بندی جدید */}
       {!disabled && (
         <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
           <TextField

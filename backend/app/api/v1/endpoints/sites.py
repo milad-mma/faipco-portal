@@ -1,17 +1,25 @@
-"""Endpoint های مدیریت Site ها، اتصال دیتابیس هر Site و Mapping ستون‌های پرسنلی."""
+"""
+Endpoint های مدیریت Site ها (/sites).
+
+شامل: فهرست و ایجاد/فعال‌سازی/حذف سایت، تنظیم GPS، اتصال دیتابیس منبع هر سایت،
+کشف ساختار دیتابیس و پیشنهاد نگاشت، نگاشت ستون‌های پرسنل و نگاشت جدول تردد.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
+from app.core.org_tree import OrgTreeError
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
+from app.models.employee import EmployeeMapping
 from app.models.user import User
 from app.schemas.site import (
     AttendanceMappingIn,
     AttendanceMappingOut,
     EmployeeMappingIn,
     EmployeeMappingOut,
+    OrgPreviewOut,
     SiteActiveUpdate,
     SiteConnectionActiveUpdate,
     SiteConnectionIn,
@@ -22,6 +30,7 @@ from app.schemas.site import (
 )
 from app.services.schema_discovery_service import SchemaDiscoveryError, discover_site_schema, suggest_mapping_for_table
 from app.services.site_service import SiteService
+from app.sync_engine.sync_service import SyncError, SyncService
 
 router = APIRouter()
 
@@ -31,9 +40,10 @@ async def list_sites(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    # فهرست ساده سایت‌ها (نام/کد) اطلاعات حساسی نیست؛ هر کاربر لاگین‌شده برای
-    # فرم ارسال اطلاعیه (نمایش نام سایت خودش) به آن نیاز دارد. اطلاعات حساس
-    # (اتصال دیتابیس، پسورد) در Endpoint های جداگانه و همچنان محافظت‌شده هستند.
+    """
+    فهرست همه سایت‌ها (نام/کد/وضعیت/GPS) را برمی‌گرداند.
+    دسترسی: هر کاربر لاگین‌شده؛ اطلاعات حساس (اتصال دیتابیس، پسورد) در Endpoint های محافظت‌شده جداست.
+    """
     return await SiteService(db).list_sites()
 
 
@@ -44,23 +54,13 @@ async def my_accessible_sites(
     current_user: User = Depends(get_current_user),
 ):
     """
-    برای فیلترهای «سایت» در صفحات گزارش‌گیری (ورود/خروج، پرسنل آنلاین،
-    گزارش اطلاعیه‌ها، مدیریت دسترسی، ...) — نه فهرست همه سایت‌های سیستم
-    (که GET /sites بدون فیلتر برمی‌گرداند)، بلکه دقیقاً همان سایت‌هایی
-    که کاربر جاری برای این Permission Code مشخص واقعاً دسترسی دارد.
-
-    ⚠️ رفع یک نقص واقعی UX (نه خطای امنیتی — خودِ Endpoint های داده،
-    مثل GET /attendance/clock-logs، از قبل درست فیلتر می‌کردند): چند
-    صفحه فیلتر «سایت» را از GET /sites (همه سایت‌های سیستم) پر می‌کردند
-    — یعنی کاربری با دسترسی فقط به یک سایت، در دراپ‌داون همه سایت‌های
-    دیگر را هم می‌دید (که انتخابشان فقط یک نتیجه خالی می‌داد، نه خطای
-    روشن) — به‌اشتباه به‌نظر می‌رسید «فیلتر سایتی اصلاً کار نمی‌کند».
-
-    unrestricted=True یعنی Admin واقعی یا انتصاب سراسری این مجوز — همه
-    سایت‌ها را ببیند (site_ids در این حالت خالی است؛ Frontend باید در
-    این حالت خودش GET /sites معمولی را برای «همه سایت‌ها» صدا بزند).
+    ورودی: کد مجوز (permission). سایت‌هایی را برمی‌گرداند که کاربر جاری برای آن مجوز واقعاً دسترسی دارد؛
+    برای پر کردن فیلتر «سایت» در صفحات گزارش‌گیری (ورود/خروج، پرسنل آنلاین، گزارش اطلاعیه‌ها، ...).
+    دسترسی: هر کاربر لاگین‌شده. خروجی unrestricted=True (با sites خالی) یعنی Admin یا انتصاب
+    سراسری؛ در این حالت Frontend خودش GET /sites را برای «همه سایت‌ها» صدا می‌زند.
     """
     accessible = await get_sites_with_permission(db, current_user, permission)
+    # None یعنی محدودیت سایتی ندارد
     if accessible is None:
         return {"unrestricted": True, "sites": []}
     sites = await SiteService(db).list_sites()
@@ -71,8 +71,11 @@ async def my_accessible_sites(
 async def create_site(
     payload: SiteCreate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sites.manage")),
+    current_user: User = Depends(require_permission("sites.manage")),
 ):
+    """یک سایت جدید می‌سازد و آن را برمی‌گرداند. مجوز: sites.manage سراسری (انتصاب سایتی → 403)."""
+    if await get_sites_with_permission(db, current_user, "sites.manage") is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ساخت سایت جدید فقط با مجوز sites.manage برای همه‌ی سایت‌ها ممکن است")
     return await SiteService(db).create_site(payload)
 
 
@@ -83,7 +86,10 @@ async def update_site_active(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
-    """فعال/غیرفعال‌کردن یک Site (بدون حذف داده‌ها)."""
+    """
+    یک Site را فعال/غیرفعال می‌کند (بدون حذف داده‌ها)؛ با غیرفعال‌شدن، Sync خودکار آن هم خاموش می‌شود.
+    مجوز: sites.manage برای همان سایت. خطا: 404 اگر سایت پیدا نشود.
+    """
     site = await SiteService(db).set_active(site_id, payload.is_active)
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
@@ -100,7 +106,7 @@ async def update_site_gps_location(
     """
     موقعیت GPS + شعاع مجاز این سایت را تنظیم می‌کند — برای «حضور دوره‌ای» و
     «ثبت ورود/خروج آزمایشی». برای پاک‌کردن (غیرفعال‌کردن محدودیت مکانی این
-    سایت)، هر سه فیلد را null بفرستید.
+    سایت)، هر سه فیلد را null بفرستید. مجوز: sites.manage برای همان سایت؛ خطای 404 اگر سایت پیدا نشود.
     """
     site = await SiteService(db).set_gps_location(
         site_id, payload.gps_latitude, payload.gps_longitude, payload.gps_radius_meters
@@ -120,6 +126,7 @@ async def delete_site(
     حذف کامل و برگشت‌ناپذیر یک Site — همراه با تمام واحدهای سازمانی، پرسنل،
     اتصال دیتابیس و Mapping آن (به‌خاطر CASCADE در سطح دیتابیس). فرانت‌اند باید
     پیش از فراخوانی این Endpoint، تأییدیه صریح (مثل تایپ‌کردن «DELETE») از Admin بگیرد.
+    مجوز: sites.manage برای همان سایت. خطا: 404 اگر سایت پیدا نشود.
     """
     deleted = await SiteService(db).delete_site(site_id)
     if not deleted:
@@ -134,6 +141,7 @@ async def get_connection(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """اطلاعات اتصال دیتابیس منبع سایت (بدون رمز) یا null را برمی‌گرداند. مجوز: sites.manage برای همان سایت."""
     return await SiteService(db).get_connection(site_id)
 
 
@@ -147,7 +155,8 @@ async def discover_schema(
     کشف کامل ساختار دیتابیس این سایت (فقط خواندن فراداده - جدول‌ها،
     ستون‌ها، نوع‌داده‌ها، کلیدهای خارجی رسماً تعریف‌شده) - برای کمک به
     تنظیم Mapping ها بدون نیاز به ابزار جدا (SSMS/pgAdmin/...). هیچ داده
-    واقعی خوانده یا نوشته نمی‌شود.
+    واقعی خوانده یا نوشته نمی‌شود. مجوز: sites.manage برای همان سایت.
+    خطاها: 404 اگر اتصال تعریف نشده باشد، 400 اگر اتصال/کشف ساختار با خطا مواجه شود.
     """
     conn = await SiteService(db).get_connection(site_id)
     if conn is None:
@@ -161,6 +170,8 @@ async def discover_schema(
 
 
 class SuggestMappingRequest(BaseModel):
+    """بدنه POST /sites/{id}/suggest-mapping: نام جدول، ستون‌های آن و مفهوم‌های موردنیاز."""
+
     table_name: str
     columns: list[str]
     concepts: list[str]
@@ -178,6 +189,7 @@ async def suggest_mapping_for_site(
     اتصال دیتابیسی)، و فقط برای مفاهیمی که چیزی پیدا نشد، با نمونه‌گیری
     چند مقدار واقعی از ستون‌های هنوز بلاتکلیف (نیازمند اتصال واقعی به
     دیتابیس این سایت). فقط یک پیشنهاد است؛ تأیید نهایی همیشه دستی است.
+    مجوز: sites.manage برای همان سایت. خطاها: 404 بدون اتصال تعریف‌شده، 400 برای خطای اتصال.
     """
     conn = await SiteService(db).get_connection(site_id)
     if conn is None:
@@ -197,6 +209,10 @@ async def upsert_connection(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """
+    اتصال دیتابیس منبع سایت را می‌سازد یا ویرایش می‌کند (رمز خالی در ویرایش یعنی حفظ رمز قبلی).
+    مجوز: sites.manage برای همان سایت. خطا: 400 اگر برای اتصال جدید رمز داده نشود.
+    """
     try:
         return await SiteService(db).upsert_connection(site_id, payload)
     except ValueError as e:
@@ -209,6 +225,7 @@ async def delete_connection(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """اتصال دیتابیس منبع سایت را (در صورت وجود) حذف می‌کند. مجوز: sites.manage برای همان سایت."""
     await SiteService(db).delete_connection(site_id)
 
 
@@ -219,7 +236,10 @@ async def update_connection_active(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sync.manage", site_scoped=True)),
 ):
-    """روشن/خاموش‌کردن همگام‌سازی خودکار این Site (بدون تغییر اطلاعات اتصال)."""
+    """
+    همگام‌سازی خودکار این Site را روشن/خاموش می‌کند (بدون تغییر اطلاعات اتصال).
+    مجوز: sync.manage برای همان سایت. خطا: 404 اگر اتصال تعریف نشده باشد.
+    """
     conn = await SiteService(db).set_connection_active(site_id, payload.is_active)
     if conn is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اتصال دیتابیس این سایت تعریف نشده است")
@@ -234,6 +254,7 @@ async def get_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """نگاشت ستون‌های پرسنل سایت یا null را برمی‌گرداند. مجوز: sites.manage برای همان سایت."""
     return await SiteService(db).get_mapping(site_id)
 
 
@@ -244,7 +265,35 @@ async def upsert_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
-    return await SiteService(db).upsert_mapping(site_id, payload)
+    """
+    نگاشت ستون‌های پرسنل سایت را می‌سازد یا جایگزین می‌کند. مجوز: sites.manage برای همان سایت.
+    واحد ریشه‌ای که ریشه‌ی سایت هم‌منبع دیگری هم باشد → 400.
+    """
+    try:
+        return await SiteService(db).upsert_mapping(site_id, payload)
+    except OrgTreeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{site_id}/mapping/org-preview", response_model=OrgPreviewOut)
+async def preview_org_filter(
+    site_id: int,
+    payload: EmployeeMappingIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("sites.manage", site_scoped=True)),
+):
+    """
+    پیش‌نمایش فیلتر واحد ریشه با نگاشت ارسالی (بدون ذخیره): درخت واحدهای منبع، سایت هر واحد
+    و تعداد پرسنل فعال هر سایت. مجوز: sites.manage برای همان سایت. نبود اتصال → 400؛
+    خطای اتصال به منبع → 502؛ خطای تنظیمات در فیلد error پاسخ برمی‌گردد.
+    """
+    mapping = EmployeeMapping(site_id=site_id, **payload.model_dump())  # نمونه‌ی ذخیره‌نشده
+    try:
+        return await SyncService(db).preview_org_scope(site_id, mapping)
+    except SyncError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری منبع
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"خواندن دیتابیس منبع ناموفق بود: {e}")
 
 
 @router.delete("/{site_id}/mapping", status_code=status.HTTP_204_NO_CONTENT)
@@ -253,6 +302,7 @@ async def delete_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """نگاشت پرسنل سایت را (در صورت وجود) حذف می‌کند. مجوز: sites.manage برای همان سایت."""
     await SiteService(db).delete_mapping(site_id)
 
 
@@ -262,6 +312,7 @@ async def get_attendance_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """نگاشت جدول تردد سایت یا null را برمی‌گرداند. مجوز: sites.manage برای همان سایت."""
     return await SiteService(db).get_attendance_mapping(site_id)
 
 
@@ -272,6 +323,10 @@ async def upsert_attendance_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """
+    نگاشت جدول تردد (و تقویم/ستون‌های تکمیلی) سایت را می‌سازد یا به‌روز می‌کند.
+    مجوز: sites.manage برای همان سایت. خطا: 400 اگر سایت هنوز اتصال دیتابیس نداشته باشد.
+    """
     try:
         return await SiteService(db).upsert_attendance_mapping(site_id, payload)
     except ValueError as e:
@@ -284,4 +339,5 @@ async def delete_attendance_mapping(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("sites.manage", site_scoped=True)),
 ):
+    """نگاشت تردد سایت را حذف می‌کند و با آن گزارش تردد ماهانه این سایت غیرفعال می‌شود. مجوز: sites.manage."""
     await SiteService(db).delete_attendance_mapping(site_id)

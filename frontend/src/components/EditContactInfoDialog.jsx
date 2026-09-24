@@ -13,10 +13,10 @@ import { updateMyContactInfo } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 
 /**
- * ویرایش ایمیل/موبایل شخصی از پنل کاربری. اگر برای سایت خودِ کاربر،
- * ستون ایمیل/موبایل در نگاشت ستون‌ها (تنظیمات سایت) مشخص شده باشد، مقدار
- * جدید در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌شود (Write-back)، نه
- * فقط دیتابیس داخلی پرتال - پیام موفقیت این را به کاربر اطلاع می‌دهد.
+ * دیالوگ ویرایش ایمیل و موبایل شخصی کاربر جاری از پنل کاربری.
+ * ورودی: open و onClose. خروجی: Dialog با دو فیلد (موبایل اجباری) و پیام نتیجه.
+ * اگر در نگاشت ستون‌های سایت کاربر، ستون ایمیل/موبایل مشخص شده باشد، Backend مقدار جدید را
+ * در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌کند (Write-back)، نه فقط در دیتابیس پرتال.
  */
 export default function EditContactInfoDialog({ open, onClose }) {
   const { user, refetchUser } = useAuth();
@@ -26,6 +26,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // با باز شدن دیالوگ، فیلدها از اطلاعات فعلی کاربر پر و پیام‌ها پاک می‌شوند
   useEffect(() => {
     if (open) {
       setEmail(user?.email || "");
@@ -33,18 +34,18 @@ export default function EditContactInfoDialog({ open, onClose }) {
       setError("");
       setSuccessMessage("");
     }
-    // ⚠️ عمداً فقط به open وابسته است، نه به user - چون در انتهای ذخیره
-    // موفق، refetchUser() مقدار user را در Context تازه می‌کند؛ اگر user
-    // هم اینجا Dependency بود، همین افکت دوباره اجرا و پیام موفقیت را
-    // بلافاصله بعد از نمایش پاک می‌کرد (باگ اصلی «واکنشی نشان نمی‌دهد»).
+    // فقط به open وابسته است، نه به user: پس از ذخیره، refetchUser() مقدار user را تازه می‌کند
+    // و وابستگی به user باعث اجرای دوباره‌ی افکت و پاک شدن پیام موفقیت می‌شد.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // بستن دیالوگ؛ در حین ذخیره غیرفعال است
   function handleClose() {
     if (isSubmitting) return;
     onClose();
   }
 
+  // ذخیره‌ی ایمیل و موبایل (trim‌شده) و تازه کردن اطلاعات کاربر در Context
   async function handleSubmit() {
     if (isSubmitting) return; // محافظت اضافی در برابر چند کلیک سریع، جدا از غیرفعال‌شدن دکمه
     setError("");

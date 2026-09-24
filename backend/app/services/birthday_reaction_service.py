@@ -2,7 +2,7 @@
 سرویس «ری‌اکشن تبریک تولد» — ثبت/تغییر/حذف ری‌اکشن و خواندن فهرست
 کسانی که تبریک گفته‌اند.
 
-⚠️ قواعد اعتبارسنجی (طبق تصمیمات صریح کاربر):
+قواعد اعتبارسنجی:
     - فقط برای کسی که **امروز** روز تولدش است (نه دیروز، نه فردا).
     - خودِ متولد **نمی‌تواند** به تولد خودش ری‌اکشن بزند.
     - هر فرد فقط یک ری‌اکشن دارد؛ ری‌اکشن جدید جایگزین قبلی می‌شود و
@@ -16,6 +16,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.persian_date import get_current_jalali_date
+from app.core.site_access import get_accessible_site_ids
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
 from app.models.employee import Department, Employee
 from app.models.user import User
@@ -23,9 +24,8 @@ from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
 
-# ⚠️ متن نمایشی هر ایموجی - در UI به کاربر نشان داده می‌شود تا انتخابش
-# آگاهانه باشد. اینجا نگه داشته می‌شود (نه فقط در فرانت‌اند) تا اگر
-# جای دیگری هم لازم شد، یک منبع واحد داشته باشد.
+# نگاشت هر مقدار BirthdayReactionEmoji به کاراکتر ایموجی آن؛ منبع واحد
+# برای هر جای Backend که به کاراکتر نمایشی نیاز دارد.
 EMOJI_CHARS = {
     BirthdayReactionEmoji.party: "🎉",
     BirthdayReactionEmoji.cake: "🎂",
@@ -35,15 +35,21 @@ EMOJI_CHARS = {
 
 
 class BirthdayReactionError(Exception):
+    """خطای اعتبارسنجی ری‌اکشن (پرسنل یافت نشد، امروز تولدش نیست، ری‌اکشن به خود)."""
     pass
 
 
 class BirthdayReactionService:
+    """ثبت/تغییر/حذف ری‌اکشن تبریک تولد، خواندن ری‌اکشن‌ها و ارسال اعلان‌های مربوط."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def _assert_is_birthday_today(self, employee_id: int) -> Employee:
-        """⚠️ ری‌اکشن فقط در همان روز تولد مجاز است - نه قبل، نه بعد."""
+        """
+        بررسی می‌کند پرسنل فعال است و امروز (شمسی) روز تولدش است؛ پرسنل را برمی‌گرداند.
+        در غیر این صورت BirthdayReactionError می‌دهد (ری‌اکشن فقط در همان روز تولد مجاز است).
+        """
         employee = await self.db.get(Employee, employee_id)
         if employee is None or not employee.is_active:
             raise BirthdayReactionError("پرسنل موردنظر یافت نشد")
@@ -56,17 +62,22 @@ class BirthdayReactionService:
         self, current_user: User, birthday_employee_id: int, emoji: BirthdayReactionEmoji
     ) -> dict:
         """
-        ثبت یا تغییر ری‌اکشن. اگر همان ایموجی قبلاً ثبت شده باشد، برداشته
-        می‌شود (Toggle) - تا اگر کسی اشتباهی زد بتواند پس بگیرد.
+        ثبت یا تغییر ری‌اکشن کاربر جاری برای تولد یک پرسنل. اگر همان ایموجی از قبل
+        ثبت شده باشد، برداشته می‌شود (Toggle). خروجی: {"emoji": مقدار جدید یا None}.
         """
         employee = await self._assert_is_birthday_today(birthday_employee_id)
 
-        # ⚠️ طبق تصمیم صریح کاربر: خودِ متولد نمی‌تواند به تولد خودش
-        # ری‌اکشن بزند.
+        # خودِ متولد نمی‌تواند به تولد خودش ری‌اکشن بزند
         if current_user.employee_id == birthday_employee_id:
             raise BirthdayReactionError("نمی‌توانید به تولد خودتان واکنش ثبت کنید")
 
+        # فقط به تولد پرسنل سایت‌هایی که کاربر به آن‌ها دسترسی دارد (همان محدودیت لیست تولد داشبورد)
+        accessible_site_ids = await get_accessible_site_ids(self.db, current_user)
+        if accessible_site_ids is not None and employee.site_id not in accessible_site_ids:
+            raise BirthdayReactionError("امکان ثبت واکنش برای این فرد وجود ندارد")
+
         jalali_year, _, _ = get_current_jalali_date()
+        # ری‌اکشن فعلی همین کاربر برای همین متولد در سال جاری
         result = await self.db.execute(
             select(BirthdayReaction).where(
                 BirthdayReaction.reactor_user_id == current_user.id,
@@ -96,28 +107,30 @@ class BirthdayReactionService:
                 )
             )
             await self.db.commit()
+        # همان ایموجی دوباره انتخاب شده: ری‌اکشن برداشته می‌شود
         elif existing.emoji == emoji:
             await self.db.delete(existing)
             await self.db.commit()
             return {"emoji": None}
+        # ایموجی متفاوت: جایگزین ری‌اکشن قبلی
         else:
             existing.emoji = emoji
             await self.db.commit()
 
-        # ⚠️ طبق تصمیم صریح کاربر: فقط **اولین** تبریک اعلان فوری دارد -
-        # وگرنه اگر ۵۰ نفر تبریک بگویند، متولد ۵۰ اعلان می‌گرفت. خلاصه
-        # روزانه را Job زمان‌بندی‌شده ۴ ساعت مانده به پایان روز می‌فرستد.
+        # فقط اولین تبریک روز اعلان فوری دارد تا متولد به‌ازای هر تبریک اعلان نگیرد؛
+        # خلاصه روزانه را Job زمان‌بندی‌شده ۴ ساعت مانده به پایان روز می‌فرستد.
         if is_first_ever:
             await self._notify_first_reaction(employee)
 
         return {"emoji": emoji.value}
 
     async def _notify_first_reaction(self, employee: Employee) -> None:
+        """به کاربرِ متولد اعلان Push «همکاران تبریک گفتند» می‌فرستد؛ خطاها فقط لاگ می‌شوند."""
         try:
             result = await self.db.execute(select(User).where(User.employee_id == employee.id))
             target_user = result.scalar_one_or_none()
             if target_user is None:
-                return
+                return  # پرسنل حساب کاربری ندارد
             await PushService(self.db).notify_users(
                 {target_user.id},
                 url="/my-dashboard",
@@ -132,8 +145,8 @@ class BirthdayReactionService:
 
     async def get_reactions_for_employees(self, employee_ids: list[int]) -> dict[int, dict]:
         """
-        ⚠️ برای کارت داشبورد - یک درخواست برای همه متولدین امروز (نه یک
-        Query به‌ازای هر نفر). خروجی به‌ازای هر employee_id:
+        ری‌اکشن‌های امسال برای مجموعه‌ای از متولدین (کارت داشبورد) با یک Query واحد.
+        خروجی به‌ازای هر employee_id:
             {"counts": {emoji: n}, "reactors": [{name, department, emoji}]}
         """
         if not employee_ids:
@@ -148,8 +161,8 @@ class BirthdayReactionService:
                 Employee.last_name,
                 Department.name,
                 Employee.id,
-                # ⚠️ خودِ عکس کشیده نمی‌شود (حجیم است) - فقط اینکه وجود
-                # دارد یا نه، تا فرانت‌اند بداند درخواست تصویر بزند یا نه.
+                # خودِ عکس (حجیم) خوانده نمی‌شود، فقط وجود یا نبود آن،
+                # تا فرانت‌اند بداند درخواست تصویر بزند یا نه.
                 Employee.photo_thumbnail.isnot(None),
             )
             .join(User, User.id == BirthdayReaction.reactor_user_id)
@@ -162,6 +175,7 @@ class BirthdayReactionService:
             .order_by(BirthdayReaction.created_at)
         )
 
+        # ساختار خروجی برای همه متولدین (حتی بدون ری‌اکشن) از قبل ساخته می‌شود
         out: dict[int, dict] = {eid: {"counts": {}, "reactors": []} for eid in employee_ids}
         for (
             emp_id,
@@ -175,9 +189,9 @@ class BirthdayReactionService:
         ) in result.all():
             entry = out[emp_id]
             key = emoji.value
-            entry["counts"][key] = entry["counts"].get(key, 0) + 1
-            # کاربران مدیریتی محض (بدون Employee) نام ندارند - کنار گذاشته
-            # نمی‌شوند ولی با نام جایگزین نمایش داده می‌شوند.
+            entry["counts"][key] = entry["counts"].get(key, 0) + 1  # شمارش به‌ازای هر ایموجی
+            # کاربران مدیریتی محض (بدون Employee) نام ندارند و با نام جایگزین
+            # «کاربر سامانه» نمایش داده می‌شوند.
             entry["reactors"].append(
                 {
                     "user_id": reactor_user_id,
@@ -206,14 +220,11 @@ class BirthdayReactionService:
 
     async def send_end_of_day_summaries(self) -> dict:
         """
-        ⚠️ طبق تصمیم صریح کاربر: ۴ ساعت مانده به پایان روز تولد، یک اعلان
-        خلاصه به هر متولد می‌رود («N نفر تبریک گفتند») - به‌جای اینکه
-        به‌ازای هر تبریک یک اعلان جداگانه برود.
-
-        فقط متولدینی که واقعاً حداقل یک تبریک گرفته‌اند اعلان می‌گیرند -
-        وگرنه پیام «۰ نفر تبریک گفتند» فرستادن، از نفرستادن بدتر است.
+        به هر متولد امروز که حداقل یک تبریک گرفته، یک اعلان خلاصه («N نفر تبریک گفتند») می‌فرستد.
+        توسط Job زمان‌بندی‌شده ۴ ساعت مانده به پایان روز اجرا می‌شود. خروجی: {"notified": تعداد}.
         """
         jalali_year, month, day = get_current_jalali_date()
+        # متولدین فعال امروز که حساب کاربری دارند
         result = await self.db.execute(
             select(Employee.id, User.id)
             .join(User, User.employee_id == Employee.id)
@@ -232,9 +243,8 @@ class BirthdayReactionService:
         for emp_id, user_id in rows:
             total = sum(counts.get(emp_id, {}).get("counts", {}).values())
             if total <= 0:
-                continue
-            # ⚠️ طبق درخواست صریح کاربر: فعل با تعداد مطابقت کند -
-            # «۱ نفر ... تبریک گفت» در برابر «۳ نفر ... تبریک گفتند».
+                continue  # بدون تبریک، اعلانی فرستاده نمی‌شود
+            # مطابقت فعل با تعداد: «۱ نفر ... تبریک گفت» در برابر «۳ نفر ... تبریک گفتند»
             verb = "گفت" if total == 1 else "گفتند"
             try:
                 await PushService(self.db).notify_users(

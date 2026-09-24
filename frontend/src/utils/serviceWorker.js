@@ -1,40 +1,27 @@
 /**
- * ثبت Service Worker + تشخیص نسخه جدید بعد از هر Deploy — با تأیید دستی
- * کاربر، نه Reload خودکار بی‌هشدار.
+ * ثبت Service Worker و تشخیص نسخه‌ی جدید پس از هر Deploy، با تأیید دستی کاربر.
  *
- * چرا دستی: نسخه‌های قبلی این فایل، به‌محض پیداشدن نسخه جدید، بلافاصله و
- * خودکار صفحه را Reload می‌کردند. مشکلش: اگر دقیقاً همان لحظه کاربر یک فرم
- * طولانی (مثلاً نوشتن یک اطلاعیه) باز داشته باشد، همان لحظه محتوای
- * ذخیره‌نشده از دست می‌رفت. حالا نسخه جدید در حالت "waiting" می‌ماند و فقط
- * یک رویداد سفارشی (`faipco-update-ready`) پخش می‌شود — پنل یک پیام کوچک
- * «نسخه جدید آماده است» نشان می‌دهد و کاربر خودش تصمیم می‌گیرد کِی
- * بارگذاری کند (`applyPendingUpdate()`).
- *
- * `localStorage` (و در نتیجه ورود کاربر) در این فرآیند هرگز دست‌نخورده
- * می‌ماند — فقط کدهای فرانت‌اند به‌روز می‌شوند.
+ * نسخه‌ی جدید در حالت "waiting" می‌ماند و فقط رویداد سفارشی `faipco-update-ready` پخش می‌شود؛
+ * پنل پیام «نسخه جدید آماده است» را نشان می‌دهد و کاربر زمان بارگذاری را انتخاب می‌کند (`applyPendingUpdate()`)
+ * تا محتوای ذخیره‌نشده‌ی فرم‌ها با Reload خودکار از دست نرود.
+ * `localStorage` (و در نتیجه ورود کاربر) در این فرآیند دست‌نخورده می‌ماند و فقط کدهای فرانت‌اند به‌روز می‌شوند.
  */
-const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // هر ۵ دقیقه یک‌بار چک نسخه جدید (وقتی اپ باز است)
-export const UPDATE_READY_EVENT = "faipco-update-ready";
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // فاصله‌ی بررسی نسخه‌ی جدید وقتی برنامه باز است (۵ دقیقه)
+export const UPDATE_READY_EVENT = "faipco-update-ready"; // نام رویداد window که آماده بودن نسخه‌ی جدید را اعلام می‌کند
 
-let waitingRegistration = null;
+let waitingRegistration = null; // registration دارای نسخه‌ی در انتظار، برای ارسال SKIP_WAITING
 
+// registration را نگه می‌دارد و رویداد آماده بودن نسخه‌ی جدید را پخش می‌کند
 function notifyUpdateReady(registration) {
   waitingRegistration = registration;
   window.dispatchEvent(new CustomEvent(UPDATE_READY_EVENT));
 }
 
-/** از UI (دکمه «بارگذاری نسخه جدید») صدا زده می‌شود. */
+/** اعمال نسخه‌ی جدید (دکمه‌ی «بارگذاری نسخه جدید»): پاک کردن Cache Storage و ارسال SKIP_WAITING به نسخه‌ی در انتظار. */
 export async function applyPendingUpdate() {
-  // ⚠️ رفع مشکل واقعی: بعضی کاربران بعد از زدن همین دکمه، هنوز ظاهر/کد
-  // قدیمی می‌دیدند. علتش: قبلاً فقط Service Worker جدید فعال می‌شد و صفحه
-  // Reload می‌گشت، ولی خودِ Cache Storage (جایی که Workbox فایل‌های
-  // Precache‌شده — JS/CSS/تصاویر نسخه قبلی — را نگه می‌دارد) هرگز صریحاً
-  // پاک نمی‌شد؛ در برخی مرورگرها/شرایط، این باعث می‌شد نسخه جدید هم باز
-  // بخشی از فایل‌های قدیمی را (از همان Cache قدیمی) سرو کند. حالا قبل از
-  // فعال‌کردن نسخه جدید، تمام Cache Storage (نه localStorage — کاملاً
-  // مجزا و دست‌نخورده می‌ماند، پس کاربر هرگز از حساب خارج نمی‌شود) پاک
-  // می‌شود؛ Service Worker جدید بلافاصله بعدش Cache خودش را از صفر و
-  // کاملاً تازه می‌سازد.
+  // پیش از فعال‌سازی نسخه‌ی جدید، همه‌ی Cache Storage (فایل‌های Precache نسخه‌ی قبلی) پاک می‌شود
+  // تا هیچ فایل قدیمی سرو نشود؛ localStorage جداست و دست‌نخورده می‌ماند (کاربر از حساب خارج نمی‌شود)
+  // و Service Worker جدید کش خود را از نو می‌سازد
   try {
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.map((name) => caches.delete(name)));
@@ -47,6 +34,10 @@ export async function applyPendingUpdate() {
   }
 }
 
+/**
+ * پس از load صفحه /sw.js را ثبت می‌کند، نسخه‌ی در انتظار یا تازه نصب‌شده را اعلام می‌کند،
+ * به صورت دوره‌ای و با برگشت به برنامه به‌روزرسانی را بررسی می‌کند و پس از تعویض کنترل‌کننده صفحه را Reload می‌کند.
+ */
 export function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
@@ -54,16 +45,13 @@ export function registerServiceWorker() {
     try {
       const registration = await navigator.serviceWorker.register("/sw.js");
 
-      // اگر همین لحظه یک نسخه در حالت waiting از قبل موجود باشد (مثلاً
-      // کاربر یک‌بار قبلاً همین صفحه را باز کرده بود و همان‌جا هنوز مانده)
+      // اگر از قبل نسخه‌ای در حالت waiting وجود دارد (و این اولین نصب نیست)، آماده بودن آن اعلام می‌شود
       if (registration.waiting && navigator.serviceWorker.controller) {
         notifyUpdateReady(registration);
       }
 
-      // وقتی یک نسخه تازه پیدا/نصب می‌شود، تا وقتی به حالت "installed"
-      // نرسیده صبر می‌کنیم — و فقط اگر از قبل یک SW دیگر واقعاً در حال
-      // کنترل صفحه بوده (یعنی این اولین نصب نیست، بلکه یک آپدیت است)،
-      // اطلاع می‌دهیم.
+      // با پیدا شدن نسخه‌ی تازه، پس از رسیدن به حالت "installed" و فقط اگر SW دیگری صفحه را کنترل می‌کرده
+      // (یعنی به‌روزرسانی است نه اولین نصب)، آماده بودن نسخه اعلام می‌شود
       registration.addEventListener("updatefound", () => {
         const newWorker = registration.installing;
         if (!newWorker) return;
@@ -74,14 +62,12 @@ export function registerServiceWorker() {
         });
       });
 
+      // بررسی دوره‌ای وجود نسخه‌ی جدید؛ خطای شبکه نادیده گرفته می‌شود
       setInterval(() => {
         registration.update().catch(() => {});
       }, UPDATE_CHECK_INTERVAL_MS);
 
-      // بلافاصله چک کن — نه فقط وقتی اپ همیشه باز مانده — دقیقاً همان لحظه‌ای
-      // که کاربر به اپ برمی‌گردد (از پس‌زمینه، یا با باز کردن دوباره بعد از
-      // بسته‌شدن کامل). visibilitychange روی این حالت‌ها هم fire می‌شود، نه
-      // فقط تعویض بین تب‌های یک مرورگر.
+      // بررسی فوری به‌روزرسانی هنگام برگشت کاربر به برنامه (از پس‌زمینه یا تب دیگر) با رویداد visibilitychange
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
           registration.update().catch(() => {});
@@ -92,8 +78,7 @@ export function registerServiceWorker() {
     }
   });
 
-  // این‌جا (نه در لحظه پیداشدن آپدیت) واقعاً Reload می‌شود — یعنی فقط بعد
-  // از اینکه کاربر خودش با applyPendingUpdate() تأیید کرده باشد.
+  // Reload صفحه فقط وقتی کنترل‌کننده عوض شود، یعنی پس از تأیید کاربر با applyPendingUpdate()
   let hasReloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (hasReloaded) return; // جلوگیری از حلقه Reload در صورت چند بار fire شدن رویداد

@@ -1,7 +1,7 @@
 """
-پارس فایل XLSX فیش حقوقی.
+پارس فایل XLSX فیش حقوقی و تبدیل آن به لیست ParsedReceiptItem.
 
-ساختار واقعی این فایل‌ها (خروجی مستقیم "چاپ به Excel" همان گزارش SSRS): هر
+ساختار فایل (خروجی «چاپ به Excel» همان گزارش SSRS): هر
 پرسنل یک بلوک از سطرها را اشغال می‌کند که با یک سطر «مشخصات» (کد پرسنلی/نام/
 مرکز هزینه) شروع می‌شود. زیرِ آن، یک سطر «سرستون» چهار Section را با نامشان
 («وام»، «کسور»، «مزایا»، «سایر») در چهار محدوده‌ی ستونی جدا مشخص می‌کند؛ در
@@ -22,9 +22,8 @@ Section ها (اگر Section ناشناخته‌ای هم باشد، به هما
   4. برای هر سطر، سلول‌های هر Section (بر اساس محدوده ستونی‌اش) به‌صورت
      (اولین سلول غیرخالی = مقدار، آخرین سلول غیرخالی = برچسب) خوانده
      می‌شوند — به‌جز ردیف‌هایی که برچسبشان با «جمع» شروع می‌شود (این‌ها
-     ویجت‌های جمع‌بندی پایین فیش‌اند که به‌صورت تصادفی در محدوده ستونی یک
-     Section افتاده‌اند، نه یک قلم واقعی از آن Section — به فوتر منتقل
-     می‌شوند).
+     ویجت‌های جمع‌بندی پایین فیش‌اند که در محدوده ستونی یک Section افتاده‌اند
+     و به فوتر واگذار می‌شوند). این استثنا برای «سایر» اعمال نمی‌شود.
   5. نوار جمع‌بندی پایین فیش (که در XLSX هم مثل XML، برچسب و مقدارش همیشه
      مجاور هم نیستند) با خوشه‌بندی سطری داخل هر گروه ستونی استخراج می‌شود
      (تفصیل در _extract_footer_rows).
@@ -38,23 +37,23 @@ import openpyxl
 
 from app.services.payroll_common import FOOTER_LABEL_COLUMN, ParsedReceiptItem, PayrollParseError, ReceiptSection
 
-_INFO_LABEL_CODE = "کد پرسنلی:"
+_INFO_LABEL_CODE = "کد پرسنلی:"  # سلولی که سطر مشخصات هر بلوک پرسنل را مشخص می‌کند
 _PERIOD_LABEL = "فیش حقوق ماه"  # همیشه چند سطر قبل از «کد پرسنلی:» همان بلوک می‌آید — برای تشخیص دقیق مرز واقعی بلوک
-# چند برچسب شناخته‌شده که برخلاف «کد پرسنلی:»/«نام و نام خانوادگی:» با «:»
-# ختم نمی‌شوند ولی هنوز هم به‌وضوح «برچسب» هستند نه «مقدار» (اصطلاحات عمومی
-# گزارش حقوق و دستمزد، نه داده اختصاصی یک سازمان خاص)
+# برچسب‌های شناخته‌شده‌ای که برخلاف «کد پرسنلی:»/«نام و نام خانوادگی:» با «:»
+# ختم نمی‌شوند ولی برچسب‌اند نه مقدار (اصطلاحات عمومی گزارش حقوق و دستمزد)
 _KNOWN_LABEL_WORDS_NO_COLON = {"سال", "فیش حقوق ماه", "ماه"}
-_KNOWN_SECTION_NAMES = {"وام", "کسور", "مزایا", "سایر"}
+_KNOWN_SECTION_NAMES = {"وام", "کسور", "مزایا", "سایر"}  # متن سلول‌های سطر سرستون Sectionها
 
 
 def _cell_str(value) -> str:
+    """ورودی: مقدار خام سلول. خروجی: متن trim‌شده؛ برای None رشته خالی."""
     if value is None:
         return ""
     return str(value).strip()
 
 
 def _row_cells(ws, row: int, max_col: int) -> list[tuple[int, str]]:
-    """[(شماره ستون, متن)] سلول‌های غیرخالی یک سطر، به ترتیب ستون."""
+    """ورودی: شیت، شماره سطر و بیشینه ستون. خروجی: [(شماره ستون, متن)] سلول‌های غیرخالی، به ترتیب ستون."""
     out = []
     for c in range(1, max_col + 1):
         v = _cell_str(ws.cell(row=row, column=c).value)
@@ -64,24 +63,27 @@ def _row_cells(ws, row: int, max_col: int) -> list[tuple[int, str]]:
 
 
 def _is_label_text(text: str) -> bool:
+    """ورودی: متن سلول. خروجی: True اگر با «:» (یا دونقطه تمام‌عرض) ختم شود یا از برچسب‌های شناخته‌شده باشد."""
     return text.endswith(":") or text.endswith("：") or text in _KNOWN_LABEL_WORDS_NO_COLON
 
 
 def _pair_row_value_then_label(cells: list[tuple[int, str]]) -> list[dict]:
     """
-    مثل payroll_xml._pair_stream ولی روی سلول‌های یک سطر Excel: هر سلولی که
-    برچسب شناخته شود، بلافاصله سلول غیرخالی ماقبلش (در همان لیست) «مقدار»
-    همان برچسب می‌شود.
+    ورودی: سلول‌های غیرخالی یک سطر. مثل payroll_xml._pair_stream: سلول غیرخالیِ قبل از
+    هر برچسب، مقدار آن برچسب است؛ مقدار بدون برچسب با برچسب colN ثبت می‌شود.
+    خروجی: لیست {label, value} فقط برای ردیف‌های دارای مقدار.
     """
     rows: list[dict] = []
     i = 0
     n = len(cells)
     while i < n:
         col, text = cells[i]
+        # برچسب بدون مقدار قبلی
         if _is_label_text(text):
             rows.append({"label": text.rstrip(": ："), "value": ""})
             i += 1
             continue
+        # مقدار + برچسبِ بعدی
         if i + 1 < n and _is_label_text(cells[i + 1][1]):
             rows.append({"label": cells[i + 1][1].rstrip(": ："), "value": text})
             i += 2
@@ -92,6 +94,7 @@ def _pair_row_value_then_label(cells: list[tuple[int, str]]) -> list[dict]:
 
 
 def _find_code(rows: list[dict]) -> str | None:
+    """ورودی: ردیف‌های مشخصات. خروجی: مقدار اولین ردیفی که برچسبش شامل «کد پرسنلی» است، یا None."""
     for row in rows:
         if "کد پرسنلی" in row["label"]:
             return row["value"]
@@ -102,20 +105,19 @@ def _extract_footer_rows(
     ws, footer_start_row: int, block_end: int, max_col: int, ranges: list[tuple[int, int, str]]
 ) -> list[dict]:
     """
-    نوار جمع‌بندی پایین فیش را استخراج می‌کند. چون محل دقیق برچسب/مقدار هر
-    مورد نسبت به هم یکنواخت نیست (گاهی هم‌سطر، گاهی چند سطر فاصله)، ابتدا هر
-    سلول را بر اساس ستونش به یکی از همان ۴ گروه اصلی (وام/کسور/مزایا/سایر)
-    نسبت می‌دهد، سپس فقط داخل همان گروه (نه کل فوتر) دنبال نزدیک‌ترین همسایه
-    می‌گردد — این کار احتمال قاطی‌شدن مقدارِ یک ستون با برچسبِ ستون دیگر را
-    از بین می‌برد.
+    ورودی: شیت، محدوده سطرهای فوتر، بیشینه ستون و محدوده ستونی Sectionها.
+    هر سلول به گروه ستونی‌اش (وام/کسور/مزایا/سایر) نسبت داده می‌شود و جفت‌سازی برچسب/مقدار
+    فقط داخل همان گروه انجام می‌شود (هم‌سطر یا حداکثر ۳ سطر فاصله). خروجی: لیست {label, value, column}.
     """
 
     def which_column(col: int) -> str | None:
+        """ورودی: شماره ستون. خروجی: نام Sectionی که ستون در محدوده‌اش است، یا None."""
         for start, end, name in ranges:
             if start <= col <= end:
                 return name
         return None
 
+    # سطر -> [(ستون، متن، گروه ستونی)] برای همه‌ی سلول‌های غیرخالی فوتر
     rows_map: dict[int, list[tuple[int, str, str | None]]] = {}
     for r in range(footer_start_row, block_end + 1):
         for c in range(1, max_col + 1):
@@ -134,7 +136,7 @@ def _extract_footer_rows(
         values_here = [(c, t, cn) for c, t, cn in items if t not in FOOTER_LABEL_COLUMN]
         if labels_here and values_here:
             for c, t, _cn in labels_here:
-                nearest = min(values_here, key=lambda v: abs(v[0] - c))
+                nearest = min(values_here, key=lambda v: abs(v[0] - c))  # نزدیک‌ترین مقدار از نظر فاصله ستونی
                 results.append({"label": t, "value": nearest[1], "column": FOOTER_LABEL_COLUMN[t]})
             used_rows.add(r)
 
@@ -155,7 +157,7 @@ def _extract_footer_rows(
             for _c, t, cn in values_here:
                 remaining_values.append((r, t, cn))
 
-    claimed: set[int] = set()
+    claimed: set[int] = set()  # اندیس مقادیری که به یک برچسب اختصاص یافته‌اند
     for lr, lt, lcn in remaining_labels:
         best_idx, best_dist = None, None
         for idx, (vr, vt, vcn) in enumerate(remaining_values):
@@ -172,12 +174,16 @@ def _extract_footer_rows(
 
 
 def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem]:
+    """
+    ورودی: بایت‌های فایل XLSX. اولین شیت را بلوک‌به‌بلوک (یک بلوک به‌ازای هر پرسنل) پارس می‌کند.
+    خروجی: لیست ParsedReceiptItem؛ برای فایل نامعتبر یا بدون «کد پرسنلی:» PayrollParseError.
+    """
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)  # data_only: مقدار محاسبه‌شده به‌جای فرمول
     except Exception as e:  # noqa: BLE001 - فایل خراب/فرمت نامعتبر
         raise PayrollParseError(f"فایل XLSX معتبر نیست: {e}") from e
 
-    ws = wb.worksheets[0]
+    ws = wb.worksheets[0]  # فقط اولین شیت خوانده می‌شود
     max_col = ws.max_column
     max_row = ws.max_row
 
@@ -210,18 +216,24 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
             break
 
     def _true_block_start(info_row: int) -> int:
+        """
+        ورودی: سطر «کد پرسنلی:». خروجی: سطر «فیش حقوق ماه» حداکثر ۵ سطر بالاتر
+        (شروع واقعی بلوک)، وگرنه خود info_row.
+        """
         candidates = [p for p in period_rows if p <= info_row and info_row - p <= 5]
         return min(candidates) if candidates else info_row
 
     block_start_rows = sorted({_true_block_start(r) for r in info_rows})
+    # اگر دو بلوک به یک سطر شروع نگاشت شدند، سطرهای info هم به‌عنوان شروع اضافه می‌شوند
     if len(block_start_rows) < len(info_rows):
         block_start_rows = sorted(set(block_start_rows) | set(info_rows))
 
     items: list[ParsedReceiptItem] = []
 
+    # پردازش هر بلوک پرسنل: از شروع بلوک تا قبل از شروع بلوک بعدی
     for idx, block_start in enumerate(block_start_rows):
         block_end = (block_start_rows[idx + 1] - 1) if idx + 1 < len(block_start_rows) else max_row
-        info_row = next((r for r in info_rows if block_start <= r <= block_end), block_start)
+        info_row = next((r for r in info_rows if block_start <= r <= block_end), block_start)  # سطر «کد پرسنلی:» داخل این بلوک
 
         # ---------- ۲. مشخصات فیش ----------
         header_rows: list[dict] = []
@@ -238,17 +250,18 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
                 for c in range(1, max_col + 1)
                 if _cell_str(ws.cell(row=r, column=c).value) in _KNOWN_SECTION_NAMES
             ]
-            if len(found) >= 2:
+            if len(found) >= 2:  # حداقل دو نام Section در یک سطر = سطر سرستون
                 section_header_row = r
                 section_starts = found
                 break
 
         sections: list[ReceiptSection] = []
         data_start_row = (section_header_row + 1) if section_header_row else (info_row + 1)
-        footer_start_row = block_end + 1
+        footer_start_row = block_end + 1  # پیش‌فرض: بدون فوتر، مگر بعد از داده‌های Section تعیین شود
         ranges: list[tuple[int, int, str]] = []
 
         if section_starts:
+            # محدوده ستونی هر Section: از ستون شروعش تا قبل از شروع Section بعدی
             section_starts.sort(key=lambda x: x[0])
             for i, (start_col, name) in enumerate(section_starts):
                 end_col = section_starts[i + 1][0] - 1 if i + 1 < len(section_starts) else max_col
@@ -257,6 +270,7 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
             section_rows_map: dict[str, list[dict]] = {name: [] for _, _, name in ranges}
             last_data_row = section_header_row
 
+            # خواندن ردیف‌های داده: در هر محدوده، اولین سلول = مقدار و آخرین سلول = برچسب
             for r in range(data_start_row, block_end + 1):
                 matched_this_row = False
                 for start_col, end_col, name in ranges:
@@ -272,19 +286,15 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
                     if not (value_text and label_text and value_col != label_col):
                         continue
                     if name != "سایر" and (label_text.startswith("جمع") or label_text in FOOTER_LABEL_COLUMN):
-                        # این یک ویجت جمع‌بندی پایین فیش است که به‌صورت تصادفی
-                        # در محدوده ستونی این Section افتاده — قلم واقعی این
-                        # Section نیست؛ به فوتر (مرحله بعد) واگذار می‌شود.
-                        # نکته مهم: این استثنا فقط برای وام/کسور/مزایا اعمال
-                        # می‌شود، نه «سایر» — چون در «سایر» (بخش Attendance در
-                        # XML)، آیتم‌هایی مثل «جمع مزایا»، «جمع کسور»، «خالص
-                        # پرداختی» و «جمع ماههای کارکرد» قلم‌های واقعی و
-                        # قانونی همان بخش‌اند، نه نشتی از فوتر.
+                        # ویجت جمع‌بندی پایین فیش که در محدوده ستونی این Section افتاده؛
+                        # قلم این Section نیست و به فوتر واگذار می‌شود. برای «سایر»
+                        # (بخش Attendance) اعمال نمی‌شود چون آیتم‌هایی مثل «جمع مزایا»،
+                        # «خالص پرداختی» و «جمع ماههای کارکرد» قلم‌های واقعی همان بخش‌اند.
                         continue
                     section_rows_map[name].append({"label": label_text, "value": value_text})
                     matched_this_row = True
                 if matched_this_row:
-                    last_data_row = r
+                    last_data_row = r  # آخرین سطر داده؛ فوتر بعد از آن شروع می‌شود
 
             for start_col, end_col, name in ranges:
                 if section_rows_map[name]:
@@ -297,6 +307,7 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
             _extract_footer_rows(ws, footer_start_row, block_end, max_col, ranges) if ranges else []
         )
 
+        # عنوان گزارش برای همه‌ی بلوک‌ها یکسان است
         items.append(
             ParsedReceiptItem(
                 code=code,

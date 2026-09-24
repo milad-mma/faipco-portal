@@ -1,4 +1,6 @@
 """
+Endpoint های «انتقادات و پیشنهادات».
+
 /feedback                      (POST)   ارسال انتقاد/پیشنهاد - هر کاربر لاگین‌شده (۱ پیام در دقیقه)
 /feedback                      (GET)    فهرست پیام‌ها - Admin واقعی، یا دارنده مجوز
                                           feedback.view (سایت‌محور) / feedback.view_all (سراسری)
@@ -37,6 +39,10 @@ async def submit_feedback(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    یک انتقاد/پیشنهاد/نظر از طرف کاربر جاری ثبت می‌کند. دسترسی: هر کاربر لاگین‌شده.
+    خطا: 429 اگر محدودیت نرخ ارسال (۱ پیام در دقیقه) رد شود.
+    """
     try:
         await FeedbackService(db).submit_feedback(
             current_user, payload.category, payload.title, payload.message, payload.is_anonymous
@@ -59,7 +65,10 @@ async def list_feedback(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """⚠️ خروجی صفحه‌بندی‌شده است ({items, total, page, page_size}) - نه یک لیست ساده."""
+    """
+    فهرست پیام‌ها با فیلتر فرستنده/سایت/دسته/ناشناس/بازه تاریخ؛ خروجی صفحه‌بندی‌شده {items, total, page, page_size}.
+    دسترسی: Admin واقعی یا دارنده feedback.view / feedback.view_all. خطا: 403 در نبود مجوز.
+    """
     try:
         return await FeedbackService(db).get_feedback_list(
             current_user,
@@ -82,6 +91,7 @@ async def delete_feedback(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_superuser),
 ):
+    """یک پیام را حذف نرم می‌کند. دسترسی: فقط superuser. خطا: 404 اگر پیام یافت نشود. خروجی: 204."""
     deleted = await FeedbackService(db).delete_feedback(feedback_id, deleted_by_user_id=_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="یافت نشد")
@@ -92,6 +102,7 @@ async def list_prohibited_phrases(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_superuser),
 ):
+    """فهرست عبارات نامناسب را برمی‌گرداند. دسترسی: فقط superuser."""
     return await FeedbackService(db).list_prohibited_phrases()
 
 
@@ -101,6 +112,7 @@ async def add_prohibited_phrase(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_superuser),
 ):
+    """یک عبارت نامناسب جدید اضافه می‌کند. دسترسی: فقط superuser. خطا: 400 اگر عبارت تکراری باشد."""
     try:
         return await FeedbackService(db).add_prohibited_phrase(payload.phrase)
     except Exception as e:  # noqa: BLE001 - محتمل‌ترین خطا، تکراری‌بودن عبارت (Unique Constraint) است
@@ -113,6 +125,7 @@ async def delete_prohibited_phrase(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_superuser),
 ):
+    """یک عبارت نامناسب را حذف می‌کند. دسترسی: فقط superuser. خطا: 404 اگر یافت نشود."""
     deleted = await FeedbackService(db).delete_prohibited_phrase(phrase_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="یافت نشد")

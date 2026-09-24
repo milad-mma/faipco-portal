@@ -1,15 +1,12 @@
 """
-مدل‌های «محتوای ارزیابی عملکرد» - دوره‌های ارزیابی و فرم‌ها (با
-دسته‌بندی/سوال/گزینه‌های آن‌ها). این‌ها فقط «چه چیزی پرسیده می‌شود و در
-چه بازه زمانی» را مشخص می‌کنند - نه «چه کسی چه کسی را ارزیابی می‌کند»
-(آن در app/models/evaluation.py است) و نه خودِ فرایند پرسش‌وپاسخ واقعی
-(Draft/Submit، که یک مرحله بعدی است).
+مدل‌های «محتوای ارزیابی عملکرد»: دوره‌های ارزیابی و فرم‌ها (با دسته‌بندی، سوال و گزینه).
+این مدل‌ها مشخص می‌کنند چه چیزی و در چه بازه‌ای پرسیده می‌شود؛ «چه کسی چه کسی را
+ارزیابی می‌کند» در app/models/evaluation.py و خود فرایند پاسخ‌دهی در
+app/models/evaluation_process.py است.
 
-⚠️ Historical Integrity: بعد از این‌که حداقل یک ارزیابی واقعی از یک
-فرم/سوال استفاده کرد، آن فرم/سوال دیگر Hard-Delete نمی‌شود - فقط
-غیرفعال (is_active=False / status=archived) می‌شود؛ این‌طوری تاریخچه
-ارزیابی‌های قبلی همیشه سالم می‌ماند. این قانون در Service Layer اعمال
-می‌شود (app/services/evaluation_form_service.py)، نه در سطح دیتابیس.
+فرم/سوالی که در حداقل یک ارزیابی استفاده شده Hard-Delete نمی‌شود و فقط غیرفعال
+(is_active=False / status=archived) می‌شود تا تاریخچه سالم بماند. این قانون در
+app/services/evaluation_form_service.py اعمال می‌شود، نه در دیتابیس.
 """
 from __future__ import annotations
 
@@ -24,6 +21,7 @@ from app.models.base import TimestampMixin
 
 
 class EvaluationPeriodStatus(str, enum.Enum):
+    """وضعیت‌های چرخه عمر یک دوره ارزیابی."""
     draft = "draft"
     scheduled = "scheduled"
     active = "active"
@@ -33,15 +31,14 @@ class EvaluationPeriodStatus(str, enum.Enum):
 
 class EvaluationPeriod(Base, TimestampMixin):
     """
-    یک دوره ارزیابی - مثلاً «ارزیابی عملکرد نیمه اول ۱۴۰۵». site_id
-    اختیاری است: اگر None باشد، این دوره برای همه سایت‌ها اعمال می‌شود؛
-    اگر مقدار داشته باشد، فقط مخصوص همان سایت است.
+    یک دوره ارزیابی (مثلاً «ارزیابی عملکرد نیمه اول ۱۴۰۵»).
+    site_id=None یعنی دوره برای همه سایت‌هاست؛ در غیر این صورت فقط مخصوص همان سایت.
     """
 
     __tablename__ = "evaluation_periods"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True)  # None = همه سایت‌ها
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -51,9 +48,8 @@ class EvaluationPeriod(Base, TimestampMixin):
         default=EvaluationPeriodStatus.draft,
         nullable=False,
     )
-    # ⚠️ غیرفعال (طبق درخواست کاربر): ارزیابی‌های این دوره برای ارزیاب‌ها و
-    # پرسنل دیگر در دسترس نیست (نه فهرست، نه انجام، نه نتیجه، نه اجبار) - فقط
-    # ادمین در صفحه دوره‌ها و گزارش‌های مدیریتی می‌بیند. برگشت‌پذیر است.
+    # غیرفعال: ارزیابی‌های این دوره برای ارزیاب‌ها و پرسنل پنهان است (فهرست، انجام،
+    # نتیجه و اجبار)؛ فقط ادمین در صفحه دوره‌ها و گزارش‌ها می‌بیند. برگشت‌پذیر است.
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
@@ -61,6 +57,7 @@ class EvaluationPeriod(Base, TimestampMixin):
 
 
 class EvaluationFormStatus(str, enum.Enum):
+    """وضعیت‌های یک فرم ارزیابی."""
     draft = "draft"
     active = "active"
     inactive = "inactive"
@@ -69,25 +66,21 @@ class EvaluationFormStatus(str, enum.Enum):
 
 class EvaluationForm(Base, TimestampMixin):
     """
-    یک فرم ارزیابی - مثلاً «فرم ارزیابی عملکرد پرسنل». هر فرم چند
-    دسته‌بندی دارد، هر دسته‌بندی چند سوال.
-
-    ⚠️ Form Versioning ساده: اگر فرمی که قبلاً استفاده شده نیاز به تغییر
-    محتوایی دارد، به‌جای ویرایش مستقیم، یک نسخه جدید (version افزایش‌یافته،
-    parent_form_id به فرم قبلی) ساخته می‌شود - فرم‌های قدیمی همچنان
-    archived می‌مانند، نه حذف.
+    یک فرم ارزیابی؛ هر فرم چند دسته‌بندی و هر دسته‌بندی چند سوال دارد.
+    برای تغییر محتوای فرمِ استفاده‌شده، نسخه جدید (version+1 با parent_form_id به فرم قبلی)
+    ساخته می‌شود و فرم قبلی archived می‌ماند.
     """
 
     __tablename__ = "evaluation_forms"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True)  # None = همه سایت‌ها
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)  # شماره نسخه فرم
     parent_form_id: Mapped[int | None] = mapped_column(
         ForeignKey("evaluation_forms.id", ondelete="SET NULL"), nullable=True
-    )
+    )  # فرم نسخه قبلی که این نسخه از آن ساخته شده
     status: Mapped[EvaluationFormStatus] = mapped_column(
         Enum(EvaluationFormStatus, name="evaluation_form_status"),
         default=EvaluationFormStatus.draft,
@@ -103,10 +96,8 @@ class EvaluationForm(Base, TimestampMixin):
 
 class EvaluationCategory(Base, TimestampMixin):
     """
-    یک دسته‌بندی سوالات درون یک فرم - مثلاً «انضباط کاری». weight درصد
-    این دسته از امتیاز کل فرم است (اعتبارسنجی مجموع ۱۰۰٪ در Service
-    Layer، نه در دیتابیس - چون فقط هنگام فعال‌کردن فرم لازم است، نه در
-    حالت Draft که هنوز ناقص است).
+    یک دسته‌بندی سوالات درون فرم (مثلاً «انضباط کاری»).
+    weight درصد سهم دسته از امتیاز کل است؛ مجموع ۱۰۰٪ فقط هنگام فعال‌سازی فرم در Service Layer بررسی می‌شود.
     """
 
     __tablename__ = "evaluation_categories"
@@ -114,7 +105,7 @@ class EvaluationCategory(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("evaluation_forms.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    weight: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+    weight: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)  # درصد از امتیاز کل فرم
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -125,6 +116,7 @@ class EvaluationCategory(Base, TimestampMixin):
 
 
 class EvaluationQuestionType(str, enum.Enum):
+    """انواع سوال؛ چهار نوع اول گزینه‌دار و امتیازی‌اند، سه نوع آخر پاسخ آزاد دارند."""
     single_choice = "single_choice"
     multiple_choice = "multiple_choice"
     rating = "rating"
@@ -136,11 +128,9 @@ class EvaluationQuestionType(str, enum.Enum):
 
 class EvaluationQuestion(Base, TimestampMixin):
     """
-    یک سوال درون یک دسته‌بندی. برای انواع single_choice/multiple_choice/
-    rating/yes_no، پاسخ‌های ممکن در EvaluationQuestionOption تعریف
-    می‌شوند (حتی yes_no - با دو گزینه «بله»/«خیر» با امتیاز دلخواه، تا
-    منطق امتیازدهی یکسانی برای همه این انواع استفاده شود). انواع
-    text/number/date گزینه ندارند - فقط برای ثبت توضیح/عدد/تاریخ آزاد.
+    یک سوال درون دسته‌بندی. برای single_choice/multiple_choice/rating/yes_no پاسخ‌ها در
+    EvaluationQuestionOption تعریف می‌شوند (yes_no هم دو گزینه با امتیاز دلخواه دارد تا منطق
+    امتیازدهی یکسان باشد). text/number/date گزینه ندارند و فقط مقدار آزاد ثبت می‌کنند.
     """
 
     __tablename__ = "evaluation_questions"
@@ -154,7 +144,7 @@ class EvaluationQuestion(Base, TimestampMixin):
     question_type: Mapped[EvaluationQuestionType] = mapped_column(
         Enum(EvaluationQuestionType, name="evaluation_question_type"), nullable=False
     )
-    weight: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+    weight: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)  # وزن سوال درون دسته‌بندی
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -166,7 +156,7 @@ class EvaluationQuestion(Base, TimestampMixin):
 
 
 class EvaluationQuestionOption(Base, TimestampMixin):
-    """یک گزینه پاسخ ممکن برای یک سوال - با یک امتیاز عددی دلخواه (Dynamic)."""
+    """یک گزینه پاسخ برای یک سوال، با امتیاز عددی دلخواه."""
 
     __tablename__ = "evaluation_question_options"
     __table_args__ = (UniqueConstraint("question_id", "sort_order", name="uq_evaluation_option_sort_order"),)
@@ -176,7 +166,7 @@ class EvaluationQuestionOption(Base, TimestampMixin):
         ForeignKey("evaluation_questions.id", ondelete="CASCADE"), nullable=False
     )
     label: Mapped[str] = mapped_column(String(255), nullable=False)
-    score: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)
+    score: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)  # امتیاز خام این گزینه
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     question: Mapped["EvaluationQuestion"] = relationship(back_populates="options")

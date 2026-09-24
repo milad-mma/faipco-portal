@@ -1,3 +1,7 @@
+/**
+ * دیالوگ کشف ساختار دیتابیس یک سایت و پیشنهاد خودکار نگاشت (Mapping) ستون‌ها.
+ * شامل ثابت‌های MAPPING_TYPES و CONCEPT_LABELS، کامپوننت داخلی TableSuggestionPanel و کامپوننت اصلی SchemaDiscoveryDialog.
+ */
 import { useEffect, useMemo, useState } from "react";
 import {
   Accordion,
@@ -29,16 +33,11 @@ import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import { discoverSiteSchema, suggestMappingForSite } from "../api/sites";
 
 /**
- * مفاهیم موردنیاز هر نوع Mapping - برای مرحله دوم/سوم (پیشنهاد بر اساس
- * نام ستون/نمونه داده). این‌ها دقیقاً همان فیلدهای موجود در فرم‌های
- * EmployeeMapping/AttendanceMapping (SiteSettingsPage.jsx) هستند -
- * شامل فیلدهای همان‌جدول (اکثریت) و فیلدهای جدول مرجع/عکس/تقویم که
- * روی یک جدول کاملاً جدا (نه جدول اصلی پرسنل/تردد) اعمال می‌شوند.
- *
- * ⚠️ برای افزودن یک نوع نگاشت جدید در آینده: فقط کافی است یک ورودی
- * جدید اینجا اضافه شود (+ کلیدواژه‌های مربوطه در
- * app/services/mapping_suggestion_service.py اگر مفهوم کاملاً تازه‌ای
- * باشد) - هیچ تغییر دیگری لازم نیست.
+ * انواع نگاشت و مفاهیم (فیلدهای) موردنیاز هر کدام برای درخواست پیشنهاد (بر اساس نام ستون/نمونه داده).
+ * این‌ها همان فیلدهای فرم‌های EmployeeMapping/AttendanceMapping در SiteSettingsPage.jsx هستند؛
+ * شامل فیلدهای جدول اصلی پرسنل/تردد و فیلدهای جدول‌های جدا (مرجع، عکس، تقویم).
+ * برای افزودن نوع نگاشت جدید کافی است یک ورودی اینجا اضافه شود (و اگر مفهوم کاملاً تازه است،
+ * کلیدواژه‌هایش در app/services/mapping_suggestion_service.py).
  */
 const MAPPING_TYPES = {
   employee: {
@@ -74,6 +73,7 @@ const MAPPING_TYPES = {
   },
 };
 
+// برچسب فارسی هر مفهوم برای نمایش در فهرست پیشنهادها
 const CONCEPT_LABELS = {
   personnel_code: "کد پرسنلی",
   national_code: "کد ملی",
@@ -100,16 +100,18 @@ const CONCEPT_LABELS = {
 };
 
 /**
- * پیشنهاد نگاشت برای یک جدول مشخص - مرحله دوم طرح نگاشت داینامیک.
- * ⚠️ فقط یک پیشنهاد است؛ اعمال آن روی فرم اصلی نیازمند تأیید صریح مدیر
- * (دکمه جداگانه) است - هیچ‌چیز خودکار ذخیره نمی‌شود.
+ * پنل پیشنهاد نگاشت برای یک جدول مشخص.
+ * ورودی: table (نام و ستون‌های جدول)، siteId و onApplySuggestion(mappingType, tableName, suggestions).
+ * کاربر نوع نگاشت را انتخاب می‌کند، پیشنهاد هر مفهوم (ستون، میزان اطمینان، منبع) نمایش داده می‌شود و
+ * اعمال روی فرم فقط با دکمه‌ی جداگانه و تأیید صریح مدیر انجام می‌شود؛ چیزی خودکار ذخیره نمی‌شود.
  */
 function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
-  const [mappingType, setMappingType] = useState("employee");
-  const [suggestions, setSuggestions] = useState(null);
+  const [mappingType, setMappingType] = useState("employee");  // کلید نوع نگاشت انتخاب‌شده از MAPPING_TYPES
+  const [suggestions, setSuggestions] = useState(null);  // نتیجه‌ی پیشنهاد: { concept: {column, confidence, source} | null } یا null
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // نام ستون‌های جدول و مفاهیم نوع نگاشت را برای سرور می‌فرستد و پیشنهادها را ذخیره می‌کند
   async function handleSuggest() {
     setError("");
     setSuggestions(null);
@@ -125,7 +127,7 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
     }
   }
 
-  const hasAnySuggestion = suggestions && Object.values(suggestions).some((s) => s !== null);
+  const hasAnySuggestion = suggestions && Object.values(suggestions).some((s) => s !== null);  // حداقل یک مفهوم پیشنهاد داشته باشد تا دکمه‌ی اعمال نمایش داده شود
 
   return (
     <Box sx={{ mt: 2, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
@@ -133,6 +135,7 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
         پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها؛ برای مواردی که از نام مشخص نباشد، چند مقدار
         واقعی نمونه هم بررسی می‌شود - فقط پیشنهاد، نیاز به تأیید شما)
       </Typography>
+      {/* انتخاب نوع نگاشت (با تغییرش پیشنهاد قبلی پاک می‌شود) و دکمه‌ی دریافت پیشنهاد */}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
           select
@@ -168,6 +171,7 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
         </Alert>
       )}
 
+      {/* فهرست پیشنهاد هر مفهوم و دکمه‌ی اعمال روی فرم */}
       {suggestions && (
         <Box sx={{ mt: 1.5 }}>
           <Stack spacing={0.5}>
@@ -213,18 +217,18 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
 }
 
 /**
- * نمایش کامل ساختار دیتابیس این سایت (جدول‌ها، ستون‌ها، نوع‌داده‌ها،
- * کلیدهای خارجی رسماً تعریف‌شده) - فقط خواندن فراداده، بدون هیچ داده
- * واقعی یا نوشتن. هدف: مدیر بدون باز کردن ابزار جدا (SSMS/pgAdmin/...)
- * بتواند نام دقیق جدول/ستون‌ها را برای فرم‌های Mapping پیدا کند، و
- * اختیاری با کمک پیشنهاد خودکار (مرحله دوم)، فرم را سریع‌تر پر کند.
+ * دیالوگ نمایش ساختار دیتابیس سایت (جدول‌ها، ستون‌ها، نوع داده‌ها و کلیدهای خارجی رسماً تعریف‌شده)؛
+ * فقط فراداده خوانده می‌شود، نه داده‌ی واقعی. مدیر نام دقیق جدول/ستون‌ها را برای فرم‌های Mapping پیدا می‌کند
+ * و می‌تواند با پیشنهاد خودکار فرم را پر کند.
+ * ورودی: open، onClose، siteId و onApplySuggestion (پس از اعمال پیشنهاد، دیالوگ بسته می‌شود).
  */
 export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySuggestion }) {
-  const [schema, setSchema] = useState(null);
+  const [schema, setSchema] = useState(null);  // ساختار دریافتی: { tables: [{name, columns, foreign_keys}] } یا null
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState("");  // عبارت جست‌وجو در نام جدول/ستون
 
+  // با هر بار باز شدن دیالوگ، وضعیت پاک و ساختار دیتابیس از سرور دریافت می‌شود
   useEffect(() => {
     if (!open) return;
     setSchema(null);
@@ -237,6 +241,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
       .finally(() => setIsLoading(false));
   }, [open, siteId]);
 
+  // جدول‌هایی که نام خودشان یا یکی از ستون‌هایشان شامل عبارت جست‌وجو باشد
   const filteredTables = useMemo(() => {
     if (!schema) return [];
     const term = search.trim().toLowerCase();
@@ -246,6 +251,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
     );
   }, [schema, search]);
 
+  // پیشنهاد را به والد می‌دهد و دیالوگ را می‌بندد
   function handleApplySuggestion(mappingType, tableName, suggestions) {
     onApplySuggestion(mappingType, tableName, suggestions);
     onClose();
@@ -261,6 +267,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
           «دریافت پیشنهاد» برای پرشدن خودکار فرم (با تأیید خودتان) کمک بگیرید.
         </Typography>
 
+        {/* وضعیت بارگذاری و خطا */}
         {isLoading && (
           <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
             <CircularProgress size={28} />
@@ -271,6 +278,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
 
         {schema && (
           <>
+            {/* جست‌وجو، شمارش جدول‌ها و آکاردئون هر جدول */}
             <TextField
               size="small"
               label="جست‌وجوی نام جدول یا ستون"
@@ -284,6 +292,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
 
             {filteredTables.map((table) => (
               <Accordion key={table.name} disableGutters variant="outlined">
+                {/* سربرگ آکاردئون: نام جدول، تعداد ستون‌ها و کلیدهای خارجی */}
                 <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
                     <Typography fontWeight={700} sx={{ fontFamily: "monospace" }}>
@@ -296,6 +305,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                   </Stack>
                 </AccordionSummary>
                 <AccordionDetails>
+                  {/* جدول ستون‌ها: نام، نوع داده (با طول) و Nullable */}
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
@@ -320,6 +330,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                     </Table>
                   </TableContainer>
 
+                  {/* فهرست کلیدهای خارجی رسمی جدول */}
                   {table.foreign_keys.length > 0 && (
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="caption" fontWeight={700} color="text.secondary">
@@ -336,6 +347,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                     </Box>
                   )}
 
+                  {/* پنل پیشنهاد نگاشت برای همین جدول */}
                   <Divider sx={{ my: 1.5 }} />
                   <TableSuggestionPanel table={table} siteId={siteId} onApplySuggestion={handleApplySuggestion} />
                 </AccordionDetails>

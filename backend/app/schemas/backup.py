@@ -1,7 +1,7 @@
 """
 Schema های «زمان‌بندی بکاپ + هدف راه‌دور (SMB/FTP)».
 
-⚠️ همان الگوی امنیتی SiteConnectionIn/Out (app/schemas/site.py): رمز عبور
+همان الگوی امنیتی SiteConnectionIn/Out (app/schemas/site.py): رمز عبور
 هرگز در پاسخ (Out) برگردانده نمی‌شود؛ در ورودی (In) اختیاری است - اگر خالی
 باشد، رمز قبلی دست‌نخورده می‌ماند (برای ویرایش بدون نیاز به وارد‌کردن دوباره).
 """
@@ -15,6 +15,8 @@ from app.models.backup_settings import BackupRetentionMode, BackupScheduleType
 
 
 class BackupSettingsIn(BaseModel):
+    """بدنه PUT /backup/settings و ورودی BackupSettingsService.update_settings."""
+
     schedule_enabled: bool = False
     schedule_type: BackupScheduleType = BackupScheduleType.daily
     schedule_hour: int = Field(default=3, ge=0, le=23)
@@ -47,11 +49,14 @@ class BackupSettingsIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_schedule_fields(self) -> "BackupSettingsIn":
+        """فیلدهای وابسته به هم را بررسی می‌کند؛ در صورت نقص ValueError (پاسخ 422) می‌دهد."""
+        # فیلدهای لازم برای هر نوع زمان‌بندی
         if self.schedule_enabled:
             if self.schedule_type == BackupScheduleType.weekly and self.schedule_weekday is None:
                 raise ValueError("برای زمان‌بندی هفتگی، روز هفته باید مشخص شود")
             if self.schedule_type == BackupScheduleType.interval and not self.schedule_interval_hours:
                 raise ValueError("برای زمان‌بندی چندساعتی، فاصله زمانی (ساعت) باید مشخص شود")
+        # هر مقصد فعال باید اطلاعات اتصال حداقلی داشته باشد
         if self.smb_enabled and not (self.smb_host and self.smb_share and self.smb_username):
             raise ValueError("برای فعال‌کردن هدف SMB، نام سرور، Share و نام کاربری الزامی‌اند")
         if self.ftp_enabled and not (self.ftp_host and self.ftp_username):
@@ -62,6 +67,8 @@ class BackupSettingsIn(BaseModel):
 
 
 class BackupSettingsOut(BaseModel):
+    """پاسخ GET/PUT /backup/settings؛ به‌جای رمزها فقط has_password برمی‌گردد."""
+
     schedule_enabled: bool
     schedule_type: BackupScheduleType
     schedule_hour: int
@@ -74,14 +81,14 @@ class BackupSettingsOut(BaseModel):
     smb_share: str | None
     smb_path: str | None
     smb_username: str | None
-    smb_has_password: bool
+    smb_has_password: bool  # آیا رمز SMB ذخیره شده است
     smb_domain: str | None
 
     ftp_enabled: bool
     ftp_host: str | None
     ftp_port: int
     ftp_username: str | None
-    ftp_has_password: bool
+    ftp_has_password: bool  # آیا رمز FTP ذخیره شده است
     ftp_path: str | None
     ftp_use_tls: bool
 
@@ -98,6 +105,8 @@ class BackupSettingsOut(BaseModel):
 
 
 class SmbTestConnectionIn(BaseModel):
+    """بدنه POST تست اتصال SMB در backup.py."""
+
     host: str
     share: str
     path: str | None = None
@@ -107,6 +116,8 @@ class SmbTestConnectionIn(BaseModel):
 
 
 class FtpTestConnectionIn(BaseModel):
+    """بدنه POST تست اتصال FTP در backup.py."""
+
     host: str
     port: int = 21
     username: str

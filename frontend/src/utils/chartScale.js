@@ -1,14 +1,13 @@
 /**
- * کمک‌تابع‌های مشترک نمودارهای پنل ادمین (UsageLineChart / UsageBarChart).
+ * کمک‌تابع‌ها و ثابت‌های مشترک نمودارهای پنل ادمین (UsageLineChart / UsageBarChart):
+ * محاسبه‌ی سقف گرد محور، قالب‌بندی اعداد فارسی، فاصله‌ی برچسب‌ها و جابه‌جایی Tooltip در لبه‌ها.
  *
- * ⚠️ RTL: پروژه از stylis-plugin-rtl استفاده می‌کند که left/right/textAlign
- * داخل sx را قرینه می‌کند؛ همه موقعیت‌های افقی نمودارها در style خطی نوشته
- * می‌شوند (نه sx) و ریشه نمودار dir="ltr" دارد تا محور زمان همیشه چپ‌به‌راست
- * و برچسب‌ها دقیقاً زیر نقطه/میله خودشان باشند.
+ * نکته‌ی RTL: stylis-plugin-rtl مقادیر left/right/textAlign داخل sx را قرینه می‌کند؛ به همین دلیل موقعیت‌های افقی
+ * نمودارها در style خطی نوشته می‌شوند و ریشه‌ی نمودار dir="ltr" دارد تا محور زمان همیشه چپ‌به‌راست باشد.
  */
 
-export const AXIS_WIDTH = 40; // ستون اعداد محور عمودی
-export const PLOT_HEIGHT = 150;
+export const AXIS_WIDTH = 40; // عرض ستون اعداد محور عمودی (پیکسل)
+export const PLOT_HEIGHT = 150; // ارتفاع ناحیه‌ی رسم نمودار (پیکسل)
 
 /** سقف «گرد» محور عمودی: ۱، ۲ یا ۵ ضربدر توان ۱۰ (مثلاً ۳۷ ← ۵۰، ۱۲۰ ← ۲۰۰) */
 export function niceMax(value) {
@@ -19,11 +18,12 @@ export function niceMax(value) {
   return nice * exponent;
 }
 
+// عدد را با ارقام و جداکننده‌ی فارسی (fa-IR) به رشته تبدیل می‌کند
 export function formatNumber(value) {
   return Number(value).toLocaleString("fa-IR");
 }
 
-/** برچسب محور افقی: وقتی نقاط زیادند، فقط هر چندتا یکی (به‌علاوه آخری) */
+/** گام نمایش برچسب‌های محور افقی؛ وقتی نقاط زیادند فقط هر چند نقطه یکی برچسب می‌گیرد (حداکثر maxLabels) */
 export function labelStepFor(count, maxLabels = 8) {
   return Math.max(1, Math.ceil(count / maxLabels));
 }

@@ -1,12 +1,16 @@
-"""Schema های مربوط به تنظیمات کلی سیستم (پنل Admin → System)."""
+"""
+Schema های مربوط به تنظیمات کلی سیستم (پنل Admin → System).
+شامل محدودیت IP، پیام صفحه مسدودی IP، و تنظیمات برندینگ (عنوان‌ها، جای‌های نمایش و آیکون PWA)
+که در endpoint های app/api/v1/endpoints/system.py استفاده می‌شوند.
+"""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
 
 class IpAllowlistStateOut(BaseModel):
-    """وضعیت کامل قابلیت محدودیت IP — یک متن ویرایش‌پذیر (هر رنج در یک خط) +
-    کلید فعال/غیرفعال، مستقل از هم."""
+    """پاسخ GET/PUT /system/ip-allowlist: وضعیت کامل محدودیت IP — متن ویرایش‌پذیر
+    (هر رنج در یک خط) و کلید فعال/غیرفعال، مستقل از هم."""
 
     enabled: bool
     text: str  # هر CIDR در یک خط، مرتب‌شده
@@ -14,7 +18,7 @@ class IpAllowlistStateOut(BaseModel):
 
 
 class IpAllowlistStateIn(BaseModel):
-    """ذخیره کامل — کل فهرست فعلی (متن ویرایش‌شده توسط کاربر) جایگزین همان
+    """بدنه PUT /system/ip-allowlist: ذخیره کامل — کل فهرست فعلی (متن ویرایش‌شده توسط کاربر) جایگزین همان
     چیزی می‌شود که در دیتابیس بود؛ خط‌های خالی/نامعتبر نادیده گرفته می‌شوند."""
 
     enabled: bool
@@ -22,14 +26,20 @@ class IpAllowlistStateIn(BaseModel):
 
 
 class IpBlockedMessageIn(BaseModel):
+    """بدنه PUT /system/ip-blocked-message: متن نمایش‌داده‌شده به IP مسدود."""
+
     message: str
 
 
 class IpBlockedMessageOut(BaseModel):
+    """پاسخ GET/PUT /system/ip-blocked-message."""
+
     message: str
 
 
 class BrandingOut(BaseModel):
+    """پاسخ همه endpoint های /system/branding: عنوان‌ها، وضعیت لوگوهای سفارشی و تنظیمات هر جای نمایش."""
+
     browser_title: str
     manifest_name: str
     manifest_short_name: str
@@ -58,17 +68,20 @@ class BrandingOut(BaseModel):
 
 
 class BrandingSurfaceIn(BaseModel):
-    """بخشی از تنظیمات یک جای نمایش - فقط کلیدهای ارسالی ذخیره می‌شوند."""
+    """بدنه PUT /system/branding/surfaces/{surface}: فقط کلیدهای ارسالی ذخیره می‌شوند."""
 
     values: dict
 
 
 class PwaIconSettingsIn(BaseModel):
+    """بدنه PUT /system/branding/pwa-icon: تنظیمات تولید آیکون PWA."""
+
     values: dict
 
 
 class BrandingIn(BaseModel):
     """
+    بدنه PUT /system/branding: عنوان‌ها و متن‌های برند.
     فیلد خالی/None یعنی «به مقدار پیش‌فرض برگرد» — نه اینکه خالی ذخیره شود.
     """
 

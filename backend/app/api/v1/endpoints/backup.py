@@ -1,9 +1,15 @@
 """
-/backup/export    (GET)   دانلود یک بکاپ کامل (Schema + Data) — فقط Admin کامل.
-/backup/restore   (POST)  بازیابی یک بکاپ از همین پنل، روی همین سرور — فقط Admin کامل.
+Endpoint های پشتیبان‌گیری و بازیابی (همه با مجوز system.backup).
 
-⚠️ این قابلیت فقط برای بازیابی روی همین سرور طراحی شده (نه Clone به سرور
-دیگر). چون بازیابی واقعی نیاز به متوقف‌کردن خودِ سرویس دارد (وگرنه
+/backup/export          (GET)   دانلود یک بکاپ کامل (Schema + Data) به صورت ZIP
+/backup/restore         (POST)  بازیابی یک بکاپ روی همین سرور (در پس‌زمینه)
+/backup/restore-status  (GET)   وضعیت زنده آخرین بازیابی
+/backup/settings        (GET/PUT) تنظیمات زمان‌بندی و مقصدهای راه‌دور
+/backup/test-smb        (POST)  تست اتصال SMB
+/backup/test-ftp        (POST)  تست اتصال FTP
+/backup/run-now         (POST)  اجرای فوری بکاپ و ارسال به مقصدهای فعال
+
+بازیابی فقط برای همین سرور طراحی شده (نه Clone به سرور دیگر). چون بازیابی واقعی نیاز به متوقف‌کردن خودِ سرویس دارد (وگرنه
 Connection Pool زنده‌ی سرویس روی همان جدول‌هایی که pg_restore می‌خواهد
 بازسازی کند قفل می‌گیرد و pg_restore برای همیشه منتظر می‌ماند)، و چون این
 درخواست HTTP از داخل همان سرویسی می‌آید که قرار است متوقف شود، خودِ کار
@@ -41,6 +47,10 @@ router = APIRouter()
 async def export_backup(
     _user=Depends(require_permission("system.backup")),
 ):
+    """
+    یک بکاپ کامل می‌سازد و به صورت فایل ZIP دانلودی برمی‌گرداند. مجوز system.backup.
+    خطا: 500 اگر ساخت بکاپ ناموفق باشد.
+    """
     try:
         archive_bytes = await create_backup_archive()
     except BackupError as e:
@@ -52,6 +62,7 @@ async def export_backup(
             detail="ساخت بکاپ با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
         )
 
+    # نام فایل دانلودی با زمان UTC
     filename = f"faipco-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
     return Response(
         content=archive_bytes,
@@ -74,7 +85,9 @@ async def restore_backup(
     واقعی (که سرویس را چند لحظه متوقف می‌کند) در پس‌زمینه ادامه پیدا می‌کند.
     یعنی این پاسخ به معنای «بازیابی موفق شد» نیست، فقط یعنی «شروع شد» —
     برای دیدن نتیجه واقعی، بعد از ۳۰-۶۰ ثانیه صفحه را Refresh کنید.
+    مجوز system.backup. خطا: 400 برای عبارت تأیید/فایل نامعتبر، 500 برای خطای راه‌اندازی.
     """
+    # مرحله ۱: اعتبارسنجی فایل و عبارت تأیید، و آماده‌سازی فایل dump روی دیسک
     file_bytes = await file.read()
     try:
         dump_path = validate_and_stage_archive(file_bytes, confirm_phrase=confirm)
@@ -87,6 +100,7 @@ async def restore_backup(
             detail="بررسی فایل بکاپ با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
         )
 
+    # مرحله ۲: اجرای اسکریپت مستقل بازیابی بدون انتظار برای اتمام
     try:
         schedule_restore(dump_path)
     except BackupError as e:
@@ -112,7 +126,7 @@ async def restore_status(
     _user=Depends(require_permission("system.backup")),
 ):
     """
-    وضعیت زنده آخرین Restore — پنل هر چند ثانیه یک‌بار این را می‌پرسد تا
+    وضعیت زنده آخرین Restore (مجوز system.backup) — پنل هر چند ثانیه یک‌بار این را می‌پرسد تا
     مراحل واقعی (نه یک شمارش‌معکوس کور) نشان بدهد. طبیعی است که خودِ همین
     Endpoint هم برای چند ثانیه (دقیقاً همان لحظه‌ای که سرویس Stop/Start
     می‌شود) در دسترس نباشد — فرانت‌اند باید آن گپ را با Retry پر کند.
@@ -121,6 +135,7 @@ async def restore_status(
 
 
 def _to_settings_out(settings) -> BackupSettingsOut:
+    """ورودی: رکورد BackupSettings. خروجی: BackupSettingsOut بدون رمزها (فقط has_password)."""
     return BackupSettingsOut(
         schedule_enabled=settings.schedule_enabled,
         schedule_type=settings.schedule_type,
@@ -158,7 +173,10 @@ async def get_backup_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.backup")),
 ):
-    """رمزهای عبور هرگز در پاسخ برنمی‌گردند — فقط smb_has_password/ftp_has_password (بولی)."""
+    """
+    تنظیمات فعلی بکاپ را برمی‌گرداند. مجوز system.backup.
+    رمزهای عبور هرگز در پاسخ برنمی‌گردند — فقط smb_has_password/ftp_has_password (بولی).
+    """
     settings = await BackupSettingsService(db).get_settings()
     return _to_settings_out(settings)
 
@@ -170,7 +188,8 @@ async def update_backup_settings(
     _user=Depends(require_permission("system.backup")),
 ):
     """
-    برای رمزهای SMB/FTP: اگر خالی فرستاده شود، رمز قبلاً ذخیره‌شده دست‌نخورده
+    تنظیمات بکاپ را ذخیره و زمان‌بندی را به‌روز می‌کند. مجوز system.backup؛ 422 برای ورودی ناقص.
+    برای رمزهای SMB/FTP: اگر خالی فرستاده شود، رمز ذخیره‌شده دست‌نخورده
     می‌ماند (نیازی به وارد‌کردن دوباره در هر ویرایش نیست).
     """
     settings = await BackupSettingsService(db).update_settings(payload)
@@ -183,6 +202,11 @@ async def test_smb(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.backup")),
 ):
+    """
+    اتصال به SMB را با اطلاعات ارسالی تست می‌کند. مجوز system.backup.
+    خطا: 400 اگر رمزی در دسترس نباشد یا اتصال ناموفق باشد.
+    """
+    # رمز خالی یعنی استفاده از رمز ذخیره‌شده
     password = payload.password
     if not password:
         settings = await BackupSettingsService(db).get_settings()
@@ -213,6 +237,11 @@ async def test_ftp(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.backup")),
 ):
+    """
+    اتصال به FTP/FTPS را با اطلاعات ارسالی تست می‌کند. مجوز system.backup.
+    خطا: 400 اگر رمزی در دسترس نباشد یا اتصال ناموفق باشد.
+    """
+    # رمز خالی یعنی استفاده از رمز ذخیره‌شده
     password = payload.password
     if not password:
         settings = await BackupSettingsService(db).get_settings()
@@ -245,9 +274,11 @@ async def run_backup_now(
     """
     بلافاصله (نه در پس‌زمینه) یک بکاپ می‌گیرد و به هدف‌های راه‌دور فعال
     می‌فرستد - برخلاف Restore، این عملیات سرویس را متوقف نمی‌کند، پس
-    نیازی به الگوی «شروع کن و برگرد» نیست؛ همین‌جا منتظر اتمام می‌مانیم.
+    نیازی به الگوی «شروع کن و برگرد» نیست؛ همین‌جا منتظر اتمام می‌ماند.
+    مجوز system.backup. خطا: 502 اگر ارسال به مقصدها ناموفق باشد.
     """
     await run_scheduled_backup(db)
+    # نتیجه اجرا از فیلدهای last_run_* خوانده می‌شود
     settings = await BackupSettingsService(db).get_settings()
     if settings.last_run_success is False:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=settings.last_run_message)

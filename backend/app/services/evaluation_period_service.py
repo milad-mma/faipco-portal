@@ -1,4 +1,7 @@
-"""سرویس «دوره‌های ارزیابی عملکرد»."""
+"""
+سرویس «دوره‌های ارزیابی عملکرد»: فهرست دوره‌ها با آمار انتساب‌ها، هم‌گام‌سازی خودکار وضعیت
+دوره‌ها بر اساس تاریخ و پیشرفت، ایجاد/ویرایش/حذف دوره، و مدیریت ارزیابی‌های منتشرشده یک دوره.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,25 +15,40 @@ from app.models.evaluation_process import Evaluation, EvaluationAssignment, Eval
 
 
 class EvaluationPeriodError(Exception):
+    """خطای قابل نمایش به کاربر در عملیات دوره‌ها."""
     pass
 
 
+# مقادیر مجاز وضعیت دوره (برای اعتبارسنجی ورودی)
 _VALID_STATUSES = {s.value for s in EvaluationPeriodStatus}
 
 
 class EvaluationPeriodService:
+    """سرویس مدیریت دوره‌های ارزیابی."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: نشست async دیتابیس."""
         self.db = db
 
-    async def list_periods(self, site_id: int | None = None) -> list[EvaluationPeriod]:
-        # ⚠️ قبل از نمایش، وضعیت‌های خودکار هم‌گام می‌شوند تا ادمین همیشه
-        # وضعیت واقعی را ببیند، نه یک مقدار کهنه.
+    async def list_periods(
+        self, site_id: int | None = None, allowed_site_ids: set[int] | None = None
+    ) -> list[EvaluationPeriod]:
+        """
+        ورودی: site_id اختیاری. ابتدا وضعیت‌های خودکار را هم‌گام می‌کند، سپس دوره‌ها (جدیدترین اول)
+        را همراه assignments_total/assignments_completed برمی‌گرداند؛ با site_id، دوره‌های سراسری هم می‌آیند.
+        allowed_site_ids: فقط دوره‌های این سایت‌ها به‌علاوه‌ی دوره‌های سراسری (None = بدون محدودیت).
+        """
+        # هم‌گام‌سازی وضعیت‌ها پیش از نمایش، تا وضعیت واقعی دیده شود
         await self.sync_automatic_statuses()
 
         query = select(EvaluationPeriod).order_by(EvaluationPeriod.start_date.desc())
         if site_id is not None:
             # site_id=None روی خودِ دوره یعنی «همه سایت‌ها» - همیشه هم نمایش داده شود
             query = query.where((EvaluationPeriod.site_id == site_id) | (EvaluationPeriod.site_id.is_(None)))
+        if allowed_site_ids is not None:
+            query = query.where(
+                EvaluationPeriod.site_id.in_(allowed_site_ids) | EvaluationPeriod.site_id.is_(None)
+            )
         result = await self.db.execute(query)
         periods = list(result.scalars().all())
         # تعداد ارزیابی‌های منتشرشده (انتساب‌ها) و انجام‌شده هر دوره - برای نمایش در جدول
@@ -47,6 +65,7 @@ class EvaluationPeriodService:
                 .group_by(EvaluationAssignment.period_id)
             )
             by_period = {row[0]: (row[1], row[2]) for row in counts.all()}
+            # ضمیمه‌کردن آمار به اشیای دوره (ویژگی غیر ستونی، برای schema خروجی)
             for period in periods:
                 total, done = by_period.get(period.id, (0, 0))
                 period.assignments_total = total
@@ -55,23 +74,22 @@ class EvaluationPeriodService:
 
     async def sync_automatic_statuses(self) -> dict:
         """
-        ⚠️ طبق تصمیم صریح کاربر، چرخه وضعیت دوره کاملاً خودکار است:
+        وضعیت دوره‌های scheduled/active را بر اساس تاریخ و پیشرفت به‌روز می‌کند و تعداد تغییرات
+        ({"activated", "rescheduled", "closed"}) را برمی‌گرداند. قواعد:
 
-            پیش‌نویس        → دست‌نخورده می‌ماند (تصمیم خودِ ادمین، نه تاریخ)
+            پیش‌نویس        → دست‌نخورده می‌ماند (تصمیم ادمین، نه تاریخ)
             زمان‌بندی‌شده   → با رسیدن تاریخ شروع، «فعال» می‌شود
+            فعال            → اگر تاریخ شروع به آینده منتقل شده باشد، «زمان‌بندی‌شده» می‌شود
             فعال            → با گذشتن تاریخ پایان، «بسته‌شده» می‌شود
-            فعال            → اگر همه ارزیابی‌ها زودتر انجام شد، «بسته‌شده»
+            فعال            → اگر همه ارزیابی‌ها زودتر انجام شده باشد، «بسته‌شده» می‌شود
             بسته/بایگانی‌شده → هرگز خودکار باز نمی‌شود
 
-        ⚠️ اجبارِ «تکمیل ارزیابی‌ها» به وضعیت **بسته/بایگانی‌شده** گره
-        خورده است (نه فعال) - یعنی تا وقتی دوره در جریان است ارزیاب آزاد
-        است، و به‌محض بسته‌شدنِ دوره (چه با پایان مهلت، چه دستی) اگر
-        کاری ناتمام مانده باشد قفل می‌شود.
-
-        سه راه خروج برای ادمین: غیرفعال‌کردن اجبار از تنظیمات، تغییر
-        زمان‌بندی دوره، یا برگرداندن دستی وضعیت به «فعال».
+        اجبار «تکمیل ارزیابی‌ها» (access gate) به وضعیت بسته/بایگانی‌شده وابسته است: تا دوره در جریان
+        است ارزیاب آزاد است و با بسته‌شدن دوره، کار ناتمام قفل ایجاد می‌کند. ادمین می‌تواند اجبار را در
+        تنظیمات غیرفعال کند، زمان‌بندی را تغییر دهد یا وضعیت را دستی به «فعال» برگرداند.
         """
         now = datetime.now(timezone.utc)
+        # فقط دوره‌های زمان‌بندی‌شده و فعال بررسی می‌شوند
         result = await self.db.execute(
             select(EvaluationPeriod).where(
                 EvaluationPeriod.status.in_(
@@ -114,18 +132,17 @@ class EvaluationPeriodService:
                 ).where(EvaluationAssignment.period_id == period.id)
             )
             total, pending = counts.one()
-            # ⚠️ دوره‌ای که اصلاً Assignment ندارد بسته نمی‌شود - وگرنه
-            # دوره‌ای که ادمین تازه فعال کرده و هنوز تخصیص نداده،
-            # بلافاصله بسته می‌شد.
+            # دوره بدون هیچ Assignment بسته نمی‌شود (دوره تازه فعال‌شده‌ای که هنوز انتساب ندارد)
             if total > 0 and pending == 0:
                 period.status = EvaluationPeriodStatus.closed
                 closed += 1
 
-        if activated or rescheduled or closed:
+        if activated or rescheduled or closed:  # commit فقط در صورت تغییر
             await self.db.commit()
         return {"activated": activated, "rescheduled": rescheduled, "closed": closed}
 
     async def create_period(self, data: dict, created_by_user_id: int | None) -> EvaluationPeriod:
+        """ورودی: فیلدهای دوره و شناسه سازنده. دوره جدید (draft) را ذخیره و برمی‌گرداند."""
         period = EvaluationPeriod(**data, created_by_user_id=created_by_user_id)
         self.db.add(period)
         await self.db.commit()
@@ -133,41 +150,35 @@ class EvaluationPeriodService:
         return period
 
     async def update_period(self, period_id: int, data: dict) -> EvaluationPeriod:
+        """
+        فیلدهای دوره (از جمله تاریخ‌ها) را در هر وضعیتی به‌جز archived به‌روز می‌کند.
+        اگر دوره بسته‌شده با تاریخ پایان آینده تمدید شود، دوباره فعال/زمان‌بندی‌شده می‌شود.
+        خروجی: دوره به‌روزشده؛ اگر نباشد یا بایگانی‌شده باشد EvaluationPeriodError.
+        """
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None:
             raise EvaluationPeriodError("دوره ارزیابی موردنظر یافت نشد")
-        # ⚠️ طبق درخواست صریح کاربر: ویرایش تاریخ شروع/پایان برای دوره‌های
-        # **فعال** هم مجاز شد - چون مهلت‌ها در عمل تمدید می‌شوند و قبلاً
-        # تنها راهش ساختن دوره جدید بود (که تاریخچه را تکه‌تکه می‌کرد).
-        # ⚠️ طبق درخواست کاربر: دوره «بسته‌شده» هم قابل‌ویرایش است تا بتوان
-        # مهلت را تمدید کرد - اگر تاریخ پایان جدید در آینده باشد، دوره دوباره
-        # باز می‌شود (فعال یا زمان‌بندی‌شده بر اساس تاریخ شروع). فقط دوره‌های
-        # بایگانی‌شده قفل‌اند.
+        # ویرایش (تمدید مهلت) برای دوره‌های فعال و بسته‌شده هم مجاز است؛ فقط بایگانی‌شده‌ها قفل‌اند
         if period.status == EvaluationPeriodStatus.archived:
             raise EvaluationPeriodError("دوره‌های بایگانی‌شده قابل‌ویرایش نیستند - اول وضعیت را تغییر دهید")
         for key, value in data.items():
             setattr(period, key, value)
         now = datetime.now(timezone.utc)
+        # بازگشایی دوره بسته‌شده‌ای که تاریخ پایانش به آینده منتقل شده (بر اساس تاریخ شروع: فعال یا زمان‌بندی‌شده)
         if period.status == EvaluationPeriodStatus.closed and period.end_date > now:
             period.status = (
                 EvaluationPeriodStatus.scheduled if period.start_date > now else EvaluationPeriodStatus.active
             )
         await self.db.commit()
-        # ⚠️ تغییر تاریخ می‌تواند وضعیت را عوض کند (مثلاً جابه‌جایی تاریخ
-        # شروع به آینده → «زمان‌بندی‌شده») - بلافاصله هم‌گام می‌شود تا
-        # ادمین نتیجه را همان لحظه ببیند.
+        # تغییر تاریخ ممکن است وضعیت را عوض کند؛ بلافاصله هم‌گام می‌شود
         await self.sync_automatic_statuses()
         await self.db.refresh(period)
         return period
 
     async def update_title(self, period_id: int, title: str) -> EvaluationPeriod:
         """
-        ⚠️ طبق درخواست صریح: برخلاف update_period (که فقط برای دوره‌های
-        هنوز فعال‌نشده مجاز است)، عنوان یک دوره - صرف‌نظر از وضعیتش -
-        همیشه قابل‌ویرایش است؛ چون تغییر متن عنوان (بر خلاف تغییر
-        تاریخ/سایت) هیچ آسیبی به تاریخچه ارزیابی‌های قبلی نمی‌زند
-        (Snapshot ها بر اساس form_title_snapshot/... ذخیره شده‌اند، نه
-        یک ارجاع زنده به period.title).
+        عنوان دوره را در هر وضعیتی تغییر می‌دهد؛ ارزیابی‌های قبلی از period_title_snapshot استفاده
+        می‌کنند، پس تاریخچه تغییر نمی‌کند. اگر دوره نباشد EvaluationPeriodError.
         """
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None:
@@ -178,6 +189,7 @@ class EvaluationPeriodService:
         return period
 
     async def update_status(self, period_id: int, status: str) -> EvaluationPeriod:
+        """وضعیت دوره را دستی تنظیم می‌کند؛ وضعیت نامعتبر یا دوره ناموجود: EvaluationPeriodError."""
         if status not in _VALID_STATUSES:
             raise EvaluationPeriodError(f"وضعیت «{status}» معتبر نیست")
         period = await self.db.get(EvaluationPeriod, period_id)
@@ -199,13 +211,15 @@ class EvaluationPeriodService:
         return period
 
     async def delete_period(self, period_id: int, confirm_title: str | None = None) -> None:
+        """
+        دوره را همراه همه انتساب‌ها، ارزیابی‌ها و نتایجش (CASCADE، برگشت‌ناپذیر) حذف می‌کند.
+        اگر دوره انتساب داشته باشد یا draft نباشد، confirm_title باید دقیقاً برابر عنوان دوره باشد؛
+        وگرنه EvaluationPeriodError.
+        """
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None:
             return
-        # ⚠️ Historical Integrity: دوره‌ای که ارزیابی منتشرشده دارد با همه
-        # ارزیابی‌ها و نتایجش حذف می‌شود (CASCADE) - برگشت‌ناپذیر. طبق درخواست
-        # کاربر مجاز است، ولی فقط با تأیید صریح (تایپ دقیق عنوان دوره).
-        # دوره پیش‌نویسِ بدون انتساب مثل قبل بدون تأیید حذف می‌شود.
+        # شمارش انتساب‌ها برای تصمیم درباره نیاز به تأیید
         assignments = (
             await self.db.execute(
                 select(func.count(EvaluationAssignment.id)).where(EvaluationAssignment.period_id == period_id)
@@ -220,7 +234,8 @@ class EvaluationPeriodService:
         await self.db.commit()
 
     async def list_assignments(self, period_id: int) -> list[dict]:
-        """ارزیابی‌های منتشرشده (انتساب‌های) یک دوره - ارزیاب، ارزیابی‌شونده، فرم، وضعیت، امتیاز."""
+        """ارزیابی‌های منتشرشده (انتساب‌های) یک دوره: ارزیاب، ارزیابی‌شونده، فرم، وضعیت و امتیاز (لیست dict)."""
+        # انتساب‌های دوره همراه ارزیاب، هدف و فرم
         result = await self.db.execute(
             select(EvaluationAssignment)
             .options(
@@ -232,6 +247,7 @@ class EvaluationPeriodService:
             .order_by(EvaluationAssignment.id)
         )
         assignments = list(result.scalars().all())
+        # وضعیت/امتیاز ارزیابی‌های شروع‌شده، به تفکیک assignment_id
         evaluations = {}
         if assignments:
             rows = await self.db.execute(
@@ -242,8 +258,10 @@ class EvaluationPeriodService:
             evaluations = {r[0]: r for r in rows.all()}
 
         def _name(emp):
+            """نام کامل پرسنل یا «—» اگر موجود نباشد."""
             return f"{emp.first_name} {emp.last_name}" if emp else "—"
 
+        # ساخت ردیف خروجی برای هر انتساب؛ بدون Evaluation یعنی not_started
         items = []
         for a in assignments:
             ev = evaluations.get(a.id)
@@ -267,7 +285,7 @@ class EvaluationPeriodService:
         return items
 
     async def delete_assignment(self, period_id: int, assignment_id: int) -> None:
-        """حذف یک ارزیابی منتشرشده (انتساب + ارزیابی و پاسخ‌هایش - CASCADE)."""
+        """حذف یک ارزیابی منتشرشده (انتساب + ارزیابی و پاسخ‌هایش با CASCADE)؛ اگر در این دوره نباشد EvaluationPeriodError."""
         assignment = await self.db.get(EvaluationAssignment, assignment_id)
         if assignment is None or assignment.period_id != period_id:
             raise EvaluationPeriodError("ارزیابی موردنظر یافت نشد")

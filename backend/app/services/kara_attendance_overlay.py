@@ -1,7 +1,11 @@
 """
-لایه «مرخصی/ماموریت» روی گزارش تردد ماهانه - فقط برای سایت‌های کاراوب.
+لایه‌ی «مرخصی/ماموریت/تقویم کاری» روی گزارش تردد ماهانه - فقط برای سایت‌های کاراوب.
 
-کاراوب مرخصی/ماموریت را در دو جای مختلف ثبت می‌کند (با داده واقعی بررسی شد):
+این ماژول از SQL Server کاراوب می‌خواند که در هر روز/تردد، چه علامت مرخصی یا
+ماموریتی ثبت شده، کدام روزها غیرکاری هستند و شیفت هر روز چه ساعتی است.
+خروجی آن در monthly_attendance_service روی گزارش تردد قرار می‌گیرد.
+
+کاراوب مرخصی/ماموریت را در دو جای مختلف ثبت می‌کند:
 
 روزانه (مرخصی استحقاقی، استعلاجی، ماموریت روزانه، ...):
     یک ردیف در Mor_Mam با بازه S_Date..E_Date و Type = شماره کارت.
@@ -12,8 +16,8 @@
 ساعتی (مرخصی ساعتی، ماموریت ساعتی):
     روی خودِ تردد: DataFile.Status = شماره کارت (مثلاً ۱۷ مرخصی شخصی،
     ۹ ماموریت). این علامت یا از خودِ دستگاه (کارت مرخصی/ماموریت) می‌آید یا
-    از تأیید درخواست. بازه آن به «ورود» یا «خروج» بودن تردد بستگی دارد
-    (تأییدشده با کارکرد روزانه کاراوب - ستون S_Sha، ۱۴۰۵/۰۶/۲۸):
+    از تأیید درخواست. بازه‌ی آن به «ورود» یا «خروج» بودن تردد بستگی دارد
+    (مطابق محاسبه‌ی کارکرد روزانه‌ی کاراوب، ستون S_Sha):
       - تردد ورود (اول، سوم، ... روز): از خروج قبلی - یا شروع شیفت اگر اولین
         تردد است - تا همین تردد. مثال: ورود ۰۸:۱۳ با کارت مرخصی، شیفت ۰۶:۳۰
         -> مرخصی ۰۶:۳۰ تا ۰۸:۱۳ (۱:۴۳)
@@ -36,6 +40,7 @@ from app.core.security import decrypt_secret
 from app.models.site import SiteConnection
 from app.services.kara_schema import KaraNames
 
+# نوع کارت برای نمایش در گزارش
 KIND_LEAVE = "leave"
 KIND_MISSION = "mission"
 KIND_OTHER = "other"
@@ -45,6 +50,7 @@ DAILY_WORK_CARDS = 24
 
 
 def _connect(conn: SiteConnection):
+    """اتصال pymssql به SQL Server سایت با رمز رمزگشایی‌شده و timeout ده ثانیه."""
     return pymssql.connect(
         server=conn.host,
         port=str(conn.port),
@@ -57,39 +63,41 @@ def _connect(conn: SiteConnection):
 
 
 def _clean_title(title: str | None) -> str:
-    # «ماموریت اداری ساعتی1» / «مرخصی روزانه بدون حقوق 3» -> بدون شماره انتهایی
+    """عنوان کارت را تمیز می‌کند: فاصله‌های تکراری و شماره‌ی انتهایی حذف می‌شود («ماموریت اداری ساعتی1» -> «ماموریت اداری ساعتی»)."""
+    # فاصله‌های تکراری به یک فاصله تبدیل و شماره‌ی انتهایی (لاتین یا فارسی) حذف می‌شود
     cleaned = re.sub(r"\s+", " ", title or "").strip()
     return re.sub(r"\s*[0-9۰-۹]+$", "", cleaned).strip()
 
 
 def _is_thursday(date_int: int) -> bool:
+    """آیا تاریخ شمسی فشرده (YYYYMMDD) پنجشنبه است؛ شیفت پنجشنبه ساعت جداگانه دارد."""
     j = jdatetime.date(date_int // 10000, (date_int // 100) % 100, date_int % 100)
-    return j.togregorian().weekday() == 3
+    return j.togregorian().weekday() == 3  # weekday: دوشنبه=0 ... پنجشنبه=3
 
 
 def next_jalali_date(date_int: int) -> int:
+    """تاریخ شمسی فشرده (YYYYMMDD) روز بعد را برمی‌گرداند."""
     j = jdatetime.date(date_int // 10000, (date_int // 100) % 100, date_int % 100) + jdatetime.timedelta(days=1)
     return j.year * 10000 + j.month * 100 + j.day
 
 
 def hourly_interval(times: list[int], index: int, bounds: tuple[int, int] | None) -> tuple[int | None, int | None]:
     """
-    بازه مرخصی/ماموریت ساعتیِ کارتِ زده‌شده روی times[index] - دقیقاً مثل
-    کاراوب (با S_Sha کارکرد روزانه مقایسه شد، شامل شیفت شب):
-      ورود (اندیس زوج): از خروج قبلی یا شروع شیفت تا همین تردد
-      خروج (اندیس فرد): از همین تردد تا ورود بعدی یا پایان شیفت
-    ساعت‌ها فشرده HHMM هستند و می‌توانند از ۲۴۰۰ بیشتر باشند (روز بعد).
+    بازه‌ی مرخصی/ماموریت ساعتیِ کارتِ زده‌شده روی times[index] را برمی‌گرداند.
+    ورودی: لیست ترددهای روز (HHMM، ممکن است از ۲۴۰۰ بیشتر باشد = روز بعد)، اندیس تردد و بازه‌ی شیفت (شروع، پایان) یا None.
+    ورود (اندیس زوج): از خروج قبلی یا شروع شیفت تا همین تردد؛ خروج (اندیس فرد): از همین تردد تا ورود بعدی یا پایان شیفت.
     """
+    # تردد ورود
     if index % 2 == 0:
         start = times[index - 1] if index > 0 else (bounds[0] if bounds else None)
         return start, times[index]
+    # تردد خروج
     end = times[index + 1] if index + 1 < len(times) else (bounds[1] if bounds else None)
     return times[index], end
 
 
 def _kind_for_card_type(card_type) -> str:
-    # Cards.CardType در داده واقعی: ۳ = ماموریت، ۵/۷ = مرخصی (با/بدون حقوق)،
-    # ۲ = تاخیر/تعجیل و مانند آن
+    """Cards.CardType کاراوب را به نوع نمایشی تبدیل می‌کند: ۳ = ماموریت، ۵/۷ = مرخصی (با/بدون حقوق)، بقیه = سایر."""
     if card_type == 3:
         return KIND_MISSION
     if card_type in (5, 7):
@@ -101,16 +109,19 @@ def fetch_overlay_sync(
     conn: SiteConnection, n: KaraNames, emp_no: int, from_date: int, to_date: int, branch_value: int | None = None
 ) -> dict:
     """
+    علامت‌های مرخصی/ماموریت، تقویم کاری و شیفت‌های یک پرسنل را در یک بازه از کاراوب می‌خواند (همگام).
+    ورودی: اتصال سایت، نام‌های نگاشت‌شده (KaraNames)، شماره‌ی پرسنل، بازه‌ی تاریخ شمسی فشرده و کد شعبه‌ی اختیاری.
     خروجی:
       {
         "punch_status": {(date, time): status, ...}   # فقط Status غیرصفر
         "daily": {date: card_no, ...}                 # روزهای مرخصی/ماموریت روزانه
         "cards": {card_no: {"title": str, "kind": str}, ...}
         "work_calendar": {date: is_off_day, ...}      # فقط روزهایی که کارکرد روزانه دارند
+        "shift_times": {date: (start, end)}, "shift_days": {date: {"bounds", "cards"}}, "daily_enabled": bool
       }
-    همه نام جدول/ستون‌ها از تنظیمات سایت (KaraNames) می‌آیند.
+    هر بخش فقط اگر جدول/ستون‌هایش نگاشت شده باشد خوانده می‌شود.
     """
-    M = lambda role: n.c("mor_mam", role)  # noqa: E731
+    M = lambda role: n.c("mor_mam", role)  # noqa: E731  # نام ستون جدول Mor_Mam بر اساس نقش
     punch_status: dict = {}
     daily_rows: list = []
     work_calendar: dict[int, bool] = {}
@@ -120,7 +131,7 @@ def fetch_overlay_sync(
     connection = _connect(conn)
     try:
         with connection.cursor(as_dict=True) as cur:
-            # ساعتی: علامت روی خودِ تردد (جدول تردد از تب «نگاشت تردد»)
+            # ساعتی: علامت مرخصی/ماموریت روی خودِ تردد (ستون Status جدول تردد)
             if n.can_read_hourly_marks:
                 status_col = n.c("datafile", "status")
                 cur.execute(
@@ -145,18 +156,20 @@ def fetch_overlay_sync(
                 )
                 daily_rows = list(cur.fetchall())
 
-            # روزهای غیرکاریِ خودِ این پرسنل (مثلاً جمعه یا روز استراحت شیفتی):
-            # شیفت آن روز در کارکرد روزانه، در جدول شیفت‌ها تعریف نشده (مثل ۵۰۱)
+            # تقویم کاری: روز غیرکاری این پرسنل (جمعه یا استراحت شیفتی) روزی است که
+            # شماره‌ی شیفتش در کارکرد روزانه، در جدول شیفت‌ها تعریف نشده باشد
             if n.can_read_work_calendar:
-                W = lambda role: n.c("daily_work", role)  # noqa: E731
-                S = lambda role: n.c("shifts", role)  # noqa: E731
+                W = lambda role: n.c("daily_work", role)  # noqa: E731  # ستون جدول کارکرد روزانه
+                S = lambda role: n.c("shifts", role)  # noqa: E731  # ستون جدول شیفت‌ها
                 sh_no = S("shift_no")
+                # ساعت شیفت فقط وقتی خوانده می‌شود که همه‌ی ستون‌های شروع/پایان (عادی و پنجشنبه) نگاشت شده باشند
                 with_times = all(
                     n.has("shifts", r)
                     for r in ("start_time", "start_time5", "end_time", "end_time5", "added_day", "added_day5")
                 )
-                with_cards = with_times and n.has("daily_work", "card_prefix")
+                with_cards = with_times and n.has("daily_work", "card_prefix")  # ترددهای روز (Card1..Card24)
                 extra_sql = ""
+                # ستون‌های اختیاری کوئری بر اساس نگاشت موجود
                 if with_times:
                     extra_sql += (
                         f", s.{S('start_time')} AS StartTime, s.{S('start_time5')} AS StartTime5, "
@@ -172,10 +185,12 @@ def fetch_overlay_sync(
                     f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} BETWEEN %(f)s AND %(t)s",
                     {"e": emp_no, "f": from_date, "t": to_date},
                 )
+                # برای هر روز: وضعیت غیرکاری، بازه‌ی شیفت و ترددهای ثبت‌شده در کارکرد روزانه
                 for r in cur.fetchall():
                     date_int = int(r["DateInt"])
                     work_calendar[date_int] = bool(r["IsOff"])
                     bounds = None
+                    # بازه‌ی شیفت روز کاری؛ پنجشنبه ساعت جداگانه (ستون‌های *5) دارد
                     if with_times and not r["IsOff"]:
                         thursday = _is_thursday(date_int)
                         start = r["StartTime5"] if thursday else r["StartTime"]
@@ -185,10 +200,12 @@ def fetch_overlay_sync(
                             # مثل کاراوب: ساعت روز بعد = +۲۴۰۰
                             bounds = (int(start), int(end) + (2400 if added else 0))
                             shift_times[date_int] = bounds
+                    # ترددهای روز به ترتیب ستون‌ها (فقط مقادیر غیر NULL)
                     if with_cards:
                         times = [int(r[f"C{i}"]) for i in range(1, DAILY_WORK_CARDS + 1) if r.get(f"C{i}") is not None]
                         shift_days[date_int] = {"bounds": bounds, "cards": times}
 
+            # عنوان و نوع کارت‌هایی که در علامت‌های ساعتی یا روزانه دیده شدند
             card_nos = set(punch_status.values()) | {int(r["CardNo"]) for r in daily_rows}
             if card_nos and n.has_cards and getattr(n.leave, "card_lookup_desc_column", None):
                 placeholders = ", ".join(f"%(c{i})s" for i in range(len(card_nos)))
@@ -196,8 +213,8 @@ def fetch_overlay_sync(
                 card_type_sql = (
                     f"{n.c('cards', 'card_type')} AS CardType" if n.has("cards", "card_type") else "NULL AS CardType"
                 )
-                # WF_Cards عنوان‌های سفارشی هر شعبه را دارد (Card_No در چند شعبه تکرار
-                # می‌شود) - با ستون شعبه نگاشت‌شده فقط ردیف شعبه همین سایت
+                # جدول کارت‌ها عنوان سفارشی هر شعبه را دارد (Card_No در چند شعبه تکرار می‌شود)؛
+                # اگر ستون شعبه نگاشت شده باشد فقط ردیف شعبه‌ی همین سایت خوانده می‌شود
                 branch_sql = ""
                 if n.has("cards", "branch_code") and branch_value is not None:
                     branch_sql = f" AND {n.c('cards', 'branch_code')} = %(branch)s"
@@ -215,10 +232,11 @@ def fetch_overlay_sync(
     finally:
         connection.close()
 
+    # باز کردن بازه‌های روزانه (S_Date..E_Date) به روزهای تکی داخل بازه‌ی گزارش
     daily: dict[int, int] = {}
     for r in daily_rows:
         start, end = int(r["SDate"]), int(r["EDate"])
-        # بازه‌های تاریخ شمسی فشرده هستند (YYYYMMDD) - روز به روز داخل همان ماه گزارش
+        # تاریخ‌ها فشرده (YYYYMMDD) هستند؛ شمارش عددی، اعداد نامعتبر (ماه/روز خارج از محدوده) را رد می‌کند
         for date_int in range(max(start, from_date), min(end, to_date) + 1):
             if 1 <= date_int % 100 <= 31 and 1 <= (date_int // 100) % 100 <= 12:
                 daily[date_int] = int(r["CardNo"])
@@ -229,13 +247,11 @@ def fetch_overlay_sync(
         "cards": cards,
         "work_calendar": work_calendar,
         "shift_times": shift_times,
-        # ترددهای هر روزِ شیفت از کارکرد روزانه کاراوب (ساعت بعد از نیمه‌شب = +۲۴۰۰)
-        "shift_days": shift_days,
-        # «غیبت» فقط وقتی قابل‌تشخیص است که مرخصی/ماموریت روزانه خوانده شده باشد
-        "daily_enabled": n.can_read_daily_marks,
+        "shift_days": shift_days,  # ترددهای هر روزِ شیفت از کارکرد روزانه (ساعت بعد از نیمه‌شب = +۲۴۰۰)
+        "daily_enabled": n.can_read_daily_marks,  # «غیبت» فقط وقتی قابل‌تشخیص است که مرخصی/ماموریت روزانه خوانده شده باشد
     }
 
 
 def is_enabled(n: KaraNames) -> bool:
-    """آیا حداقل یکی از بخش‌های این لایه نگاشت شده است؟"""
+    """آیا حداقل یکی از بخش‌های این لایه (ساعتی، روزانه، تقویم کاری) برای سایت نگاشت شده است."""
     return n.can_read_hourly_marks or n.can_read_daily_marks or n.can_read_work_calendar

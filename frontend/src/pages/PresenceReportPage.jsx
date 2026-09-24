@@ -1,3 +1,8 @@
+/**
+ * صفحه گزارش «پرسنل آنلاین» (آزمایشی).
+ * جلسات حضور پرسنل را نشان می‌دهد: بازه‌هایی که اپ باز بوده و موقعیت GPS داخل محدوده مجاز سایت بوده؛
+ * با فیلتر سایت، پرسنل و «فقط آنلاین‌های فعلی» و صفحه‌بندی سمت سرور.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -24,8 +29,9 @@ import { fetchEmployees } from "../api/employees";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { monoFontSx } from "../theme";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 50;  // تعداد ردیف در هر صفحه
 
+// مدت بر حسب ثانیه را به متن فارسی (ساعت/دقیقه/ثانیه) تبدیل می‌کند؛ null = «—»
 function formatDuration(seconds) {
   if (seconds == null) return "—";
   const h = Math.floor(seconds / 3600);
@@ -36,17 +42,19 @@ function formatDuration(seconds) {
   return `${s} ثانیه`;
 }
 
+// کامپوننت صفحه؛ فیلترها و جدول جلسات حضور را مدیریت می‌کند
 export default function PresenceReportPage() {
-  const [sessions, setSessions] = useState(null);
+  const [sessions, setSessions] = useState(null);  // جلسات صفحه فعلی؛ null = در حال بارگذاری
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(1);  // شماره صفحه از ۱
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [onlyOnline, setOnlyOnline] = useState(false);
 
-  const [employeeOptions, setEmployeeOptions] = useState([]);
-  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeOptions, setEmployeeOptions] = useState([]);  // گزینه‌های Autocomplete پرسنل
+  const [employeeSearch, setEmployeeSearch] = useState("");  // متن تایپ‌شده در Autocomplete برای جست‌وجوی پرسنل
 
+  // بارگذاری جلسات حضور با فیلترها و صفحه فعلی
   useEffect(() => {
     setSessions(null);
     fetchPresenceSessions({
@@ -61,6 +69,7 @@ export default function PresenceReportPage() {
     });
   }, [page, selectedEmployee, selectedSiteId, onlyOnline]);
 
+  // با تغییر متن جست‌وجو، حداکثر ۲۰ پرسنل منطبق برای گزینه‌های فیلتر گرفته می‌شود
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
   }, [employeeSearch]);
@@ -79,6 +88,7 @@ export default function PresenceReportPage() {
         — نه یک لحظه تکی. اگر خارج از محدوده باشد، اصلاً هیچ ردیفی ثبت نمی‌شود.
       </Alert>
 
+      {/* نوار فیلترها؛ تغییر هر فیلتر صفحه را به ۱ برمی‌گرداند */}
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
@@ -115,6 +125,7 @@ export default function PresenceReportPage() {
         />
       </Stack>
 
+      {/* جدول جلسات حضور (یا حالت بارگذاری/خالی) و صفحه‌بندی */}
       {sessions === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
@@ -176,6 +187,7 @@ export default function PresenceReportPage() {
         </>
       )}
 
+      {/* توضیح نحوه کار مانیتورینگ حضور و ارتباط آن با GPS */}
       <Box sx={{ mt: 4, p: 2.5, border: "1px dashed", borderColor: "divider", borderRadius: 2 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           دقیقاً چطور کار می‌کند؟ و چه ارتباطی با GPS دارد؟

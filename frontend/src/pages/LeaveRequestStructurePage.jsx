@@ -48,20 +48,26 @@ import {
   updateLeaveRequestType,
 } from "../api/leaveRequestsAdmin";
 
+/**
+ * بخش مدیریت نوع‌های درخواست یک سایت.
+ * ورودی: siteId و onError برای نمایش خطا در والد.
+ * جدول نوع‌های موجود (با سوئیچ فعال/غیرفعال و حذف) و فرم افزودن نوع جدید با کدهای ActionId/OperationId/Card_No کاراوب.
+ */
 function TypesSection({ siteId, onError }) {
-  const [types, setTypes] = useState(null);
-  const [title, setTitle] = useState("");
-  const [isMission, setIsMission] = useState(false);
-  const [isHourly, setIsHourly] = useState(false);
-  const [isForgottenPunch, setIsForgottenPunch] = useState(false);
-  const [actionId, setActionId] = useState("1");
-  const [actionIdTouched, setActionIdTouched] = useState(false);
-  const [actionLookup, setActionLookup] = useState([]);
-  const [operationId, setOperationId] = useState("");
-  const [operationLookup, setOperationLookup] = useState([]);
-  const [cardNo, setCardNo] = useState("");
-  const [cardLookup, setCardLookup] = useState([]);
+  const [types, setTypes] = useState(null); // نوع‌های تعریف‌شده‌ی سایت؛ null = هنوز بارگذاری نشده
+  const [title, setTitle] = useState(""); // عنوان نوع جدید
+  const [isMission, setIsMission] = useState(false); // ماموریت (خاموش = مرخصی)
+  const [isHourly, setIsHourly] = useState(false); // ساعتی (خاموش = روزانه)
+  const [isForgottenPunch, setIsForgottenPunch] = useState(false); // نوع «تردد فراموش‌شده»
+  const [actionId, setActionId] = useState("1"); // ActionId کاراوب (رشته‌ای؛ خالی = null)
+  const [actionIdTouched, setActionIdTouched] = useState(false); // کاربر ActionId را دستی/از فهرست تعیین کرده؛ پیشنهاد خودکار متوقف می‌شود
+  const [actionLookup, setActionLookup] = useState([]); // فهرست رسمی WF_Action سایت
+  const [operationId, setOperationId] = useState(""); // OperationId کاراوب
+  const [operationLookup, setOperationLookup] = useState([]); // فهرست رسمی WF_OperationTypes سایت
+  const [cardNo, setCardNo] = useState(""); // Card_No کاراوب
+  const [cardLookup, setCardLookup] = useState([]); // فهرست رسمی Cards سایت
 
+  // بارگذاری سه فهرست مرجع کاراوب؛ در خطا فهرست خالی (Autocomplete مربوطه نمایش داده نمی‌شود)
   useEffect(() => {
     fetchActionLookup(siteId)
       .then(setActionLookup)
@@ -74,9 +80,7 @@ function TypesSection({ siteId, onError }) {
       .catch(() => setCardLookup([]));
   }, [siteId]);
 
-  // ⚠️ طبق تحلیل دقیق داده واقعی WF_Requests (۷ ردیف تستی): ActionId
-  // فقط به همین دو بعد بستگی دارد - این فقط یک پیشنهاد خودکار است؛ اگر
-  // کاربر دستی مقدار را عوض کند، دیگر خودکار به‌روزرسانی نمی‌شود.
+  // پیشنهاد خودکار ActionId از ترکیب ماموریت/ساعتی: مرخصی روزانه=1، ماموریت روزانه=2، مرخصی ساعتی=3، ماموریت ساعتی=9
   function suggestActionId(mission, hourly) {
     if (!mission && !hourly) return "1";
     if (mission && !hourly) return "2";
@@ -84,22 +88,26 @@ function TypesSection({ siteId, onError }) {
     return "9";
   }
 
+  // تغییر سوئیچ ماموریت؛ تا وقتی کاربر ActionId را دستی عوض نکرده، پیشنهاد خودکار به‌روز می‌شود
   function handleMissionChange(value) {
     setIsMission(value);
     if (!actionIdTouched) setActionId(suggestActionId(value, isHourly));
   }
 
+  // تغییر سوئیچ ساعتی؛ مانند handleMissionChange
   function handleHourlyChange(value) {
     setIsHourly(value);
     if (!actionIdTouched) setActionId(suggestActionId(isMission, value));
   }
 
+  // بارگذاری نوع‌های سایت
   function load() {
     fetchLeaveRequestTypes(siteId).then(setTypes);
   }
 
   useEffect(load, [siteId]);
 
+  // افزودن نوع جدید با مقادیر فرم، سپس بازنشانی فرم و بارگذاری مجدد لیست
   async function handleAdd() {
     if (!title.trim()) return;
     try {
@@ -126,6 +134,7 @@ function TypesSection({ siteId, onError }) {
     }
   }
 
+  // فعال/غیرفعال کردن یک نوع
   async function handleToggleActive(type) {
     try {
       await updateLeaveRequestType(type.id, { is_active: !type.is_active });
@@ -135,6 +144,7 @@ function TypesSection({ siteId, onError }) {
     }
   }
 
+  // حذف یک نوع
   async function handleDelete(type) {
     try {
       await deleteLeaveRequestType(type.id);
@@ -148,6 +158,7 @@ function TypesSection({ siteId, onError }) {
 
   return (
     <Box>
+      {/* جدول نوع‌های موجود */}
       <TableContainer sx={{ mb: 2 }}>
         <Table size="small">
           <TableHead>
@@ -185,6 +196,7 @@ function TypesSection({ siteId, onError }) {
         </Table>
       </TableContainer>
 
+      {/* انتخاب از فهرست WF_Action: عنوان و ActionId را پر می‌کند */}
       {actionLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
@@ -209,6 +221,7 @@ function TypesSection({ siteId, onError }) {
         </Box>
       )}
 
+      {/* انتخاب از فهرست WF_OperationTypes: OperationId را پر می‌کند */}
       {operationLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
@@ -225,6 +238,7 @@ function TypesSection({ siteId, onError }) {
         </Box>
       )}
 
+      {/* انتخاب کارت از فهرست Cards: Card_No و ActionId مشتق از کارت را پر می‌کند */}
       {cardLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
@@ -233,9 +247,7 @@ function TypesSection({ siteId, onError }) {
             onChange={(_, item) => {
               if (item) {
                 setCardNo(String(item.card_no));
-                // ⚠️ کشف حیاتی (تأییدشده با بررسی مستقیم دیتابیس): ActionId
-                // همیشه از همین کارت مشتق می‌شود، نه مستقل - با انتخاب
-                // کارت، خودکار هم‌زمان پر می‌شود.
+                // ActionId در کاراوب از کارت مشتق می‌شود؛ با انتخاب کارت خودکار پر می‌شود
                 if (item.action_id != null) {
                   setActionId(String(item.action_id));
                   setActionIdTouched(true);
@@ -254,6 +266,7 @@ function TypesSection({ siteId, onError }) {
         </Box>
       )}
 
+      {/* فرم افزودن نوع جدید: عنوان، سوئیچ‌ها (تردد فراموش‌شده، ماموریت و ساعتی را قفل می‌کند)، کدهای کاراوب و دکمه‌ی افزودن */}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField size="small" label="عنوان نوع جدید" value={title} onChange={(e) => setTitle(e.target.value)} />
         <FormControlLabel
@@ -318,10 +331,15 @@ function TypesSection({ siteId, onError }) {
   );
 }
 
+/**
+ * بخش تعیین تأییدکننده‌ی هر واحد سازمانی سایت.
+ * ورودی: siteId و onError. برای هر واحد، تأییدکننده‌ی فعلی (قابل حذف) و انتخاب‌گر پرسنل نمایش داده می‌شود.
+ */
 function ApproversSection({ siteId, onError }) {
-  const [departments, setDepartments] = useState(null);
-  const [approvers, setApprovers] = useState(null);
+  const [departments, setDepartments] = useState(null); // واحدهای سازمانی سایت
+  const [approvers, setApprovers] = useState(null); // تأییدکننده‌های تعیین‌شده به ازای واحد
 
+  // بارگذاری واحدها و تأییدکننده‌ها
   function load() {
     fetchDepartments(siteId).then(setDepartments);
     fetchLeaveRequestApprovers(siteId).then(setApprovers);
@@ -329,6 +347,7 @@ function ApproversSection({ siteId, onError }) {
 
   useEffect(load, [siteId]);
 
+  // تعیین/تغییر تأییدکننده‌ی یک واحد
   async function handleSetApprover(departmentId, employee) {
     try {
       await setLeaveRequestApprover(departmentId, employee.id);
@@ -338,6 +357,7 @@ function ApproversSection({ siteId, onError }) {
     }
   }
 
+  // حذف تأییدکننده‌ی یک واحد
   async function handleRemoveApprover(departmentId) {
     try {
       await removeLeaveRequestApprover(departmentId);
@@ -351,8 +371,9 @@ function ApproversSection({ siteId, onError }) {
 
   return (
     <Stack spacing={1.5}>
+      {/* یک کارت به ازای هر واحد سازمانی */}
       {departments.map((department) => {
-        const current = approvers.find((a) => a.department_id === department.id);
+        const current = approvers.find((a) => a.department_id === department.id); // تأییدکننده‌ی فعلی این واحد
         return (
           <Box key={department.id} sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
             <Typography fontWeight={700} sx={{ mb: 1 }}>
@@ -381,11 +402,14 @@ function ApproversSection({ siteId, onError }) {
   );
 }
 
-// ⚠️ طبق درخواست صریح کاربر: «تردد فراموش‌شده» اول توسط سرپرست (مثل مرخصی)
-// و در نهایت توسط مسئول نیروی انسانی همین سایت تأیید می‌شود.
+/**
+ * بخش تعیین مسئول نیروی انسانی سایت.
+ * ورودی: siteId و onError. «تردد فراموش‌شده» بعد از تأیید سرپرست، توسط این فرد تأیید نهایی می‌شود.
+ */
 function HrOfficerSection({ siteId, onError }) {
-  const [officer, setOfficer] = useState(undefined);
+  const [officer, setOfficer] = useState(undefined); // undefined = هنوز بارگذاری نشده، null = تعیین نشده
 
+  // بارگذاری مسئول فعلی
   function load() {
     fetchLeaveRequestHrOfficer(siteId)
       .then(setOfficer)
@@ -394,6 +418,7 @@ function HrOfficerSection({ siteId, onError }) {
 
   useEffect(load, [siteId]);
 
+  // تعیین/تغییر مسئول نیروی انسانی
   async function handleSet(employee) {
     try {
       await setLeaveRequestHrOfficer(siteId, employee.id);
@@ -403,6 +428,7 @@ function HrOfficerSection({ siteId, onError }) {
     }
   }
 
+  // حذف مسئول نیروی انسانی
   async function handleRemove() {
     try {
       await removeLeaveRequestHrOfficer(siteId);
@@ -435,13 +461,16 @@ function HrOfficerSection({ siteId, onError }) {
   );
 }
 
-// ⚠️ طبق درخواست کاربر: فعال/غیرفعال کردن کل ماژول برای این سایت. وقتی
-// غیرفعال است صفحه درخواست پرسنل بسته است و کارت داشبورد «غیرفعال» نشان
-// می‌دهد؛ نگاشت و تنظیمات دست‌نخورده می‌مانند و با فعال‌سازی دوباره برمی‌گردند.
+/**
+ * بخش فعال/غیرفعال کردن کل ماژول درخواست مرخصی برای یک سایت.
+ * ورودی: siteId و onError. وقتی غیرفعال است صفحه‌ی درخواست پرسنل بسته و کارت داشبورد «غیرفعال» است؛
+ * نگاشت و تنظیمات دست‌نخورده می‌مانند. اگر سایت نگاشت نداشته باشد فقط هشدار نشان می‌دهد.
+ */
 function ModuleStatusSection({ siteId, onError }) {
-  const [moduleStatus, setModuleStatus] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [moduleStatus, setModuleStatus] = useState(null); // { has_mapping, is_disabled }؛ null = هنوز بارگذاری نشده
+  const [saving, setSaving] = useState(false); // در حال ذخیره‌ی تغییر سوئیچ
 
+  // بارگذاری وضعیت ماژول با هر تغییر سایت
   useEffect(() => {
     setModuleStatus(null);
     fetchLeaveRequestModuleStatus(siteId)
@@ -449,6 +478,7 @@ function ModuleStatusSection({ siteId, onError }) {
       .catch(() => setModuleStatus(null));
   }, [siteId]);
 
+  // تغییر سوئیچ: سوئیچ روشن = فعال، پس مقدار disabled معکوس آن ارسال می‌شود
   async function handleToggle(event) {
     setSaving(true);
     try {
@@ -462,6 +492,7 @@ function ModuleStatusSection({ siteId, onError }) {
 
   if (moduleStatus === null) return null;
 
+  // بدون نگاشت کاراوب، ماژول اصلاً در دسترس نیست
   if (!moduleStatus.has_mapping) {
     return (
       <Alert severity="warning" sx={{ mb: 2 }}>
@@ -500,16 +531,22 @@ function ModuleStatusSection({ siteId, onError }) {
   );
 }
 
+/**
+ * صفحه‌ی تنظیمات درخواست مرخصی/ماموریت (مدیریتی).
+ * سایت انتخاب می‌شود (پیش‌فرض از query string یا اولین سایت) و سپس چهار بخش نمایش داده می‌شود:
+ * وضعیت ماژول، نوع‌های درخواست، تأییدکننده‌ی هر واحد و مسئول نیروی انسانی.
+ */
 export default function LeaveRequestStructurePage() {
   const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);
-  const [siteId, setSiteId] = useState("");
-  const [error, setError] = useState("");
+  const [siteId, setSiteId] = useState(""); // سایت انتخابی
+  const [error, setError] = useState(""); // خطای مشترک همه‌ی بخش‌ها
 
+  // بارگذاری سایت‌ها و انتخاب سایت اولیه
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
-      // از دکمه تب «نگاشت مرخصی/ماموریت» تنظیمات سایت، همان سایت انتخاب می‌شود
+      // اگر از تب «نگاشت مرخصی/ماموریت» تنظیمات سایت آمده باشیم، همان سایت انتخاب می‌شود
       const requested = Number(searchParams.get("site"));
       const match = data.find((site) => site.id === requested);
       if (match) setSiteId(match.id);
@@ -531,6 +568,7 @@ export default function LeaveRequestStructurePage() {
         باز کنید.
       </Alert>
 
+      {/* انتخاب سایت */}
       <TextField
         select
         label="سایت"
@@ -551,8 +589,10 @@ export default function LeaveRequestStructurePage() {
         </Alert>
       )}
 
+      {/* وضعیت ماژول برای سایت انتخابی */}
       {siteId && <ModuleStatusSection siteId={siteId} onError={setError} />}
 
+      {/* سه بخش تنظیمات در آکاردئون */}
       {siteId && (
         <Stack spacing={2}>
           <Accordion variant="outlined">

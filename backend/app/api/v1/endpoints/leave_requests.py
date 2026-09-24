@@ -1,6 +1,10 @@
 """
-Endpoint های «درخواست مرخصی/ماموریت» - ثبت (پرسنل)، فهرست خودم، فهرست
-در‌انتظار تأیید من، و تصمیم‌گیری (تأییدکننده).
+Endpoint های سمت پرسنل و تأییدکننده برای «درخواست مرخصی/ماموریت» (پیشوند /leave-requests).
+
+    - پرسنل: فهرست نوع‌های فعال، ثبت درخواست، فهرست درخواست‌های خودم، حذف درخواست تصمیم‌گیری‌نشده
+    - تأییدکننده: فهرست در انتظار من، سوابق تصمیم‌های من، شمارنده داشبورد، تأیید/رد
+همه‌ی این مسیرها به حساب متصل به پرسنل نیاز دارند (به‌جز pending-count که صفر برمی‌گرداند).
+خطاهای منطقی LeaveRequestService به 400 تبدیل می‌شوند.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -26,6 +30,7 @@ router = APIRouter()
 
 
 async def _require_employee(db: AsyncSession, current_user: User) -> Employee:
+    """پرسنل متصل به کاربر فعلی را برمی‌گرداند؛ حساب بدون پرسنل 400 و پرسنل حذف‌شده 404 می‌دهد."""
     if current_user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="این قابلیت فقط برای حساب‌های متصل به پرسنل در دسترس است"
@@ -41,13 +46,18 @@ async def get_active_types(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """فهرست نوع‌های فعال درخواست، برای فرم ثبت - بر اساس سایت خودِ کاربر."""
+    """
+    فهرست نوع‌های فعال درخواست برای فرم ثبت، بر اساس سایت پرسنل کاربر.
+    اگر ماژول برای سایت غیرفعال شده باشد، لیست خالی برمی‌گرداند.
+    """
     employee = await _require_employee(db, current_user)
+    # ماژول غیرفعال‌شده از پنل: فرم پرسنل هیچ نوعی نمی‌بیند
     mapping_disabled = await db.scalar(
         select(LeaveRequestMapping.is_disabled).where(LeaveRequestMapping.site_id == employee.site_id)
     )
     if mapping_disabled:
         return []
+    # فقط نوع‌های فعال همین سایت
     result = await db.execute(
         select(LeaveRequestType).where(
             LeaveRequestType.site_id == employee.site_id, LeaveRequestType.is_active.is_(True)
@@ -62,14 +72,20 @@ async def submit_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
-    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    """
+    ثبت یک درخواست جدید در WF_Requests کاراوب توسط پرسنل.
+    ورودی SubmitLeaveRequestIn؛ خروجی شناسه ردیف(های) ساخته‌شده.
+    خطاها: 403 اگر پیش‌نیاز دسترسی (اطلاعیه/ارزیابی) رد شود، 400 برای خطای اعتبارسنجی سرویس.
+    """
+    # پیش‌نیاز دسترسی: اگر ادمین آن را فعال کرده باشد و کاربر اطلاعیه خوانده‌نشده یا
+    # ارزیابی انجام‌نشده داشته باشد، 403 می‌گیرد
     try:
         await AccessGateService(db).check(current_user, "leave_request")
     except AccessGateBlocked as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
     employee = await _require_employee(db, current_user)
+    # اعتبارسنجی نوع/تاریخ‌ها و نوشتن در کاراوب داخل سرویس انجام می‌شود
     try:
         return await LeaveRequestService(db).submit_request(
             employee=employee,
@@ -92,6 +108,7 @@ async def get_my_requests(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """فهرست درخواست‌های خودِ پرسنل (همه وضعیت‌ها) از کاراوب؛ 400 اگر سایت نگاشت نداشته باشد."""
     employee = await _require_employee(db, current_user)
     try:
         return await LeaveRequestService(db).list_my_requests(employee)
@@ -104,6 +121,7 @@ async def get_pending_for_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """درخواست‌های در انتظار تصمیم کاربر فعلی به‌عنوان تأییدکننده (سرپرست یا مسئول نیروی انسانی)."""
     employee = await _require_employee(db, current_user)
     try:
         return await LeaveRequestService(db).list_pending_for_approver(employee)
@@ -118,7 +136,7 @@ async def get_decided_by_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """سوابق درخواست‌هایی که همین فرد قبلاً تأیید/رد کرده - صفحه‌بندی‌شده، جدیدترین تصمیم بالا."""
+    """سوابق درخواست‌هایی که کاربر فعلی تأیید/رد کرده است؛ صفحه‌بندی با page/page_size، جدیدترین تصمیم بالا."""
     employee = await _require_employee(db, current_user)
     try:
         return await LeaveRequestService(db).list_decided_by_approver(employee, page, page_size)
@@ -132,10 +150,10 @@ async def get_pending_count(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ برای شمارنده روی کارت داشبورد پرسنل (مثل شمارنده ارزیابی عملکرد).
-    هرگز خطا نمی‌دهد - کاربران بدون Employee یا سایت‌های بدون نگاشت،
-    صفر می‌گیرند (کارت داشبورد برای همه نمایش داده می‌شود).
+    تعداد درخواست‌های در انتظار تصمیم کاربر فعلی، برای شمارنده کارت داشبورد.
+    هرگز خطا نمی‌دهد: کاربر بدون پرسنل یا سایت بدون نگاشت، صفر می‌گیرد.
     """
+    # بدون پرسنل متصل، شمارنده صفر است (کارت داشبورد برای همه نمایش داده می‌شود)
     if current_user.employee_id is None:
         return {"pending_count": 0}
     employee = await db.get(Employee, current_user.employee_id)
@@ -150,7 +168,7 @@ async def delete_my_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """⚠️ فقط درخواست خودِ فرد، و فقط تا وقتی هنوز تصمیم‌گیری نشده."""
+    """حذف یک درخواست توسط خودِ پرسنل؛ فقط درخواست خودش و فقط تا وقتی تصمیم‌گیری نشده (وگرنه 400)."""
     employee = await _require_employee(db, current_user)
     try:
         await LeaveRequestService(db).delete_request(request_id, employee)
@@ -166,6 +184,10 @@ async def decide_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    تأیید یا رد یک درخواست توسط تأییدکننده فعلی آن (ورودی DecideRequestIn).
+    سرویس بررسی می‌کند که کاربر واقعاً تأییدکننده این درخواست باشد؛ در غیر این صورت 400.
+    """
     employee = await _require_employee(db, current_user)
     try:
         await LeaveRequestService(db).decide_request(

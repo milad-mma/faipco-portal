@@ -19,28 +19,32 @@ import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsAc
 import { fetchNoticeReaders, resendNoticePush } from "../api/notices";
 import { monoFontSx } from "../theme";
 
+/**
+ * دیالوگ فهرست کسانی که یک اطلاعیه را خوانده‌اند (نام، کد پرسنلی، زمان مشاهده).
+ * ورودی: noticeId (شناسه‌ی اطلاعیه؛ مقدار خالی = دیالوگ بسته) و onClose.
+ * دکمه‌ی «ارسال مجدد اعلان» هم دارد که Push را فقط برای کسانی که هنوز نخوانده‌اند دوباره می‌فرستد.
+ */
 export default function NoticeReadersDialog({ noticeId, onClose }) {
   const [readers, setReaders] = useState([]);
-  const [isResending, setIsResending] = useState(false);
+  const [isResending, setIsResending] = useState(false);  // در حال ارسال مجدد اعلان
   const [resendResult, setResendResult] = useState(null); // { success, message } | null
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState("");  // خطای دریافت فهرست (مثلاً 403)؛ جدا از «فهرست خالی» نمایش داده می‌شود
 
+  // با باز شدن دیالوگ برای یک اطلاعیه، وضعیت قبلی پاک و فهرست خوانندگان دریافت می‌شود
   useEffect(() => {
     if (noticeId) {
       setReaders([]);
       setResendResult(null);
       setLoadError("");
-      // ⚠️ رفع یک باگ واقعی: قبلاً بدون .catch بود — اگر Backend خطای ۴۰۳
-      // می‌داد (مثلاً برای کسی با notices.site_report نه notices.view)،
-      // این خطا بی‌صدا بلعیده می‌شد و readers همچنان [] (مقدار اولیه)
-      // می‌ماند — دقیقاً همان چیزی که به‌اشتباه «هنوز کسی نخوانده» تعبیر
-      // می‌شد، در حالی که واقعاً یعنی «اجازه مشاهده نداری».
+      // خطای سرور (مثلاً 403 برای کاربر بدون مجوز مشاهده) در loadError ذخیره می‌شود تا با
+      // «هنوز کسی نخوانده» اشتباه گرفته نشود.
       fetchNoticeReaders(noticeId)
         .then(setReaders)
         .catch((err) => setLoadError(err.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
     }
   }, [noticeId]);
 
+  // پس از تأیید کاربر، اعلان را برای خوانندگان‌نشده دوباره می‌فرستد و نتیجه را نمایش می‌دهد
   async function handleResendClick() {
     const confirmed = window.confirm(
       "این اعلان فقط برای کسانی که هنوز این اطلاعیه را نخوانده‌اند دوباره ارسال می‌شود — کسانی که قبلاً دیده‌اند، اعلان جدیدی دریافت نمی‌کنند. ادامه می‌دهید؟"
@@ -69,6 +73,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
     <Dialog open={Boolean(noticeId)} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>چه کسانی این اطلاعیه را دیده‌اند</DialogTitle>
       <DialogContent>
+        {/* محتوا: خطا، پیام خالی بودن، یا جدول خوانندگان */}
         {loadError ? (
           <Alert severity="error">{loadError}</Alert>
         ) : readers.length === 0 ? (
@@ -101,6 +106,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
         )}
       </DialogContent>
       <DialogActions sx={{ p: 2.5, flexDirection: "column", alignItems: "stretch", gap: 1 }}>
+        {/* نتیجه‌ی ارسال مجدد و دکمه‌های پایین دیالوگ */}
         {resendResult && (
           <Alert severity={resendResult.success ? "success" : "error"}>{resendResult.message}</Alert>
         )}

@@ -2,12 +2,10 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 /**
- * برخلاف AdminRoute (که فقط is_superuser را می‌پذیرد)، این یکی برای
- * /notice-reports است — که هم Admin واقعی (گزارش کامل سیستم) و هم
- * site_manager (گزارش سایت خودش) باید ببینند. can_view_site_notice_report
- * از قبل هردو حالت را روی Backend پوشش می‌دهد (در get_me()، یا is_superuser
- * یا حداقل یک سایت تحت مدیریت). این یک لایه محافظتی در UI است؛ بررسی
- * واقعی امنیتی (کدام سایت‌ها) همیشه در Backend انجام می‌شود.
+ * محافظ مسیر /notice-reports که هم ادمین (گزارش کل سیستم) و هم site_manager (گزارش سایت خودش) باید ببینند.
+ * ورودی: children. خروجی: اگر user.can_view_site_notice_report درست باشد children، وگرنه هدایت به /notices.
+ * این فلگ در Backend (get_me) برای is_superuser یا مدیر حداقل یک سایت درست است.
+ * این فقط لایه‌ی UI است؛ بررسی امنیتی واقعی (کدام سایت‌ها) در Backend انجام می‌شود.
  */
 export default function SiteNoticeReportRoute({ children }) {
   const { user } = useAuth();

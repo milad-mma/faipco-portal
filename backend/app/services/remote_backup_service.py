@@ -3,7 +3,7 @@
 
 SMB: از ابزار خط‌فرمان smbclient (بخش samba-client، باید در install.sh نصب
 شود) استفاده می‌شود - بدون نیاز به mount/دسترسی root، برخلاف mount.cifs که
-راه‌حل Restore همین پروژه (backup_service.py) هم عمداً از آن اجتناب کرد.
+نیاز به root دارد.
 
 FTP: از ftplib استاندارد پایتون استفاده می‌شود؛ اگر use_tls=True باشد، از
 FTP_TLS (یعنی FTPS - رمزنگاری‌شده) استفاده می‌شود، نه FTP خام (که رمز عبور
@@ -23,14 +23,17 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# الگوی نام فایل بکاپ؛ گروه ۱ زمان ساخت (UTC) است
 BACKUP_FILENAME_PATTERN = re.compile(r"faipco-backup-(\d{8}-\d{6})\.zip")
 
 
 class RemoteBackupError(Exception):
+    """خطای اتصال/آپلود/حذف روی مقصد SMB یا FTP با پیام قابل‌نمایش."""
     pass
 
 
 def _parse_backup_timestamp(filename: str) -> datetime | None:
+    """ورودی: نام فایل. خروجی: زمان ساخت بکاپ (UTC) از روی نام، یا None اگر با الگو نخواند."""
     match = BACKUP_FILENAME_PATTERN.search(filename)
     if not match:
         return None
@@ -46,14 +49,16 @@ def _files_to_delete_for_retention(
     """
     از بین filenames، فقط آن‌هایی که با الگوی بکاپ خودمان مطابقت دارند در
     نظر گرفته می‌شوند (فایل‌های دیگرِ همان پوشه/Share دست‌نخورده می‌مانند).
+    خروجی: نام فایل‌هایی که طبق mode (count/days) باید حذف شوند.
     """
     dated = [(name, ts) for name in filenames if (ts := _parse_backup_timestamp(name)) is not None]
     dated.sort(key=lambda pair: pair[1], reverse=True)  # جدیدترین اول
 
+    # حالت count: همه به‌جز N مورد جدیدتر حذف می‌شوند
     if mode == "count":
         return [name for name, _ in dated[retention_count:]]
 
-    # mode == "days"
+    # حالت days: بکاپ‌های قدیمی‌تر از N روز حذف می‌شوند
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     return [name for name, ts in dated if ts < cutoff]
 
@@ -62,16 +67,22 @@ def _files_to_delete_for_retention(
 
 
 def _find_smbclient_binary() -> str:
+    """مسیر اجرایی smbclient را از PATH یا مسیر پیش‌فرض برمی‌گرداند."""
     found = shutil.which("smbclient")
     return found or "/usr/bin/smbclient"
 
 
 def _smb_auth_string(username: str, password: str, domain: str | None) -> str:
-    auth = f"{username}%{password}"
+    """رشته احراز هویت smbclient را از نام کاربری، رمز و دامنه اختیاری می‌سازد."""
+    auth = f"{username}%{password}"  # قالب -U در smbclient: user%pass یا DOMAIN\user%pass
     return f"{domain}\\{auth}" if domain else auth
 
 
 def _run_smbclient(target: str, auth: str, command: str, *, timeout: int = 60) -> str:
+    """
+    یک فرمان smbclient روی target اجرا می‌کند و stdout+stderr را برمی‌گرداند.
+    خطا: RemoteBackupError اگر ابزار نصب نباشد یا Timeout شود.
+    """
     smbclient = _find_smbclient_binary()
     try:
         result = subprocess.run(
@@ -91,10 +102,12 @@ def _run_smbclient(target: str, auth: str, command: str, *, timeout: int = 60) -
 def test_smb_connection(
     *, host: str, share: str, path: str | None, username: str, password: str, domain: str | None
 ) -> None:
+    """اتصال به Share (و ورود به مسیر اختیاری) را با ls تست می‌کند. خطا: RemoteBackupError."""
     target = f"//{host}/{share}"
     auth = _smb_auth_string(username, password, domain)
     cmd = f'cd "{path.strip("/")}"; ls' if path else "ls"
     output = _run_smbclient(target, auth, cmd)
+    # smbclient خطاها را با کدهای NT_STATUS_* در خروجی گزارش می‌دهد
     if "NT_STATUS" in output and "NT_STATUS_OK" not in output:
         raise RemoteBackupError(f"اتصال به SMB ناموفق بود: {output.strip()[:500]}")
 
@@ -110,6 +123,10 @@ def upload_to_smb(
     password: str,
     domain: str | None,
 ) -> None:
+    """
+    فایل محلی را با نام remote_filename در Share/مسیر آپلود می‌کند و پوشه‌های لازم را می‌سازد.
+    خطا: RemoteBackupError اگر پیام موفقیت در خروجی نباشد.
+    """
     target = f"//{host}/{share}"
     auth = _smb_auth_string(username, password, domain)
 
@@ -124,24 +141,27 @@ def upload_to_smb(
         commands.append(f'cd "{path.strip("/")}"')
     commands.append(f'put "{file_path}" "{remote_filename}"')
 
+    # اجرای همه فرمان‌ها در یک نشست smbclient
     output = _run_smbclient(target, auth, "; ".join(commands), timeout=300)
-    if "putting file" not in output.lower():
+    if "putting file" not in output.lower():  # پیام موفقیت put در smbclient
         raise RemoteBackupError(f"آپلود به SMB ناموفق بود: {output.strip()[:800]}")
 
 
 def list_smb_backup_filenames(
     *, host: str, share: str, path: str | None, username: str, password: str, domain: str | None
 ) -> list[str]:
+    """خروجی: نام فایل‌های بکاپ پرتال موجود در مسیر SMB."""
     target = f"//{host}/{share}"
     auth = _smb_auth_string(username, password, domain)
     cmd = f'cd "{path.strip("/")}"; ls' if path else "ls"
     output = _run_smbclient(target, auth, cmd)
-    return [m.group(0) for m in re.finditer(r"faipco-backup-\d{8}-\d{6}\.zip", output)]
+    return [m.group(0) for m in re.finditer(r"faipco-backup-\d{8}-\d{6}\.zip", output)]  # فقط فایل‌های بکاپ از خروجی ls
 
 
 def delete_smb_file(
     filename: str, *, host: str, share: str, path: str | None, username: str, password: str, domain: str | None
 ) -> None:
+    """یک فایل را از مسیر SMB حذف می‌کند (خروجی smbclient بررسی نمی‌شود)."""
     target = f"//{host}/{share}"
     auth = _smb_auth_string(username, password, domain)
     cmd = f'cd "{path.strip("/")}"; del "{filename}"' if path else f'del "{filename}"'
@@ -160,6 +180,7 @@ def apply_smb_retention(
     retention_count: int,
     retention_days: int,
 ) -> int:
+    """بکاپ‌های اضافی/قدیمی روی SMB را طبق سیاست نگهداری حذف می‌کند. خروجی: تعداد حذف‌شده."""
     filenames = list_smb_backup_filenames(
         host=host, share=share, path=path, username=username, password=password, domain=domain
     )
@@ -175,6 +196,7 @@ def apply_smb_retention(
 
 
 def _connect_ftp(host: str, port: int, username: str, password: str, use_tls: bool) -> ftplib.FTP:
+    """به سرور FTP (یا FTPS اگر use_tls) وصل و وارد می‌شود. خروجی: شیء FTP. خطا: RemoteBackupError."""
     try:
         if use_tls:
             ftp = ftplib.FTP_TLS()
@@ -191,8 +213,10 @@ def _connect_ftp(host: str, port: int, username: str, password: str, use_tls: bo
 
 
 def _ftp_ensure_path(ftp: ftplib.FTP, path: str | None) -> None:
+    """پوشه کاری را به path تغییر می‌دهد و پوشه‌های ناموجود را می‌سازد."""
     if not path:
         return
+    # برای هر بخش مسیر: ورود به پوشه، و در صورت نبود ساخت آن
     for part in [p for p in path.strip("/").split("/") if p]:
         try:
             ftp.cwd(part)
@@ -204,6 +228,7 @@ def _ftp_ensure_path(ftp: ftplib.FTP, path: str | None) -> None:
 def test_ftp_connection(
     *, host: str, port: int, username: str, password: str, path: str | None, use_tls: bool
 ) -> None:
+    """اتصال، ورود و دسترسی به مسیر FTP را تست می‌کند. خطا: RemoteBackupError."""
     ftp = _connect_ftp(host, port, username, password, use_tls)
     try:
         _ftp_ensure_path(ftp, path)
@@ -228,6 +253,7 @@ def upload_to_ftp(
     path: str | None,
     use_tls: bool,
 ) -> None:
+    """فایل محلی را با نام remote_filename در مسیر FTP آپلود (STOR) می‌کند. خطا: RemoteBackupError."""
     ftp = _connect_ftp(host, port, username, password, use_tls)
     try:
         _ftp_ensure_path(ftp, path)
@@ -245,6 +271,7 @@ def upload_to_ftp(
 def list_ftp_backup_filenames(
     *, host: str, port: int, username: str, password: str, path: str | None, use_tls: bool
 ) -> list[str]:
+    """خروجی: نام فایل‌های بکاپ پرتال موجود در مسیر FTP."""
     ftp = _connect_ftp(host, port, username, password, use_tls)
     try:
         _ftp_ensure_path(ftp, path)
@@ -263,6 +290,7 @@ def list_ftp_backup_filenames(
 def delete_ftp_file(
     filename: str, *, host: str, port: int, username: str, password: str, path: str | None, use_tls: bool
 ) -> None:
+    """یک فایل را از مسیر FTP حذف می‌کند. خطا: RemoteBackupError."""
     ftp = _connect_ftp(host, port, username, password, use_tls)
     try:
         _ftp_ensure_path(ftp, path)
@@ -288,6 +316,7 @@ def apply_ftp_retention(
     retention_count: int,
     retention_days: int,
 ) -> int:
+    """بکاپ‌های اضافی/قدیمی روی FTP را طبق سیاست نگهداری حذف می‌کند. خروجی: تعداد حذف‌شده."""
     filenames = list_ftp_backup_filenames(
         host=host, port=port, username=username, password=password, path=path, use_tls=use_tls
     )

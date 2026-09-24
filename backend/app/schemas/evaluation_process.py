@@ -1,4 +1,7 @@
-"""Schema های Pydantic برای «جریان انجام ارزیابی»."""
+"""
+Schema های Pydantic برای «جریان انجام ارزیابی»: تولید انتساب‌ها، فهرست ارزیابی‌های من،
+ذخیره پاسخ‌ها، نمایش ارزیابی/نتیجه و خلاصه داشبورد. ورودی/خروجی endpointهای evaluation_process.py.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,15 +10,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class GenerateAssignmentsIn(BaseModel):
+    """بدنه درخواست تولید انتساب‌های یک دوره با یک فرم."""
     form_id: int
 
 
 class GenerateAssignmentsOut(BaseModel):
+    """نتیجه تولید انتساب‌ها: تعداد جدیدها و کل انتساب‌های دوره."""
     created_count: int
     total_assignments: int
 
 
 class EmployeeBriefOut(BaseModel):
+    """خلاصه پرسنل ارزیابی‌شونده؛ درون MyEvaluationItemOut."""
     id: int
     personnel_code: str
     first_name: str
@@ -25,17 +31,19 @@ class EmployeeBriefOut(BaseModel):
 
 
 class MyEvaluationItemOut(BaseModel):
+    """یک ردیف در فهرست «ارزیابی‌هایی که من باید انجام دهم»."""
     assignment_id: int
     target: EmployeeBriefOut
     period_title: str
     form_title: str
-    evaluation_id: int | None
+    evaluation_id: int | None  # None یعنی ارزیابی هنوز شروع نشده
     status: str  # not_started | draft | submitted
     was_edited: bool = False
     total_score: float | None = None
 
 
 class AnswerIn(BaseModel):
+    """پاسخ یک سوال درون SaveAnswersIn؛ بسته به نوع سوال فقط یکی از فیلدهای مقدار پر می‌شود."""
     question_id: int
     selected_option_ids: list[int] | None = None
     text_value: str | None = None
@@ -45,11 +53,12 @@ class AnswerIn(BaseModel):
 
 
 class SaveAnswersIn(BaseModel):
+    """بدنه ذخیره پیش‌نویس/ثبت پاسخ‌های یک ارزیابی."""
     answers: list[AnswerIn] = Field(default_factory=list)
 
 
 class AnswerOptionOut(BaseModel):
-    """⚠️ یک گزینه ممکن برای سوال - با مشخص‌بودن اینکه انتخاب شده یا نه، تا کاربر بفهمد «از بین چه گزینه‌هایی» انتخاب شده است."""
+    """یک گزینه ممکن برای سوال همراه با انتخاب‌شدن یا نشدنش، تا همه گزینه‌های موجود نمایش داده شوند."""
 
     id: int
     label: str
@@ -58,6 +67,7 @@ class AnswerOptionOut(BaseModel):
 
 
 class AnswerOut(BaseModel):
+    """پاسخ کامل یک سوال (شامل نظر ارزیاب)؛ برای ارزیاب و گزارش‌های مدیریتی."""
     id: int
     question_id: int | None
     question_text_snapshot: str
@@ -76,10 +86,8 @@ class AnswerOut(BaseModel):
 
 class MyAnswerOut(BaseModel):
     """
-    ⚠️ طبق تصمیم صریح کاربر: نسخه‌ی مخصوص نمایش به خودِ پرسنل - عمداً
-    فیلد comment (نظر خصوصی ارزیاب روی همان سوال) را ندارد؛ فقط متن
-    سوال، پاسخ و امتیاز. از AnswerOut جدا نگه داشته شده تا اگر بعداً
-    فیلدی به AnswerOut اضافه شود، ناخواسته به پرسنل نشت نکند.
+    پاسخ یک سوال برای نمایش به خودِ پرسنل ارزیابی‌شده؛ فیلد comment (نظر خصوصی ارزیاب)
+    را ندارد. جدا از AnswerOut تعریف شده تا فیلدهای جدید AnswerOut به پرسنل نشت نکنند.
     """
 
     id: int
@@ -97,6 +105,7 @@ class MyAnswerOut(BaseModel):
 
 
 class EvaluationOut(BaseModel):
+    """ارزیابی کامل همراه پاسخ‌ها؛ خروجی شروع/ذخیره/ثبت و بازکردن ارزیابی توسط ارزیاب."""
     id: int
     assignment_id: int
     form_id: int
@@ -117,7 +126,7 @@ class EvaluationOut(BaseModel):
 
 
 class EvaluationResultOut(BaseModel):
-    """برای «نتایج ارزیابی من» - همان Evaluation، بدون فهرست کامل پاسخ‌ها."""
+    """یک ردیف «نتایج ارزیابی من»؛ همان Evaluation بدون فهرست پاسخ‌ها."""
 
     id: int
     total_score: float | None
@@ -134,6 +143,7 @@ class EvaluationResultOut(BaseModel):
 
 
 class DashboardSummaryOut(BaseModel):
+    """خلاصه ارزیابی کاربر برای داشبورد: میانگین، آخرین امتیاز و تعداد موارد در انتظار."""
     average_score: float | None
     latest_score: float | None
     results_count: int
@@ -141,13 +151,14 @@ class DashboardSummaryOut(BaseModel):
 
 
 class YearlyAverageOut(BaseModel):
+    """میانگین امتیاز کاربر در یک سال شمسی (نمودار سالانه)."""
     jalali_year: int
     average_score: float | None
     count: int
 
 
 class ShiftLeadEvaluationOut(BaseModel):
-    """برای سرپرست - ارزیابی‌های ثبت‌شده توسط سرشیفت‌های واحدش، قابل بازکردن/ویرایش."""
+    """ارزیابی‌های ثبت‌شده توسط سرشیفت‌های واحد، برای مشاهده/ویرایش توسط سرپرست."""
 
     evaluation_id: int
     assignment_id: int

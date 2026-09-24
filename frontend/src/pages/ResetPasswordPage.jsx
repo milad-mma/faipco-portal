@@ -1,3 +1,7 @@
+/**
+ * صفحه بازنشانی رمز عبور از طریق لینک ایمیل.
+ * توکن از querystring خوانده می‌شود و رمز جدید (با تکرار) به سرور ارسال می‌شود.
+ */
 import { useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
 import { Alert, Box, Button, IconButton, InputAdornment, Link, TextField, Typography } from "@mui/material";
@@ -14,15 +18,17 @@ import AuthPageShell from "../components/AuthPageShell";
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const token = searchParams.get("token") || "";
+  const token = searchParams.get("token") || "";  // توکن بازنشانی از ?token=...
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);  // نمایش/مخفی کردن متن رمز در هر دو فیلد
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState(false);  // true = رمز تغییر کرد و فرم جای خود را به پیام موفقیت می‌دهد
 
+  // ارسال فرم: یکسان بودن رمز و تکرارش را بررسی می‌کند، سپس رمز جدید را با توکن
+  // به سرور می‌فرستد و در صورت موفقیت success را true می‌کند؛ خطای سرور در error نمایش داده می‌شود
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -45,6 +51,7 @@ export default function ResetPasswordPage() {
 
   return (
     <AuthPageShell title="بازنشانی رمز عبور">
+      {/* سه حالت: لینک بدون توکن، پیام موفقیت، یا فرم رمز جدید */}
       {!token ? (
         <Alert severity="error">
           لینک نامعتبر است. لطفاً از طریق لینک ارسال‌شده به ایمیل خود وارد این صفحه شوید.
@@ -114,6 +121,7 @@ export default function ResetPasswordPage() {
         </Box>
       )}
 
+      {/* لینک بازگشت به صفحه ورود */}
       <Typography variant="body2" textAlign="center" sx={{ mt: 3 }}>
         <Link component={RouterLink} to="/login">
           بازگشت به صفحه ورود

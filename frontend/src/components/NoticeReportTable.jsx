@@ -1,3 +1,7 @@
+/**
+ * جدول گزارش اطلاعیه‌های ارسالی با صفحه‌بندی سمت سرور؛ در موبایل به‌صورت کارت‌های بازشونده نمایش داده می‌شود.
+ * شامل کامپوننت داخلی SentNoticeCard (کارت موبایل) و کامپوننت اصلی NoticeReportTable.
+ */
 import { useEffect, useState } from "react";
 import {
   Box,
@@ -32,6 +36,7 @@ import { monoFontSx } from "../theme";
 import { deleteNotice } from "../api/notices";
 import NoticeReadersDialog from "./NoticeReadersDialog";
 
+// برچسب فارسی سطوح اولویت اطلاعیه
 const PRIORITY_LABELS = {
   low: "کم",
   normal: "عادی",
@@ -39,25 +44,23 @@ const PRIORITY_LABELS = {
   urgent: "فوری",
 };
 
-const ROWS_PER_PAGE = 10;
-// بیش از این تعداد Chip داخل خودِ سطر جدول نمایش داده نمی‌شود — مقصدهای بیشتر
-// فقط با کلیک روی «و N مورد دیگر» داخل یک Dialog قابل‌اسکرول دیده می‌شوند، تا
-// سطر جدول بیش‌ازحد بزرگ نشود و لود گزارش کند نشود.
+const ROWS_PER_PAGE = 10;  // تعداد اطلاعیه در هر صفحه (سمت سرور)
+// حداکثر تعداد Chip مقصد داخل سطر جدول؛ مقصدهای بیشتر با کلیک روی «و N مورد دیگر»
+// در یک Dialog قابل‌اسکرول نمایش داده می‌شوند تا سطر بیش‌ازحد بزرگ نشود.
 const INLINE_TARGET_LIMIT = 3;
 
 /**
- * کارت اطلاعیه روی موبایل — دقیقاً هم‌الگو با ReceivedNoticeCard (صفحه
- * «دریافتی»): در حالت عادی فقط یک هدر خلاصه (عنوان، تاریخ، اولویت) دیده
- * می‌شود؛ بدنه کامل (متن، مقصدها، تعداد مخاطب/دیده‌شده، دکمه‌های عملیات)
- * فقط با کلیک باز می‌شود. قبلاً همه این‌ها یک‌جا و همیشه نمایش داده
- * می‌شد — با تعداد زیاد اطلاعیه، صفحه موبایل بیش‌ازحد شلوغ و طولانی
- * می‌شد.
+ * کارت یک اطلاعیه‌ی ارسالی در موبایل (هم‌الگو با ReceivedNoticeCard صفحه‌ی «دریافتی»).
+ * ورودی: notice، showSender، allowDelete، onShowReaders(id)، onDelete(notice)، isDeleting و renderTargets(notice).
+ * به‌طور پیش‌فرض فقط هدر خلاصه (عنوان، تاریخ، اولویت) دیده می‌شود؛ با کلیک، متن، مقصدها،
+ * تعداد مخاطب/دیده‌شده و دکمه‌های عملیات باز می‌شوند.
  */
 function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onDelete, isDeleting, renderTargets }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false);  // باز/بسته بودن بدنه‌ی کارت
 
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", opacity: n.is_deleted ? 0.6 : 1 }}>
+      {/* هدر خلاصه‌ی کارت؛ کلیک روی آن بدنه را باز/بسته می‌کند */}
       <Box
         onClick={() => setExpanded((v) => !v)}
         sx={{
@@ -88,6 +91,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
         </Stack>
       </Box>
 
+      {/* بدنه‌ی بازشونده: فرستنده، متن، مقصدها، آمار و دکمه‌ها */}
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
           <Stack spacing={1}>
@@ -107,6 +111,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
 
             {renderTargets(n)}
 
+            {/* تعداد مخاطبان، تعداد دیده‌شده و وضعیت حذف */}
             <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
               <Typography variant="caption" sx={monoFontSx}>
                 مخاطبان: {n.audience_count}
@@ -123,6 +128,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
 
             <Divider />
 
+            {/* دکمه‌های مشاهده‌ی خوانندگان و حذف */}
             <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
               <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => onShowReaders(n.id)}>
                 چه کسانی دیدند
@@ -145,32 +151,27 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
 }
 
 /**
- * جدول گزارش اطلاعیه‌ها — هم برای «ارسالی من» و هم برای «گزارش کامل Admin»
- * استفاده می‌شود. برخلاف قبل، این کامپوننت خودش صفحه‌بندی سمت سرور را مدیریت
- * می‌کند (نه گرفتن کل لیست از والد و برش آن در فرانت‌اند) — چون واکشی و
- * پردازش هم‌زمان همه اطلاعیه‌های سیستم در یک درخواست، با رشد تعدادشان به‌شدت
- * کند می‌شد. کافی است تابع fetchPage(page, pageSize) داده شود که یک Promise
- * برگرداند شامل {items, total} برای همان صفحه.
- *
- * در هر دو استفاده با allowDelete=true قابلیت حذف فعال است (Backend اجازه
- * می‌دهد: خودِ فرستنده هر اطلاعیه، یا Admin برای اطلاعیه هرکسی). حذف همیشه
- * Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی خودِ این ردیف در
- * گزارش با برچسب «حذف شده» باقی می‌ماند (به‌جای این‌که ناپدید شود).
+ * جدول گزارش اطلاعیه‌ها؛ هم برای «ارسالی من» و هم برای «گزارش کامل ادمین» استفاده می‌شود.
+ * ورودی: fetchPage(page, pageSize) که Promise با {items, total} برای همان صفحه برمی‌گرداند (صفحه‌بندی سمت سرور)،
+ * showSender (نمایش ستون فرستنده)، allowDelete (امکان حذف) و reloadKey (تغییرش = بارگذاری مجدد و بازگشت به صفحه‌ی اول).
+ * حذف همیشه Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی ردیفش در گزارش با برچسب «حذف شده» می‌ماند.
+ * Backend حذف را برای فرستنده‌ی اطلاعیه یا ادمین مجاز می‌کند.
  */
 export default function NoticeReportTable({ fetchPage, showSender = false, allowDelete = false, reloadKey }) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));  // زیر breakpoint sm نمای کارتی به‌جای جدول
 
   const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);  // تعداد کل اطلاعیه‌ها برای صفحه‌بندی
+  const [page, setPage] = useState(0);  // ایندکس صفحه از صفر (سرور از ۱ می‌شمارد)
   const [isLoading, setIsLoading] = useState(true);
 
-  const [readersNoticeId, setReadersNoticeId] = useState(null);
-  const [bodyNotice, setBodyNotice] = useState(null);
-  const [targetsNotice, setTargetsNotice] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const [readersNoticeId, setReadersNoticeId] = useState(null);  // اطلاعیه‌ای که دیالوگ خوانندگانش باز است
+  const [bodyNotice, setBodyNotice] = useState(null);  // اطلاعیه‌ای که دیالوگ متن کاملش باز است
+  const [targetsNotice, setTargetsNotice] = useState(null);  // اطلاعیه‌ای که دیالوگ فهرست کامل مقصدهایش باز است
+  const [deletingId, setDeletingId] = useState(null);  // شناسه‌ی اطلاعیه‌ی در حال حذف (برای غیرفعال کردن دکمه)
 
+  // یک صفحه از سرور می‌خواند (ایندکس صفر‌پایه به شماره‌ی ۱‌پایه تبدیل می‌شود) و items/total را به‌روز می‌کند
   function loadPage(pageIndex) {
     setIsLoading(true);
     return fetchPage(pageIndex + 1, ROWS_PER_PAGE)
@@ -181,18 +182,19 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
       .finally(() => setIsLoading(false));
   }
 
+  // با تغییر صفحه یا reloadKey، داده دوباره بارگذاری می‌شود
   useEffect(() => {
     loadPage(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, reloadKey]);
 
   useEffect(() => {
-    // وقتی فیلتر بیرونی (مثلاً انتخاب سایت) تغییر کند، باید به صفحه اول
-    // برگردیم — وگرنه ممکن است روی صفحه‌ای بمانیم که دیگر داده‌ای ندارد.
+    // با تغییر فیلتر بیرونی (مثلاً انتخاب سایت) به صفحه‌ی اول برمی‌گردد تا روی صفحه‌ی بدون داده نماند
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
+  // پس از تأیید، اطلاعیه را حذف (Soft-Delete) و صفحه را به‌روز می‌کند
   async function handleDelete(notice) {
     if (!window.confirm(`اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`)) {
       return;
@@ -200,8 +202,8 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     setDeletingId(notice.id);
     try {
       await deleteNotice(notice.id);
-      // اگر آخرین ردیف همین صفحه حذف شد و صفحه اول نیست، یک صفحه به عقب برو؛
-      // وگرنه همین صفحه را دوباره از سرور بخوان.
+      // اگر آخرین ردیف صفحه حذف شد و صفحه‌ی اول نیست، یک صفحه به عقب می‌رود؛
+      // وگرنه همین صفحه دوباره از سرور خوانده می‌شود.
       if (items.length === 1 && page > 0) {
         setPage((p) => p - 1);
       } else {
@@ -214,8 +216,8 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     }
   }
 
-  // مشترک بین حالت جدول (دسکتاپ) و حالت کارت (موبایل) — تا منطق «نمایش
-  // Chip های مقصد + دکمه و N مورد دیگر» را دوبار ننویسیم.
+  // Chipهای مقصد یک اطلاعیه را می‌سازد (مشترک بین جدول دسکتاپ و کارت موبایل)؛
+  // اگر تعداد از INLINE_TARGET_LIMIT بیشتر باشد، بقیه در Chip «و N مورد دیگر» خلاصه می‌شوند.
   function renderTargets(n) {
     if (n.targets.length <= INLINE_TARGET_LIMIT) {
       return (
@@ -251,10 +253,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     );
   }
 
-  // ---------- حالت موبایل: کارت به‌جای جدول — چون این جدول ۱۰-۱۱ ستون دارد
-  // و روی صفحه کوچک هیچ‌جوره بدون اسکرول افقی (که خیلی آزاردهنده‌ست) جا
-  // نمی‌شود، این‌جا هر اطلاعیه یک کارت مستقل با چیدمان عمودی می‌شود —
-  // هیچ‌وقت نیازی به اسکرول چپ/راست نیست.
+  // حالت موبایل: هر اطلاعیه یک کارت عمودی است تا جدول چندستونی نیاز به اسکرول افقی نداشته باشد
   if (isMobile) {
     return (
       <>
@@ -273,6 +272,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
           ))}
         </Stack>
 
+        {/* صفحه‌بندی سمت سرور با اندازه‌ی ثابت صفحه */}
         <TablePagination
           component="div"
           count={total}
@@ -286,6 +286,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
 
         <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
 
+        {/* دیالوگ فهرست کامل مقصدهای یک اطلاعیه (قابل‌اسکرول) */}
         <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
           <DialogTitle>
             مقصدهای اطلاعیه «{targetsNotice?.title}»
@@ -308,12 +309,13 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
     );
   }
 
-  // ---------- حالت دسکتاپ/تبلت: همان جدول قبلی ----------
+  // حالت دسکتاپ/تبلت: جدول کامل
 
   return (
     <>
       <TableContainer>
         <Table size="small">
+          {/* سرستون‌ها؛ ستون فرستنده و حذف شرطی‌اند */}
           <TableHead>
             <TableRow>
               <TableCell>تاریخ و ساعت ارسال</TableCell>
@@ -396,6 +398,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         </Table>
       </TableContainer>
 
+      {/* صفحه‌بندی سمت سرور با اندازه‌ی ثابت صفحه */}
       <TablePagination
         component="div"
         count={total}
@@ -409,6 +412,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
 
       <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
 
+      {/* دیالوگ نمایش متن کامل اطلاعیه */}
       <Dialog open={Boolean(bodyNotice)} onClose={() => setBodyNotice(null)} fullWidth maxWidth="sm">
         <DialogTitle>{bodyNotice?.title}</DialogTitle>
         <DialogContent>
@@ -421,8 +425,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: فهرست کامل مقصدهای یک اطلاعیه — وقتی تعداد زیاد است، خودِ این
-          Dialog اسکرول می‌شود تا سطر جدول اصلی بزرگ و کند نشود. */}
+      {/* دیالوگ فهرست کامل مقصدهای یک اطلاعیه؛ خودِ دیالوگ اسکرول می‌شود تا سطر جدول بزرگ نشود */}
       <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
         <DialogTitle>
           مقصدهای اطلاعیه «{targetsNotice?.title}»

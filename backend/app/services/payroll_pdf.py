@@ -1,7 +1,6 @@
 """
 تولید PDF فیش حقوقی از روی فیلدهای خام استخراج‌شده (payroll_xml.py یا
-payroll_xlsx.py) — طرح‌بندی دقیقاً از روی نمونه واقعی فیش این سازمان تنظیم
-شده: عنوان بالای صفحه، زیرعنوان «فیش حقوق {ماه} ماه سال {سال}»، یک نوار
+payroll_xlsx.py). طرح‌بندی مطابق قالب فیش سازمان: عنوان بالای صفحه، زیرعنوان «فیش حقوق {ماه} ماه سال {سال}»، یک نوار
 مشخصات با پس‌زمینه طوسی کم‌رنگ (کد پرسنلی/نام/مرکز هزینه)، جدول ۴ ستونی اصلی
 (وام | کسور | مزایا | سایر)، و یک نوار جمع‌بندی پایین که هر مقدارش دقیقاً
 زیر همان ستون اصلی مربوطه‌اش می‌نشیند.
@@ -12,11 +11,10 @@ payroll_xlsx.py) — طرح‌بندی دقیقاً از روی نمونه وا�
 حروف از arabic_reshaper + python-bidi (یا در نبودشان، simple_bidi.py داخلی)
 استفاده می‌شود.
 
-نکته مهم درباره متن‌های طولانی: چون Bidi/Reshape قبل از چیدمان متن روی کل
-رشته اعمال می‌شود، اگر بگذاریم خودِ ReportLab یک رشته‌ی از قبل Reverse‌شده را
-خط‌شکنی کند، ترتیب کلمات بین خط‌ها به‌هم می‌ریزد. برای همین، برچسب‌های طولانی
-را خودمان از قبل بر اساس عرض واقعی ستون به چند خط می‌شکنیم و هر خط را
-جداگانه Shape می‌کنیم (_wrap_and_shape) — نه کل رشته را یک‌جا.
+متن‌های طولانی: Bidi/Reshape روی رشته اعمال می‌شود و خط‌شکنی ReportLab روی رشته‌ی
+Reverse‌شده ترتیب کلمات بین خط‌ها را به‌هم می‌ریزد؛ پس برچسب‌های طولانی از قبل بر اساس
+عرض ستون به چند خط شکسته و هر خط جداگانه Shape می‌شود (_wrap_and_shape).
+توابع _ensure_font_registered، _shape و _wrap_and_shape در attendance_card_pdf.py هم استفاده می‌شوند.
 """
 from __future__ import annotations
 
@@ -37,16 +35,16 @@ from app.services.payroll_common import FOOTER_LABEL_ROW
 
 logger = logging.getLogger("faipco.payroll_pdf")
 
+# نام‌های ثبت فونت در ReportLab و وضعیت ثبت (یک‌بار در طول عمر پردازش)
 _FONT_NAME = "PersianFont"
 _FONT_NAME_BOLD = "PersianFont-Bold"
 _font_checked = False
 _font_available = False
 _bold_font_available = False
 
-# اگر فایل تنظیم‌شده در PERSIAN_FONT_PATH موجود نبود، این مسیرهای رایج در
-# توزیع‌های اوبونتو/دبیان هم امتحان می‌شوند — نسخه Condensed را اول امتحان
-# می‌کنیم چون فشرده‌تر است و به ساختار فشرده گزارش اصلی (فونت Tahoma) نزدیک‌تر
-# می‌ماند؛ هر دو از قبل روی اکثر توزیع‌های لینوکس نصب هستند و حروف فارسی/عربی را دارند.
+# اگر فایل PERSIAN_FONT_PATH موجود نبود، این مسیرهای رایج اوبونتو/دبیان امتحان می‌شوند.
+# نسخه Condensed اول است چون فشرده‌تر و به فونت Tahoma گزارش اصلی نزدیک‌تر است؛
+# هر دو روی اکثر توزیع‌های لینوکس نصب‌اند و حروف فارسی/عربی را دارند.
 _FALLBACK_FONT_PATHS = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
     "/usr/share/fonts/dejavu/DejaVuSansCondensed.ttf",
@@ -54,11 +52,12 @@ _FALLBACK_FONT_PATHS = (
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 )
 
+# بازه‌های یونیکد عربی/فارسی و فرم‌های نمایشی؛ برای تشخیص نیاز به Shape
 _PERSIAN_RANGES = (("\u0600", "\u06FF"), ("\u0750", "\u077F"), ("\uFB50", "\uFDFF"), ("\uFE70", "\uFEFF"))
 
 
 def _bold_variant_path(regular_path: str) -> list[str]:
-    """چند حدس معقول برای مسیر نسخه Bold همان فونت (بر اساس قراردادهای نام‌گذاری رایج)."""
+    """ورودی: مسیر فونت Regular. خروجی: لیست مسیرهای حدسی نسخه Bold (Regular→Bold یا پسوند -Bold.ttf)."""
     candidates = []
     if "Regular" in regular_path:
         candidates.append(regular_path.replace("Regular", "Bold"))
@@ -68,12 +67,16 @@ def _bold_variant_path(regular_path: str) -> list[str]:
 
 
 def _ensure_font_registered() -> bool:
-    """فقط یک‌بار در طول عمر پردازش، Font (و در صورت امکان نسخه Bold آن) را ثبت می‌کند."""
+    """
+    فونت فارسی (و در صورت امکان نسخه Bold) را فقط یک‌بار در طول عمر پردازش ثبت می‌کند؛
+    اول PERSIAN_FONT_PATH و بعد مسیرهای جایگزین. خروجی: True اگر فونتی ثبت شد.
+    """
     global _font_checked, _font_available, _bold_font_available
     if _font_checked:
         return _font_available
     _font_checked = True
 
+    # امتحان مسیرها به ترتیب؛ اولین مسیر موفق ثبت می‌شود
     candidates = [get_settings().PERSIAN_FONT_PATH, *_FALLBACK_FONT_PATHS]
     for font_path in candidates:
         try:
@@ -85,6 +88,7 @@ def _ensure_font_registered() -> bool:
                     candidates[0],
                     font_path,
                 )
+            # تلاش برای ثبت نسخه Bold همان فونت (اختیاری)
             for bold_path in _bold_variant_path(font_path):
                 try:
                     pdfmetrics.registerFont(TTFont(_FONT_NAME_BOLD, bold_path))
@@ -92,6 +96,7 @@ def _ensure_font_registered() -> bool:
                     break
                 except Exception:  # noqa: BLE001
                     continue
+            # ثبت خانواده برای تگ <b> در Paragraph؛ بدون Bold، همان Regular استفاده می‌شود
             pdfmetrics.registerFontFamily(
                 _FONT_NAME,
                 normal=_FONT_NAME,
@@ -111,11 +116,15 @@ def _ensure_font_registered() -> bool:
 
 
 def _contains_persian(text: str) -> bool:
+    """ورودی: متن. خروجی: True اگر حداقل یک کاراکتر در بازه‌های _PERSIAN_RANGES باشد."""
     return any(any(lo <= ch <= hi for lo, hi in _PERSIAN_RANGES) for ch in text)
 
 
 def _shape(text: str) -> str:
-    """متن فارسی را برای نمایش صحیح (اتصال حروف + ترتیب راست‌به‌چپ) آماده می‌کند — بدون خط‌شکنی."""
+    """
+    ورودی: متن. برای متن فارسی اتصال حروف و ترتیب راست‌به‌چپ را اعمال می‌کند (بدون خط‌شکنی).
+    اول arabic_reshaper + python-bidi و در نبودشان simple_bidi داخلی؛ متن غیرفارسی یا خطا = متن اصلی.
+    """
     if not text or not _contains_persian(text):
         return text
     try:
@@ -132,13 +141,17 @@ def _shape(text: str) -> str:
 
 
 def _wrap_lines(text: str, font_name: str, font_size: float, max_width_pts: float) -> list[str]:
-    """مثل _wrap_and_shape ولی خط‌های خام (هنوز Shape نشده) را برمی‌گرداند — برای ترکیب با محتوای دیگر (مثل برچسب) قبل از Shape نهایی."""
+    """
+    ورودی: متن، فونت، اندازه و عرض مجاز (pt). متن را کلمه‌به‌کلمه بر اساس عرض رسم‌شده به خطوط می‌شکند.
+    خروجی: خط‌های خام (Shape‌نشده) — برای ترکیب با محتوای دیگر (مثل برچسب) پیش از Shape نهایی.
+    """
     if not text:
         return []
-    safe_width_pts = max_width_pts * 0.8
+    safe_width_pts = max_width_pts * 0.8  # ضریب اطمینان تا ReportLab خودش خط را دوباره نشکند
     words = text.split(" ")
     lines: list[str] = []
     current = ""
+    # افزودن کلمه به خط جاری تا وقتی عرض مجاز رد نشود؛ کلمه‌ی تنهای بلند هم در خط خودش می‌ماند
     for word in words:
         candidate = f"{current} {word}".strip()
         width = pdfmetrics.stringWidth(candidate, font_name, font_size)
@@ -154,17 +167,9 @@ def _wrap_lines(text: str, font_name: str, font_size: float, max_width_pts: floa
 
 def _wrap_and_shape(text: str, font_name: str, font_size: float, max_width_pts: float) -> str:
     """
-    متن را بر اساس عرض واقعی (px) به چند خط می‌شکند و هر خط را جداگانه Shape
-    می‌کند — چون Shape کردن کل رشته و سپس گذاشتن خط‌شکنی به عهده ReportLab
-    باعث به‌هم‌ریختن ترتیب کلمات بین خطوط می‌شود (نتیجه یک بار درست‌کردن این
-    مشکل واقعی بود؛ توضیح کامل در docstring بالای فایل).
-
-    نکته حیاتی: محاسبه عرض با pdfmetrics.stringWidth همیشه دقیقاً با
-    محاسبه داخلی ReportLab یکی نیست؛ اگر خیلی به مرز عرض واقعی نزدیک حساب
-    کنیم، ممکن است تصور کنیم یک خط جا می‌شود ولی ReportLab موقع رسم واقعی
-    دوباره آن را (این‌بار روی رشته‌ی از قبل Reverse‌شده و با ترتیب غلط)
-    بشکند. برای همین با ضریب اطمینان ۰٫۸ محاسبه می‌کنیم تا تصمیم شکستن خط
-    همیشه دست خودمان بماند، نه ReportLab.
+    ورودی: متن، فونت، اندازه و عرض مجاز (pt). متن را به چند خط می‌شکند و هر خط را جداگانه Shape می‌کند
+    تا ترتیب کلمات بین خطوط حفظ شود. خروجی: HTML خطوط با <br/> برای Paragraph.
+    عرض با ضریب ۰٫۸ حساب می‌شود (در _wrap_lines) چون stringWidth با محاسبه‌ی داخلی ReportLab دقیقاً یکی نیست.
     """
     return "<br/>".join(_shape(line) for line in _wrap_lines(text, font_name, font_size, max_width_pts))
 
@@ -173,37 +178,25 @@ def _build_label_value_html(
     label: str, value: str, font_name: str, font_bold_name: str, font_size: float, max_width_pts: float
 ) -> str:
     """
-    برای نوار مشخصات: «برچسب: مقدار» با ترتیب خواندن راست‌به‌چپ درست.
+    ورودی: برچسب، مقدار، فونت‌ها، اندازه و عرض سلول. HTML «برچسب: مقدار» را برای نوار مشخصات
+    با ترتیب راست‌به‌چپ درست می‌سازد. خروجی: HTML برای Paragraph.
 
-    نکته حیاتی درباره جهت: ReportLab هر خط را دقیقاً به ترتیب حروف داخل
-    رشته، از چپ به راست، رسم می‌کند و فقط کل خط را طوری جابه‌جا می‌کند که
-    آخرین چیزِ رسم‌شده به حاشیه راست بچسبد (چون alignment=TA_RIGHT است).
-    یعنی هر چیزی که در رشته آخر بیاید، در صفحه راست‌ترین (یعنی جایی که
-    خواننده فارسی‌زبان اول می‌بیند) قرار می‌گیرد. برای همین برچسب باید در
-    انتهای رشته‌ی خط اول بیاید، نه ابتدای آن.
-
-    نکته دوم (مهم‌تر): «:» باید همراه خودِ برچسب یک‌جا Shape شود
-    (_shape(f"{label}:"))، نه این‌که جدا بعد از Shape شدن برچسب اضافه شود
-    (_shape(label) + ":"). چون Shape/Bidi روی کل رشته‌ای که به آن داده
-    می‌شود موقعیت درست علائم را حساب می‌کند؛ اگر «:» را جدا و بیرون از
-    Shape اضافه کنیم، درست همان بلایی که یک‌بار سرش آمد تکرار می‌شود: به‌جای
-    اینکه بلافاصله بعد از خودِ کلمه برچسب بچسبد، به انتهای کل خط (بعد از
-    مقدار) پرتاب می‌شود.
-
-    اگر مقدار طولانی باشد و به چند خط بشکند، فقط خط اولش کنار برچسب می‌آید
-    (با عرض کمی کمتر، چون جای برچسب را هم اشغال کرده)؛ خط‌های بعدی فقط
-    ادامه مقدارند، بدون برچسب.
+    ReportLab هر خط را چپ‌به‌راست رسم و با TA_RIGHT به راست می‌چسباند، پس آنچه آخر رشته
+    می‌آید راست‌ترین است؛ برای همین برچسب در انتهای خط اول قرار می‌گیرد.
+    «:» همراه برچسب یک‌جا Shape می‌شود (_shape(f"{label}:")) تا Bidi آن را کنار برچسب
+    نگه دارد و به انتهای خط پرتاب نشود.
+    مقدار طولانی چندخطی می‌شود: فقط خط اول (با عرض کمتر) کنار برچسب است و بقیه ادامه‌ی مقدارند.
     """
     label_clean = label.rstrip(": ：")
     label_with_colon_shaped = _shape(f"{label_clean}:")
-    label_prefix_width = pdfmetrics.stringWidth(f"{label_clean}: ", font_bold_name, font_size)
-    reduced_width = max(max_width_pts - label_prefix_width, max_width_pts * 0.3)
+    label_prefix_width = pdfmetrics.stringWidth(f"{label_clean}: ", font_bold_name, font_size)  # عرض اشغال‌شده توسط برچسب
+    reduced_width = max(max_width_pts - label_prefix_width, max_width_pts * 0.3)  # حداقل ۳۰٪ عرض برای مقدار
 
     value_lines = _wrap_lines(value, font_name, font_size, reduced_width)
     if not value_lines:
         return f"<b>{label_with_colon_shaped}</b>"
 
-    lines_html = [f"{_shape(value_lines[0])} <b>{label_with_colon_shaped}</b>"]
+    lines_html = [f"{_shape(value_lines[0])} <b>{label_with_colon_shaped}</b>"]  # برچسب در انتهای رشته = سمت راست خط
     lines_html.extend(_shape(line) for line in value_lines[1:])
     return "<br/>".join(lines_html)
 
@@ -219,6 +212,7 @@ def render_payroll_receipt_pdf(
     fields: list[dict],
 ) -> bytes:
     """
+    ورودی: عنوان اطلاعیه، نام/کد پرسنل، نام Site و fields. خروجی: بایت‌های PDF فیش (A4).
     fields: خروجی ParsedReceiptItem.fields — لیست تخت {"label", "value", "section"}.
     "section" یکی از این‌هاست:
       ""            → مشخصات فیش (نوار بالای صفحه)
@@ -230,17 +224,10 @@ def render_payroll_receipt_pdf(
     """
     has_font = _ensure_font_registered()
     font_name = _FONT_NAME if has_font else "Helvetica"
-    # نکته مهم: هرگز _FONT_NAME_BOLD مستقیماً به‌عنوان fontName یک Paragraph
-    # Style استفاده نمی‌شود. برخلاف چیزی که قبلاً اینجا نوشته شده بود،
-    # چک‌کردن _bold_font_available کافی نیست: ReportLab برای Paragraph (نه
-    # drawString ساده)، fontName هر Style را با ps2tt() به یک «خانواده» فونت
-    # نگاشت می‌کند؛ این تابع فقط خانواده‌ای که با registerFontFamily ثبت شده
-    # (فقط _FONT_NAME) را می‌شناسد، نه نام مستقیم فونت Bold را — و بسته به
-    # این‌که کدام فایل Bold واقعاً روی هر سرور پیدا/Register شود، همین حالت
-    # می‌تواند با خطای «Can't map determine family/bold/italic» کل PDF را
-    # خراب کند (در تولید واقعاً رخ داده). پس این‌جا برای «حس Bold» فقط از
-    # رنگ/سایز فونت استفاده می‌شود، نه وزن واقعی Bold — تضمین می‌کند این
-    # مستقل از فونت Register‌شده روی هر سرور، همیشه قابل‌ساخت بماند.
+    # _FONT_NAME_BOLD مستقیماً به‌عنوان fontName یک ParagraphStyle استفاده نمی‌شود:
+    # ReportLab در Paragraph نام فونت را با ps2tt() به خانواده‌ی ثبت‌شده (فقط _FONT_NAME)
+    # نگاشت می‌کند و نام مستقیم فونت Bold ممکن است خطای «Can't map determine family/bold/italic»
+    # بدهد. پس «Bold» در Styleها همان فونت عادی است و تأکید با سایز فونت انجام می‌شود.
     font_bold = font_name if has_font else "Helvetica-Bold"
 
     # ---------- بازسازی فیلدهای تخت به بخش‌های معنادار ----------
@@ -263,19 +250,23 @@ def render_payroll_receipt_pdf(
                 section_order.append(section)
             section_rows[section].append(row)
 
+    # ترتیب ستون‌ها: ۴ ستون ثابت و سپس Sectionهای ناشناخته به ترتیب ظهور
     fixed_columns = ["وام", "کسور", "مزایا", "سایر"]
     extra_columns = [s for s in section_order if s not in fixed_columns]
     column_titles = fixed_columns + extra_columns
 
     def pop_header(*label_substrings: str) -> str | None:
+        """ورودی: زیررشته‌های برچسب. اولین ردیف مشخصات منطبق را از header_rows حذف و مقدارش را برمی‌گرداند."""
         for i, row in enumerate(header_rows):
             if any(s in row["label"] for s in label_substrings):
                 return header_rows.pop(i)["value"]
         return None
 
+    # سال و ماه از نوار مشخصات جدا و در زیرعنوان نمایش داده می‌شوند
     year_value = pop_header("سال")
     month_value = pop_header("ماه")
 
+    # سند A4 با حاشیه ۸ میلی‌متر از هر طرف
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -286,9 +277,8 @@ def render_payroll_receipt_pdf(
         bottomMargin=8 * mm,
     )
 
-    # اندازه‌ها و رنگ‌ها دقیقاً از روی CSS خودِ گزارش اصلی (خروجی MHTML همان
-    # سیستم) خوانده شده‌اند: عنوان ۱۲pt Bold، برچسب نوار مشخصات ۹pt Bold/مقدار
-    # ۹pt عادی با پس‌زمینه #d3d3d3، ردیف‌های جدول اصلی ۸pt با Padding فقط ۲pt.
+    # اندازه‌ها و رنگ‌ها مطابق CSS گزارش اصلی (خروجی MHTML): عنوان ۱۲pt، نوار مشخصات ۹pt
+    # با پس‌زمینه #d3d3d3، ردیف‌های جدول اصلی ۸pt با Padding حدود ۲pt.
     title_style = ParagraphStyle("PayrollTitle", fontName=font_bold, fontSize=12, alignment=TA_CENTER, spaceAfter=4)
     subtitle_style = ParagraphStyle(
         "PayrollSubtitle", fontName=font_bold, fontSize=10, alignment=TA_CENTER, spaceAfter=6
@@ -303,7 +293,7 @@ def render_payroll_receipt_pdf(
     story = []
 
     # ---------- عنوان و زیرعنوان ----------
-    story.append(Paragraph(_shape(report_title or site_name or notice_title or "فیش حقوقی"), title_style))
+    story.append(Paragraph(_shape(report_title or site_name or notice_title or "فیش حقوقی"), title_style))  # اولویت عنوان: عنوان گزارش، Site، عنوان اطلاعیه
     if month_value or year_value:
         subtitle = f"فیش حقوق {month_value or ''} ماه سال {year_value or ''}".replace("  ", " ").strip()
         story.append(Paragraph(_shape(subtitle), subtitle_style))
@@ -315,9 +305,8 @@ def render_payroll_receipt_pdf(
         for row in header_rows:
             cell_html = _build_label_value_html(row["label"], row["value"], font_name, font_bold, 9, info_col_width_pts)
             info_cells.append(Paragraph(cell_html, info_cell_style))
-        # ترتیب طبیعی سند (مرکز هزینه، نام، کد پرسنلی) از چپ به راست همان
-        # چیزی است که در نمایش راست‌به‌چپ، کد پرسنلی را در سمت راست می‌گذارد
-        # — پس هیچ Reverse ای لازم نیست.
+        # ترتیب سلول‌ها همان ترتیب سند است (چپ به راست: مرکز هزینه، نام، کد پرسنلی)
+        # که کد پرسنلی را در سمت راست قرار می‌دهد؛ Reverse لازم نیست.
         info_table = Table([info_cells], colWidths=[doc.width / len(info_cells)] * len(info_cells))
         info_table.setStyle(
             TableStyle(
@@ -337,61 +326,43 @@ def render_payroll_receipt_pdf(
         story.append(Spacer(1, 1.5 * mm))
 
     # ---------- جدول اصلی ۴ ستونی ----------
-    # نکته حیاتی ۱ (پایداری بین صفحات): این جدول را به‌جای «۴ سلول که هرکدام
-    # یک جدول تودرتوی کامل داخلش است» با ۸ ستون تخت (مقدار+برچسب برای هرکدام
-    # از ۴ ستون اصلی) و چند ردیف واقعی می‌سازیم؛ یک جدول تودرتوی خیلی بلند در
-    # یک سلول اگر از یک صفحه بلندتر شود، ReportLab نمی‌تواند آن را بین صفحات
-    # بشکند و کل تولید PDF متوقف می‌شود، ولی جدول تخت با ردیف واقعی می‌تواند.
-    #
-    # نکته حیاتی ۲ (عرض هر ستون): در گزارش اصلی، عرض هر ۴ ستون یکسان نیست —
-    # ستون «سایر» چون برچسب‌های بلندتری دارد (مثلاً «دستمزد و مزایای مشمول
-    # بیمه تامین اجتماعی»)، عرض بیشتری می‌گیرد. این نسبت‌ها از CSS واقعی
-    # همان گزارش استخراج شده‌اند.
+    # جدول تخت با دو ستون (مقدار + برچسب) به‌ازای هر ستون اصلی و ردیف‌های واقعی ساخته می‌شود،
+    # نه جدول‌های تودرتو در یک سلول، تا ReportLab بتواند آن را بین صفحات بشکند.
+    # عرض ستون‌ها یکسان نیست و نسبت‌ها از CSS گزارش اصلی گرفته شده‌اند؛ «سایر» به‌خاطر
+    # برچسب‌های بلندتر (مثل «دستمزد و مزایای مشمول بیمه تامین اجتماعی») پهن‌تر است.
     column_weights = {"وام": 0.19, "کسور": 0.21, "مزایا": 0.24, "سایر": 0.36}
-    default_weight = 1 / len(column_titles)
+    default_weight = 1 / len(column_titles)  # وزن Sectionهای ناشناخته
     total_weight = sum(column_weights.get(t, default_weight) for t in column_titles)
 
     col_width_map = {
         t: doc.width * (column_weights.get(t, default_weight) / total_weight) for t in column_titles
     }
-    # نکته مهم: عرض ستون «مقدار» فقط با درصد (۴۰٪) تعیین نمی‌شود، چون در
-    # ستون‌های باریک‌تر (مثل «وام») این عرض برای اعداد ۱۰-۱۳ رقمی (با
-    # جداکننده هزارگان) کافی نیست و ReportLab مجبور می‌شود خودش وسط عدد را
-    # بشکند (دقیقاً همان مشکلی که با تغییر فونت به Tahoma - که کمی عریض‌تر
-    # از DejaVu Condensed است - خودش را نشان داد). برای همین یک حداقل مطلق
-    # (بر حسب پوینت) هم تضمین می‌شود؛ چون برچسب‌های همین ستون‌های باریک
-    # (مثل «مانده»، «مبلغ قسط») کوتاهند، کم‌شدن سهم برچسب مشکلی ایجاد نمی‌کند.
-    # ۴۶٫۸ پوینت عرض واقعی متن لازم است (اندازه‌گیری‌شده با فونت Tahoma برای
-    # بزرگ‌ترین اعداد معمول مثل «مانده» وام)، به‌علاوه ۴pt Padding داخلی سلول
-    # و چند پوینت حاشیه اطمینان. این حداقل فقط برای ستون «وام» اعمال می‌شود
-    # (تنها ستونی که این مشکل در آن دیده شد) — نه برای هر ۴ ستون، چون عرض
-    # طبیعی «کسور» و «مزایا» هم به‌صورت اتفاقی زیر همین حد بود و اعمال
-    # سراسری این حداقل باعث می‌شد برچسب‌های آن دو ستون هم بیشتر بشکنند و
-    # ارتفاع کل جدول (که بین هر ۴ ستون مشترک است) چند رکورد را به ۲ صفحه سرریز کند.
+    # عرض ستون «مقدار» ۴۰٪ ستون اصلی است، با یک حداقل مطلق برای ستون باریک «وام» تا اعداد
+    # ۱۰ تا ۱۳ رقمی با جداکننده هزارگان وسط عدد شکسته نشوند (برچسب‌های «وام» کوتاه‌اند).
+    # ۵۸pt = حدود ۴۶٫۸pt عرض بزرگ‌ترین عدد با Tahoma + ۴pt Padding + حاشیه اطمینان.
+    # این حداقل فقط برای «وام» است؛ اعمال آن روی «کسور» و «مزایا» برچسب‌هایشان را بیشتر می‌شکند
+    # و ارتفاع جدول را زیاد می‌کند.
     min_value_width_pts_by_column = {"وام": 58}
     value_width_map = {
         t: max(w * 0.4, min_value_width_pts_by_column.get(t, 0)) for t, w in col_width_map.items()
     }
     label_width_map = {t: col_width_map[t] - value_width_map[t] for t in column_titles}
-    label_col_width_pts_map = {t: label_width_map[t] - 6 for t in column_titles}
+    label_col_width_pts_map = {t: label_width_map[t] - 6 for t in column_titles}  # منهای Padding برای خط‌شکنی برچسب
 
-    max_rows = max((len(section_rows.get(title, [])) for title in column_titles), default=0)
+    max_rows = max((len(section_rows.get(title, [])) for title in column_titles), default=0)  # تعداد ردیف جدول = بلندترین ستون
 
+    # ردیف سرستون: عنوان هر ستون اصلی روی دو زیرستون (مقدار + برچسب) ادغام می‌شود
     header_row = []
     span_commands = []
     for i, title in enumerate(column_titles):
-        # نکته مهم: عمداً رشته خام (نه Paragraph) استفاده می‌شود — وقتی یک
-        # Paragraph داخل سلولی قرار می‌گیرد که با SPAN بین دو ستون با عرض
-        # نامساوی (مقدار ۴۰٪ / برچسب ۶۰٪) ادغام شده، مرکز‌چینی داخلی خودِ
-        # Paragraph گاهی بر اساس عرض فقط اولین زیرستون محاسبه می‌شود، نه کل
-        # عرض ادغام‌شده — نتیجه‌اش این بود که عنوان هر ستون به‌جای وسط واقعی
-        # ستون، کمی به چپ متمایل می‌شد. رشته خام + ALIGN در TableStyle این
-        # مشکل را ندارد چون مستقیماً نسبت به عرض واقعی سلول (بعد از Span)
-        # وسط‌چین می‌شود.
+        # رشته خام (نه Paragraph) استفاده می‌شود: Paragraph در سلول SPAN‌شده با زیرستون‌های
+        # نامساوی بر اساس عرض اولین زیرستون وسط‌چین می‌شود، ولی رشته خام + ALIGN در
+        # TableStyle نسبت به عرض کامل سلول ادغام‌شده وسط‌چین می‌شود.
         header_row.append(_shape(title))
         header_row.append("")
         span_commands.append(("SPAN", (i * 2, 0), (i * 2 + 1, 0)))
 
+    # ردیف‌های داده: برای هر ستون اصلی (مقدار، برچسب) یا دو سلول خالی
     table_data = [header_row]
     for row_idx in range(max_rows):
         row_cells = []
@@ -420,13 +391,13 @@ def render_payroll_receipt_pdf(
         for i in range(len(column_titles) - 1)
     ]
 
-    main_table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    main_table = Table(table_data, colWidths=col_widths, repeatRows=1)  # تکرار سرستون در صفحات بعد
     main_table.setStyle(
         TableStyle(
             [
                 ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
                 *group_dividers,
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d3d3d3")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d3d3d3")),  # پس‌زمینه طوسی فقط برای سرستون
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
                 ("ALIGN", (0, 0), (-1, 0), "CENTER"),
@@ -447,30 +418,28 @@ def render_payroll_receipt_pdf(
     if footer_rows:
         story.append(Spacer(1, 1 * mm))
 
-        # هر ستون اصلی می‌تواند حداکثر ۲ ردیف جمع‌بندی داشته باشد (مثلاً زیر
-        # «مزایا»: هم «جمع مزایا» (ردیف اول) هم «خالص پرداختی» (ردیف دوم)؛
-        # زیر «وام»: هم «جمع اقساط وام» (ردیف اول) هم «شماره حساب» (ردیف دوم)).
-        # موقعیت هر برچسب از FOOTER_LABEL_ROW صریحاً معلوم است — مستقل از
-        # ترتیب پیدا شدنش (مثلاً اگر پرسنلی وام نداشته باشد، «شماره حساب»
-        # باید همچنان در ردیف دوم بماند، نه این‌که به ردیف اول منتقل شود).
+        # هر ستون اصلی حداکثر ۲ ردیف جمع‌بندی دارد (مثلاً زیر «مزایا»: «جمع مزایا» و «خالص پرداختی»؛
+        # زیر «وام»: «جمع اقساط وام» و «شماره حساب»). ردیف هر برچسب از FOOTER_LABEL_ROW تعیین می‌شود،
+        # مستقل از ترتیب پیدا شدنش (مثلاً «شماره حساب» حتی بدون وام در ردیف دوم می‌ماند).
+        # footer_grid: ستون -> {شماره ردیف -> ردیف جمع‌بندی}
         footer_grid: dict[str, dict[int, dict]] = {title: {} for title in column_titles}
         max_footer_row = -1
         for row in footer_rows:
             col = row.get("column")
             if col not in footer_grid:
-                col = column_titles[0]
+                col = column_titles[0]  # ستون نامشخص: زیر اولین ستون
             row_idx = FOOTER_LABEL_ROW.get(row["label"], 0)
             footer_grid[col][row_idx] = row
             max_footer_row = max(max_footer_row, row_idx)
 
         if max_footer_row >= 0:
-            # برخلاف جدول اصلی، در نوار جمع‌بندی برچسب‌ها همیشه کوتاهند
-            # («جمع کسور»، «خالص پرداختی») ولی مقدارها می‌توانند اعداد بزرگ
-            # باشند — پس نسبت عرض برعکس می‌شود (به مقدار فضای بیشتر داده می‌شود).
+            # در نوار جمع‌بندی برچسب‌ها کوتاه‌اند («جمع کسور»، «خالص پرداختی») و مقدارها اعداد بزرگ؛
+            # پس برخلاف جدول اصلی، سهم بیشتر عرض (۵۸٪) به مقدار داده می‌شود.
             footer_value_width_map = {t: w * 0.58 for t, w in col_width_map.items()}
             footer_label_width_map = {t: w * 0.42 for t, w in col_width_map.items()}
             footer_label_width_pts_map = {t: footer_label_width_map[t] - 6 for t in column_titles}
 
+            # هر سلول پر، یک جدول کوچک (مقدار، برچسب) است؛ سلول‌های بدون جمع‌بندی خالی می‌مانند
             footer_table_data = []
             for row_idx in range(max_footer_row + 1):
                 table_row = []
@@ -505,10 +474,8 @@ def render_payroll_receipt_pdf(
                         table_row.append("")
                 footer_table_data.append(table_row)
 
-            # نکته مهم: پس‌زمینه طوسی روی خودِ جدول بیرونی اعمال می‌شود (نه
-            # فقط سلول‌های پرمحتوا) تا کل نوار جمع‌بندی — شامل ستون‌های خالی
-            # مثل «سایر» وقتی جمع‌بندی ندارد — یکدست طوسی باشد، درست مثل نوار
-            # مشخصات بالای صفحه.
+            # پس‌زمینه طوسی روی کل جدول بیرونی اعمال می‌شود تا ستون‌های خالی (مثل «سایر» بدون
+            # جمع‌بندی) هم یکدست طوسی باشند، مثل نوار مشخصات. عرض ستون‌ها همان جدول اصلی است.
             footer_table = Table(footer_table_data, colWidths=[col_width_map[t] for t in column_titles])
             footer_table.setStyle(
                 TableStyle(
@@ -526,6 +493,7 @@ def render_payroll_receipt_pdf(
             )
             story.append(footer_table)
 
+    # هشدار انگلیسی در انتهای PDF وقتی فونت فارسی روی سرور پیدا نشد
     if not has_font:
         story.append(Spacer(1, 6 * mm))
         story.append(

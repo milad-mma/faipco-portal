@@ -12,7 +12,9 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/sent-by-me            (GET)   گزارش «چه چیزهایی به چه کسانی فرستادم» برای فرستنده
 /notices/admin-report          (GET)   گزارش کامل همه اطلاعیه‌ها با فرستنده و آمار بازدید — Admin
 /notices/site-report           (GET)   گزارش اطلاعیه‌های رسیده به سایت(های) تحت پوشش — فقط notices.site_report
-/notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده خودش یا Admin)
+/notices/{id}/readers          (GET)   چه کسانی این اطلاعیه را دیدند (فرستنده، Admin، notices.view یا notices.site_report)
+/notices/{id}/resend-push      (POST)  ارسال دوباره Push به مخاطبانی که هنوز نخوانده‌اند — فرستنده یا Admin
+/notices/stats-summary         (GET)   تعداد اطلاعیه‌های منتشرشده ۷ روز اخیر — نیازمند notices.view
 /notices/available-targets     (GET)   برای فرم «اطلاعیه جدید» — Target های مجاز کاربر جاری
 /notices/{id}                  (DELETE) حذف اطلاعیه — Soft-Delete، فقط فرستنده خودش یا Admin
 /notices/payroll               (POST)  آپلود XML فیش حقوقی و ارسال خودکار — فقط notices.payroll
@@ -34,7 +36,6 @@ from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority, NoticeType
 from app.core.site_access import get_sites_with_permission
-from app.repositories.user_repository import UserRepository
 from app.models.user import User
 from app.schemas.notice import (
     AttendanceCardResultOut,
@@ -57,9 +58,11 @@ router = APIRouter()
 
 
 async def _enforce_message_rate_limit(db: AsyncSession, user_id: int) -> None:
-    """هر کاربر حداکثر یک اطلاعیه در هر ۶۰ ثانیه می‌تواند بفرستد — روی هر
-    سه مسیر ارسال واقعی (متنی، فیش حقوقی، فیش کارکرد) به‌طور یکسان اعمال
-    می‌شود، چون هر سه از نظر این محدودیت «فرستادن یک پیام» محسوب می‌شوند."""
+    """
+    محدودیت نرخ ارسال: هر کاربر حداکثر یک اطلاعیه در هر MESSAGE_RATE_LIMIT_SECONDS ثانیه.
+    روی همه مسیرهای ارسال واقعی (انتشار متنی، فیش حقوقی، فیش کارکرد، ارسال مجدد Push) اعمال می‌شود.
+    خطا: 429 همراه هدر Retry-After.
+    """
     remaining = await check_message_rate_limit(db, user_id)
     if remaining is not None:
         raise HTTPException(
@@ -75,6 +78,10 @@ async def create_notice(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    یک اطلاعیه متنی (پیش‌نویس) می‌سازد و برمی‌گرداند. دسترسی: هر کاربر لاگین‌شده،
+    ولی مجوز ارسال به هر Target جداگانه در سرویس بررسی می‌شود. خطا: 403 برای Target غیرمجاز.
+    """
     try:
         return await NoticeService(db).create_notice(current_user, payload)
     except NoticePermissionError as e:
@@ -88,8 +95,15 @@ async def publish_notice(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    اطلاعیه‌ی پیش‌نویس را منتشر می‌کند و ارسال Push را در پس‌زمینه زمان‌بندی می‌کند.
+    دسترسی: فقط فرستنده‌ی اطلاعیه یا superuser. خطاها: 429 محدودیت نرخ، 403 غیرمجاز یا غیرپیش‌نویس، 404 یافت نشد.
+    """
     await _enforce_message_rate_limit(db, current_user.id)
-    notice = await NoticeService(db).publish_notice(notice_id)
+    try:
+        notice = await NoticeService(db).publish_notice(notice_id, current_user)
+    except NoticePermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
     # ارسال Push به Background منتقل می‌شود تا پاسخ فوراً برگردد (بدون مکث شبکه)
@@ -101,9 +115,14 @@ async def publish_notice(
 @router.get("", response_model=list[NoticeOut])
 async def list_notices(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("notices.view")),
+    current_user: User = Depends(require_permission("notices.view")),
 ):
-    return await NoticeService(db).list_all()
+    """
+    فهرست اطلاعیه‌ها. دسترسی: مجوز notices.view (در غیر این صورت 403). با مجوز سراسری همه‌ی
+    اطلاعیه‌ها، با مجوز سایتی فقط اطلاعیه‌هایی که به همان سایت‌ها می‌رسند.
+    """
+    view_sites = await get_sites_with_permission(db, current_user, "notices.view")
+    return await NoticeService(db).list_all(view_sites)
 
 
 @router.get("/me", response_model=NoticePageOut)
@@ -116,6 +135,8 @@ async def my_notices(
     current_user: User = Depends(get_current_user),
 ):
     """
+    اطلاعیه‌های قابل‌مشاهده برای کاربر جاری به‌صورت صفحه‌بندی‌شده، همراه تعداد کل خوانده‌نشده‌ها.
+    دسترسی: هر کاربر لاگین‌شده.
     notice_type (اختیاری): فقط اطلاعیه‌های همان نوع — برای صفحه اختصاصی
     «فقط فیش‌های حقوقی من» یا «فقط فیش‌های کارکرد من».
     archived (پیش‌فرض "exclude"): "exclude" مثل صندوق ورودی ایمیل — آرشیوشده‌ها
@@ -135,7 +156,7 @@ async def mark_notice_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """وقتی کاربر یک اطلاعیه بسته/Preview‌شده را باز می‌کند، از فرانت‌اند صدا زده می‌شود."""
+    """مشاهده اطلاعیه توسط کاربر جاری را ثبت می‌کند؛ هنگام باز کردن اطلاعیه از فرانت‌اند صدا زده می‌شود. خروجی: 204."""
     await NoticeService(db).mark_as_read(notice_id, current_user.id)
 
 
@@ -166,7 +187,8 @@ async def sent_by_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """گزارش شخصی فرستنده: چه چیزهایی به چه کسانی/واحدهایی فرستاده و چند نفر دیده‌اند (صفحه‌بندی‌شده)."""
+    """گزارش شخصی فرستنده: چه چیزهایی به چه کسانی/واحدهایی فرستاده و چند نفر دیده‌اند (صفحه‌بندی‌شده). دسترسی: هر کاربر لاگین‌شده."""
+    # محدودسازی صفحه و اندازه صفحه (حداکثر ۱۰۰)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     items, total = await NoticeService(db).get_detailed_notices(
@@ -181,7 +203,7 @@ async def admin_report(
     page_size: int = 10,
     site_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("notices.view")),
+    current_user: User = Depends(require_permission("notices.view")),
 ):
     """
     گزارش کامل Admin: همه اطلاعیه‌های سیستم، فرستنده هرکدام، و آمار بازدید
@@ -189,9 +211,22 @@ async def admin_report(
     همان سایت می‌رسند (از هر فرستنده‌ای) — برای نمای «سایت-محور» پنل Admin؛
     از همان منطق /site-report استفاده می‌کند، فقط این‌جا Admin خودش سایت را
     از یک Dropdown انتخاب می‌کند (نه این‌که به سایت‌های تحت مدیریتش محدود باشد).
+    دسترسی: مجوز notices.view.
     """
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
+    # مجوز سایتی notices.view فقط سایت‌های خودش را می‌بیند (سایت خارج از آن → 403)
+    view_sites = await get_sites_with_permission(db, current_user, "notices.view")
+    if view_sites is not None:
+        if site_id is not None and site_id not in view_sites:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده اطلاعیه‌های این سایت را ندارید")
+        items, total = await NoticeService(db).get_detailed_notices_for_sites(
+            [site_id] if site_id is not None else sorted(view_sites),
+            limit=page_size,
+            offset=(page - 1) * page_size,
+        )
+        return NoticeDetailPageOut(items=items, total=total)
+    # با site_id: گزارش سایت‌محور؛ بدون آن: همه اطلاعیه‌ها از همه فرستنده‌ها
     if site_id is not None:
         items, total = await NoticeService(db).get_detailed_notices_for_sites(
             [site_id], limit=page_size, offset=(page - 1) * page_size
@@ -219,17 +254,18 @@ async def site_report(
     برخلاف /admin-report، نیازمند notices.view سراسری نیست. Admin هم
     می‌تواند صدا بزند (همه سایت‌ها).
 
-    ⚠️ این مجوز قبلاً مستقیماً به نام نقش «site_manager» Hard-code شده
-    بود؛ حالا یک Permission Code واقعی و قابل‌تخصیص به هر نقشی است
-    (طبق Migration 035، به‌طور پیش‌فرض همچنان به site_manager هم وصل است).
+    notices.site_report یک Permission Code قابل‌تخصیص به هر نقشی است
+    (طبق Migration 035، به‌طور پیش‌فرض به نقش site_manager وصل است).
 
     site_id (اختیاری): فیلتر «سایت-محور» — برای کسی که چند سایت را
     پوشش می‌دهد، اگر بخواهد فقط یکی را ببیند. با سایت‌های مجازش تقاطع
     گرفته می‌شود؛ نمی‌تواند سایتی خارج از دسترسش را انتخاب کند.
+    خطا: 403 اگر کاربر برای هیچ سایتی مجوز notices.site_report نداشته باشد.
     """
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
 
+    # تعیین سایت‌های تحت پوشش کاربر: superuser یا مجوز سراسری → همه سایت‌ها
     if current_user.is_superuser:
         from app.models.site import Site
 
@@ -251,6 +287,7 @@ async def site_report(
                 detail="شما اجازه مشاهده این گزارش را ندارید",
             )
 
+    # فیلتر اختیاری روی یک سایت، فقط در صورتی که جزو سایت‌های مجاز باشد
     if site_id is not None:
         site_ids = [site_id] if site_id in managed_site_ids else []
     else:
@@ -272,22 +309,19 @@ async def notice_readers(
     چه کسانی این اطلاعیه را دیده‌اند — فرستنده، Admin واقعی، هرکسی با
     notices.view سراسری، یا هرکسی با notices.site_report برای حداقل یکی
     از سایت‌هایی که این اطلاعیه واقعاً به آن‌ها می‌رسد.
-
-    ⚠️ رفع یک باگ واقعی: قبلاً این Endpoint فقط فرستنده/is_superuser را
-    اجازه می‌داد — با اینکه توضیحش ادعا می‌کرد notices.view هم مجاز است؛
-    در عمل، کسی با notices.site_report (که دقیقاً برای دیدن اطلاعیه‌های
-    فرستاده‌شده توسط *دیگران* به سایتش طراحی شده) همیشه ۴۰۳ می‌گرفت. چون
-    Frontend این خطا را می‌بلعید (بدون .catch)، به‌جای پیام خطا، یک لیست
-    خالی نشان می‌داد — دقیقاً همان چیزی که به‌اشتباه «هنوز کسی نخوانده»
-    تعبیر می‌شد.
+    خطا: 404 اگر اطلاعیه وجود نداشته باشد، 403 اگر هیچ‌کدام از شرایط دسترسی برقرار نباشد.
     """
     notice = await db.get(Notice, notice_id)
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
 
+    # بررسی دسترسی برای غیر فرستنده و غیر superuser: ابتدا notices.view سراسری، سپس notices.site_report
     if notice.sender_id != current_user.id and not current_user.is_superuser:
-        has_global_view = "notices.view" in await UserRepository(db).get_all_permission_codes(current_user.id)
-        allowed = has_global_view
+        # notices.view: سراسری → مجاز؛ سایتی → اگر اطلاعیه به یکی از آن سایت‌ها برسد
+        view_sites = await get_sites_with_permission(db, current_user, "notices.view")
+        allowed = view_sites is None or (
+            bool(view_sites) and await NoticeService(db).notice_reaches_any_site(notice_id, view_sites)
+        )
         if not allowed:
             site_report_sites = await get_sites_with_permission(db, current_user, "notices.site_report")
             if site_report_sites is None:
@@ -307,12 +341,9 @@ async def resend_notice_push(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ارسال دوباره Push — فقط خودِ Push، نه خودِ اطلاعیه (که هیچ تغییری
-    نمی‌کند)، و فقط برای کسانی که هنوز این اطلاعیه را باز نکرده‌اند. مجوز
-    دقیقاً مثل حذف اطلاعیه (فقط فرستنده یا Admin) داخل خودِ Service چک
-    می‌شود. از همان محدودیت «حداکثر هر ۶۰ ثانیه یک بار» بقیه مسیرهای ارسال
-    واقعی استفاده می‌کند — تا کلیک پیاپی این دکمه هم کاربران را با ارسال
-    Push پشت‌سرهم اذیت نکند.
+    ارسال دوباره Push (بدون تغییر خودِ اطلاعیه) فقط برای مخاطبانی که هنوز آن را باز نکرده‌اند.
+    دسترسی: فقط فرستنده یا Admin (بررسی در Service). مشمول همان محدودیت نرخ بقیه مسیرهای ارسال.
+    خطا: 429، 404 (اطلاعیه یافت نشد)، 403 (عدم مجوز). خروجی: {"sent_count": تعداد}.
     """
     await _enforce_message_rate_limit(db, current_user.id)
     try:
@@ -335,6 +366,7 @@ async def delete_notice(
     حذف اطلاعیه (Soft-Delete): فقط فرستنده خودش یا Admin. بلافاصله از پنل همه
     مخاطبانی که آن را دریافت کرده بودند کنار می‌رود، ولی رکورد در گزارش «ارسالی
     من» و گزارش کامل Admin با برچسب «حذف شده» باقی می‌ماند (حذف فیزیکی نمی‌شود).
+    خطا: 404 اگر اطلاعیه یافت نشود، 403 اگر کاربر فرستنده یا Admin نباشد.
     """
     try:
         await NoticeService(db).delete_notice(notice_id, current_user)
@@ -347,10 +379,14 @@ async def delete_notice(
 @router.get("/stats-summary")
 async def notices_stats_summary(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("notices.view")),
+    current_user: User = Depends(require_permission("notices.view")),
 ):
-    """تعداد اطلاعیه‌های منتشرشده کل سیستم در ۷ روز اخیر — برای کارت آمار داشبورد Admin."""
-    count = await NoticeService(db).count_published_this_week()
+    """
+    تعداد اطلاعیه‌های منتشرشده در ۷ روز اخیر — برای کارت آمار داشبورد Admin. دسترسی: notices.view
+    (با مجوز سایتی فقط اطلاعیه‌هایی که به همان سایت‌ها می‌رسند شمرده می‌شوند).
+    """
+    view_sites = await get_sites_with_permission(db, current_user, "notices.view")
+    count = await NoticeService(db).count_published_this_week(view_sites)
     return {"published_this_week": count}
 
 
@@ -359,6 +395,7 @@ async def available_targets(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Target هایی (سایت/دپارتمان/نقش/پرسنل/همه) که کاربر جاری مجاز به ارسال اطلاعیه به آن‌هاست؛ برای فرم «اطلاعیه جدید»."""
     return await NoticeService(db).get_available_targets(current_user)
 
 
@@ -382,10 +419,13 @@ async def create_payroll_notice(
     فایل آپلود می‌شود (XML یا XLSX — بر اساس پسوند تشخیص داده می‌شود)، کد هر
     رکورد با Employee.personnel_code تطبیق داده می‌شود، و اطلاعیه بلافاصله
     فقط برای پرسنل منطبق منتشر می‌شود. کدهای پیدا نشده در پاسخ گزارش می‌شوند
-    (ارسال نمی‌شوند).
+    (ارسال نمی‌شوند). دسترسی: مجوز notices.payroll.
+    خطا: 429 (محدودیت نرخ)، 400 (فایل نامعتبر/قابل‌تجزیه نبودن).
     """
     await _enforce_message_rate_limit(db, current_user.id)
     file_bytes = await file.read()
+    # فیش فقط برای پرسنل سایت‌هایی ارسال می‌شود که فرستنده notices.payroll را برایشان دارد
+    allowed_sites = await get_sites_with_permission(db, current_user, "notices.payroll")
     try:
         result = await PayrollNoticeService(db).create_payroll_notice(
             sender=current_user,
@@ -394,10 +434,12 @@ async def create_payroll_notice(
             priority=priority,
             file_bytes=file_bytes,
             filename=file.filename or "",
+            site_ids=allowed_sites,
         )
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    # ارسال Push در پس‌زمینه و ثبت زمان ارسال برای محدودیت نرخ
     background_tasks.add_task(send_publish_notifications, result.notice.id)
     await record_message_sent(db, current_user.id)
 
@@ -406,6 +448,7 @@ async def create_payroll_notice(
         matched_employee_count=result.matched_employee_count,
         missing_codes=result.missing_codes,
         invalid_row_count=result.invalid_row_count,
+        out_of_scope_codes=result.out_of_scope_codes,
     )
 
 
@@ -420,10 +463,10 @@ async def download_my_payroll_receipt(
     پارامتری برای انتخاب employee_id دیگری در این Endpoint وجود ندارد؛ همیشه
     از روی current_user.employee_id خوانده می‌شود، پس دسترسی به فیش دیگران
     از این مسیر ساختاراً غیرممکن است.
+    خطا: 403 (پیش‌نیاز دسترسی برقرار نیست)، 404 (اطلاعیه یا فیش یافت نشد).
     """
-    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و
-    # کاربر اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳
-    # می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
+    # پیش‌نیاز دسترسی: اگر ادمین این اجبار را فعال کرده باشد و کاربر اطلاعیه
+    # خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، 403 می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
     try:
         await AccessGateService(db).check(current_user, "payroll_receipt")
     except AccessGateBlocked as e:
@@ -446,6 +489,7 @@ async def download_my_payroll_receipt(
 
     site = await db.get(Site, employee.site_id) if employee else None
 
+    # فیلدهای فیش به‌صورت JSON ذخیره شده‌اند؛ PDF در لحظه ساخته می‌شود
     fields = json.loads(receipt.fields_json)
     pdf_bytes = render_payroll_receipt_pdf(
         notice_title=notice.title,
@@ -480,9 +524,12 @@ async def create_attendance_card_notice(
     داده می‌شود، و اطلاعیه بلافاصله فقط برای پرسنل منطبق منتشر می‌شود.
     کدهای پیدا نشده در پاسخ گزارش می‌شوند (ارسال نمی‌شوند). تعداد سطرهای
     سرستون فایل به‌صورت خودکار تشخیص داده می‌شود (نیازی به ورودی دستی نیست).
+    دسترسی: مجوز notices.attendance_card. خطا: 429 (محدودیت نرخ)، 400 (فایل نامعتبر).
     """
     await _enforce_message_rate_limit(db, current_user.id)
     file_bytes = await file.read()
+    # فیش کارکرد فقط برای پرسنل سایت‌هایی که فرستنده notices.attendance_card را برایشان دارد
+    allowed_sites = await get_sites_with_permission(db, current_user, "notices.attendance_card")
     try:
         result = await AttendanceCardNoticeService(db).create_attendance_card_notice(
             sender=current_user,
@@ -491,10 +538,12 @@ async def create_attendance_card_notice(
             priority=priority,
             file_bytes=file_bytes,
             card_subtitle=card_subtitle,
+            site_ids=allowed_sites,
         )
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    # ارسال Push در پس‌زمینه و ثبت زمان ارسال برای محدودیت نرخ
     background_tasks.add_task(send_publish_notifications, result.notice.id)
     await record_message_sent(db, current_user.id)
 
@@ -503,6 +552,7 @@ async def create_attendance_card_notice(
         matched_employee_count=result.matched_employee_count,
         missing_codes=result.missing_codes,
         invalid_row_count=result.invalid_row_count,
+        out_of_scope_codes=result.out_of_scope_codes,
     )
 
 
@@ -516,10 +566,10 @@ async def download_my_attendance_card(
     PDF فیش کارکرد خودِ کاربر جاری برای این اطلاعیه — و *فقط* خودش. دقیقاً
     همان مدل دسترسی ساختاری فیش حقوقی: همیشه از روی current_user.employee_id،
     هیچ پارامتری برای انتخاب employee_id دیگری وجود ندارد.
+    خطا: 403 (پیش‌نیاز دسترسی برقرار نیست)، 404 (اطلاعیه یا کارت یافت نشد).
     """
-    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و
-    # کاربر اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳
-    # می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
+    # پیش‌نیاز دسترسی: اگر ادمین این اجبار را فعال کرده باشد و کاربر اطلاعیه
+    # خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، 403 می‌گیرد. Admin واقعی هرگز قفل نمی‌شود.
     try:
         await AccessGateService(db).check(current_user, "attendance_card")
     except AccessGateBlocked as e:
@@ -541,7 +591,7 @@ async def download_my_attendance_card(
     fields = json.loads(receipt.fields_json)
     pdf_bytes = render_attendance_card_pdf(
         employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
-        month_year=notice.card_subtitle or notice.title,
+        month_year=notice.card_subtitle or notice.title,  # در نبود زیرعنوان، عنوان اطلاعیه
         fields=fields,
     )
     return Response(

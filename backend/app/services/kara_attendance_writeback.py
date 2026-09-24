@@ -1,10 +1,11 @@
 """
-هم‌رفتاری کامل با کاراوب هنگام ثبت/تأیید/لغو درخواست مرخصی و ماموریت.
+نوشتن اثر درخواست‌های مرخصی/ماموریت/تردد فراموش‌شده در دیتابیس کاراوب (SQL Server).
 
-همه چیز این فایل با آزمایش مستقیم روی دیتابیس واقعی کاراوب (۱۴۰۵/۰۶/۲۸،
-درخواست‌های ۲۲، ۲۶، ۴۳ تا ۴۹) استخراج شده - نه حدس:
+این ماژول همان تغییراتی را در جدول‌های کاراوب انجام می‌دهد که خودِ برنامه‌ی
+کاراوب هنگام ثبت، تأیید نهایی، لغو و ارجاع یک درخواست انجام می‌دهد، تا
+گزارش‌ها و کارکرد کاراوب با درخواست‌های ثبت‌شده در پرتال هم‌خوان بمانند.
 
-ثبت درخواست (کاراوب):
+ثبت درخواست (ستون‌های اضافه‌ی WF_Requests):
     SubmittedByEmployeeID = کد پرسنلی درخواست‌دهنده
     Requested_Time       = همان Duration (رشته)
     DutyTools / DutyTamin = '' (نه NULL)
@@ -16,8 +17,7 @@
         ApplicationId = (4 << 16) | منبع اولیه تردد؛ یک ردیف LogDataFile؛
         AcceptCode = 0 (اعمال‌شده)
       - اگر نبود: فقط AcceptCode = 8 (تأییدشده، اعمال‌نشده) - هیچ جدول
-        دیگری تغییر نمی‌کند. کاراوب در این حالت فقط یک هشدار نمایش می‌دهد
-        که طبق خواست کاربر، پرتال نمایش نمی‌دهد.
+        دیگری تغییر نمی‌کند و پرتال هشداری نمایش نمی‌دهد.
 
 تأیید نهایی - درخواست روزانه:
     یک ردیف Mor_Mam + یک ردیف LogMorMam (ChangeType=1)، AcceptCode = 0.
@@ -31,14 +31,13 @@
     ساعتی: Status تردد اعمال‌شده به ۰ برمی‌گردد + LogDataFile
     روزانه: ردیف Mor_Mam حذف + LogMorMam (ChangeType=3)
 
-Checksum: مقدار آن را برنامه کاراوب محاسبه می‌کند و الگوریتمش در دسترس
-نیست؛ ۰ نوشته می‌شود (بخش بزرگی از ردیف‌های موجود Mor_Mam/DataFile هم ۰
-دارند و کاراوب با آن‌ها مشکلی ندارد).
+Checksum: الگوریتم محاسبه‌ی آن در دسترس نیست؛ ۰ نوشته می‌شود (بسیاری از
+ردیف‌های موجود Mor_Mam/DataFile هم ۰ دارند و کاراوب با آن‌ها مشکلی ندارد).
 
-⚠️ فقط برای SQL Server (کاراوب). همه توابع یک cursor از pymssql
-(as_dict=True) و یک KaraNames (نام جدول/ستون‌ها از تنظیمات سایت) می‌گیرند
-و commit را به فراخوان می‌سپارند تا هر عملیات در یک تراکنش انجام شود.
-هیچ نام جدول/ستونی در این فایل مستقیم نوشته نشده (app/services/kara_schema.py).
+فقط برای SQL Server (کاراوب). همه‌ی توابع یک cursor از pymssql (as_dict=True)
+و یک KaraNames (نام جدول/ستون‌ها از تنظیمات سایت) می‌گیرند و commit را به
+فراخوان می‌سپارند تا هر عملیات در یک تراکنش انجام شود. هیچ نام جدول/ستونی
+در این فایل مستقیم نوشته نشده (app/services/kara_schema.py).
 """
 from __future__ import annotations
 
@@ -49,25 +48,25 @@ import jdatetime
 
 from app.services.kara_schema import KaraNames
 
-_KARA_TZ = ZoneInfo("Asia/Tehran")
+_KARA_TZ = ZoneInfo("Asia/Tehran")  # کاراوب همه‌ی تاریخ/ساعت‌ها را به وقت ایران می‌نویسد
 
 
 def kara_now() -> datetime:
     """
-    ساعت محلی ایران (بدون tzinfo) - کاراوب همه تاریخ/ساعت‌ها را به وقت
-    محلی می‌نویسد؛ سرور پرتال UTC است و datetime.now() خام، ۳:۳۰ ساعت
-    عقب ثبت می‌کرد (تأییدِ ۱۲:۳۵ به‌صورت ۰۹:۰۵ ثبت شد).
+    زمان فعلی به وقت ایران بدون tzinfo برمی‌گرداند.
+    سرور پرتال UTC است و datetime.now() خام ۳:۳۰ ساعت عقب‌تر از ساعتی می‌شد که کاراوب انتظار دارد.
     """
     return datetime.now(_KARA_TZ).replace(tzinfo=None)
 
-ACCEPT_APPLIED = 0
-ACCEPT_APPROVED_NOT_APPLIED = 8
+# مقادیر AcceptCode درخواست در کاراوب
+ACCEPT_APPLIED = 0  # تأیید و اعمال‌شده
+ACCEPT_APPROVED_NOT_APPLIED = 8  # تأییدشده ولی روی ترددی اعمال نشده
 ACCEPT_CANCELLED = 22
 
-# کارت‌هایی که از مانده مرخصی (ساعتی) کسر می‌شوند - با داده واقعی فقط ۵۷
+# کارت‌هایی که از مانده‌ی مرخصی (ساعتی) کسر می‌شوند (مرخصی استحقاقی)
 ENTITLEMENT_CARDS = {57}
 
-# پرچم «ویرایش‌شده توسط برنامه X» روی ApplicationId تردد = شناسه برنامه << 16
+# پرچم «ویرایش‌شده توسط برنامه X» روی ApplicationId تردد = شناسه‌ی برنامه << 16
 # (۶۵۵۳۶ = دسکتاپ کاراوب، ۲۶۲۱۴۴ = وب کاراوب)
 _EDITOR_SHIFT = 16
 
@@ -79,31 +78,37 @@ _FRIDAY = 4
 
 
 def _jalali_int(d: date) -> int:
+    """تاریخ میلادی را به عدد فشرده‌ی شمسی YYYYMMDD تبدیل می‌کند."""
     j = jdatetime.date.fromgregorian(date=d)
     return j.year * 10000 + j.month * 100 + j.day
 
 
 def _now_parts() -> tuple[datetime, int, int]:
+    """(datetime فعلی به وقت ایران، تاریخ شمسی فشرده‌ی امروز، ساعت فعلی به فرمت HHMM) را برمی‌گرداند."""
     now = kara_now()
     return now, _jalali_int(now.date()), now.hour * 100 + now.minute
 
 
 def _to_date(value) -> date | None:
+    """مقدار datetime یا date را به date تبدیل می‌کند؛ None بدون تغییر."""
     if value is None:
         return None
     return value.date() if hasattr(value, "date") else value
 
 
 def _hhmm_to_minutes(value: int) -> int:
+    """ساعت فشرده‌ی HHMM را به دقیقه تبدیل می‌کند (None/خالی = ۰)."""
     value = int(value or 0)
     return (value // 100) * 60 + value % 100
 
 
 def _minutes_to_hhmm(minutes: int) -> int:
+    """دقیقه را به ساعت فشرده‌ی HHMM تبدیل می‌کند."""
     return (minutes // 60) * 100 + minutes % 60
 
 
 def get_sec_no(cur, n: KaraNames, emp_no: int | None) -> int | None:
+    """شماره‌ی واحد (Sec_No) یک پرسنل را از جدول پرسنل کاراوب می‌خواند؛ None اگر نگاشت نشده یا پیدا نشود."""
     if emp_no is None or not n.has_employee_section:
         return None
     cur.execute(
@@ -116,15 +121,15 @@ def get_sec_no(cur, n: KaraNames, emp_no: int | None) -> int | None:
 
 def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[str, str]:
     """
-    کاربرِ کاراوبی که تغییر به نامش ثبت می‌شود - کاراوب کاربرِ مدیر
-    تأییدکننده را می‌نویسد (UserId در Mor_Mam، Username در لاگ‌ها).
-    اگر آن فرد کاربر کاراوب نداشت، کاربر درخواست‌دهنده، و در نهایت
-    قدیمی‌ترین کاربر فعال (ستون‌ها NOT NULL هستند).
+    (UserId, Username) کاربر کاراوبی را برمی‌گرداند که تغییر به نامش ثبت می‌شود.
+    ورودی: لیست کد پرسنلی به ترتیب اولویت (مدیر تأییدکننده، درخواست‌دهنده، ...)؛
+    اولین نفری که کاربر کاراوب دارد انتخاب می‌شود، وگرنه قدیمی‌ترین کاربر فعال (ستون‌ها NOT NULL هستند).
     """
     select = (
         f"SELECT TOP 1 {n.c('users', 'user_id')} AS UserId, {n.c('users', 'username')} AS Username "
         f"FROM {n.t('users')} "
     )
+    # کاربر هر پرسنل به ترتیب اولویت؛ کاربر فعال و قدیمی‌تر مقدم است
     for emp_no in emp_nos:
         if emp_no is None:
             continue
@@ -136,6 +141,7 @@ def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[st
         row = cur.fetchone()
         if row:
             return str(row["UserId"]), row["Username"]
+    # هیچ‌کدام کاربر نداشتند: قدیمی‌ترین کاربر فعال
     cur.execute(select + f"WHERE {n.c('users', 'is_active')} = 1 ORDER BY {n.c('users', 'creation_date')}")
     row = cur.fetchone()
     if not row:
@@ -148,8 +154,8 @@ def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[st
 
 def submit_extra_columns(cur, n: KaraNames, requester_emp_no: int, approver_emp_no: int | None, duration) -> dict:
     """
-    ستون‌هایی که کاراوب هنگام ثبت پر می‌کند - فقط آن‌هایی که در تنظیمات
-    نگاشت شده‌اند (ستون نگاشت‌نشده نوشته نمی‌شود).
+    ستون‌های اضافه‌ای که کاراوب هنگام ثبت درخواست پر می‌کند را به‌صورت {نام ستون: مقدار} برمی‌گرداند.
+    ورودی: کد پرسنلی درخواست‌دهنده و تأییدکننده، مدت درخواست. فقط ستون‌های نگاشت‌شده برگردانده می‌شوند.
     """
     values = {
         "submitted_by": requester_emp_no,
@@ -157,7 +163,8 @@ def submit_extra_columns(cur, n: KaraNames, requester_emp_no: int, approver_emp_
         "duty_tools": "",
         "duty_tamin": "",
     }
-    columns = {n.raw("wf_requests", role): value for role, value in values.items() if n.has("wf_requests", role)}
+    columns = {n.raw("wf_requests", role): value for role, value in values.items() if n.has("wf_requests", role)}  # فقط نگاشت‌شده‌ها
+    # واحد جاری درخواست = واحد تأییدکننده
     if n.has("wf_requests", "cur_section"):
         columns[n.raw("wf_requests", "cur_section")] = get_sec_no(cur, n, approver_emp_no)
     return columns
@@ -167,27 +174,31 @@ def submit_extra_columns(cur, n: KaraNames, requester_emp_no: int, approver_emp_
 
 
 def _kasr_minutes(row: dict | None, thursday: bool) -> int | None:
-    """None یعنی «از این منبع اطلاعاتی نیامد»؛ ۰ یعنی روز غیرکاری."""
+    """
+    دقیقه‌ی کسر مرخصی استحقاقی یک روز را از ردیف شیفت (ShiftNo/KasrGh/KasrGh5) حساب می‌کند.
+    None یعنی «از این منبع اطلاعاتی نیامد»؛ ۰ یعنی روز غیرکاری.
+    """
     if not row or row.get("ShiftNo") is None:
         return None
     if row.get("KasrGh") is None:
-        return 0  # شیفت غیرکاری/تعطیل (در جدول شیفت‌ها تعریف نشده، مثل ۵۰۱)
+        return 0  # شیفت غیرکاری/تعطیل (در جدول شیفت‌ها تعریف نشده)
     return _hhmm_to_minutes(row["KasrGh5"] if thursday else row["KasrGh"])
 
 
 def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
     """
-    ساعت کسر یک روز: شیفت همان روز -> ستون کسر مرخصی استحقاقی آن شیفت.
-    هر منبع فقط اگر نگاشت شده باشد استفاده می‌شود؛ در نهایت قاعده روز هفته.
+    دقیقه‌ی کسر مرخصی استحقاقی برای یک روز از شیفت همان روز را برمی‌گرداند.
+    منابع به ترتیب: کارکرد روزانه، تقویم شیفت گروهی (ماه‌های آینده)، آخرین شیفت ثبت‌شده‌ی فرد؛
+    هر منبع فقط اگر نگاشت شده باشد. در نهایت قاعده‌ی روز هفته (جمعه ۰، پنجشنبه ۲۴۰، بقیه ۴۸۰).
     """
     thursday = day.weekday() == _THURSDAY
     jalali = _jalali_int(day)
 
     if n.has("shifts"):
         shifts, sh_no = n.t("shifts"), n.c("shifts", "shift_no")
-        kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"
+        kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"  # ستون‌های کسر شیفت
 
-        # ۱) کارکرد روزانه کاراوب (فقط شماره شیفت روز خوانده می‌شود)
+        # ۱) کارکرد روزانه‌ی کاراوب: شماره‌ی شیفت روز -> کسر آن شیفت
         if n.has("daily_work"):
             W = lambda role: n.c("daily_work", role)  # noqa: E731
             cur.execute(
@@ -200,10 +211,8 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
             if minutes is not None:
                 return minutes
 
-        # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود - برای ماه‌های
-        # آینده، تقویم شیفت گروهی کاراوب (جمعه‌ها و تعطیلات رسمی = غیرکاری):
-        # گروه فرد در آن تاریخ -> شیفت آن روز گروه. (با شهریور ۱۴۰۵ مقایسه
-        # شد: ۷۶۰۹ از ۷۶۲۳ روز با کارکرد روزانه یکی بود)
+        # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود؛ برای ماه‌های آینده از تقویم
+        # شیفت گروهی کاراوب: گروه فرد در آن تاریخ -> شیفت آن روز گروه (ستون روز ماه)
         if n.has("grp_shift") and n.has("emp_grps"):
             j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
             day_col = f"[{n.raw('grp_shift', 'day_prefix')}{j_day}]"
@@ -221,7 +230,7 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
             if minutes is not None:
                 return minutes
 
-    # ۳) آخرین راه: قاعده روز هفته
+    # ۳) جمعه غیرکاری است؛ وگرنه کسرِ آخرین شیفت ثبت‌شده‌ی فرد در کارکرد روزانه
     if day.weekday() == _FRIDAY:
         return 0
     if n.has("shifts") and n.has("daily_work"):
@@ -236,12 +245,16 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
         minutes = _kasr_minutes(cur.fetchone(), thursday)
         if minutes is not None:
             return minutes
-    return 240 if thursday else 480
+    return 240 if thursday else 480  # پیش‌فرض: پنجشنبه ۴ ساعت، بقیه ۸ ساعت
 
 
 def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
-    """(Requested, StandardRequested, Inc_Type) دقیقاً مطابق کاراوب."""
+    """
+    مقادیر (Requested, StandardRequested, Inc_Type) ردیف Mor_Mam را مثل کاراوب حساب می‌کند.
+    مرخصی استحقاقی: منفیِ مجموع کسر روزها (HHMM و دقیقه) و Inc_Type=0؛ بقیه: تعداد روز تقویمی و Inc_Type=NULL.
+    """
     if card_no in ENTITLEMENT_CARDS:
+        # جمع دقیقه‌ی کسر همه‌ی روزهای بازه
         total = 0
         day = start
         while day <= end:
@@ -256,7 +269,7 @@ def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, 
 
 
 def _set_accept_code(cur, n: KaraNames, request_id: int, accept: int | None, cur_section: int | None = None) -> None:
-    """فقط ستون‌هایی که نگاشت شده‌اند به‌روز می‌شوند."""
+    """AcceptCode (و در صورت وجود CurSection) درخواست را به‌روز می‌کند؛ فقط ستون‌های نگاشت‌شده."""
     sets, params = [], {"r": request_id}
     if n.has("wf_requests", "accept_code"):
         sets.append(f"{n.c('wf_requests', 'accept_code')} = %(a)s")
@@ -271,23 +284,25 @@ def _set_accept_code(cur, n: KaraNames, request_id: int, accept: int | None, cur
 
 def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int) -> int:
     """
-    اثر تأیید نهایی را مثل کاراوب اعمال می‌کند و AcceptCode نهایی را
-    برمی‌گرداند (۰ یا ۸). request یک ردیف نرمال‌نشده از _select_requests_sync است.
+    اثر تأیید نهایی یک درخواست مرخصی/ماموریت را مثل کاراوب اعمال می‌کند.
+    ورودی: ردیف خام درخواست (از _select_requests_sync)، کد پرسنلی تأییدکننده، شناسه‌ی برنامه و کد شعبه.
+    خروجی: AcceptCode نهایی (۰ اعمال‌شده، ۸ تأییدشده بدون تردد) یا None اگر جدول‌های لازم نگاشت نشده باشند.
     """
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
-    hourly = request.get("StartHour") is not None
-    # ⚠️ قابلیتی که جدول‌هایش نگاشت نشده، اصلاً اجرا نمی‌شود (بدون تیک جداگانه)
+    hourly = request.get("StartHour") is not None  # درخواست ساعتی StartHour دارد
+    # اگر جدول‌های لازم برای این نوع درخواست نگاشت نشده باشند، هیچ اثری نوشته نمی‌شود
     if (hourly and not n.can_write_hourly) or (not hourly and not n.can_write_daily):
         return None
     user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
     now, today_j, now_hhmm = _now_parts()
     start = _to_date(request["StartDate"])
 
+    # ساعتی: علامت روی تردد؛ روزانه: ردیف Mor_Mam
     if hourly:
         accept = _apply_hourly(cur, n, request, emp_no, card_no, start, user_id, username, app_id, today_j, now_hhmm)
     else:
-        end = _to_date(request.get("EndDate")) or start
+        end = _to_date(request.get("EndDate")) or start  # درخواست یک‌روزه EndDate ندارد
         _insert_mor_mam(
             cur, n, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code
         )
@@ -298,6 +313,7 @@ def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, ap
 
 
 def _punch_select(n: KaraNames) -> str:
+    """SELECT پایه‌ی یک تردد (با پارامترهای e/d/s/t: پرسنل، تاریخ، بازه‌ی ساعت) بدون ORDER BY."""
     return (
         f"SELECT TOP 1 {n.c('datafile', 'id')} AS Id, {n.df_time} AS Time, "
         f"{n.c('datafile', 'status')} AS Status, {n.c('datafile', 'duration')} AS Duration, "
@@ -309,6 +325,11 @@ def _punch_select(n: KaraNames) -> str:
 
 
 def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_id, today_j, now_hhmm) -> int:
+    """
+    اثر درخواست ساعتی: اولین تردد روز در بازه‌ی StartHour..EndHour علامت کارت می‌گیرد.
+    خروجی: ACCEPT_APPLIED اگر ترددی پیدا شد، وگرنه ACCEPT_APPROVED_NOT_APPLIED.
+    """
+    # اولین تردد در بازه‌ی درخواست
     cur.execute(
         _punch_select(n) + f"ORDER BY {n.df_time}",
         {"e": emp_no, "d": _jalali_int(day), "s": int(request["StartHour"]), "t": int(request["EndHour"])},
@@ -316,6 +337,7 @@ def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_
     punch = cur.fetchone()
     if not punch:
         return ACCEPT_APPROVED_NOT_APPLIED
+    # مدت درخواست رشته است؛ مقدار نامعتبر = ۰
     try:
         new_duration = int(request.get("Duration") or 0)
     except (TypeError, ValueError):
@@ -327,13 +349,14 @@ def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_
 def _update_punch(
     cur, n, punch, emp_no, day, new_status, new_duration, user_id, username, app_id, today_j, now_hhmm, restore=False
 ):
-    source_app_id = int(punch["ApplicationId"]) & 0xFFFF
+    """
+    Status/Duration/ApplicationId یک تردد را تغییر می‌دهد و یک ردیف LogDataFile می‌نویسد.
+    restore=True هنگام لغو اثر: ApplicationId تردد به منبع اولیه‌اش برمی‌گردد تا پرچم «گردش کار» روی تردد نماند.
+    """
+    source_app_id = int(punch["ApplicationId"]) & 0xFFFF  # ۱۶ بیت پایین = منبع اولیه‌ی تردد (دستگاه/برنامه)
     # ردیف لاگ همیشه با پرچم «گردش کار» ثبت می‌شود (مثل کاراوب)
     log_app_id = (app_id << _EDITOR_SHIFT) | source_app_id
-    # ⚠️ طبق گزارش کاربر: بعد از لغو اثر (حذف/رد درخواست)، پرچم «گردش کار»
-    # روی خودِ تردد باقی می‌ماند و در کاراوب با Hover «گردش کار» نشان داده
-    # می‌شد. هنگام لغو، ApplicationId تردد به منبع اولیه‌اش برمی‌گردد تا
-    # تردد دقیقاً مثل قبل از اعمال درخواست شود.
+    # روی خودِ تردد: هنگام لغو، منبع اولیه؛ هنگام اعمال، پرچم گردش کار
     punch_app_id = source_app_id if restore else log_app_id
     cur.execute(
         f"UPDATE {n.df_table} SET {n.c('datafile', 'status')} = %(st)s, {n.c('datafile', 'duration')} = %(du)s, "
@@ -343,6 +366,7 @@ def _update_punch(
     )
     if not n.has("log_datafile"):
         return  # لاگ تغییر تردد نگاشت نشده
+    # ردیف لاگ تغییر: ساعت و PrevDay بدون تغییر، Duration و Status قدیم/جدید
     L = lambda role: n.c("log_datafile", role)  # noqa: E731
     cur.execute(
         f"INSERT INTO {n.t('log_datafile')} ({L('user_id')}, {L('application_id')}, {L('username')}, "
@@ -372,7 +396,9 @@ def _update_punch(
 
 
 def _insert_mor_mam(cur, n, request, emp_no, card_no, start, end, user_id, username, app_id, now, today_j, branch_code):
+    """یک ردیف مرخصی/ماموریت روزانه در Mor_Mam درج می‌کند و لاگ درج (ChangeType=1) می‌نویسد."""
     requested, standard, inc_type = _mor_mam_amounts(cur, n, emp_no, card_no, start, end)
+    # پارامترهای ردیف؛ همین دیکشنری برای لاگ هم استفاده می‌شود
     row = {
         "e": emp_no,
         "sd": _jalali_int(start),
@@ -399,11 +425,12 @@ def _insert_mor_mam(cur, n, request, emp_no, card_no, start, end, user_id, usern
         "%(now)s, 0, %(b)s)",
         row,
     )
-    ref_number = cur.fetchone()["RefNumber"]
+    ref_number = cur.fetchone()["RefNumber"]  # شناسه‌ی ردیف تازه از OUTPUT INSERTED
     _log_mor_mam(cur, n, row, ref_number, change_type=1, username=username, app_id=app_id)
 
 
 def _log_mor_mam(cur, n: KaraNames, row: dict, ref_number, change_type: int, username: str, app_id: int) -> None:
+    """یک ردیف LogMorMam برای درج (ChangeType=1) یا حذف (ChangeType=3) ردیف Mor_Mam می‌نویسد."""
     if not n.has("log_mor_mam"):
         return  # لاگ مرخصی/ماموریت روزانه نگاشت نشده
     L = lambda role: n.c("log_mor_mam", role)  # noqa: E731
@@ -423,8 +450,9 @@ def _log_mor_mam(cur, n: KaraNames, row: dict, ref_number, change_type: int, use
 
 def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, app_id: int) -> None:
     """
-    اثر یک درخواستِ تأییدشده را از کارکرد برمی‌دارد (هنگام رد، حذف یا
-    ویرایش مدیریتی). اگر اثری ثبت نشده بود، کاری نمی‌کند.
+    اثر یک درخواستِ تأییدشده را از کارکرد کاراوب برمی‌دارد (هنگام رد، حذف یا ویرایش مدیریتی).
+    ساعتی: Status تردد به مقدار قبل از اعمال برمی‌گردد + لاگ؛ روزانه: ردیف Mor_Mam حذف + لاگ (ChangeType=3).
+    اگر اثری ثبت نشده بود یا جدول‌ها نگاشت نشده باشند، کاری نمی‌کند.
     """
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
@@ -436,6 +464,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
     now, today_j, now_hhmm = _now_parts()
 
     if hourly:
+        # فقط اگر درخواست واقعاً روی ترددی اعمال شده بود (AcceptCode = 0)
         if n.has("wf_requests", "accept_code"):
             cur.execute(
                 f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
@@ -445,6 +474,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
             state = cur.fetchone()
             if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
                 return  # روی ترددی اعمال نشده بود
+        # ترددی در بازه‌ی درخواست که علامت همین کارت را دارد
         cur.execute(
             _punch_select(n) + f"AND {n.c('datafile', 'status')} = %(c)s ORDER BY {n.df_time}",
             {
@@ -457,9 +487,8 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
         )
         punch = cur.fetchone()
         if punch:
-            # ⚠️ وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال خوانده می‌شود -
-            # اگر تردد از اول با کارت ماموریت/مرخصی زده شده بود (Status=۹/۱۷
-            # از خودِ دستگاه)، حذف درخواست نباید آن علامت واقعی را هم پاک کند.
+            # وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال (پرچم گردش کار) خوانده می‌شود؛
+            # اگر تردد از اول با کارت مرخصی/ماموریت از خودِ دستگاه زده شده بود، آن علامت واقعی پاک نمی‌شود
             before = {}
             if n.has("log_datafile"):
                 L = lambda role: n.c("log_datafile", role)  # noqa: E731
@@ -483,6 +512,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
             )
         return
 
+    # روزانه: ردیف Mor_Mam همین درخواست (همان پرسنل، بازه و کارت؛ ردیف با همان توضیح مقدم است)
     end = _to_date(request.get("EndDate")) or start
     M = lambda role: n.c("mor_mam", role)  # noqa: E731
     cur.execute(
@@ -504,6 +534,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
     mor = cur.fetchone()
     if not mor:
         return
+    # حذف ردیف و ثبت لاگ حذف با مقادیر همان ردیف
     cur.execute(f"DELETE FROM {n.t('mor_mam')} WHERE {M('ref_number')} = %(r)s", {"r": mor["RefNumber"]})
     log_row = {
         "u": user_id,
@@ -524,6 +555,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
 
 
 def clear_accept_code(cur, n: KaraNames, request_id: int) -> None:
+    """AcceptCode درخواست را NULL می‌کند (برگشت به وضعیت «در انتظار»)؛ اگر ستون نگاشت نشده کاری نمی‌کند."""
     if not n.has("wf_requests", "accept_code"):
         return
     accept_col = n.c("wf_requests", "accept_code")
@@ -531,7 +563,7 @@ def clear_accept_code(cur, n: KaraNames, request_id: int) -> None:
 
 
 def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
-    """جدول وضعیت درخواست (WF_RequestState) به جدول درخواست کلید خارجی ندارد - باید دستی پاک شود."""
+    """ردیف‌های وضعیت یک درخواست را حذف می‌کند؛ WF_RequestState به جدول درخواست کلید خارجی ندارد و باید دستی پاک شود."""
     if not n.has("wf_request_state"):
         return
     cur.execute(
@@ -542,7 +574,7 @@ def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:
 
 # ---------- تردد فراموش‌شده ----------
 #
-# رفتار کاراوب (تأییدشده با درخواست‌های ۵۶ و ۵۷، ۱۴۰۵/۰۶/۲۸):
+# رفتار کاراوب:
 #   ثبت: یک ردیف درخواست به‌ازای هر تردد - StartDate = تاریخ تردد،
 #        StartHour = ساعت تردد، EndHour = ۰، EndDate = NULL، Duration = '0'
 #   تأیید نهایی: یک ردیف تازه در جدول تردد (Status 0، Modify 1، Direction 0،
@@ -569,7 +601,10 @@ def punch_exists(cur, n: KaraNames, emp_no: int, date_int: int, time_int: int) -
 
 
 def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int):
-    """تأیید نهایی تردد فراموش‌شده: درج تردد + لاگ + AcceptCode = ۰."""
+    """
+    اثر تأیید نهایی تردد فراموش‌شده: درج تردد در جدول تردد + لاگ درج + AcceptCode = ۰.
+    اگر همان تردد از قبل وجود داشته باشد فقط AcceptCode به‌روز می‌شود. خروجی: ACCEPT_APPLIED.
+    """
     if not n.can_write_punch:
         raise RuntimeError("ستون‌های لازم جدول تردد برای ثبت تردد فراموش‌شده در تنظیمات سایت نگاشت نشده‌اند")
     emp_no = int(request["EmpNo"])
@@ -579,6 +614,7 @@ def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int
     user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
     _, today_j, now_hhmm = _now_parts()
 
+    # درج تردد فقط اگر تکراری نباشد
     if not punch_exists(cur, n, emp_no, date_int, time_int):
         D = lambda role: n.c("datafile", role)  # noqa: E731
         cur.execute(
@@ -600,12 +636,12 @@ def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int
 
 def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int | None, app_id: int) -> None:
     """
-    لغو اثر تردد فراموش‌شده (حذف/رد مدیریتی پس از تأیید): فقط همان ترددی
-    که این پرتال/گردش کار درج کرده بود حذف می‌شود - تردد دستگاه یا تردد
-    دستیِ کاراوب هرگز پاک نمی‌شود.
+    لغو اثر تردد فراموش‌شده (حذف/رد مدیریتی پس از تأیید): همان ترددی که این پرتال درج کرده بود حذف
+    و لاگ حذف نوشته می‌شود. تردد دستگاه یا تردد دستیِ کاراوب هرگز پاک نمی‌شود.
     """
     if not n.can_write_punch:
         return
+    # فقط اگر درخواست واقعاً اعمال شده بود
     if n.has("wf_requests", "accept_code"):
         cur.execute(
             f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
@@ -617,6 +653,7 @@ def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int |
             return
     emp_no = int(request["EmpNo"])
     date_int = _jalali_int(_to_date(request["StartDate"]))
+    # ترددِ درج‌شده توسط همین برنامه (Modify=1 و منبع = app_id) در همان روز و دقیقه
     D = lambda role: n.c("datafile", role)  # noqa: E731
     cur.execute(
         f"SELECT TOP 1 {D('id')} AS Id, {n.df_time} AS Time, {D('status')} AS Status, {D('duration')} AS Duration, "
@@ -631,7 +668,7 @@ def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int |
     user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
     _, today_j, now_hhmm = _now_parts()
     cur.execute(f"DELETE FROM {n.df_table} WHERE {D('id')} = %(id)s", {"id": punch["Id"]})
-    log_app_id = (app_id << _EDITOR_SHIFT) | (int(punch["ApplicationId"]) & 0xFFFF)
+    log_app_id = (app_id << _EDITOR_SHIFT) | (int(punch["ApplicationId"]) & 0xFFFF)  # پرچم ویرایشگر | منبع تردد
     _log_punch_change(
         cur, n, user_id, username, log_app_id, today_j, now_hhmm, date_int, emp_no, punch["BranchCode"],
         old=punch, new=None,
@@ -639,7 +676,7 @@ def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int |
 
 
 def _log_punch_change(cur, n, user_id, username, app_id, today_j, now_hhmm, io_date, emp_no, branch_code, old, new):
-    """ردیف لاگ درج (old=None) یا حذف (new=None) تردد - دقیقاً مثل کاراوب."""
+    """یک ردیف LogDataFile برای درج (old=None) یا حذف (new=None) تردد می‌نویسد؛ ستون‌های سمت خالی NULL می‌شوند."""
     if not n.has("log_datafile"):
         return
     old = old or {}
@@ -676,13 +713,14 @@ def _log_punch_change(cur, n, user_id, username, app_id, today_j, now_hhmm, io_d
 
 def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: int) -> None:
     """
-    ارجاع درخواست از سرپرست به مسئول نیروی انسانی: تأییدکننده فعلی و
-    واحد او عوض می‌شود و (اگر نگاشت شده باشد) یک ردیف در جدول ارجاع
-    کاراوب ثبت می‌شود تا تاریخچه مسیر درخواست در خودِ کاراوب هم دیده شود.
+    ارجاع درخواست از سرپرست (from_emp_no) به مسئول نیروی انسانی (to_emp_no).
+    تأییدکننده‌ی فعلی و واحد او روی درخواست عوض می‌شود و اگر جدول ارجاع نگاشت شده باشد،
+    یک ردیف در آن ثبت می‌شود تا تاریخچه‌ی مسیر درخواست در خودِ کاراوب هم دیده شود.
     """
     cur_col = getattr(n.leave, "cur_emp_no_column", None)
     if not cur_col:
         raise RuntimeError("ستون تأییدکننده فعلی در نگاشت درخواست تنظیم نشده است")
+    # به‌روزرسانی تأییدکننده‌ی فعلی و (در صورت نگاشت) واحد جاری
     sets, params = [f"[{cur_col}] = %(to)s"], {"to": to_emp_no, "r": request["RequestId"]}
     from_sec = get_sec_no(cur, n, from_emp_no)
     to_sec = get_sec_no(cur, n, to_emp_no)
@@ -691,6 +729,7 @@ def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: in
         params["sec"] = to_sec
     cur.execute(f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s", params)
 
+    # ردیف تاریخچه‌ی ارجاع؛ فقط ستون‌های نگاشت‌شده نوشته می‌شوند
     if not n.can_write_moveup:
         return
     values = {
@@ -711,7 +750,7 @@ def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: in
 
 
 def request_ids_moved_by(cur, n: KaraNames, from_emp_no: int) -> list[int]:
-    """شناسه درخواست‌هایی که این فرد (به‌عنوان سرپرست) به مرحله بعد ارجاع داده است."""
+    """شناسه‌ی درخواست‌هایی که این فرد (به‌عنوان سرپرست) به مرحله‌ی بعد ارجاع داده است؛ بدون جدول ارجاع، لیست خالی."""
     if not n.can_write_moveup:
         return []
     cur.execute(

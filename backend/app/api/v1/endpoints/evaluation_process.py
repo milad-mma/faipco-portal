@@ -1,13 +1,10 @@
 """
-Endpoint های «جریان انجام ارزیابی».
+Endpoint های «جریان انجام ارزیابی»: تولید انتساب‌ها، فهرست ارزیابی‌های من، شروع/ذخیره/ثبت/بازگشایی
+ارزیابی، نتایج و جزئیات نتایج من، میانگین سالانه و خلاصه داشبورد.
 
-⚠️ نکته معماری مهم: دیدن/انجام «ارزیابی‌های من» و «نتایج ارزیابی من»
-هیچ Permission خاصی نمی‌خواهد - فقط داشتن حساب کاربری متصل به یک
-Employee کافی است؛ چون طبق اصل بنیادی این ماژول (نگاه کنید به
-evaluation_structure_service.py)، مجاز بودن به ارزیابی از روی همان
-جدول‌های ساختار سازمانی (evaluation_*) تعیین می‌شود، نه از روی RBAC.
-تنها عملیات سطح Admin («تولید انتساب‌ها برای یک دوره») مجوز
-performance.assignments.manage می‌خواهد.
+دیدن/انجام «ارزیابی‌های من» و «نتایج من» مجوز RBAC نمی‌خواهد؛ فقط حساب کاربری باید به یک
+Employee متصل باشد، چون مجاز بودن به ارزیابی از جدول‌های ساختار ارزیابی (evaluation_*) تعیین
+می‌شود. تنها عملیات مدیریتی (تولید انتساب‌ها) مجوز performance.assignments.manage می‌خواهد.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +34,7 @@ router = APIRouter()
 
 
 def _require_employee(user: User) -> int:
+    """employee_id کاربر جاری را برمی‌گرداند؛ اگر حساب به پرسنل متصل نباشد 400 می‌دهد."""
     if user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="این قابلیت فقط برای حساب‌های متصل به پرسنل در دسترس است"
@@ -51,6 +49,10 @@ async def generate_assignments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    تولید انتساب‌های ارزیابی یک دوره با فرم داده‌شده از روی ساختار ارزیابی.
+    نیازمند مجوز performance.assignments.manage روی سایت دوره. خطاها: 404 دوره یافت نشد، 400 خطای سرویس.
+    """
     period = await db.get(EvaluationPeriod, period_id)
     if period is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دوره ارزیابی موردنظر یافت نشد")
@@ -66,6 +68,7 @@ async def get_my_evaluations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """فهرست ارزیابی‌هایی که کاربر جاری باید انجام دهد؛ نیازمند حساب متصل به پرسنل (400)."""
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_my_evaluations(employee_id)
 
@@ -76,10 +79,8 @@ async def get_my_shift_lead_evaluations(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ طبق درخواست صریح: سرپرست باید دسترسی ویرایش ارزیابی‌های
-    انجام‌شده توسط سرشیفت‌های واحدش را هم داشته باشد - این Endpoint
-    فهرست همان ارزیابی‌ها را برمی‌گرداند (خالی است اگر کاربر جاری اصلاً
-    سرپرست هیچ واحدی نباشد یا آن واحد سرشیفت نداشته باشد).
+    فهرست ارزیابی‌های انجام‌شده توسط سرشیفت‌های واحدهایی که کاربر جاری سرپرست آن‌هاست،
+    تا سرپرست بتواند آن‌ها را ببیند/ویرایش کند. اگر کاربر سرپرست نباشد یا واحد سرشیفت نداشته باشد، خالی است.
     """
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_shift_lead_evaluations(employee_id)
@@ -91,6 +92,7 @@ async def start_evaluation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """شروع (یا ادامه) ارزیابی یک انتساب توسط ارزیابِ همان انتساب؛ خروجی ارزیابی کامل. 400 اگر مجاز نباشد."""
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).start_evaluation(assignment_id, employee_id)
@@ -105,10 +107,8 @@ async def get_evaluation(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ برخلاف start_evaluation (که با assignment_id و فقط برای ارزیابِ
-    اصلی کار می‌کند)، این Endpoint مستقیماً با evaluation_id کار می‌کند
-    و به سرپرست هم اجازه می‌دهد - برای ادامه‌ی فرایند «ویرایش ارزیابی
-    سرشیفت» بعد از reopen، بدون برخورد با محدودیت مالکیت Assignment.
+    بازکردن ارزیابی با evaluation_id؛ علاوه بر ارزیاب اصلی، سرپرستِ سرشیفت ارزیاب هم مجاز است
+    (برای ادامه ویرایش ارزیابی سرشیفت پس از reopen). 400 اگر کاربر دسترسی نداشته باشد.
     """
     employee_id = _require_employee(current_user)
     try:
@@ -124,6 +124,7 @@ async def save_answers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """ذخیره پاسخ‌های پیش‌نویس ارزیابی توسط ارزیاب مجاز؛ خروجی ارزیابی به‌روزشده. 400 در خطای اعتبارسنجی/دسترسی."""
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).save_answers(
@@ -139,6 +140,7 @@ async def submit_evaluation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """ثبت نهایی ارزیابی و محاسبه امتیاز کل؛ 400 اگر سوال الزامی بی‌پاسخ باشد یا کاربر مجاز نباشد."""
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).submit_evaluation(evaluation_id, employee_id)
@@ -152,6 +154,7 @@ async def reopen_evaluation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """بازگشایی ارزیابی ثبت‌شده برای ویرایش (ارزیاب یا سرپرستِ سرشیفت)؛ 400 اگر مجاز نباشد."""
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).reopen_for_edit(evaluation_id, employee_id)
@@ -164,8 +167,12 @@ async def get_my_results(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
-    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    """
+    فهرست نتایج ارزیابی‌های ثبت‌شده درباره کاربر جاری.
+    خطاها: 403 اگر پیش‌نیاز دسترسی (access gate) برقرار نباشد، 400 اگر حساب به پرسنل متصل نباشد.
+    """
+    # پیش‌نیاز دسترسی: اگر ادمین اجبار را فعال کرده باشد و کاربر اطلاعیه خوانده‌نشده
+    # یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ برمی‌گردد
     try:
         await AccessGateService(db).check(current_user, "evaluation_result")
     except AccessGateBlocked as e:
@@ -181,7 +188,7 @@ async def get_my_result_answers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """⚠️ جزئیات سوال‌به‌سوال نتیجه ارزیابی خودِ پرسنل - فقط ارزیابی‌های ثبت‌نهایی‌شده‌ای که خودش هدفشان بوده."""
+    """جزئیات سوال‌به‌سوال یک نتیجه برای خود پرسنل (فقط ارزیابی‌های ثبت‌شده‌ای که هدفش بوده، بدون نظر ارزیاب)؛ 404 در غیر این صورت."""
     employee_id = _require_employee(current_user)
     try:
         return await EvaluationProcessService(db).get_my_result_answers(evaluation_id, employee_id)
@@ -195,6 +202,7 @@ async def get_my_yearly_average(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """میانگین امتیاز کاربر جاری در یک سال شمسی (پیش‌فرض: سال جاری)؛ نیازمند حساب متصل به پرسنل."""
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_yearly_average(employee_id, jalali_year)
 
@@ -204,10 +212,9 @@ async def get_my_dashboard_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """خلاصه ارزیابی کاربر جاری برای کارت داشبورد؛ برای حساب بدون پرسنل خلاصه خالی (بدون خطا) برمی‌گرداند."""
     if current_user.employee_id is None:
-        # کاربران مدیریتی محض (بدون Employee، مثل admin) هیچ ارزیابی‌ای
-        # ندارند - نه خطا، فقط یک خلاصه خالی (کارت داشبورد اصلاً برای
-        # این حساب‌ها نمایش داده نمی‌شود، ولی این Endpoint نباید ۴۰۰ بدهد)
+        # کاربران مدیریتی بدون Employee (مثل admin) ارزیابی ندارند؛ خلاصه خالی برمی‌گردد نه خطای ۴۰۰
         return DashboardSummaryOut(
             average_score=None, latest_score=None, results_count=0, pending_to_evaluate_count=0
         )

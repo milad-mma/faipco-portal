@@ -1,9 +1,8 @@
 """
-پارس XML فیش حقوقی.
+پارس XML فیش حقوقی و تبدیل آن به لیست ParsedReceiptItem.
 
-نکته کلیدی درباره‌ی فرمت واقعی: فایل‌های واقعی این سازمان خروجی مستقیم یک
-گزارش‌ساز نوع SSRS/Telerik هستند — نه یک XML ساده با تگ‌های تخت مثل
-<Amount>. در این فرمت:
+فرمت ورودی: خروجی مستقیم یک گزارش‌ساز نوع SSRS/Telerik (نه XML ساده با تگ‌های
+تخت مثل <Amount>). در این فرمت:
   - هر رکورد پرسنل داخل یک <SalaryReceiptItem> است (در هر عمقی از درخت،
     بدون فرض خاصی درباره‌ی نام ریشه فایل).
   - کد پرسنلی («Code») یک Attribute است (نه یک Element)، و ممکن است روی هر
@@ -31,9 +30,10 @@
      شناخته‌شده (TextboxN، Title، FactorTitleN) مطابقت دارند به‌عنوان
      «برچسب» و مقدار مجاورشان در توالی سند به‌عنوان «مقدار» جفت می‌شوند.
   4. نوار جمع‌بندی پایین فیش («جمع مزایا»/«جمع کسور»/«جمع اقساط وام»/
-     «خالص پرداختی»/«شماره حساب») چون در XML به‌هم‌ریخته و غیرمجاور است، با
-     یک الگوریتم «نزدیک‌ترین همسایه» استخراج می‌شود — تفصیل در
-     payroll_common.extract_footer_rows_by_proximity.
+     «خالص پرداختی»/«شماره حساب») با نگاشت ثابت نام Attributeها استخراج می‌شود
+     و در صورت نبودِ آن‌ها با الگوریتم «نزدیک‌ترین همسایه»
+     (payroll_common.extract_footer_rows_by_proximity).
+ورودی‌های دارای DOCTYPE/ENTITY برای جلوگیری از حملات XXE رد می‌شوند.
 """
 from __future__ import annotations
 
@@ -48,32 +48,34 @@ from app.services.payroll_common import (
     extract_footer_rows_by_proximity,
 )
 
-# نام قدیمی (سازگاری با کدهای قبلی که مستقیماً از این فایل Import می‌کردند)
+# نام مستعار PayrollParseError برای کدهایی که PayrollXmlError را از این ماژول Import می‌کنند
 PayrollXmlError = PayrollParseError
 
-_FORBIDDEN_MARKERS = (b"<!DOCTYPE", b"<!ENTITY")
-_CODE_ATTR_CANDIDATES = ("Code", "code", "PersonnelCode", "EmployeeCode")
+_FORBIDDEN_MARKERS = (b"<!DOCTYPE", b"<!ENTITY")  # جلوگیری از XXE و Entity Expansion
+_CODE_ATTR_CANDIDATES = ("Code", "code", "PersonnelCode", "EmployeeCode")  # نام‌های محتمل Attribute کد پرسنلی، به ترتیب اولویت
 
+# تگ‌های <SalaryReceipt*> یک بخش (ستون) فیش‌اند؛ پسوند نام، نوع بخش را تعیین می‌کند
 _SECTION_TAG_RE = re.compile(r"^SalaryReceipt(.+)$")
+# عنوان فارسی هر بخش بر اساس پسوند نام تگ SalaryReceipt*
 _SECTION_TITLE_HINTS = {
     "Loan": "وام",
     "Deduction": "کسور",
     "Payment": "مزایا",
     "Attendance": "سایر",
 }
-_LABEL_ATTR_RE = re.compile(r"^(Textbox\d+|Title\d*|FactorTitle\d*)$")
-_NUMERIC_RE = re.compile(r"^[\-+]?[0-9۰-۹]+([.,٫][0-9۰-۹]+)*$")
+_LABEL_ATTR_RE = re.compile(r"^(Textbox\d+|Title\d*|FactorTitle\d*)$")  # الگوی نام Attributeهایی که معمولاً برچسب‌اند
+_NUMERIC_RE = re.compile(r"^[\-+]?[0-9۰-۹]+([.,٫][0-9۰-۹]+)*$")  # عدد فارسی/لاتین با علامت و جداکننده
 _REPORT_META_ATTR_KEYS = {"Name"}  # روی تگ Report، صرفاً متادیتای داخلی گزارش (بدون معنای مالی)
 
+# تگ‌های ساختار جدول (Tablix): ردیف سرستون، ردیف داده و ستون شماره‌دار
 _ROW_TAG_RE = re.compile(r"^Row\d+$")
 _DETAILS_TAG_RE = re.compile(r"^Details\d*$")
 _COLUMN_TAG_RE = re.compile(r"^Column(\d+)$")
 
-# نگاشت مستقیم Attribute برچسب → Attribute مقدار برای نوار جمع‌بندی پایین
-# فیش (Rectangle2/13/14). برخلاف بقیه گزارش، این‌ها در XML به‌هم‌ریخته و
-# غیرمجاورند (مثلاً Textbox18 مقدار «جمع مزایا» است ولی بین آن و برچسبش
-# Textbox17، یک برچسب کاملاً نامرتبط دیگر فاصله انداخته) — با بررسی مستقیم
-# چند رکورد واقعی، این نگاشت کاملاً ثابت و قابل‌اتکا تشخیص داده شد.
+# نگاشت ثابت Attribute برچسب → Attribute مقدار برای نوار جمع‌بندی پایین فیش
+# (Rectangle2/13/14). در این قالب گزارش برچسب و مقدار در XML غیرمجاورند
+# (مثلاً بین Textbox17 «جمع مزایا» و مقدارش Textbox18 برچسب دیگری آمده)، پس
+# جفت‌سازی بر اساس نام Attribute انجام می‌شود.
 _FOOTER_LABEL_TO_VALUE_ATTR = {
     "Textbox17": "Textbox18",  # جمع مزایا
     "Textbox19": "Textbox20",  # جمع کسور
@@ -89,6 +91,10 @@ def _local(tag: str) -> str:
 
 
 def _find_code(item_element: ET.Element) -> str | None:
+    """
+    ورودی: گره SalaryReceiptItem. اولین Attribute غیرخالی از _CODE_ATTR_CANDIDATES را
+    در کل زیردرخت جست‌وجو می‌کند. خروجی: کد پرسنلی یا None.
+    """
     for sub in item_element.iter():
         for candidate in _CODE_ATTR_CANDIDATES:
             if candidate in sub.attrib:
@@ -99,7 +105,10 @@ def _find_code(item_element: ET.Element) -> str | None:
 
 
 def _collect_flat_stream(element: ET.Element, stream: list[tuple[str, str]]) -> None:
-    """تمام Attribute های این زیردرخت را به ترتیب سند (Depth-First) جمع می‌کند."""
+    """
+    ورودی: گره و لیست خروجی. همه‌ی Attributeهای زیردرخت را به ترتیب سند (Depth-First)
+    به‌صورت (نام، مقدار) به stream اضافه می‌کند؛ Attributeهای Namespace‌دار و متای Report حذف می‌شوند.
+    """
     tag = _local(element.tag)
     for key, value in element.attrib.items():
         if key.startswith("{"):  # Attribute های Namespace-دار (مثل xsi:...)
@@ -107,17 +116,16 @@ def _collect_flat_stream(element: ET.Element, stream: list[tuple[str, str]]) -> 
         if tag == "Report" and key in _REPORT_META_ATTR_KEYS:
             continue
         stream.append((key, value))
+    # پیمایش بازگشتی فرزندان
     for child in element:
         _collect_flat_stream(child, stream)
 
 
 def _classify(key: str, value: str) -> str:
     """
-    'value' یا 'label' برمی‌گرداند. اول بر اساس محتوا قضاوت می‌کند (عدد = تقریباً
-    همیشه مقدار)، چون در برخی ویجت‌ها (مثل جمع‌های پایین فیش) نام Attribute
-    مقدار و برچسب هر دو از یک الگو (TextboxN) پیروی می‌کنند و نمی‌شود فقط از
-    روی نام تشخیص داد؛ فقط وقتی محتوا عدد نیست، به الگوی نام (TextboxN/Title/
-    FactorTitleN) یا خالی‌بودن مقدار به‌عنوان نشانه «برچسب» رجوع می‌کند.
+    ورودی: نام و مقدار یک Attribute. خروجی: 'value' یا 'label'.
+    اول محتوا بررسی می‌شود (عدد = مقدار)، چون نام Attribute برچسب و مقدار گاهی هر دو TextboxN است؛
+    در غیر این صورت الگوی نام (TextboxN/Title/FactorTitleN) یا خالی‌بودن مقدار نشانه‌ی برچسب است.
     """
     v = value.strip()
     if v and _NUMERIC_RE.match(v):
@@ -129,25 +137,26 @@ def _classify(key: str, value: str) -> str:
 
 def _pair_stream(stream: list[tuple[str, str]], keep_orphans: bool = False) -> list[dict]:
     """
-    (برچسب، مقدار) را از یک دنباله Attribute می‌سازد — با فرض این‌که همیشه
-    «مقدار» بلافاصله قبل از Attribute برچسبِ خودش می‌آید.
-    keep_orphans=True یعنی ردیف‌های بدون مقدار (برچسب یتیم) هم برگردانده
-    شوند (برای استخراج عنوان گزارش از روی همین‌ها استفاده می‌شود)، وگرنه
-    این ردیف‌ها حذف می‌شوند تا PDF شلوغ نشود.
+    ورودی: دنباله‌ی (نام، مقدار) Attributeها. با فرض این‌که «مقدار» بلافاصله قبل از
+    برچسبش می‌آید، ردیف‌های {label, value} می‌سازد.
+    keep_orphans=True: برچسب‌های بدون مقدار هم برمی‌گردند (برای عنوان گزارش)؛ وگرنه حذف می‌شوند.
     """
     rows: list[dict] = []
     i = 0
     n = len(stream)
     while i < n:
         key, value = stream[i]
+        # برچسب بدون مقدار قبلی: ردیف یتیم
         if _classify(key, value) == "label":
             rows.append({"label": value, "value": ""})
             i += 1
             continue
+        # مقدار + برچسبِ بعدی: یک ردیف کامل
         if i + 1 < n and _classify(*stream[i + 1]) == "label":
             rows.append({"label": stream[i + 1][1], "value": value})
             i += 2
             continue
+        # مقدار بدون برچسب: نام خود Attribute به‌عنوان برچسب
         if not _LABEL_ATTR_RE.match(key):
             rows.append({"label": key, "value": value})
         i += 1
@@ -158,15 +167,15 @@ def _pair_stream(stream: list[tuple[str, str]], keep_orphans: bool = False) -> l
 
 def _extract_footer_rows_xml(footer_stream: list[tuple[str, str]]) -> list[dict]:
     """
-    اول با نگاشت مستقیم نام Attribute (_FOOTER_LABEL_TO_VALUE_ATTR) — که در
-    این فرمت گزارش کاملاً ثابت و قابل‌اتکاست — تلاش می‌کند؛ برای هر مورد
-    ناشناخته (فرمت گزارش دیگری با نام Attribute متفاوت)، به الگوریتم عمومی
-    «نزدیک‌ترین همسایه» (extract_footer_rows_by_proximity) سقوط می‌کند.
+    ورودی: دنباله‌ی Attributeهای بعد از اولین Section. ردیف‌های جمع‌بندی را با نگاشت
+    _FOOTER_LABEL_TO_VALUE_ATTR استخراج می‌کند؛ اگر هیچ‌کدام پیدا نشد از
+    extract_footer_rows_by_proximity استفاده می‌کند. خروجی: لیست {label, value, column}.
     """
     footer_dict = dict(footer_stream)
     rows: list[dict] = []
     matched_labels: set[str] = set()
 
+    # جفت‌سازی بر اساس نگاشت ثابت نام Attributeها
     for label_key, value_key in _FOOTER_LABEL_TO_VALUE_ATTR.items():
         label_text = footer_dict.get(label_key, "").strip()
         value_text = footer_dict.get(value_key, "").strip()
@@ -174,8 +183,7 @@ def _extract_footer_rows_xml(footer_stream: list[tuple[str, str]]) -> list[dict]
             rows.append({"label": label_text, "value": value_text, "column": FOOTER_LABEL_COLUMN[label_text]})
             matched_labels.add(label_text)
 
-    # اگر هیچ‌کدام از Attribute های شناخته‌شده بالا در این فایل پیدا نشدند
-    # (فرمت گزارش دیگری)، به روش عمومی سقوط می‌کنیم.
+    # اگر هیچ‌کدام از Attributeهای شناخته‌شده پیدا نشد (قالب گزارش دیگر)، روش عمومی مجاورت
     if not matched_labels:
         return extract_footer_rows_by_proximity(footer_stream)
 
@@ -184,16 +192,15 @@ def _extract_footer_rows_xml(footer_stream: list[tuple[str, str]]) -> list[dict]
 
 def _try_parse_tablix_columns(section_element: ET.Element) -> list[dict] | None:
     """
-    اگر این Section شامل یک ردیف سرستون (RowN، هر فرزند ColumnN دقیقاً یک
-    Attribute برچسب) و حداقل یک ردیف داده (DetailsN، هر فرزند ColumnN
-    دقیقاً یک Attribute مقدار) باشد، آن‌ها را بر اساس شماره ستون (نه توالی
-    سند) به‌هم جفت می‌کند و لیست {label,value} برمی‌گرداند. اگر این الگوی
-    خاص پیدا نشد، None برمی‌گرداند تا فراخوان به pairing معمولی سقوط کند.
+    ورودی: گره یک Section. اگر شامل ردیف سرستون (RowN، هر ColumnN یک Attribute برچسب) و
+    ردیف‌های داده (DetailsN) باشد، برچسب و مقدار را بر اساس شماره ستون جفت می‌کند.
+    خروجی: لیست {label, value} یا None اگر این الگو وجود نداشت (تا pairing معمولی اجرا شود).
     """
     header_row = next((el for el in section_element.iter() if _ROW_TAG_RE.match(_local(el.tag))), None)
     if header_row is None:
         return None
 
+    # برچسب هر ستون از روی ردیف سرستون
     column_labels: dict[int, str] = {}
     for child in header_row:
         m = _COLUMN_TAG_RE.match(_local(child.tag))
@@ -208,6 +215,7 @@ def _try_parse_tablix_columns(section_element: ET.Element) -> list[dict] | None:
     if not details_elements:
         return None
 
+    # جفت‌کردن مقدار هر ستون در ردیف‌های داده با برچسب همان شماره ستون
     rows: list[dict] = []
     for details in details_elements:
         for child in details:
@@ -230,12 +238,13 @@ def _walk(
     state: dict,
 ) -> None:
     """
-    attribute های خارج از Section را بر اساس این‌که قبل یا بعد از اولین
-    Section دیده شده‌اند، جدا نگه می‌دارد: header_stream = مشخصات فیش،
-    footer_stream = جمع‌بندی‌های پایین فیش.
+    پیمایش بازگشتی درخت یک فیش. زیردرخت‌های <SalaryReceipt*> به Section تبدیل و به sections
+    اضافه می‌شوند؛ Attributeهای بیرون از Section قبل از اولین Section به header_stream
+    (مشخصات فیش) و بعد از آن به footer_stream (جمع‌بندی) می‌روند. state["seen_section"] وضعیت را نگه می‌دارد.
     """
     tag = _local(element.tag)
     target_stream = footer_stream if state["seen_section"] else header_stream
+    # Attributeهای خود گره به stream مشخصات یا جمع‌بندی
     for key, value in element.attrib.items():
         if key.startswith("{"):
             continue
@@ -246,6 +255,7 @@ def _walk(
     for child in element:
         child_tag = _local(child.tag)
         match = _SECTION_TAG_RE.match(child_tag)
+        # فرزند Section: اول الگوی جدولی، در غیر این صورت جفت‌سازی ترتیبی
         if match:
             state["seen_section"] = True
             rows = _try_parse_tablix_columns(child)
@@ -254,7 +264,7 @@ def _walk(
                 _collect_flat_stream(child, section_stream)
                 rows = _pair_stream(section_stream)
             if rows:
-                title = _SECTION_TITLE_HINTS.get(match.group(1), child_tag)
+                title = _SECTION_TITLE_HINTS.get(match.group(1), child_tag)  # عنوان فارسی یا نام خام تگ
                 sections.append(ReceiptSection(title=title, rows=rows))
         else:
             _walk(child, header_stream, footer_stream, sections, state)
@@ -262,10 +272,9 @@ def _walk(
 
 def _extract_report_title(header_rows_with_orphans: list[dict]) -> tuple[str | None, list[dict]]:
     """
-    اولین ردیف «یتیم» (برچسبی که هیچ مقداری برایش پیدا نشد، مثل
-    Textbox32="Faipco") را به‌عنوان عنوان بالای فیش برمی‌دارد؛ چون معمولاً
-    همین است که در گزارش اصلی به‌عنوان نام/لوگوی متنی سازمان نمایش داده
-    می‌شود. بقیه‌ی ردیف‌های معتبر (دارای مقدار) بدون تغییر برگردانده می‌شوند.
+    ورودی: ردیف‌های مشخصات شامل ردیف‌های یتیم. اولین ردیف یتیم (برچسب بدون مقدار، مثل
+    Textbox32="Faipco") عنوان بالای فیش در نظر گرفته می‌شود و بقیه‌ی یتیم‌ها حذف می‌شوند.
+    خروجی: (عنوان یا None، ردیف‌های دارای مقدار).
     """
     title = None
     kept: list[dict] = []
@@ -279,12 +288,17 @@ def _extract_report_title(header_rows_with_orphans: list[dict]) -> tuple[str | N
 
 
 def _parse_one_item(item_element: ET.Element) -> ParsedReceiptItem:
+    """
+    ورودی: یک گره SalaryReceiptItem. کد، مشخصات، ستون‌ها، جمع‌بندی و عنوان گزارش را استخراج می‌کند.
+    خروجی: ParsedReceiptItem.
+    """
     code = _find_code(item_element)
     header_stream: list[tuple[str, str]] = []
     footer_stream: list[tuple[str, str]] = []
     sections: list[ReceiptSection] = []
     _walk(item_element, header_stream, footer_stream, sections, {"seen_section": False})
 
+    # مشخصات فیش و جداکردن عنوان گزارش از ردیف‌های یتیم
     header_rows_raw = _pair_stream(header_stream, keep_orphans=True)
     report_title, header_rows = _extract_report_title(header_rows_raw)
 
@@ -300,10 +314,14 @@ def _parse_one_item(item_element: ET.Element) -> ParsedReceiptItem:
 
 
 def parse_salary_receipt_items(xml_bytes: bytes) -> list[ParsedReceiptItem]:
-    """تمام <SalaryReceiptItem> های فایل را پیدا و Parse می‌کند — مستقل از نام/ریشه فایل."""
+    """
+    ورودی: بایت‌های فایل XML. همه‌ی <SalaryReceiptItem>ها را در هر عمقی پیدا و Parse می‌کند.
+    خروجی: لیست ParsedReceiptItem؛ برای فایل خالی/نامعتبر/ناامن یا بدون آیتم PayrollXmlError.
+    """
     if not xml_bytes or not xml_bytes.strip():
         raise PayrollXmlError("فایل XML خالی است")
 
+    # رد فایل‌های دارای DOCTYPE/ENTITY پیش از پارس
     for marker in _FORBIDDEN_MARKERS:
         if marker in xml_bytes:
             raise PayrollXmlError(
@@ -315,6 +333,7 @@ def parse_salary_receipt_items(xml_bytes: bytes) -> list[ParsedReceiptItem]:
     except ET.ParseError as e:
         raise PayrollXmlError(f"فایل XML معتبر نیست: {e}") from e
 
+    # پارس هر SalaryReceiptItem در هر عمقی از درخت
     items: list[ParsedReceiptItem] = []
     for element in root.iter():
         if _local(element.tag) != "SalaryReceiptItem":

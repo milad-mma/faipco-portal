@@ -1,5 +1,5 @@
 {
-  "count": 263,
+  "count": 266,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -145,6 +145,7 @@
     "GET /api/v1/users/permissions",
     "GET /api/v1/users/role-catalog/{role_id}",
     "GET /api/v1/users/roles",
+    "GET /api/v1/users/site-transfers",
     "GET /api/v1/users/{user_id}/roles",
     "GET /api/v1/vehicles",
     "GET /api/v1/vehicles/me",
@@ -206,6 +207,7 @@
     "POST /api/v1/push/subscribe",
     "POST /api/v1/push/unsubscribe",
     "POST /api/v1/sites",
+    "POST /api/v1/sites/{site_id}/mapping/org-preview",
     "POST /api/v1/sites/{site_id}/suggest-mapping",
     "POST /api/v1/sync/{site_id}/run",
     "POST /api/v1/sync/{site_id}/test-connection",
@@ -218,6 +220,7 @@
     "POST /api/v1/system/smtp-settings/test",
     "POST /api/v1/users/bulk-assign-role",
     "POST /api/v1/users/role-catalog",
+    "POST /api/v1/users/site-transfers/{transfer_id}/review",
     "POST /api/v1/users/{user_id}/roles",
     "POST /api/v1/vehicles/me",
     "PUT /api/v1/access-gate/settings",

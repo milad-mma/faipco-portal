@@ -1,19 +1,19 @@
 import { MenuItem, Stack, TextField } from "@mui/material";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 
-// چند سال اخیر تا سال جاری شمسی - برای گزارش‌های تردد/حضور، معمولاً
-// نیازی به بازه‌ای فراتر از چند سال گذشته نیست؛ دراپ‌داون به‌جای ورودی
-// عددی آزاد، از انتخاب سالِ نامعتبر (مثلاً یک رقمی یا خیلی بزرگ) جلوگیری می‌کند.
+// گزینه‌های سال: چند سال اخیر تا سال جاری شمسی (برای گزارش‌های تردد/حضور)؛
+// دراپ‌داون به‌جای ورودی عددی آزاد از انتخاب سال نامعتبر جلوگیری می‌کند.
 const YEARS_BACK = 3;
 const { jy: CURRENT_JALALI_YEAR } = gregorianToJalali(new Date());
 const YEAR_OPTIONS = Array.from({ length: YEARS_BACK + 1 }, (_, i) => CURRENT_JALALI_YEAR - YEARS_BACK + i);
 
 /**
- * فیلتر ماه/سال شمسی - مقدار اولیه از پاسخ سرور (که ماه جاری را پیش‌فرض
- * برمی‌گرداند) پر می‌شود، پس نیازی نیست خودِ مرورگر «امروز شمسی» را حساب کند
- * (فقط برای محاسبه بازه دراپ‌داون سال، که مستقل از مقدار انتخاب‌شده است).
+ * فیلتر ماه/سال شمسی با دو دراپ‌داون.
+ * ورودی: year و month (مقدار اولیه از پاسخ سرور که ماه جاری را پیش‌فرض برمی‌گرداند)، onChange و disabled.
+ * خروجی از طریق onChange: شیء {year, month}. تا مشخص نبودن سال، انتخاب ماه غیرفعال است.
  */
 export default function JalaliMonthYearFilter({ year, month, onChange, disabled }) {
+  // اگر سال فعلی خارج از بازه‌ی پیش‌فرض باشد، به گزینه‌ها اضافه و مرتب می‌شود
   const yearOptions = YEAR_OPTIONS.includes(year)
     ? YEAR_OPTIONS
     : [...YEAR_OPTIONS, year].filter((y) => y != null).sort((a, b) => a - b);

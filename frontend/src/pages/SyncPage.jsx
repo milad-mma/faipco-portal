@@ -1,3 +1,6 @@
+// صفحه‌ی همگام‌سازی دیتابیس سایت‌ها.
+// تنظیم فاصله‌ی Sync خودکار، تست اتصال و اجرای دستی Sync برای سایت انتخاب‌شده،
+// روشن/خاموش‌کردن Sync خودکار هر سایت و نمایش تاریخچه‌ی اجراها؛ هر بخش بر اساس مجوز مربوطش نمایش داده می‌شود.
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -29,40 +32,38 @@ import SyncStatusChip from "../components/SyncStatusChip";
 import { monoFontSx } from "../theme";
 import { useAuth } from "../context/AuthContext";
 
+// کامپوننت صفحه‌ی همگام‌سازی؛ ورودی ندارد.
+// داده‌های سایت انتخاب‌شده (اتصال و لاگ‌ها) و تنظیمات سراسری Sync را بارگذاری و مدیریت می‌کند.
 export default function SyncPage() {
   const { user } = useAuth();
-  // ⚠️ برخلاف اکثر مجوزهای دیگر پروژه، sync.manage به‌طور خودکار شامل
-  // sync.view/sync.run نمی‌شود — این سه، سه Permission کاملاً مستقل‌اند
-  // (خودِ Backend هم دقیقاً همین‌طور، سه require_permission جدا دارد).
-  // پس هرکدام از دکمه‌ها/بخش‌های این صفحه دقیقاً بر همان مجوز خاص خودش
-  // نمایش داده می‌شود، نه یک فرض کلی «manage یعنی همه‌کاره».
+  // sync.manage، sync.view و sync.run سه مجوز مستقل‌اند (در Backend هم سه require_permission جدا)؛
+  // manage شامل دو مجوز دیگر نمی‌شود و هر بخش صفحه فقط با مجوز خاص خودش نمایش داده می‌شود
   const canManageSync = Boolean(user?.can_manage_sync);
   const canViewSync = Boolean(user?.can_view_sync);
   const canRunSync = Boolean(user?.can_run_sync);
   const [sites, setSites] = useState([]);
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [logs, setLogs] = useState([]);
-  const [testResult, setTestResult] = useState(null);
+  const [testResult, setTestResult] = useState(null);  // نتیجه‌ی تست اتصال { success, message }
   const [isRunning, setIsRunning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
-  const [intervalMinutes, setIntervalMinutes] = useState("");
-  const [savedIntervalMinutes, setSavedIntervalMinutes] = useState(null);
+  const [intervalMinutes, setIntervalMinutes] = useState("");  // مقدار ورودی فاصله‌ی Sync خودکار (رشته)
+  const [savedIntervalMinutes, setSavedIntervalMinutes] = useState(null);  // مقدار ذخیره‌شده روی سرور؛ null = هنوز بارگذاری نشده
   const [lastAutoSyncAt, setLastAutoSyncAt] = useState(null);
   const [isSavingInterval, setIsSavingInterval] = useState(false);
-  const [intervalMessage, setIntervalMessage] = useState(null);
+  const [intervalMessage, setIntervalMessage] = useState(null);  // پیام نتیجه‌ی ذخیره { severity, text }
 
   const [connectionStatus, setConnectionStatus] = useState(null); // SiteConnectionOut | null
   const [isTogglingSync, setIsTogglingSync] = useState(false);
 
   useEffect(() => {
+    // بارگذاری سایت‌ها (انتخاب اولین سایت) و در صورت داشتن sync.manage، تنظیمات فاصله‌ی Sync
     fetchSites().then((data) => {
       setSites(data);
       if (data.length > 0) setSelectedSiteId(data[0].id);
     });
-    // fetchSyncSettings مستلزم sync.manage است — بدون این مجوز، این
-    // درخواست همیشه ۴۰۳ می‌گرفت (حتی اگر خودِ کارت تنظیمات فاصله زمانی
-    // پایین‌تر اصلاً برای این کاربر نمایش داده نمی‌شد).
+    // fetchSyncSettings به مجوز sync.manage نیاز دارد و بدون آن ۴۰۳ برمی‌گرداند، پس فقط با این مجوز صدا زده می‌شود
     if (canManageSync) {
       fetchSyncSettings().then((data) => {
         setIntervalMinutes(String(data.interval_minutes));
@@ -73,6 +74,7 @@ export default function SyncPage() {
   }, [canManageSync]);
 
   useEffect(() => {
+    // با تغییر سایت انتخاب‌شده: پاک‌کردن نتیجه‌ی تست، بارگذاری لاگ‌ها و وضعیت اتصال سایت
     if (!selectedSiteId) return;
     setTestResult(null);
     loadLogs();
@@ -81,11 +83,13 @@ export default function SyncPage() {
       .catch(() => setConnectionStatus(null));
   }, [selectedSiteId]);
 
+  // تاریخچه‌ی Sync سایت انتخاب‌شده را (در صورت داشتن sync.view) بارگذاری می‌کند
   function loadLogs() {
     if (!selectedSiteId || !canViewSync) return;
     fetchSyncLogs(selectedSiteId).then(setLogs);
   }
 
+  // Sync خودکار سایت انتخاب‌شده را روشن/خاموش می‌کند و وضعیت اتصال به‌روزشده را ذخیره می‌کند
   async function handleToggleSyncEnabled() {
     if (!connectionStatus) return;
     const nextActive = !connectionStatus.is_active;
@@ -98,6 +102,7 @@ export default function SyncPage() {
     }
   }
 
+  // اتصال دیتابیس سایت انتخاب‌شده را تست و نتیجه را نمایش می‌دهد
   async function handleTestConnection() {
     setIsTesting(true);
     setTestResult(null);
@@ -109,6 +114,7 @@ export default function SyncPage() {
     }
   }
 
+  // Sync دستی سایت انتخاب‌شده را اجرا و سپس لاگ‌ها را بازخوانی می‌کند
   async function handleRunSync() {
     setIsRunning(true);
     try {
@@ -119,6 +125,7 @@ export default function SyncPage() {
     }
   }
 
+  // فاصله‌ی Sync خودکار را (عدد صحیح ۱ تا ۱۴۴۰ دقیقه) اعتبارسنجی و روی سرور ذخیره می‌کند
   async function handleSaveInterval() {
     setIntervalMessage(null);
     const value = Number(intervalMinutes);
@@ -144,8 +151,9 @@ export default function SyncPage() {
     }
   }
 
-  const intervalChanged = savedIntervalMinutes !== null && Number(intervalMinutes) !== savedIntervalMinutes;
+  const intervalChanged = savedIntervalMinutes !== null && Number(intervalMinutes) !== savedIntervalMinutes;  // دکمه‌ی ذخیره فقط با تغییر مقدار فعال است
 
+  // گزینه‌های آماده‌ی فاصله‌ی زمانی (دقیقه)
   const intervalPresets = [
     { label: "۱۵ دقیقه", value: 15 },
     { label: "۳۰ دقیقه", value: 30 },
@@ -165,6 +173,7 @@ export default function SyncPage() {
         تست اتصال، اجرای دستی همگام‌سازی و مشاهده تاریخچه هر سایت
       </Typography>
 
+      {/* کارت تنظیم فاصله‌ی Sync خودکار (فقط با sync.manage) */}
       {canManageSync && (
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
@@ -179,6 +188,7 @@ export default function SyncPage() {
           مقدار فاصله دارد، نه دقیقاً لحظه‌به‌لحظه.
         </Typography>
 
+        {/* دکمه‌های فاصله‌ی آماده */}
         <Stack direction="row" spacing={1} flexWrap="wrap" rowGap={1} sx={{ mb: 2 }}>
           {intervalPresets.map((preset) => (
             <Chip
@@ -224,6 +234,7 @@ export default function SyncPage() {
           </Button>
         </Stack>
 
+        {/* زمان آخرین Sync خودکار */}
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2.5, opacity: 0.8 }}>
           <HistoryOutlinedIcon sx={{ fontSize: 18 }} color="action" />
           <Typography variant="caption" color="text.secondary">
@@ -236,6 +247,7 @@ export default function SyncPage() {
       </Card>
       )}
 
+      {/* کارت انتخاب سایت، تست اتصال، اجرای دستی و کلید Sync خودکار سایت */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
           <TextField
@@ -281,6 +293,7 @@ export default function SyncPage() {
           </Alert>
         )}
 
+        {/* کلید روشن/خاموش Sync خودکار سایت (تغییر فقط با sync.manage) */}
         {connectionStatus && (
           <Stack
             direction="row"
@@ -320,6 +333,7 @@ export default function SyncPage() {
         )}
       </Card>
 
+      {/* جدول تاریخچه‌ی اجراهای Sync سایت (فقط با sync.view) */}
       {canViewSync && (
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
         <TableContainer>
@@ -333,13 +347,15 @@ export default function SyncPage() {
                 <TableCell>به‌روزشده</TableCell>
                 <TableCell>غیرفعال‌شده</TableCell>
                 <TableCell>رد‌شده (غیرفعال در منبع)</TableCell>
-                <TableCell>خطا</TableCell>
+                <TableCell>منتقل‌شده از سایت دیگر</TableCell>
+                <TableCell>بدون سایت</TableCell>
+                <TableCell>خطا / هشدار</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {logs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={10}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
                       هنوز هیچ اجرایی برای این سایت ثبت نشده است.
                     </Typography>
@@ -359,10 +375,21 @@ export default function SyncPage() {
                   <TableCell sx={monoFontSx}>{log.updated_count}</TableCell>
                   <TableCell sx={monoFontSx}>{log.deactivated_count}</TableCell>
                   <TableCell sx={monoFontSx}>{log.skipped_inactive_count ?? 0}</TableCell>
-                  <TableCell sx={{ maxWidth: 240 }}>
-                    <Typography variant="caption" color="error.main" noWrap>
-                      {log.error_message || "—"}
-                    </Typography>
+                  <TableCell sx={monoFontSx}>{log.transferred_count ?? 0}</TableCell>
+                  <TableCell sx={monoFontSx}>{log.skipped_unassigned_count ?? 0}</TableCell>
+                  {/* خطا (قرمز) یا هشدار واحدهای بی‌سایت (نارنجی)؛ متن کامل در tooltip مرورگر */}
+                  <TableCell sx={{ maxWidth: 280 }}>
+                    {log.error_message ? (
+                      <Typography variant="caption" color="error.main" noWrap title={log.error_message} component="div">
+                        {log.error_message}
+                      </Typography>
+                    ) : log.warning_message ? (
+                      <Typography variant="caption" color="warning.main" noWrap title={log.warning_message} component="div">
+                        {log.warning_message}
+                      </Typography>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

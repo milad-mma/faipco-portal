@@ -4,11 +4,10 @@
 یا نوشتنی. هدف: کمک به مدیر برای تنظیم Mapping ها (EmployeeMapping/
 AttendanceMapping) بدون نیاز به باز کردن ابزار جدا (SSMS/pgAdmin/...).
 
-⚠️ این یک قابلیت صرفاً «کشف و نمایش» است - هیچ پیشنهاد/حدس یا اعمال
-خودکاری روی Mapping انجام نمی‌دهد. مرحله دوم/سوم پیشنهاد (بر اساس نام
-ستون / نمونه داده واقعی) در app/services/mapping_suggestion_service.py
-پیاده شده‌اند - suggest_mapping_for_table پایین این دو مرحله را با یک
-اتصال واقعی به دیتابیس این سایت ترکیب می‌کند.
+discover_site_schema فقط کشف و نمایش است و چیزی روی Mapping اعمال نمی‌کند.
+پیشنهاد نگاشت (بر اساس نام ستون / نمونه داده واقعی) در
+app/services/mapping_suggestion_service.py پیاده شده و suggest_mapping_for_table
+آن را با یک اتصال واقعی به دیتابیس سایت ترکیب می‌کند.
 """
 from __future__ import annotations
 
@@ -20,10 +19,13 @@ from app.sync_engine.adapters.base import BaseSiteAdapter
 
 
 class SchemaDiscoveryError(Exception):
+    """خطای اتصال/درایور هنگام کشف ساختار یا پیشنهاد نگاشت؛ پیامش به کاربر نمایش داده می‌شود."""
+
     pass
 
 
 def _build_adapter(connection: SiteConnection) -> BaseSiteAdapter:
+    """از روی رکورد اتصال سایت (با رمزگشایی پسورد) Adapter مناسب نوع دیتابیس را می‌سازد."""
     return get_adapter(
         connection.db_type,
         host=connection.host,
@@ -35,6 +37,7 @@ def _build_adapter(connection: SiteConnection) -> BaseSiteAdapter:
 
 
 async def discover_site_schema(connection: SiteConnection) -> dict:
+    """ساختار دیتابیس منبع سایت (جدول‌ها، ستون‌ها، کلیدهای خارجی) را برمی‌گرداند؛ خطاها به SchemaDiscoveryError تبدیل می‌شوند."""
     adapter = _build_adapter(connection)
     try:
         return await adapter.discover_schema()
@@ -46,9 +49,8 @@ async def suggest_mapping_for_table(
     connection: SiteConnection, table_name: str, column_names: list[str], concepts: list[str]
 ) -> dict:
     """
-    مرحله دوم (نام ستون) + سوم (نمونه داده واقعی، فقط برای مفاهیمی که
-    مرحله دوم چیزی برایشان پیدا نکرد) - با یک اتصال واقعی به دیتابیس
-    این سایت.
+    برای یک جدول، پیشنهاد نگاشت هر مفهوم را برمی‌گرداند: ابتدا بر اساس نام ستون و سپس (فقط برای
+    مفاهیم بی‌پاسخ) با نمونه‌گیری داده واقعی از دیتابیس سایت. خطاها به SchemaDiscoveryError تبدیل می‌شوند.
     """
     adapter = _build_adapter(connection)
     try:

@@ -1,8 +1,12 @@
-"""Schema های Pydantic مربوط به User."""
+"""
+Schemaهای Pydantic مربوط به User.
+UserOut: اطلاعات کاربر جاری به‌همراه اطلاعات پرسنلی و فلگ‌های مجوز که فرانت‌اند بر اساس آن منوها را نمایش می‌دهد.
+"""
 from pydantic import BaseModel, ConfigDict
 
 
 class UserOut(BaseModel):
+    """پاسخ GET /auth/me (ساخته‌شده در AuthService.get_me)."""
     id: int
     username: str
     email: str | None
@@ -34,11 +38,7 @@ class UserOut(BaseModel):
     can_manage_clock_records: bool = False  # آیا مجوز افزودن/ویرایش/حذف دستی رکورد ورود/خروج را دارد
     can_view_site_notice_report: bool = False  # آیا site_manager سایتی است (برای «گزارش اطلاعیه‌های سایت من»)
     can_view_vehicles_report: bool = False  # آیا Admin یا نقش «حراست» است (برای «گزارش خودروهای پرسنل»)
-    # ⚠️ طبق درخواست صریح: هر مجوزی که به یک نقش داده شود، منوی متناظرش هم
-    # باید در پنل کاربری اضافه شود — نه فقط برای Admin واقعی کار کند.
-    # صفحات زیر قبلاً فقط با is_superuser محافظت می‌شدند (AdminRoute)؛
-    # حالا اگر یک نقش غیر-Admin هم مجوز متناظر را داشته باشد، منویشان
-    # نمایش داده می‌شود.
+    # فلگ‌های منوهای مدیریتی: اگر کاربر (Admin یا هر نقشی) مجوز متناظر را داشته باشد، منوی مربوط نمایش داده می‌شود
     can_manage_sites: bool = False  # sites.manage — «سایت‌ها» و «واحدهای سازمانی»
     can_view_sites: bool = False  # sites.view (یا sites.manage) — مشاهده فقط‌خواندنی «سایت‌ها»
     can_manage_sync: bool = False  # sync.manage — «همگام‌سازی دیتابیس»
@@ -47,11 +47,8 @@ class UserOut(BaseModel):
     can_manage_ip_allowlist: bool = False  # system.ip_allowlist — «رنج‌های IP مجاز»
     can_view_feedback: bool = False  # feedback.view یا feedback.view_all — مشاهده انتقادات و پیشنهادات
     can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
-    # ⚠️ فلگ‌های تازه‌کشف‌شده: این مجوزها از قبل در Backend واقعاً چک
-    # می‌شدند (require_permission/get_sites_with_permission)، ولی هیچ
-    # فلگ متناظری اینجا نداشتند — یعنی حتی اگر یک نقش این مجوز را داشت،
-    # هیچ منو/مسیری در Frontend برایش باز نمی‌شد. طبق بازخورد صریح («هر
-    # مجوزی که به یک نقش بدهم باید منویش هم اضافه شود»).
+    # فلگ‌های مجوزهایی که در بک‌اند با require_permission/get_sites_with_permission چک می‌شوند؛
+    # هر فلگ True، منو/مسیر متناظر را در فرانت‌اند باز می‌کند
     can_view_employees: bool = False  # employees.view — «پرسنل»
     can_update_employees: bool = False  # employees.update — ویرایش اطلاعات پرسنل
     can_create_employees: bool = False  # employees.create — افزودن دستی پرسنل
@@ -70,10 +67,9 @@ class UserOut(BaseModel):
     can_manage_performance_assignments: bool = False  # performance.assignments.manage — تولید انتساب ارزیابی
     can_view_performance_reports: bool = False  # performance.reports.view — مشاهده گزارش‌های مدیریتی ارزیابی
     can_view_leave_requests: bool = False  # leave_requests.view — مشاهده همه درخواست‌های مرخصی/ماموریت یک سایت
-    # ⚠️ طبق تصمیم صریح کاربر: کسی که فقط مجوز به‌تفکیک نوع دارد (مثل
-    # نقش «حراست») - نه مجوز سراسری view/manage. برای این افراد، UI
-    # صفحه گزارش محدودتر است (بدون درخواست‌های در حال بررسی، بدون خروجی
-    # Excel، بدون فیلتر بازه تاریخ) - همان محدودیت‌ها سمت سرور هم اعمال می‌شوند.
+    # True: کاربر فقط مجوز به‌تفکیک نوع مرخصی/ماموریت دارد (مثل نقش «حراست»)، نه مجوز سراسری view/manage؛
+    # صفحه‌ی گزارش برایش محدودتر است (بدون درخواست‌های در حال بررسی، بدون خروجی Excel، بدون فیلتر بازه‌ی تاریخ)
+    # و همین محدودیت‌ها سمت سرور هم اعمال می‌شوند.
     leave_requests_type_restricted: bool = False
     can_manage_leave_requests: bool = False  # leave_requests.manage — مشاهده و ویرایش همه درخواست‌های مرخصی/ماموریت
 

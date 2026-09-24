@@ -1,35 +1,30 @@
+/**
+ * کامپوننت کاشی «ارزیابی عملکرد» در داشبورد پرسنل.
+ * خلاصه‌ی داشبورد ارزیابی را از سرور می‌گیرد و وضعیت را روی کاشی نشان می‌دهد.
+ */
 import { useEffect, useState } from "react";
 import { Badge, Box, Card, Chip, Stack, Typography } from "@mui/material";
 import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import { fetchMyEvaluationDashboardSummary } from "../api/evaluationProcess";
 
 /**
- * کاشی «ارزیابی عملکرد» در داشبورد پرسنل - جایگزین نسخه قبلی («به‌زودی»).
- *
- * ⚠️ طبق درخواست صریح: امتیاز هرگز روی خودِ کارت داشبورد نمایش داده
- * نمی‌شود (محرمانه است) - فقط یک برچسب «محرمانه» نشان می‌دهد که نتیجه‌ای
- * وجود دارد؛ امتیاز واقعی فقط داخل صفحه (بعد از کلیک) نمایش داده می‌شود.
- * برای سرپرست/مدیر، یک Badge با تعداد ارزیابی‌های در انتظار انجام هم
- * اضافه می‌شود (این عدد محرمانه نیست - فقط یک یادآوری کاری است).
- *
- * ⚠️ رفع یک باگ واقعی: این دو (Badge و برچسب «محرمانه») کاملاً مستقل از
- * هم بودند ولی چون کارت ارتفاع ثابت داشت، وقتی هر دو هم‌زمان لازم بود
- * نمایش داده شوند، برچسب «محرمانه» به‌خاطر کمبود جا Clip می‌شد (دیده
- * نمی‌شد) - نه اینکه واقعاً حذف شده باشد. حالا کارت minHeight دارد (نه
- * height ثابت) تا با محتوا رشد کند، و overflow: visible دارد تا اگر
- * Badge با عدد چندرقمی کمی از گوشه کارت بیرون بزند، به‌جای بریده‌شدن،
- * به‌طور طبیعی نمایش داده شود.
+ * کاشی «ارزیابی عملکرد» در داشبورد پرسنل.
+ * ورودی: onClick برای باز کردن صفحه‌ی ارزیابی.
+ * امتیاز روی کارت نمایش داده نمی‌شود (محرمانه است)؛ اگر نتیجه‌ای وجود داشته باشد فقط برچسب «محرمانه» دیده می‌شود.
+ * برای سرپرست/مدیر، Badge تعداد ارزیابی‌های در انتظار انجام را نشان می‌دهد.
+ * کارت minHeight دارد تا با محتوا رشد کند و overflow: visible تا Badge بریده نشود.
  */
 export default function PerformanceEvaluationToolCard({ onClick }) {
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary] = useState(null);  // خلاصه‌ی داشبورد ارزیابی؛ null = دریافت نشده یا خطا
 
+  // در اولین رندر خلاصه‌ی داشبورد ارزیابی را می‌گیرد؛ در خطا null می‌گذارد
   useEffect(() => {
     fetchMyEvaluationDashboardSummary()
       .then(setSummary)
       .catch(() => setSummary(null));
   }, []);
 
-  const hasResult = summary?.results_count > 0;
+  const hasResult = summary?.results_count > 0;  // آیا کاربر حداقل یک نتیجه‌ی ارزیابی دارد
 
   return (
     <Card
@@ -51,6 +46,7 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
         "&:hover": { backgroundColor: "action.hover" },
       }}
     >
+      {/* آیکون کاشی با Badge تعداد ارزیابی‌های در انتظار انجام */}
       <Badge
         color="warning"
         badgeContent={summary?.pending_to_evaluate_count || 0}
@@ -70,6 +66,7 @@ export default function PerformanceEvaluationToolCard({ onClick }) {
       >
         ارزیابی عملکرد
       </Typography>
+      {/* برچسب «محرمانه» وقتی نتیجه‌ی ارزیابی وجود دارد */}
       {hasResult && (
         <Stack direction="row" alignItems="center">
           <Chip

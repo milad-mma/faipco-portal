@@ -1,8 +1,9 @@
 """
-Endpoint های پرسنل: لیست/جستجو، انتصاب مستقیم نقش به یک پرسنل مشخص، فعال/غیرفعال‌کردن
-دستی، و تعیین دستی رمز عبور ورود.
+Endpoint های پرسنل (/employees): لیست/جستجوی صفحه‌بندی‌شده، افزودن دستی پرسنل،
+شمارش‌ها برای داشبورد، متولدین امروز و ری‌اکشن تبریک، عکس پرسنل، پاک‌سازی پرسنل
+غیرفعال بدون سابقه، انتصاب مستقیم نقش، فعال/غیرفعال‌کردن دستی و تعیین/بازنشانی رمز عبور.
 
-نکته طراحی مهم: به‌جای اینکه Admin مجبور باشد یک «کاربر» انتزاعی بسازد و به آن
+انتصاب نقش: به‌جای اینکه Admin مجبور باشد یک «کاربر» انتزاعی بسازد و به آن
 نقش «مدیر سایت» بدهد، اینجا مستقیماً از بین پرسنل واقعی (که از Sync آمده‌اند)
 جستجو می‌کند و نقش را به همان شخص می‌دهد. اگر آن پرسنل هنوز حساب کاربری
 (User) نداشته باشد (چون هنوز خودش وارد نشده)، همین‌جا به‌صورت خودکار ساخته
@@ -13,6 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.deps import get_current_user, require_permission
 from app.core.site_access import get_accessible_site_ids, get_sites_with_permission
@@ -25,6 +27,7 @@ from app.core.security import WeakPasswordError
 from app.db.session import get_db
 from app.models.employee import Department, Employee
 from app.models.site import Site
+from app.models.site_transfer import SiteTransfer
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
@@ -90,25 +93,23 @@ async def list_employees(
     sort_by: str = Query(default="personnel_code"),
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
-    # هر کاربر لاگین‌شده (نه فقط Admin) باید بتواند برای انتخاب گیرنده اطلاعیه
-    # در بین پرسنل جستجو کند. اعتبارسنجی واقعی این‌که «آیا اجازه ارسال به این
-    # شخص را دارد یا نه» موقع ثبت اطلاعیه در notice_service.py انجام می‌شود.
-    # پیش‌فرض include_inactive=False و include_portal_disabled=False همان
-    # رفتار قبلی را برای این جستجو حفظ می‌کند (فقط پرسنل فعال و در پرتال
-    # فعال، هدف اطلاعیه قرار می‌گیرند)؛ فقط صفحه «پرسنل» در پنل Admin این دو
-    # پرچم را جدا از هم کنترل می‌کند تا هم بتواند پرسنل غیرفعال در پرتال را
-    # مدیریت کند و هم در صورت نیاز پرسنل غیرفعال از منبع را ببیند.
+    # هر کاربر لاگین‌شده می‌تواند برای انتخاب گیرنده اطلاعیه جستجو کند؛ اجازه واقعی
+    # ارسال به هر شخص هنگام ثبت اطلاعیه در notice_service.py بررسی می‌شود.
+    # با پیش‌فرض‌های include_inactive=False و include_portal_disabled=False فقط پرسنل
+    # فعال در منبع و در پرتال برگردانده می‌شوند؛ صفحه «پرسنل» پنل Admin این دو را جدا کنترل می‌کند.
     _current_user: User = Depends(get_current_user),
 ):
-    # ایزوله‌سازی چندسایتی: کاربری که فقط برای یک/چند سایت خاص نقش دارد
-    # (یا اصلاً نقشی ندارد و فقط پرسنل عادی است)، نباید بتواند با تغییر
-    # site_id در URL، پرسنل سایت دیگری را جست‌وجو/ببیند — این جست‌وجو قبلاً
-    # کاملاً باز بود (فقط لاگین بودن کافی بود)، که یعنی کد ملی/موبایل پرسنل
-    # هر سایتی برای هر کاربر لاگین‌شده‌ای قابل‌دیدن بود. accessible_site_ids
-    # None یعنی بدون محدودیت (Admin واقعی یا حداقل یک نقش سراسری).
+    """
+    فهرست صفحه‌بندی‌شده پرسنل با فیلتر (سایت، واحد، جستجو، نقش، وضعیت) و مرتب‌سازی.
+    دسترسی: هر کاربر لاگین‌شده، ولی نتایج به سایت‌های در دسترس کاربر محدود می‌شود.
+    خروجی: EmployeePageOut (آیتم‌های همین صفحه + تعداد کل).
+    """
+    # ایزوله‌سازی چندسایتی: کاربر فقط پرسنل سایت‌هایی را می‌بیند که در آن‌ها نقش دارد،
+    # حتی اگر site_id دیگری در URL بفرستد. None یعنی بدون محدودیت (Admin یا نقش سراسری).
     accessible_site_ids = await get_accessible_site_ids(db, _current_user)
 
     def apply_filters(stmt):
+        """همه فیلترهای درخواست را روی یک select اعمال می‌کند (مشترک بین کوئری شمارش و کوئری داده)."""
         if not include_inactive:
             stmt = stmt.where(Employee.is_active.is_(True))
         if not include_portal_disabled:
@@ -129,6 +130,7 @@ async def list_employees(
                     Employee.national_code.ilike(pattern),
                 )
             )
+        # فقط پرسنلی که User متصلشان نقش has_role را دارد
         if has_role:
             role_exists = (
                 select(UserRole.id)
@@ -139,14 +141,16 @@ async def list_employees(
             stmt = stmt.where(role_exists.exists())
         return stmt
 
+    # تعداد کل نتایج (بدون صفحه‌بندی)
     count_stmt = apply_filters(
         select(func.count(Employee.id)).select_from(Employee)
     )
     total = (await db.execute(count_stmt)).scalar_one()
 
-    sort_columns = _SORT_COLUMNS.get(sort_by, _SORT_COLUMNS["personnel_code"])
+    sort_columns = _SORT_COLUMNS.get(sort_by, _SORT_COLUMNS["personnel_code"])  # sort_by ناشناخته → کد پرسنلی
     order_exprs = [col.desc() if sort_dir == "desc" else col.asc() for col in sort_columns]
 
+    # داده‌های همین صفحه همراه نام سایت و واحد؛ Employee.id برای ترتیب پایدار اضافه می‌شود
     data_stmt = apply_filters(
         select(Employee, Site.name, Department.name)
         .join(Site, Site.id == Employee.site_id)
@@ -156,8 +160,7 @@ async def list_employees(
     result = await db.execute(data_stmt)
     rows = result.all()
 
-    # has_custom_password روی User است نه Employee — با یک کوئری جدا (فقط برای
-    # همین صفحه از پرسنل) به هرکدام وصل می‌شود.
+    # has_custom_password روی User است نه Employee؛ با یک کوئری جدا فقط برای پرسنل همین صفحه خوانده می‌شود
     custom_password_by_employee: dict[int, bool] = {}
     employee_ids = [row[0].id for row in rows]
     if employee_ids:
@@ -196,6 +199,9 @@ async def create_employee_manually(
     current_user: User = Depends(require_permission("employees.create")),
 ):
     """
+    مجوز: employees.create (برای سایت مقصد). خطاها: 403 سایت خارج از دسترسی، 404 سایت نامعتبر،
+    400 واحد نامعتبر یا کد پرسنلی تکراری. خروجی: پرسنل ساخته‌شده.
+
     افزودن دستی یک پرسنل — فقط برای مواردی که واقعاً در هیچ منبع Sync
     موجود نیست (مثلاً هنوز به دیتابیس مبدأ اضافه نشده). این رکورد را
     Sync Engine نمی‌سازد، پس با یک نشانگر (is_manually_created) از رکوردهای
@@ -203,10 +209,11 @@ async def create_employee_manually(
     هم ظاهر شود، طبق منطق موجود Sync Engine (Upsert بر اساس
     personnel_code+site_id) به‌طور طبیعی به‌روزرسانی/ادغام می‌شود.
 
-    ⚠️ ایزوله‌سازی چندسایتی: Admin واقعی می‌تواند برای هر سایتی پرسنل
+    ایزوله‌سازی چندسایتی: Admin واقعی می‌تواند برای هر سایتی پرسنل
     اضافه کند؛ کاربر غیر-Admin با این مجوز فقط برای سایت‌هایی که خودش هم
     برایشان همین مجوز را دارد.
     """
+    # بررسی دسترسی کاربر غیر-Admin به سایت مقصد
     if not current_user.is_superuser:
         accessible_site_ids = await get_sites_with_permission(db, current_user, "employees.create")
         if accessible_site_ids is not None and payload.site_id not in accessible_site_ids:
@@ -219,11 +226,13 @@ async def create_employee_manually(
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
 
+    # واحد انتخاب‌شده باید متعلق به همان سایت باشد
     if payload.department_id is not None:
         department = await db.get(Department, payload.department_id)
         if department is None or department.site_id != payload.site_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="واحد سازمانی نامعتبر است")
 
+    # جلوگیری از کد پرسنلی تکراری در همان سایت
     existing = await db.execute(
         select(Employee).where(Employee.site_id == payload.site_id, Employee.personnel_code == payload.personnel_code)
     )
@@ -277,7 +286,8 @@ async def count_portal_disabled_employees(
     """
     تعداد پرسنلِ فعال (از منبع Sync) که دسترسی پرتالشان دستی غیرفعال شده —
     برای کارت آمار داشبورد Admin (نشان می‌دهد چند نفر با وجود فعال بودن، به
-    پرتال دسترسی ندارند). ایزوله‌سازی چندسایتی مثل GET /employees.
+    پرتال دسترسی ندارند). دسترسی: هر کاربر لاگین‌شده؛ ایزوله‌سازی چندسایتی مثل GET /employees.
+    خروجی: {"count": عدد}.
     """
     accessible_site_ids = await get_accessible_site_ids(db, _current_user)
     stmt = select(func.count()).select_from(Employee).where(
@@ -307,13 +317,14 @@ async def list_birthdays_today(
     (BirthdayMessagesPage) بدون تغییر همه پرسنل را ببینند — فقط داشبورد
     شخصی پرسنل (PersonalDashboardPage) این پارامتر را true می‌فرستد.
 
-    ⚠️ این Endpoint نام/واحد/سایت پرسنل را برمی‌گرداند — ایزوله‌سازی
-    چندسایتی مثل GET /employees اعمال می‌شود.
+    دسترسی: هر کاربر لاگین‌شده؛ چون نام/واحد/سایت پرسنل برگردانده می‌شود، ایزوله‌سازی
+    چندسایتی مثل GET /employees اعمال می‌شود. خروجی: لیست BirthdayEmployeeOut همراه ری‌اکشن‌ها.
     """
     accessible_site_ids = await get_accessible_site_ids(db, current_user)
 
     today_year, today_month, today_day = get_current_jalali_date()
 
+    # پرسنل فعالی که روز و ماه تولدشان با امروز (شمسی) یکی است
     stmt = (
         select(Employee, Site.name, Department.name)
         .join(Site, Site.id == Employee.site_id)
@@ -331,9 +342,8 @@ async def list_birthdays_today(
     result = await db.execute(stmt)
     rows = result.all()
 
-    # ⚠️ ری‌اکشن‌های تبریک تولد - با دو Query برای همه متولدین (نه یک
-    # Query به‌ازای هر نفر). فهرست تبریک‌گویندگان طبق تصمیم صریح کاربر
-    # برای همه قابل‌مشاهده است.
+    # ری‌اکشن‌های تبریک تولد با دو Query برای همه متولدین خوانده می‌شوند (نه یک Query به‌ازای هر نفر)؛
+    # فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است
     employee_ids = [e.id for e, _, _ in rows]
     reaction_service = BirthdayReactionService(db)
     reactions = await reaction_service.get_reactions_for_employees(employee_ids)
@@ -364,9 +374,10 @@ async def set_birthday_reaction(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ ثبت/تغییر/برداشتن ری‌اکشن تبریک تولد. کلیک روی همان ایموجی فعلی،
+    ثبت/تغییر/برداشتن ری‌اکشن تبریک تولد برای پرسنل employee_id. کلیک روی همان ایموجی فعلی،
     آن را برمی‌دارد (Toggle). خودِ متولد نمی‌تواند به تولد خودش ری‌اکشن
     بزند و ری‌اکشن فقط در همان روز تولد مجاز است.
+    دسترسی: هر کاربر لاگین‌شده. خطا: 400 برای ایموجی نامعتبر یا نقض این قواعد.
     """
     try:
         emoji = BirthdayReactionEmoji(payload.emoji)
@@ -388,7 +399,7 @@ async def update_my_birthday_visibility(
     تنظیم شخصی/خودانتخاب — هر پرسنل فقط برای خودش می‌تواند این را تغییر دهد
     (نه برای پرسنل دیگر، نه از پنل Admin — این عمداً یک قابلیت Self-service
     است). اگر کاربر جاری به هیچ رکورد Employee ای وصل نباشد (مثلاً یک
-    حساب مدیریتی محض مثل admin)، ۴۰۴ برمی‌گردد.
+    حساب مدیریتی محض مثل admin)، ۴۰۴ برمی‌گردد. خروجی: رکورد پرسنل به‌روزشده.
     """
     if current_user.employee_id is None:
         raise HTTPException(
@@ -411,9 +422,9 @@ async def get_birthday_related_photo_thumbnail(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ طبق تصمیم صریح کاربر: آواتار در کارت «متولدین امروز» و فهرست
-    تبریک‌گویندگان برای همه قابل‌مشاهده است - ولی **فقط در همین دو
-    زمینه**، نه به‌صورت عمومی.
+    عکس بندانگشتی (واترمارک‌شده با شناسه بیننده) برای کارت «متولدین امروز» و فهرست
+    تبریک‌گویندگان؛ برای هر کاربر لاگین‌شده، ولی **فقط در همین دو زمینه**، نه به‌صورت عمومی.
+    خطاها: 404 اگر عکس نباشد، 403 اگر پرسنل نه متولد امروز است نه تبریک‌گوی امسال.
 
     Endpoint اصلی (/photo-thumbnail) عمداً فقط به خودِ شخص یا Admin
     اجازه می‌دهد، چون تصویر چهره اطلاعات حساسی است. آن محدودیت
@@ -428,29 +439,40 @@ async def get_birthday_related_photo_thumbnail(
     employee = await db.get(Employee, employee_id)
     if employee is None or not employee.photo_thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
+    accessible_site_ids = await get_accessible_site_ids(db, current_user)  # None = همه‌ی سایت‌ها
 
-    is_birthday_person = employee.birth_month == month and employee.birth_day == day
+    # متولد امروز فقط اگر در سایت‌های در دسترس بیننده باشد
+    is_birthday_person = (
+        employee.birth_month == month
+        and employee.birth_day == day
+        and (accessible_site_ids is None or employee.site_id in accessible_site_ids)
+    )
 
+    # در غیر این صورت: آیا این پرسنل امسال به متولدی در سایت‌های در دسترس بیننده تبریک گفته است؟
+    # (تبریک‌گو ممکن است از سایت دیگری باشد، مثلاً مدیر سراسری)
     is_reactor = False
     if not is_birthday_person:
-        reactor_check = await db.execute(
+        reactor_query = (
             select(BirthdayReaction.id)
             .join(User, User.id == BirthdayReaction.reactor_user_id)
             .where(
                 User.employee_id == employee_id,
                 BirthdayReaction.jalali_year == jalali_year,
             )
-            .limit(1)
         )
+        if accessible_site_ids is not None:
+            birthday_person = aliased(Employee)
+            reactor_query = reactor_query.join(
+                birthday_person, birthday_person.id == BirthdayReaction.birthday_employee_id
+            ).where(birthday_person.site_id.in_(accessible_site_ids))
+        reactor_check = await db.execute(reactor_query.limit(1))
         is_reactor = reactor_check.first() is not None
 
     if not (is_birthday_person or is_reactor):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
 
-    # ⚠️ واترمارکِ شناسه بیننده روی تصویر حک می‌شود. جلوگیری کامل از
-    # ذخیره تصویر در مرورگر ممکن نیست، پس به‌جای وعده امنیتی غیرواقعی،
-    # بازدارندگی ساخته می‌شود: هر عکس نشت‌یافته به کسی که آن را دیده
-    # برمی‌گردد.
+    # شناسه بیننده به‌صورت واترمارک روی تصویر حک می‌شود تا هر عکس نشت‌یافته
+    # قابل ردیابی به بیننده‌اش باشد (جلوگیری کامل از ذخیره تصویر در مرورگر ممکن نیست)
     viewer_employee = (
         await db.get(Employee, current_user.employee_id) if current_user.employee_id else None
     )
@@ -460,7 +482,7 @@ async def get_birthday_related_photo_thumbnail(
     return Response(
         content=content,
         media_type=media_type,
-        # ⚠️ no-store: تصویر واترمارک‌شده مخصوص همین بیننده است و نباید در
+        # no-store: تصویر واترمارک‌شده مخصوص همین بیننده است و نباید در
         # Cache مرورگر/واسط بماند تا به بیننده دیگری سرو شود.
         headers={"Cache-Control": "no-store, private"},
     )
@@ -476,6 +498,7 @@ async def get_employee_photo_thumbnail(
     تصویر بندانگشتی پرسنل (از EmployeeExtendedInfo، طبق Mapping هر سایت).
     فقط خودِ همان شخص یا یک Admin کامل اجازه دیدن این عکس را دارد — نه هر
     کاربر لاگین‌شده‌ای برای هر پرسنلی، چون تصویر چهره اطلاعات حساسی است.
+    خطاها: 403 برای دیگران، 404 اگر عکسی ثبت نشده باشد. خروجی: بایت‌های GIF.
     """
     if current_user.employee_id != employee_id and not current_user.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
@@ -488,20 +511,49 @@ async def get_employee_photo_thumbnail(
     return Response(content=employee.photo_thumbnail, media_type="image/gif")
 
 
-# ---------- پاک‌سازی پرسنل غیرفعال «بدون سابقه» (داده تاریخی قبل از رفع باگ Sync) ----------
+async def _require_employee_site_permission(
+    db: AsyncSession, user: User, employee: Employee, permission_code: str, allow_pending_transfer: bool = False
+) -> None:
+    """
+    بررسی می‌کند سایت این پرسنل جزو سایت‌هایی باشد که کاربر permission_code را برایشان دارد؛ وگرنه 403.
+    require_permission فقط «داشتن مجوز در جایی» را می‌سنجد؛ این تابع ایزوله‌سازی بین سایت‌ها را تضمین می‌کند.
+    allow_pending_transfer: مدیر سایت قبلیِ پرسنلی که تازه منتقل شده و جابه‌جایی‌اش هنوز بازبینی نشده هم مجاز است
+    (تا بتواند نقش‌های سایت خودش را برای او ببیند و حذف کند).
+    """
+    sites = await get_sites_with_permission(db, user, permission_code)  # None = سراسری یا superuser
+    if sites is not None and employee.site_id not in sites and allow_pending_transfer:
+        pending = await db.execute(
+            select(SiteTransfer.id).where(
+                SiteTransfer.employee_id == employee.id,
+                SiteTransfer.reviewed_at.is_(None),
+                SiteTransfer.from_site_id.in_(sites),
+            ).limit(1)
+        )
+        if pending.first() is not None:
+            return
+    if sites is not None and employee.site_id not in sites:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="این پرسنل خارج از سایت‌های تحت اختیار شماست",
+        )
+
+
+# ---------- پاک‌سازی پرسنل غیرفعال «بدون سابقه» ----------
 
 
 @router.get("/cleanup-orphaned-inactive/preview")
 async def preview_orphaned_inactive_cleanup(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
     """
-    فقط یک گزارش امن و بدون‌اثر — چه کسانی حذف می‌شوند اگر Execute بعدی
-    اجرا شود. برای جزئیات کامل معیار «بدون سابقه»، نگاه کنید
-    app/services/employee_cleanup_service.py.
+    گزارش بدون‌اثر از پرسنلی که با اجرای Execute حذف می‌شوند (تعداد + فهرست با نام سایت).
+    مجوز: users.manage (فقط پرسنل سایت‌هایی که این مجوز برایشان هست). معیار «بدون سابقه» در
+    app/services/employee_cleanup_service.py است.
     """
-    employees = await find_orphaned_inactive_employees(db)
+    allowed_sites = await get_sites_with_permission(db, current_user, "users.manage")
+    employees = await find_orphaned_inactive_employees(db, allowed_sites)
+    # نام سایت‌ها با یک کوئری جمعی
     site_ids = {e.site_id for e in employees}
     sites_result = await db.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
     site_names = dict(sites_result.all())
@@ -524,15 +576,19 @@ async def preview_orphaned_inactive_cleanup(
 async def execute_orphaned_inactive_cleanup(
     confirm: bool = Query(default=False, description="باید صریحاً true باشد وگرنه هیچ حذفی انجام نمی‌شود"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
-    """حذف واقعی — فقط بعد از دیدن Preview بالا و تأیید صریح Admin (confirm=true)."""
+    """
+    حذف واقعی پرسنل غیرفعال بدون سابقه — فقط بعد از دیدن Preview و تأیید صریح Admin (confirm=true).
+    مجوز: users.manage. خطا: 400 بدون confirm=true. خروجی: {"deleted_count": تعداد}.
+    """
     if not confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="برای حذف واقعی باید confirm=true ارسال شود",
         )
-    deleted_count = await delete_orphaned_inactive_employees(db)
+    allowed_sites = await get_sites_with_permission(db, current_user, "users.manage")
+    deleted_count = await delete_orphaned_inactive_employees(db, allowed_sites)
     return {"deleted_count": deleted_count}
 
 
@@ -543,11 +599,9 @@ async def count_employees(
     _current_user: User = Depends(get_current_user),
 ):
     """
-    شمارش دقیق پرسنل فعال — برخلاف GET /employees که برای کارایی سقف ۲۰۰ رکورد
-    دارد، این Endpoint تعداد واقعی را مستقیماً با COUNT از دیتابیس می‌خواند
-    (برای کارت آمار در داشبورد استفاده می‌شود). حساسیت داده اینجا کم است
-    (فقط یک عدد، نه جزئیات پرسنل) ولی برای هم‌خوانی کامل با GET /employees،
-    همان ایزوله‌سازی چندسایتی اینجا هم اعمال می‌شود.
+    شمارش پرسنل فعال (در منبع و در پرتال) با COUNT مستقیم از دیتابیس، برای کارت آمار داشبورد.
+    ورودی اختیاری: site_id. دسترسی: هر کاربر لاگین‌شده، با همان ایزوله‌سازی چندسایتی GET /employees.
+    خروجی: {"count": عدد}.
     """
     accessible_site_ids = await get_accessible_site_ids(db, _current_user)
     stmt = select(func.count()).select_from(Employee).where(
@@ -567,11 +621,16 @@ async def count_employees(
 async def list_employee_roles(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
+    """
+    نقش‌های فعلی حساب کاربری متصل به یک پرسنل را برمی‌گرداند (بدون حساب: لیست خالی).
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز.
+    """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage", allow_pending_transfer=True)
 
     result = await db.execute(select(User).where(User.employee_id == employee_id))
     user = result.scalar_one_or_none()
@@ -587,16 +646,17 @@ async def assign_role_to_employee(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("users.manage")),
 ):
+    """
+    یک نقش (با محدوده سایت‌های اختیاری) را مستقیماً به پرسنل می‌دهد؛ در صورت نیاز حساب کاربری‌اش را می‌سازد.
+    مجوز: users.manage برای سایت آن پرسنل و همه سایت‌های نقش. خطاها: 404 پرسنل، 403 خارج از محدوده، 400 نقش نامعتبر.
+    خروجی: فهرست نقش‌های کاربر پس از انتصاب.
+    """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
 
-    # ⚠️ رفع یک نقص واقعی: require_permission("users.manage") فقط بررسی
-    # می‌کرد که کاربر جاری *یک‌جایی* این مجوز را دارد — نه اینکه خودِ این
-    # پرسنل مشخص (employee_id) در محدوده همان سایتی باشد که این مجوز
-    # برایش داده شده. یعنی کسی با users.manage فقط برای «سایت A»، عملاً
-    # می‌توانست برای پرسنل «سایت B» هم نقش اختصاص دهد — دقیقاً چیزی که
-    # ایزوله‌سازی چندسایتی باید جلویش را بگیرد.
+    # ایزوله‌سازی چندسایتی: require_permission فقط بررسی می‌کند کاربر «جایی» این مجوز را دارد؛
+    # اینجا بررسی می‌شود که سایت همین پرسنل هم جزو سایت‌های تحت مجوز users.manage کاربر باشد.
     if not current_user.is_superuser:
         accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
         if accessible_site_ids is not None:
@@ -605,10 +665,7 @@ async def assign_role_to_employee(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="اجازه مدیریت دسترسی این پرسنل را ندارید (خارج از سایت‌های تحت اختیار شما)",
                 )
-            # همچنین نمی‌تواند نقشی را برای سایتی که خودش مدیریتش را ندارد
-            # اختصاص دهد — وگرنه یک راه دور زدن ساده بود: کافی بود پرسنل
-            # سایت خودش را انتخاب کند، ولی site_ids نقش را به سایت‌های
-            # دیگر هم گسترش دهد.
+            # site_ids نقش هم نباید به سایت‌هایی خارج از اختیار کاربر گسترش یابد
             if any(sid not in accessible_site_ids for sid in payload.site_ids):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -628,12 +685,16 @@ async def assign_role_to_employee(
 async def list_supervised_departments(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
-    """شناسه واحدهایی که این پرسنل هم‌اکنون سرپرست آن‌هاست (یک نفر می‌تواند چند واحد را سرپرستی کند)."""
+    """
+    شناسه واحدهایی که این پرسنل هم‌اکنون سرپرست آن‌هاست (یک نفر می‌تواند چند واحد را سرپرستی کند).
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز.
+    """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage", allow_pending_transfer=True)
 
     result = await db.execute(select(User).where(User.employee_id == employee_id))
     user = result.scalar_one_or_none()
@@ -651,20 +712,22 @@ async def update_employee_enabled_state(
     employee_id: int,
     payload: EmployeeEnabledUpdate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("employees.update")),
+    current_user: User = Depends(require_permission("employees.update")),
 ):
     """
     فعال/غیرفعال‌کردن دستی یک پرسنل توسط Admin — کاملاً مستقل از is_active
     (که فقط Sync Engine کنترل می‌کند). این مقدار در ستون جداگانه‌ای
     (is_enabled) ذخیره می‌شود که هیچ اجرای Sync آن را بازنویسی نمی‌کند.
+    مجوز: employees.update برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز. خروجی: پرسنل به‌روزشده.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "employees.update")
     employee = await UserRepository(db).set_employee_enabled(employee, payload.is_enabled)
 
     result = await db.execute(select(User.has_custom_password).where(User.employee_id == employee.id))
-    has_custom_password = result.scalar_one_or_none() or False
+    has_custom_password = result.scalar_one_or_none() or False  # بدون حساب کاربری → False
     return EmployeeOut(
         id=employee.id,
         personnel_code=employee.personnel_code,
@@ -685,15 +748,17 @@ async def set_employee_password(
     employee_id: int,
     payload: EmployeePasswordSet,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
     """
     تعیین دستی رمز عبور ورود یک پرسنل توسط Admin. بعد از این، ورود با کد ملی
     برای این پرسنل دیگر کار نمی‌کند — فقط با «کد پرسنلی + این رمز جدید».
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز، 400 رمز ضعیف.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage")
     try:
         await UserRepository(db).set_employee_password(employee, payload.new_password)
     except WeakPasswordError as e:
@@ -704,10 +769,14 @@ async def set_employee_password(
 async def reset_employee_password(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("users.manage")),
+    current_user: User = Depends(require_permission("users.manage")),
 ):
-    """بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی) — رمز عبور اختصاصی قبلی از کار می‌افتد."""
+    """
+    بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی) — رمز عبور اختصاصی قبلی از کار می‌افتد.
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز.
+    """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage")
     await UserRepository(db).reset_employee_to_default_login(employee)

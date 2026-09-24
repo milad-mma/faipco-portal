@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی پر کردن فرم ارزیابی عملکرد.
+ * ارزیابی را (از طریق assignmentId یا evaluationId) بارگذاری می‌کند، فرم را با پاسخ‌های قبلی نمایش می‌دهد
+ * و امکان ذخیره‌ی پیش‌نویس و ثبت نهایی را فراهم می‌کند.
+ */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -19,9 +24,14 @@ import { saveEvaluationAnswers, fetchEvaluationById, startEvaluation, submitEval
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import BackLink from "../components/BackLink";
 
+/**
+ * فیلد پاسخ یک سؤال بر اساس نوع آن (تک‌گزینه‌ای/امتیازی/بله‌خیر، چندگزینه‌ای، عدد، تاریخ، متن).
+ * ورودی: سؤال، مقدار فعلی پاسخ و تابع onChange که شیء پاسخ جدید را دریافت می‌کند.
+ */
 function QuestionField({ question, value, onChange }) {
   const type = question.question_type;
 
+  // سؤال‌های تک‌انتخابی: یک RadioGroup که شناسه‌ی گزینه را در selected_option_ids می‌گذارد
   if (type === "single_choice" || type === "rating" || type === "yes_no") {
     return (
       <RadioGroup
@@ -35,8 +45,10 @@ function QuestionField({ question, value, onChange }) {
     );
   }
 
+  // سؤال چندگزینه‌ای: مجموعه‌ای از Checkboxها
   if (type === "multiple_choice") {
     const selected = value.selected_option_ids || [];
+    // گزینه را به فهرست انتخاب‌شده‌ها اضافه یا از آن حذف می‌کند
     function toggle(optionId) {
       const next = selected.includes(optionId) ? selected.filter((id) => id !== optionId) : [...selected, optionId];
       onChange({ ...value, selected_option_ids: next });
@@ -54,6 +66,7 @@ function QuestionField({ question, value, onChange }) {
     );
   }
 
+  // سؤال عددی: مقدار بین ۰ و وزن سؤال محدود می‌شود و مستقیماً امتیاز سؤال است
   if (type === "number") {
     return (
       <TextField
@@ -76,6 +89,7 @@ function QuestionField({ question, value, onChange }) {
     );
   }
 
+  // سؤال تاریخی: انتخابگر تاریخ جلالی؛ مقدار به‌صورت ISO ذخیره می‌شود
   if (type === "date") {
     return (
       <JalaliDateTimePicker
@@ -85,6 +99,7 @@ function QuestionField({ question, value, onChange }) {
     );
   }
 
+  // سایر انواع: پاسخ متنی چندخطی
   return (
     <TextField
       multiline
@@ -96,27 +111,26 @@ function QuestionField({ question, value, onChange }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی پر کردن ارزیابی؛ پارامترهای مسیر assignmentId یا evaluationId را می‌خواند.
+ */
 export default function EvaluationFillPage() {
   const { assignmentId, evaluationId } = useParams();
   const navigate = useNavigate();
-  // ⚠️ طبق اصل کلی صریح کاربر: هر صفحه‌ای که از یک صفحه‌ی دیگر باز
-  // می‌شود، باید راه برگشت مشخص (نه صرفاً تاریخچه مرورگر) داشته باشد.
-  // اینجا خودِ نوع پارامتر مسیر (assignmentId در برابر evaluationId)
-  // مشخص می‌کند از کدام تب «ارزیابی عملکرد من» وارد شده‌ایم - چون این
-  // دو مسیر همیشه دقیقاً از همان دو تب باز می‌شوند.
+  // مسیر بازگشت: نوع پارامتر مسیر (evaluationId در برابر assignmentId) مشخص می‌کند
+  // صفحه از کدام تب «ارزیابی عملکرد من» باز شده است
   const returnPath = evaluationId ? "/my-performance?tab=shift-leads" : "/my-performance?tab=personnel";
   const [evaluation, setEvaluation] = useState(null);
-  const [form, setForm] = useState(null);
-  const [answers, setAnswers] = useState({});
+  const [form, setForm] = useState(null);  // ساختار فرم (دسته‌ها و سؤال‌ها)
+  const [answers, setAnswers] = useState({});  // پاسخ‌ها به شکل { question_id: شیء پاسخ }
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");  // پیام موفقیت ذخیره‌ی پیش‌نویس
 
+  // ارزیابی و فرم آن را بارگذاری می‌کند و پاسخ‌های ذخیره‌شده را در state می‌ریزد
   useEffect(() => {
-    // ⚠️ دو مسیر ورود به این صفحه: شروع/ادامه ارزیابی خودم (با
-    // assignmentId - از طریق start_evaluation)، یا ویرایش یک ارزیابیِ
-    // از‌قبل باز‌شده توسط سرپرست (با evaluationId مستقیم - چون سرپرست
-    // مالک خودِ Assignment نیست، فقط دسترسی ویژه‌ی ویرایش دارد).
+    // دو مسیر ورود: با assignmentId ارزیابی شروع/ادامه داده می‌شود (start_evaluation)؛
+    // با evaluationId یک ارزیابی بازشده مستقیماً برای ویرایش توسط سرپرست دریافت می‌شود
     const loadPromise = evaluationId ? fetchEvaluationById(evaluationId) : startEvaluation(assignmentId);
     loadPromise
       .then(async (evalData) => {
@@ -124,6 +138,7 @@ export default function EvaluationFillPage() {
         const formData = await fetchEvaluationForm(evalData.form_id);
         setForm(formData);
 
+        // تبدیل پاسخ‌های سرور به نگاشت question_id → پاسخ
         const initialAnswers = {};
         for (const answer of evalData.answers) {
           initialAnswers[answer.question_id] = {
@@ -139,10 +154,12 @@ export default function EvaluationFillPage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی با خطا مواجه شد."));
   }, [assignmentId, evaluationId]);
 
+  // پاسخ یک سؤال را در state جایگزین می‌کند
   function updateAnswer(questionId, value) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }
 
+  // پاسخ‌های خالی را کنار می‌گذارد و آرایه‌ی پاسخ‌ها را برای ارسال به API می‌سازد
   function buildAnswersPayload() {
     return Object.entries(answers)
       .filter(
@@ -151,6 +168,7 @@ export default function EvaluationFillPage() {
       .map(([questionId, v]) => ({ question_id: Number(questionId), ...v }));
   }
 
+  // پاسخ‌ها را به‌صورت پیش‌نویس ذخیره می‌کند و پیام موفقیت یا خطا نشان می‌دهد
   async function handleSaveDraft() {
     setError("");
     setSaveMessage("");
@@ -165,6 +183,7 @@ export default function EvaluationFillPage() {
     }
   }
 
+  // پاسخ‌ها را ذخیره و ارزیابی را ثبت نهایی می‌کند، سپس به مسیر بازگشت می‌رود
   async function handleSubmit() {
     setError("");
     setSaveMessage("");
@@ -180,6 +199,7 @@ export default function EvaluationFillPage() {
     }
   }
 
+  // خطا در بارگذاری اولیه: فقط پیام خطا نمایش داده می‌شود
   if (error && !form) {
     return <Alert severity="error">{error}</Alert>;
   }
@@ -189,6 +209,7 @@ export default function EvaluationFillPage() {
 
   return (
     <Box>
+      {/* سربرگ: لینک بازگشت، عنوان فرم و نام ارزیابی‌شونده */}
       <BackLink to={returnPath} label="بازگشت به ارزیابی عملکرد من" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
         {form.title}
@@ -197,6 +218,7 @@ export default function EvaluationFillPage() {
         ارزیابی‌شونده: {evaluation.target_name_snapshot}
       </Typography>
 
+      {/* هر دسته در یک کارت با فهرست سؤال‌هایش */}
       {form.categories.map((category) => (
         <Card key={category.id} variant="outlined" sx={{ p: 2.5, mb: 2 }}>
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
@@ -227,6 +249,7 @@ export default function EvaluationFillPage() {
         </Card>
       ))}
 
+      {/* پیام‌های موفقیت و خطا */}
       {saveMessage && (
         <Alert severity="success" sx={{ mb: 2 }}>
           {saveMessage}
@@ -238,6 +261,7 @@ export default function EvaluationFillPage() {
         </Alert>
       )}
 
+      {/* دکمه‌های ذخیره‌ی پیش‌نویس و ثبت نهایی */}
       <Stack direction="row" spacing={1.5}>
         <Button variant="outlined" onClick={handleSaveDraft} disabled={isSaving}>
           ذخیره پیش‌نویس

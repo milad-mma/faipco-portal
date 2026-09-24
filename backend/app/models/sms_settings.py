@@ -1,6 +1,6 @@
 """
 مدل تنظیمات پیامک (ippanel Edge API) - یک ردیف واحد (Singleton، id=1)،
-دقیقاً همان الگوی SmtpSettings.
+با همان الگوی SmtpSettings.
 
 کاربرد: «فراموشی رمز عبور از طریق پیامک» (کد تأیید ۶ رقمی).
 
@@ -20,18 +20,20 @@ from app.db.session import Base
 
 
 class SmsSendingType(str, enum.Enum):
+    """روش ارسال پیامک در ippanel."""
     webservice = "webservice"  # متن آزاد
     pattern = "pattern"  # الگوی تأییدشده در پنل ippanel
 
 
 class SmsSettings(Base):
+    """تنظیمات سراسری ارسال پیامک (تک‌ردیفی)."""
     __tablename__ = "sms_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    api_key_encrypted: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    from_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    api_key_encrypted: Mapped[str | None] = mapped_column(String(500), nullable=True)  # کلید API به‌صورت رمزنگاری‌شده
+    from_number: Mapped[str | None] = mapped_column(String(32), nullable=True)  # شماره فرستنده در ippanel
     sending_type: Mapped[SmsSendingType] = mapped_column(
         Enum(SmsSendingType, name="sms_sending_type"), default=SmsSendingType.pattern, nullable=False
     )

@@ -1,5 +1,10 @@
 """
 سرویس تنظیمات سراسری قابل‌تغییر از پنل (بدون نیاز به ویرایش .env یا Restart سرور).
+
+همه مقادیر به‌صورت متن در جدول system_settings (کلید/مقدار) ذخیره می‌شوند و این
+سرویس تبدیل نوع و پیش‌فرض‌ها را انجام می‌دهد. شامل: فاصله Sync خودکار، محدودیت IP
+و پیام آن، اعلان تغییرات، پیش‌نیازهای دسترسی، تنظیمات تبریک تولد، عکس پس‌زمینه
+ورود، و برندینگ (متن‌ها، لوگوها به‌صورت Base64، تنظیمات جای‌های نمایش و آیکون PWA).
 """
 import base64
 import json
@@ -13,6 +18,7 @@ from app.models.system_setting import SystemSetting
 from app.services import branding_surfaces
 from app.services.index_html_branding import write_index_html_branding
 
+# ---------- نام کلیدها در جدول system_settings ----------
 SYNC_INTERVAL_KEY = "sync_interval_minutes"
 LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"  # ISO-format UTC — برای تشخیص «الان وقتشه یا نه» مستقل از هر Worker
 IP_BLOCKED_MESSAGE_KEY = "ip_blocked_message"
@@ -51,7 +57,7 @@ AUTH_SUBTITLE_KEY = "auth_subtitle"
 BRANDING_SURFACES_KEY = "branding_surfaces"  # JSON - تنظیمات به تفکیک جای نمایش (branding_surfaces.py)
 PWA_ICON_SETTINGS_KEY = "pwa_icon_settings"  # JSON - مقیاس/پس‌زمینه آیکون‌های تولیدشده PWA
 
-# مقادیر پیش‌فرض — همان چیزی که قبلاً همه‌جای پروژه Hard-code بود
+# مقادیر پیش‌فرض متن‌های برندینگ، وقتی از پنل مقداری ذخیره نشده باشد
 DEFAULT_BROWSER_TITLE = "پرتال سازمانی پرسنل فایپکو"
 DEFAULT_MANIFEST_NAME = "پرتال فایپکو"
 DEFAULT_MANIFEST_SHORT_NAME = "فایپکو"
@@ -72,15 +78,20 @@ DEFAULT_BIRTHDAY_SEND_TIME = "09:00"
 
 
 class SystemSettingsService:
+    """خواندن/نوشتن تنظیمات سراسری روی جدول system_settings با یک AsyncSession."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: Session دیتابیس."""
         self.db = db
 
     async def _get_raw(self, key: str) -> str | None:
+        """مقدار متنی خام یک کلید، یا None اگر ذخیره نشده باشد."""
         result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
         row = result.scalar_one_or_none()
         return row.value if row else None
 
     async def _set_raw(self, key: str, value: str) -> None:
+        """مقدار یک کلید را درج یا به‌روز و بلافاصله commit می‌کند."""
         result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
         row = result.scalar_one_or_none()
         if row is None:
@@ -90,6 +101,7 @@ class SystemSettingsService:
         await self.db.commit()
 
     async def _delete_raw(self, key: str) -> None:
+        """ردیف یک کلید را (در صورت وجود) حذف و commit می‌کند."""
         result = await self.db.execute(select(SystemSetting).where(SystemSetting.key == key))
         row = result.scalar_one_or_none()
         if row is not None:
@@ -101,7 +113,7 @@ class SystemSettingsService:
     async def get_sync_interval_minutes(self) -> int:
         """
         اگر هنوز از پنل تغییر داده نشده، مقدار پیش‌فرض همان SYNC_INTERVAL_MINUTES
-        در .env است (سازگار با نصب‌های قبلی که این جدول را نداشتند).
+        در .env است. خروجی: فاصله Sync خودکار به دقیقه.
         """
         raw = await self._get_raw(SYNC_INTERVAL_KEY)
         if raw is None:
@@ -109,44 +121,47 @@ class SystemSettingsService:
         return int(raw)
 
     async def set_sync_interval_minutes(self, minutes: int) -> int:
+        """فاصله Sync را ذخیره و برمی‌گرداند. خطا: ValueError برای کمتر از ۱ دقیقه."""
         if minutes < 1:
             raise ValueError("فاصله زمانی Sync باید حداقل ۱ دقیقه باشد")
         await self._set_raw(SYNC_INTERVAL_KEY, str(minutes))
         return minutes
 
     async def get_last_auto_sync_at(self) -> datetime | None:
+        """زمان آخرین Sync خودکار (از رشته ISO)، یا None."""
         raw = await self._get_raw(LAST_AUTO_SYNC_AT_KEY)
         if raw is None:
             return None
         return datetime.fromisoformat(raw)
 
     async def set_last_auto_sync_at(self, when: datetime) -> None:
+        """زمان آخرین Sync خودکار را به‌صورت ISO ذخیره می‌کند."""
         await self._set_raw(LAST_AUTO_SYNC_AT_KEY, when.isoformat())
 
     # ---------- پیام نمایش‌داده‌شده وقتی IP کاربر مجاز نیست ----------
 
     async def get_ip_blocked_message(self) -> str:
+        """متن ذخیره‌شده پیام مسدودی IP، یا متن پیش‌فرض."""
         raw = await self._get_raw(IP_BLOCKED_MESSAGE_KEY)
         return raw if raw else DEFAULT_IP_BLOCKED_MESSAGE
 
     async def set_ip_blocked_message(self, message: str) -> str:
+        """متن پیام (trim‌شده) را ذخیره و برمی‌گرداند. خطا: ValueError برای متن خالی."""
         message = message.strip()
         if not message:
             raise ValueError("متن پیام نمی‌تواند خالی باشد")
         await self._set_raw(IP_BLOCKED_MESSAGE_KEY, message)
         return message
 
-    # ---------- کلید فعال/غیرفعال محدودیت IP — مستقل از این‌که رنجی ثبت شده یا نه ----------
-
     # ---------- اعلان تغییرات پرتال (دیالوگ خوش‌آمد) ----------
 
     async def get_announcement(self) -> dict:
         """
-        ⚠️ اعلان تغییرات اخیر پرتال که هنگام ورود به کاربر نمایش داده
-        می‌شود.
+        اعلان تغییرات اخیر پرتال که هنگام ورود به کاربر نمایش داده می‌شود.
+        خروجی: dict با enabled، title، body، version.
 
         `version` کلید اصلی طراحی است: وقتی ادمین متن را ویرایش می‌کند،
-        نسخه یک واحد بالا می‌رود. کاربری که قبلاً «دیگر نمایش نده» زده،
+        نسخه یک واحد بالا می‌رود. کاربری که «دیگر نمایش نده» را زده،
         اعلان **جدید** را دوباره می‌بیند - وگرنه یک‌بار رد کردن یعنی
         هرگز ندیدن هیچ اعلان بعدی.
         """
@@ -159,7 +174,10 @@ class SystemSettingsService:
         }
 
     async def set_announcement(self, enabled: bool, title: str, body: str) -> dict:
-        """⚠️ هر ذخیره‌ای که **محتوا** را عوض کند، نسخه را بالا می‌برد تا همه دوباره ببینند."""
+        """
+        اعلان را ذخیره می‌کند؛ هر ذخیره‌ای که **محتوا** (عنوان/متن) را عوض کند، نسخه را
+        بالا می‌برد تا همه دوباره ببینند. خروجی: اعلان ذخیره‌شده.
+        """
         current = await self.get_announcement()
         version = current["version"]
         if title != current["title"] or body != current["body"]:
@@ -173,19 +191,27 @@ class SystemSettingsService:
     # ---------- پیش‌نیازهای دسترسی (اطلاعیه خوانده‌نشده / ارزیابی انجام‌نشده) ----------
 
     async def get_access_gate(self, key: str) -> bool:
-        """⚠️ پیش‌فرض خاموش - این یک محدودیت است و نباید با به‌روزرسانی ناگهان همه را قفل کند."""
+        """
+        وضعیت یک پیش‌نیاز دسترسی (کلید داده‌شده). پیش‌فرض خاموش است چون یک محدودیت
+        است و فعال‌بودن پیش‌فرض همه کاربران را قفل می‌کرد.
+        """
         raw = await self._get_raw(key)
         return raw == "true"
 
     async def set_access_gate(self, key: str, enabled: bool) -> bool:
+        """وضعیت یک پیش‌نیاز دسترسی را ذخیره و برمی‌گرداند."""
         await self._set_raw(key, "true" if enabled else "false")
         return enabled
 
+    # ---------- کلید فعال/غیرفعال محدودیت IP — مستقل از این‌که رنجی ثبت شده یا نه ----------
+
     async def get_ip_allowlist_enabled(self) -> bool:
+        """آیا محدودیت IP فعال است (پیش‌فرض خاموش)."""
         raw = await self._get_raw(IP_ALLOWLIST_ENABLED_KEY)
         return raw == "true"
 
     async def set_ip_allowlist_enabled(self, enabled: bool) -> bool:
+        """وضعیت محدودیت IP را ذخیره و برمی‌گرداند."""
         await self._set_raw(IP_ALLOWLIST_ENABLED_KEY, "true" if enabled else "false")
         return enabled
 
@@ -198,6 +224,7 @@ class SystemSettingsService:
         return int(hour_str), int(minute_str)
 
     async def set_birthday_send_time(self, hour: int, minute: int) -> tuple[int, int]:
+        """ساعت ارسال را به فرمت HH:MM ذخیره می‌کند. خطا: ValueError برای ساعت/دقیقه نامعتبر."""
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError("ساعت/دقیقه نامعتبر است")
         await self._set_raw(BIRTHDAY_SEND_TIME_KEY, f"{hour:02d}:{minute:02d}")
@@ -205,23 +232,15 @@ class SystemSettingsService:
 
     # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
 
-    # ---------- کلید فعال/غیرفعال پیام تبریک تولد — مستقل از خالی/پر بودن پول ----------
-    # ⚠️ رفع یک باگ حیاتی: این متد قبلاً دوبار در همین کلاس تعریف شده بود
-    # — پایتون بی‌صدا فقط تعریف دومی را نگه می‌داشت (اولی کاملاً بی‌اثر و
-    # مرده بود)، که رفتارش دقیقاً برعکس چیزی بود که کامنتش ادعا می‌کرد:
-    # به‌جای «پیش‌فرض فعال، مگر صراحتاً خاموش شود» (raw != "false")، عملاً
-    # «پیش‌فرض غیرفعال، مگر صراحتاً روشن شود» (raw == "true") اجرا می‌شد.
-    # یعنی برای هر نصبی که Admin هرگز این کلید را صراحتاً «روشن» نکرده بود
-    # (چون اصلاً انتظار نداشت نیاز به این کار باشد)، کل قابلیت تبریک تولد
-    # همیشه، هر روز، بی‌صدا غیرفعال می‌ماند.
-
     async def get_birthday_greetings_enabled(self) -> bool:
+        """آیا ارسال خودکار تبریک تولد فعال است؛ پیش‌فرض فعال، مگر صراحتاً "false" ذخیره شده باشد."""
         raw = await self._get_raw(BIRTHDAY_GREETINGS_ENABLED_KEY)
         # پیش‌فرض True است (برخلاف IP Allowlist) چون خودِ «پول خالی = ارسال نشدن»
         # از قبل یک محافظت کافی است؛ این کلید فقط برای خاموش‌کردن موقت است.
         return raw != "false"
 
     async def set_birthday_greetings_enabled(self, enabled: bool) -> bool:
+        """وضعیت تبریک تولد را ذخیره و برمی‌گرداند."""
         await self._set_raw(BIRTHDAY_GREETINGS_ENABLED_KEY, "true" if enabled else "false")
         return enabled
 
@@ -230,15 +249,13 @@ class SystemSettingsService:
         return await self._get_raw(LAST_BIRTHDAY_GREETINGS_DATE_KEY)
 
     async def set_last_birthday_greetings_date(self, jalali_date: str) -> None:
+        """تاریخ شمسی آخرین ارسال تبریک تولد را ذخیره می‌کند."""
         await self._set_raw(LAST_BIRTHDAY_GREETINGS_DATE_KEY, jalali_date)
 
     # ---------- عکس پس‌زمینه صفحه ورود (قابلیت «تنظیمات سامانه») ----------
-    # ⚠️ صفحه ورود قبل از احراز هویت نمایش داده می‌شود، پس Endpoint دریافت
-    # این عکس باید کاملاً بدون نیاز به ورود در دسترس باشد — برخلاف عکس
-    # پرسنلی (که همیشه پشت احراز هویت است). به همین دلیل این‌جا محتوا را
-    # مستقیماً Base64 در همان جدول SystemSetting (نوع Text، بدون محدودیت
-    # طول عملی در PostgreSQL) ذخیره می‌کنیم — بدون نیاز به یک Migration یا
-    # مسیر ذخیره‌سازی فایل جداگانه.
+    # صفحه ورود قبل از احراز هویت نمایش داده می‌شود، پس Endpoint دریافت این عکس
+    # بدون نیاز به ورود در دسترس است. محتوا مستقیماً Base64 در همان جدول
+    # SystemSetting (نوع Text) ذخیره می‌شود، بدون مسیر ذخیره‌سازی فایل جداگانه.
 
     async def get_login_background(self) -> tuple[bytes, str] | None:
         """(محتوای باینری، content_type) یا None اگر هنوز چیزی آپلود نشده."""
@@ -249,10 +266,12 @@ class SystemSettingsService:
         return base64.b64decode(raw), content_type
 
     async def set_login_background(self, content: bytes, content_type: str) -> None:
+        """عکس پس‌زمینه ورود را Base64 و نوع آن را ذخیره می‌کند."""
         await self._set_raw(LOGIN_BACKGROUND_DATA_KEY, base64.b64encode(content).decode("ascii"))
         await self._set_raw(LOGIN_BACKGROUND_CONTENT_TYPE_KEY, content_type)
 
     async def delete_login_background(self) -> None:
+        """هر دو کلید داده و نوع عکس پس‌زمینه ورود را حذف می‌کند."""
         result = await self.db.execute(
             select(SystemSetting).where(
                 SystemSetting.key.in_([LOGIN_BACKGROUND_DATA_KEY, LOGIN_BACKGROUND_CONTENT_TYPE_KEY])
@@ -263,12 +282,11 @@ class SystemSettingsService:
         await self.db.commit()
 
     # ---------- برندینگ (لوگوها + متن‌های مجزای هر بخش) — «تنظیمات سامانه» ----------
-    # ⚠️ همه این‌ها باید بدون احراز هویت هم در دسترس باشند — لوگو/متن‌ها
+    # همه این‌ها بدون احراز هویت هم در دسترس‌اند — لوگو/متن‌ها
     # باید در اسپلش‌اسکرین/صفحه ورود (قبل از Login) و در خودِ Manifest PWA
     # (که مرورگر بدون هیچ Header ای می‌گیرد) هم درست نمایش داده شوند.
 
-    # کلید‌های متنی + پیش‌فرض هرکدام — یک ساختار Generic برای جلوگیری از
-    # تکرار ۷ متد تقریباً یکسان.
+    # نام فیلد متنی ← (کلید در جدول، مقدار پیش‌فرض)؛ یک ساختار Generic به‌جای یک متد برای هر فیلد
     _TEXT_FIELDS = {
         "browser_title": (BROWSER_TITLE_KEY, DEFAULT_BROWSER_TITLE),
         "manifest_name": (MANIFEST_NAME_KEY, DEFAULT_MANIFEST_NAME),
@@ -285,7 +303,7 @@ class SystemSettingsService:
         "auth_subtitle": (AUTH_SUBTITLE_KEY, ""),
     }
 
-    # کلید‌های سه لوگوی مجزا — هرکدام برای یک مصرف کاملاً متفاوت
+    # نام لوگو ← (کلید داده Base64، کلید content_type)؛ هر لوگو برای یک مصرف متفاوت
     _LOGO_FIELDS = {
         "app_logo": (APP_LOGO_DATA_KEY, APP_LOGO_CONTENT_TYPE_KEY),
         "app_logo_small": (APP_LOGO_SMALL_DATA_KEY, APP_LOGO_SMALL_CONTENT_TYPE_KEY),
@@ -299,6 +317,10 @@ class SystemSettingsService:
     }
 
     async def get_branding(self) -> dict:
+        """
+        خروجی: dict کامل برندینگ = متن‌ها (یا پیش‌فرض)، has_custom_<لوگو> برای هر لوگو،
+        تنظیمات ادغام‌شده جای‌های نمایش (surfaces) و آیکون PWA (pwa_icon).
+        """
         texts = {}
         for field_name, (key, default) in self._TEXT_FIELDS.items():
             texts[field_name] = await self._get_raw(key) or default
@@ -310,9 +332,13 @@ class SystemSettingsService:
         return {**texts, **logos, "surfaces": surfaces, "pwa_icon": pwa_icon}
 
     async def set_surface(self, surface: str, patch: dict) -> dict:
-        """ذخیره فقط مقادیر تغییرکرده‌ی یک جای نمایش (روی JSON موجود ادغام می‌شود)."""
+        """
+        ذخیره فقط مقادیر تغییرکرده‌ی یک جای نمایش (روی JSON موجود ادغام می‌شود).
+        خروجی: برندینگ کامل به‌روزشده. خطا: ValueError برای Surface نامعتبر.
+        """
         clean = branding_surfaces.sanitize_surface_patch(surface, patch)
         raw = await self._get_raw(BRANDING_SURFACES_KEY)
+        # JSON خراب/نامعتبر با یک dict خالی جایگزین می‌شود
         try:
             stored = json.loads(raw) if raw else {}
         except (ValueError, TypeError):
@@ -324,6 +350,10 @@ class SystemSettingsService:
         return await self.get_branding()
 
     async def reset_surface(self, surface: str) -> dict:
+        """
+        همه تنظیمات ذخیره‌شده یک جای نمایش را حذف می‌کند (بازگشت به پیش‌فرض).
+        خروجی: برندینگ کامل. خطا: ValueError برای Surface نامعتبر.
+        """
         if surface not in branding_surfaces.SURFACES:
             raise ValueError("جای نمایش نامعتبر است")
         raw = await self._get_raw(BRANDING_SURFACES_KEY)
@@ -337,6 +367,7 @@ class SystemSettingsService:
         return await self.get_branding()
 
     async def set_pwa_icon_settings(self, patch: dict) -> dict:
+        """مقادیر معتبر patch را روی تنظیمات فعلی آیکون PWA ادغام و ذخیره می‌کند. خروجی: برندینگ کامل."""
         current = branding_surfaces.merged_pwa_icon(await self._get_raw(PWA_ICON_SETTINGS_KEY))
         current.update(branding_surfaces.sanitize_pwa_patch(patch))
         await self._set_raw(PWA_ICON_SETTINGS_KEY, json.dumps(current, ensure_ascii=False))
@@ -346,6 +377,7 @@ class SystemSettingsService:
         """
         هر کلید باید یکی از _TEXT_FIELDS باشد؛ مقدار خالی/None یعنی «به
         پیش‌فرض برگرد» (ردیفش پاک می‌شود، نه این‌که رشته خالی ذخیره شود).
+        کلیدهای ناشناخته نادیده گرفته می‌شوند. خروجی: برندینگ کامل.
         """
         for field_name, value in fields.items():
             if field_name not in self._TEXT_FIELDS:
@@ -356,14 +388,14 @@ class SystemSettingsService:
             else:
                 await self._delete_raw(key)
         branding = await self.get_branding()
-        # ⚠️ طبق درخواست کاربر: عنوان داخل خودِ فایل dist/index.html هم نوشته شود
-        # (Service Worker نسخه استاتیک را پیش‌کش می‌کند و کاربر یک لحظه عنوان
-        # زمان Build را می‌دید).
+        # عنوان داخل خودِ فایل dist/index.html هم نوشته می‌شود، چون Service Worker
+        # نسخه استاتیک آن را پیش‌کش می‌کند و بدون این کار عنوان زمان Build نمایش داده می‌شد.
         if "browser_title" in fields or "manifest_short_name" in fields:
             write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
         return branding
 
     async def get_logo(self, which: str) -> tuple[bytes, str] | None:
+        """ورودی: نام لوگو از _LOGO_FIELDS. خروجی: (بایت‌ها، content_type) یا None اگر آپلود نشده."""
         data_key, content_type_key = self._LOGO_FIELDS[which]
         raw = await self._get_raw(data_key)
         if raw is None:
@@ -372,11 +404,13 @@ class SystemSettingsService:
         return base64.b64decode(raw), content_type
 
     async def set_logo(self, which: str, content: bytes, content_type: str) -> None:
+        """لوگوی داده‌شده را به‌صورت Base64 همراه content_type ذخیره می‌کند."""
         data_key, content_type_key = self._LOGO_FIELDS[which]
         await self._set_raw(data_key, base64.b64encode(content).decode("ascii"))
         await self._set_raw(content_type_key, content_type)
 
     async def delete_logo(self, which: str) -> None:
+        """داده و نوع یک لوگو را حذف می‌کند (بازگشت به لوگوی پیش‌فرض)."""
         data_key, content_type_key = self._LOGO_FIELDS[which]
         await self._delete_raw(data_key)
         await self._delete_raw(content_type_key)

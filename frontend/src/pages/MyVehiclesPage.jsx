@@ -1,3 +1,7 @@
+/**
+ * صفحه «خودروهای من»: پرسنل می‌تواند خودروهای خود را (نوع، رنگ و پلاک ایرانی) ثبت،
+ * فهرست خودروهای ثبت‌شده را مشاهده و آن‌ها را با تأیید حذف کند.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -21,32 +25,35 @@ import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../comp
 import BackLink from "../components/BackLink";
 import { createMyVehicle, deleteMyVehicle, fetchMyVehicles } from "../api/vehicles";
 
-const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };
+const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };  // مقدار خالی بخش‌های پلاک (دو رقم، حرف، سه رقم، کد ایران)
 
 /**
  * قابلیت «خودروهای من» — هر پرسنل می‌تواند یک یا چند خودرو برای خودش ثبت
  * کند؛ همین صفحه لیست خودروهای خودش را هم نشان می‌دهد. برای همه پرسنل
- * (بدون نیاز به مجوز خاص) در دسترس است.
+ * (بدون نیاز به مجوز خاص) در دسترس است. ورودی ندارد.
  */
 export default function MyVehiclesPage() {
-  const [vehicles, setVehicles] = useState(null);
+  const [vehicles, setVehicles] = useState(null);  // خودروهای ثبت‌شده؛ null = در حال بارگذاری
   const [vehicleType, setVehicleType] = useState("");
   const [color, setColor] = useState("");
   const [plate, setPlate] = useState(EMPTY_PLATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [deletingId, setDeletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);  // id خودرویی که درخواست حذفش در جریان است
 
+  // فهرست خودروهای کاربر را از سرور می‌گیرد
   function loadVehicles() {
     fetchMyVehicles().then(setVehicles);
   }
 
+  // بارگذاری اولیه فهرست خودروها
   useEffect(() => {
     loadVehicles();
   }, []);
 
-  const canSubmit = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSubmitting;
+  const canSubmit = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSubmitting;  // نوع، رنگ و پلاک کامل الزامی است
 
+  // خودروی جدید را ثبت می‌کند؛ در صورت موفقیت فرم خالی و فهرست تازه می‌شود
   async function handleSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -72,8 +79,9 @@ export default function MyVehiclesPage() {
     }
   }
 
-  const [vehicleToDelete, setVehicleToDelete] = useState(null);
+  const [vehicleToDelete, setVehicleToDelete] = useState(null);  // خودرویی که دیالوگ تأیید حذف برایش باز است
 
+  // پس از تأیید، خودرو را حذف و از فهرست محلی برمی‌دارد
   async function handleConfirmDelete() {
     if (!vehicleToDelete) return;
     setDeletingId(vehicleToDelete.id);
@@ -93,6 +101,7 @@ export default function MyVehiclesPage() {
         خودروهای من
       </Typography>
 
+      {/* فرم ثبت خودروی جدید */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 2.5, mb: 3 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2 }}>
           ثبت خودروی جدید
@@ -139,6 +148,7 @@ export default function MyVehiclesPage() {
         </Box>
       </Card>
 
+      {/* فهرست خودروهای ثبت‌شده (یا حالت بارگذاری/خالی) */}
       <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
         خودروهای ثبت‌شده
       </Typography>
@@ -190,6 +200,7 @@ export default function MyVehiclesPage() {
         </Stack>
       )}
 
+      {/* دیالوگ تأیید حذف خودرو */}
       <Dialog open={Boolean(vehicleToDelete)} onClose={() => setVehicleToDelete(null)} maxWidth="xs" fullWidth>
         <DialogTitle>حذف خودرو</DialogTitle>
         <DialogContent>

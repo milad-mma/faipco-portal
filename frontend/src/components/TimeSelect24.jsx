@@ -1,29 +1,28 @@
 import { MenuItem, Stack, TextField } from "@mui/material";
 
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
-const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));  // گزینه‌های ساعت ۰۰ تا ۲۳
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));  // گزینه‌های دقیقه ۰۰ تا ۵۹
 
 /**
- * ⚠️ طبق درخواست صریح کاربر: ورودی ساعت باید همیشه ۲۴ ساعته باشد -
- * ورودی بومی مرورگر (<input type="time">) به زبان/سیستم‌عامل کاربر
- * وابسته است و گاهی به‌صورت ۱۲ ساعته (AM/PM) نمایش داده می‌شود؛ این
- * کامپوننت با دو Dropdown مستقل (ساعت ۰۰ تا ۲۳، دقیقه ۰۰ تا ۵۹) این
- * وابستگی را کاملاً حذف می‌کند. مقدار ورودی/خروجی همان رشته "HH:MM"ی
- * است که کد بقیه پروژه (timeStringToCompact) از قبل انتظار دارد - تا
- * جایگزینی بدون تغییر منطق اطراف ممکن باشد.
+ * ورودی ساعت همیشه ۲۴ ساعته با دو Dropdown مستقل (ساعت و دقیقه)، مستقل از زبان/سیستم‌عامل کاربر
+ * (برخلاف <input type="time"> که ممکن است ۱۲ ساعته نمایش داده شود).
+ * ورودی: value و onChange با رشته‌ی "HH:MM" (همان قالبی که timeStringToCompact انتظار دارد)، label، size، sx
+ * و align ("center" برای وسط‌چین).
  */
 export default function TimeSelect24({ value, onChange, label, size = "small", sx, align }) {
-  const [hourStr, minuteStr] = (value || "00:00").split(":");
+  const [hourStr, minuteStr] = (value || "00:00").split(":");  // مقدار خالی معادل 00:00
 
+  // تغییر ساعت با حفظ دقیقه‌ی فعلی
   function handleHourChange(newHour) {
     onChange(`${newHour}:${minuteStr}`);
   }
 
+  // تغییر دقیقه با حفظ ساعت فعلی
   function handleMinuteChange(newMinute) {
     onChange(`${hourStr}:${newMinute}`);
   }
 
-  // align="center": برچسب و فیلدها وسط‌چین (پیش‌فرض همان چینش قبلی)
+  // align="center": برچسب و فیلدها وسط‌چین می‌شوند
   const centered = align === "center";
   return (
     <Stack
@@ -37,9 +36,8 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
         </Stack>
       )}
       <Stack direction="row" spacing={1} sx={{ width: "100%" }}>
-        {/* ⚠️ طبق درخواست صریح کاربر: ساعت سمت چپ، دقیقه سمت راست. چون
-            صفحه RTL است، اولین عنصر در DOM سمت راست رندر می‌شود - پس
-            «دقیقه» عمداً اول آمده تا «ساعت» سمت چپ بیفتد. */}
+        {/* ساعت سمت چپ و دقیقه سمت راست: چون صفحه RTL است و اولین عنصر DOM سمت راست رندر می‌شود،
+            «دقیقه» اول آمده است. */}
         <TextField
           select
           size={size}

@@ -15,6 +15,7 @@ settings = get_settings()
 
 @router.get("/vapid-public-key")
 async def get_vapid_public_key():
+    """کلید عمومی VAPID را برای ساخت اشتراک در مرورگر برمی‌گرداند. دسترسی: عمومی (بدون احراز هویت)."""
     return {"public_key": settings.VAPID_PUBLIC_KEY}
 
 
@@ -24,13 +25,15 @@ async def subscribe(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """اشتراک Push دستگاه جاری را برای کاربر لاگین‌شده ذخیره می‌کند. خروجی: 204 بدون بدنه."""
     await PushService(db).save_subscription(current_user.id, payload)
 
 
 @router.post("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)
 async def unsubscribe(
     payload: UnsubscribeIn,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await PushService(db).remove_subscription(payload.endpoint)
+    """اشتراک Push خودِ کاربر با endpoint داده‌شده را حذف می‌کند (اشتراک دیگران دست نمی‌خورد). خروجی: 204."""
+    await PushService(db).remove_subscription(payload.endpoint, current_user.id)

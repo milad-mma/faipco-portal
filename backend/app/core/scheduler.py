@@ -1,24 +1,17 @@
 """
-اجرای خودکار و دوره‌ای Sync برای همه Site های فعال، با APScheduler.
-فقط سایت‌هایی که هم خودشان فعال‌اند و هم SiteConnection.is_active روشن است
-(یعنی Sync خودکار برایشان خاموش نشده) وارد این چرخه دوره‌ای می‌شوند. اجرای
-دستی از پنل Admin مستقل از این پرچم است و همیشه کار می‌کند (به SyncService
-مراجعه کنید).
+زمان‌بندی کارهای پس‌زمینه با APScheduler (منطقه زمانی Asia/Tehran):
+- Sync خودکار همه Siteهای فعال (فقط سایت‌های فعال با SiteConnection.is_active روشن؛
+  اجرای دستی از پنل Admin مستقل از این پرچم است — به SyncService مراجعه کنید)
+- ارسال روزانه پیام تبریک تولد و خلاصه واکنش‌های تبریک
+- نمونه‌برداری آمار مصرف سرور، بکاپ زمان‌بندی‌شده، یادآوری ارزیابی عملکرد
+  و پاک‌سازی مدارک موقت بیمه تکمیلی
 
-⚠️ نکته حیاتی درباره فاصله زمانی: این Job با یک تیک **ثابت و مکرر** (هر ۱
-دقیقه) اجرا می‌شود، نه مستقیم با همان فاصله‌ای که کاربر از پنل تنظیم
-می‌کند — و هر بار خودش چک می‌کند «طبق آخرین Sync موفق و فاصله زمانی فعلی
-(هر دو از دیتابیس، نه حافظه)، الان واقعاً وقتش شده یا نه». علتش یک باگ
-واقعی بود: چون این سرویس با چند Worker جدا (uvicorn --workers 2) اجرا
-می‌شود، هر Worker یک نسخه کاملاً مستقل از APScheduler دارد — وقتی کاربر
-فاصله زمانی را از پنل تغییر می‌داد، فقط همان Worker ای که درخواست HTTP را
-گرفته بود reschedule می‌شد؛ Worker دیگر همچنان با فاصله زمانی قدیمی (از
-همان لحظه Startup) کار می‌کرد، و چون هرکدام مستقل تصمیم می‌گرفت «وقتشه»،
-Sync می‌توانست خیلی زودتر از حد انتظار (یا اصلاً هیچ‌وقت با فاصله درست)
-اجرا شود. با این طرح جدید، تصمیم «الان وقتشه یا نه» همیشه از یک منبع واحد
-(دیتابیس) خوانده می‌شود — نتیجه‌اش برای هر Worker یکسان است، بدون نیاز به
-Reschedule کردن هیچ Job ای.
-اگر SYNC_ENABLED=false باشد، هیچ Job ای زمان‌بندی نمی‌شود.
+Jobهای دوره‌ای (Sync، آمار سرور، بکاپ) با یک تیک ثابت و کوتاه اجرا می‌شوند و هر
+بار از دیتابیس می‌خوانند که طبق تنظیمات فعلی وقت اجرا رسیده یا نه؛ چون سرویس با
+چند Worker مستقل (uvicorn --workers) اجرا می‌شود، این تصمیم برای همه Workerها
+یکسان است و تغییر تنظیمات از پنل بدون Reschedule اعمال می‌شود.
+هر Job با یک PostgreSQL Advisory Lock محافظت می‌شود تا فقط یک Worker آن را اجرا کند.
+اگر SYNC_ENABLED=false باشد، Job مربوط به Sync زمان‌بندی نمی‌شود.
 """
 import logging
 from datetime import datetime, timezone
@@ -43,64 +36,61 @@ from app.sync_engine.sync_service import SyncService
 logger = logging.getLogger("faipco.scheduler")
 settings = get_settings()
 
+# شناسه Jobها در APScheduler
 JOB_ID = "auto_sync_all_sites"
 BIRTHDAY_JOB_ID = "send_birthday_greetings"
 SERVER_STATS_JOB_ID = "record_server_stats"
 BACKUP_JOB_ID = "run_scheduled_backup"
 EVALUATION_REMINDER_JOB_ID = "send_evaluation_reminders"
 BIRTHDAY_REACTION_SUMMARY_JOB_ID = "send_birthday_reaction_summaries"
-# فاصله واقعی Sync دیگر مستقیم فاصله Job نیست (توضیح کامل بالا) — این فقط
-# فاصله «چک کردن که آیا وقتشه» است؛ هرچه کوچک‌تر، دقت زمان‌بندی بهتر (کاربری
-# که فاصله را روی ۵ دقیقه گذاشته، حداکثر ۱ دقیقه دیرتر اجرا می‌شود، نه بیشتر).
+# فاصله «چک کردن که آیا وقت Sync رسیده» (نه فاصله خود Sync)؛ Sync حداکثر
+# به همین اندازه دیرتر از زمان تنظیم‌شده اجرا می‌شود.
 SYNC_CHECK_INTERVAL_MINUTES = 1
-# نکته حیاتی: بدون این، APScheduler به‌طور پیش‌فرض از منطقه زمانی سیستم‌عامل
-# سرور استفاده می‌کند — که روی اکثر VPS های تازه‌نصب UTC است، نه ایران. یعنی
-# «ساعت ۱۲» که مدیر منابع انسانی از پنل تنظیم می‌کند، بدون این خط ممکن است
-# در عمل ساعت ۱۵:۳۰ ایران اجرا شود (یا اصلاً هنوز به آن زمان نرسیده باشد).
+# Scheduler با منطقه زمانی ایران؛ ساعت‌های cron (مثل ساعت ارسال تبریک تولد) به وقت
+# تهران تفسیر می‌شوند، نه منطقه زمانی سیستم‌عامل سرور (معمولاً UTC).
 scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Tehran"))
 
-# نکته حیاتی دیگر: این سرویس با چند Worker جدا (uvicorn --workers 2) اجرا
-# می‌شود — هر Worker یک نسخه کاملاً مستقل از این Scheduler را استارت می‌کند
-# (چون start_scheduler() در main.py، در startup هر Worker جدا صدا زده
-# می‌شود). یعنی بدون قفل، هر Job زمان‌بندی‌شده (مثل ارسال پیام تبریک تولد)
-# هم‌زمان توسط هر دو Worker اجرا می‌شود — دقیقاً همان چیزی که باعث شد یک نفر
-# دو پیام (با متن‌های متفاوت، چون هرکدام تصادفی جدا انتخاب می‌کند) دریافت کند.
-# راه‌حل: یک Advisory Lock سطح PostgreSQL — فقط Worker ای که قفل را می‌گیرد
-# واقعاً Job را اجرا می‌کند؛ Worker دیگر می‌بیند قفل گرفته شده و بی‌صدا رد می‌شود.
+# کلیدهای PostgreSQL Advisory Lock برای هر Job: هر Worker یک Scheduler مستقل دارد
+# (start_scheduler در startup هر Worker صدا زده می‌شود)، پس فقط Worker ای که قفل را
+# می‌گیرد Job را اجرا می‌کند و بقیه بی‌صدا رد می‌شوند تا اجرای تکراری رخ ندهد.
 _SYNC_LOCK_KEY = 875312001
 _BIRTHDAY_LOCK_KEY = 875312002
 _SERVER_STATS_LOCK_KEY = 875312003
 _BACKUP_LOCK_KEY = 875312004
 _EVALUATION_REMINDER_LOCK_KEY = 875312005
 _BIRTHDAY_REACTION_LOCK_KEY = 875312006
-# نمونه‌برداری واقعی مصرف سرور هر ۱۰ دقیقه یک‌بار — ولی مثل Sync، خودِ Job
-# با تیک مکرر کوتاه‌تر (هر ۲ دقیقه) چک می‌کند «طبق آخرین نمونه ثبت‌شده در
-# دیتابیس، وقتش رسیده یا نه» — همان دلیل بالا (هماهنگی بین چند Worker
-# مستقل، بدون تکیه بر تایمر جداگانه هرکدام).
-SERVER_STATS_CHECK_INTERVAL_MINUTES = 2
-SERVER_STATS_SAMPLE_INTERVAL_MINUTES = 10
-# مثل Sync/آمار سرور: یک تیک ثابت و کوتاه که هر بار از دیتابیس می‌پرسد
-# «طبق زمان‌بندی فعلی بکاپ (روزانه/هفتگی/چندساعتی)، وقتش رسیده یا نه» -
-# نگاه کنید به توضیح کامل در app/core/backup_schedule_logic.py
+# آمار مصرف سرور هر ۱۰ دقیقه نمونه‌برداری می‌شود؛ Job هر ۲ دقیقه بر اساس آخرین
+# نمونه ثبت‌شده در دیتابیس بررسی می‌کند که وقتش رسیده یا نه.
+SERVER_STATS_CHECK_INTERVAL_MINUTES = 2  # فاصله تیک بررسی
+SERVER_STATS_SAMPLE_INTERVAL_MINUTES = 10  # فاصله واقعی بین دو نمونه
+# فاصله تیک بررسی موعد بکاپ؛ تصمیم «وقتش رسیده یا نه» با تنظیمات دیتابیس در
+# app/core/backup_schedule_logic.py گرفته می‌شود.
 BACKUP_CHECK_INTERVAL_MINUTES = 5
 
 
 async def _try_advisory_lock(db: AsyncSession, lock_key: int) -> bool:
+    """ورودی: session و کلید قفل. بدون انتظار تلاش می‌کند Advisory Lock را بگیرد؛ خروجی: True اگر گرفته شد."""
     result = await db.execute(select(func.pg_try_advisory_lock(lock_key)))
     return bool(result.scalar_one())
 
 
 async def _advisory_unlock(db: AsyncSession, lock_key: int) -> None:
+    """ورودی: session و کلید قفل. Advisory Lock گرفته‌شده را آزاد می‌کند."""
     await db.execute(select(func.pg_advisory_unlock(lock_key)))
 
 
 async def _run_sync_for_all_active_sites() -> None:
+    """
+    Job تیک Sync: اگر قفل گرفته شود و از آخرین Sync خودکار به اندازه فاصله تنظیم‌شده گذشته باشد،
+    Sync را برای همه سایت‌های فعال اجرا و زمان آخرین اجرا را ثبت می‌کند.
+    """
     async with AsyncSessionLocal() as lock_db:
         acquired = await _try_advisory_lock(lock_db, _SYNC_LOCK_KEY)
         if not acquired:
             logger.info("Job سینک خودکار همزمان توسط Worker دیگری در حال اجراست — این نمونه رد می‌شود.")
             return
         try:
+            # فاصله Sync و زمان آخرین اجرا هر بار تازه از دیتابیس خوانده می‌شود
             settings_service = SystemSettingsService(lock_db)
             interval_minutes = await settings_service.get_sync_interval_minutes()
             last_run = await settings_service.get_last_auto_sync_at()
@@ -121,6 +111,7 @@ async def _run_sync_for_all_active_sites() -> None:
             )
             sites = list(result.scalars().all())
 
+            # اجرای Sync هر سایت با session جداگانه
             for site in sites:
                 async with AsyncSessionLocal() as db:
                     try:
@@ -129,12 +120,13 @@ async def _run_sync_for_all_active_sites() -> None:
                     except Exception:  # noqa: BLE001 - خطای هر Site نباید بقیه را متوقف کند
                         logger.exception("خطا در Sync خودکار برای Site '%s'", site.code)
 
-            await settings_service.set_last_auto_sync_at(now)
+            await settings_service.set_last_auto_sync_at(now)  # ثبت زمان این دور برای محاسبه موعد بعدی
         finally:
             await _advisory_unlock(lock_db, _SYNC_LOCK_KEY)
 
 
 async def _send_birthday_greetings() -> None:
+    """Job روزانه (cron): با گرفتن قفل، پیام تبریک تولد متولدین امروز را ارسال می‌کند."""
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _BIRTHDAY_LOCK_KEY)
         if not acquired:
@@ -149,7 +141,7 @@ async def _send_birthday_greetings() -> None:
 
 
 async def _cleanup_insurance_pending_documents_job() -> None:
-    """مدارک بیمه تکمیلی که آپلود شدند ولی فرم هرگز ثبت نشد (قدیمی‌تر از ۲۴ ساعت)."""
+    """Job دوره‌ای: مدارک بیمه تکمیلی آپلودشده‌ای را که فرمشان ثبت نشده (قدیمی‌تر از ۲۴ ساعت) پاک می‌کند."""
     from app.services.insurance_service import InsuranceService
 
     async with AsyncSessionLocal() as db:
@@ -162,11 +154,13 @@ async def _cleanup_insurance_pending_documents_job() -> None:
 
 
 async def _record_server_stats_job() -> None:
+    """Job تیک آمار سرور: اگر از آخرین نمونه ثبت‌شده ۱۰ دقیقه گذشته باشد، مصرف CPU/RAM/دیسک را ثبت می‌کند."""
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _SERVER_STATS_LOCK_KEY)
         if not acquired:
             return
         try:
+            # زمان آخرین نمونه ثبت‌شده
             result = await db.execute(
                 select(ServerStat.recorded_at).order_by(ServerStat.recorded_at.desc()).limit(1)
             )
@@ -182,12 +176,13 @@ async def _record_server_stats_job() -> None:
 
 
 async def _run_scheduled_backup_check() -> None:
+    """Job تیک بکاپ: تنظیمات بکاپ را می‌خواند و اگر is_backup_due بگوید موعد است، بکاپ زمان‌بندی‌شده را اجرا می‌کند."""
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _BACKUP_LOCK_KEY)
         if not acquired:
             return
         try:
-            settings = await BackupSettingsService(db).get_settings()
+            settings = await BackupSettingsService(db).get_settings()  # تنظیمات بکاپ از دیتابیس (متغیر محلی؛ settings سراسری ماژول را در این تابع می‌پوشاند)
             due = is_backup_due(
                 schedule_enabled=settings.schedule_enabled,
                 schedule_type=settings.schedule_type.value,
@@ -209,11 +204,8 @@ async def _run_scheduled_backup_check() -> None:
 
 async def _send_evaluation_reminders_job() -> None:
     """
-    ⚠️ طبق درخواست صریح کاربر: یادآوری روزانه به ارزیاب‌هایی که هنوز
-    ارزیابی محول‌شده را انجام نداده‌اند و مهلت دوره نزدیک است.
-
-    مثل بقیه Job ها با Advisory Lock محافظت می‌شود - تا اگر چند Worker
-    هم‌زمان بالا باشند، یادآوری تکراری برای یک نفر ارسال نشود.
+    Job روزانه (cron): یادآوری به ارزیاب‌هایی که ارزیابی محول‌شده را انجام نداده‌اند و مهلت دوره نزدیک است.
+    با Advisory Lock محافظت می‌شود تا یادآوری تکراری برای یک نفر ارسال نشود.
     """
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _EVALUATION_REMINDER_LOCK_KEY)
@@ -237,8 +229,7 @@ async def _send_evaluation_reminders_job() -> None:
 
 async def _send_birthday_reaction_summaries_job() -> None:
     """
-    ⚠️ طبق تصمیم صریح کاربر: ۴ ساعت مانده به پایان روز تولد (ساعت ۲۰ به‌وقت
-    تهران)، به هر متولدی که تبریک گرفته یک اعلان خلاصه می‌رود.
+    Job روزانه (cron، ساعت ۲۰ به وقت تهران): به هر متولد امروز که تبریک گرفته، یک اعلان خلاصه واکنش‌ها می‌فرستد.
     """
     async with AsyncSessionLocal() as db:
         acquired = await _try_advisory_lock(db, _BIRTHDAY_REACTION_LOCK_KEY)
@@ -257,6 +248,8 @@ async def _send_birthday_reaction_summaries_job() -> None:
 
 
 async def start_scheduler() -> None:
+    """همه Jobها را در Scheduler ثبت و آن را استارت می‌کند؛ در startup هر Worker از main.py صدا زده می‌شود."""
+    # Job تیک Sync خودکار (فقط اگر SYNC_ENABLED روشن باشد)
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
     else:
@@ -273,6 +266,7 @@ async def start_scheduler() -> None:
             SYNC_CHECK_INTERVAL_MINUTES,
         )
 
+    # Job تبریک تولد با ساعت ارسالی که از تنظیمات دیتابیس خوانده می‌شود
     async with AsyncSessionLocal() as db:
         birthday_hour, birthday_minute = await BirthdayGreetingsService(db).get_send_time()
 
@@ -283,19 +277,13 @@ async def start_scheduler() -> None:
         minute=birthday_minute,
         id=BIRTHDAY_JOB_ID,
         replace_existing=True,
-        # ⚠️ رفع یک باگ واقعی («بعضی روزها پیام تبریک تولد خودکار ارسال
-        # نمی‌شود»): بدون misfire_grace_time، پیش‌فرض خودِ APScheduler
-        # عملاً حدود ۱ ثانیه است — یعنی اگر Backend درست همان لحظه (مثلاً
-        # هر بار که install.sh اجرا و سرویس Restart می‌شود) در حال
-        # بالا‌آمدن باشد، حتی چند ثانیه تأخیر کافی بود که کل اجرای امروز
-        # را کاملاً از دست بدهد، بدون هیچ تلاش دوباره تا فردا. حالا با
-        # یک بازه اطمینان ۶ ساعته، اگر سرور دقیقاً سر ساعت ارسال Restart
-        # شود، همین که دوباره بالا بیاید (تا ۶ ساعت بعد)، همان اجرای
-        # امروز را انجام می‌دهد — نه اینکه کامل نادیده گرفته شود.
+        # بازه اطمینان ۶ ساعته: اگر سرور سر ساعت ارسال در حال Restart باشد، اجرای همان روز
+        # تا ۶ ساعت بعد از بالا آمدن انجام می‌شود (پیش‌فرض APScheduler حدود ۱ ثانیه است).
         misfire_grace_time=6 * 60 * 60,
     )
     logger.info("Scheduler پیام تبریک تولد هر روز ساعت %02d:%02d اجرا خواهد شد", birthday_hour, birthday_minute)
 
+    # Job تیک نمونه‌برداری آمار سرور
     scheduler.add_job(
         _record_server_stats_job,
         trigger="interval",
@@ -308,6 +296,7 @@ async def start_scheduler() -> None:
         SERVER_STATS_SAMPLE_INTERVAL_MINUTES,
     )
 
+    # Job پاک‌سازی مدارک موقت بیمه، هر ۶ ساعت
     scheduler.add_job(
         _cleanup_insurance_pending_documents_job,
         trigger="interval",
@@ -316,6 +305,7 @@ async def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Job تیک بررسی موعد بکاپ
     scheduler.add_job(
         _run_scheduled_backup_check,
         trigger="interval",
@@ -328,6 +318,7 @@ async def start_scheduler() -> None:
         BACKUP_CHECK_INTERVAL_MINUTES,
     )
 
+    # Job یادآوری ارزیابی، هر روز ساعت ۹
     scheduler.add_job(
         _send_evaluation_reminders_job,
         trigger="cron",
@@ -335,12 +326,12 @@ async def start_scheduler() -> None:
         minute=0,
         id=EVALUATION_REMINDER_JOB_ID,
         replace_existing=True,
-        # ⚠️ مثل Job تبریک تولد: اگر سرور دقیقاً سر ساعت ۹ در حال Restart
-        # باشد، بدون این بازه اطمینان، یادآوری آن روز کاملاً از دست می‌رفت.
+        # بازه اطمینان ۶ ساعته برای اجرای جبرانی در صورت Restart سرور سر ساعت ۹
         misfire_grace_time=6 * 60 * 60,
     )
     logger.info("Scheduler یادآوری ارزیابی‌های انجام‌نشده هر روز ساعت ۰۹:۰۰ ارسال می‌شود")
 
+    # Job خلاصه تبریک تولد، هر روز ساعت ۲۰
     scheduler.add_job(
         _send_birthday_reaction_summaries_job,
         trigger="cron",
@@ -348,9 +339,7 @@ async def start_scheduler() -> None:
         minute=0,
         id=BIRTHDAY_REACTION_SUMMARY_JOB_ID,
         replace_existing=True,
-        # ⚠️ بازه اطمینان کوتاه‌تر از بقیه Job ها (۳ ساعت، نه ۶): این اعلان
-        # باید تا قبل از پایان همان روز تولد برسد - اگر با ۶ ساعت جبران
-        # بعد از نیمه‌شب ارسال شود، دیگر روز تولد نیست و بی‌معنا می‌شود.
+        # بازه اطمینان ۳ ساعته تا اجرای جبرانی حتماً قبل از پایان همان روز تولد (نیمه‌شب) باشد
         misfire_grace_time=3 * 60 * 60,
     )
     logger.info("Scheduler خلاصه تبریک تولد هر روز ساعت ۲۰:۰۰ ارسال می‌شود")
@@ -360,24 +349,18 @@ async def start_scheduler() -> None:
 
 def reschedule_sync_interval(minutes: int) -> None:
     """
-    ⚠️ دیگر عملاً کاری لازم نیست انجام دهد — این تابع فقط برای سازگاری با
-    Endpoint موجود (که هنوز صدایش می‌زند) نگه داشته شده و بلافاصله بی‌اثر
-    برمی‌گردد. با طرح جدید (بالا)، تغییر فاصله زمانی همین که در دیتابیس
-    ذخیره شود، همان لحظه برای همه Worker ها در چک بعدی (حداکثر
-    SYNC_CHECK_INTERVAL_MINUTES دقیقه دیگر) اعمال می‌شود — نیازی به
-    Reschedule کردن هیچ Job APScheduler ای نیست.
+    ورودی: فاصله جدید Sync به دقیقه. فقط تغییر را لاگ می‌کند و Jobی را Reschedule نمی‌کند؛
+    فاصله جدید از دیتابیس در تیک بعدی (حداکثر SYNC_CHECK_INTERVAL_MINUTES دقیقه) برای همه Workerها اعمال می‌شود.
+    این تابع برای endpoint تنظیمات Sync که آن را صدا می‌زند نگه داشته شده است.
     """
     logger.info("فاصله زمانی Sync خودکار به %s دقیقه تغییر کرد (در چک بعدی همه Worker ها اعمال می‌شود)", minutes)
 
 
 def reschedule_birthday_send_time(hour: int, minute: int) -> None:
-    """ساعت ارسال روزانه پیام تبریک تولد را بدون Restart سرور تغییر می‌دهد."""
+    """ورودی: ساعت و دقیقه جدید. ساعت ارسال روزانه پیام تبریک تولد را بدون Restart سرور تغییر می‌دهد."""
     try:
-        # ⚠️ reschedule_job فقط Trigger را عوض می‌کند؛ برای اطمینان کامل
-        # (مستقل از این‌که خودِ APScheduler سایر تنظیمات Job مثل
-        # misfire_grace_time را حین Reschedule دست‌نخورده نگه می‌دارد یا
-        # نه)، آن را هم صریحاً دوباره تنظیم می‌کنیم — همان بازه اطمینان
-        # ۶ ساعته‌ای که هنگام تعریف اولیه Job در start_scheduler ست شده.
+        # reschedule_job فقط Trigger را عوض می‌کند؛ misfire_grace_time (۶ ساعت، مثل start_scheduler)
+        # صریحاً دوباره تنظیم می‌شود تا حتماً حفظ شود.
         scheduler.reschedule_job(BIRTHDAY_JOB_ID, trigger="cron", hour=hour, minute=minute)
         scheduler.modify_job(BIRTHDAY_JOB_ID, misfire_grace_time=6 * 60 * 60)
         logger.info("ساعت ارسال پیام تبریک تولد به %02d:%02d تغییر کرد", hour, minute)
@@ -386,5 +369,6 @@ def reschedule_birthday_send_time(hour: int, minute: int) -> None:
 
 
 def stop_scheduler() -> None:
+    """Scheduler را در صورت اجرا بودن، بدون انتظار برای Jobهای جاری متوقف می‌کند (هنگام shutdown)."""
     if scheduler.running:
         scheduler.shutdown(wait=False)

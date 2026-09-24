@@ -8,7 +8,7 @@ evaluation_periods.py، evaluation_forms.py).
     period = await db.get(EvaluationPeriod, period_id)
     await require_site_permission(db, current_user, period.site_id, "performance.periods.manage")
 
-⚠️ site_id می‌تواند None باشد (یعنی «سراسری» / همه سایت‌ها) - در این
+site_id می‌تواند None باشد (یعنی «سراسری» / همه سایت‌ها) - در این
 حالت فقط کاربرانی که همین Permission را به‌صورت سراسری دارند (نه فقط
 برای یک سایت خاص) مجازند؛ اجازه نمی‌دهیم کسی که فقط برای یک سایت مجوز
 دارد، یک رکورد «سراسری» (site_id=None) بسازد یا ویرایش کند.
@@ -25,17 +25,22 @@ from app.models.user import User
 async def require_site_permission(
     db: AsyncSession, user: User, site_id: int | None, permission_code: str
 ) -> None:
+    """
+    ورودی: session، کاربر، site_id رکورد (None = سراسری) و کد Permission.
+    بررسی می‌کند کاربر این Permission را برای آن سایت (یا به‌صورت سراسری) دارد؛ در غیر این صورت 403 می‌دهد.
+    """
     if user.is_superuser:
         return
-    sites = await get_sites_with_permission(db, user, permission_code)
+    sites = await get_sites_with_permission(db, user, permission_code)  # None = مجوز سراسری
     if sites is None:
         return  # این Permission را به‌صورت سراسری دارد - بدون محدودیت
     if site_id is None:
         # رکورد سراسری (site_id=None) - فقط با مجوز سراسری قابل‌دسترسی است
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"فقط با مجوز سراسری {permission_code} می‌توانید موارد «همه سایت‌ها» را مدیریت کنید",
+            detail=f"فقط با مجوز {permission_code} برای همه‌ی سایت‌ها می‌توانید موارد «همه سایت‌ها» را مدیریت کنید",
         )
+    # رکورد سایت‌محور: سایت باید در فهرست سایت‌های مجاز باشد
     if site_id not in sites:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=f"دسترسی لازم برای این عملیات را ندارید: {permission_code}"

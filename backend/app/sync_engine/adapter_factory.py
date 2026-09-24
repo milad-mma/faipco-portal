@@ -12,6 +12,7 @@ from app.sync_engine.adapters.mssql_adapter import MSSQLAdapter
 from app.sync_engine.adapters.mysql_adapter import MySQLAdapter
 from app.sync_engine.adapters.postgresql_adapter import PostgreSQLAdapter
 
+# نگاشت نوع دیتابیس به کلاس Adapter
 _ADAPTERS: dict[DbType, type[BaseSiteAdapter]] = {
     DbType.postgresql: PostgreSQLAdapter,
     DbType.mysql: MySQLAdapter,
@@ -22,6 +23,10 @@ _ADAPTERS: dict[DbType, type[BaseSiteAdapter]] = {
 def get_adapter(
     db_type: DbType, *, host: str, port: int, database: str, username: str, password: str
 ) -> BaseSiteAdapter:
+    """
+    ورودی: نوع دیتابیس و مشخصات اتصال (پسورد رمزگشایی‌شده). نمونه Adapter متناظر را می‌سازد.
+    برای نوع پشتیبانی‌نشده ValueError می‌دهد.
+    """
     adapter_cls = _ADAPTERS.get(db_type)
     if adapter_cls is None:
         raise ValueError(f"دیتابیس از نوع '{db_type}' پشتیبانی نمی‌شود")

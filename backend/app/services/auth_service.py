@@ -1,5 +1,8 @@
 """
-منطق تجاری Authentication: بررسی نام‌کاربری/پسورد، صدور و تمدید توکن.
+منطق تجاری احراز هویت (AuthService).
+- ورود یکپارچه (مدیریت با یوزرنیم/رمز، پرسنل با کد پرسنلی/کد ملی یا رمز اختصاصی) با بررسی IP مجاز و قفل موقت.
+- صدور و تمدید توکن‌ها، بررسی اعتبار فعلی و تغییر رمز توسط کاربر.
+- ساخت پاسخ /auth/me شامل اطلاعات پرسنلی و فلگ‌های مجوز منوها.
 """
 from datetime import datetime, timezone
 import logging
@@ -39,8 +42,9 @@ class AuthLockedError(AuthError):
     """ورود به‌خاطر تلاش‌های ناموفق پیاپی موقتاً قفل شده — retry_after ثانیه باقی‌مانده تا باز شدن قفل است."""
 
     def __init__(self, retry_after_seconds: int):
+        """ورودی: ثانیه‌های باقی‌مانده تا باز شدن قفل؛ پیام فارسی با واحد دقیقه یا ثانیه ساخته می‌شود."""
         self.retry_after_seconds = retry_after_seconds
-        minutes = retry_after_seconds // 60
+        minutes = retry_after_seconds // 60  # نمایش به دقیقه اگر حداقل یک دقیقه باقی باشد
         if minutes >= 1:
             human = f"{minutes} دقیقه"
         else:
@@ -53,20 +57,22 @@ class AuthIpBlockedError(AuthError):
     تنظیمات قابل‌تغییر از پنل خوانده می‌شود (نه یک متن ثابت در کد)."""
 
     def __init__(self, message: str):
+        """ورودی: متن پیام قابل‌تنظیم از پنل."""
         super().__init__(message)
 
 
 class AuthService:
+    """سرویس احراز هویت و اطلاعات کاربر جاری؛ ورودی سازنده: نشست دیتابیس."""
     def __init__(self, db: AsyncSession):
+        """نشست دیتابیس و UserRepository را نگه می‌دارد."""
         self.db = db
         self.repo = UserRepository(db)
 
     async def authenticate(self, username: str, password: str) -> User | None:
         """
-        فقط تلاش برای ورود به‌عنوان کاربر مدیریتی (یوزرنیم/پسورد).
-        برخلاف قبل، دیگر در صورت نبود تطبیق خطا نمی‌دهد (None برمی‌گرداند) —
-        چون login() یکپارچه در ادامه باید بتواند به‌جایش کد پرسنلی/کد ملی
-        پرسنل را هم امتحان کند.
+        ورود با یوزرنیم/رمز (کاربر مدیریتی یا پرسنل دارای رمز اختصاصی) را امتحان می‌کند.
+        خروجی: User در صورت تطبیق (و ثبت last_login_at)، وگرنه None تا login() روش کد پرسنلی/کد ملی را امتحان کند.
+        خطا: AuthError اگر رمز درست ولی حساب غیرفعال باشد.
         """
         user = await self.repo.get_by_username(username)
         if user is None or not verify_password(password, user.password_hash):
@@ -80,39 +86,30 @@ class AuthService:
 
     async def login(self, identifier: str, credential: str, client_ip: str | None = None) -> tuple[str, str]:
         """
-        فرم ورود یکپارچه: همان دو فیلد، چه برای مدیریت و چه برای پرسنل.
-        ابتدا به‌عنوان (یوزرنیم + رمز عبور) کاربر مدیریتی امتحان می‌شود؛
-        اگر تطبیق نداشت، به‌عنوان (کد پرسنلی + کد ملی) پرسنل امتحان می‌شود.
-
-        قبل از هر بررسی رمز عبوری، وضعیت قفل موقت (بعد از تلاش‌های ناموفق
-        پیاپی روی همین identifier) چک می‌شود — اگر قفل باشد، حتی رمز درست
-        هم پذیرفته نمی‌شود (تا شمارش تلاش‌های Brute-Force معنا داشته باشد).
-
-        اگر رنج IP مجاز در پنل تعریف شده باشد، IP کاربر هم چک می‌شود — این
-        بررسی قبل از هر چیز دیگری انجام می‌شود (حتی قبل از چک رمز)، چون اگر
-        IP مجاز نیست، اصلاً نیازی به بررسی درست/غلط بودن رمز نیست.
+        ورود یکپارچه؛ ورودی: شناسه (یوزرنیم/کد پرسنلی)، اعتبار (رمز/کد ملی) و IP کلاینت. خروجی: (access_token, refresh_token).
+        ترتیب: بررسی IP مجاز (AuthIpBlockedError) ← قفل موقت این شناسه (AuthLockedError، حتی با رمز درست)
+        ← یوزرنیم/رمز ← کد پرسنلی/کد ملی؛ در شکست، تلاش ناموفق ثبت و AuthError داده می‌شود.
         """
+        # بررسی IP فقط وقتی فهرست IP مجاز در پنل تعریف شده باشد
         if client_ip is not None and await is_ip_allowlist_enforced(self.db):
             if not await is_ip_allowed(self.db, client_ip):
                 message = await SystemSettingsService(self.db).get_ip_blocked_message()
                 raise AuthIpBlockedError(message)
 
+        # قفل موقت پس از تلاش‌های ناموفق پیاپی روی همین شناسه
         locked_remaining = await check_login_lockout(self.db, identifier)
         if locked_remaining is not None:
             raise AuthLockedError(retry_after_seconds=int(locked_remaining) + 1)
 
         user = await self.authenticate(identifier, credential)
 
+        # اگر یوزرنیم/رمز تطبیق نداشت، ورود پرسنل با کد پرسنلی + کد ملی امتحان می‌شود
         if user is None:
             employee = await self.repo.find_employee_for_login(identifier, credential)
             if employee is None:
                 await record_failed_login(self.db, identifier)
-                # لاگ تشخیصی — عمداً بدون خودِ کد ملی/رمز واقعی (که یک PII حساس
-                # است)، فقط برای اینکه اگر این مورد دوباره پیش آمد، داده واقعی
-                # برای بررسی وجود داشته باشد به‌جای حدس زدن. length_before /
-                # changed_by_normalization مشخص می‌کند آیا رقم فارسی/عربی یا
-                # کاراکتر نامرئی در ورودی بوده (که با نرمال‌سازی رفع می‌شود) یا
-                # مشکل واقعاً چیز دیگری (مثلاً کد ملی/پرسنلی که اصلاً درست نیست).
+                # لاگ تشخیصی بدون ذخیره‌ی خودِ کد ملی/رمز (PII): فقط طول ورودی و اینکه آیا نرمال‌سازی
+                # (ارقام فارسی/عربی یا کاراکتر نامرئی) مقدار را تغییر داده است
                 normalized = normalize_login_credential(credential)
                 logger.info(
                     "ورود پرسنل ناموفق — identifier=%s، طول ورودی=%d، "
@@ -123,20 +120,18 @@ class AuthService:
                     credential.strip() != normalized,
                 )
                 raise AuthError("اطلاعات ورود اشتباه است")
-            user = await self.repo.get_or_create_employee_user(employee)
+            user = await self.repo.get_or_create_employee_user(employee)  # حساب پرسنل در اولین ورود ساخته می‌شود
 
-        await reset_login_attempts(self.db, identifier)
+        await reset_login_attempts(self.db, identifier)  # ورود موفق: شمارنده‌ی تلاش‌ها صفر می‌شود
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, refresh_token
 
     async def refresh(self, refresh_token: str) -> tuple[str, str]:
         """
-        تمدید Session — به‌صورت Sliding Window: هر بار که این متد صدا زده شود
-        (یعنی کاربر در حال استفاده از برنامه است)، هم Access Token و هم یک
-        Refresh Token تازه (با تاریخ انقضای جدید) صادر می‌شود. یعنی تا وقتی
-        کاربر حداقل هر REFRESH_TOKEN_EXPIRE_DAYS یک‌بار برنامه را باز کند،
-        هرگز به‌صورت خودکار Logout نمی‌شود — فقط با زدن دکمه «خروج» خارج می‌شود.
+        تمدید نشست به‌صورت Sliding Window؛ ورودی: refresh token، خروجی: access token و refresh token تازه (با انقضای جدید).
+        تا وقتی کاربر حداقل هر REFRESH_TOKEN_EXPIRE_DAYS یک‌بار برنامه را باز کند، خودکار خارج نمی‌شود.
+        خطا: AuthError برای توکن نامعتبر/منقضی یا کاربر ناموجود/غیرفعال.
         """
         payload = decode_token(refresh_token)
         if payload is None or payload.get("type") != "refresh":
@@ -153,12 +148,11 @@ class AuthService:
 
     async def verify_current_credential(self, user: User, current_password: str) -> None:
         """
-        فقط بررسی می‌کند که «رمز عبور/کد ملی فعلی» درست وارد شده — بدون هیچ
-        تغییری. هم توسط change_password (قبل از تنظیم رمز جدید) و هم برای
-        تأیید هویت قبل از عملیات‌های حساس (مثل «تأیید و آپدیت» در پنل)
-        استفاده می‌شود؛ چون Session به‌تنهایی (اگر دزدیده شود) نباید برای
-        این‌جور عملیات کافی باشد.
+        بدون تغییر چیزی، درستی «رمز عبور/کد ملی فعلی» کاربر را بررسی می‌کند؛ در صورت نادرستی AuthError می‌دهد.
+        در change_password و برای تأیید هویت پیش از عملیات حساس (مثل «تأیید و آپدیت») استفاده می‌شود،
+        تا نشست دزدیده‌شده به‌تنهایی کافی نباشد.
         """
+        # کاربر مدیریتی یا پرسنل دارای رمز اختصاصی: بررسی رمز؛ پرسنل بدون رمز اختصاصی: مقایسه با کد ملی
         if user.employee_id is None or user.has_custom_password:
             if not verify_password(current_password, user.password_hash):
                 raise AuthError("رمز عبور فعلی اشتباه است")
@@ -173,18 +167,9 @@ class AuthService:
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
         """
-        تغییر رمز عبور توسط خودِ کاربر.
-
-        اگر کاربر هنوز رمز اختصاصی تعیین نکرده باشد (has_custom_password=False
-        — یعنی همان پرسنلی که با کد ملی وارد می‌شود)، «رمز عبور فعلی» که از او
-        خواسته می‌شود در واقع همان کد ملی خودش است (چون آن چیزی است که واقعاً
-        می‌داند؛ password_hash فعلی یک مقدار تصادفی است که خودش نمی‌داند).
-        بعد از این تغییر has_custom_password=True می‌شود و از این پس ورود با
-        کد ملی دیگر کار نمی‌کند — طبق UserRepository.find_employee_for_login.
-
-        کاربران مدیریتی (بدون employee_id، مثل Admin) همیشه از همان روش قبلی
-        (بررسی رمز عبور فعلی) استفاده می‌کنند — آن‌ها اصلاً پرسنل نیستند که
-        بخواهند به روش «کد ملی» وارد شوند.
+        تغییر رمز توسط خودِ کاربر؛ ورودی: کاربر، رمز فعلی (برای پرسنل بدون رمز اختصاصی = کد ملی) و رمز جدید.
+        رمز جدید باید قانون قدرت رمز را رعایت کند (وگرنه AuthError). پس از تغییر has_custom_password=True
+        و must_change_password=False می‌شود و ورود با کد ملی دیگر ممکن نیست.
         """
         await self.verify_current_credential(user, current_password)
         try:
@@ -199,21 +184,12 @@ class AuthService:
 
     async def get_me(self, user: User) -> UserOut:
         """
-        اطلاعات کاربر جاری را همراه با اطلاعات پرسنلی/سازمانی (در صورت وجود)
-        برمی‌گرداند — برای نمایش نام و نام خانوادگی در AppBar و باکس اطلاعات
-        شخصی/سازمانی بالای صفحه اطلاعیه‌ها. کاربران مدیریتی محض (بدون
-        employee_id، مثل admin) فقط فیلدهای پایه را دارند.
+        ورودی: کاربر جاری. خروجی: UserOut با فلگ‌های مجوز منوها و (در صورت اتصال به پرسنل) اطلاعات پرسنلی/سازمانی
+        برای AppBar و باکس اطلاعات بالای صفحه‌ی اطلاعیه‌ها. کاربران مدیریتی بدون employee_id فقط فیلدهای پایه و فلگ‌ها را دارند.
         """
         base = UserOut.model_validate(user)
-        # ⚠️ رفع یک باگ حیاتی: قبلاً اینجا get_permission_codes بدون site_id
-        # صدا زده می‌شد — که طبق مستندات خودِ آن تابع، فقط نقش‌های *سراسری*
-        # را می‌بیند. از وقتی site_id برای انتصاب نقش اجباری شد (دیگر هیچ
-        # انتصاب جدیدی سراسری نیست)، این یعنی همه فلگ‌های can_X پایین
-        # همیشه False می‌ماندند — حتی برای کاربری که همین الان یک نقش با
-        # همه مجوزها گرفته بود، چون آن انتصاب حتماً site-scoped بود. اینجا
-        # باید get_all_permission_codes (بدون فیلتر سایت) استفاده شود — چون
-        # این فلگ‌ها فقط برای «کدام منو دیده شود» هستند، نه محدودسازی داده
-        # به یک سایت خاص.
+        # مجوزها از همه‌ی نقش‌ها (سراسری و سایت‌محور) خوانده می‌شوند، چون این فلگ‌ها فقط تعیین می‌کنند
+        # کدام منو دیده شود، نه محدودسازی داده به یک سایت
         permission_codes = await self.repo.get_all_permission_codes(user.id)
         base.can_clock_in_out = user.is_superuser or "attendance.clock_in_out" in permission_codes
         base.can_view_attendance_logs = user.is_superuser or "attendance.view_logs" in permission_codes
@@ -229,21 +205,16 @@ class AuthService:
             user.is_superuser or "performance.assignments.manage" in permission_codes
         )
         base.can_view_performance_reports = user.is_superuser or "performance.reports.view" in permission_codes
-        # ⚠️ رفع باگ: طبق طراحی جدید مجوز به‌تفکیک نوع، کسی که فقط یک یا
-        # چند مجوز leave_requests.view.type.<id> دارد (نه لزوماً مجوز
-        # سراسری leave_requests.view) هم باید منو را ببیند - وگرنه نقشی
-        # مثل «حراست» که فقط اجازه دیدن یک نوع خاص را دارد، اصلاً منو را
-        # نمی‌بیند (چون can_view_leave_requests قبلاً فقط دقیقاً همان یک
-        # کد سراسری را چک می‌کرد).
+        # منوی مرخصی/ماموریت با مجوز سراسری leave_requests.view یا هر مجوز به‌تفکیک نوع
+        # (leave_requests.view.type.<id>، مثل نقش «حراست») نمایش داده می‌شود
         base.can_view_leave_requests = (
             user.is_superuser
             or "leave_requests.view" in permission_codes
             or any(code.startswith("leave_requests.view.type.") for code in permission_codes)
         )
         base.can_manage_leave_requests = user.is_superuser or "leave_requests.manage" in permission_codes
-        # ⚠️ «محدود به نوع» یعنی فقط مجوز به‌تفکیک نوع دارد، نه هیچ‌کدام از
-        # دو مجوز سراسری - دقیقاً همان تشخیصی که _get_view_access سمت
-        # سرور انجام می‌دهد (نقشی مثل «حراست»).
+        # «محدود به نوع»: فقط مجوز به‌تفکیک نوع دارد و هیچ‌یک از دو مجوز سراسری را ندارد
+        # (همان تشخیص _get_view_access سمت سرور)
         base.leave_requests_type_restricted = (
             not user.is_superuser
             and "leave_requests.view" not in permission_codes
@@ -252,8 +223,7 @@ class AuthService:
         )
         base.can_view_vehicles_report = user.is_superuser or "vehicles.view_all" in permission_codes
         base.can_manage_sites = user.is_superuser or "sites.manage" in permission_codes
-        # sites.manage خودش هم شامل مشاهده است — کسی که اجازه مدیریت سایت‌ها را دارد،
-        # طبیعتاً باید بتواند آن‌ها را ببیند هم.
+        # sites.manage شامل مشاهده هم هست
         base.can_view_sites = base.can_manage_sites or "sites.view" in permission_codes
         base.can_manage_sync = user.is_superuser or "sync.manage" in permission_codes
         base.can_manage_users = user.is_superuser or "users.manage" in permission_codes
@@ -282,29 +252,21 @@ class AuthService:
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes
         base.can_manage_system_settings = user.is_superuser or "system.settings" in permission_codes
-        # ⚠️ رفع یک محدودیت واقعی: این فلگ قبلاً مستقیماً به نام نقش
-        # «site_manager» Hard-code شده بود (get_managed_site_ids با
-        # role_name="site_manager" ثابت) — یعنی هیچ نقش دیگری، هرچقدر هم
-        # از پنل «مدیریت نقش/مجوز» مجوز می‌گرفت، نمی‌توانست این گزارش را
-        # ببیند. حالا از get_sites_with_permission (مجوز notices.site_report،
-        # طبق Migration 035 به‌طور پیش‌فرض به site_manager هم وصل است) استفاده
-        # می‌شود — یعنی از این به بعد، هر نقشی با همین مجوز، دسترسی می‌گیرد.
+        # گزارش اطلاعیه‌های سایت: هر نقشی که مجوز notices.site_report را حداقل برای یک سایت داشته باشد
+        # (این مجوز به‌طور پیش‌فرض در Migration 035 به site_manager داده شده)؛ None یعنی همه‌ی سایت‌ها
         site_notice_report_sites = await get_sites_with_permission(self.db, user, "notices.site_report")
         base.can_view_site_notice_report = user.is_superuser or bool(
             site_notice_report_sites is None or len(site_notice_report_sites) > 0
         )
-        # کد ملی هم خودش یک اعتبار ضعیف است (جاهای زیادی در دسترس است، قابل
-        # تغییر/چرخش نیست) — پس هر پرسنلی که هنوز رمز اختصاصی تعیین نکرده
-        # (همچنان با کد ملی وارد می‌شود)، صرف‌نظر از مقدار ذخیره‌شده در
-        # دیتابیس، باید مجبور به تعیین یک رمز واقعی شود. این مقدار همیشه
-        # محاسبه‌شده است، نه صرفاً یک فلگ ثابت — چون هیچ Migration ای برای
-        # «همه پرسنلی که هنوز حساب کاربری نساخته‌اند» عملی نیست (حساب‌شان
-        # فقط موقع اولین ورود واقعی خودکار ساخته می‌شود).
+        # کد ملی اعتبار ضعیفی است (در دسترس و غیرقابل‌تغییر)، پس پرسنلی که هنوز رمز اختصاصی ندارد
+        # همیشه ملزم به تعیین رمز می‌شود؛ این مقدار در لحظه محاسبه می‌شود، مستقل از مقدار ذخیره‌شده در دیتابیس
+        # (حساب پرسنل تا اولین ورود ساخته نمی‌شود، پس با migration قابل تنظیم نیست)
         if user.employee_id is not None and not user.has_custom_password:
             base.must_change_password = True
         if user.employee_id is None:
             return base
 
+        # کوئری: پرسنل متصل همراه با نام سایت، نام واحد، نگاشت تردد و وضعیت ماژول مرخصی سایت
         result = await self.db.execute(
             select(Employee, Site.name, Department.name, AttendanceMapping.id, LeaveRequestMapping.is_disabled)
             .join(Site, Site.id == Employee.site_id)
@@ -327,21 +289,16 @@ class AuthService:
         base.department_id = employee.department_id
         base.department_name = department_name
         base.position_title = employee.position_title
-        # اولویت با ایمیل خودِ Employee (همان الگوی password_reset_service.py) -
-        # چون User.email معمولاً هرگز مستقیماً ست نمی‌شود، مگر برای کاربری
-        # که اصلاً به هیچ Employee ای متصل نیست.
+        # اولویت با ایمیل Employee (همان الگوی password_reset_service.py)؛ User.email معمولاً فقط
+        # برای کاربران بدون Employee مقدار دارد
         base.email = employee.email or user.email
         base.mobile = employee.mobile
         base.has_photo = bool(employee.photo_thumbnail)
         base.hide_birthday_in_dashboard = employee.hide_birthday_in_dashboard
-        # ⚠️ این یک Permission نیست (طبق درخواست صریح — دسترسی خودکار برای
-        # همه پرسنل، بدون نیاز به مجوز جدا) بلکه یک قابلیت سطح Site است:
-        # فقط اگر برای سایت خودِ این پرسنل یک AttendanceMapping (نگاشت
-        # جدول/ستون تردد دستگاهی) تنظیم شده باشد، این گزارش برایش معنا
-        # دارد؛ وگرنه کارت‌های داشبورد باید حالت «به‌زودی» نشان دهند، نه
-        # تلاش برای اتصال و شکست با خطا.
+        # قابلیت سطح سایت (نه Permission؛ برای همه‌ی پرسنل): فقط اگر سایت پرسنل AttendanceMapping
+        # (نگاشت جدول/ستون تردد دستگاهی) داشته باشد True است؛ وگرنه کارت‌های داشبورد «به‌زودی» نشان می‌دهند
         base.has_monthly_attendance = attendance_mapping_id is not None
-        # ⚠️ ماژول مرخصی/ماموریت از پنل ادمین برای سایت این پرسنل غیرفعال شده -
-        # صفحه درخواست بسته و کارت داشبورد «غیرفعال» نشان داده می‌شود.
+        # اگر ماژول مرخصی/ماموریت برای سایت پرسنل از پنل غیرفعال شده باشد، صفحه‌ی درخواست بسته
+        # و کارت داشبورد «غیرفعال» نمایش داده می‌شود
         base.leave_requests_disabled = bool(leave_module_disabled)
         return base

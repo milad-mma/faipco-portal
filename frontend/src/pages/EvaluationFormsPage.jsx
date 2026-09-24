@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی فهرست فرم‌های ارزیابی عملکرد.
+ * فرم‌ها را با سایت، نسخه و وضعیت نمایش می‌دهد و امکان ساخت فرم جدید، ساخت نسخه‌ی جدید (کپی)،
+ * حذف فرم پیش‌نویس و رفتن به فرم‌ساز را فراهم می‌کند.
+ */
 import { useEffect, useState } from "react";
 import {
   Accordion,
@@ -35,17 +40,22 @@ import {
   fetchEvaluationForms,
 } from "../api/evaluationForms";
 
-const STATUS_LABELS = { draft: "پیش‌نویس", active: "فعال", inactive: "غیرفعال", archived: "بایگانی‌شده" };
-const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning", archived: "default" };
+const STATUS_LABELS = { draft: "پیش‌نویس", active: "فعال", inactive: "غیرفعال", archived: "بایگانی‌شده" };  // برچسب فارسی وضعیت فرم
+const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning", archived: "default" };  // رنگ Chip هر وضعیت فرم
 
+/**
+ * دیالوگ ساخت فرم ارزیابی جدید (سایت اختیاری، عنوان، توضیحات).
+ * ورودی: open، onClose، onCreated و فهرست سایت‌ها؛ پس از ساخت به فرم‌ساز فرم جدید می‌رود.
+ */
 function NewFormDialog({ open, onClose, onCreated, sites }) {
-  const [siteId, setSiteId] = useState("");
+  const [siteId, setSiteId] = useState("");  // رشته‌ی خالی = فرم برای همه‌ی سایت‌ها
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
 
+  // فرم را می‌سازد (site_id خالی → null)، فهرست را تازه می‌کند و به صفحه‌ی فرم‌ساز می‌رود
   async function handleCreate() {
     setError("");
     setIsSaving(true);
@@ -109,17 +119,22 @@ function NewFormDialog({ open, onClose, onCreated, sites }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی فهرست فرم‌های ارزیابی.
+ */
 export default function EvaluationFormsPage() {
   const [sites, setSites] = useState([]);
   const [forms, setForms] = useState([]);
   const [error, setError] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);  // باز بودن دیالوگ فرم جدید
   const navigate = useNavigate();
 
+  // دریافت فهرست سایت‌ها برای نمایش نام سایت و انتخاب در دیالوگ
   useEffect(() => {
     fetchSites().then(setSites);
   }, []);
 
+  // فهرست فرم‌های ارزیابی را از سرور می‌گیرد
   function loadForms() {
     setError("");
     fetchEvaluationForms()
@@ -127,13 +142,16 @@ export default function EvaluationFormsPage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت فرم‌های ارزیابی با خطا مواجه شد."));
   }
 
+  // بارگذاری اولیه‌ی فرم‌ها
   useEffect(loadForms, []);
 
+  // نام سایت را از روی شناسه برمی‌گرداند؛ null یعنی «همه سایت‌ها»
   function siteName(siteId) {
     if (siteId === null) return "همه سایت‌ها";
     return sites.find((s) => s.id === siteId)?.name || "—";
   }
 
+  // یک نسخه‌ی قابل‌ویرایش از فرم می‌سازد و به فرم‌ساز آن می‌رود
   async function handleDuplicate(form) {
     try {
       const newForm = await duplicateEvaluationForm(form.id);
@@ -144,6 +162,7 @@ export default function EvaluationFormsPage() {
     }
   }
 
+  // فرم (فقط پیش‌نویس) را حذف و فهرست را تازه می‌کند
   async function handleDelete(form) {
     try {
       await deleteEvaluationForm(form.id);
@@ -155,6 +174,7 @@ export default function EvaluationFormsPage() {
 
   return (
     <Box>
+      {/* سربرگ: عنوان صفحه و دکمه‌ی فرم جدید */}
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h5" fontWeight={700}>
           فرم‌های ارزیابی
@@ -164,6 +184,7 @@ export default function EvaluationFormsPage() {
         </Button>
       </Stack>
 
+      {/* راهنمای کار با فرم‌های ارزیابی */}
       <Accordion variant="outlined" sx={{ mb: 2 }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -206,6 +227,7 @@ export default function EvaluationFormsPage() {
         </Alert>
       )}
 
+      {/* جدول فرم‌ها با عملیات ویرایش، نسخه‌ی جدید و حذف */}
       <TableContainer>
         <Table>
           <TableHead>
@@ -251,6 +273,7 @@ export default function EvaluationFormsPage() {
         </Table>
       </TableContainer>
 
+      {/* دیالوگ ساخت فرم جدید */}
       <NewFormDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onCreated={loadForms} sites={sites} />
     </Box>
   );

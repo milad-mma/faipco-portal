@@ -1,3 +1,10 @@
+/**
+ * پوسته‌ی اصلی صفحات پس از ورود (Layout).
+ * بدون ورودی (props)؛ کاربر، برندینگ و حالت تم را از Context می‌خواند.
+ * برای ادمین: AppBar بالا + منوی کناری (Drawer دائمی در دسکتاپ، موقت در موبایل) با آیتم‌های فیلترشده بر اساس مجوز.
+ * برای پرسنل غیرادمین: فقط نوار پایین (BottomNavigation) در همه‌ی اندازه‌ها.
+ * صفحه‌ی جاری از طریق <Outlet /> رندر می‌شود؛ دیالوگ تغییر رمز، اطلاعیه‌ی پاپ‌آپ و Snackbar پیام‌ها هم اینجا هستند.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -41,7 +48,7 @@ import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
 import { NAV_ITEMS, isItemVisible } from "../config/navItems";
 
-const DRAWER_WIDTH = 260;
+const DRAWER_WIDTH = 260;  // عرض منوی کناری (px)؛ عرض AppBar و main هم بر اساس آن محاسبه می‌شود
 
 
 export default function Layout() {
@@ -51,76 +58,50 @@ export default function Layout() {
   const { mode, toggleMode } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [mobileOpen, setMobileOpen] = useState(false);  // باز بودن Drawer موقت در موبایل (ادمین)
+  const [menuAnchor, setMenuAnchor] = useState(null);  // عنصر لنگر منوی پروفایل؛ null = منو بسته
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [snackbar, setSnackbar] = useState("");
+  const [snackbar, setSnackbar] = useState("");  // متن پیام Snackbar؛ رشته‌ی خالی = پنهان
 
+  // آیتم‌های منو را بر اساس مجوز کاربر فیلتر می‌کند و مسیر مؤثر هر آیتم والد را تعیین می‌کند.
   const visibleNavItems = useMemo(
     () =>
       NAV_ITEMS.filter((item) => isItemVisible(item, user)).map((item) => {
-        // فرزندان هم مستقل از والد فیلتر می‌شوند — هر مجوزی که به یک نقش
-        // داده شود، منوی متناظرش (چه در سطح والد چه فرزند) باید نمایش
-        // داده شود؛ ممکن است کاربری فقط یکی از چند زیرمنو را ببیند، نه
-        // لزوماً همه را.
+        // فرزندان مستقل از والد فیلتر می‌شوند؛ کاربر ممکن است فقط بعضی از زیرمنوها را ببیند.
         const filteredChildren = item.children?.filter((child) => isItemVisible(child, user));
 
-        // ⚠️ رفع یک مشکل واقعی: خودِ آیتم والد (مثل «مدیریت دسترسی») با
-        // کلیک مستقیماً به path خودش می‌رود؛ ولی آن مسیر ممکن است به یک
-        // مجوز محدودتر از «هر فرزندی» نیاز داشته باشد (نگاه کنید به
-        // ownPageCheck در navItems.jsx). اگر خودِ والد در دسترس نیست ولی
-        // حداقل یک فرزند هست، مسیر والد را به همان اولین فرزند در‌دسترس
-        // تغییر می‌دهیم - این منطق حالا برای *هر* آیتمی با ownPageCheck
-        // به‌طور خودکار کار می‌کند، نه فقط دو مورد خاص قبلی.
+        // اگر صفحه‌ی خودِ والد (ownPageCheck در navItems.jsx) برای کاربر در دسترس نیست ولی
+        // حداقل یک فرزند در دسترس است، کلیک روی والد به اولین فرزند در‌دسترس می‌رود.
         let effectivePath = item.path;
         if (item.ownPageCheck && !item.ownPageCheck(user) && filteredChildren?.length) {
           effectivePath = filteredChildren[0].path;
         }
-        // گروه بدون صفحه مستقل (groupOnly) - همیشه اولین زیرمنوی در‌دسترس
+        // گروه بدون صفحه‌ی مستقل (groupOnly): همیشه به اولین زیرمنوی در‌دسترس می‌رود
         if (item.groupOnly && filteredChildren?.length) {
           effectivePath = filteredChildren[0].path;
         }
 
-        // menuKey ثابت (مسیر تعریف‌شده در navItems) - برای کلید React و
-        // وضعیت باز/بسته‌بودن گروه، مستقل از effectivePath
+        // menuKey ثابت (مسیر تعریف‌شده در navItems) برای کلید React و وضعیت باز/بسته‌ی گروه،
+        // مستقل از effectivePath
         return { ...item, menuKey: item.path, path: effectivePath, children: filteredChildren };
       }),
     [user]
   );
 
-  // اگر کاربر فقط یک مقصد قابل‌دسترس دارد (مثلاً یک پرسنل عادی که فقط
-  // «اطلاعیه‌ها» را می‌بیند)، نشون‌دادن یک منوی کناری/همبرگری با یک گزینه
-  // تکراری بی‌فایده است — چون جایی برای رفتن جز همون صفحه فعلی نیست. کل
-  // منو مخفی می‌شود و صفحه تمام‌عرض می‌شود؛ به‌محض این‌که (مثلاً بعداً)
-  // مجوز/نقش دومی به این کاربر اضافه شود، همین شرط خودکار false می‌شود و
-  // منو دوباره ظاهر می‌شود — بدون نیاز به هیچ تغییر دستی دیگری.
+  // اگر کاربر حداکثر یک مقصد در دسترس داشته باشد، منوی کناری/همبرگری پنهان
+  // و محتوا تمام‌عرض می‌شود (در پوسته‌ی ادمین).
   const hasSingleNavItem = visibleNavItems.length <= 1;
 
-  // ⚠️ این با hasSingleNavItem فرق دارد و باگ واقعی همین تفاوت بود: یک
-  // پرسنل عادی که علاوه بر «اطلاعیه‌ها» یک دسترسی دیگر هم دارد (مثلاً
-  // ثبت ورود/خروج، یا site_manager با «گزارش اطلاعیه‌ها»)، طبق
-  // hasSingleNavItem دیگر «تک‌مقصدی» محسوب نمی‌شد (۲+ آیتم) — یعنی نوار
-  // پایین که فقط بر همان شرط بود، برایش هرگز نمایش داده نمی‌شد و به‌جایش
-  // Drawer قدیمی می‌دید. نوار پایین باید برای **هر** کاربر غیر-Admin
-  // نمایش داده شود، صرف‌نظر از تعداد دقیق مقصدهای اضافه‌اش — مقصدهای
-  // اضافه (اگر داشته باشد) از صفحه «پنل کاربری» در دسترس‌اند (پایین‌تر
-  // در ProfilePage.jsx).
-  //
-  // ⚠️ به‌روزرسانی بعدی: قبلاً این فقط MOBILE را عوض می‌کرد (نوار پایین
-  // فقط زیر md، Drawer/AppBar فقط بالای md). طبق درخواست صریح، حالا در
-  // دسکتاپ هم — به‌جز پنل Admin — همین تجربهٔ «فقط نوار پایین، بدون
-  // Sidebar/AppBar» اعمال می‌شود؛ یعنی این متغیر دیگر واقعاً «فقط موبایل»
-  // نیست، اسمش هم به همین دلیل عوض شد. hasSingleNavItem برای دسکتاپِ
-  // Admin (تصمیم Drawer کامل یا تمام‌عرض) دست‌نخورده باقی مانده.
+  // کاربر غیرادمین (پرسنل) در همه‌ی اندازه‌های صفحه فقط نوار پایین را می‌بیند (بدون AppBar و Drawer)،
+  // صرف‌نظر از تعداد مقصدهایش؛ مقصدهای اضافه از صفحه‌ی «پنل کاربری» (ProfilePage.jsx) در دسترس‌اند.
+  // hasSingleNavItem فقط برای پوسته‌ی ادمین (Drawer کامل یا تمام‌عرض) به کار می‌رود.
   const isPersonnelNav = !user?.is_superuser;
 
-  // نشانگر زنده «آنلاین/آفلاین» با WebSocket — دقیقاً مثل یک سیستم چت: تا
-  // وقتی این کامپوننت زنده است، یک Session باز نگه داشته می‌شود؛ سرور خودش
-  // لحظه‌ی قطع‌شدن (بستن تب/قطعی شبکه/هرچیز دیگر) را تشخیص و مدت‌زمان دقیق
-  // را محاسبه می‌کند. فقط برای پرسنلی که وارد آزمایش شده‌اند (can_clock_in_out).
+  // نشانگر زنده‌ی آنلاین/آفلاین با WebSocket: تا وقتی این کامپوننت mount است یک Session باز می‌ماند
+  // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند. فقط برای کاربرانی با can_clock_in_out فعال است.
   usePresenceMonitor(Boolean(user?.can_clock_in_out));
 
-  // زیرمنو اگر خودش یا یکی از زیرمجموعه‌هایش فعال باشد، به‌طور پیش‌فرض باز است
+  // وضعیت باز/بسته‌ی زیرمنوها (کلید: مسیر والد)؛ گروهی که خودش یا یکی از فرزندانش فعال است، پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {
     const initial = {};
     NAV_ITEMS.forEach((item) => {
@@ -133,31 +114,24 @@ export default function Layout() {
     return initial;
   });
 
-  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());
+  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());  // وضعیت اجازه‌ی اعلان مرورگر: default / granted / denied
 
-  // ⚠️ رفع یک نقص واقعی: قبلاً ثبت/تازه‌سازی اشتراک Push فقط با کلیک
-  // دستی روی «فعال‌سازی اعلان» در منوی پروفایل اتفاق می‌افتاد — نه هرگز
-  // خودکار. اگر اشتراک ذخیره‌شده یک کاربر به هر دلیلی بی‌صدا نامعتبر شود
-  // (مثلاً پاک‌شدن داده مرورگر، یا چرخش داخلی اشتراک توسط خودِ مرورگر/
-  // سیستم‌عامل)، دیگر هیچ اعلانی برایش نمی‌رسید — و چون خودش هیچ خطایی
-  // نمی‌دید، دلیلی هم نداشت که دوباره دستی این دکمه را بزند؛ این دقیقاً
-  // با گزارش «بعضی کاربرا اعلان دریافت نمی‌کنند» مطابقت دارد. حالا اگر
-  // اجازه از قبل داده شده («granted»)، هر بار پنل باز می‌شود، بی‌صدا (بدون
-  // پرامپت جدید — چون مرورگر برای اجازه از‌قبل‌داده‌شده هرگز دوباره
-  // Prompt نشان نمی‌دهد) اشتراک را به سرور دوباره می‌فرستد.
+  // اگر اجازه‌ی اعلان از قبل داده شده، در هر بار باز شدن پنل اشتراک Push را بی‌صدا دوباره به سرور می‌فرستد
+  // تا اشتراکی که توسط مرورگر/سیستم‌عامل نامعتبر یا عوض شده، تازه شود (پرامپت جدیدی نمایش داده نمی‌شود).
   useEffect(() => {
     if (getNotificationPermission() === "granted") {
       enablePushNotifications().catch(() => {
-        // بی‌صدا — این یک تلاش پس‌زمینه‌ای است، نه یک اقدام کاربر که نیاز
-        // به بازخورد داشته باشد؛ اگر شکست بخورد، دفعه بعد دوباره تلاش می‌شود.
+        // خطا نادیده گرفته می‌شود؛ تلاشی پس‌زمینه‌ای است و در بار بعدی تکرار می‌شود.
       });
     }
   }, []);
 
+  // باز/بسته کردن زیرمنوی یک آیتم والد
   function toggleMenu(path) {
     setOpenMenus((prev) => ({ ...prev, [path]: !prev[path] }));
   }
 
+  // فعال‌سازی اعلان Push از منوی پروفایل: درخواست اجازه، ثبت اشتراک و نمایش نتیجه در Snackbar
   async function handleEnableNotifications() {
     setMenuAnchor(null);
     try {
@@ -170,8 +144,10 @@ export default function Layout() {
     }
   }
 
+  // محتوای منوی کناری (مشترک بین Drawer دائمی و موقت): لوگو/عنوان و فهرست آیتم‌ها با زیرمنوهای جمع‌شونده
   const drawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* سربرگ منو: لوگو و عنوان سایدبار */}
       <Toolbar sx={{ gap: 1.5, px: 3, background: sidebarCfg.background || undefined }}>
         <BrandLogo surface="sidebar" alt={sidebarTitle} />
         {sidebarCfg.show_title && (
@@ -179,6 +155,7 @@ export default function Layout() {
         )}
       </Toolbar>
       <Divider />
+      {/* فهرست آیتم‌های منو */}
       <List sx={{ px: 1.5, py: 2, flexGrow: 1 }}>
         {visibleNavItems.map((item) => {
           const hasChildren = item.children?.length > 0;
@@ -190,6 +167,7 @@ export default function Layout() {
           return (
             <Box key={item.menuKey}>
               <Box sx={{ display: "flex", alignItems: "stretch" }}>
+                {/* لینک اصلی آیتم؛ آیتم فعال با رنگ و نوار کناری مشخص می‌شود */}
                 <ListItemButton
                   component={RouterLink}
                   to={item.path}
@@ -217,6 +195,7 @@ export default function Layout() {
                     }}
                   />
                 </ListItemButton>
+                {/* دکمه‌ی باز/بسته کردن زیرمنو (بدون ناوبری) */}
                 {hasChildren && (
                   <IconButton
                     size="small"
@@ -232,6 +211,7 @@ export default function Layout() {
                 )}
               </Box>
 
+              {/* زیرمنوهای جمع‌شونده */}
               {hasChildren && (
                 <Collapse in={isOpen} timeout="auto" unmountOnExit>
                   <List component="div" disablePadding>
@@ -285,41 +265,15 @@ export default function Layout() {
     <Box
       sx={{
         display: "flex",
-        // ⚠️ این شرطی است چون Drawer دائمی Admin (چند خط پایین‌تر) برای
-        // قرارگرفتن کنارِ محتوا (نه رویش) به جهت "row" همین Container
-        // نیاز دارد — تغییر این برای همه به "column" تجربه دسکتاپ Admin را
-        // کاملاً خراب می‌کرد. فقط برای پرسنل (که اصلاً Drawer نمی‌بینند)
-        // رویکرد جدید و مطمئن‌تر (پایین توضیح داده شده) اعمال می‌شود.
+        // ادمین: جهت row تا Drawer دائمی کنار محتوا قرار بگیرد؛ پرسنل: ستونی (محتوا + نوار پایین)
         flexDirection: isPersonnelNav ? "column" : "row",
         ...(isPersonnelNav
           ? {
-              // ⚠️ رفع نهایی (تلاش چهارم) برای پرسنل — تغییر رویکرد کامل:
-              // به‌جای «نوار پایین ثابت (position:fixed) + حدس‌زدن Padding
-              // کافی برای جبرانش» (که در سه تلاش قبلی، با دلایل مختلف،
-              // هرکدام کار نکردند)، ناحیه اصلی محتوا به یک ناحیه اسکرول
-              // کاملاً صریح و مستقل تبدیل شد: پوسته بیرونی دقیقاً هم‌ارتفاع
-              // Viewport (نه min-height، بلکه height واقعی) با overflow:hidden
-              // خودش — یعنی خودِ پوسته هرگز اسکرول نمی‌شود؛ فقط ناحیه main
-              // (پایین‌تر) با overflowY:auto صریح اسکرول می‌شود. نوار پایین
-              // هم دیگر position:fixed نیست — یک فرزند عادی و آخرِ همین
-              // ستون Flex است، پس هرگز روی محتوا نمی‌افتد (از نظر ساختاری
-              // غیرممکن است، نه چیزی که با محاسبه Padding درست پیش‌بینی شود)
-              // و همچنان همیشه پایین صفحه دیده می‌شود چون پوسته دقیقاً
-              // هم‌ارتفاع Viewport است.
-              //
-              // ⚠️ رفع مشکل «در مرورگر تا اسکرول کامل به پایین، نوار پایین
-              // دیده نمی‌شود (ولی در PWA درست است)»: واحد قدیمی "100vh"
-              // در مرورگرهای موبایل معمولاً بر اساس بزرگ‌ترین حالت ممکن
-              // Viewport محاسبه می‌شود (انگار نوار آدرس/ابزار مرورگر از قبل
-              // جمع شده) — در حالی که هنگام بارگذاری اولیه صفحه، آن نوارها
-              // هنوز واقعاً روی صفحه‌اند و فضای واقعی کمتری باقی می‌گذارند؛
-              // محتوا (و نوار پایین ما) کمی بیرون از دیدِ واقعی می‌افتد، تا
-              // با اسکرول‌کردن، مرورگر آن نوارها را جمع کند. PWA به‌خاطر
-              // نداشتن این نوارهای مرورگر اصلاً این مشکل را نداشت. واحد
-              // جدیدتر "100dvh" (Dynamic Viewport Height) دقیقاً برای همین
-              // مشکل ساخته شده — همیشه با فضای واقعی/فعلی قابل‌مشاهده
-              // هماهنگ است. برای مرورگرهای خیلی قدیمی که dvh را نمی‌شناسند،
-              // همان 100vh قبلی به‌عنوان Fallback باقی می‌ماند.
+              // پرسنل: پوسته دقیقاً هم‌ارتفاع Viewport با overflow:hidden است و هرگز اسکرول نمی‌شود؛
+              // فقط ناحیه‌ی main اسکرول می‌خورد و نوار پایین فرزند عادی آخر ستون Flex است،
+              // پس همیشه پایین صفحه دیده می‌شود و روی محتوا نمی‌افتد.
+              // از 100dvh استفاده می‌شود تا ارتفاع با فضای واقعی قابل‌مشاهده (با وجود نوار آدرس مرورگر موبایل)
+              // هماهنگ باشد؛ 100vh برای مرورگرهایی که dvh را نمی‌شناسند جایگزین است.
               height: "100vh",
               "@supports (height: 100dvh)": {
                 height: "100dvh",
@@ -327,32 +281,30 @@ export default function Layout() {
               overflow: "hidden",
             }
           : {
-              // دسکتاپ/موبایل Admin — کاملاً دست‌نخورده، دقیقاً مثل قبل.
+              // ادمین: حداقل ارتفاع به اندازه‌ی Viewport؛ اسکرول عادی صفحه
               minHeight: "100vh",
             }),
       }}
     >
+      {/* نوار بالای صفحه (فقط ادمین): دکمه‌ی منوی موبایل و منوی پروفایل */}
       <AppBar
         position="fixed"
         elevation={0}
         color="inherit"
         sx={{
-          // پرسنل غیر-Admin که نوار پایین را می‌بیند، دیگر منوی بالای صفحه
-          // را هم نمی‌بیند — نه فقط روی موبایل، طبق درخواست صریح روی
-          // دسکتاپ هم؛ چون «پنل کاربری» حالا یک تب مستقل در همان نوار
-          // پایین است، نه نیاز به منوی بالا هم.
+          // پرسنل نوار بالا را نمی‌بینند؛ «پنل کاربری» یک تب در نوار پایین است
           display: isPersonnelNav ? "none" : "flex",
           width: hasSingleNavItem ? "100%" : { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           borderBottom: "1px solid",
           borderColor: "divider",
           zIndex: (theme) => theme.zIndex.drawer + 1,
-          // ⚠️ همان رفع ناحیه امن برای پوسته Admin: این AppBar هم fixed و
-          // چسبیده به بالای صفحه است، پس با viewport-fit=cover محتوایش
-          // زیر Dynamic Island / ناچ می‌افتاد و دکمه‌هایش لمس‌ناپذیر می‌شد.
+          // AppBar ثابت بالای صفحه است؛ فاصله‌ی ناحیه‌ی امن بالا (ناچ / Dynamic Island) در حالت
+          // viewport-fit=cover اعمال می‌شود تا دکمه‌ها قابل لمس بمانند.
           pt: "env(safe-area-inset-top, 0px)",
         }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
+          {/* دکمه‌ی همبرگری فقط در موبایل و فقط وقتی بیش از یک مقصد وجود دارد */}
           {!hasSingleNavItem && (
             <IconButton
               edge="start"
@@ -363,8 +315,10 @@ export default function Layout() {
             </IconButton>
           )}
 
+          {/* فضای خالی برای هل دادن بخش پروفایل به انتهای نوار */}
           <Box />
 
+          {/* خوش‌آمدگویی و منوی پروفایل: اعلان‌ها، تغییر تم، تغییر رمز و خروج */}
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Typography variant="body2" color="text.secondary">
               خوش آمدید
@@ -425,10 +379,8 @@ export default function Layout() {
       </AppBar>
 
       {/*
-        نکته مهم RTL: چون stylis-plugin-rtl تمام استایل‌های فیزیکی left/right را
-        خودکار Mirror می‌کند، اگر اینجا anchor="right" بگذاریم، در نهایت روی
-        صفحه سمت چپ می‌نشیند! برای اینکه واقعاً سمت راست بنشیند، باید anchor="left"
-        بدهیم تا بعد از Mirror شدن توسط پلاگین RTL، در سمت راست قرار بگیرد.
+        در RTL، stylis-plugin-rtl مقادیر فیزیکی left/right را برعکس می‌کند؛ بنابراین anchor="left"
+        پس از برعکس‌شدن، Drawer را در سمت راست صفحه قرار می‌دهد. (Drawer دائمی: فقط دسکتاپ ادمین)
       */}
       {!isPersonnelNav && (
         <Drawer
@@ -452,6 +404,7 @@ export default function Layout() {
         </Drawer>
       )}
 
+      {/* Drawer موقت برای موبایل ادمین؛ با دکمه‌ی همبرگری باز می‌شود */}
       {!isPersonnelNav && (
         <Drawer
           variant="temporary"
@@ -468,6 +421,7 @@ export default function Layout() {
         </Drawer>
       )}
 
+      {/* ناحیه‌ی اصلی محتوا؛ صفحه‌ی جاری از طریق Outlet اینجا رندر می‌شود */}
       <Box
         component="main"
         sx={{
@@ -476,31 +430,18 @@ export default function Layout() {
           p: { xs: 2, md: 4 },
           ...(isPersonnelNav
             ? {
-                // پرسنل: فرزند دوم و آخر ستون Flex پوسته (بعد از این، نوار
-                // پایین می‌آید — نگاه کنید پایین‌تر). flex:1 یعنی تمام
-                // فضای باقی‌مانده بعد از نوار پایین را می‌گیرد؛
-                // overflowY:auto صریح یعنی این Box خودش مسئول اسکرول است —
-                // نه راه‌حل غیرمستقیم/محاسباتی، بلکه یک ناحیه اسکرول کاملاً
-                // آگاهانه و تضمین‌شده.
+                // پرسنل: flex:1 تمام فضای باقی‌مانده‌ی ستون را می‌گیرد و خودِ این Box با overflowY:auto اسکرول می‌شود.
                 flex: 1,
                 overflowY: "auto",
                 overflowX: "hidden",
                 mt: 0,
-                // ⚠️ رفع باگ واقعی (گزارش کاربر: «در آیفون ۱۶ پرو، دکمه
-                // بازگشت آن‌قدر بالای صفحه است که قابل کلیک نیست»):
-                // index.html با viewport-fit=cover تعریف شده، یعنی محتوا
-                // عمداً تا زیر Dynamic Island / ناچ کشیده می‌شود. نوار
-                // پایین از قبل safe-area-inset-bottom را رعایت می‌کرد، ولی
-                // بالای صفحه هیچ جبرانی نداشت - و چون پوسته پرسنل اصلاً
-                // AppBar ندارد (mt:0)، اولین عنصر صفحه دقیقاً زیر ناچ
-                // می‌افتاد و لمس‌ناپذیر می‌شد.
-                //
-                // این یک رفع سراسری است: چون همه صفحات از همین Box واحد
-                // رندر می‌شوند، نیازی به اصلاح تک‌تک صفحات نیست.
+                // چون index.html با viewport-fit=cover تعریف شده و پوسته‌ی پرسنل AppBar ندارد،
+                // فاصله‌ی ناحیه‌ی امن بالا (ناچ / Dynamic Island) به padding بالا اضافه می‌شود تا
+                // اولین عنصر هر صفحه قابل لمس باشد.
                 pt: "calc(16px + env(safe-area-inset-top, 0px))",
               }
             : {
-                // Admin — کاملاً دست‌نخورده، دقیقاً مثل قبل.
+                // ادمین: فاصله‌ی بالا به اندازه‌ی AppBar ثابت
                 flexGrow: 1,
                 mt: 8,
                 overflowX: "hidden",
@@ -510,11 +451,8 @@ export default function Layout() {
         <Outlet />
       </Box>
 
-      {/* نوار پایین — برای هر کاربر غیر-Admin (صرف‌نظر از تعداد دقیق
-          دسترسی‌های اضافه‌اش — همان باگی که قبلاً روی hasSingleNavItem بود).
-          ⚠️ طبق درخواست صریح، دیگر فقط موبایل نیست — روی دسکتاپ هم (به‌جز
-          پنل Admin) همین تجربه (بدون Sidebar/AppBar، فقط همین نوار پایین)
-          اعمال می‌شود. بر اساس طرح personnel_portal.html کاربر. */}
+      {/* نوار پایین برای همه‌ی کاربران غیرادمین در همه‌ی اندازه‌های صفحه: داشبورد، اطلاعیه‌ها و پنل کاربری.
+          تب فعال از روی پیشوند مسیر جاری تعیین می‌شود. */}
       {isPersonnelNav && (
         <BottomNavigation
           value={
@@ -527,11 +465,8 @@ export default function Layout() {
           onChange={(_, newValue) => navigate(newValue)}
           showLabels
           sx={{
-            // ⚠️ دیگر position:"fixed" نیست — یک فرزند عادی و آخرِ ستون
-            // Flex پوسته (بالا) است؛ چون پوسته دقیقاً هم‌ارتفاع Viewport و
-            // خودش overflow:hidden است، و ناحیه main کنارش flex:1 دارد،
-            // این نوار همیشه دقیقاً در پایین Viewport می‌ماند — بدون نیاز
-            // به position:fixed و بدون امکان ساختاری همپوشانی با محتوا.
+            // position:fixed نیست؛ فرزند آخر ستون Flex پوسته است و چون پوسته هم‌ارتفاع Viewport است
+            // همیشه پایین صفحه می‌ماند. ارتفاع و padding پایین، ناحیه‌ی امن پایین را هم در نظر می‌گیرند.
             display: "flex",
             flexShrink: 0,
             borderTop: "1px solid",
@@ -548,11 +483,11 @@ export default function Layout() {
 
       <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
 
-      {/* ⚠️ اینجا (نه main.jsx) mount می‌شود چون Layout فقط برای کاربر
-          لاگین‌شده رندر می‌شود - وگرنه در صفحه ورود هم درخواست می‌رفت و
-          ۴۰۱ می‌گرفت. */}
+      {/* اطلاعیه‌ی پاپ‌آپ اینجا mount می‌شود چون Layout فقط برای کاربر واردشده رندر می‌شود
+          (در صفحه‌ی ورود درخواستش با 401 رد می‌شد). */}
       <AnnouncementDialog />
 
+      {/* پیام نتیجه‌ی فعال‌سازی اعلان */}
       <Snackbar
         open={Boolean(snackbar)}
         autoHideDuration={4000}

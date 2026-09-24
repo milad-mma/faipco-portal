@@ -1,23 +1,19 @@
 """
 سرویس پشتیبان‌گیری و بازیابی — فقط برای همین سرور (نه Clone روی سرور دیگر).
 
-⚠️ بازطراحی کامل (v3): نسخه‌های قبلی برای «Clone به سرور دیگر» طراحی شده
-بودند (--data-only + جابه‌جایی دستی کلیدهای رمزنگاری در .env) — این باعث
-یک باگ واقعی شد: چون alembic_version عمداً از TRUNCATE قبل از بازیابی
-مستثنی بود (تا ردیابی Migration خراب نشود)، ولی pg_dump --data-only آن را
-مستثنی نمی‌کرد، هر بار یک بکاپ قدیمی‌تر بازیابی می‌شد، یک ردیف اضافه در
-alembic_version می‌ماند (نه Conflict، چون مقدارش با ردیف موجود فرق داشت) —
-یعنی خرابی به‌مرور در دیتابیس دنبال بکاپ‌ها می‌گشت.
+- create_backup_archive: یک Dump کامل (Schema + Data) با pg_dump --format=custom
+  می‌گیرد و همراه manifest.json در یک ZIP برمی‌گرداند.
+- validate_and_stage_archive: عبارت تأیید و فایل ZIP را بررسی و database.dump را
+  در پوشه موقت آماده می‌کند.
+- schedule_restore: یک اسکریپت shell مستقل (با systemd-run به‌عنوان root) اجرا
+  می‌کند که سرویس را متوقف، Schema فعلی را کنار گذاشته، pg_restore و
+  alembic upgrade head را اجرا و سرویس را دوباره روشن می‌کند؛ در صورت شکست
+  داده قبلی برگردانده می‌شود.
+- get_restore_status: وضعیت بازیابی را از فایل لاگ و systemctl می‌خواند.
 
-طراحی جدید بسیار ساده‌تر است: یک Dump کامل (Schema + Data، نه فقط Data) از
-همین سرور گرفته می‌شود؛ بازیابی هم با pg_restore --clean --if-exists انجام
-می‌شود (خودش هر Object از جمله alembic_version را قبل از بازسازی درست حذف
-می‌کند — نه یک TRUNCATE دستی با استثنا). چون بازیابی همیشه روی همین سرور
-است، نیازی به بکاپ‌گرفتن/جابه‌جایی .env یا کلیدهای رمزنگاری نیست — همان
-کلیدهای فعلی سرور معتبر می‌مانند. بعد از بازیابی، alembic upgrade head یک
-بار دیگر اجرا می‌شود تا اگر بکاپ از نسخه قدیمی‌تر کد بود، Schema به آخرین
-Migration های موجود برسد (بدون از‌دست‌رفتن داده‌های تازه بازیابی‌شده،
-چون Migration ها تصادفاً هرگز داده حذف نمی‌کنند).
+چون بازیابی همیشه روی همین سرور است، نیازی به جابه‌جایی .env یا کلیدهای
+رمزنگاری نیست. اجرای alembic upgrade head بعد از بازیابی Schema بکاپ‌های
+قدیمی‌تر را به آخرین Migration می‌رساند.
 """
 from __future__ import annotations
 
@@ -37,6 +33,7 @@ from app.core.config import get_settings
 
 
 class BackupError(Exception):
+    """خطای قابل‌نمایش به کاربر در ساخت/اعتبارسنجی/راه‌اندازی بکاپ یا بازیابی."""
     pass
 
 
@@ -56,6 +53,7 @@ def _find_pg_binary(name: str) -> str:
     found = shutil.which(name)
     if found:
         return found
+    # جست‌وجوی بازگشتی در مسیرهای رایج؛ sorted معکوس نسخه جدیدتر را اول می‌آورد
     candidate_dirs = ["/usr/bin", "/usr/local/bin", "/usr/lib/postgresql"]
     for d in candidate_dirs:
         base = Path(d)
@@ -64,11 +62,11 @@ def _find_pg_binary(name: str) -> str:
         for candidate in sorted(base.glob(f"**/{name}"), reverse=True):
             if candidate.is_file():
                 return str(candidate)
-    return name
+    return name  # اگر پیدا نشد، همان نام خام (اجرا با FileNotFoundError شکست می‌خورد)
 
 
 def _find_alembic_binary() -> str:
-    """alembic همیشه در همان venv کنار خودِ Python در حال اجراست."""
+    """مسیر اجرایی alembic را برمی‌گرداند؛ اول کنار Python در حال اجرا (venv)، بعد در PATH."""
     venv_bin = Path(sys.executable).resolve().parent
     candidate = venv_bin / "alembic"
     if candidate.exists():
@@ -82,6 +80,7 @@ async def create_backup_archive() -> bytes:
     یک Dump کامل (Schema + Data) از دیتابیس همین سرور می‌گیرد — نه فقط
     داده. چون این بکاپ فقط برای بازیابی روی همین سرور طراحی شده (نه Clone
     به سرور دیگر)، نیازی به کلیدهای رمزنگاری/secrets.json جداگانه نیست.
+    خروجی: بایت‌های فایل ZIP شامل database.dump و manifest.json. خطا: BackupError.
     """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
@@ -90,6 +89,7 @@ async def create_backup_archive() -> bytes:
     with tempfile.TemporaryDirectory() as tmp_dir:
         dump_path = Path(tmp_dir) / "database.dump"
 
+        # اجرای pg_dump با فرمت custom (قابل استفاده با pg_restore)، بدون مالک و مجوزها
         try:
             proc = await asyncio.create_subprocess_exec(
                 pg_dump_path,
@@ -112,6 +112,7 @@ async def create_backup_archive() -> bytes:
         except OSError as e:
             raise BackupError(f"اجرای pg_dump ناموفق بود: {e}") from e
 
+        # اطلاعات توصیفی بکاپ که کنار dump در ZIP قرار می‌گیرد
         manifest = {
             "app_name": settings.APP_NAME,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -119,6 +120,7 @@ async def create_backup_archive() -> bytes:
             "note": "این بکاپ فقط برای بازیابی روی همین سرور (از پنل) طراحی شده — Clone به سرور دیگر پشتیبانی نمی‌شود.",
         }
 
+        # بسته‌بندی dump و manifest در یک ZIP
         zip_path = Path(tmp_dir) / "backup.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(dump_path, "database.dump")
@@ -130,8 +132,8 @@ async def create_backup_archive() -> bytes:
 # مقداری که کاربر باید عیناً تایپ کند تا Restore واقعاً اجرا شود — یک لایه
 # محافظتی اضافه، مستقل از تأیید سمت فرانت‌اند (چون فرانت‌اند قابل‌دورزدن است).
 RESTORE_CONFIRMATION_PHRASE = "RESTORE"
-_RESTORE_STAGING_DIR = Path("/tmp/faipco-restore-staging")
-_RESTORE_LOG_PATH = Path("/tmp/faipco-restore.log")
+_RESTORE_STAGING_DIR = Path("/tmp/faipco-restore-staging")  # محل استخراج فایل بکاپ قبل از بازیابی
+_RESTORE_LOG_PATH = Path("/tmp/faipco-restore.log")  # خروجی اسکریپت بازیابی
 
 
 def get_restore_status() -> dict:
@@ -141,11 +143,13 @@ def get_restore_status() -> dict:
     که خودِ سرویس بک‌اند دارد Stop/Start می‌شود، این Endpoint هم موقتاً در
     دسترس نیست (چون بخشی از همان سرویس است) — فرانت‌اند باید این حالت را با
     Retry کردن مدیریت کند، نه خطا نشان دادن.
+    خروجی: dict با کلیدهای log، is_running، is_finished، is_failed.
     """
     log_content = ""
     if _RESTORE_LOG_PATH.exists():
         log_content = _RESTORE_LOG_PATH.read_text(encoding="utf-8", errors="ignore")
 
+    # پرسیدن از systemd درباره فعال بودن Unit موقت faipco-restore
     is_unit_active = False
     try:
         result = subprocess.run(
@@ -159,6 +163,7 @@ def get_restore_status() -> dict:
 
     return {
         "log": log_content,
+        # در حال اجرا: Unit فعال است، یا لاگ شروع شده ولی هنوز پیام پایان (موفق/ناموفق) ندارد
         "is_running": is_unit_active or (bool(log_content) and "===" in log_content and "FAILED" not in log_content and "finished successfully" not in log_content),
         "is_finished": "Restore finished successfully" in log_content,
         "is_failed": "Restore FAILED" in log_content,
@@ -172,10 +177,12 @@ def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Pat
     عبارت تأیید اشتباه) فوراً به کاربر نشان داده می‌شود؛ خودِ Restore واقعی
     (که نیاز به توقف سرویس دارد) جدا انجام می‌شود — نگاه کنید به
     schedule_restore().
+    خروجی: مسیر database.dump استخراج‌شده. خطا: BackupError.
     """
     if confirm_phrase != RESTORE_CONFIRMATION_PHRASE:
         raise BackupError(f'برای تأیید، باید دقیقاً عبارت «{RESTORE_CONFIRMATION_PHRASE}» ارسال شود.')
 
+    # پوشه موقت از نو ساخته می‌شود تا فایل‌های تلاش قبلی باقی نمانند
     if _RESTORE_STAGING_DIR.exists():
         shutil.rmtree(_RESTORE_STAGING_DIR)
     _RESTORE_STAGING_DIR.mkdir(parents=True)
@@ -201,41 +208,21 @@ _PRERESTORE_SCHEMA = "public_prerestore"
 
 def schedule_restore(dump_path: Path) -> None:
     """
-    برخلاف نسخه‌های قبلی، اینجا کل کار واقعی به یک Scope کاملاً مستقل و جدا
-    از systemd (با systemd-run) واگذار می‌شود که:
-      ۱. اول خودِ سرویس بک‌اند را کامل متوقف می‌کند
-      ۲. Schema "public" را کامل با CASCADE پاک و از نو می‌سازد
-      ۳. pg_restore را روی همان Schema خالی اجرا می‌کند
-      ۴. Migration های آخرین کد را اجرا می‌کند
-      ۵. سرویس را دوباره بالا می‌آورد
+    ورودی: مسیر database.dump آماده‌شده. یک اسکریپت shell می‌سازد و آن را در یک
+    Scope مستقل systemd (systemd-run، به‌عنوان root) اجرا می‌کند که:
+      ۱. سرویس faipco-backend را متوقف می‌کند
+      ۲. Schema فعلی public را به public_prerestore تغییر نام داده و public خالی می‌سازد
+      ۳. pg_restore را روی Schema خالی اجرا می‌کند
+      ۴. alembic upgrade head را اجرا می‌کند
+      ۵. در موفقیت public_prerestore را حذف، در شکست آن را به public برمی‌گرداند
+      ۶. سرویس را دوباره روشن می‌کند
 
-    چرا systemd-run لازم بود (نه فقط setsid): تلاش قبلی از یک فرآیند
-    setsid‌شده (ولی هنوز زیرمجموعه Cgroup خودِ faipco-backend.service)
-    استفاده می‌کرد — همان لحظه که آن اسکریپت دستور «متوقف‌کردن
-    faipco-backend» را صادر می‌کرد، systemd کل Cgroup آن سرویس (که خودِ
-    همین اسکریپت هم داخلش بود) را می‌کشت، درست بعد از چاپ «در حال توقف
-    سرویس» و قبل از رسیدن به pg_restore — یعنی هیچ‌وقت واقعاً بازیابی
-    اجرا نمی‌شد. systemd-run یک Scope واقعاً جدا (و به‌عنوان root) می‌سازد
-    که از این Cgroup Kill در امان است.
-
-    چرا DROP SCHEMA CASCADE به‌جای pg_restore --clean --if-exists: روی
-    بازیابی بین دو نصب مختلف (مثلاً بکاپ سرور اصلی روی یک نصب تازه دیگر)،
-    pg_restore --clean هنگام تلاش برای Drop کردن هر Object به‌تنهایی (بدون
-    CASCADE) با خطای «چیز دیگری به این وابسته است» شکست می‌خورد — مثلاً یک
-    Constraint روی جدول دیگر که به یک Primary Key وابسته است. این یک
-    محدودیت شناخته‌شده pg_restore --clean است، نه چیزی که بشود با ترتیب
-    دادن درست کرد. راه‌حل قابل‌اطمینان‌تر: کل Schema را یک‌جا با CASCADE پاک
-    و از نو بسازیم، بعد pg_restore را روی یک Schema کاملاً خالی اجرا کنیم —
-    دیگر هیچ «ترتیب Drop» ای در کار نیست.
-
-    ⚠️ برگشت خودکار (رفع باگ گزارش‌شده): قبلاً Schema فعلی پاک می‌شد و اگر
-    pg_restore یا Migration شکست می‌خورد، دیتابیس خالی می‌ماند (در حالی که
-    پیام پایانی می‌گفت «روی داده قبلی»). حالا Schema فعلی پاک نمی‌شود، فقط به
-    public_prerestore تغییر نام می‌دهد؛ بازیابی روی یک public خالی انجام
-    می‌شود. موفق = Schema قدیمی پاک می‌شود. ناموفق = public نیمه‌کاره پاک و
-    Schema قدیمی دوباره public می‌شود - یعنی دقیقاً داده قبل از شروع. اگر
-    حتی این برگشت هم شکست بخورد، داده قبلی در public_prerestore دست‌نخورده
-    می‌ماند و لاگ صریحاً می‌گوید.
+    systemd-run لازم است چون فرآیندی که داخل Cgroup سرویس بک‌اند باشد هنگام
+    توقف سرویس همراه آن کشته می‌شود؛ Scope جدا از این Cgroup مستقل است.
+    به‌جای pg_restore --clean از بازسازی کامل Schema استفاده می‌شود، چون --clean
+    هنگام Drop تک‌تک Objectها (بدون CASCADE) روی وابستگی‌ها شکست می‌خورد.
+    اگر برگشت داده هم شکست بخورد، داده قبلی در public_prerestore باقی می‌ماند و در لاگ ذکر می‌شود.
+    خطا: BackupError اگر راه‌اندازی systemd-run ناموفق باشد (دیتابیس دست‌نخورده می‌ماند).
     """
     settings = get_settings()
     libpq_url = _to_libpq_url(settings.DATABASE_URL)
@@ -249,17 +236,9 @@ def schedule_restore(dump_path: Path) -> None:
     db_user_match = re.search(r"://([^:]+):", libpq_url)
     db_user = db_user_match.group(1) if db_user_match else ""
 
-    # نکته حیاتی: خودِ این تابع با کاربر www-data اجرا می‌شود، ولی خودِ
-    # اسکریپت (چند خط پایین‌تر) با systemd-run به‌عنوان root اجرا می‌شود —
-    # یعنی هرکدام این‌ها لاگ را بسازند/دست بزنند، مالکش همان کاربر می‌شود.
-    # اگر اینجا (www-data) سعی کنیم فایل لاگِ ساخته‌شده توسط تلاش قبلی
-    # (که مالکش root بود) را پاک کنیم، چون /tmp با Sticky Bit است، www-data
-    # اجازه حذف فایل root را ندارد و با PermissionError کل این تابع (حتی
-    # قبل از رسیدن به systemd-run) شکست می‌خورد — دقیقاً همان چیزی که باعث
-    # پیام مبهم «راه‌اندازی ناموفق بود» شد. راه‌حل: اصلاً از این‌جا لاگ را
-    # پاک نمی‌کنیم؛ به‌جایش خودِ اسکریپت (که همیشه به‌عنوان root اجرا
-    # می‌شود) با ">" (نه ">>") آن را از نو می‌سازد — همیشه یک‌دست، همیشه
-    # مالکش root.
+    # فایل لاگ این‌جا پاک نمی‌شود: این تابع با www-data اجرا می‌شود و لاگ قبلی
+    # مالک root دارد (در /tmp با Sticky Bit قابل حذف نیست). خودِ اسکریپت که با
+    # root اجرا می‌شود لاگ را با ">" از نو می‌سازد.
 
     # این اسکریپت از داخل systemd-run --collect به‌عنوان root اجرا می‌شود
     # (نگاه کنید پایین‌تر) — پس دیگر نیازی به sudo داخل خودِ اسکریپت نیست.
@@ -325,6 +304,7 @@ else
   echo "=== Restore FAILED and ROLLBACK FAILED: $(date -Iseconds) — the previous data is kept in schema {_PRERESTORE_SCHEMA}. Do not run another restore; ask for manual recovery. ==="
 fi
 """
+    # ذخیره اسکریپت روی دیسک با دسترسی فقط برای مالک
     script_path = Path("/tmp/faipco-restore-run.sh")
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)
@@ -332,11 +312,9 @@ fi
     # اجرا در یک Scope کاملاً مستقل از systemd، به‌عنوان root — نه زیرمجموعه
     # Cgroup سرویس فعلی. sudo -n دقیقاً همان دستور ثابتی است که در sudoers
     # مجاز شده (نگاه کنید install.sh) — هیچ آرگومان دیگری قابل‌تزریق نیست.
-    # چون systemd-run معمولاً بلافاصله بعد از ساخت Scope برمی‌گردد (منتظر
-    # اتمام خودِ اسکریپت نمی‌ماند)، همین‌جا synchronous صبر می‌کنیم تا از
-    # موفقیت خودِ «راه‌اندازی» مطمئن شویم — اگر مثلاً sudoers درست تنظیم
-    # نشده باشد، همین‌جا با یک خطای واضح متوجه می‌شویم، نه با یک لاگ خالی
-    # و سکوت کامل.
+    # systemd-run بلافاصله بعد از ساخت Unit برمی‌گردد (منتظر اتمام اسکریپت نمی‌ماند)؛
+    # اجرای synchronous فقط موفقیت راه‌اندازی را بررسی می‌کند تا مثلاً خطای
+    # sudoers به‌صورت یک خطای واضح گزارش شود.
     result = subprocess.run(
         [
             "sudo",

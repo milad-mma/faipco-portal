@@ -1,12 +1,14 @@
 """
-تست‌های واحد الگوریتم خالص Resolve کردن اهداف ارزیابی
-(app/services/evaluation_structure_service.py::resolve_evaluation_target_ids)
-- بدون I/O، بدون نیاز به دیتابیس واقعی.
+تست‌های واحد الگوریتم‌های خالص ارزیابی عملکرد در app/core/evaluation_rules.py
+(بدون I/O و بدون دیتابیس واقعی):
+- resolve_evaluation_target_ids: اهداف مدیر، سرپرست و سرشیفت
+- validate_form_weights: اعتبارسنجی وزن دسته‌بندی‌ها و سوالات
+- calculate_option_based_question_score / calculate_weighted_average: محاسبه امتیاز
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # افزودن backend/ به مسیر import
 
 from app.core.evaluation_rules import resolve_evaluation_target_ids
 
@@ -28,9 +30,8 @@ def test_manager_evaluates_explicitly_assigned_targets():
 
 def test_intermediate_manager_can_have_partial_targets_not_all_supervisors():
     """
-    طبق بازخورد صریح: چارت واقعی ممکن است چند سطحی باشد - مثلاً یک مدیر
-    میانی (مثل «مدیر تولید») فقط بخشی از سرپرست‌ها را ارزیابی می‌کند، نه
-    همه؛ چون دیگر هیچ قانون خودکاری وجود ندارد، این کاملاً پشتیبانی می‌شود.
+    چارت چندسطحی: مدیر میانی (مثل «مدیر تولید») فقط بخشی از سرپرست‌ها را ارزیابی می‌کند
+    و مدیر سایت فقط اهداف تخصیص‌داده‌شده به خودش را.
     """
     site_manager_targets = resolve_evaluation_target_ids(
         evaluator_employee_id=1,  # مدیر سایت
@@ -58,7 +59,7 @@ def test_intermediate_manager_can_have_partial_targets_not_all_supervisors():
 
 
 def test_manager_can_target_arbitrary_employee_from_any_department():
-    """طبق درخواست صریح: یک مدیر باید بتواند هر فرد خاصی را - حتی از واحد/سایت دیگر - مستقیم هدف بگیرد."""
+    """مدیر می‌تواند هر فرد خاصی را - حتی از واحد/سایت دیگر - مستقیم هدف بگیرد."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=100,
         manager_ids_of_evaluator=[1],
@@ -73,6 +74,7 @@ def test_manager_can_target_arbitrary_employee_from_any_department():
 
 
 def test_department_supervisor_evaluates_all_employees_when_no_shift_leads():
+    """سرپرست واحد بدون سرشیفت، همه پرسنل واحد را ارزیابی می‌کند."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=200,
         manager_ids_of_evaluator=[],
@@ -107,7 +109,7 @@ def test_department_supervisor_evaluates_only_shift_leads_when_present():
 
 def test_department_supervisor_also_evaluates_employees_unassigned_to_any_shift_lead():
     """
-    طبق بازخورد صریح کاربر: اگر واحد سرشیفت دارد ولی بعضی پرسنل هنوز به
+    اگر واحد سرشیفت دارد ولی بعضی پرسنل هنوز به
     هیچ سرشیفتی تخصیص داده نشده‌اند، آن پرسنل نباید بی‌ارزیاب بمانند -
     مستقیماً زیر نظر سرپرست باقی می‌مانند (علاوه بر خودِ سرشیفت‌ها).
     """
@@ -128,7 +130,7 @@ def test_department_supervisor_also_evaluates_employees_unassigned_to_any_shift_
 
 def test_shift_lead_evaluates_only_own_assigned_subset():
     """
-    طبق تصمیم صریح کاربر: پرسنل بین سرشیفت‌ها تقسیم می‌شوند - هر سرشیفت
+    پرسنل بین سرشیفت‌ها تقسیم می‌شوند - هر سرشیفت
     فقط زیرمجموعه اختصاصی خودش را می‌بیند، نه بقیه پرسنل واحد.
     """
     shift_assignments = {"shift_lead_600": [800, 801], "shift_lead_601": [802]}
@@ -209,6 +211,7 @@ def test_evaluator_never_included_in_own_targets():
 
 
 def test_no_roles_means_no_targets():
+    """ارزیاب بدون هیچ نقشی، هدفی ندارد."""
     targets = resolve_evaluation_target_ids(
         evaluator_employee_id=1,
         manager_ids_of_evaluator=[],
@@ -230,6 +233,7 @@ from app.core.evaluation_rules import validate_form_weights  # noqa: E402
 
 
 def test_valid_weights_return_no_errors():
+    """فرم با مجموع وزن ۱۰۰ در هر دو سطح، بدون خطاست."""
     errors = validate_form_weights(
         [
             {
@@ -253,6 +257,7 @@ def test_valid_weights_return_no_errors():
 
 
 def test_category_weights_not_summing_to_100_is_invalid():
+    """مجموع وزن دسته‌بندی‌ها ۹۰ است: یک خطا."""
     errors = validate_form_weights(
         [
             {
@@ -273,6 +278,7 @@ def test_category_weights_not_summing_to_100_is_invalid():
 
 
 def test_question_weights_not_summing_to_100_is_invalid():
+    """مجموع وزن سوالات یک دسته ۶۰ است: یک خطا با نام همان دسته."""
     errors = validate_form_weights(
         [
             {
@@ -291,6 +297,7 @@ def test_question_weights_not_summing_to_100_is_invalid():
 
 
 def test_inactive_categories_and_questions_are_ignored():
+    """دسته‌بندی‌ها و سوالات غیرفعال در محاسبه وزن نادیده گرفته می‌شوند."""
     errors = validate_form_weights(
         [
             {
@@ -309,11 +316,13 @@ def test_inactive_categories_and_questions_are_ignored():
 
 
 def test_no_active_categories_is_invalid():
+    """فرم بدون دسته‌بندی فعال نامعتبر است."""
     errors = validate_form_weights([{"title": "غیرفعال", "weight": 100, "is_active": False, "questions": []}])
     assert len(errors) == 1
 
 
 def test_active_category_with_no_active_questions_is_invalid():
+    """دسته‌بندی فعال بدون سوال فعال نامعتبر است."""
     errors = validate_form_weights(
         [{"title": "خالی", "weight": 100, "is_active": True, "questions": []}]
     )
@@ -337,19 +346,19 @@ def test_single_selected_option_score_normalized_to_100_scale():
 
 
 def test_multiple_selected_options_score_is_average_then_normalized():
+    """چند گزینه انتخاب‌شده: میانگین امتیازها سپس نرمالایز."""
     assert calculate_option_based_question_score([80, 60], max_option_score=100) == 70
 
 
 def test_no_selected_options_score_is_zero():
+    """بدون گزینه انتخاب‌شده امتیاز صفر است."""
     assert calculate_option_based_question_score([], max_option_score=100) == 0.0
 
 
 def test_option_score_normalized_when_scale_is_not_0_to_100():
     """
-    رفع باگ واقعی طبق گزارش کاربر: طراح فرم ممکن است گزینه‌ها را روی
-    مقیاس دیگری (نه ۰-۱۰۰) تنظیم کند - مثلاً ۰ تا ۵ (شبیه سوالات
-    امتیازی رایج). انتخاب بهترین گزینه ممکن (امتیاز خام = حداکثر) باید
-    همیشه دقیقاً ۱۰۰ (نه همان عدد خام کوچک) بدهد.
+    گزینه‌ها روی مقیاس دیگری (مثلاً ۰ تا ۵) هم درست نرمالایز می‌شوند:
+    انتخاب بهترین گزینه (امتیاز خام = حداکثر) همیشه دقیقاً ۱۰۰ می‌دهد.
     """
     assert calculate_option_based_question_score([5], max_option_score=5) == 100.0
     assert calculate_option_based_question_score([4], max_option_score=5) == 80.0
@@ -357,15 +366,17 @@ def test_option_score_normalized_when_scale_is_not_0_to_100():
 
 
 def test_option_score_normalization_is_a_no_op_for_correctly_scaled_forms():
-    """برای فرم‌هایی که از قبل طبق قرارداد صحیح (حداکثر امتیاز گزینه=۱۰۰) ساخته شده‌اند، رفتار کاملاً بدون تغییر است."""
+    """برای فرم‌هایی با حداکثر امتیاز گزینه = ۱۰۰، نرمالایز همان امتیاز خام را برمی‌گرداند."""
     assert calculate_option_based_question_score([75], max_option_score=100) == 75.0
 
 
 def test_weighted_average_two_items():
+    """میانگین وزنی دو آیتم با وزن‌های ۴۰ و ۶۰."""
     result = calculate_weighted_average([{"weight": 40, "score": 80}, {"weight": 60, "score": 90}])
     assert result == 86.0
 
 
 def test_weighted_average_single_item_full_weight():
+    """یک آیتم با وزن ۱۰۰ همان امتیاز خودش را می‌دهد."""
     result = calculate_weighted_average([{"weight": 100, "score": 75}])
     assert result == 75.0

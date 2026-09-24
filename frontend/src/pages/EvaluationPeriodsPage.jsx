@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی مدیریت دوره‌های ارزیابی عملکرد.
+ * فهرست دوره‌ها را با سایت، بازه، وضعیت و تعداد ارزیابی‌های منتشرشده نشان می‌دهد و امکان ساخت/ویرایش/تمدید،
+ * تغییر وضعیت، فعال/غیرفعال‌سازی، حذف (با تأیید عنوان)، مشاهده و حذف ارزیابی‌های منتشرشده و تولید انتساب را فراهم می‌کند.
+ */
 import { useEffect, useState } from "react";
 import {
   Accordion,
@@ -45,6 +50,7 @@ import {
   setEvaluationPeriodDisabled,
 } from "../api/evaluationPeriods";
 
+// برچسب فارسی وضعیت دوره
 const STATUS_LABELS = {
   draft: "پیش‌نویس",
   scheduled: "زمان‌بندی‌شده",
@@ -53,6 +59,7 @@ const STATUS_LABELS = {
   archived: "بایگانی‌شده",
 };
 
+// رنگ Chip هر وضعیت دوره
 const STATUS_COLORS = {
   draft: "default",
   scheduled: "info",
@@ -61,13 +68,18 @@ const STATUS_COLORS = {
   archived: "default",
 };
 
-const EMPTY_FORM = { site_id: "", title: "", description: "", start_date: null, end_date: null };
+const EMPTY_FORM = { site_id: "", title: "", description: "", start_date: null, end_date: null };  // مقادیر اولیه‌ی فرم دیالوگ دوره
 
+/**
+ * دیالوگ ساخت یا ویرایش دوره (سایت، عنوان، توضیحات، تاریخ شروع و پایان).
+ * ورودی: open، onClose، onSaved، فهرست سایت‌ها و editingPeriod (null = دوره‌ی جدید).
+ */
 function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // با هر باز شدن دیالوگ، فرم را با داده‌ی دوره‌ی در حال ویرایش یا مقادیر پیش‌فرض (تاریخ امروز) پر می‌کند
   useEffect(() => {
     if (editingPeriod) {
       setForm({
@@ -83,6 +95,7 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
     setError("");
   }, [editingPeriod, open]);
 
+  // payload دوره را می‌سازد (site_id خالی → null، تاریخ‌ها به ISO) و دوره را ایجاد یا ویرایش می‌کند
   async function handleSave() {
     setError("");
     setIsSaving(true);
@@ -166,15 +179,19 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
   );
 }
 
-const EVALUATION_STATUS_LABELS = { not_started: "شروع‌نشده", draft: "در حال انجام", submitted: "ثبت‌شده" };
-const EVALUATION_STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };
+const EVALUATION_STATUS_LABELS = { not_started: "شروع‌نشده", draft: "در حال انجام", submitted: "ثبت‌شده" };  // برچسب فارسی وضعیت هر ارزیابی منتشرشده
+const EVALUATION_STATUS_COLORS = { not_started: "default", draft: "warning", submitted: "success" };  // رنگ Chip وضعیت ارزیابی
 
-// ⚠️ طبق درخواست کاربر: نمایش ارزیابی‌های منتشرشده یک دوره و امکان حذف تک‌تک آن‌ها
+/**
+ * دیالوگ فهرست ارزیابی‌های منتشرشده‌ی یک دوره با امکان حذف تک‌تک آن‌ها.
+ * ورودی: دوره، onClose و onChanged (برای تازه‌سازی شمارنده‌های جدول دوره‌ها).
+ */
 function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
-  const [items, setItems] = useState(null);
+  const [items, setItems] = useState(null);  // فهرست ارزیابی‌ها؛ null = هنوز دریافت نشده
   const [error, setError] = useState("");
-  const [deletingId, setDeletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);  // assignment_id ارزیابی در حال حذف
 
+  // فهرست ارزیابی‌های منتشرشده‌ی دوره را از سرور می‌گیرد
   function load() {
     setError("");
     fetchPublishedEvaluations(period.id)
@@ -182,8 +199,10 @@ function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
       .catch((err) => setError(err.response?.data?.detail || "دریافت ارزیابی‌ها با خطا مواجه شد."));
   }
 
+  // بارگذاری فهرست با تغییر دوره
   useEffect(load, [period.id]);
 
+  // پس از تأیید کاربر، ارزیابی (با پاسخ‌ها و نتیجه) را حذف و فهرست و جدول دوره‌ها را تازه می‌کند
   async function handleDelete(item) {
     if (
       !window.confirm(
@@ -217,6 +236,7 @@ function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
             {error}
           </Alert>
         )}
+        {/* حالت‌های فهرست: در حال بارگذاری، خالی، یا جدول ارزیابی‌ها */}
         {items === null ? null : items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             هنوز هیچ ارزیابی‌ای برای این دوره منتشر نشده (تولید انتساب انجام نشده).
@@ -273,12 +293,16 @@ function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
   );
 }
 
-// حذف دوره‌ای که ارزیابی منتشرشده دارد: فقط با تایپ دقیق عنوان دوره
+/**
+ * دیالوگ حذف قطعی دوره‌ای که ارزیابی منتشرشده دارد یا پیش‌نویس نیست.
+ * ورودی: دوره، onClose و onDeleted؛ دکمه‌ی حذف فقط با تایپ دقیق عنوان دوره فعال می‌شود.
+ */
 function DeletePeriodDialog({ period, onClose, onDeleted }) {
   const [confirmTitle, setConfirmTitle] = useState("");
   const [error, setError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // دوره را با ارسال عنوان تأییدشده (confirm_title) حذف می‌کند
   async function handleDelete() {
     setError("");
     setIsDeleting(true);
@@ -325,13 +349,18 @@ function DeletePeriodDialog({ period, onClose, onDeleted }) {
   );
 }
 
+/**
+ * دیالوگ تولید انتساب‌های ارزیابی برای یک دوره بر اساس ساختار ارزیابی و یک فرم فعال.
+ * ورودی: open، onClose و دوره؛ خروجی سرور (تعداد ساخته‌شده و مجموع) در پیام موفقیت نمایش داده می‌شود.
+ */
 function GenerateAssignmentsDialog({ open, onClose, period }) {
   const [forms, setForms] = useState([]);
   const [formId, setFormId] = useState("");
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(null);  // نتیجه‌ی تولید انتساب: { created_count, total_assignments }
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // با باز شدن دیالوگ، وضعیت قبلی پاک و فرم‌های سایت دوره دریافت می‌شوند
   useEffect(() => {
     if (!open) return;
     setResult(null);
@@ -340,6 +369,7 @@ function GenerateAssignmentsDialog({ open, onClose, period }) {
     fetchEvaluationForms(period?.site_id).then(setForms);
   }, [open, period]);
 
+  // انتساب‌ها را برای دوره و فرم انتخاب‌شده تولید می‌کند (اجرای دوباره فقط موارد جدید را می‌سازد)
   async function handleGenerate() {
     setError("");
     setIsSaving(true);
@@ -388,21 +418,26 @@ function GenerateAssignmentsDialog({ open, onClose, period }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی دوره‌های ارزیابی.
+ */
 export default function EvaluationPeriodsPage() {
   const [sites, setSites] = useState([]);
   const [periods, setPeriods] = useState([]);
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingPeriod, setEditingPeriod] = useState(null);
-  const [generateDialogPeriod, setGenerateDialogPeriod] = useState(null);
-  const [publishedPeriod, setPublishedPeriod] = useState(null);
-  const [deletingPeriod, setDeletingPeriod] = useState(null);
-  const [toast, setToast] = useState("");
+  const [editingPeriod, setEditingPeriod] = useState(null);  // دوره‌ی در حال ویرایش؛ null = دوره‌ی جدید
+  const [generateDialogPeriod, setGenerateDialogPeriod] = useState(null);  // دوره‌ی دیالوگ تولید انتساب؛ null = بسته
+  const [publishedPeriod, setPublishedPeriod] = useState(null);  // دوره‌ی دیالوگ ارزیابی‌های منتشرشده؛ null = بسته
+  const [deletingPeriod, setDeletingPeriod] = useState(null);  // دوره‌ی دیالوگ حذف قطعی؛ null = بسته
+  const [toast, setToast] = useState("");  // پیام Snackbar موفقیت
 
+  // دریافت فهرست سایت‌ها برای نمایش نام سایت و انتخاب در دیالوگ
   useEffect(() => {
     fetchSites().then(setSites);
   }, []);
 
+  // فهرست دوره‌های ارزیابی را از سرور می‌گیرد
   function loadPeriods() {
     setError("");
     fetchEvaluationPeriods()
@@ -410,13 +445,16 @@ export default function EvaluationPeriodsPage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت دوره‌های ارزیابی با خطا مواجه شد."));
   }
 
+  // بارگذاری اولیه‌ی دوره‌ها
   useEffect(loadPeriods, []);
 
+  // نام سایت را از روی شناسه برمی‌گرداند؛ null یعنی «همه سایت‌ها»
   function siteName(siteId) {
     if (siteId === null) return "همه سایت‌ها";
     return sites.find((s) => s.id === siteId)?.name || "—";
   }
 
+  // وضعیت دوره را تغییر می‌دهد و فهرست را تازه می‌کند
   async function handleStatusChange(period, status) {
     try {
       await updateEvaluationPeriodStatus(period.id, status);
@@ -426,6 +464,7 @@ export default function EvaluationPeriodsPage() {
     }
   }
 
+  // حذف دوره: دوره‌ی پیش‌نویس بدون ارزیابی با confirm ساده، بقیه با دیالوگ تأیید عنوان
   async function handleDelete(period) {
     // دوره‌ای که ارزیابی منتشرشده دارد یا دیگر پیش‌نویس نیست: تأیید با تایپ عنوان
     if (period.assignments_total > 0 || period.status !== "draft") {
@@ -442,6 +481,7 @@ export default function EvaluationPeriodsPage() {
     }
   }
 
+  // دسترسی ارزیاب‌ها و پرسنل به ارزیابی‌های دوره را قطع/وصل می‌کند (غیرفعال‌سازی با تأیید)
   async function handleToggleDisabled(period) {
     const disable = !period.is_disabled;
     if (
@@ -462,6 +502,7 @@ export default function EvaluationPeriodsPage() {
 
   return (
     <Box>
+      {/* سربرگ: عنوان صفحه و دکمه‌ی دوره‌ی جدید */}
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h5" fontWeight={700}>
           دوره‌های ارزیابی
@@ -478,6 +519,7 @@ export default function EvaluationPeriodsPage() {
         </Button>
       </Stack>
 
+      {/* راهنمای مراحل کار با دوره‌ها */}
       <Accordion variant="outlined" sx={{ mb: 2 }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -528,6 +570,7 @@ export default function EvaluationPeriodsPage() {
         </Alert>
       )}
 
+      {/* جدول دوره‌ها: عنوان قابل‌ویرایش، سایت، بازه، وضعیت، شمارنده‌ی ارزیابی‌ها و عملیات */}
       <TableContainer>
         <Table>
           <TableHead>
@@ -616,6 +659,7 @@ export default function EvaluationPeriodsPage() {
         </Table>
       </TableContainer>
 
+      {/* دیالوگ‌های صفحه: ساخت/ویرایش، تولید انتساب، ارزیابی‌های منتشرشده و حذف قطعی */}
       <PeriodDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -653,6 +697,7 @@ export default function EvaluationPeriodsPage() {
         />
       )}
 
+      {/* پیام موفقیت عملیات */}
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={4000}

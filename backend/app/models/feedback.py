@@ -1,16 +1,16 @@
 """
-مدل‌های «انتقادات و پیشنهادات» — پیام‌هایی که پرسنل می‌فرستند (با امکان
-درخواست ناشناس‌ماندن)، و فهرست کلمات/عبارات نامناسب که تعیین می‌کند یک
+مدل‌های «انتقادات و پیشنهادات»: پیام‌هایی که پرسنل می‌فرستند (با امکان
+درخواست ناشناس‌ماندن) و فهرست کلمات/عبارات نامناسب که تعیین می‌کند یک
 پیام از حالت محرمانه/ناشناس خارج شود یا نه.
 
-منطق محرمانگی (پیاده‌سازی در feedback_service.py، نه اینجا):
+منطق محرمانگی (پیاده‌سازی در feedback_service.py):
     - Admin واقعی (is_superuser) از پنل ادمین: همیشه فرستنده واقعی همه
-      پیام‌ها را می‌بیند - صرف‌نظر از درخواست ناشناس‌ماندن - ولی می‌بیند
+      پیام‌ها را می‌بیند - صرف‌نظر از درخواست ناشناس‌ماندن - و می‌بیند
       که کاربر تیک ناشناس را زده یا نه.
     - هر نقش دیگری با مجوز feedback.view (سایت‌محور) یا feedback.view_all
       (سراسری): اگر is_anonymous_requested=True و contains_profanity=False
-      باشد، فرستنده برایش نمایش داده نمی‌شود؛ در غیر این صورت (پیام حاوی
-      الفاظ نامناسب بود)، فرستنده کاملاً قابل‌مشاهده می‌شود.
+      باشد، فرستنده برایش نمایش داده نمی‌شود؛ اگر پیام حاوی الفاظ نامناسب
+      باشد، فرستنده کاملاً قابل‌مشاهده می‌شود.
 """
 from __future__ import annotations
 
@@ -26,36 +26,35 @@ from app.models.base import TimestampMixin
 
 
 class FeedbackCategory(str, enum.Enum):
+    """دسته‌بندی پیام بازخورد."""
     complaint = "complaint"  # انتقاد
     suggestion = "suggestion"  # پیشنهاد
     comment = "comment"  # نظر
 
 
 class FeedbackMessage(Base, TimestampMixin):
+    """یک پیام انتقاد/پیشنهاد/نظر ارسال‌شده توسط یک کاربر."""
     __tablename__ = "feedback_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # فرستنده همیشه ثبت می‌شود (حتی اگر ناشناس درخواست شده) - چون Admin
-    # واقعی همیشه باید بتواند ببیند، و اگر پیام حاوی الفاظ نامناسب باشد،
-    # باید بتوان هویت را برای دارنده مجوز هم آشکار کرد.
+    # فرستنده همیشه ثبت می‌شود (حتی اگر ناشناس درخواست شده) تا Admin واقعی
+    # همیشه آن را ببیند و در صورت وجود الفاظ نامناسب، هویت برای دارنده مجوز هم آشکار شود.
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     category: Mapped[FeedbackCategory] = mapped_column(
         Enum(FeedbackCategory, name="feedback_category"), nullable=False
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    is_anonymous_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_anonymous_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # کاربر تیک «ناشناس» را زده است
     # در لحظه ارسال، بر اساس فهرست ProhibitedPhrase همان لحظه محاسبه و
-    # ذخیره می‌شود (نه هر بار در زمان نمایش) - یعنی اگر بعداً یک عبارت به
-    # فهرست اضافه/حذف شود، روی پیام‌های قبلاً ارسال‌شده اثر نمی‌گذارد.
+    # ذخیره می‌شود (نه در زمان نمایش)؛ تغییرات بعدی فهرست روی پیام‌های
+    # ارسال‌شده اثر نمی‌گذارد.
     contains_profanity: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # ⚠️ طبق درخواست صریح کاربر: حذف «نرم» - رکورد واقعاً از دیتابیس پاک
-    # نمی‌شود. قبلاً تنها عملیات مدیریتی، حذف دائمی بود و یک کلیک اشتباه
-    # یعنی از دست رفتن همیشگی بازخورد پرسنل، بدون هیچ راه بازگشتی. حالا
-    # فقط علامت‌گذاری می‌شود و از فهرست‌ها کنار می‌رود، ولی داده باقی
-    # می‌ماند و در صورت نیاز قابل‌بازیابی است.
+    # حذف نرم: رکورد از دیتابیس پاک نمی‌شود، فقط علامت‌گذاری شده و از
+    # فهرست‌ها کنار می‌رود؛ داده باقی می‌ماند و قابل‌بازیابی است.
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # کاربری که پیام را حذف (نرم) کرده است
     deleted_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -63,11 +62,9 @@ class FeedbackMessage(Base, TimestampMixin):
 
 class ProhibitedPhrase(Base, TimestampMixin):
     """
-    فهرست کلمات/عبارات نامناسب - فقط توسط Admin واقعی (superuser) قابل‌مدیریت
-    است (نه حتی دارنده مجوز feedback.view/view_all)، چون این فهرست مستقیماً
-    تعیین می‌کند چه زمانی محرمانگی یک پیام برای همان دارنده مجوز شکسته
-    می‌شود - اگر خودِ او می‌توانست این فهرست را ویرایش کند، می‌توانست
-    عملاً محرمانگی را برای پیام‌های دلخواه دور بزند.
+    یک کلمه/عبارت نامناسب. فقط Admin واقعی (superuser) می‌تواند این فهرست را مدیریت کند
+    (نه دارنده مجوز feedback.view/view_all)، چون این فهرست تعیین می‌کند چه زمانی
+    محرمانگی پیام برای همان دارنده مجوز شکسته شود.
     """
 
     __tablename__ = "prohibited_phrases"

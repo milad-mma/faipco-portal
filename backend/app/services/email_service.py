@@ -4,7 +4,7 @@
 ایمیل».
 
 smtplib کتابخانه Sync است - برای این‌که کل Event Loop را برای مدت اتصال
-SMTP بلاک نکند، در asyncio.to_thread اجرا می‌شود - دقیقاً همان الگوی
+SMTP بلاک نکند، در asyncio.to_thread اجرا می‌شود - همان الگوی
 pymssql/smbclient در بقیه این پروژه.
 """
 from __future__ import annotations
@@ -25,14 +25,17 @@ _SETTINGS_ID = 1
 
 
 class EmailError(Exception):
+    """خطای عمومی ارسال ایمیل (مثلاً خطای اتصال یا احراز هویت SMTP)."""
     pass
 
 
 class EmailNotConfiguredError(EmailError):
+    """سرویس ایمیل غیرفعال است یا تنظیمات SMTP ناقص است."""
     pass
 
 
 async def get_smtp_settings(db: AsyncSession) -> SmtpSettings:
+    """ردیف تنظیمات SMTP (id=1) را برمی‌گرداند؛ اگر وجود نداشته باشد با مقادیر پیش‌فرض می‌سازد."""
     settings = await db.get(SmtpSettings, _SETTINGS_ID)
     if settings is None:
         settings = SmtpSettings(id=_SETTINGS_ID)
@@ -56,18 +59,25 @@ def _send_email_sync(
     body_text: str,
     attachment: tuple[str, bytes] | None,
 ) -> None:
+    """
+    ارسال هم‌زمان (Sync) یک ایمیل متنی با smtplib؛ برای اجرا در thread جداگانه.
+    ورودی: مشخصات سرور، فرستنده، گیرنده، موضوع، متن و پیوست اختیاری (نام، بایت‌ها).
+    """
+    # ساخت پیام MIME با متن UTF-8
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = formataddr((from_name, from_address)) if from_name else from_address
     msg["To"] = to_address
     msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
+    # افزودن پیوست (در صورت وجود)
     if attachment:
         filename, content = attachment
         part = MIMEApplication(content, Name=filename)
         part["Content-Disposition"] = f'attachment; filename="{filename}"'
         msg.attach(part)
 
+    # حالت ssl از ابتدا اتصال رمزنگاری‌شده می‌سازد؛ بقیه حالت‌ها اتصال ساده
     server: smtplib.SMTP
     if encryption_mode == "ssl":
         server = smtplib.SMTP_SSL(host, port, timeout=30)
@@ -76,7 +86,8 @@ def _send_email_sync(
 
     try:
         if encryption_mode == "starttls":
-            server.starttls()
+            server.starttls()  # ارتقای اتصال ساده به TLS
+        # ورود فقط وقتی نام کاربری و رمز هر دو تنظیم شده باشند
         if username and password:
             server.login(username, password)
         server.sendmail(from_address, [to_address], msg.as_string())
@@ -92,15 +103,21 @@ async def send_email(
     body_text: str,
     attachment: tuple[str, bytes] | None = None,
 ) -> None:
-    """attachment اختیاری: (نام_فایل، محتوای_باینری) - برای «ارسال بکاپ به ایمیل»."""
+    """
+    یک ایمیل را با تنظیمات SMTP ذخیره‌شده ارسال می‌کند.
+    attachment اختیاری: (نام_فایل، محتوای_باینری) - برای «ارسال بکاپ به ایمیل».
+    خطا: EmailNotConfiguredError اگر سرویس غیرفعال/ناقص باشد، EmailError اگر ارسال شکست بخورد.
+    """
     settings = await get_smtp_settings(db)
     if not settings.enabled:
         raise EmailNotConfiguredError("سرویس ایمیل هنوز در پنل ادمین فعال/تنظیم نشده است")
     if not (settings.host and settings.from_address):
         raise EmailNotConfiguredError("تنظیمات SMTP کامل نیست — آدرس سرور یا آدرس فرستنده خالی است")
 
+    # رمز SMTP به‌صورت رمزنگاری‌شده ذخیره شده و اینجا رمزگشایی می‌شود
     password = decrypt_secret(settings.password_encrypted) if settings.password_encrypted else None
 
+    # اجرای ارسال Sync در thread جداگانه تا Event Loop بلاک نشود
     try:
         await asyncio.to_thread(
             _send_email_sync,

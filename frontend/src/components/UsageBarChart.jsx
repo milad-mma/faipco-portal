@@ -3,17 +3,21 @@ import { Box, Typography } from "@mui/material";
 import { AXIS_WIDTH, PLOT_HEIGHT, edgeAwareTranslate, formatNumber, labelStepFor, niceMax } from "../utils/chartScale";
 
 /**
- * نمودار میله‌ای عمودی - برای مقادیر گسسته هر بازه (مثل «تعداد درخواست هر
- * روز»)؛ خط بین دو روز این تصور غلط را می‌داد که بین آن‌ها هم مقداری هست.
+ * نمودار میله‌ای عمودی برای مقادیر گسسته‌ی هر بازه (مثل «تعداد درخواست هر روز»)؛
+ * برای این داده‌ها میله مناسب‌تر از خط است، چون خط بین دو روز مقدار میانی را القا می‌کند.
  *
  * props:
  *   data: [{ label, value }]
- *   partialLast: آخرین میله بازه جاری و ناتمام است (مثلاً امروز) - کم‌رنگ و
+ *   color: رنگ میله‌ها
+ *   partialLast: آخرین میله بازه‌ی جاری و ناتمام است (مثلاً امروز)؛ کم‌رنگ و خط‌چین و در Tooltip
  *     با برچسب «تا این لحظه» تا افت ظاهری‌اش با کاهش واقعی اشتباه نشود
  *   unit: پسوند عدد در Tooltip
+ *   emptyMessage: پیام نمایش‌داده‌شده وقتی داده‌ای نیست
  *
- * ⚠️ میله‌ها و برچسب‌ها در دو ردیف Flex با همان تعداد ستون‌اند (dir="ltr")،
- * پس هر برچسب همیشه دقیقاً زیر میله خودش است. Tooltip با Hover و لمس.
+ * نمودار با dir="ltr" رسم می‌شود و موقعیت‌های افقی (left/marginLeft/textAlign) عمداً در style خطی
+ * آمده‌اند نه sx، چون stylis-plugin-rtl مقادیر left/right داخل sx را قرینه می‌کند.
+ * میله‌ها و برچسب‌ها در دو ردیف Flex با تعداد ستون برابرند، پس هر برچسب دقیقاً زیر میله‌ی خودش است.
+ * Tooltip با Hover و لمس (کلیک) نمایش داده می‌شود.
  */
 export default function UsageBarChart({
   data,
@@ -22,7 +26,7 @@ export default function UsageBarChart({
   unit = "",
   emptyMessage = "داده‌ای برای نمایش نیست",
 }) {
-  const [hoverIndex, setHoverIndex] = useState(null);
+  const [hoverIndex, setHoverIndex] = useState(null);  // ایندکس میله‌ی انتخاب‌شده برای Tooltip؛ null = هیچ
   const count = data?.length || 0;
 
   if (count === 0) {
@@ -35,16 +39,18 @@ export default function UsageBarChart({
     );
   }
 
-  const maxValue = niceMax(Math.max(...data.map((d) => d.value), 0));
-  const ticks = [0, maxValue / 2, maxValue];
-  const yPx = (value) => PLOT_HEIGHT - (value / maxValue) * PLOT_HEIGHT;
-  const labelStep = labelStepFor(count, 10);
-  const gap = count > 20 ? 2 : 6;
-  const isPartial = (i) => partialLast && i === count - 1;
+  const maxValue = niceMax(Math.max(...data.map((d) => d.value), 0));  // سقف گرد‌شده‌ی محور عمودی
+  const ticks = [0, maxValue / 2, maxValue];  // خطوط راهنمای افقی: صفر، نصف و سقف
+  const yPx = (value) => PLOT_HEIGHT - (value / maxValue) * PLOT_HEIGHT;  // تبدیل مقدار به فاصله از بالای ناحیه‌ی رسم (px)
+  const labelStep = labelStepFor(count, 10);  // هر چند برچسب یک برچسب نمایش داده شود (حداکثر حدود ۱۰ برچسب)
+  const gap = count > 20 ? 2 : 6;  // فاصله‌ی بین میله‌ها؛ با تعداد زیاد کمتر
+  const isPartial = (i) => partialLast && i === count - 1;  // آیا میله‌ی i همان بازه‌ی ناتمام آخر است
 
   return (
     <Box dir="ltr" onMouseLeave={() => setHoverIndex(null)}>
+      {/* ناحیه‌ی رسم؛ به اندازه‌ی عرض محور از چپ فاصله دارد */}
       <Box sx={{ position: "relative", height: PLOT_HEIGHT }} style={{ marginLeft: AXIS_WIDTH }}>
+        {/* برچسب‌های محور عمودی و خطوط راهنمای افقی (خط صفر توپر، بقیه خط‌چین) */}
         {ticks.map((t) => (
           <Box key={t}>
             <Typography
@@ -68,6 +74,7 @@ export default function UsageBarChart({
           </Box>
         ))}
 
+        {/* ردیف میله‌ها؛ هر ستون کل ارتفاع را می‌گیرد تا Hover روی کل ستون کار کند */}
         <Box
           dir="ltr"
           sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end" }}
@@ -101,6 +108,7 @@ export default function UsageBarChart({
           })}
         </Box>
 
+        {/* Tooltip میله‌ی انتخاب‌شده؛ edgeAwareTranslate از بیرون‌زدن آن از لبه‌های نمودار جلوگیری می‌کند */}
         {hoverIndex !== null && (
           <Box
             dir="rtl"
@@ -135,6 +143,7 @@ export default function UsageBarChart({
         )}
       </Box>
 
+      {/* ردیف برچسب‌های محور افقی با همان ستون‌بندی میله‌ها؛ فقط هر labelStep برچسب و آخرین برچسب نمایش داده می‌شود */}
       <Box dir="ltr" sx={{ display: "flex", mt: 0.75 }} style={{ marginLeft: AXIS_WIDTH, gap }}>
         {data.map((d, i) => (
           <Typography

@@ -1,4 +1,9 @@
-"""Endpoint های Authentication: یک فرم ورود یکپارچه برای مدیریت و پرسنل، refresh، دریافت اطلاعات کاربر جاری."""
+"""
+Endpointهای احراز هویت (Authentication).
+- login: فرم ورود یکپارچه برای کاربران مدیریت و پرسنل؛ refresh: تمدید توکن.
+- me / me/password / me/contact-info: اطلاعات، رمز عبور و اطلاعات تماس کاربر جاری.
+- forgot-password / verify-reset-code / reset-password: جریان بازنشانی رمز عبور با ایمیل یا پیامک.
+"""
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,9 +41,9 @@ router = APIRouter()
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
-    فرم ورود یکپارچه: همان دو فیلد (username/password) هم برای مدیریت
-    (یوزرنیم + رمز عبور) و هم برای پرسنل (کد پرسنلی + کد ملی) کار می‌کند —
-    منطق تشخیص در AuthService.login() انجام می‌شود.
+    ورود یکپارچه: username/password برای مدیریت (یوزرنیم + رمز) و پرسنل (کد پرسنلی + کد ملی)؛ تشخیص در AuthService.login().
+    دسترسی: عمومی. خروجی: access و refresh token.
+    خطاها: 403 (IP مجاز نیست)، 429 (قفل موقت، با هدر Retry-After)، 401 (اطلاعات نادرست).
     """
     service = AuthService(db)
     try:
@@ -60,6 +65,10 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    """
+    با refresh token معتبر، جفت توکن جدید (access + refresh) صادر می‌کند.
+    دسترسی: عمومی (نیازمند refresh token). خطا: 401 اگر توکن نامعتبر یا منقضی باشد.
+    """
     service = AuthService(db)
     try:
         access_token, new_refresh_token = await service.refresh(payload.refresh_token)
@@ -73,6 +82,7 @@ async def read_current_user(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """اطلاعات کامل کاربر جاری (UserOut) را برمی‌گرداند. دسترسی: هر کاربر واردشده."""
     return await AuthService(db).get_me(current_user)
 
 
@@ -82,6 +92,10 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    رمز عبور کاربر جاری را پس از بررسی رمز فعلی تغییر می‌دهد (پاسخ 204).
+    دسترسی: هر کاربر واردشده. خطا: 400 اگر رمز فعلی نادرست یا رمز جدید نامعتبر باشد.
+    """
     service = AuthService(db)
     try:
         await service.change_password(current_user, payload.current_password, payload.new_password)
@@ -96,9 +110,9 @@ async def update_my_contact_info_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    اگر برای سایت این پرسنل، ستون ایمیل/موبایل در نگاشت ستون‌ها تنظیم شده
-    باشد، مقدار جدید در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌شود
-    (Write-back)؛ وگرنه فقط در دیتابیس داخلی پرتال ذخیره می‌شود.
+    ایمیل/موبایل کاربر جاری را به‌روزرسانی می‌کند؛ اگر ستون متناظر در نگاشت ستون‌های سایت پرسنل
+    تنظیم شده باشد، در دیتابیس اصلی سایت هم نوشته می‌شود (write-back)، وگرنه فقط در دیتابیس پرتال.
+    دسترسی: هر کاربر واردشده. خطا: 400 برای مقدار نامعتبر یا خطای ذخیره.
     """
     try:
         result = await update_my_contact_info(db, current_user, email=payload.email, mobile=payload.mobile)
@@ -112,26 +126,19 @@ async def forgot_password(
     payload: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """
-    ⚠️ امنیتی: طبق درخواست صریح، همیشه یک نسخه ناقص از مخاطب
-    (masked_contact) و زمان انقضا (expires_in_seconds) برگردانده
-    می‌شود - چه شناسه معتبر باشد چه نه (برای شناسه نامعتبر، یک ماسک
-    قلابی ولی باورپذیر تولید می‌شود) - نگاه کنید به توضیح کامل در
-    docstring بالای app/services/password_reset_service.py. فقط اگر
-    خودِ سرویس ایمیل/پیامک قطع/تنظیم‌نشده باشد، خطای واقعی نشان داده
-    می‌شود.
+    درخواست بازنشانی رمز: لینک (ایمیل) یا کد ۶ رقمی (پیامک) می‌فرستد. دسترسی: عمومی.
+    همیشه masked_contact و expires_in_seconds برمی‌گرداند، حتی برای شناسه‌ی نامعتبر (ماسک ساختگی)،
+    تا وجود حساب قابل تشخیص نباشد. خطا: 503 فقط اگر سرویس ایمیل/پیامک تنظیم‌نشده یا قطع باشد.
     """
     settings = get_settings()
-    reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
+    reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"  # آدرس صفحه‌ی بازنشانی در فرانت‌اند
     try:
         result = await request_reset(db, payload.identifier, payload.channel, reset_link_base)
     except (EmailNotConfiguredError, EmailError, SmsNotConfiguredError, SmsError) as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
 
-    # ⚠️ عمداً masked_contact داخل متن message جای‌گذاری نمی‌شود - چون
-    # ترکیب اعداد لاتین (شماره/ایمیل ماسک‌شده) وسط یک جمله فارسی راست‌به‌چپ
-    # می‌تواند باعث جابه‌جایی نمایشی این بخش (طبق الگوریتم دوجهته یونیکد)
-    # شود. به‌جای آن، متن عمومی و masked_contact جدا برگردانده می‌شوند تا
-    # Frontend بتواند masked_contact را با جهت صریح LTR نمایش دهد.
+    # masked_contact جدا از متن پیام برگردانده می‌شود تا فرانت‌اند آن را با جهت LTR نمایش دهد
+    # (درج اعداد/ایمیل لاتین وسط جمله‌ی فارسی RTL باعث به‌هم‌ریختگی نمایش دوجهته می‌شود)
     if payload.channel == "sms":
         message = "کد تأیید بازنشانی رمز عبور به شماره زیر پیامک شد."
     else:
@@ -149,13 +156,13 @@ async def verify_reset_code_endpoint(
     payload: VerifyResetCodeRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """
-    فقط اعتبار کد/توکن را بررسی می‌کند - بدون مصرف‌کردن آن. کاربرد: در
-    جریان پیامکی، پیش از نمایش فرم رمز عبور جدید، کد وارد‌شده تأیید
-    می‌شود. همان محافظت IP-محور برابر Brute-force توکن reset-password
-    اینجا هم اعمال می‌شود.
+    اعتبار کد/توکن بازنشانی را بدون مصرف آن بررسی می‌کند (در جریان پیامکی، پیش از نمایش فرم رمز جدید).
+    دسترسی: عمومی، با قفل موقت بر اساس IP در برابر Brute-force.
+    خطاها: 429 (قفل موقت)، 400 (کد نامعتبر یا منقضی).
     """
     client_ip = get_client_ip(request)
-    lockout_key = f"reset-password:{client_ip}"
+    lockout_key = f"reset-password:{client_ip}"  # کلید قفل مشترک با reset-password
+    # اگر این IP در حال حاضر قفل باشد، درخواست رد می‌شود
     locked_remaining = await check_login_lockout(db, lockout_key)
     if locked_remaining is not None:
         raise HTTPException(
@@ -163,13 +170,14 @@ async def verify_reset_code_endpoint(
             detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
         )
 
+    # بررسی کد؛ در صورت شکست، یک تلاش ناموفق برای این IP ثبت می‌شود
     try:
         await verify_reset_token(db, payload.token)
     except PasswordResetError as e:
         await record_failed_login(db, lockout_key)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    await reset_login_attempts(db, lockout_key)
+    await reset_login_attempts(db, lockout_key)  # موفقیت: شمارنده‌ی تلاش‌ها صفر می‌شود
     return {"message": "کد تأیید معتبر است."}
 
 
@@ -178,14 +186,13 @@ async def reset_password_endpoint(
     payload: ResetPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """
-    ⚠️ محافظت در برابر Brute-force: مهم‌ترین کاربرد این محافظت، کد ۶ رقمی
-    پیامکی است (فقط یک‌میلیون حالت ممکن، برخلاف توکن ایمیل که یک رشته
-    تصادفی طولانی و عملاً غیرقابل‌حدس است) - از همان زیرساخت قفل موقت
-    ورود (app/core/rate_limit.py، امن در برابر چند Worker) استفاده
-    می‌شود، این‌بار کلید‌شده بر اساس IP کلاینت به‌جای نام‌کاربری.
+    با کد/توکن معتبر، رمز عبور جدید را ثبت می‌کند و توکن را مصرف می‌کند. دسترسی: عمومی.
+    قفل موقت بر اساس IP (زیرساخت app/core/rate_limit.py، امن برای چند worker) از حدس کد ۶ رقمی پیامکی جلوگیری می‌کند.
+    خطاها: 429 (قفل موقت)، 400 (توکن نامعتبر/منقضی یا رمز نامعتبر).
     """
     client_ip = get_client_ip(request)
     lockout_key = f"reset-password:{client_ip}"
+    # اگر این IP در حال حاضر قفل باشد، درخواست رد می‌شود
     locked_remaining = await check_login_lockout(db, lockout_key)
     if locked_remaining is not None:
         raise HTTPException(
@@ -193,6 +200,7 @@ async def reset_password_endpoint(
             detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
         )
 
+    # تغییر رمز؛ در صورت شکست، یک تلاش ناموفق برای این IP ثبت می‌شود
     try:
         await reset_password(db, payload.token, payload.new_password)
     except PasswordResetError as e:

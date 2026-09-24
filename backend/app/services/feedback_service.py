@@ -30,29 +30,35 @@ from app.models.user import Permission, Role, RolePermission, User, UserRole
 from app.services.push_service import PushService
 from app.schemas.feedback import FeedbackMessageOut
 
-FEEDBACK_RATE_LIMIT_SECONDS = 60
+FEEDBACK_RATE_LIMIT_SECONDS = 60  # حداقل فاصله بین دو پیام از یک فرستنده (ثانیه)
 
 
 logger = logging.getLogger(__name__)
 
 
 class FeedbackAccessDenied(Exception):
+    """کاربر مجوز مشاهده انتقادات و پیشنهادات را ندارد."""
     pass
 
 
 class FeedbackRateLimitExceeded(Exception):
+    """فرستنده در بازه محدودیت نرخ، پیام دیگری فرستاده است."""
     pass
 
 
 class FeedbackService:
+    """ثبت، فهرست (با اعمال محرمانگی)، حذف نرم بازخوردها و مدیریت عبارات نامناسب."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def _get_prohibited_phrases(self) -> list[str]:
+        """متن همه عبارات نامناسب ثبت‌شده را برمی‌گرداند."""
         result = await self.db.execute(select(ProhibitedPhrase.phrase))
         return [p for (p,) in result.all()]
 
     async def _check_rate_limit(self, sender_id: int) -> None:
+        """اگر فرستنده در FEEDBACK_RATE_LIMIT_SECONDS اخیر پیامی داده باشد، FeedbackRateLimitExceeded می‌دهد."""
         window_start = datetime.now(timezone.utc) - timedelta(seconds=FEEDBACK_RATE_LIMIT_SECONDS)
         result = await self.db.execute(
             select(FeedbackMessage.id)
@@ -67,6 +73,10 @@ class FeedbackService:
     async def submit_feedback(
         self, sender: User, category: FeedbackCategory, title: str, message: str, is_anonymous: bool
     ) -> FeedbackMessage:
+        """
+        پیام جدید را پس از بررسی محدودیت نرخ و تشخیص الفاظ نامناسب ذخیره می‌کند،
+        به بازبین‌ها اعلان می‌دهد و رکورد ذخیره‌شده را برمی‌گرداند.
+        """
         await self._check_rate_limit(sender.id)
 
         prohibited_phrases = await self._get_prohibited_phrases()
@@ -86,27 +96,21 @@ class FeedbackService:
         await self.db.commit()
         await self.db.refresh(feedback)
 
-        # ⚠️ طبق درخواست صریح کاربر: اطلاع‌رسانی به دارندگان مجوز مشاهده.
-        # هرگز نباید خودِ ثبت پیام را متوقف کند - اگر Push پیکربندی نشده
-        # یا خطا داد، پیام همچنان با موفقیت ثبت شده است.
+        # اطلاع‌رسانی به دارندگان مجوز مشاهده؛ خطای Push ثبت پیام را متوقف
+        # نمی‌کند، چون پیام پیش از این مرحله commit شده است.
         await self._notify_reviewers_of_new_feedback(sender)
 
         return feedback
 
     async def _notify_reviewers_of_new_feedback(self, sender: User) -> None:
         """
-        ⚠️ اعلان فقط به کسانی می‌رود که مجوز مشاهده انتقادات/پیشنهادات
-        دارند (feedback.view یا feedback.view_all) - یعنی همان کسانی که
-        اصلاً حق دیدن این پیام را دارند.
-
-        ⚠️ محرمانگی: متن اعلان عمداً هیچ اشاره‌ای به فرستنده، عنوان یا
-        محتوای پیام ندارد - چون ممکن است پیام ناشناس باشد و اعلان روی
-        صفحه قفل گوشی دیده شود. فقط می‌گوید «پیام جدیدی ثبت شده».
-
-        ⚠️ خودِ فرستنده هرگز اعلان نمی‌گیرد، حتی اگر خودش مجوز مشاهده
-        داشته باشد - وگرنه برای پیام خودش به خودش اعلان می‌رفت.
+        به دارندگان مجوز feedback.view یا feedback.view_all (به‌جز خودِ فرستنده) اعلان Push می‌فرستد؛
+        فقط کسانی که این مجوز را سراسری یا برای سایت فرستنده دارند (feedback.view_all همیشه).
+        متن اعلان هیچ اشاره‌ای به فرستنده، عنوان یا محتوا ندارد (حفظ محرمانگی روی صفحه قفل گوشی).
+        خطاها فقط لاگ می‌شوند.
         """
         try:
+            # کاربرانی که از طریق یکی از نقش‌هایشان مجوز مشاهده بازخورد دارند
             stmt = (
                 select(User.id)
                 .join(UserRole, UserRole.user_id == User.id)
@@ -116,8 +120,17 @@ class FeedbackService:
                 .where(Permission.code.in_(["feedback.view", "feedback.view_all"]))
                 .distinct()
             )
+            # سایت فرستنده: بازبین‌های سایتیِ سایت‌های دیگر اعلان نمی‌گیرند
+            sender_site_id = None
+            if sender.employee_id is not None:
+                sender_employee = await self.db.get(Employee, sender.employee_id)
+                sender_site_id = sender_employee.site_id if sender_employee else None
+            site_condition = UserRole.site_id.is_(None) | (Permission.code == "feedback.view_all")
+            if sender_site_id is not None:
+                site_condition = site_condition | (UserRole.site_id == sender_site_id)
+            stmt = stmt.where(site_condition)
             result = await self.db.execute(stmt)
-            user_ids = {row[0] for row in result.all()} - {sender.id}
+            user_ids = {row[0] for row in result.all()} - {sender.id}  # حذف خودِ فرستنده
             if not user_ids:
                 return
             await PushService(self.db).notify_users(
@@ -138,9 +151,11 @@ class FeedbackService:
         هر دو مجوز feedback.view و feedback.view_all چک می‌شوند و ترکیب می‌شوند -
         اگر هرکدام به‌صورت سراسری اختصاص یافته باشد، دسترسی نامحدود است.
         """
+        # superuser دسترسی سراسری دارد
         if current_user.is_superuser:
             return None, True
 
+        # None از get_sites_with_permission یعنی مجوز به‌صورت سراسری اختصاص یافته
         view_all_sites = await get_sites_with_permission(self.db, current_user, "feedback.view_all")
         if view_all_sites is None:
             return None, True
@@ -166,14 +181,15 @@ class FeedbackService:
         page_size: int = 25,
     ) -> dict:
         """
-        ⚠️ طبق درخواست صریح کاربر: صفحه‌بندی اضافه شد - قبلاً همه پیام‌ها
-        یکجا برگردانده می‌شدند و با رشد تعداد، صفحه کند می‌شد. خروجی حالا
-        {items, total, page, page_size} است (نه یک لیست ساده).
+        فهرست صفحه‌بندی‌شده پیام‌ها با فیلترهای اختیاری، محدود به سایت‌های قابل‌دسترسی کاربر.
+        فرستنده طبق قواعد محرمانگی پنهان/آشکار می‌شود. خروجی: {items, total, page, page_size}.
+        خطا: FeedbackAccessDenied اگر کاربر هیچ دسترسی نداشته باشد.
         """
         accessible_site_ids, has_access = await self._get_accessible_scope(current_user)
         if not has_access:
             raise FeedbackAccessDenied("اجازه مشاهده انتقادات و پیشنهادات را ندارید")
 
+        # کوئری اصلی: پیام + فرستنده + پرسنل و سایت فرستنده، جدیدترین اول
         query = (
             select(FeedbackMessage, User, Employee, Site.id, Site.name)
             .join(User, User.id == FeedbackMessage.sender_id)
@@ -182,8 +198,7 @@ class FeedbackService:
             .order_by(desc(FeedbackMessage.created_at))
         )
 
-        # ⚠️ پیام‌های حذف‌شده (حذف نرم) هرگز در فهرست نمی‌آیند - داده باقی
-        # می‌ماند ولی از دید کاربر خارج است.
+        # شرط‌های فیلتر؛ پیام‌های حذف‌شده (حذف نرم) هرگز در فهرست نمی‌آیند
         conditions = [FeedbackMessage.is_deleted.is_(False)]
         if accessible_site_ids is not None:
             conditions.append(Employee.site_id.in_(accessible_site_ids))
@@ -201,6 +216,7 @@ class FeedbackService:
             conditions.append(FeedbackMessage.created_at <= date_to)
         query = query.where(and_(*conditions))
 
+        # شمارش کل نتایج با همان شرط‌ها (برای صفحه‌بندی)
         count_query = (
             select(func.count())
             .select_from(FeedbackMessage)
@@ -210,17 +226,18 @@ class FeedbackService:
         )
         total = (await self.db.execute(count_query)).scalar_one()
 
+        # محدودسازی شماره و اندازه صفحه به بازه معتبر
         safe_page = max(1, page)
         safe_page_size = max(1, min(page_size, 200))
         result = await self.db.execute(query.offset((safe_page - 1) * safe_page_size).limit(safe_page_size))
         rows = result.all()
 
-        # فقط Admin واقعی همیشه فرستنده را می‌بیند - دارنده مجوز
-        # (حتی اگر مجوز سراسری feedback.view_all داشته باشد)، طبق درخواست
-        # صریح، باید به همان قانون محرمانگی/ناشناس‌بودن پایبند بماند.
+        # فقط Admin واقعی همیشه فرستنده را می‌بیند؛ دارنده مجوز (حتی مجوز
+        # سراسری feedback.view_all) تابع قانون محرمانگی/ناشناس‌بودن است.
         always_reveal_sender = current_user.is_superuser
 
         out = []
+        # ساخت خروجی؛ فرستنده فقط وقتی آشکار است که: بیننده superuser باشد، یا ناشناس درخواست نشده، یا پیام حاوی الفاظ نامناسب باشد
         for feedback, sender, employee, site_id_val, site_name in rows:
             reveal_sender = always_reveal_sender or not feedback.is_anonymous_requested or feedback.contains_profanity
             sender_name = f"{employee.first_name} {employee.last_name}" if employee else (sender.username or "—")
@@ -243,11 +260,8 @@ class FeedbackService:
 
     async def delete_feedback(self, feedback_id: int, deleted_by_user_id: int | None = None) -> bool:
         """
-        ⚠️ طبق درخواست صریح کاربر: حذف «نرم» - رکورد واقعاً از دیتابیس
-        پاک نمی‌شود، فقط علامت‌گذاری می‌شود و از فهرست‌ها کنار می‌رود.
-        قبلاً حذف دائمی بود و یک کلیک اشتباه یعنی از دست رفتن همیشگی
-        بازخورد پرسنل. حالا داده باقی می‌ماند و قابل‌بازیابی است (به‌همراه
-        اینکه چه کسی و چه زمانی حذفش کرده).
+        حذف نرم یک پیام: رکورد باقی می‌ماند و فقط is_deleted، زمان و کاربر حذف‌کننده ثبت می‌شود.
+        خروجی: True در صورت موفقیت، False اگر پیام یافت نشود یا از قبل حذف شده باشد.
         """
         feedback = await self.db.get(FeedbackMessage, feedback_id)
         if feedback is None or feedback.is_deleted:
@@ -261,10 +275,12 @@ class FeedbackService:
     # ---------- مدیریت فهرست کلمات/عبارات نامناسب (فقط Admin واقعی) ----------
 
     async def list_prohibited_phrases(self) -> list[ProhibitedPhrase]:
+        """همه عبارات نامناسب را به ترتیب الفبایی برمی‌گرداند."""
         result = await self.db.execute(select(ProhibitedPhrase).order_by(ProhibitedPhrase.phrase))
         return list(result.scalars().all())
 
     async def add_prohibited_phrase(self, phrase: str) -> ProhibitedPhrase:
+        """عبارت جدید را ذخیره می‌کند؛ در خطای commit (مثلاً تکراری) rollback کرده و خطا را بالا می‌دهد."""
         entry = ProhibitedPhrase(phrase=phrase.strip())
         self.db.add(entry)
         try:
@@ -276,6 +292,7 @@ class FeedbackService:
         return entry
 
     async def delete_prohibited_phrase(self, phrase_id: int) -> bool:
+        """عبارت را حذف می‌کند؛ اگر یافت نشود False برمی‌گرداند."""
         entry = await self.db.get(ProhibitedPhrase, phrase_id)
         if entry is None:
             return False

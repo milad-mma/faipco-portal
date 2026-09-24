@@ -1,22 +1,23 @@
 """
-برندینگ به تفکیک «جای نمایش» (Surface) - طبق درخواست کاربر: لوگو، اندازه،
-مقیاس، قاب، متن‌ها، اندازه فونت و رنگ‌ها برای هر جا مستقل.
+برندینگ به تفکیک «جای نمایش» (Surface): لوگو، اندازه، مقیاس، قاب، متن‌ها،
+اندازه فونت و رنگ‌ها برای هر جا به‌صورت مستقل؛ به‌علاوه تنظیمات تولید آیکون PWA.
 
 جای‌های نمایش: splash (اسپلش‌اسکرین)، login (صفحه ورود)، auth (فراموشی/بازیابی
 رمز)، sidebar (نوار بالای پنل ادمین)، profile (پنل کاربری).
 
 ذخیره‌سازی: یک ردیف JSON در system_settings (کلید branding_surfaces) که فقط
 مقادیرِ تغییرداده‌شده را نگه می‌دارد؛ خواندن همیشه روی DEFAULTS ادغام می‌شود،
-پس نصب فعلی بعد از آپدیت هیچ تغییر ظاهری نمی‌بیند تا ادمین چیزی را عوض کند.
+پس تا وقتی ادمین چیزی را عوض نکرده، ظاهر همان پیش‌فرض‌هاست.
 لوگوی اختصاصی هر Surface در کلیدهای surface_logo_<name>_data/_content_type.
 
-پیش‌فرض‌ها دقیقاً همان مقادیری‌اند که قبلاً ثابت در کد فرانت بودند.
+پیش‌فرض‌ها (DEFAULTS) با ظاهر پیش‌فرض فرانت‌اند یکسان‌اند.
 """
 from __future__ import annotations
 
 import json
 from copy import deepcopy
 
+# نام همه جای‌های نمایش پشتیبانی‌شده
 SURFACES = ("splash", "login", "auth", "sidebar", "profile")
 
 # ساختار هر Surface (همه اعداد پیکسل، مقیاس/فونت عدد صحیح):
@@ -49,6 +50,7 @@ _LOGIN_LIKE = {
     "show_subtitle": True,
 }
 
+# مقادیر پیش‌فرض هر جای نمایش؛ login و auth ظاهر یکسان دارند
 DEFAULTS: dict[str, dict] = {
     "splash": {
         "logo_source": "default",
@@ -114,6 +116,7 @@ DEFAULTS: dict[str, dict] = {
     },
 }
 
+# قواعد اعتبارسنجی کلیدها: بازه اعداد، مقادیر مجاز enum، حداکثر طول رشته‌ها و کلیدهای بولی
 _INT_RANGES = {
     "logo_size_mobile": (8, 400),
     "logo_size_desktop": (8, 400),
@@ -140,11 +143,13 @@ PWA_ICON_DEFAULTS = {
     "background": "#FFFFFF",  # پس‌زمینه maskable/apple (iOS شفافیت را سیاه می‌کند)
     "any_background": "",  # خالی = شفاف
 }
-_PWA_INT_RANGES = {"icon_scale": (30, 100), "maskable_scale": (30, 90)}
+_PWA_INT_RANGES = {"icon_scale": (30, 100), "maskable_scale": (30, 90)}  # بازه مجاز درصدهای آیکون PWA
 
 
 def merged_surfaces(stored_json: str | None) -> dict[str, dict]:
+    """ورودی: JSON ذخیره‌شده (یا None). خروجی: تنظیمات کامل همه Surface ها = DEFAULTS با اعمال مقادیر ذخیره‌شده."""
     result = deepcopy(DEFAULTS)
+    # JSON خراب یا غیر dict نادیده گرفته می‌شود و پیش‌فرض‌ها برمی‌گردند
     if not stored_json:
         return result
     try:
@@ -153,6 +158,7 @@ def merged_surfaces(stored_json: str | None) -> dict[str, dict]:
         return result
     if not isinstance(stored, dict):
         return result
+    # فقط Surface ها و کلیدهای شناخته‌شده روی پیش‌فرض ادغام می‌شوند
     for surface, values in stored.items():
         if surface in result and isinstance(values, dict):
             result[surface].update({k: v for k, v in values.items() if k in result[surface]})
@@ -160,10 +166,15 @@ def merged_surfaces(stored_json: str | None) -> dict[str, dict]:
 
 
 def sanitize_surface_patch(surface: str, patch: dict) -> dict:
-    """فقط کلیدهای شناخته‌شده، در بازه مجاز؛ مقدار نامعتبر نادیده گرفته می‌شود."""
+    """
+    ورودی: نام Surface و dict تغییرات. خروجی: فقط کلیدهای شناخته‌شده با مقدار معتبر
+    (اعداد به بازه مجاز محدود می‌شوند؛ مقدار نامعتبر نادیده گرفته می‌شود).
+    خطا: ValueError برای Surface نامعتبر.
+    """
     if surface not in DEFAULTS:
         raise ValueError("جای نمایش نامعتبر است")
     clean: dict = {}
+    # بررسی هر کلید بر اساس نوعش
     for key, value in patch.items():
         if key not in DEFAULTS[surface]:
             continue
@@ -173,7 +184,7 @@ def sanitize_surface_patch(surface: str, patch: dict) -> dict:
             except (TypeError, ValueError):
                 continue
             lo, hi = _INT_RANGES[key]
-            clean[key] = max(lo, min(hi, iv))
+            clean[key] = max(lo, min(hi, iv))  # محدود کردن به بازه
         elif key in _ENUMS:
             if value in _ENUMS[key]:
                 clean[key] = value
@@ -188,7 +199,7 @@ def sanitize_surface_patch(surface: str, patch: dict) -> dict:
 
 
 def _safe_css_value(value: str) -> bool:
-    """رنگ/گرادیان CSS - بدون url()، expression و کاراکترهای خطرناک (XSS از طریق style)."""
+    """True اگر رشته رنگ/گرادیان CSS بدون url()، expression و کاراکترهای خطرناک باشد (جلوگیری از XSS از طریق style)."""
     lowered = value.lower()
     if any(bad in lowered for bad in ("url(", "expression", "javascript", "<", ">", ";", "{", "}")):
         return False
@@ -196,6 +207,7 @@ def _safe_css_value(value: str) -> bool:
 
 
 def merged_pwa_icon(stored_json: str | None) -> dict:
+    """ورودی: JSON ذخیره‌شده (یا None). خروجی: تنظیمات کامل آیکون PWA = پیش‌فرض‌ها با اعمال مقادیر معتبر ذخیره‌شده."""
     result = dict(PWA_ICON_DEFAULTS)
     if not stored_json:
         return result
@@ -209,6 +221,7 @@ def merged_pwa_icon(stored_json: str | None) -> dict:
 
 
 def sanitize_pwa_patch(patch: dict) -> dict:
+    """ورودی: dict تغییرات آیکون PWA. خروجی: فقط کلیدهای معتبر (درصدها محدود به بازه، رنگ‌ها امن)."""
     clean: dict = {}
     for key, value in patch.items():
         if key in _PWA_INT_RANGES:

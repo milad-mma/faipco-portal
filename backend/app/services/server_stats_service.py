@@ -19,11 +19,12 @@ logger = logging.getLogger("faipco.server_stats")
 # دیسکی که پرتال واقعاً رویش نصب است — نه لزوماً هر Mount Point دیگری که
 # ممکن است روی همین سرور باشد (مثلاً یک دیسک جدا برای Backup)
 DISK_PATH = "/"
-RETENTION_DAYS = 30
+RETENTION_DAYS = 30  # نمونه‌های قدیمی‌تر از این تعداد روز حذف می‌شوند
 
 
 def _sample_sync() -> dict:
     """
+    یک نمونه از مصرف CPU، RAM و دیسک می‌گیرد و به صورت dict (هم‌نام ستون‌های ServerStat) برمی‌گرداند.
     این تابع Blocking است (psutil.cpu_percent با interval واقعاً ۱ ثانیه
     صبر می‌کند تا مصرف CPU را دقیق اندازه بگیرد) — عمداً از asyncio.to_thread
     صدا زده می‌شود، نه مستقیم await، تا Event Loop اصلی برنامه در این ۱
@@ -45,7 +46,12 @@ def _sample_sync() -> dict:
 
 
 async def record_server_stats(db: AsyncSession) -> None:
+    """
+    یک نمونه مصرف سرور ثبت و نمونه‌های قدیمی‌تر از RETENTION_DAYS را حذف می‌کند.
+    هر خطا فقط لاگ می‌شود تا زمان‌بند متوقف نشود.
+    """
     try:
+        # نمونه‌برداری در Thread جدا و ذخیره یک ردیف جدید
         sample = await asyncio.to_thread(_sample_sync)
         stat = ServerStat(recorded_at=datetime.now(timezone.utc), **sample)
         db.add(stat)
@@ -62,6 +68,7 @@ async def record_server_stats(db: AsyncSession) -> None:
 
 
 async def get_server_stats(db: AsyncSession, days: int = 7) -> list[ServerStat]:
+    """ورودی: Session و تعداد روز. خروجی: نمونه‌های مصرف سرور در این بازه به ترتیب زمان."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     result = await db.execute(
         select(ServerStat).where(ServerStat.recorded_at >= cutoff).order_by(ServerStat.recorded_at)

@@ -3,26 +3,27 @@ import { Autocomplete, Box, Chip, Stack, TextField, Typography } from "@mui/mate
 import { fetchManagerCandidates } from "../api/evaluationStructure";
 
 /**
- * انتخابگر «افزودن به فهرست ارزیابی یک مدیر» - طبق درخواست صریح:
- *   ۱. علاوه بر جست‌وجوی کل پرسنل، یک بخش «سرپرستان بدون مدیر» هم دارد -
- *      برای افزودن سریع سرپرستانی که هنوز زیر هیچ مدیری نیستند.
- *   ۲. اگر فردی از قبل تحت ارزیابی یک مدیر دیگر است، در جست‌وجو نشان داده
- *      می‌شود ولی غیرفعال است، با برچسب «تحت ارزیابی [نام آن مدیر]» -
- *      نه اینکه کاملاً پنهان شود؛ یعنی کاربر می‌فهمد چرا نمی‌تواند
- *      انتخابش کند، به‌جای اینکه فکر کند اصلاً وجود ندارد.
+ * انتخابگر افزودن فرد به فهرست ارزیابی یک مدیر.
+ * ورودی: siteId (سایت)، managerEmployeeId (خودِ مدیر، از فهرست حذف می‌شود)، excludeIds (افراد از قبل افزوده‌شده)
+ * و onSelect (با فرد انتخاب‌شده صدا زده می‌شود).
+ * خروجی: چیپ‌های «سرپرستان بدون مدیر» برای افزودن سریع + Autocomplete جست‌وجو در کل پرسنل سایت.
+ * فردی که از قبل تحت ارزیابی مدیر دیگری است، در جست‌وجو غیرفعال و با برچسب «تحت ارزیابی [نام مدیر]» نمایش داده می‌شود.
  */
 export default function ManagerTargetPicker({ siteId, managerEmployeeId, excludeIds = [], onSelect }) {
-  const [candidates, setCandidates] = useState(null);
+  const [candidates, setCandidates] = useState(null);  // فهرست نامزدها از سرور؛ null = هنوز بارگذاری نشده
 
+  // با تغییر سایت، فهرست نامزدها دوباره دریافت می‌شود
   useEffect(() => {
     fetchManagerCandidates(siteId).then(setCandidates);
   }, [siteId]);
 
+  // نامزدها بدون خودِ مدیر و بدون افراد از قبل افزوده‌شده
   const availableCandidates = useMemo(() => {
     if (!candidates) return [];
     return candidates.filter((c) => c.id !== managerEmployeeId && !excludeIds.includes(c.id));
   }, [candidates, managerEmployeeId, excludeIds]);
 
+  // سرپرستانی که هنوز زیر هیچ مدیری نیستند و خودشان مدیر نیستند
   const unassignedSupervisors = useMemo(
     () => availableCandidates.filter((c) => c.supervisor_department_name && !c.evaluated_by_name && !c.is_manager),
     [availableCandidates]
@@ -32,6 +33,7 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
 
   return (
     <Box>
+      {/* بخش افزودن سریع سرپرستان بدون مدیر */}
       {unassignedSupervisors.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
@@ -53,6 +55,7 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
         </Box>
       )}
 
+      {/* جست‌وجو در کل پرسنل؛ افراد تحت ارزیابی مدیر دیگر غیرفعال‌اند. value همیشه null است تا بعد از انتخاب خالی شود */}
       <Autocomplete
         options={availableCandidates}
         getOptionLabel={(c) => `${c.first_name} ${c.last_name} (${c.personnel_code})`}

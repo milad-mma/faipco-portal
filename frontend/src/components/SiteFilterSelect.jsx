@@ -3,22 +3,17 @@ import { MenuItem, TextField } from "@mui/material";
 import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
 
 /**
- * دراپ‌داون فیلتر سایت — برای نمای «سایت-محور» گزارش‌های پنل Admin. مقدار
- * "" یعنی «همه سایت‌ها»؛ در غیر این صورت شناسه عددی همان سایت.
- *
- * ⚠️ رفع یک نقص واقعی UX (نه خطای امنیتی — خودِ Endpoint های داده همیشه
- * درست فیلتر می‌کردند): قبلاً فهرست سایت‌ها را از GET /sites (همه
- * سایت‌های سیستم، بدون فیلتر) می‌گرفت — یعنی کاربری با دسترسی فقط به یک
- * سایت، همه سایت‌های دیگر را هم در دراپ‌داون می‌دید (که انتخابشان فقط
- * یک نتیجه خالی می‌داد، بدون هیچ توضیحی) — به‌اشتباه به‌نظر می‌رسید
- * فیلتر سایتی اصلاً کار نمی‌کند. حالا با `permission` (Permission Code
- * همان گزارش)، فقط سایت‌هایی که کاربر جاری واقعاً برایشان دسترسی دارد
- * نشان داده می‌شود — مگر Admin واقعی/انتصاب سراسری باشد، که همچنان همه
- * سایت‌ها را می‌بیند.
+ * دراپ‌داون فیلتر سایت برای گزارش‌های سایت‌محور پنل ادمین.
+ * ورودی: value (شناسه‌ی سایت یا null/"" = همه‌ی سایت‌ها)، onChange (شناسه‌ی عددی یا null)،
+ * permission (کد مجوز همان گزارش)، size و sx.
+ * با داشتن permission فقط سایت‌هایی که کاربر جاری برایشان دسترسی دارد نمایش داده می‌شوند؛
+ * کاربر با دسترسی سراسری (unrestricted) همه‌ی سایت‌ها را می‌بیند.
+ * فیلتر واقعی داده همیشه در Endpointهای Backend انجام می‌شود.
  */
 export default function SiteFilterSelect({ value, onChange, permission, size = "small", sx }) {
-  const [sites, setSites] = useState([]);
+  const [sites, setSites] = useState([]);  // فهرست سایت‌های قابل انتخاب
 
+  // فهرست سایت‌ها بر اساس مجوز داده‌شده بارگذاری می‌شود
   useEffect(() => {
     if (permission) {
       fetchMyAccessibleSites(permission).then(({ unrestricted, sites: accessibleSites }) => {
@@ -29,7 +24,7 @@ export default function SiteFilterSelect({ value, onChange, permission, size = "
         }
       });
     } else {
-      // اگر permission داده نشود (برای سازگاری با فراخوانی‌های قدیمی‌تر)، همان رفتار قبلی
+      // بدون permission، فهرست همه‌ی سایت‌ها نمایش داده می‌شود
       fetchSites().then(setSites);
     }
   }, [permission]);

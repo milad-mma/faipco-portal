@@ -1,7 +1,9 @@
 """
-لایه دسترسی به داده برای User.
-محاسبه Permission های مؤثر کاربر (با در نظر گرفتن نقش‌های سراسری و Site-scoped) اینجا انجام می‌شود.
-همچنین منطق «پیدا کردن پرسنل برای ورود» و «ساخت خودکار حساب کاربری متصل به پرسنل» اینجاست.
+لایه‌ی دسترسی به داده برای User.
+- خواندن کاربر با username یا id.
+- محاسبه‌ی Permissionهای مؤثر کاربر (نقش‌های سراسری و محدود به سایت).
+- پیدا کردن پرسنل برای ورود با کد پرسنلی + کد ملی و ساخت خودکار حساب کاربری متصل به پرسنل.
+- فعال/غیرفعال‌سازی دستی پرسنل و تعیین/بازنشانی رمز عبور پرسنل توسط Admin.
 """
 import secrets
 
@@ -9,38 +11,35 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, normalize_login_credential, validate_password_strength
+from app.core.site_access import all_site_ids, covers_all_sites
 from app.models.employee import Employee
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
 
 class UserRepository:
+    """عملیات پایگاه‌داده‌ای مربوط به کاربران، مجوزها و حساب‌های پرسنل؛ ورودی سازنده: نشست دیتابیس."""
     def __init__(self, db: AsyncSession):
+        """نشست async دیتابیس را نگه می‌دارد."""
         self.db = db
 
     async def get_by_username(self, username: str) -> User | None:
+        """کاربر با username داده‌شده را برمی‌گرداند؛ اگر نبود None."""
         result = await self.db.execute(select(User).where(User.username == username))
         return result.scalar_one_or_none()
 
     async def get_by_id(self, user_id: int) -> User | None:
+        """کاربر با id داده‌شده را برمی‌گرداند؛ اگر نبود None."""
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_permission_codes(self, user_id: int, site_id: int | None = None) -> set[str]:
         """
-        فهرست کدهای Permission مؤثر برای کاربر را برمی‌گرداند.
-
-        نقش‌های سراسری (UserRole.site_id IS NULL) همیشه لحاظ می‌شوند.
-        اگر site_id پاس داده شود، نقش‌های مخصوص همان Site هم اضافه می‌شوند
-        (مثلاً کاربری که فقط نقش "HR سایت ۲" را دارد، فقط وقتی site_id=2 چک شود این مجوز را دارد).
-
-        ⚠️ اگر site_id داده نشود، فقط نقش‌های سراسری دیده می‌شوند — نقش‌های
-        سایت‌محور این کاربر (که بعد از اجباری‌شدن site_id در انتصاب نقش،
-        امروز اکثریت قریب‌به‌اتفاق انتصاب‌ها همین‌طورند) اصلاً لحاظ نمی‌شوند.
-        برای «آیا این کاربر اصلاً این قابلیت را دارد؟» (مثلاً برای فلگ‌های
-        get_me که تعیین می‌کنند کدام منو نمایش داده شود، نه محدودسازی داده
-        به یک سایت خاص) به‌جای این تابع از get_all_permission_codes پایین
-        استفاده کنید.
+        مجموعه‌ی کدهای Permission مؤثر کاربر: نقش‌های سراسری (site_id IS NULL) همیشه، و با site_id، نقش‌های همان سایت هم.
+        بدون site_id (پرسش «در همه‌جا دارد؟»): مجوزهای نقش‌های سراسری به‌علاوه‌ی مجوزهایی که کاربر برای
+        همه‌ی سایت‌های موجود دارد. برای پرسش «آیا کاربر اصلاً این قابلیت را دارد؟» (مثل فلگ‌های منوی get_me)
+        از get_all_permission_codes استفاده کنید.
         """
+        # کوئری: کدهای مجوز از مسیر UserRole -> Role -> RolePermission -> Permission
         stmt = (
             select(Permission.code)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -48,24 +47,33 @@ class UserRepository:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == user_id)
         )
+        # فیلتر سایت: نقش‌های سراسری + (در صورت وجود) نقش‌های همان سایت
         if site_id is not None:
             stmt = stmt.where(or_(UserRole.site_id.is_(None), UserRole.site_id == site_id))
-        else:
-            stmt = stmt.where(UserRole.site_id.is_(None))
+            result = await self.db.execute(stmt)
+            return {row[0] for row in result.all()}
 
-        result = await self.db.execute(stmt)
-        return {row[0] for row in result.all()}
+        # بدون site_id: سراسری‌ها + مجوزهایی که برای تک‌تک سایت‌های موجود داده شده‌اند
+        result = await self.db.execute(stmt.add_columns(UserRole.site_id))
+        codes: set[str] = set()
+        sites_by_code: dict[str, set[int]] = {}
+        for code, role_site_id in result.all():
+            if role_site_id is None:
+                codes.add(code)
+            else:
+                sites_by_code.setdefault(code, set()).add(role_site_id)
+        if sites_by_code:
+            every_site = await all_site_ids(self.db)
+            codes |= {code for code, sites in sites_by_code.items() if covers_all_sites(sites, every_site)}
+        return codes
 
     async def get_all_permission_codes(self, user_id: int) -> set[str]:
         """
-        همه کدهای Permission این کاربر — از هر انتصاب نقشی، چه سراسری چه
-        محدود به یک سایت خاص، بدون هیچ فیلتر سایتی. ⚠️ فقط برای تصمیمات
-        سطح «آیا این قابلیت اصلاً برای این کاربر فعال است» (مثل فلگ‌های
-        get_me که منوها را کنترل می‌کنند) مناسب است — هرگز برای محدودسازی
-        داده به یک سایت مشخص استفاده نشود؛ برای آن منظور همیشه
-        get_sites_with_permission (که خودِ سایت‌های مجاز را برمی‌گرداند،
-        نه فقط بله/خیر) درست‌تر است.
+        همه‌ی کدهای Permission کاربر از هر انتصاب نقش (سراسری یا سایت‌محور) بدون فیلتر سایت.
+        فقط برای تصمیم‌های «آیا این قابلیت برای کاربر فعال است» (مثل فلگ‌های منوی get_me)؛
+        برای محدود کردن داده به سایت‌ها از get_sites_with_permission استفاده شود.
         """
+        # کوئری: کدهای مجوز از همه‌ی نقش‌های کاربر
         stmt = (
             select(Permission.code)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -80,21 +88,13 @@ class UserRepository:
 
     async def find_employee_for_login(self, personnel_code: str, national_code: str) -> Employee | None:
         """
-        پرسنل فعالی (هم is_active از منبع، هم is_enabled دستی Admin) که هم کد
-        پرسنلی و هم کد ملی‌اش دقیقاً مطابقت داشته باشد را برمی‌گرداند.
-        اگر (به‌ندرت) بین سایت‌های مختلف کد پرسنلی تکراری باشد، اولین مورد فعال برگردانده می‌شود.
-
-        نکته مهم: اگر این پرسنل قبلاً رمز عبور اختصاصی تعیین کرده باشد
-        (User.has_custom_password=True)، ورود با کد ملی دیگر برایش کار
-        نمی‌کند — باید حتماً از رمز عبور جدیدش استفاده کند.
-
-        ورودی‌ها قبل از مقایسه با normalize_login_credential نرمال‌سازی
-        می‌شوند (ارقام فارسی/عربی→لاتین، حذف کاراکترهای نامرئی) — رفع یک
-        مشکل واقعی: پرسنلی که از کیبورد فارسی موبایل استفاده می‌کرد، با
-        تایپ کاملاً درست کد ملی‌اش «اطلاعات ورود اشتباه است» می‌گرفت.
+        پرسنل فعال (is_active از منبع و is_enabled دستی Admin) با کد پرسنلی و کد ملی مطابق را برمی‌گرداند؛ در تکرار بین سایت‌ها، اولین مورد.
+        پرسنلی که رمز اختصاصی دارد (has_custom_password=True) با کد ملی پیدا نمی‌شود.
+        ورودی‌ها با normalize_login_credential نرمال می‌شوند (ارقام فارسی/عربی به لاتین، حذف کاراکترهای نامرئی).
         """
         normalized_personnel_code = normalize_login_credential(personnel_code)
         normalized_national_code = normalize_login_credential(national_code)
+        # کوئری: پرسنل مطابق که یا هنوز حساب کاربری ندارد یا حسابش رمز اختصاصی ندارد
         result = await self.db.execute(
             select(Employee)
             .outerjoin(User, User.employee_id == Employee.id)
@@ -110,14 +110,11 @@ class UserRepository:
 
     async def get_or_create_employee_user(self, employee: Employee) -> User:
         """
-        هر پرسنل یک حساب User مرتبط (از طریق employee_id) دارد که اولین بار
-        هنگام ورود موفق یا اختصاص نقش، به‌صورت خودکار ساخته می‌شود. Username
-        همان کد پرسنلی خودش است (چیز جدیدی ساخته نمی‌شود) — مگر در موارد
-        نادر تداخل بین چند Site که با پسوند site_id یکتا می‌شود. تا وقتی
-        has_custom_password=False است، password_hash یک مقدار تصادفی
-        غیرقابل‌حدس است (نه چیزی که کسی واقعاً بداند) و ورود از مسیر کد
-        پرسنلی/کد ملی انجام می‌شود.
+        حساب User متصل به پرسنل (از طریق employee_id) را برمی‌گرداند و اگر نبود می‌سازد؛ حساب غیرفعال دوباره فعال می‌شود.
+        username همان کد پرسنلی است (در تداخل بین سایت‌ها با پسوند site_id)؛
+        password_hash یک مقدار تصادفی غیرقابل‌حدس است تا ورود از مسیر کد ملی انجام شود.
         """
+        # اگر حساب از قبل وجود دارد، همان (پس از فعال‌سازی در صورت نیاز) برگردانده می‌شود
         result = await self.db.execute(select(User).where(User.employee_id == employee.id))
         user = result.scalar_one_or_none()
         if user is not None:
@@ -126,12 +123,14 @@ class UserRepository:
                 await self.db.commit()
             return user
 
+        # انتخاب username یکتا
         username = employee.personnel_code
         existing_username = await self.db.execute(select(User).where(User.username == username))
         if existing_username.scalar_one_or_none() is not None:
             # تداخل نادر (مثلاً همین کد پرسنلی در Site دیگری هم به یوزرنیم تبدیل شده)
             username = f"{employee.personnel_code}-{employee.site_id}"
 
+        # ساخت حساب جدید با رمز تصادفی
         random_password = secrets.token_urlsafe(32)
         user = User(
             username=username,
@@ -149,14 +148,12 @@ class UserRepository:
 
     async def set_employee_enabled(self, employee: Employee, enabled: bool) -> Employee:
         """
-        این مقدار کاملاً مستقل از is_active (که Sync Engine کنترل می‌کند) است
-        و با هیچ Sync جدیدی بازنویسی نمی‌شود. اگر این پرسنل از قبل حساب کاربری
-        داشته باشد (User)، همان لحظه User.is_active هم هماهنگ می‌شود تا
-        غیرفعال‌سازی فوراً روی هر دو روش ورود (کد ملی و رمز اختصاصی) و حتی
-        Session های باز فعلی اثر بگذارد — بدون این‌که رکورد User را اگر
-        هنوز وجود ندارد، الکی بسازیم.
+        فلگ is_enabled پرسنل را تنظیم می‌کند (مستقل از is_active که Sync Engine کنترل می‌کند و با Sync بازنویسی نمی‌شود).
+        اگر پرسنل حساب User داشته باشد، User.is_active هم هماهنگ می‌شود تا روی هر دو روش ورود و نشست‌های باز اثر کند؛
+        حساب جدیدی ساخته نمی‌شود. خروجی: پرسنل به‌روزشده.
         """
         employee.is_enabled = enabled
+        # هماهنگ‌سازی وضعیت حساب کاربری متصل (در صورت وجود)
         result = await self.db.execute(select(User).where(User.employee_id == employee.id))
         user = result.scalar_one_or_none()
         if user is not None:
@@ -169,15 +166,9 @@ class UserRepository:
 
     async def set_employee_password(self, employee: Employee, new_password: str) -> User:
         """
-        Admin مستقیماً یک رمز عبور مشخص برای پرسنل تعیین می‌کند. چون در login()
-        ابتدا (یوزرنیم/پسورد) کاربر مدیریتی امتحان می‌شود و username این حساب
-        همان personnel_code است، از این پس پرسنل با «کد پرسنلی + این رمز جدید»
-        وارد می‌شود؛ has_custom_password=True می‌شود و از همین لحظه ورود با
-        کد ملی دیگر برای این پرسنل کار نمی‌کند (طبق find_employee_for_login).
-
-        must_change_password=True تنظیم می‌شود — چون این رمز را خودِ پرسنل
-        انتخاب نکرده (Admin برایش تعیین کرده)، باید بعد از اولین ورود موفق
-        مجبور شود یک رمز جدید (که فقط خودش می‌داند) تعیین کند.
+        Admin برای پرسنل رمز مشخص تعیین می‌کند؛ از این پس ورود با «کد پرسنلی (username) + این رمز» است و ورود با کد ملی غیرفعال می‌شود.
+        must_change_password=True می‌شود تا پرسنل پس از اولین ورود رمز شخصی خود را تعیین کند.
+        خروجی: حساب User پرسنل. اگر رمز ضعیف باشد validate_password_strength خطا می‌دهد.
         """
         validate_password_strength(new_password)
         user = await self.get_or_create_employee_user(employee)
@@ -189,8 +180,8 @@ class UserRepository:
 
     async def reset_employee_to_default_login(self, employee: Employee) -> User:
         """
-        بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی)؛ رمز عبور
-        اختصاصی قبلی از کار می‌افتد (با یک رمز تصادفی غیرقابل‌حدس جایگزین می‌شود).
+        پرسنل را به روش ورود پیش‌فرض (کد پرسنلی + کد ملی) برمی‌گرداند؛ رمز اختصاصی قبلی
+        با یک رمز تصادفی غیرقابل‌حدس جایگزین می‌شود. خروجی: حساب User پرسنل.
         """
         user = await self.get_or_create_employee_user(employee)
         user.password_hash = hash_password(secrets.token_urlsafe(32))

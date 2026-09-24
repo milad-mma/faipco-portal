@@ -1,13 +1,14 @@
 """
-مدل AttendanceCardReceipt: برای هر اطلاعیه از نوع «فیش کارکرد»، یک رکورد
-به‌ازای هر پرسنلی که کدش در اکسل آپلودشده (توسط مدیر منابع انسانی) پیدا
-شده است.
+مدل AttendanceCardReceipt (جدول attendance_card_receipts).
 
-دقیقاً هم‌ساختار با PayrollReceipt — همان مدل دسترسی ساختاری: هیچ Endpoint ای
-اجازه لیست‌کردن یا خواندن رکورد یک پرسنل توسط پرسنل دیگر را نمی‌دهد؛ همیشه
-با (notice_id, employee_id == current_user.employee_id) واکشی می‌شود.
-fields_json خام و Generic نگه داشته شده (لیست {label, value}) تا PDF از
-رویش ساخته شود.
+برای هر اطلاعیه از نوع «فیش کارکرد»، یک رکورد به‌ازای هر پرسنلی نگه می‌دارد
+که کد پرسنلی‌اش در اکسل آپلودشده توسط مدیر منابع انسانی پیدا شده است.
+
+هم‌ساختار با PayrollReceipt است و همان مدل دسترسی را دارد: هیچ Endpoint ای
+اجازه‌ی خواندن رکورد یک پرسنل توسط پرسنل دیگر را نمی‌دهد؛ رکورد همیشه با
+(notice_id, employee_id == current_user.employee_id) واکشی می‌شود.
+fields_json به‌صورت خام و عمومی (لیست {label, value}) ذخیره می‌شود تا
+PDF فیش از روی آن ساخته شود.
 """
 from __future__ import annotations
 
@@ -20,9 +21,13 @@ from app.db.session import Base
 
 
 class AttendanceCardReceipt(Base):
+    """
+    یک فیش کارکرد برای یک پرسنل در یک اطلاعیه.
+    هر جفت (notice_id, employee_id) یکتاست؛ با حذف اطلاعیه یا پرسنل، رکورد هم حذف می‌شود.
+    """
     __tablename__ = "attendance_card_receipts"
     __table_args__ = (
-        UniqueConstraint("notice_id", "employee_id", name="uq_attendance_card_receipt_notice_employee"),
+        UniqueConstraint("notice_id", "employee_id", name="uq_attendance_card_receipt_notice_employee"),  # یک فیش برای هر پرسنل در هر اطلاعیه
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -31,12 +36,12 @@ class AttendanceCardReceipt(Base):
         ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # کد پرسنلی همان لحظه‌ی Upload (Snapshot، مستقل از تغییرات بعدی personnel_code خودِ پرسنل)
+    # کد پرسنلی در لحظه‌ی آپلود (Snapshot؛ با تغییر بعدی personnel_code پرسنل عوض نمی‌شود)
     source_personnel_code: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # JSON از لیست [{"label": "...", "value": "..."}] — همان ۱۶ فیلد فیش کارکرد
+    # JSON از لیست [{"label": "...", "value": "..."}] — فیلدهای فیش کارکرد به ترتیب ستون‌های اکسل
     fields_json: Mapped[str] = mapped_column(Text, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)  # زمان ساخت رکورد (با timezone)
 
-    employee: Mapped["Employee"] = relationship()  # noqa: F821
+    employee: Mapped["Employee"] = relationship()  # noqa: F821  # رابطه به پرسنل صاحب فیش

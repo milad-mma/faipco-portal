@@ -1,3 +1,8 @@
+/**
+ * صفحه گزارش «انتقادات و پیشنهادات» در پنل ادمین.
+ * شامل فهرست صفحه‌بندی‌شده پیام‌ها با فیلتر سمت سرور (فرستنده/سایت/موضوع/ناشناس/بازه تاریخ شمسی)
+ * و برای Admin، تب مدیریت کلمات نامناسب که ناشناس بودن پیام را لغو می‌کنند.
+ */
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -34,32 +39,25 @@ import {
   fetchProhibitedPhrases,
 } from "../api/feedback";
 
-const CATEGORY_LABELS = {
+const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام
   complaint: "انتقاد",
   suggestion: "پیشنهاد",
   comment: "نظر",
 };
 
 /**
- * صفحه مشاهده «انتقادات و پیشنهادات» در پنل ادمین - برای Admin واقعی، یا
- * دارنده مجوز feedback.view (سایت‌محور) یا feedback.view_all (سراسری).
+ * کامپوننت اصلی صفحه؛ برای Admin، یا دارنده مجوز feedback.view (سایت‌محور) یا feedback.view_all (سراسری).
  *
- * منطق محرمانگی کاملاً در Backend پیاده شده - این صفحه فقط هرچه API
- * برگرداند را نمایش می‌دهد. Admin واقعی همیشه sender_name واقعی را در
- * پاسخ می‌بیند؛ دارنده مجوز (غیر Admin)، برای پیام‌های ناشناسِ بدون
- * الفاظ نامناسب، sender_name را null دریافت می‌کند - در این حالت فقط
- * «ناشناس» نمایش داده می‌شود.
+ * منطق محرمانگی در Backend پیاده شده و این صفحه فقط پاسخ API را نمایش می‌دهد: Admin همیشه
+ * sender_name واقعی را می‌گیرد؛ برای دارنده مجوز (غیر Admin)، در پیام‌های ناشناسِ بدون الفاظ
+ * نامناسب sender_name برابر null است و «ناشناس» نمایش داده می‌شود.
  *
- * فیلترها (فرستنده/سایت/موضوع/ناشناس‌بودن/بازه تاریخ) به Backend فرستاده
- * می‌شوند - فیلتر واقعی سمت سرور، نه فقط مخفی‌کردن ردیف‌ها در Frontend.
- * فیلتر تاریخ با دراپ‌داون روز/ماه/سال شمسی است (نه ورودی تاریخ میلادی
- * خام مرورگر) - طبق درخواست صریح.
- *
- * تب «مدیریت کلمات نامناسب» فقط برای Admin واقعی نمایش داده می‌شود.
+ * فیلترها به Backend فرستاده می‌شوند (فیلتر سمت سرور) و فیلتر تاریخ با دراپ‌داون روز/ماه/سال شمسی است.
+ * تب «مدیریت کلمات نامناسب» فقط برای Admin نمایش داده می‌شود.
  */
 export default function FeedbackReportPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState("messages");
+  const [tab, setTab] = useState("messages");  // "messages" | "prohibited-words"
 
   return (
     <Box>
@@ -72,6 +70,7 @@ export default function FeedbackReportPage() {
           : "پیام‌های سایت(های) تحت مدیریت شما — پیام‌های ناشناس بدون فرستنده نمایش داده می‌شوند."}
       </Typography>
 
+      {/* تب‌ها فقط برای Admin (کاربر عادی فقط فهرست پیام‌ها را می‌بیند) */}
       {user?.is_superuser && (
         <PillTabs
           value={tab}
@@ -89,13 +88,17 @@ export default function FeedbackReportPage() {
   );
 }
 
-const EMPTY_DATE_PARTS = { year: null, month: null, day: null };
+const EMPTY_DATE_PARTS = { year: null, month: null, day: null };  // مقدار اولیه/خالی فیلتر تاریخ شمسی
 
+/**
+ * فهرست صفحه‌بندی‌شده پیام‌ها با فیلترهای سمت سرور.
+ * ورودی: canDelete (نمایش دکمه حذف هر پیام؛ فقط برای Admin).
+ */
 function FeedbackMessagesList({ canDelete }) {
   const [allMessages, setAllMessages] = useState(null); // بدون فیلتر - فقط برای ساخت گزینه‌های فیلتر
-  const [messages, setMessages] = useState(null);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [messages, setMessages] = useState(null);  // پیام‌های صفحه فعلی؛ null = در حال بارگذاری
+  const [total, setTotal] = useState(0);  // تعداد کل پیام‌های منطبق با فیلتر (برای صفحه‌بندی)
+  const [page, setPage] = useState(0);  // شماره صفحه از صفر (سرور از ۱ می‌شمارد)
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [error, setError] = useState("");
   const [senderFilter, setSenderFilter] = useState("");
@@ -106,16 +109,16 @@ function FeedbackMessagesList({ canDelete }) {
   const [dateToParts, setDateToParts] = useState(EMPTY_DATE_PARTS);
 
   useEffect(() => {
-    // ⚠️ این فقط برای ساختن فهرست فرستندگان در دراپ‌داون فیلتر است - نه
-    // نمایش جدول. صفحه بزرگ گرفته می‌شود تا فهرست فرستندگان تقریباً کامل
-    // باشد (خودِ جدول جداگانه و واقعاً صفحه‌بندی‌شده لود می‌شود).
+    // فقط برای ساختن گزینه‌های دراپ‌داون فرستنده/سایت، نه نمایش جدول؛ یک صفحه
+    // بزرگ (۲۰۰ مورد) گرفته می‌شود تا فهرست گزینه‌ها تقریباً کامل باشد.
+    // جدول به‌طور جداگانه و صفحه‌بندی‌شده بارگذاری می‌شود.
     fetchFeedback({ page: 1, pageSize: 200 })
       .then((data) => setAllMessages(data.items))
       .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
   }, []);
 
-  // فقط وقتی هر سه بخش (روز/ماه/سال) یک تاریخ کامل شده باشند، به ISO
-  // تبدیل و به‌عنوان فیلتر واقعی اعمال می‌شود - انتخاب ناقص، فیلتر نمی‌کند.
+  // ابتدای بازه: فقط وقتی هر سه بخش (روز/ماه/سال) انتخاب شده باشند با ساعت ۰۰:۰۰
+  // به ISO تبدیل و به‌عنوان فیلتر اعمال می‌شود؛ انتخاب ناقص فیلتر نمی‌کند.
   const dateFromIso = useMemo(() => {
     const { year, month, day } = dateFromParts;
     if (!year || !month || !day) return undefined;
@@ -123,6 +126,7 @@ function FeedbackMessagesList({ canDelete }) {
     return d.toISOString();
   }, [dateFromParts]);
 
+  // پایان بازه: تاریخ شمسی کامل با ساعت ۲۳:۵۹ به ISO تبدیل می‌شود؛ انتخاب ناقص = بدون فیلتر
   const dateToIso = useMemo(() => {
     const { year, month, day } = dateToParts;
     if (!year || !month || !day) return undefined;
@@ -130,6 +134,7 @@ function FeedbackMessagesList({ canDelete }) {
     return d.toISOString();
   }, [dateToParts]);
 
+  // بارگذاری صفحه فعلی پیام‌ها با فیلترهای انتخاب‌شده؛ با تغییر هر فیلتر یا صفحه دوباره اجرا می‌شود
   useEffect(() => {
     setError("");
     fetchFeedback({
@@ -150,12 +155,13 @@ function FeedbackMessagesList({ canDelete }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso, page, rowsPerPage]);
 
-  // ⚠️ با تغییر هر فیلتری به صفحه اول برگرد - وگرنه ممکن است کاربر روی
-  // صفحه‌ای بماند که دیگر ردیفی ندارد و جدول خالی به‌نظر برسد.
+  // با تغییر هر فیلتر به صفحه اول برمی‌گردد تا کاربر روی صفحه‌ای که دیگر ردیفی
+  // ندارد نماند.
   useEffect(() => {
     setPage(0);
   }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso]);
 
+  // گزینه‌های یکتای فیلتر فرستنده به‌صورت [sender_id, sender_name] از پیام‌های بدون فیلتر
   const senderOptions = useMemo(() => {
     if (!allMessages) return [];
     const map = new Map();
@@ -165,6 +171,7 @@ function FeedbackMessagesList({ canDelete }) {
     return Array.from(map.entries());
   }, [allMessages]);
 
+  // گزینه‌های یکتای فیلتر سایت به‌صورت [site_id, site_name]
   const siteOptions = useMemo(() => {
     if (!allMessages) return [];
     const map = new Map();
@@ -174,6 +181,7 @@ function FeedbackMessagesList({ canDelete }) {
     return Array.from(map.entries());
   }, [allMessages]);
 
+  // پس از تأیید کاربر، پیام را حذف و از هر دو فهرست (جدول و منبع گزینه‌ها) برمی‌دارد
   async function handleDelete(id) {
     if (!window.confirm("این پیام برای همیشه حذف شود؟")) return;
     try {
@@ -187,8 +195,10 @@ function FeedbackMessagesList({ canDelete }) {
 
   return (
     <Box>
+      {/* نوار فیلترها: ردیف اول دراپ‌داون‌ها، ردیف دوم بازه تاریخ شمسی */}
       <Stack spacing={1.5} sx={{ mb: 2.5 }}>
         <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center">
+          {/* فیلتر فرستنده/سایت فقط وقتی گزینه‌ای وجود دارد نمایش داده می‌شود */}
           {senderOptions.length > 0 && (
             <TextField
               select
@@ -284,6 +294,7 @@ function FeedbackMessagesList({ canDelete }) {
         </Alert>
       )}
 
+      {/* حالت‌های بارگذاری، خالی، یا فهرست کارت پیام‌ها به‌همراه صفحه‌بندی */}
       {messages === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
@@ -305,10 +316,8 @@ function FeedbackMessagesList({ canDelete }) {
                   sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {m.sender_name || "ناشناس"}
-                  {/* وقتی نام واقعی نمایش داده می‌شود (Admin واقعی، یا پیام حاوی الفاظ
-                      نامناسب) ولی خودِ فرستنده درخواست ناشناس‌ماندن داشته، این برچسب
-                      نشان می‌دهد که او خواستار محرمانه‌ماندن بوده - حتی اگر الان نامش
-                      قابل‌مشاهده است. */}
+                  {/* وقتی نام واقعی نمایش داده می‌شود (Admin، یا پیام حاوی الفاظ نامناسب)
+                      ولی فرستنده درخواست ناشناس ماندن داشته، برچسب «(ناشناس)» این را نشان می‌دهد. */}
                   {m.sender_name && m.is_anonymous_requested && (
                     <Typography component="span" variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
                       {" "}
@@ -321,6 +330,7 @@ function FeedbackMessagesList({ canDelete }) {
                 </Typography>
               </Stack>
 
+              {/* برچسب‌های موضوع/سایت/الفاظ نامناسب و دکمه حذف */}
               <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5, mb: 1 }}>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                   <Chip
@@ -351,6 +361,7 @@ function FeedbackMessagesList({ canDelete }) {
               </Typography>
             </Card>
           ))}
+          {/* صفحه‌بندی سمت سرور؛ تغییر تعداد در صفحه به صفحه اول برمی‌گرداند */}
           <TablePagination
             component="div"
             count={total}
@@ -371,22 +382,29 @@ function FeedbackMessagesList({ canDelete }) {
   );
 }
 
+/**
+ * مدیریت فهرست کلمات/عبارات نامناسب (فقط Admin): نمایش، افزودن و حذف.
+ * پیامی که یکی از این عبارات را داشته باشد، حتی اگر ناشناس ارسال شده باشد هویت فرستنده‌اش آشکار می‌شود.
+ */
 function ProhibitedWordsManager() {
-  const [phrases, setPhrases] = useState(null);
+  const [phrases, setPhrases] = useState(null);  // فهرست عبارات؛ null = در حال بارگذاری
   const [newPhrase, setNewPhrase] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // فهرست عبارات را از سرور می‌گیرد
   function loadPhrases() {
     fetchProhibitedPhrases()
       .then(setPhrases)
       .catch((err) => setError(err.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."));
   }
 
+  // بارگذاری اولیه فهرست
   useEffect(() => {
     loadPhrases();
   }, []);
 
+  // عبارت جدید (trim شده) را اضافه و فهرست را تازه می‌کند
   async function handleAdd() {
     if (!newPhrase.trim()) return;
     setIsSaving(true);
@@ -402,6 +420,7 @@ function ProhibitedWordsManager() {
     }
   }
 
+  // عبارت را حذف و فهرست را تازه می‌کند
   async function handleDelete(id) {
     try {
       await deleteProhibitedPhrase(id);
@@ -424,6 +443,7 @@ function ProhibitedWordsManager() {
         </Alert>
       )}
 
+      {/* فرم افزودن عبارت جدید */}
       <Stack direction="row" spacing={1.5} sx={{ mb: 3 }}>
         <TextField
           size="small"
@@ -438,6 +458,7 @@ function ProhibitedWordsManager() {
         </Button>
       </Stack>
 
+      {/* جدول عبارات (یا حالت بارگذاری/خالی) */}
       {phrases === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress size={24} />

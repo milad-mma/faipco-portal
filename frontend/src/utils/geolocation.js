@@ -1,7 +1,15 @@
+/**
+ * کمک‌تابع‌های موقعیت‌یابی مرورگر (Geolocation API) با پیام‌های خطای فارسی.
+ */
+// خروجی: true اگر مرورگر از Geolocation پشتیبانی کند
 export function isGeolocationSupported() {
   return "geolocation" in navigator;
 }
 
+/**
+ * موقعیت فعلی دستگاه را می‌گیرد. ورودی: گزینه‌های Geolocation (پیش‌فرض: دقت بالا، Timeout پانزده ثانیه).
+ * خروجی: Promise با { latitude, longitude, accuracyMeters }؛ در صورت رد دسترسی یا خطا با پیام فارسی reject می‌شود.
+ */
 export function getCurrentPosition(options = { enableHighAccuracy: true, timeout: 15000 }) {
   return new Promise((resolve, reject) => {
     if (!isGeolocationSupported()) {

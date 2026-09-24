@@ -10,9 +10,22 @@
 4. تبدیل هر ردیف خام به فیلدهای استاندارد Employee طبق Mapping — شامل
    پیدا/ساخت خودکار واحد سازمانی متناظر بر اساس کد بخش (Sec_No)
 5. Insert رکوردهای جدید / Update رکوردهای موجود (بر اساس personnel_code در همان Site)
+   و در صورت نگاشت، همگام‌سازی تصویر بندانگشتی پرسنل
 6. غیرفعال‌کردن (نه حذف فیزیکی) پرسنلی که دیگر در منبع دیده نشدند، یا طبق
    ستون is_active_column (در صورت تعریف) در منبع غیرفعال اعلام شده‌اند
 7. ثبت نتیجه در SyncLog و به‌روزرسانی last_sync_* در SiteConnection
+
+چند سایت با یک دیتابیس منبع مشترک (فیلتر واحد ریشه):
+اگر در نگاشت پرسنل «واحدهای ریشه» تعریف شده باشد، درخت واحدها (مثل Sections.TFather)
+خوانده و هر واحد به سایتی داده می‌شود که نزدیک‌ترین ریشه‌ی بالادستش را دارد
+(core/org_tree.py، با در نظر گرفتن ریشه‌های همه‌ی سایت‌هایی که به همان دیتابیس وصل‌اند).
+- پرسنل واحدهای این سایت Sync می‌شوند.
+- پرسنل واحدهای سایت‌های دیگر نادیده گرفته می‌شوند، ولی اگر رکوردشان هنوز در این
+  سایت است غیرفعال نمی‌شوند تا Sync سایت مقصد آن را منتقل کند.
+- پرسنلی که واحدشان زیر هیچ ریشه‌ای نیست وارد نمی‌شوند، رکورد موجودشان دست نمی‌خورد
+  و در SyncLog هشدار ثبت می‌شود.
+- اگر پرسنلی که مال این سایت است هنوز در یک سایت هم‌منبع دیگر رکورد دارد، همان رکورد
+  (با حساب کاربری و همه‌ی سوابق) به این سایت منتقل و در site_transfers ثبت می‌شود.
 """
 from datetime import datetime, timezone
 import logging
@@ -20,10 +33,13 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.org_tree import OrgTreeError, assign_units_to_sites, build_parent_map, normalize_code
 from app.core.security import decrypt_secret, normalize_login_credential
 from app.models.employee import Department, Employee, EmployeeMapping
 from app.models.site import Site, SiteConnection, SyncStatus
+from app.models.site_transfer import SiteTransfer
 from app.models.sync_log import SyncLog, SyncRunStatus
+from app.models.user import User
 from app.sync_engine.adapter_factory import get_adapter
 
 logger = logging.getLogger("faipco.sync")
@@ -37,17 +53,25 @@ class SyncError(Exception):
 
 
 class SyncService:
+    """اجرای Sync پرسنل یک سایت از دیتابیس منبع به جدول employees پرتال، تست اتصال و خلاصه وضعیت."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: AsyncSession دیتابیس پرتال."""
         self.db = db
 
     # ---------- عمومی ----------
 
     async def test_connection(self, site_id: int) -> tuple[bool, str | None]:
+        """اتصال به دیتابیس منبع سایت را تست می‌کند؛ خروجی: (موفق؟, پیام خطا). بدون اتصال تعریف‌شده SyncError."""
         conn = await self._get_site_connection(site_id)
         adapter = self._build_adapter(conn)
         return await adapter.test_connection()
 
     async def run_sync(self, site_id: int) -> SyncLog:
+        """
+        یک اجرای کامل Sync پرسنل سایت را انجام می‌دهد و رکورد SyncLog آن را برمی‌گرداند.
+        هر خطای حین اجرا در SyncLog و SiteConnection ثبت می‌شود (نه پرتاب)؛ نبود اتصال/Mapping پیش از شروع SyncError می‌دهد.
+        """
         conn = await self._get_site_connection(site_id)
         mapping = await self._get_mapping(site_id)
         adapter = self._build_adapter(conn)
@@ -56,12 +80,14 @@ class SyncService:
             site_id=site_id, started_at=datetime.now(timezone.utc), status=SyncRunStatus.running
         )
         self.db.add(log)
-        await self.db.flush()
+        await self.db.flush()  # برای گرفتن log.id پیش از شروع
 
         try:
+            # خواندن ردیف‌های خام پرسنل (ستون‌های تکراری حذف می‌شوند) و فیلتر شعبه
             columns = self._mapping_columns(mapping)
             raw_rows = await adapter.fetch_rows(mapping.table_name, list(dict.fromkeys(columns.values())))
             raw_rows = self._filter_branch(mapping, raw_rows)
+            # جدول‌های Lookup واحد و سمت (در صورت تعریف)
             department_lookup = await self._load_lookup_table(
                 adapter,
                 mapping.department_lookup_table,
@@ -75,10 +101,33 @@ class SyncService:
                 mapping.position_lookup_name_column,
             )
 
-            inserted, updated, skipped_inactive, seen_codes = await self._upsert_employees(
-                site_id, columns, raw_rows, department_lookup, position_lookup, mapping.is_active_inverted
+            # فیلتر واحد ریشه (فقط اگر ریشه تعریف شده باشد)
+            protected_codes: set[str] = set()  # کدهایی که در منبع هستند ولی مال این سایت نیستند
+            sibling_site_ids: set[int] = set()
+            warning: str | None = None
+            skipped_unassigned = 0
+            org_scope = await self._resolve_org_scope(site_id, conn, mapping, adapter)
+            if org_scope is not None:
+                assignment, sibling_site_ids = org_scope
+                raw_rows, owned_elsewhere, unassigned_codes, skipped_unassigned, warning = self._split_rows_by_org(
+                    site_id, columns, raw_rows, assignment, department_lookup
+                )
+                protected_codes, pending = await self._protected_codes(site_id, owned_elsewhere, unassigned_codes)
+                if pending:
+                    note = f"{pending} نفر هنوز در این سایت‌اند ولی واحدشان متعلق به سایت دیگری است و منتظر Sync آن سایت برای انتقال‌اند."
+                    warning = f"{warning} | {note}" if warning else note
+
+            inserted, updated, skipped_inactive, seen_codes, transferred = await self._upsert_employees(
+                site_id,
+                columns,
+                raw_rows,
+                department_lookup,
+                position_lookup,
+                mapping.is_active_inverted,
+                transfer_from_site_ids=sibling_site_ids,
             )
 
+            # همگام‌سازی عکس‌ها جدا از بقیه؛ خطای آن فقط لاگ می‌شود
             try:
                 await self._sync_employee_photos(site_id, adapter, mapping)
             except Exception as photo_error:  # noqa: BLE001 - عکس پرسنل نباید کل Sync را ناموفق کند
@@ -88,13 +137,17 @@ class SyncService:
                     photo_error,
                 )
 
-            deactivated = await self._deactivate_missing(site_id, seen_codes)
+            deactivated = await self._deactivate_missing(site_id, seen_codes | protected_codes)
 
+            # ثبت نتیجه موفق
             log.status = SyncRunStatus.success
             log.inserted_count = inserted
             log.updated_count = updated
             log.deactivated_count = deactivated
             log.skipped_inactive_count = skipped_inactive
+            log.skipped_unassigned_count = skipped_unassigned
+            log.transferred_count = transferred
+            log.warning_message = warning
 
             conn.last_sync_status = SyncStatus.success
             conn.last_sync_error = None
@@ -106,11 +159,95 @@ class SyncService:
             conn.last_sync_error = str(e)
 
         finally:
+            # زمان پایان و commit در هر حالت (موفق یا ناموفق)
             log.finished_at = datetime.now(timezone.utc)
             conn.last_sync_at = datetime.now(timezone.utc)
             await self.db.commit()
 
         return log
+
+    async def preview_org_scope(self, site_id: int, mapping: EmployeeMapping) -> dict:
+        """
+        پیش‌نمایش فیلتر واحد ریشه بدون ذخیره: درخت واحدهای منبع را می‌خواند، با ریشه‌های پیشنهادی
+        این سایت (mapping ذخیره‌نشده) و ریشه‌های ذخیره‌شده‌ی سایت‌های هم‌منبع تقسیم می‌کند و
+        تعداد واحد و پرسنل فعال هر سایت و پرسنل بی‌سایت را برمی‌گرداند.
+        خطای تنظیمات (فیلد ناقص، ریشه‌ی تکراری) در کلید error برمی‌گردد، نه به‌صورت استثنا.
+        """
+        conn = await self._get_site_connection(site_id)
+        empty = {"units": [], "sites": [], "unassigned_active_employees": 0, "error": None}
+        missing = self.org_filter_missing_fields(mapping)
+        if missing:
+            return {**empty, "error": "این فیلدهای نگاشت پرسنل باید پر شوند: " + "، ".join(missing)}
+
+        adapter = self._build_adapter(conn)
+        roots_by_site = await self.sibling_roots(site_id, conn)
+        own_roots = self.root_codes(mapping)
+        if own_roots:
+            roots_by_site[site_id] = own_roots
+
+        # درخت و نام واحدها
+        parents = await self.load_parent_map(adapter, mapping)
+        names = await self._load_lookup_table(
+            adapter,
+            mapping.department_lookup_table,
+            mapping.department_lookup_id_column,
+            mapping.department_lookup_name_column,
+        )
+        try:
+            assignment = assign_units_to_sites(parents, roots_by_site)
+        except OrgTreeError as e:
+            return {**empty, "error": str(e)}
+
+        # شمارش پرسنل فعال منبع در هر واحد (با فیلتر شعبه و ستون وضعیت، مثل Sync)
+        columns = self._mapping_columns(mapping)
+        rows = await adapter.fetch_rows(mapping.table_name, list(dict.fromkeys(columns.values())))
+        rows = self._filter_branch(mapping, rows)
+        active_by_unit: dict[str, int] = {}
+        for row in rows:
+            if "is_active_raw" in columns:
+                active = self._coerce_is_active(row.get(columns["is_active_raw"]))
+                if mapping.is_active_inverted:
+                    active = not active
+                if not active:
+                    continue
+            unit = normalize_code(row.get(columns["department_raw"])) or "—"
+            active_by_unit[unit] = active_by_unit.get(unit, 0) + 1
+
+        # نام سایت‌ها
+        site_ids = set(roots_by_site) | {site_id}
+        sites_result = await self.db.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
+        site_names = dict(sites_result.all())
+
+        all_roots = {code for codes in roots_by_site.values() for code in codes}
+        units = [
+            {
+                "code": code,
+                "name": names.get(code, code),
+                "parent": parents.get(code),
+                "site_id": assignment.get(code),
+                "is_root": code in all_roots,
+                "active_employees": active_by_unit.get(code, 0),
+            }
+            for code in sorted(set(parents) | set(assignment), key=lambda c: (len(c), c))
+        ]
+        sites = []
+        for sid in sorted(site_ids, key=lambda x: (x != site_id, x)):
+            owned = [u for u in units if u["site_id"] == sid]
+            sites.append(
+                {
+                    "site_id": sid,
+                    "site_name": site_names.get(sid, f"سایت {sid}"),
+                    "is_current": sid == site_id,
+                    "roots": sorted(roots_by_site.get(sid, set())),
+                    "unit_count": len(owned),
+                    "active_employee_count": sum(u["active_employees"] for u in owned),
+                }
+            )
+        # پرسنل فعالی که واحدشان در درخت نیست یا به هیچ سایتی نمی‌رسد
+        unassigned = sum(
+            count for unit, count in active_by_unit.items() if assignment.get(unit) is None
+        )
+        return {"units": units, "sites": sites, "unassigned_active_employees": unassigned, "error": None}
 
     # ---------- کمکی ----------
 
@@ -119,12 +256,15 @@ class SyncService:
         خلاصه وضعیت Sync امروز برای همه Site های فعال — چند سایت امروز حداقل
         یک اجرای موفق داشته‌اند، چند سایت ناموفق بوده‌اند، و چند سایت اصلاً
         امروز اجرا نشده‌اند. برای کارت آمار داشبورد Admin استفاده می‌شود.
+        «امروز» از نیمه‌شب UTC حساب می‌شود.
         """
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
+        # سایت‌های فعال
         sites_result = await self.db.execute(select(Site.id).where(Site.is_active.is_(True)))
         site_ids = [row[0] for row in sites_result.all()]
 
+        # اجراهای امروز این سایت‌ها، مرتب بر اساس سایت و جدیدترین اول
         logs_result = await self.db.execute(
             select(SyncLog.site_id, SyncLog.status, SyncLog.started_at)
             .where(SyncLog.site_id.in_(site_ids), SyncLog.started_at >= today_start)
@@ -159,11 +299,12 @@ class SyncService:
         """
         result = await self.db.execute(select(SiteConnection).where(SiteConnection.site_id == site_id))
         conn = result.scalar_one_or_none()
-        if conn is None:
+        if conn is None:  # بدون اتصال تعریف‌شده: SyncError
             raise SyncError("اتصال دیتابیس برای این Site تعریف نشده است")
         return conn
 
     async def _get_mapping(self, site_id: int) -> EmployeeMapping:
+        """نگاشت پرسنل سایت را برمی‌گرداند؛ اگر تعریف نشده باشد SyncError."""
         result = await self.db.execute(select(EmployeeMapping).where(EmployeeMapping.site_id == site_id))
         mapping = result.scalar_one_or_none()
         if mapping is None:
@@ -171,6 +312,7 @@ class SyncService:
         return mapping
 
     def _build_adapter(self, conn: SiteConnection):
+        """Adapter دیتابیس منبع را با پسورد رمزگشایی‌شده می‌سازد."""
         return get_adapter(
             conn.db_type,
             host=conn.host,
@@ -182,7 +324,10 @@ class SyncService:
 
     @staticmethod
     def _mapping_columns(mapping: EmployeeMapping) -> dict[str, str]:
-        """نگاشت نام فیلد استاندارد Employee -> نام ستون خام دیتابیس مبدأ."""
+        """
+        نگاشت نام فیلد استاندارد Employee -> نام ستون خام دیتابیس مبدأ.
+        فیلدهای اختیاری فقط اگر در Mapping تعریف شده باشند اضافه می‌شوند؛ پسوند _raw یعنی مقدار نیاز به تبدیل دارد.
+        """
         columns = {
             "personnel_code": mapping.personnel_code_column,
             "first_name": mapping.first_name_column,
@@ -213,16 +358,172 @@ class SyncService:
     @staticmethod
     def _filter_branch(mapping: EmployeeMapping, rows: list[dict]) -> list[dict]:
         """
-        ⚠️ طبق درخواست کاربر: اگر ستون و مقدار شعبه (مثل Employee.BranchCode)
-        برای این سایت تنظیم شده باشد، فقط پرسنل همان شعبه مال این سایت‌اند.
-        پرسنلی که قبلاً از شعبه‌های دیگر Sync شده بودند، در همین اجرا «دیگر در
-        منبع این سایت نیستند» و غیرفعال می‌شوند.
+        اگر ستون و مقدار شعبه (مثل Employee.BranchCode) برای این سایت تنظیم شده باشد،
+        فقط ردیف‌های همان شعبه را نگه می‌دارد؛ پرسنل موجودِ شعبه‌های دیگر در این اجرا
+        «در منبع دیده نمی‌شوند» و غیرفعال می‌شوند. بدون تنظیم شعبه، همه ردیف‌ها برمی‌گردند.
         """
         column = (mapping.branch_code_column or "").strip()
         value = (mapping.branch_code_value or "").strip()
         if not column or not value:
             return rows
         return [row for row in rows if row.get(column) is not None and str(row.get(column)).strip() == value]
+
+    @staticmethod
+    def root_codes(mapping: EmployeeMapping | None) -> set[str]:
+        """کدهای واحد ریشه‌ی نگاشت را نرمال‌شده برمی‌گرداند (مقادیر خالی حذف)؛ نگاشت بدون ریشه → مجموعه خالی."""
+        if mapping is None:
+            return set()
+        return {code for code in (normalize_code(v) for v in (mapping.root_department_codes or [])) if code}
+
+    @staticmethod
+    def same_source(a: SiteConnection, b: SiteConnection) -> bool:
+        """آیا دو اتصال به یک دیتابیس منبع اشاره می‌کنند؟ (نوع، میزبان، پورت و نام دیتابیس یکسان؛ بدون حساسیت به حروف)"""
+        return (
+            a.db_type == b.db_type
+            and (a.host or "").strip().lower() == (b.host or "").strip().lower()
+            and a.port == b.port
+            and (a.database_name or "").strip().lower() == (b.database_name or "").strip().lower()
+        )
+
+    async def sibling_roots(self, site_id: int, conn: SiteConnection) -> dict[int, set[str]]:
+        """
+        ریشه‌های همه‌ی سایت‌های دیگری را برمی‌گرداند که به همین دیتابیس منبع وصل‌اند و ریشه تعریف کرده‌اند.
+        خروجی: «شناسه سایت → مجموعه کد ریشه‌ها». سایت‌های غیرفعال هم حساب می‌شوند تا واحدهایشان به سایت دیگری نیفتد.
+        """
+        result = await self.db.execute(
+            select(SiteConnection, EmployeeMapping)
+            .join(EmployeeMapping, EmployeeMapping.site_id == SiteConnection.site_id)
+            .where(SiteConnection.site_id != site_id)
+        )
+        roots: dict[int, set[str]] = {}
+        for other_conn, other_mapping in result.all():
+            codes = self.root_codes(other_mapping)
+            if codes and self.same_source(conn, other_conn):
+                roots[other_conn.site_id] = codes
+        return roots
+
+    async def load_parent_map(self, adapter, mapping: EmployeeMapping) -> dict[str, str | None]:
+        """جدول واحدهای منبع را با ستون کد و ستون بالادست می‌خواند و نقشه‌ی «کد → بالادست» برمی‌گرداند."""
+        rows = await adapter.fetch_rows(
+            mapping.department_lookup_table,
+            list(dict.fromkeys([mapping.department_lookup_id_column, mapping.department_lookup_parent_column])),
+        )
+        return build_parent_map(rows, mapping.department_lookup_id_column, mapping.department_lookup_parent_column)
+
+    @staticmethod
+    def org_filter_missing_fields(mapping: EmployeeMapping) -> list[str]:
+        """فیلدهای نگاشتی که فیلتر واحد ریشه به آن‌ها نیاز دارد و خالی‌اند (برچسب فارسی)."""
+        required = {
+            "ستون واحد در جدول پرسنل": mapping.department_column,
+            "جدول واحدها": mapping.department_lookup_table,
+            "ستون کد واحد": mapping.department_lookup_id_column,
+            "ستون واحد بالادست": mapping.department_lookup_parent_column,
+        }
+        return [label for label, value in required.items() if not (value or "").strip()]
+
+    async def _resolve_org_scope(
+        self, site_id: int, conn: SiteConnection, mapping: EmployeeMapping, adapter
+    ) -> tuple[dict[str, int | None], set[int]] | None:
+        """
+        اگر این سایت واحد ریشه دارد، درخت واحدهای منبع را می‌خواند و هر واحد را به سایتش نسبت می‌دهد.
+        خروجی: (نقشه «کد واحد → شناسه سایت یا None»، مجموعه سایت‌های هم‌منبع دیگر)؛ بدون ریشه → None.
+        نگاشت ناقص یا ریشه‌ی مشترک بین دو سایت SyncError می‌دهد تا Sync با داده‌ی اشتباه اجرا نشود.
+        """
+        own_roots = self.root_codes(mapping)
+        if not own_roots:
+            return None
+        missing = self.org_filter_missing_fields(mapping)
+        if missing:
+            raise SyncError("برای فیلتر واحد ریشه این فیلدهای نگاشت پرسنل باید پر شوند: " + "، ".join(missing))
+        roots_by_site = await self.sibling_roots(site_id, conn)
+        roots_by_site[site_id] = own_roots
+        parents = await self.load_parent_map(adapter, mapping)
+        try:
+            assignment = assign_units_to_sites(parents, roots_by_site)
+        except OrgTreeError as e:
+            raise SyncError(str(e)) from e
+        return assignment, set(roots_by_site) - {site_id}
+
+    async def _protected_codes(
+        self, site_id: int, owned_elsewhere: dict[str, int], unassigned_codes: set[str]
+    ) -> tuple[set[str], int]:
+        """
+        کدهای پرسنلی‌ای را که رکوردشان در این سایت نباید غیرفعال شود مشخص می‌کند:
+        - بی‌سایت‌ها همیشه (تا تنظیم ریشه‌ها، رکورد فعلی‌شان دست نمی‌خورد)؛
+        - متعلق به سایت دیگر فقط تا وقتی آن سایت هنوز رکوردی برایشان ندارد (منتظر انتقال)؛
+          اگر آن سایت رکورد دارد، نسخه‌ی این سایت تکراری است و غیرفعال می‌شود.
+        خروجی: (مجموعه کدهای محافظت‌شده، تعداد رکوردهای این سایت که منتظر انتقال‌اند).
+        """
+        protected = set(unassigned_codes)
+        if not owned_elsewhere:
+            return protected, 0
+        # کدهایی که سایت مالکشان هنوز رکوردی ندارد
+        result = await self.db.execute(
+            select(Employee.personnel_code, Employee.site_id).where(
+                Employee.personnel_code.in_(owned_elsewhere.keys()),
+                Employee.site_id.in_(set(owned_elsewhere.values())),
+            )
+        )
+        present = {(code, sid) for code, sid in result.all()}
+        waiting = {code for code, owner in owned_elsewhere.items() if (code, owner) not in present}
+        protected |= waiting
+        if not waiting:
+            return protected, 0
+        # چند نفر از این منتظران هنوز رکورد فعال در همین سایت دارند (برای هشدار)
+        here = await self.db.execute(
+            select(Employee.personnel_code).where(
+                Employee.site_id == site_id,
+                Employee.personnel_code.in_(waiting),
+                Employee.is_active.is_(True),
+            )
+        )
+        return protected, len(here.all())
+
+    @staticmethod
+    def _split_rows_by_org(
+        site_id: int,
+        columns: dict[str, str],
+        rows: list[dict],
+        assignment: dict[str, int | None],
+        department_lookup: dict[str, str],
+    ) -> tuple[list[dict], dict[str, int], set[str], int, str | None]:
+        """
+        ردیف‌های پرسنل را بر اساس سایتِ واحدشان جدا می‌کند.
+        خروجی: (ردیف‌های این سایت، «کد پرسنلی → سایت مالک» برای پرسنل سایت‌های دیگر، کدهای پرسنل بی‌سایت،
+        تعداد پرسنل بی‌سایت، متن هشدار یا None). کد پرسنلی مثل Upsert با str().strip() ساخته می‌شود.
+        """
+        own_rows: list[dict] = []
+        owned_elsewhere: dict[str, int] = {}
+        unassigned_codes: set[str] = set()
+        unassigned_by_unit: dict[str, int] = {}
+        for row in rows:
+            raw_code = row.get(columns["personnel_code"])
+            code = str(raw_code).strip() if raw_code is not None else ""  # همان قالب کد در _upsert_employees
+            unit = normalize_code(row.get(columns["department_raw"]))
+            owner = assignment.get(unit) if unit else None
+            if owner == site_id:
+                own_rows.append(row)
+                continue
+            if code:
+                if owner is None:
+                    unassigned_codes.add(code)
+                else:
+                    owned_elsewhere[code] = owner
+            if owner is None:
+                key = unit or "—"
+                unassigned_by_unit[key] = unassigned_by_unit.get(key, 0) + 1
+        skipped = sum(unassigned_by_unit.values())
+        warning = None
+        if skipped:
+            # فهرست واحدهای بی‌سایت با نام و تعداد پرسنل (حداکثر ۲۰ مورد)
+            parts = [
+                (f"{department_lookup.get(unit, unit)} ({unit}): {count}" if unit != "—" else f"بدون واحد: {count}")
+                for unit, count in sorted(unassigned_by_unit.items(), key=lambda kv: -kv[1])[:20]
+            ]
+            warning = (
+                f"{skipped} نفر وارد نشدند چون واحدشان زیر هیچ واحد ریشه‌ای از سایت‌ها نیست: " + "، ".join(parts)
+            )
+        return own_rows, owned_elsewhere, unassigned_codes, skipped, warning
 
     async def _load_lookup_table(
         self, adapter, table: str | None, id_column: str | None, name_column: str | None
@@ -238,6 +539,7 @@ class SyncService:
 
         rows = await adapter.fetch_rows(table, [id_column, name_column])
 
+        # کد (strip‌شده) -> نام؛ اگر نام NULL باشد خود کد به‌جای نام استفاده می‌شود
         lookup: dict[str, str] = {}
         for row in rows:
             raw_id = row.get(id_column)
@@ -250,7 +552,10 @@ class SyncService:
     async def _get_or_create_department(
         self, site_id: int, code: str, name: str, cache: dict[str, int]
     ) -> int:
-        """واحد سازمانی متناظر با این کد را پیدا می‌کند، یا اگر نبود می‌سازد."""
+        """
+        واحد سازمانی متناظر با این کد را پیدا می‌کند، یا اگر نبود می‌سازد؛ نام تغییرکرده را هم به‌روز می‌کند.
+        خروجی: شناسه واحد. cache برای جلوگیری از Query تکراری در طول یک اجرا است.
+        """
         if code in cache:
             return cache[code]
 
@@ -262,7 +567,7 @@ class SyncService:
         if department is None:
             department = Department(site_id=site_id, name=name, code=code)
             self.db.add(department)
-            await self.db.flush()
+            await self.db.flush()  # برای گرفتن department.id
         elif department.name != name:
             # اگر عنوان بخش در منبع (مثلاً ستون Title) تغییر کرده، همگام می‌کنیم
             department.name = name
@@ -272,7 +577,7 @@ class SyncService:
 
     @staticmethod
     def _coerce_is_active(raw_value) -> bool:
-        """مقدار خام ستون is_active منبع را به True/False تبدیل می‌کند."""
+        """مقدار خام ستون is_active منبع را به True/False تبدیل می‌کند (NULL = فعال؛ رشته‌های _FALSY_ACTIVE_VALUES = غیرفعال)."""
         if raw_value is None:
             return True
         if isinstance(raw_value, bool):
@@ -292,6 +597,7 @@ class SyncService:
         text = str(raw_value).strip()
         if not text:
             return None
+        # جداکردن سال/ماه/روز: با جداکننده یا به‌صورت ۸ رقم چسبیده
         parts: list[str] | None = None
         for sep in ("/", "-", "."):
             if sep in text:
@@ -338,6 +644,7 @@ class SyncService:
         if not text:
             return None
 
+        # فرمت با جداکننده (سال/ماه/روز)
         for sep in ("/", "-", "."):
             if sep in text:
                 parts = text.split(sep)
@@ -350,6 +657,7 @@ class SyncService:
                         return None
                 return None
 
+        # فرمت ۸ رقمی چسبیده (YYYYMMDD)
         if text.isdigit() and len(text) == 8:
             try:
                 month, day = int(text[4:6]), int(text[6:8])
@@ -363,24 +671,15 @@ class SyncService:
     @staticmethod
     def _normalize_fixed_length_digits(raw_value, length: int) -> str | None:
         """
-        برای فیلدهایی مثل کد ملی (همیشه دقیقاً ۱۰ رقم) و موبایل (همیشه دقیقاً
-        ۱۱ رقم، با ۰ شروع می‌شود) — یک باگ واقعی که روی همین پروژه کشف شد:
-        اگر ستون مبدأ در دیتابیس خارجی به‌صورت عددی (نه متنی) ذخیره شده باشد،
-        درایور دیتابیس این مقدار را به‌صورت int/float برمی‌گرداند، که صفرهای
-        ابتدایی را برای همیشه از دست می‌دهد (چون در یک عدد، ۰۰۱۲۳۴۵۶۷۸ همان
-        ۱۲۳۴۵۶۷۸ است) — دقیقاً پرسنلی که کد ملی‌شان با ۰ یا ۰۰ شروع می‌شود
-        (خیلی از استان‌ها) از این آسیب می‌دیدند: ورود اولشان (که کد ملی رمز
-        پیش‌فرض است) با «اطلاعات ورود اشتباه است» رد می‌شد، چون مقدار
-        ذخیره‌شده در دیتابیس پرتال با کد ملی واقعی روی کارتشان یکی نبود.
-
-        چون طول این دو فیلد در ایران همیشه ثابت است، این تابع با اطمینان
-        صفرهای ابتدایی گم‌شده را با zfill بازمی‌گرداند — چه مقدار مبدأ از
-        اول رشته بوده چه عدد.
+        مقدار خام فیلدهای طول‌ثابت مثل کد ملی (۱۰ رقم) و موبایل (۱۱ رقم) را به رشته ارقام لاتین
+        با طول length تبدیل می‌کند. اگر ستون مبدأ عددی باشد، درایور int/float برمی‌گرداند و صفرهای
+        ابتدایی (مثلاً کد ملی ۰۰۱۲۳۴۵۶۷۸) از بین می‌روند؛ این تابع آن‌ها را با zfill بازمی‌گرداند تا
+        ورود با کد ملی (رمز پیش‌فرض) درست کار کند. خروجی: رشته نرمال‌شده یا None.
         """
         if raw_value is None:
             return None
         if isinstance(raw_value, float):
-            raw_value = int(raw_value)
+            raw_value = int(raw_value)  # حذف «.0» مقدار عددی
         # normalize_login_credential ارقام فارسی/عربی احتمالی را هم به لاتین
         # تبدیل می‌کند و کاراکترهای نامرئی را حذف می‌کند — برای هم‌خوانی با
         # همان تابعی که هنگام ورود کاربر استفاده می‌شود.
@@ -397,10 +696,17 @@ class SyncService:
         department_lookup: dict[str, str],
         position_lookup: dict[str, str],
         is_active_inverted: bool = False,
-    ) -> tuple[int, int, int, set[str]]:
+        transfer_from_site_ids: set[int] | None = None,
+    ) -> tuple[int, int, int, set[str], int]:
+        """
+        ردیف‌های خام منبع را به رکوردهای Employee این سایت تبدیل و Insert/Update می‌کند.
+        transfer_from_site_ids: سایت‌های هم‌منبعی که اگر پرسنلِ این سایت هنوز آنجا رکورد دارد، همان رکورد منتقل شود.
+        خروجی: (تعداد درج، تعداد به‌روزرسانی، تعداد ردشده به‌خاطر غیرفعال بودن، مجموعه کدهای پرسنلی دیده‌شده، تعداد انتقال).
+        """
         inserted = 0
         updated = 0
         skipped_inactive = 0
+        transferred = 0
         seen_codes: set[str] = set()
         now = datetime.now(timezone.utc)
         has_department_mapping = "department_raw" in columns
@@ -410,6 +716,29 @@ class SyncService:
         result = await self.db.execute(select(Employee).where(Employee.site_id == site_id))
         existing_by_code = {emp.personnel_code: emp for emp in result.scalars().all()}
 
+        # پرسنلِ این سایت که هنوز در یک سایت هم‌منبع دیگر رکورد دارند (نامزد انتقال)
+        transfer_candidates: dict[str, Employee] = {}
+        if transfer_from_site_ids:
+            new_codes = {
+                str(row.get(columns["personnel_code"])).strip()
+                for row in raw_rows
+                if row.get(columns["personnel_code"]) is not None
+            } - set(existing_by_code)
+            if new_codes:
+                cand_result = await self.db.execute(
+                    select(Employee).where(
+                        Employee.site_id.in_(transfer_from_site_ids),
+                        Employee.personnel_code.in_(new_codes),
+                        Employee.is_manually_created.is_(False),
+                    )
+                )
+                for emp in cand_result.scalars().all():
+                    # اگر در چند سایت رکورد داشت، رکورد فعال ترجیح دارد
+                    current = transfer_candidates.get(emp.personnel_code)
+                    if current is None or (emp.is_active and not current.is_active):
+                        transfer_candidates[emp.personnel_code] = emp
+
+        # پردازش هر ردیف منبع
         for row in raw_rows:
             raw_code = row.get(columns["personnel_code"])
             personnel_code = str(raw_code).strip() if raw_code is not None else ""
@@ -438,6 +767,7 @@ class SyncService:
                 if not email:
                     email = None
 
+            # تاریخ تولد (روز/ماه + تاریخ کامل)، تاریخ استخدام و جنسیت
             birth_month = birth_day = None
             birth_date_jalali = None
             if "birth_date_raw" in columns:
@@ -450,6 +780,7 @@ class SyncService:
             )
             gender = self._normalize_gender(row.get(columns["gender_raw"])) if "gender_raw" in columns else None
 
+            # سمت: ترجمه کد با جدول Lookup (در نبود، خود کد)
             position_title = None
             if "position_raw" in columns:
                 raw_position = row.get(columns["position_raw"])
@@ -457,6 +788,7 @@ class SyncService:
                 if position_code:
                     position_title = position_lookup.get(position_code, position_code)
 
+            # وضعیت فعال بودن در منبع (بدون ستون وضعیت: فعال)
             if "is_active_raw" in columns:
                 is_active = self._coerce_is_active(row.get(columns["is_active_raw"]))
                 if is_active_inverted:
@@ -465,6 +797,7 @@ class SyncService:
             else:
                 is_active = True
 
+            # واحد سازمانی: پیدا/ساخت واحد متناظر با کد بخش
             department_id = None
             if has_department_mapping:
                 raw_dept = row.get(columns["department_raw"])
@@ -477,16 +810,20 @@ class SyncService:
 
             existing = existing_by_code.get(personnel_code)
 
+            # انتقال رکورد از سایت هم‌منبع دیگر (حساب کاربری و سوابق همراه رکورد می‌آیند)
+            if existing is None and personnel_code in transfer_candidates:
+                existing = transfer_candidates.pop(personnel_code)
+                await self._record_transfer(existing, site_id, now)
+                existing_by_code[personnel_code] = existing
+                transferred += 1
+
             if existing is None and not is_active:
-                # ⚠️ پرسنلی که تا امروز اصلاً وارد پرتال نشده و همین الان هم در
-                # منبع IsActive=۰ یا IsCut=۱ است، اصلاً Import نمی‌شود — نه فقط
-                # is_active=False. برخلاف پرسنلی که قبلاً فعال بوده و بعداً کات
-                # شده (که رکورد و سوابقش، مثل فیش حقوقی، دست‌نخورده می‌ماند —
-                # فقط پایین همین تابع is_active=False می‌شود)، اینجا اصلاً هیچ
-                # رکوردی برایش وجود نداشته که نگهش داریم.
+                # پرسنل جدیدی که در منبع غیرفعال/کات است اصلاً Import نمی‌شود. پرسنل موجودی که
+                # کات شده رکورد و سوابقش حفظ می‌شود و فقط is_active=False می‌گیرد (شاخه Update پایین).
                 skipped_inactive += 1
                 continue
 
+            # درج پرسنل جدید
             if existing is None:
                 self.db.add(
                     Employee(
@@ -511,6 +848,7 @@ class SyncService:
                     )
                 )
                 inserted += 1
+            # به‌روزرسانی پرسنل موجود؛ فیلدهای اختیاری فقط اگر نگاشت/مقدار داشته باشند بازنویسی می‌شوند
             else:
                 existing.first_name = first_name
                 existing.last_name = last_name
@@ -533,14 +871,39 @@ class SyncService:
                 if has_department_mapping:
                     existing.department_id = department_id
                 existing.is_active = is_active
-                # نکته مهم: is_enabled عمداً اینجا دست‌کاری نمی‌شود. آن یک
+                # is_enabled عمداً اینجا دست‌کاری نمی‌شود. آن یک
                 # تصمیم دستی Admin است (از پنل «پرسنل») و باید مستقل از نتیجه
                 # هر اجرای Sync باقی بماند.
                 existing.last_synced_at = now
                 updated += 1
 
         await self.db.flush()
-        return inserted, updated, skipped_inactive, seen_codes
+        return inserted, updated, skipped_inactive, seen_codes, transferred
+
+    async def _record_transfer(self, employee: Employee, to_site_id: int, now: datetime) -> None:
+        """
+        رکورد پرسنل را به سایت مقصد منتقل و یک SiteTransfer برای بازبینی نقش‌های سایت قبلی ثبت می‌کند.
+        واحد پرسنل در ادامه‌ی همان Sync با واحد سایت مقصد به‌روز می‌شود.
+        """
+        from_site_id = employee.site_id
+        user_result = await self.db.execute(select(User.id).where(User.employee_id == employee.id).limit(1))
+        user_id = user_result.scalar_one_or_none()
+        employee.site_id = to_site_id
+        employee.department_id = None  # واحد سایت قبلی نباید بماند؛ در ادامه واحد سایت مقصد تنظیم می‌شود
+        self.db.add(
+            SiteTransfer(
+                employee_id=employee.id,
+                personnel_code=employee.personnel_code,
+                from_site_id=from_site_id,
+                to_site_id=to_site_id,
+                user_id=user_id,
+                transferred_at=now,
+            )
+        )
+        await self.db.flush()
+        logger.info(
+            "پرسنل %s از سایت %s به سایت %s منتقل شد", employee.personnel_code, from_site_id, to_site_id
+        )
 
     async def _sync_employee_photos(self, site_id: int, adapter, mapping: EmployeeMapping) -> None:
         """
@@ -559,6 +922,7 @@ class SyncService:
             mapping.photo_table, [mapping.photo_emp_no_column, mapping.photo_thumbnail_column]
         )
 
+        # کد پرسنلی -> بایت‌های تصویر (ردیف‌های بدون کد یا بدون تصویر نادیده گرفته می‌شوند)
         photo_by_code: dict[str, bytes] = {}
         for row in rows:
             raw_code = row.get(mapping.photo_emp_no_column)
@@ -571,6 +935,7 @@ class SyncService:
         if not photo_by_code:
             return
 
+        # اعمال تصویر روی پرسنل همین سایت که در منبع عکس دارند
         result = await self.db.execute(
             select(Employee).where(
                 Employee.site_id == site_id, Employee.personnel_code.in_(photo_by_code.keys())
@@ -585,10 +950,9 @@ class SyncService:
 
     async def _deactivate_missing(self, site_id: int, seen_codes: set[str]) -> int:
         """
-        پرسنلی که دیگر اصلاً در منبع دیده نشدند (حذف فیزیکی از منبع)، غیرفعال می‌شوند.
-
-        ⚠️ پرسنلی که دستی در پرتال اضافه شده‌اند (is_manually_created) هیچ‌وقت
-        در منبع نیستند - قبلاً هر Sync غیرفعالشان می‌کرد (باگ گزارش‌شده).
+        پرسنل فعال این سایت که در این اجرا در منبع دیده نشدند (seen_codes) را غیرفعال می‌کند (بدون حذف).
+        پرسنل افزوده‌شده دستی (is_manually_created) مستثنا هستند، چون هرگز در منبع وجود ندارند.
+        خروجی: تعداد پرسنل غیرفعال‌شده.
         """
         result = await self.db.execute(
             select(Employee).where(

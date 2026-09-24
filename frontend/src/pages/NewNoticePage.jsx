@@ -1,3 +1,10 @@
+/**
+ * صفحه ایجاد اطلاعیه جدید با سه حالت (بسته به مجوزهای کاربر):
+ * - اطلاعیه متنی: عنوان، متن، اولویت و مخاطبان (کل سازمان، سایت‌ها، واحدها، سرپرستان، اشخاص خاص)؛ ثبت و انتشار فوری.
+ * - فیش حقوقی: آپلود فایل XML/XLSX؛ هر پرسنلِ موجود در فایل فقط فیش خودش را دریافت می‌کند.
+ * - فیش کارکرد: آپلود فایل اکسل به‌همراه متن ماه/سال چاپ‌شده روی کارت PDF.
+ * پس از ارسال، نتیجه (و کدهای پیدانشده/ردیف‌های نامعتبر فایل) نمایش داده می‌شود.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -34,6 +41,7 @@ import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
 import PillTabs from "../components/PillTabs";
 
+// برچسب و رنگ گزینه‌های اولویت
 const PRIORITY_LABELS = {
   low: { label: "کم", color: "default" },
   normal: { label: "عادی", color: "info" },
@@ -41,6 +49,7 @@ const PRIORITY_LABELS = {
   urgent: { label: "فوری", color: "error" },
 };
 
+// مقدار اولیه فرم اطلاعیه متنی (employees: اشیای پرسنل انتخاب‌شده، supervisors: id سرپرستان)
 const EMPTY_FORM = {
   title: "",
   body: "",
@@ -52,6 +61,7 @@ const EMPTY_FORM = {
   supervisors: [],
 };
 
+// مقدار اولیه فرم فیش حقوقی
 const EMPTY_PAYROLL_FORM = {
   title: "فیش حقوقی",
   body: "",
@@ -59,6 +69,7 @@ const EMPTY_PAYROLL_FORM = {
   file: null,
 };
 
+// مقدار اولیه فرم فیش کارکرد (cardSubtitle: ماه/سال چاپ‌شده روی کارت)
 const EMPTY_ATTENDANCE_CARD_FORM = {
   title: "فیش کارکرد",
   body: "",
@@ -67,37 +78,39 @@ const EMPTY_ATTENDANCE_CARD_FORM = {
   file: null,
 };
 
+// کامپوننت صفحه؛ مجوزهای ارسال را بارگذاری و فرم متناسب با حالت انتخاب‌شده را رندر می‌کند
 export default function NewNoticePage() {
   const navigate = useNavigate();
 
   const [createMode, setCreateMode] = useState("normal"); // "normal" | "payroll" | "attendance_card"
   const [form, setForm] = useState(EMPTY_FORM);
   const [payrollForm, setPayrollForm] = useState(EMPTY_PAYROLL_FORM);
-  const [payrollResult, setPayrollResult] = useState(null);
+  const [payrollResult, setPayrollResult] = useState(null);  // پاسخ آپلود فیش حقوقی (matched_employee_count، missing_codes، invalid_row_count)
   const [attendanceCardForm, setAttendanceCardForm] = useState(EMPTY_ATTENDANCE_CARD_FORM);
-  const [attendanceCardResult, setAttendanceCardResult] = useState(null);
+  const [attendanceCardResult, setAttendanceCardResult] = useState(null);  // پاسخ آپلود فیش کارکرد، با همان ساختار
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // نتیجه نهایی ارسال — با رنگ سبز (موفق) یا قرمز (ناموفق) نمایش داده می‌شود
   const [result, setResult] = useState(null); // { success: boolean, message: string } | null
 
-  const [availableTargets, setAvailableTargets] = useState(null);
+  const [availableTargets, setAvailableTargets] = useState(null);  // مقصدها و مجوزهای ارسال کاربر از سرور؛ null = در حال بارگذاری
   const [sites, setSites] = useState([]);
   const [departments, setDepartments] = useState([]);
 
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [employeeOptions, setEmployeeOptions] = useState([]);
+  const [employeeOptions, setEmployeeOptions] = useState([]);  // نتایج جست‌وجوی پرسنل برای «ارسال به شخص خاص»
   const [employeeSearchLoading, setEmployeeSearchLoading] = useState(false);
 
+  // بارگذاری اولیه مجوزهای ارسال، سایت‌ها و واحدها
   useEffect(() => {
     fetchAvailableTargets().then(setAvailableTargets);
     fetchSites().then(setSites);
     fetchDepartments().then(setDepartments);
   }, []);
 
-  // اگر کاربر فقط می‌تواند فیش حقوقی/فیش کارکرد بفرستد (مثل acc_manager یا
-  // hr-manager)، مستقیم همان حالت باز شود
+  // اگر کاربر مجوز اطلاعیه متنی ندارد و فقط می‌تواند فیش حقوقی/کارکرد بفرستد
+  // (مثل acc_manager یا hr-manager)، همان حالت به‌صورت پیش‌فرض انتخاب می‌شود
   useEffect(() => {
     if (!availableTargets) return;
     const hasNormal =
@@ -117,6 +130,7 @@ export default function NewNoticePage() {
   // جستجو باید فقط در همان واحد(های) خودش انجام شود، نه کل سازمان.
   const employeeScopeDepartmentIds = availableTargets?.employee_target_department_ids || null;
 
+  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه (debounce)، محدود به واحدهای مجاز در صورت وجود
   useEffect(() => {
     if (!employeeSearch) {
       setEmployeeOptions([]);
@@ -134,6 +148,7 @@ export default function NewNoticePage() {
     return () => clearTimeout(timer);
   }, [employeeSearch, employeeScopeDepartmentIds]);
 
+  // سایت‌ها و واحدهایی که کاربر اجازه ارسال به آن‌ها را دارد
   const allowedSites = useMemo(
     () => sites.filter((s) => availableTargets?.site_ids.includes(s.id)),
     [sites, availableTargets]
@@ -143,6 +158,7 @@ export default function NewNoticePage() {
     [departments, availableTargets]
   );
 
+  // کاربر حداقل یک نوع مخاطب برای اطلاعیه متنی دارد
   const canAnyNormalTarget =
     availableTargets &&
     (availableTargets.can_target_all ||
@@ -150,9 +166,10 @@ export default function NewNoticePage() {
       allowedDepartments.length > 0 ||
       availableTargets.can_target_employee);
 
-  const allDepartmentsSelected =
+  const allDepartmentsSelected =  // همه واحدهای مجاز انتخاب شده‌اند
     allowedDepartments.length > 0 && form.departmentIds.length === allowedDepartments.length;
 
+  // افزودن/حذف یک واحد از مخاطبان
   function toggleDepartment(deptId) {
     setForm((prev) => ({
       ...prev,
@@ -162,6 +179,7 @@ export default function NewNoticePage() {
     }));
   }
 
+  // انتخاب همه واحدهای مجاز یا پاک کردن همه
   function toggleSelectAllDepartments() {
     setForm((prev) => ({
       ...prev,
@@ -169,10 +187,11 @@ export default function NewNoticePage() {
     }));
   }
 
-  const supervisorOptions = availableTargets?.supervisor_employees || [];
+  const supervisorOptions = availableTargets?.supervisor_employees || [];  // سرپرستانی که کاربر می‌تواند به آن‌ها ارسال کند
   const allSupervisorsSelected =
     supervisorOptions.length > 0 && form.supervisors.length === supervisorOptions.length;
 
+  // افزودن/حذف یک سرپرست از مخاطبان
   function toggleSupervisor(employeeId) {
     setForm((prev) => ({
       ...prev,
@@ -182,6 +201,7 @@ export default function NewNoticePage() {
     }));
   }
 
+  // انتخاب همه سرپرستان یا پاک کردن همه
   function toggleSelectAllSupervisors() {
     setForm((prev) => ({
       ...prev,
@@ -189,27 +209,24 @@ export default function NewNoticePage() {
     }));
   }
 
-  // فیلد «عنوان» تک‌خطی است — این صفحه اصلاً <form> ندارد، پس Enter به‌خودی‌خود
-  // چیزی را Submit نمی‌کند؛ ولی برای اطمینان کامل (بعضی کیبوردهای موبایل با
-  // IME فارسی/ایموجی، Enter را به‌عنوان «تأیید» تفسیر می‌کنند) صریحاً از هر
-  // رفتار پیش‌فرض روی این فیلد جلوگیری می‌کنیم.
+  // در فیلدهای تک‌خطی (عنوان/زیرعنوان کارت) رفتار پیش‌فرض Enter را غیرفعال می‌کند؛ صفحه <form>
+  // ندارد ولی بعضی کیبوردهای موبایل (IME فارسی/ایموجی) Enter را «تأیید» تفسیر می‌کنند.
   function handleTitleKeyDown(e) {
     if (e.key === "Enter") {
       e.preventDefault();
     }
   }
 
-  // برخلاف فیلد عنوان، توی فیلد «متن اطلاعیه» باید Enter دقیقاً کار همیشگی‌اش
-  // (خط جدید) را انجام بدهد — این‌جا فقط جلوی سرریزشدن رویداد به هر Listener
-  // بالاتری گرفته می‌شود، بدون این‌که رفتار پیش‌فرض textarea تغییر کند. ایموجی
-  // نیازی به کد جداگانه ندارد؛ چون این یک <textarea>/<input> معمولی است، هر
-  // چیزی که کیبورد موبایل بفرستد (شامل ایموجی) عیناً وارد متن می‌شود.
+  // در فیلدهای چندخطی Enter همان خط جدید را درج می‌کند؛ فقط از انتشار رویداد به Listenerهای
+  // بالاتر جلوگیری می‌شود و رفتار پیش‌فرض textarea تغییر نمی‌کند.
   function handleBodyKeyDown(e) {
     if (e.key === "Enter") {
       e.stopPropagation();
     }
   }
 
+  // ثبت اطلاعیه متنی: فهرست targets را از انتخاب‌ها می‌سازد (سرپرستان و اشخاص بدون تکرار)،
+  // مخاطب/عنوان/متن را اعتبارسنجی می‌کند، سپس اطلاعیه را ایجاد و بلافاصله منتشر می‌کند
   async function handleCreate() {
     if (isSubmitting) return; // جلوگیری از ارسال تکراری با کلیک چندباره
     setError("");
@@ -267,6 +284,7 @@ export default function NewNoticePage() {
     }
   }
 
+  // اعتبارسنجی و آپلود فایل فیش حقوقی؛ نتیجه شامل تعداد پرسنل منطبق در result و payrollResult قرار می‌گیرد
   async function handleCreatePayroll() {
     if (isSubmitting) return;
     setError("");
@@ -303,6 +321,7 @@ export default function NewNoticePage() {
     }
   }
 
+  // اعتبارسنجی و آپلود فایل فیش کارکرد به‌همراه متن ماه/سال کارت؛ نتیجه در result و attendanceCardResult
   async function handleCreateAttendanceCard() {
     if (isSubmitting) return;
     setError("");
@@ -344,6 +363,7 @@ export default function NewNoticePage() {
     }
   }
 
+  // همه فرم‌ها و نتایج را پاک می‌کند تا اطلاعیه دیگری ارسال شود
   function handleSendAnother() {
     setResult(null);
     setError("");
@@ -354,6 +374,7 @@ export default function NewNoticePage() {
     setAttendanceCardResult(null);
   }
 
+    // تا بارگذاری مجوزها، نشانگر بارگذاری نمایش داده می‌شود
   if (!availableTargets) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -362,6 +383,7 @@ export default function NewNoticePage() {
     );
   }
 
+    // کاربری که هیچ مجوز ارسالی ندارد فقط پیام هشدار و دکمه بازگشت را می‌بیند
   if (!canAnyNormalTarget && !availableTargets.can_upload_payroll && !availableTargets.can_upload_attendance_card) {
     return (
       <Box sx={{ maxWidth: 640, mx: "auto" }}>
@@ -385,6 +407,7 @@ export default function NewNoticePage() {
       </Stack>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
+        {/* پیام نتیجه ارسال؛ برای فیش‌ها کدهای پیدانشده و تعداد ردیف‌های بدون کد پرسنلی هم اضافه می‌شود */}
         {result && (
           <Alert severity={result.success ? "success" : "error"} sx={{ mb: 3, whiteSpace: "pre-line" }}>
             {result.message}
@@ -392,17 +415,24 @@ export default function NewNoticePage() {
               payrollResult?.missing_codes?.length > 0 &&
               `\nکدهای موجود در فایل که در سامانه پیدا نشدند (${payrollResult.missing_codes.length} مورد) — فیش برای این افراد ارسال نشد:\n${payrollResult.missing_codes.join("، ")}`}
             {result.success &&
+              payrollResult?.out_of_scope_codes?.length > 0 &&
+              `\nکدهایی که پرسنلشان در سایت‌های خارج از دسترسی شماست (${payrollResult.out_of_scope_codes.length} مورد) — فیش برای این افراد ارسال نشد:\n${payrollResult.out_of_scope_codes.join("، ")}`}
+            {result.success &&
               payrollResult?.invalid_row_count > 0 &&
               `\n${payrollResult.invalid_row_count} ردیف در فایل فاقد کد پرسنلی بود و نادیده گرفته شد.`}
             {result.success &&
               attendanceCardResult?.missing_codes?.length > 0 &&
               `\nکدهای موجود در فایل که در سامانه پیدا نشدند (${attendanceCardResult.missing_codes.length} مورد) — کارت برای این افراد ارسال نشد:\n${attendanceCardResult.missing_codes.join("، ")}`}
             {result.success &&
+              attendanceCardResult?.out_of_scope_codes?.length > 0 &&
+              `\nکدهایی که پرسنلشان در سایت‌های خارج از دسترسی شماست (${attendanceCardResult.out_of_scope_codes.length} مورد) — کارت برای این افراد ارسال نشد:\n${attendanceCardResult.out_of_scope_codes.join("، ")}`}
+            {result.success &&
               attendanceCardResult?.invalid_row_count > 0 &&
               `\n${attendanceCardResult.invalid_row_count} ردیف در فایل فاقد کد پرسنلی بود و نادیده گرفته شد.`}
           </Alert>
         )}
 
+        {/* پس از ارسال: دکمه‌های «ارسال اطلاعیه دیگر» و بازگشت؛ در غیر این صورت فرم */}
         {result ? (
           <Stack direction="row" spacing={1.5}>
             <Button variant="contained" onClick={handleSendAnother}>
@@ -414,6 +444,7 @@ export default function NewNoticePage() {
           </Stack>
         ) : (
           <Stack spacing={2}>
+            {/* تب انتخاب حالت، فقط وقتی کاربر به بیش از یک حالت دسترسی دارد */}
             {((canAnyNormalTarget ? 1 : 0) +
               (availableTargets?.can_upload_payroll ? 1 : 0) +
               (availableTargets?.can_upload_attendance_card ? 1 : 0)) > 1 && (
@@ -437,6 +468,7 @@ export default function NewNoticePage() {
               />
             )}
 
+            {/* حالت اطلاعیه متنی */}
             {createMode === "normal" && (
               <>
                 <TextField
@@ -478,6 +510,7 @@ export default function NewNoticePage() {
                   مخاطبان
                 </Typography>
 
+                {/* ارسال به کل سازمان */}
                 {availableTargets?.can_target_all && (
                   <FormControlLabel
                     control={
@@ -491,6 +524,7 @@ export default function NewNoticePage() {
                   />
                 )}
 
+                {/* انتخاب چند سایت */}
                 {allowedSites.length > 0 && (
                   <Autocomplete
                     multiple
@@ -508,6 +542,7 @@ export default function NewNoticePage() {
                   />
                 )}
 
+                {/* انتخاب واحدها با گزینه «انتخاب همه» */}
                 {allowedDepartments.length > 0 && (
                   <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
                     <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
@@ -548,6 +583,7 @@ export default function NewNoticePage() {
                   </Box>
                 )}
 
+                {/* انتخاب سرپرستان واحد با گزینه «انتخاب همه» */}
                 {supervisorOptions.length > 0 && (
                   <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
                     <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
@@ -588,6 +624,7 @@ export default function NewNoticePage() {
                   </Box>
                 )}
 
+                {/* انتخاب اشخاص خاص با جست‌وجوی سمت سرور (filterOptions بدون فیلتر محلی) */}
                 {availableTargets?.can_target_employee && (
                   <Autocomplete
                     multiple
@@ -638,6 +675,7 @@ export default function NewNoticePage() {
               </>
             )}
 
+            {/* حالت فیش حقوقی */}
             {createMode === "payroll" && (
               <>
                 <Alert severity="info">
@@ -704,6 +742,7 @@ export default function NewNoticePage() {
               </>
             )}
 
+            {/* حالت فیش کارکرد */}
             {createMode === "attendance_card" && (
               <>
                 <Alert severity="info">

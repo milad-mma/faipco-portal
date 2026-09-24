@@ -28,18 +28,21 @@ from app.services.remote_backup_service import (
 
 logger = logging.getLogger("faipco.backup_scheduler")
 
-_SETTINGS_ID = 1
+_SETTINGS_ID = 1  # شناسه ردیف یکتای backup_settings
 
 
 class BackupSettingsService:
+    """خواندن و به‌روزرسانی ردیف یکتای تنظیمات بکاپ."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: Session دیتابیس."""
         self.db = db
 
     async def get_settings(self) -> BackupSettings:
+        """ردیف تنظیمات را برمی‌گرداند و اگر وجود نداشت آن را با مقادیر پیش‌فرض می‌سازد."""
         settings = await self.db.get(BackupSettings, _SETTINGS_ID)
         if settings is None:
-            # حالت لبه‌ای غیرمنتظره (Migration 043 باید همیشه ردیف اولیه را
-            # ساخته باشد) - برای اطمینان، اگر نبود همین‌جا می‌سازیم
+            # ردیف اولیه در Migration 043 ساخته می‌شود؛ این شاخه فقط برای اطمینان است
             settings = BackupSettings(id=_SETTINGS_ID)
             self.db.add(settings)
             await self.db.commit()
@@ -47,8 +50,13 @@ class BackupSettingsService:
         return settings
 
     async def update_settings(self, payload: BackupSettingsIn) -> BackupSettings:
+        """
+        همه فیلدها را از payload ذخیره می‌کند و رکورد به‌روزشده را برمی‌گرداند.
+        رمزهای SMB/FTP فقط اگر مقدار داشته باشند رمزنگاری و جایگزین می‌شوند.
+        """
         settings = await self.get_settings()
 
+        # زمان‌بندی
         settings.schedule_enabled = payload.schedule_enabled
         settings.schedule_type = payload.schedule_type
         settings.schedule_hour = payload.schedule_hour
@@ -56,6 +64,7 @@ class BackupSettingsService:
         settings.schedule_weekday = payload.schedule_weekday
         settings.schedule_interval_hours = payload.schedule_interval_hours
 
+        # مقصد SMB؛ رمز خالی یعنی حفظ رمز قبلی
         settings.smb_enabled = payload.smb_enabled
         settings.smb_host = payload.smb_host
         settings.smb_share = payload.smb_share
@@ -65,6 +74,7 @@ class BackupSettingsService:
             settings.smb_password_encrypted = encrypt_secret(payload.smb_password)
         settings.smb_domain = payload.smb_domain
 
+        # مقصد FTP؛ رمز خالی یعنی حفظ رمز قبلی
         settings.ftp_enabled = payload.ftp_enabled
         settings.ftp_host = payload.ftp_host
         settings.ftp_port = payload.ftp_port
@@ -74,6 +84,7 @@ class BackupSettingsService:
         settings.ftp_path = payload.ftp_path
         settings.ftp_use_tls = payload.ftp_use_tls
 
+        # سیاست نگهداری و مقصد ایمیل
         settings.retention_mode = payload.retention_mode
         settings.retention_count = payload.retention_count
         settings.retention_days = payload.retention_days
@@ -87,6 +98,7 @@ class BackupSettingsService:
 
 
 def _decrypt_or_empty(encrypted: str | None) -> str:
+    """رمز رمزنگاری‌شده را باز می‌کند؛ برای مقدار خالی رشته خالی برمی‌گرداند."""
     return decrypt_secret(encrypted) if encrypted else ""
 
 
@@ -95,15 +107,17 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
     یک بکاپ می‌گیرد و به همه هدف‌های راه‌دور فعال (SMB و/یا FTP - هر دو اگر
     هر دو فعال باشند) می‌فرستد، سپس روی هرکدام Retention اعمال می‌کند.
     نتیجه (موفق/ناموفق + پیام) در خودِ رکورد تنظیمات ذخیره می‌شود تا در
-    پنل قابل‌مشاهده باشد.
+    پنل قابل‌مشاهده باشد. ورودی: Session دیتابیس. خروجی: ندارد.
     """
     service = BackupSettingsService(db)
     settings = await service.get_settings()
 
+    # اگر هیچ مقصدی فعال نیست، بکاپی ساخته نمی‌شود
     if not (settings.smb_enabled or settings.ftp_enabled or settings.email_enabled):
         logger.info("بکاپ زمان‌بندی‌شده اجرا شد ولی هیچ هدف راه‌دوری فعال نیست - رد شد")
         return
 
+    # ساخت آرشیو؛ خطا در last_run_* ثبت و اجرا متوقف می‌شود
     try:
         archive_bytes = await create_backup_archive()
     except Exception as e:  # noqa: BLE001 - هر خطای غیرمنتظره باید در وضعیت آخرین اجرا ثبت شود، نه کل Job را بترکاند
@@ -118,10 +132,12 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
     messages: list[str] = []
     any_failure = False
 
+    # آرشیو در یک فایل موقت نوشته می‌شود تا آپلودکننده‌ها از مسیر فایل استفاده کنند
     with tempfile.TemporaryDirectory() as tmp_dir:
         local_path = Path(tmp_dir) / filename
         local_path.write_bytes(archive_bytes)
 
+        # آپلود به SMB و سپس حذف بکاپ‌های قدیمی طبق Retention
         if settings.smb_enabled:
             try:
                 upload_to_smb(
@@ -151,6 +167,7 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
                 messages.append(f"SMB: {e}")
                 logger.error("آپلود بکاپ زمان‌بندی‌شده به SMB ناموفق بود: %s", e)
 
+        # آپلود به FTP و سپس حذف بکاپ‌های قدیمی طبق Retention
         if settings.ftp_enabled:
             try:
                 upload_to_ftp(
@@ -180,10 +197,10 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
                 messages.append(f"FTP: {e}")
                 logger.error("آپلود بکاپ زمان‌بندی‌شده به FTP ناموفق بود: %s", e)
 
+        # ارسال به ایمیل به صورت پیوست
         if settings.email_enabled:
-            # ⚠️ محدودیت اندازه پیوست ایمیل - اکثر سرورهای SMTP رایج (Gmail،
-            # Outlook، ...) پیوست‌های بزرگ‌تر از ۲۰-۲۵ مگابایت را رد می‌کنند؛
-            # به‌جای یک خطای مبهم SMTP، همین‌جا با پیام روشن رد می‌شود.
+            # محدودیت اندازه پیوست: اکثر سرورهای SMTP رایج (Gmail، Outlook، ...)
+            # پیوست بزرگ‌تر از ۲۰-۲۵ مگابایت را رد می‌کنند؛ این‌جا با پیام روشن رد می‌شود.
             max_email_size_bytes = 20 * 1024 * 1024
             if len(archive_bytes) > max_email_size_bytes:
                 any_failure = True
@@ -192,6 +209,7 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
                     f"ایمیل: حجم بکاپ ({size_mb:.1f} مگابایت) بیش از حد مجاز پیوست ایمیل (۲۰ مگابایت) است — ارسال نشد"
                 )
             else:
+                # هر خط email_recipients یک گیرنده؛ ارسال جداگانه به هر گیرنده
                 recipients = [r.strip() for r in (settings.email_recipients or "").splitlines() if r.strip()]
                 email_failures = []
                 email_successes = 0
@@ -215,6 +233,7 @@ async def run_scheduled_backup(db: AsyncSession) -> None:
                 else:
                     messages.append(f"ایمیل: با موفقیت به {email_successes} گیرنده ارسال شد")
 
+    # ثبت نتیجه نهایی اجرا برای نمایش در پنل
     settings.last_run_at = datetime.now(timezone.utc)
     settings.last_run_success = not any_failure
     settings.last_run_message = " | ".join(messages) if messages else "هیچ هدفی فعال نبود"

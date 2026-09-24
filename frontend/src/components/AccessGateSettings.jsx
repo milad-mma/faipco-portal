@@ -1,3 +1,9 @@
+/**
+ * تنظیمات «پیش‌نیازهای دسترسی» در پنل مدیریت.
+ * بدون ورودی (props). جدولی از قابلیت‌ها × نوع پیش‌نیاز رسم می‌کند که هر خانه‌ی آن یک سوییچ است؛
+ * با روشن کردن هر سوییچ، دسترسی کاربر به آن قابلیت مشروط به خواندن اطلاعیه‌ها یا تکمیل ارزیابی‌ها می‌شود.
+ * هر ترکیب جداگانه فعال/غیرفعال می‌شود و پیش‌فرض همه خاموش است.
+ */
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -15,14 +21,7 @@ import {
 } from "@mui/material";
 import { fetchAccessGateSettings, updateAccessGateSetting } from "../api/accessGate";
 
-/**
- * ⚠️ طبق درخواست صریح کاربر: هر ترکیب «نوع اجبار × قابلیت» جداگانه
- * قابل فعال/غیرفعال‌سازی است - اگر ادمین نخواست این اجبار باشد، بتواند
- * تک‌تک یا همه را خاموش کند.
- *
- * ⚠️ پیش‌فرض همه خاموش است - این یک محدودیت است و نباید با به‌روزرسانی،
- * ناگهان همه کاربران قفل شوند.
- */
+// برچسب فارسی قابلیت‌هایی که می‌توان دسترسی به آن‌ها را مشروط کرد (کلید = نام قابلیت در Backend)
 const FEATURE_LABELS = {
   payroll_receipt: "مشاهده فیش حقوقی",
   attendance_card: "مشاهده فیش کارکرد",
@@ -31,12 +30,14 @@ const FEATURE_LABELS = {
   evaluation_result: "مشاهده نتیجه ارزیابی عملکرد",
 };
 
+// برچسب فارسی انواع پیش‌نیاز (gate)
 const GATE_LABELS = {
   unread_notices: "خواندن اطلاعیه‌ها",
   pending_evaluations: "تکمیل ارزیابی‌ها",
 };
 
-const GATES = ["unread_notices", "pending_evaluations"];
+const GATES = ["unread_notices", "pending_evaluations"]; // ترتیب ستون‌های جدول
+// ترتیب ردیف‌های جدول
 const FEATURES = [
   "payroll_receipt",
   "attendance_card",
@@ -46,10 +47,11 @@ const FEATURES = [
 ];
 
 export default function AccessGateSettings() {
-  const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(null); // فهرست {gate, feature, enabled}؛ null = در حال بارگذاری
   const [error, setError] = useState("");
-  const [savingKey, setSavingKey] = useState(null);
+  const [savingKey, setSavingKey] = useState(null); // کلید "gate:feature" سوییچی که در حال ذخیره است
 
+  // بارگذاری اولیه‌ی تنظیمات از سرور؛ در صورت خطا فهرست خالی می‌شود تا جدول نمایش داده شود
   useEffect(() => {
     fetchAccessGateSettings()
       .then(setSettings)
@@ -59,16 +61,17 @@ export default function AccessGateSettings() {
       });
   }, []);
 
+  // وضعیت فعال بودن یک ترکیب پیش‌نیاز × قابلیت را برمی‌گرداند (نبودِ رکورد = غیرفعال)
   function isEnabled(gate, feature) {
     return Boolean(settings?.find((s) => s.gate === gate && s.feature === feature)?.enabled);
   }
 
+  // تغییر یک سوییچ: وضعیت جدید را ذخیره می‌کند و در صورت خطا به حالت قبل برمی‌گرداند
   async function handleToggle(gate, feature, enabled) {
     const key = `${gate}:${feature}`;
     setError("");
     setSavingKey(key);
-    // ⚠️ به‌روزرسانی خوش‌بینانه - تا سوییچ بلافاصله واکنش نشان دهد؛ در
-    // صورت خطا به حالت قبل برمی‌گردد.
+    // به‌روزرسانی خوش‌بینانه: سوییچ بلافاصله تغییر می‌کند و در صورت خطا به حالت قبل برمی‌گردد
     setSettings((prev) =>
       prev.map((s) => (s.gate === gate && s.feature === feature ? { ...s, enabled } : s))
     );
@@ -84,6 +87,7 @@ export default function AccessGateSettings() {
     }
   }
 
+  // نمایش لودر تا زمان دریافت تنظیمات
   if (settings === null) {
     return (
       <Stack alignItems="center" sx={{ py: 3 }}>
@@ -102,17 +106,20 @@ export default function AccessGateSettings() {
         تکمیل نکند، به آن بخش دسترسی نخواهد داشت. همه گزینه‌ها به‌صورت پیش‌فرض غیرفعال هستند.
       </Typography>
 
+      {/* پیام خطای دریافت/ذخیره */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
+      {/* توضیح استثناها: اطلاعیه‌های فیش شمرده نمی‌شوند و مدیر ارشد قفل نمی‌شود */}
       <Alert severity="info" sx={{ mb: 2 }}>
         اطلاعیه‌های فیش حقوقی و فیش کارکرد در شمارش «خوانده‌نشده» حساب نمی‌شوند — وگرنه برای دیدن فیش،
         خواندن همان فیش لازم می‌شد. همچنین مدیر ارشد سامانه هرگز با این محدودیت‌ها قفل نمی‌شود.
       </Alert>
 
+      {/* جدول سوییچ‌ها: ردیف = قابلیت، ستون = نوع پیش‌نیاز */}
       <Card variant="outlined" sx={{ borderRadius: 2 }}>
         <Table size="small">
           <TableHead>

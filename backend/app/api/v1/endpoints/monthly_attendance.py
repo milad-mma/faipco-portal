@@ -1,17 +1,15 @@
 """
-/monthly-attendance/report  (GET)  گزارش تردد ماهانه شخصی — از دستگاه‌های
-                                     حضور و غیاب واقعی، در همان SQL Server
-                                     سایت خودِ کاربر. فقط برای Siteهایی که
-                                     یک AttendanceMapping (نگاشت جدول/ستون)
-                                     تنظیم شده در دسترس است.
+Endpoint گزارش تردد ماهانه‌ی شخصی.
 
-⚠️ کاملاً مستقل از سیستم آزمایشی GPS (در endpoints/attendance.py) — این یک
-منبع داده کاملاً متفاوت (دستگاه حضور و غیاب واقعی کارخانه، نه خوداظهاری
-GPS) است.
+GET /monthly-attendance/report — گزارش تردد ماه شمسی کاربر لاگین‌شده را از
+دستگاه‌های حضور و غیاب واقعی (SQL Server سایت خودِ پرسنل) می‌خواند. فقط
+برای سایت‌هایی در دسترس است که AttendanceMapping (نگاشت جدول/ستون) دارند.
 
-⚠️ امنیتی حیاتی: کد پرسنلی همیشه از خودِ Employee کاربر لاگین‌شده
-(سشن/توکن) خوانده می‌شود — هرگز از پارامتر ورودی درخواست. هیچ پارامتری
-نمی‌تواند این را Override کند.
+این ماژول مستقل از سیستم GPS در endpoints/attendance.py است؛ منبع داده‌اش
+دستگاه حضور و غیاب کارخانه است، نه خوداظهاری GPS.
+
+نکته‌ی امنیتی: کد پرسنلی همیشه از Employee کاربر لاگین‌شده (توکن) خوانده
+می‌شود و هیچ پارامتر ورودی نمی‌تواند آن را تغییر دهد.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -40,13 +38,19 @@ async def monthly_attendance_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ⚠️ پیش‌نیاز دسترسی - اگر ادمین این اجبار را فعال کرده باشد و کاربر
-    # اطلاعیه خوانده‌نشده یا ارزیابی انجام‌نشده داشته باشد، ۴۰۳ می‌گیرد.
+    """
+    گزارش تردد ماهانه‌ی خودِ کاربر لاگین‌شده را برمی‌گرداند (هر کاربر متصل به پرسنل).
+    ورودی: سال/ماه شمسی اختیاری (پیش‌فرض: ماه جاری). خروجی: ساختار get_monthly_attendance.
+    خطاها: 403 اگر دروازه‌ی دسترسی بسته باشد، 404 اگر پرسنل/نگاشت/اتصال سایت نباشد، 502 در خطای SQL Server.
+    """
+    # دروازه‌ی دسترسی: اگر ادمین اجبار را فعال کرده و کاربر اطلاعیه‌ی خوانده‌نشده
+    # یا ارزیابی انجام‌نشده دارد، 403 برمی‌گردد
     try:
         await AccessGateService(db).check(current_user, "attendance_report")
     except AccessGateBlocked as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+    # کاربر باید به یک پرسنل متصل باشد
     if current_user.employee_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این کاربر به هیچ پرسنلی متصل نیست")
 
@@ -54,8 +58,7 @@ async def monthly_attendance_report(
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
 
-    # ⚠️ وجود یا نبود AttendanceMapping برای سایت این پرسنل، خودِ «آیا این
-    # گزارش برایش فعال است؟» را مشخص می‌کند — نه یک فلگ boolean جدا.
+    # وجود AttendanceMapping برای سایت پرسنل، به‌تنهایی یعنی گزارش برای او فعال است
     mapping_result = await db.execute(select(AttendanceMapping).where(AttendanceMapping.site_id == employee.site_id))
     mapping = mapping_result.scalar_one_or_none()
     if mapping is None:
@@ -64,6 +67,7 @@ async def monthly_attendance_report(
             detail="گزارش تردد ماهانه برای سایت شما فعال نیست",
         )
 
+    # اتصال SQL Server سایت
     conn_result = await db.execute(select(SiteConnection).where(SiteConnection.site_id == employee.site_id))
     site_connection = conn_result.scalar_one_or_none()
     if site_connection is None:
@@ -72,20 +76,22 @@ async def monthly_attendance_report(
             detail="اتصال دیتابیس این سایت هنوز تنظیم نشده است",
         )
 
+    # پیش‌فرض سال/ماه: ماه شمسی جاری
     if year is None or month is None:
         current_year, current_month = get_current_jalali_year_month()
         year = year or current_year
         month = month or current_month
 
-    # ⚠️ نمایش مرخصی/ماموریت/تعطیل/غیبت: بدون تیک جداگانه - هر بخش فقط اگر
-    # جدول‌هایش در نگاشت تردد/مرخصی این سایت نگاشت شده باشد فعال است.
+    # لایه‌ی مرخصی/ماموریت/تعطیل/غیبت (overlay کارا) فقط وقتی فعال است که
+    # جدول‌هایش در نگاشت تردد/مرخصی این سایت تعریف شده باشند
     leave_mapping = (
         await db.execute(select(LeaveRequestMapping).where(LeaveRequestMapping.site_id == employee.site_id))
     ).scalar_one_or_none()
     kara_names = KaraNames(leave_mapping, mapping)
     if not kara_attendance_overlay.is_enabled(kara_names):
-        kara_names = None
-    type_titles: dict[int, str] = {}
+        kara_names = None  # None یعنی overlay غیرفعال
+    type_titles: dict[int, str] = {}  # card_no -> عنوان نوع مرخصی
+    # عنوان انواع مرخصی سایت برای نمایش در گزارش (اولین عنوان هر card_no)
     if kara_names is not None:
         types = (
             await db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == employee.site_id))
@@ -94,6 +100,7 @@ async def monthly_attendance_report(
             if leave_type.card_no is not None and leave_type.card_no not in type_titles:
                 type_titles[leave_type.card_no] = leave_type.title
 
+    # خواندن گزارش از SQL Server سایت؛ خطای اتصال/کوئری به 502 تبدیل می‌شود
     try:
         return await get_monthly_attendance(
             site_connection,

@@ -1,29 +1,24 @@
 """
-سرویس «گزارش تردد ماهانه» — از دستگاه‌های حضور و غیاب واقعی هر Site
-می‌خواند، از همان دیتابیس که برای Sync پرسنل هم استفاده می‌شود
-(SiteConnection - از هر سه نوع پشتیبانی‌شده در این پروژه: SQL Server،
-MySQL، PostgreSQL). نام جدول/ستون‌ها هاردکد نیستند - از یک AttendanceMapping
-(دقیقاً همان الگوی EmployeeMapping برای Sync پرسنل) خوانده می‌شوند که
-از پنل «تنظیمات سایت» قابل‌تنظیم است.
+سرویس «گزارش تردد ماهانه».
 
-⚠️ طبق درخواست صریح: این سرویس داده خام را دقیقاً همان‌طور که در دیتابیس
-ثبت شده، بدون هیچ پردازش/گروه‌بندی/جفت‌کردن اضافه‌ای نشان می‌دهد - فقط
-بر اساس همان ستون Date خام دستگاه گروه‌بندی می‌شود (نه یک «روز شیفت»
-محاسبه‌شده). به‌جای «ورود/خروج» (که فرض می‌کرد رکورد اول = ورود، دوم =
-خروج)، هر تردد فقط با شماره ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده
-می‌شود - همان داده خام، فقط با برچسب خنثی‌تر.
+ترددهای یک پرسنل را در یک ماه شمسی از دیتابیس دستگاه حضور و غیاب سایت
+(SiteConnection؛ SQL Server، MySQL یا PostgreSQL) می‌خواند و به‌صورت
+روزبه‌روز برمی‌گرداند. نام جدول/ستون‌ها از AttendanceMapping (تنظیم‌شده در
+پنل «تنظیمات سایت») خوانده می‌شود، نه هاردکد.
 
-⚠️ زنده - این داده هیچ‌جا Cache/ذخیره نمی‌شود؛ هر بار درخواست، مستقیماً
-از دیتابیس اصلی سایت خوانده و بلافاصله نمایش داده می‌شود (کاملاً مستقل
-از Sync Engine که پرسنل را به‌صورت دوره‌ای در دیتابیس خودِ پرتال ذخیره
-می‌کند).
+داده‌ی خام دقیقاً همان‌طور که در دیتابیس ثبت شده نمایش داده می‌شود: فقط بر
+اساس ستون Date خام دستگاه گروه‌بندی می‌شود (نه «روز شیفت» محاسبه‌شده) و هر
+تردد با شماره‌ی ترتیبی («تردد ۱»، «تردد ۲»، ...) می‌آید، نه برچسب ورود/خروج.
+روی این داده، لایه‌ی اختیاری تعطیلات تقویمی و لایه‌ی کاراوب (مرخصی/ماموریت
+ساعتی و روزانه، تقویم کاری شیفت، غیبت) قرار می‌گیرد.
 
-⚠️ امنیتی: personnel_code همیشه از خودِ Employee کاربر لاگین‌شده خوانده
-می‌شود (هرگز از ورودی درخواست). مقادیر (نه نام جدول/ستون) همیشه
-Parameterized هستند؛ نام جدول/ستون فقط از AttendanceMapping (تنظیم‌شده
-توسط Admin با مجوز sites.manage) می‌آیند و با علامت کوته مخصوص همان نوع
-دیتابیس (تابع _quote) احاطه می‌شوند — همان الگوی امنیتی Sync Engine
-(app/sync_engine/adapters/).
+داده هیچ‌جا Cache نمی‌شود؛ هر درخواست مستقیماً از دیتابیس سایت می‌خواند
+(مستقل از Sync Engine که پرسنل را دوره‌ای در دیتابیس پرتال ذخیره می‌کند).
+
+امنیت: personnel_code همیشه از Employee کاربر لاگین‌شده می‌آید. مقادیر
+همیشه Parameterized هستند؛ نام جدول/ستون فقط از AttendanceMapping (تنظیم
+Admin با مجوز sites.manage) می‌آید و با علامت کوته‌ی نوع دیتابیس (_quote)
+احاطه می‌شود — همان الگوی app/sync_engine/adapters/.
 """
 from __future__ import annotations
 
@@ -45,15 +40,17 @@ logger = logging.getLogger("faipco.monthly_attendance")
 
 
 class MonthlyAttendanceError(Exception):
+    """خطای گزارش تردد با پیام فارسی قابل‌نمایش (کد پرسنلی نامعتبر، خطای اتصال، نوع دیتابیس پشتیبانی‌نشده)."""
     pass
 
 
 def _format_time(raw_time: int) -> str:
     """
-    عدد فشرده ساعت (بدون جداکننده) را به HH:MM تبدیل می‌کند. 3 رقمی
-    (مثلاً 618) -> 06:18؛ 4 رقمی (مثلاً 1401) -> 14:01.
+    عدد فشرده‌ی ساعت (بدون جداکننده) را به HH:MM تبدیل می‌کند.
+    3 رقمی (618) -> 06:18؛ 4 رقمی (1401) -> 14:01؛ 1-2 رقمی -> 00:MM؛ طول دیگر بدون تغییر برمی‌گردد.
     """
     s = str(raw_time)
+    # تفکیک ساعت/دقیقه بر اساس تعداد رقم
     if len(s) == 3:
         hour, minute = s[0], s[1:3]
     elif len(s) == 4:
@@ -66,9 +63,10 @@ def _format_time(raw_time: int) -> str:
 
 
 def _minutes_between(start: int | None, end: int | None) -> int | None:
-    """فاصله دو ساعت فشرده HHMM به دقیقه (None اگر یکی نامعلوم یا ترتیب نادرست باشد)."""
+    """فاصله‌ی دو ساعت فشرده‌ی HHMM را به دقیقه برمی‌گرداند (None اگر یکی نامعلوم یا پایان قبل از شروع باشد)."""
     if start is None or end is None:
         return None
+    # هر ساعت فشرده به دقیقه از نیمه‌شب تبدیل می‌شود
     diff = (end // 100 * 60 + end % 100) - (start // 100 * 60 + start % 100)
     return diff if diff > 0 else None
 
@@ -84,18 +82,16 @@ def _today_jalali_int() -> int:
 
 
 def _format_jalali_date(yyyymmdd: int) -> str:
-    """14050524 -> "1405/05/24" """
+    """تاریخ شمسی فشرده را به رشته‌ی نمایشی تبدیل می‌کند: 14050524 -> "1405/05/24"."""
     s = str(yyyymmdd)
     return f"{s[0:4]}/{s[4:6]}/{s[6:8]}"
 
 
 def _quote(db_type: DbType, name: str) -> str:
     """
-    نام جدول/ستون (فقط از AttendanceMapping تنظیم‌شده توسط Admin، هرگز از
-    ورودی کاربر نهایی) را با علامت کوته مخصوص همان نوع دیتابیس احاطه
-    می‌کند - SQL Server از [براکت]، MySQL از بک‌تیک، PostgreSQL از
-    گیومه دوتایی استفاده می‌کند؛ Parameterized-کردن نام جدول/ستون در
-    هیچ‌کدام از این درایورها ممکن نیست (فقط مقادیر Parameterized می‌شوند).
+    نام جدول/ستون را با علامت کوته‌ی مخصوص نوع دیتابیس احاطه می‌کند:
+    SQL Server [براکت]، MySQL بک‌تیک، PostgreSQL گیومه‌ی دوتایی.
+    نام‌ها فقط از AttendanceMapping تنظیم‌شده توسط Admin می‌آیند، چون در هیچ درایوری قابل Parameterized شدن نیستند.
     """
     if db_type == DbType.mysql:
         return f"`{name}`"
@@ -105,7 +101,9 @@ def _quote(db_type: DbType, name: str) -> str:
 
 
 def _connect(conn: SiteConnection):
+    """اتصال خام به دیتابیس سایت بر اساس نوع آن (mssql/mysql/postgresql) با timeout ده ثانیه می‌سازد."""
     password = decrypt_secret(conn.password_encrypted)
+    # درایور مناسب هر نوع دیتابیس
     if conn.db_type == DbType.mssql:
         return pymssql.connect(
             server=conn.host,
@@ -140,9 +138,8 @@ def _connect(conn: SiteConnection):
 
 def _dict_cursor(connection, db_type: DbType):
     """
-    ⚠️ فقط MSSQL/MySQL از پارامتر اختصاصی خودشان برای Cursor دیکشنری‌مانند
-    استفاده می‌کنند (as_dict/cursorclass، که در _connect یا همین‌جا تنظیم
-    شده)؛ PostgreSQL نیاز به cursor_factory جداگانه در لحظه ساخت Cursor دارد.
+    یک Cursor می‌سازد که هر ردیف را به‌صورت دیکشنری برمی‌گرداند.
+    MSSQL با as_dict، PostgreSQL با RealDictCursor؛ MySQL cursorclass را از قبل روی Connection دارد.
     """
     if db_type == DbType.mssql:
         return connection.cursor(as_dict=True)
@@ -155,20 +152,16 @@ def _fetch_raw_rows_single_column_sync(
     conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
 ) -> list[dict]:
     """
-    فقط برای mapping_mode=single_column. نام جدول/ستون‌ها (فقط از
-    AttendanceMapping تنظیم‌شده توسط Admin) با علامت کوته مخصوص نوع
-    دیتابیس این سایت (_quote) در متن Query قرار می‌گیرند -
-    Parameterized-کردن نام جدول/ستون در هیچ‌کدام از درایورها ممکن نیست.
-    مقادیر واقعی (emp_no/from_date/to_date) همیشه Parameterized هستند.
-    نام مستعار ستون‌ها (AS ...) هم عمداً کوته می‌شوند - وگرنه PostgreSQL
-    آن‌ها را خودکار کوچک می‌کرد و کلید دیکشنری خروجی با آنچه کد زیر
-    انتظار دارد ("AttendanceDate"/"AttendanceTime") مطابقت نمی‌داشت.
-
-    خروجی: [{"AttendanceDate": int, "AttendanceTime": int}, ...]
+    ترددهای خام یک پرسنل را در حالت mapping_mode=single_column می‌خواند (همگام).
+    ورودی: اتصال سایت، نگاشت، شماره‌ی پرسنل و بازه‌ی تاریخ شمسی فشرده.
+    خروجی: [{"AttendanceDate": int, "AttendanceTime": int}, ...] مرتب بر اساس تاریخ و ساعت.
+    نام جدول/ستون‌ها با _quote در متن Query قرار می‌گیرند و مقادیر Parameterized هستند؛
+    نام‌های مستعار هم کوته می‌شوند تا PostgreSQL آن‌ها را کوچک نکند و کلید دیکشنری خروجی ثابت بماند.
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     connection = _connect(conn)
     try:
+        # کوئری تردد در بازه‌ی ماه
         query = f"""
             SELECT {q(mapping.date_column)} AS {q("AttendanceDate")}, {q(mapping.time_column)} AS {q("AttendanceTime")}
             FROM {q(mapping.table_name)}
@@ -187,18 +180,14 @@ def _fetch_raw_rows_enter_exit_sync(
     conn: SiteConnection, mapping: AttendanceMapping, emp_no: int, from_date: int, to_date: int
 ) -> list[dict]:
     """
-    فقط برای mapping_mode=enter_exit_columns - هر ردیف یک نشست کامل است
-    (نه یک تردد منفرد)، با چهار ستون جدا. یک نشست اگر یا تاریخ ورودش یا
-    تاریخ خروجش داخل بازه ماه درخواستی باشد لحاظ می‌شود (نشستی که از یک
-    روزِ خارج از بازه شروع شده ولی همین ماه پایان یافته، یا برعکس، هم
-    باید دیده شود). exit_date/exit_time می‌توانند NULL باشند (نشست هنوز
-    باز است).
-
-    خروجی: [{"EnterDate": int, "EnterTime": int, "ExitDate": int|None, "ExitTime": int|None}, ...]
+    نشست‌های ورود/خروج یک پرسنل را در حالت mapping_mode=enter_exit_columns می‌خواند (همگام).
+    هر ردیف یک نشست کامل با چهار ستون است؛ نشستی لحاظ می‌شود که تاریخ ورود یا خروجش داخل بازه‌ی ماه باشد.
+    خروجی: [{"EnterDate": int, "EnterTime": int, "ExitDate": int|None, "ExitTime": int|None}, ...]؛ خروج NULL یعنی نشست باز است.
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     connection = _connect(conn)
     try:
+        # کوئری نشست‌هایی که ورود یا خروجشان در بازه‌ی ماه است
         query = f"""
             SELECT {q(mapping.enter_date_column)} AS {q("EnterDate")}, {q(mapping.enter_time_column)} AS {q("EnterTime")},
                    {q(mapping.exit_date_column)} AS {q("ExitDate")}, {q(mapping.exit_time_column)} AS {q("ExitTime")}
@@ -219,13 +208,12 @@ def _fetch_raw_rows_enter_exit_sync(
 
 def _normalize_enter_exit_sessions(sessions: list[dict]) -> list[dict]:
     """
-    هر نشست (ورود+خروج) را به یک یا دو «تردد منفرد» تبدیل می‌کند - یکی
-    برای لحظه ورود، و اگر خروج ثبت شده باشد (NULL نباشد)، یکی هم برای
-    لحظه خروج؛ خروجی دقیقاً هم‌شکل با حالت single_column می‌شود
-    (["AttendanceDate", "AttendanceTime"])، تا بقیه خط لوله (گروه‌بندی
-    بر اساس روز، ساخت days_out) بدون هیچ تغییری برای هر دو حالت کار کند.
+    هر نشست (ورود+خروج) را به یک یا دو «تردد منفرد» تبدیل می‌کند: یکی برای ورود و
+    اگر خروج ثبت شده باشد یکی هم برای خروج.
+    خروجی هم‌شکل حالت single_column است ({"AttendanceDate", "AttendanceTime"}) تا ادامه‌ی خط لوله برای هر دو حالت یکی باشد.
     """
     transits: list[dict] = []
+    # هر نشست به ترددهای جداگانه شکسته می‌شود
     for session in sessions:
         if session.get("EnterDate") is not None and session.get("EnterTime") is not None:
             transits.append({"AttendanceDate": session["EnterDate"], "AttendanceTime": session["EnterTime"]})
@@ -238,11 +226,11 @@ def _fetch_holidays_sync(
     conn: SiteConnection, mapping: AttendanceMapping, year: int, month: int, branch_value: str | None = None
 ) -> set[int]:
     """
-    فهرست شماره روزهای تعطیل این ماه شمسی را از جدول تقویم برمی‌گرداند —
-    یک ستون غیرصفر (طبق داده واقعی: 500 یا 501) یعنی آن روز تعطیل است؛
-    فقط اگر همه فیلدهای نگاشت تقویم برای این سایت تنظیم شده باشند، وگرنه
-    مجموعه خالی (بدون رنگ‌آمیزی تعطیلات — نه خطا).
+    مجموعه‌ی شماره‌ی روزهای تعطیل یک ماه شمسی را از جدول تقویم سایت می‌خواند (همگام).
+    جدول تقویم یک ردیف برای هر (سال، ماه) دارد با ستون‌های روز ۱ تا ۳۱؛ مقدار غیرصفر یعنی تعطیل.
+    اگر نگاشت تقویم کامل تنظیم نشده باشد، مجموعه‌ی خالی برمی‌گردد (بدون خطا).
     """
+    # نگاشت تقویم باید کامل باشد
     if not (
         mapping.calendar_table_name
         and mapping.calendar_year_column
@@ -252,16 +240,17 @@ def _fetch_holidays_sync(
         return set()
 
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
-    day_columns_sql = ", ".join(q(f"{mapping.calendar_day_column_prefix}{i}") for i in range(1, 32))
-    # ⚠️ تقویم مشترک بین چند شعبه: فقط ردیف شعبه همین سایت (وگرنه ردیف یک شعبه دیگر برمی‌گشت)
+    day_columns_sql = ", ".join(q(f"{mapping.calendar_day_column_prefix}{i}") for i in range(1, 32))  # ستون‌های روز ۱..۳۱
+    # تقویم ممکن است بین چند شعبه مشترک باشد؛ اگر ستون شعبه نگاشت شده، فقط ردیف شعبه‌ی همین سایت
     params = {"year": year, "month": month}
     branch_sql = ""
     branch_column = (getattr(mapping, "calendar_branch_column", None) or "").strip()
     if branch_column and branch_value:
         branch_sql = f"AND {q(branch_column)} = %(branch)s"
-        params["branch"] = int(branch_value) if str(branch_value).isdigit() else branch_value
+        params["branch"] = int(branch_value) if str(branch_value).isdigit() else branch_value  # کد عددی شعبه به int
     connection = _connect(conn)
     try:
+        # ردیف تقویم این ماه
         query = f"""
             SELECT {day_columns_sql}
             FROM {q(mapping.calendar_table_name)}
@@ -277,6 +266,7 @@ def _fetch_holidays_sync(
     if row is None:
         return set()
 
+    # هر ستون روز با مقدار غیرصفر، تعطیل است
     holidays = set()
     for i in range(1, 32):
         value = row.get(f"{mapping.calendar_day_column_prefix}{i}")
@@ -297,18 +287,22 @@ async def get_monthly_attendance(
     branch_value: str | None = None,
 ) -> dict:
     """
-    گزارش تردد ماهانه یک پرسنل مشخص - داده خام، دقیقاً همان‌طور که در
-    دیتابیس ثبت شده، فقط بر اساس ستون Date خام دستگاه گروه‌بندی شده
-    (بدون هیچ تغییر/ترکیب/جفت‌کردن) - شامل روزهای بدون رکورد (با
-    transits خالی).
+    گزارش تردد ماهانه‌ی یک پرسنل را می‌سازد.
+    ورودی: اتصال و نگاشت سایت، کد پرسنلی (عددی)، سال/ماه شمسی، نام‌های کاراوب (اختیاری)،
+    عنوان انواع مرخصی پرتال (card_no -> عنوان) و کد شعبه.
+    خروجی: {"year", "month", "max_transits_in_month", "days": [...]} با یک آیتم برای هر روز ماه
+    (روزهای بدون رکورد با transits خالی)؛ هر روز شامل ترددها، وضعیت روز، علامت‌های ساعتی و روزانه است.
+    خطای اتصال/کوئری تردد به MonthlyAttendanceError تبدیل می‌شود؛ شکست لایه‌های اختیاری فقط لاگ می‌شود.
     """
+    # کد پرسنلی در دستگاه‌ها عددی است
     try:
         emp_no = int(personnel_code)
     except (TypeError, ValueError):
         raise MonthlyAttendanceError("کد پرسنلی این کاربر عددی نیست — با فرمت مورد انتظار این گزارش سازگار نیست")
 
-    from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)
+    from_date, to_date = jalali_year_month_to_yyyymmdd_range(year, month)  # اولین و آخرین روز ماه (YYYYMMDD)
 
+    # خواندن ترددهای خام در thread جدا (درایورها همگام هستند)؛ حالت نشستی به تردد منفرد نرمال می‌شود
     try:
         if mapping.mapping_mode == AttendanceMappingMode.enter_exit_columns:
             sessions = await asyncio.to_thread(
@@ -325,19 +319,18 @@ async def get_monthly_attendance(
         logger.exception("خطا در دریافت گزارش تردد ماهانه (Emp_No=%s)", emp_no)
         raise MonthlyAttendanceError("اتصال به سیستم تردد با خطا مواجه شد — لطفاً بعداً دوباره تلاش کنید") from e
 
-    # ⚠️ شکست در خواندن تقویم/تعطیلات نباید کل گزارش تردد را خراب کند —
-    # این یک قابلیت مکمل/اختیاری است، نه بخش اصلی گزارش.
+    # تعطیلات تقویمی (اختیاری): شکست آن گزارش اصلی را خراب نمی‌کند
     try:
         holidays = await asyncio.to_thread(_fetch_holidays_sync, site_connection, mapping, year, month, branch_value)
     except Exception:  # noqa: BLE001
         logger.exception("خطا در دریافت تقویم/تعطیلات ماهانه (سایت=%s)", site_connection.site_id)
         holidays = set()
 
-    # ⚠️ لایه مرخصی/ماموریت (فقط کاراوب) - شکستش نباید گزارش اصلی را خراب کند
+    # لایه‌ی مرخصی/ماموریت/تقویم کاری (فقط کاراوب روی SQL Server)؛ شکست آن گزارش اصلی را خراب نمی‌کند
     overlay = None
     if kara_names is not None and site_connection.db_type == DbType.mssql:
         try:
-            branch_int = int(branch_value) if branch_value is not None and str(branch_value).isdigit() else None
+            branch_int = int(branch_value) if branch_value is not None and str(branch_value).isdigit() else None  # کد شعبه به int
             overlay = await asyncio.to_thread(
                 kara_attendance_overlay.fetch_overlay_sync,
                 site_connection,
@@ -352,36 +345,30 @@ async def get_monthly_attendance(
             overlay = None
 
     def _label(card_no: int) -> dict:
+        """برای یک شماره کارت، {"code", "label", "kind"} می‌سازد؛ عنوان پرتال بر عنوان کاراوب مقدم است."""
         card = (overlay or {}).get("cards", {}).get(card_no, {})
-        # عنوان نوع درخواست تعریف‌شده در پرتال (خواناتر) مقدم است؛ در غیر
-        # این صورت عنوان رسمی همان کارت در کاراوب
+        # اولویت عنوان: نوع درخواست تعریف‌شده در پرتال، سپس عنوان کارت در کاراوب، سپس «کد N»
         title = (type_titles or {}).get(card_no) or card.get("title") or f"کد {card_no}"
         return {"code": card_no, "label": title, "kind": card.get("kind", kara_attendance_overlay.KIND_OTHER)}
 
-    # گروه‌بندی دقیقاً بر اساس همان ستون Date خام دستگاه - بدون هیچ تغییر
+    # گروه‌بندی ترددها بر اساس همان ستون Date خام دستگاه
     rows_by_date: dict[int, list[dict]] = {}
     for row in raw_rows:
         rows_by_date.setdefault(row["AttendanceDate"], []).append(row)
 
     def _mark(card_no: int, start: int | None, end: int | None) -> dict:
+        """علامت ساعتی: برچسب کارت به‌همراه from/to (HH:MM، ساعت روز بعد به همان روز نگاشت می‌شود) و مدت به دقیقه."""
         mark = _label(card_no)
         mark["from"] = _format_time(start % 2400) if start is not None else None
         mark["to"] = _format_time(end % 2400) if end is not None else None
         mark["minutes"] = _minutes_between(start, end)
         return mark
 
-    # ⚠️ علامت مرخصی/ماموریت ساعتی - دقیقاً مثل محاسبه کاراوب (کارکرد روزانه،
-    # ستون S_Sha): تردد «ورود» (اول/سوم/...) یعنی از خروج قبلی یا شروع شیفت تا
-    # همین تردد؛ تردد «خروج» (دوم/چهارم/...) یعنی از همین تردد تا ورود بعدی یا
-    # پایان شیفت. ترتیب ورود/خروج از کارکرد روزانه کاراوب خوانده می‌شود تا شیفت
-    # شب/گردشی (خروج بعد از نیمه‌شب که تاریخ روز بعد را دارد) هم درست باشد؛
-    # علامت کارت (Status) همیشه از خودِ جدول تردد (زنده) خوانده می‌شود.
     def _mark_once(seen: dict, card_no: int, start: int | None, end: int | None) -> dict:
         """
-        ⚠️ یک بازه فقط یک‌بار حساب می‌شود - اگر هم روی خروج و هم روی ورود
-        برگشت کارت زده شود (مثلاً خروج ۰۸:۱۱ و ورود ۰۸:۵۳ هر دو با کارت
-        مرخصی)، هر دو به همان فاصله ۰۸:۱۱ تا ۰۸:۵۳ اشاره می‌کنند و کاراوب هم
-        فقط یک‌بار (۰:۴۲) حساب می‌کند.
+        علامت ساعتی برای یک بازه می‌سازد و بازه‌ی تکراری را دوباره نمی‌سازد.
+        اگر هم روی خروج و هم روی ورودِ برگشت کارت زده شود، هر دو به همان بازه اشاره می‌کنند و
+        مثل کاراوب فقط یک‌بار حساب می‌شود. علامت تازه‌ساخته با کلید موقت "_new" مشخص می‌شود.
         """
         key = (start, end)
         if key in seen:
@@ -391,12 +378,16 @@ async def get_monthly_attendance(
         seen[key] = mark
         return mark
 
-    seen_by_shift: dict[int, dict] = {}
-    shift_punch_marks: dict[tuple[int, int], dict | None] = {}
-    shift_hourly: dict[int, list[dict]] = {}
+    # علامت‌های ساعتی بر اساس شیفت‌بندی کارکرد روزانه‌ی کاراوب:
+    # ترتیب ورود/خروج از کارکرد روزانه خوانده می‌شود تا شیفت شب (خروج بعد از نیمه‌شب با
+    # تاریخ روز بعد) هم درست محاسبه شود؛ علامت کارت (Status) از خودِ جدول تردد (زنده) می‌آید
+    seen_by_shift: dict[int, dict] = {}  # روز شیفت -> بازه‌های دیده‌شده
+    shift_punch_marks: dict[tuple[int, int], dict | None] = {}  # (تاریخ واقعی، ساعت) -> علامت یا None
+    shift_hourly: dict[int, list[dict]] = {}  # روز شیفت -> لیست علامت‌های ساعتی یکتا
     for shift_date, info in ((overlay or {}).get("shift_days") or {}).items():
         times = info["cards"]
         for index, kara_time in enumerate(times):
+            # ساعت >= ۲۴۰۰ یعنی تردد در تاریخ روز بعد ثبت شده
             actual_date = shift_date if kara_time < 2400 else kara_attendance_overlay.next_jalali_date(shift_date)
             actual_time = kara_time % 2400
             status_code = overlay["punch_status"].get((actual_date, actual_time))
@@ -409,35 +400,32 @@ async def get_monthly_attendance(
             shift_punch_marks[(actual_date, actual_time)] = mark
 
     today_int = _today_jalali_int()
-    days_in_month = to_date % 100  # همان عدد روز از خودِ to_date (چون to_date = آخرین روز واقعی ماه است)
+    days_in_month = to_date % 100  # عدد روزِ to_date، چون to_date آخرین روز واقعی ماه است
     max_transits = 0
     days_out = []
 
+    # ساخت خروجی روزبه‌روز برای همه‌ی روزهای ماه
     for day in range(1, days_in_month + 1):
         date_int = year * 10000 + month * 100 + day
         day_rows = rows_by_date.get(date_int, [])
         transits = [_format_time(r["AttendanceTime"]) for r in day_rows]
         max_transits = max(max_transits, len(transits))
 
-        # ⚠️ علامت مرخصی/ماموریت ساعتی روی هر تردد - دقیقاً مثل محاسبه کاراوب
-        # (کارکرد روزانه، ستون S_Sha): تردد «ورود» (اول/سوم/...) یعنی از خروج
-        # قبلی یا شروع شیفت تا همین تردد؛ تردد «خروج» (دوم/چهارم/...) یعنی از
-        # همین تردد تا ورود بعدی یا پایان شیفت. (قبلاً همیشه «از همین تردد تا
-        # تردد بعدی» نمایش داده می‌شد - ورود ۰۸:۱۳ با کارت مرخصی به‌اشتباه
-        # «۰۸:۱۳ تا ۱۴:۳۷» دیده می‌شد، در حالی که کاراوب ۰۶:۳۰ تا ۰۸:۱۳ حساب می‌کند.)
+        # علامت مرخصی/ماموریت ساعتی روی هر تردد (مثل محاسبه‌ی کاراوب، ستون S_Sha):
+        # تردد ورود = از خروج قبلی یا شروع شیفت تا همین تردد؛ تردد خروج = از همین تردد تا ورود بعدی یا پایان شیفت
         transit_marks: list[dict | None] = []
         hourly: list[dict] = []
         daily_mark = None
         if overlay is not None:
-            covered = all((date_int, t) in shift_punch_marks for t in (r["AttendanceTime"] for r in day_rows))
+            covered = all((date_int, t) in shift_punch_marks for t in (r["AttendanceTime"] for r in day_rows))  # همه‌ی ترددهای روز در کارکرد روزانه هستند؟
             if covered:
-                # ترددهای این روز در کارکرد روزانه کاراوب شیفت‌بندی شده‌اند
+                # ترددهای این روز در کارکرد روزانه‌ی کاراوب شیفت‌بندی شده‌اند؛ علامت‌های آماده استفاده می‌شوند
                 for r in day_rows:
                     mark = shift_punch_marks[(date_int, r["AttendanceTime"])]
                     transit_marks.append(mark)
                 hourly.extend(shift_hourly.get(date_int, []))
             else:
-                # هنوز در کارکرد روزانه محاسبه نشده - همان قاعده روی ترددهای خام همین تاریخ
+                # هنوز در کارکرد روزانه محاسبه نشده؛ همان قاعده روی ترددهای خام همین تاریخ اعمال می‌شود
                 shift = (overlay.get("shift_times") or {}).get(date_int)
                 times = [r["AttendanceTime"] for r in day_rows]
                 seen_raw: dict = {}
@@ -451,14 +439,15 @@ async def get_monthly_attendance(
                     transit_marks.append(mark)
                     if mark.pop("_new", False):
                         hourly.append(mark)
+            # مرخصی/ماموریت روزانه (در روز تعطیل نمایش داده نمی‌شود)
             daily_code = overlay["daily"].get(date_int)
             if daily_code and day not in holidays:
                 daily_mark = _label(daily_code)
 
-        # ⚠️ برچسب وضعیت روز (طبق درخواست صریح کاربر):
-        #   تعطیل  = تعطیل تقویمی یا روز غیرکاری شیفت خودِ فرد (کارکرد روزانه)
-        #   غیبت   = روز کاری گذشته، بدون هیچ تردد و بدون مرخصی/ماموریت روزانه
-        # امروز و روزهای آینده هرگز «غیبت» نمی‌گیرند.
+        # وضعیت روز:
+        #   holiday = تعطیل تقویمی یا روز غیرکاری شیفت خودِ فرد (کارکرد روزانه)
+        #   leave/mission/other = نوع مرخصی/ماموریت روزانه
+        #   absent  = روز کاری گذشته، بدون هیچ تردد و بدون مرخصی/ماموریت روزانه (امروز و آینده هرگز غیبت نمی‌گیرند)
         is_off = day in holidays or bool(overlay and overlay.get("work_calendar", {}).get(date_int))
         if is_off:
             day_status = "holiday"
@@ -469,6 +458,7 @@ async def get_monthly_attendance(
         else:
             day_status = None
 
+        # آیتم خروجی این روز
         days_out.append(
             {
                 "date": _format_jalali_date(date_int),

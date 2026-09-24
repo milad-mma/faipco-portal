@@ -45,12 +45,10 @@ import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
 
-const PAGE_SIZE = 50;
-const ATTENDANCE_PILOT_ROLE = "attendance-pilot";
+const PAGE_SIZE = 50; // تعداد ردیف (روز-پرسنل) در هر صفحه
+const ATTENDANCE_PILOT_ROLE = "attendance-pilot"; // نقش پرسنلی که مجاز به ثبت ورود/خروج GPS هستند
 
-// وقتی از دکمه «افزودن» کنار یک اسلات خالی (بدون ورود/بدون خروج) باز می‌شود،
-// پرسنل و نوع رکورد از قبل مشخص است — فقط تاریخ/ساعت باید تعیین شود. اگر
-// خودِ روز گذشته باشد، ساعت پیش‌فرض ۰۸:۰۰ منطقی‌تر از «همین لحظه» است.
+// تاریخ/ساعت پیش‌فرض برای ثبت رکورد در یک اسلات خالی: اگر روز، امروز باشد «همین لحظه»، وگرنه ساعت ۰۸:۰۰ همان روز
 function buildPresetDate(dayDate) {
   const d = new Date(dayDate);
   const now = new Date();
@@ -60,18 +58,22 @@ function buildPresetDate(dayDate) {
   return d;
 }
 
+/**
+ * دیالوگ ثبت/ویرایش دستی یک رکورد ورود/خروج.
+ * ورودی: mode یکی از "create" (دکمه‌ی بالای صفحه، انتخاب آزاد پرسنل) | "createForSlot" (آیکون + کنار اسلات خالی؛
+ * پرسنل و نوع از preset می‌آید) | "edit" (ویرایش initialLog)، به همراه لیست سایت‌ها و callbackهای بستن/ذخیره.
+ */
 function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteOptions }) {
-  // mode: "create" (دکمه بالای صفحه، انتخاب پرسنل آزاد) | "createForSlot"
-  // (آیکون + کنار یک اسلات خالی، پرسنل/نوع از قبل مشخص) | "edit"
-  const [employee, setEmployee] = useState(null);
-  const [employeeOptions, setEmployeeOptions] = useState([]);
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [logType, setLogType] = useState("check_in");
-  const [dateValue, setDateValue] = useState(new Date());
-  const [site, setSite] = useState(null);
+  const [employee, setEmployee] = useState(null); // پرسنل انتخابی؛ در حالت edit همیشه null (پرسنل رکورد ثابت است)
+  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جستجوی پرسنل برای Autocomplete
+  const [employeeSearch, setEmployeeSearch] = useState(""); // متن جستجوی پرسنل
+  const [logType, setLogType] = useState("check_in"); // نوع رکورد: check_in | check_out
+  const [dateValue, setDateValue] = useState(new Date()); // تاریخ و ساعت رکورد
+  const [site, setSite] = useState(null); // سایت انتخابی (اختیاری)
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // با هر بار باز شدن دیالوگ، فیلدها را بر اساس mode مقداردهی اولیه می‌کند
   useEffect(() => {
     if (!open) return;
     setError("");
@@ -93,21 +95,18 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
     }
   }, [open, mode, initialLog, preset, siteOptions]);
 
+  // جستجوی پرسنل برای حالت create؛ فقط پرسنلی که نقش attendance-pilot دارند (تنها همان‌ها مجاز به این قابلیت‌اند)
   useEffect(() => {
     if (mode !== "create") return;
-    // فقط پرسنلی که نقش attendance-pilot را دارند — چون فقط همان‌ها اصلاً
-    // مجاز به استفاده از این قابلیت هستند
     fetchEmployees({ search: employeeSearch, pageSize: 20, hasRole: ATTENDANCE_PILOT_ROLE }).then((data) =>
       setEmployeeOptions(data.items || [])
     );
   }, [mode, employeeSearch]);
 
+  // اعتبارسنجی و ذخیره: در حالت edit رکورد را به‌روز می‌کند، در غیر این صورت رکورد جدید می‌سازد و onSaved را صدا می‌زند
   async function handleSave() {
     setError("");
-    // اعتبارسنجی «پرسنل انتخاب شود» فقط برای create/createForSlot معنا دارد
-    // — در حالت edit، عمداً employee همیشه null است (چون ویرایش نیازی به
-    // انتخاب دوباره پرسنل ندارد؛ پرسنل رکورد از قبل مشخص است). این چک قبلاً
-    // بدون توجه به mode اجرا می‌شد و همیشه جلوی ذخیره در حالت ویرایش را می‌گرفت.
+    // انتخاب پرسنل فقط برای create/createForSlot لازم است؛ در حالت edit پرسنل رکورد از قبل مشخص است
     if (mode !== "edit" && !employee) {
       setError("پرسنل را انتخاب کنید.");
       return;
@@ -133,7 +132,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
     }
   }
 
-  const employeeIsLocked = mode === "createForSlot" || mode === "edit";
+  const employeeIsLocked = mode === "createForSlot" || mode === "edit"; // پرسنل قابل تغییر نیست؛ فقط نمایش داده می‌شود
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
@@ -143,6 +142,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
         {mode === "edit" && "ویرایش رکورد"}
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        {/* پرسنل: فیلد غیرفعال (قفل‌شده) یا Autocomplete جستجو */}
         {employeeIsLocked ? (
           <TextField
             label="پرسنل"
@@ -168,6 +168,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           />
         )}
 
+        {/* نوع رکورد (در createForSlot ثابت است)، تاریخ/ساعت شمسی و سایت اختیاری */}
         <TextField
           select
           label="نوع رکورد"
@@ -202,7 +203,13 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
   );
 }
 
+/**
+ * سلول یک ورود یا خروج در جدول.
+ * ورودی: لاگ (یا undefined برای اسلات خالی)، نوع "in"/"out"، مجوز مدیریت، ردیف و callbackهای ویرایش/افزودن/حذف.
+ * اسلات خالی: خط تیره یا دکمه‌ی افزودن؛ لاگ موجود: چیپ ساعت (با ستاره برای رکورد دستی) و دکمه‌های ویرایش/حذف.
+ */
 function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
+  // اسلات خالی
   if (!log) {
     if (!canManage) {
       return (
@@ -251,26 +258,32 @@ function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
   );
 }
 
+/**
+ * صفحه‌ی گزارش ثبت ورود و خروج GPS (آزمایشی) برای مدیران.
+ * لاگ‌های همه‌ی پرسنل را با فیلتر سایت/پرسنل/ماه می‌گیرد، به ازای هر پرسنل-روز گروه‌بندی می‌کند
+ * و در جدولی با ستون‌های پویای ورود/خروج نمایش می‌دهد. کاربران دارای مجوز می‌توانند رکورد دستی ثبت، ویرایش یا حذف کنند.
+ */
 export default function ClockInOutReportPage() {
   const { user } = useAuth();
-  const canManage = Boolean(user?.can_manage_clock_records);
+  const canManage = Boolean(user?.can_manage_clock_records); // مجوز ثبت/ویرایش/حذف دستی رکوردها
 
-  const [groupedRows, setGroupedRows] = useState(null);
-  const [page, setPage] = useState(1);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [selectedSiteId, setSelectedSiteId] = useState(null);
-  const [period, setPeriod] = useState({ year: null, month: null });
+  const [groupedRows, setGroupedRows] = useState(null); // ردیف‌های گروه‌بندی‌شده به ازای پرسنل-روز؛ null = در حال بارگذاری
+  const [page, setPage] = useState(1); // صفحه‌ی جاری (صفحه‌بندی سمت کلاینت)
+  const [selectedEmployee, setSelectedEmployee] = useState(null); // فیلتر پرسنل
+  const [selectedSiteId, setSelectedSiteId] = useState(null); // فیلتر سایت
+  const [period, setPeriod] = useState({ year: null, month: null }); // ماه شمسی انتخابی؛ null = ماه جاری از سرور
 
-  const [employeeOptions, setEmployeeOptions] = useState([]);
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [siteOptions, setSiteOptions] = useState([]);
+  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جستجوی پرسنل برای فیلتر
+  const [employeeSearch, setEmployeeSearch] = useState(""); // متن جستجوی پرسنل
+  const [siteOptions, setSiteOptions] = useState([]); // سایت‌های قابل انتخاب در دیالوگ ثبت/ویرایش
 
-  const [dialogMode, setDialogMode] = useState(null); // "create" | "createForSlot" | "edit" | null
-  const [editingLog, setEditingLog] = useState(null);
-  const [slotPreset, setSlotPreset] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [dialogMode, setDialogMode] = useState(null); // "create" | "createForSlot" | "edit" | null (بسته)
+  const [editingLog, setEditingLog] = useState(null); // لاگ در حال ویرایش
+  const [slotPreset, setSlotPreset] = useState(null); // پرسنل/نوع/روز از پیش تعیین‌شده برای اسلات خالی
+  const [deleteTarget, setDeleteTarget] = useState(null); // لاگ در انتظار تأیید حذف
+  const [reloadKey, setReloadKey] = useState(0); // با افزایش، لیست دوباره بارگذاری می‌شود
 
+  // بارگذاری لاگ‌ها: ورودها و خروج‌های ماه را جداگانه می‌گیرد، ترکیب و به ازای پرسنل-روز گروه‌بندی می‌کند
   useEffect(() => {
     setGroupedRows(null);
     Promise.all([
@@ -299,17 +312,15 @@ export default function ClockInOutReportPage() {
     });
   }, [page, selectedEmployee, selectedSiteId, period.year, period.month, reloadKey]);
 
+  // جستجوی پرسنل برای فیلتر بالای صفحه
   useEffect(() => {
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
   }, [employeeSearch]);
 
+  // سایت‌های قابل انتخاب در دیالوگ: فقط سایت‌هایی که کاربر برایشان مجوز مدیریت رکورد دارد
+  // (اگر مجوز بدون محدودیت سایت باشد، همه‌ی سایت‌ها)
   useEffect(() => {
     if (canManage) {
-      // ⚠️ رفع یک نقص واقعی: قبلاً از fetchSites (همه سایت‌های سیستم)
-      // استفاده می‌شد — یعنی کسی با attendance.manage_clock_records فقط
-      // برای یک سایت، در این دراپ‌داون همه سایت‌های دیگر را هم می‌دید
-      // (که انتخابشان فقط نتیجه خالی می‌داد، بدون هیچ توضیحی) — به‌اشتباه
-      // به‌نظر می‌رسید فیلتر سایتی اصلاً کار نمی‌کند.
       fetchMyAccessibleSites("attendance.manage_clock_records").then(({ unrestricted, sites }) => {
         if (unrestricted) {
           fetchSites().then((data) => setSiteOptions(data || []));
@@ -320,6 +331,7 @@ export default function ClockInOutReportPage() {
     }
   }, [canManage]);
 
+  // بعد از ذخیره‌ی موفق دیالوگ: بستن دیالوگ و بارگذاری مجدد لیست
   function handleSaved() {
     setDialogMode(null);
     setEditingLog(null);
@@ -327,6 +339,7 @@ export default function ClockInOutReportPage() {
     setReloadKey((k) => k + 1);
   }
 
+  // حذف لاگ انتخاب‌شده پس از تأیید کاربر و بارگذاری مجدد لیست
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
     await deleteAttendanceLog(deleteTarget.id);
@@ -334,6 +347,7 @@ export default function ClockInOutReportPage() {
     setReloadKey((k) => k + 1);
   }
 
+  // باز کردن دیالوگ ثبت برای یک اسلات خالی (ورود یا خروج) با پرسنل و روز همان ردیف
   function handleAddMissing(row, type) {
     setSlotPreset({
       employeeId: row.employeeId,
@@ -345,12 +359,10 @@ export default function ClockInOutReportPage() {
     setDialogMode("createForSlot");
   }
 
-  const pageRows = groupedRows ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : null;
+  const pageRows = groupedRows ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : null; // ردیف‌های صفحه‌ی جاری
 
-  // تعداد ستون‌های ورود/خروج پویا است — بر اساس بیشترین تعداد نوبت در بین
-  // ردیف‌های همین صفحه، نه یک عدد ثابت. اگر یک پرسنل آن روز ۳ بار ورود/خروج
-  // زده باشد، ۳ زوج ستون نشان داده می‌شود؛ ردیف‌های دیگر همان ستون‌های اضافه
-  // را خالی می‌بینند.
+  // تعداد زوج‌ستون‌های ورود/خروج: بیشترین تعداد نوبت در بین ردیف‌های همین صفحه (حداقل ۱)؛
+  // ردیف‌هایی با نوبت کمتر، ستون‌های اضافه را خالی می‌بینند
   const maxSessions = useMemo(() => {
     if (!pageRows) return 1;
     return Math.max(1, ...pageRows.map((r) => r.sessions.length));
@@ -358,6 +370,7 @@ export default function ClockInOutReportPage() {
 
   return (
     <Box>
+      {/* عنوان صفحه و دکمه‌ی افزودن رکورد دستی (فقط با مجوز مدیریت) */}
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" rowGap={1}>
         <Box>
           <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
@@ -378,11 +391,13 @@ export default function ClockInOutReportPage() {
           </Button>
         )}
       </Stack>
+      {/* هشدار آزمایشی بودن سیستم GPS */}
       <Alert severity="warning" icon={<ScienceOutlinedIcon />} sx={{ mb: 3, mt: 1 }}>
         این قابلیت آزمایشی است. ثبت ورود/خروج رسمی همچنان باید از طریق دستگاه‌های تعبیه‌شده در
         کارخانه انجام شود.{canManage && " رکوردهایی که دستی ثبت/ویرایش شده‌اند با یک ⭐ کنار ساعت مشخص می‌شوند."}
       </Alert>
 
+      {/* فیلترها: سایت، پرسنل و ماه/سال؛ هر تغییر صفحه را به ۱ برمی‌گرداند */}
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
@@ -416,6 +431,7 @@ export default function ClockInOutReportPage() {
         />
       </Stack>
 
+      {/* در حال بارگذاری / بدون رکورد / جدول ردیف‌های پرسنل-روز با صفحه‌بندی */}
       {groupedRows === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
@@ -426,6 +442,7 @@ export default function ClockInOutReportPage() {
         <>
           <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, overflowX: "auto" }}>
             <Table size="small">
+              {/* سرستون‌ها: پرسنل، تاریخ، زوج‌ستون‌های پویای ورود/خروج و سایت مطابق */}
               <TableHead>
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
@@ -447,6 +464,7 @@ export default function ClockInOutReportPage() {
                       </Typography>
                     </TableCell>
                     <TableCell sx={monoFontSx}>{row.dateLabel}</TableCell>
+                    {/* به ازای هر نوبت، یک سلول ورود و یک سلول خروج */}
                     {Array.from({ length: maxSessions }, (_, i) => i).flatMap((i) => {
                       const session = row.sessions[i];
                       return [
@@ -489,6 +507,7 @@ export default function ClockInOutReportPage() {
             </Table>
           </TableContainer>
 
+          {/* صفحه‌بندی سمت کلاینت */}
           {groupedRows.length > PAGE_SIZE && (
             <Stack alignItems="center" sx={{ mt: 3 }}>
               <Pagination
@@ -502,6 +521,7 @@ export default function ClockInOutReportPage() {
         </>
       )}
 
+      {/* دیالوگ ثبت/ویرایش رکورد */}
       <LogEditDialog
         open={dialogMode !== null}
         mode={dialogMode}
@@ -516,6 +536,7 @@ export default function ClockInOutReportPage() {
         onSaved={handleSaved}
       />
 
+      {/* دیالوگ تأیید حذف رکورد */}
       <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle>حذف رکورد</DialogTitle>
         <DialogContent>

@@ -1,3 +1,9 @@
+/**
+ * صفحه اطلاعیه‌های پرسنل با سه تب: «دریافتی»، «ارسالی» (فقط برای دارندگان مجوز ارسال) و «آرشیو».
+ * هر اطلاعیه یک کارت بازشونده است (علامت‌گذاری خوانده‌شده، دانلود فیش حقوقی/کارکرد، آرشیو).
+ * با ?type=payroll یا ?type=attendance_card نمای اختصاصی «فقط فیش‌های من» بدون تب نمایش داده می‌شود.
+ * با رسیدن Push جدید از Service Worker، فهرست بدون Reload صفحه تازه می‌شود.
+ */
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -35,23 +41,23 @@ import {
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
 
+// برچسب و رنگ نشان اولویت هر اطلاعیه
 const PRIORITY_LABELS = {
-  // رنگ‌بندی طبق personnel_portal.html: «عادی»=Teal/Secondary این پروژه،
-  // «بالا»=قرمز کم‌رنگ. «کم» در نمونه HTML تعریف نشده بود، پس با همان
-  // منطق تعمیم داده شد: کم → خاکستری خنثی. طبق بازخورد صریح، «بالا» و
-  // «فوری» دیگر رنگ یکسان ندارند — «بالا» قرمز کم‌رنگ‌تر، «فوری» قرمز
-  // کامل (پررنگ‌ترین سطح اولویت) است، تا این دو از هم قابل‌تشخیص باشند.
+  // کم = خاکستری خنثی، عادی = رنگ Secondary پروژه، بالا = قرمز کم‌رنگ، فوری = قرمز کامل
+  // (بالا و فوری رنگ متفاوت دارند تا از هم قابل تشخیص باشند)
   low: { label: "کم", bg: "action.selected", color: "text.secondary" },
   normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
   high: { label: "بالا", bg: "error.light", color: "common.white" },
   urgent: { label: "فوری", bg: "error.main", color: "error.contrastText" },
 };
 
+// عنوان صفحه و برچسب Chip برای اطلاعیه‌های نوع فیش حقوقی/کارکرد
 const NOTICE_TYPE_META = {
   payroll: { label: "فیش‌های حقوقی من", chipLabel: "فیش حقوقی", chipColor: "secondary" },
   attendance_card: { label: "فیش‌های کارکرد من", chipLabel: "فیش کارکرد", chipColor: "info" },
 };
 
+// تعریف تب‌های صفحه
 const TABS = [
   { key: "received", label: "دریافتی", icon: <InboxOutlinedIcon fontSize="small" /> },
   { key: "sent", label: "ارسالی", icon: <SendOutlinedIcon fontSize="small" /> },
@@ -59,13 +65,10 @@ const TABS = [
 ];
 
 /**
- * دانلود واقعی و مطمئن فایل — به‌جای window.open(url, "_blank") قبلی.
- * ⚠️ رفع یک مشکل واقعی: توی PWA نصب‌شده (Standalone، بدون تب/نوار آدرس
- * مرورگر)، window.open روی خیلی از گوشی‌ها یا کاری نمی‌کرد یا صفحه خالی
- * باز می‌کرد — چون آنجا اصلاً «تب جدید»ی برای نمایش PDF وجود ندارد. این
- * روش (لینک موقت با download=) مستقیماً فایل را در پوشه Download گوشی
- * ذخیره می‌کند، مستقل از این‌که در مرورگر عادی باز شده یا به‌عنوان PWA
- * نصب شده — از همان‌جا کاربر می‌تواند بازش کند، پرینت بگیرد، یا Share کند.
+ * یک Blob را با نام فایل داده‌شده دانلود می‌کند (لینک موقت با خصیصه download).
+ * این روش به‌جای window.open استفاده می‌شود چون در PWA نصب‌شده (Standalone) تب جدیدی
+ * برای نمایش PDF وجود ندارد؛ فایل مستقیماً در پوشه Download دستگاه ذخیره می‌شود.
+ * URL موقت پس از ۶۰ ثانیه آزاد می‌شود.
  */
 function triggerBlobDownload(blob, filename) {
   const url = window.URL.createObjectURL(blob);
@@ -78,19 +81,18 @@ function triggerBlobDownload(blob, filename) {
   setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
+// فیش حقوقی کاربر برای یک اطلاعیه را دانلود می‌کند.
+// ورودی: شناسه اطلاعیه، setter پیام خطا و تابعی برای باز کردن دیالوگ پیش‌نیاز دسترسی (در پاسخ ۴۰۳)
 async function downloadPayrollReceipt(noticeId, setDownloadError, onGateBlocked) {
   setDownloadError("");
   try {
     const blob = await fetchMyPayrollReceiptBlob(noticeId);
     triggerBlobDownload(blob, `فیش-حقوقی-${noticeId}.pdf`);
   } catch (err) {
-    // ⚠️ طبق درخواست صریح کاربر: ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده -
-    // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
-    // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
+    // ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده؛ به‌جای پیام خطای عمومی، دیالوگ راهنما باز می‌شود
     if (err.response?.status === 403) {
-      // ⚠️ رشته خالی پاس نده - falsy است و دیالوگ را وادار می‌کند به متن
-      // پیش‌فرض خودش با تعداد نامشخص برگردد («۰ اطلاعیه»). اگر سرور دلیلی
-      // نداد، null می‌فرستیم تا دیالوگ متن عمومی و بدون عدد نشان دهد.
+      // پیام سرور پاس داده می‌شود؛ اگر سرور دلیلی نداد null (نه رشته خالی) فرستاده می‌شود
+      // تا دیالوگ متن عمومی و بدون عدد نشان دهد
       onGateBlocked?.(err.response?.data?.detail || null);
       return;
     }
@@ -102,19 +104,17 @@ async function downloadPayrollReceipt(noticeId, setDownloadError, onGateBlocked)
   }
 }
 
+// فیش کارکرد کاربر برای یک اطلاعیه را دانلود می‌کند؛ ورودی‌ها و رفتار خطا مانند downloadPayrollReceipt
 async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked) {
   setDownloadError("");
   try {
     const blob = await fetchMyAttendanceCardBlob(noticeId);
     triggerBlobDownload(blob, `فیش-کارکرد-${noticeId}.pdf`);
   } catch (err) {
-    // ⚠️ طبق درخواست صریح کاربر: ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده -
-    // به‌جای پیام مبهم «دانلود فیش با خطا مواجه شد»، دیالوگ راهنما باز
-    // می‌شود تا کاربر بداند دقیقاً باید چه کار کند.
+    // ۴۰۳ یعنی پیش‌نیاز دسترسی انجام نشده؛ به‌جای پیام خطای عمومی، دیالوگ راهنما باز می‌شود
     if (err.response?.status === 403) {
-      // ⚠️ رشته خالی پاس نده - falsy است و دیالوگ را وادار می‌کند به متن
-      // پیش‌فرض خودش با تعداد نامشخص برگردد («۰ اطلاعیه»). اگر سرور دلیلی
-      // نداد، null می‌فرستیم تا دیالوگ متن عمومی و بدون عدد نشان دهد.
+      // پیام سرور پاس داده می‌شود؛ اگر سرور دلیلی نداد null (نه رشته خالی) فرستاده می‌شود
+      // تا دیالوگ متن عمومی و بدون عدد نشان دهد
       onGateBlocked?.(err.response?.data?.detail || null);
       return;
     }
@@ -126,6 +126,7 @@ async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked)
   }
 }
 
+// نشان گرد اولویت اطلاعیه؛ ورودی: priority (low/normal/high/urgent، پیش‌فرض normal)
 function PriorityBadge({ priority }) {
   const cfg = PRIORITY_LABELS[priority] || PRIORITY_LABELS.normal;
   return (
@@ -150,19 +151,22 @@ function PriorityBadge({ priority }) {
   );
 }
 
+/**
+ * کارت بازشونده یک اطلاعیه دریافتی/آرشیوشده.
+ * ورودی: notice، onOpened (پس از اولین باز شدنِ اطلاعیه خوانده‌نشده)، onArchiveChange (پس از آرشیو/بازگردانی)
+ * و isArchiveView. شامل متن، دکمه دانلود فیش، اطلاعات فرستنده و دکمه آرشیو است.
+ */
 function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }) {
   const [expanded, setExpanded] = useState(false);
   const [downloadError, setDownloadError] = useState("");
-  const [archiveBusy, setArchiveBusy] = useState(false);
-  // ⚠️ پیام ۴۰۳ خودِ سرور نگه داشته می‌شود تا دیالوگ دقیقاً همان دلیل و
-  // تعداد واقعی را نشان دهد (نه یک متن حدسی سمت کلاینت).
-  // ⚠️ «باز بودن» از «متن پیام» جدا نگه داشته می‌شود. قبلاً هر دو در یک
-  // state بودند و چون null هم یعنی «بسته» و هم یعنی «سرور متنی نداد»،
-  // وقتی پاسخ ۴۰۳ بدون detail می‌آمد دیالوگ اصلاً باز نمی‌شد و کلیک روی
-  // دانلود هیچ واکنشی نداشت.
+  const [archiveBusy, setArchiveBusy] = useState(false);  // درخواست آرشیو/بازگردانی در جریان است
+  // وضعیت دیالوگ پیش‌نیاز دسترسی: پیام ۴۰۳ خود سرور نگه داشته می‌شود تا دیالوگ همان دلیل
+  // و تعداد واقعی را نشان دهد. «باز بودن» از «متن پیام» جداست، چون null در gateMessage
+  // یعنی «سرور متنی نداد» و دیالوگ باید در این حالت هم باز شود.
   const [gateOpen, setGateOpen] = useState(false);
   const [gateMessage, setGateMessage] = useState(null);
 
+  // دیالوگ پیش‌نیاز دسترسی را با پیام سرور (یا null برای متن عمومی) باز می‌کند
   function openGate(message) {
     setGateMessage(message || null);
     setGateOpen(true);
@@ -170,8 +174,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
   const isUnread = !notice.is_read;
   const isPayroll = notice.notice_type === "payroll";
   const isAttendanceCard = notice.notice_type === "attendance_card";
-  const typeMeta = NOTICE_TYPE_META[notice.notice_type];
+  const typeMeta = NOTICE_TYPE_META[notice.notice_type];  // برای اطلاعیه‌های عادی undefined است
 
+  // باز/بسته کردن کارت؛ اولین باز شدن اطلاعیه خوانده‌نشده آن را در سرور «خوانده‌شده» ثبت می‌کند
   function handleToggle() {
     if (!expanded && isUnread) {
       markNoticeRead(notice.id).catch(() => {});
@@ -180,6 +185,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
     setExpanded((v) => !v);
   }
 
+  // آرشیو یا بازگردانی اطلاعیه (بسته به وضعیت فعلی) و اطلاع به والد برای تازه کردن فهرست‌ها
   async function handleArchiveToggle(e) {
     e.stopPropagation();
     setArchiveBusy(true);
@@ -210,8 +216,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        {/* سمت راست: آیکون پاکت، بعدش عنوان (و زیرش تاریخ/ساعت) — دقیقاً
-            مثل تم قبلی */}
+        {/* سمت راست: آیکون پاکت (باز/بسته بسته به خوانده شدن)، سپس عنوان و زیرش تاریخ/ساعت */}
         <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, flex: 1 }}>
           <Box
             sx={{
@@ -228,9 +233,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           >
             {isUnread ? <MailOutlineIcon fontSize="small" /> : <DraftsOutlinedIcon fontSize="small" />}
           </Box>
-          {/* flex:1 اینجا لازم بود — بدون آن، این Box فقط به اندازه عرض خودِ
-              عنوان جمع می‌شد و راست‌چین‌کردن تاریخ زیرش عملاً هیچ فضایی برای
-              نمایش نداشت (چون عرض تاریخ معمولاً از عرض عنوان کمتر است). */}
+          {/* flex:1 لازم است تا این Box کل عرض باقی‌مانده را بگیرد و تاریخ زیر عنوان
+              فضای کافی برای راست‌چین شدن داشته باشد (نه فقط به اندازه عرض عنوان). */}
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography
               fontSize={14}
@@ -245,12 +249,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               {notice.title}
             </Typography>
             {/* تاریخ و ساعت — زیر عنوان، راست‌چین */}
-            {/* ⚠️ textAlign اینجا عمداً "left" است، نه "right" — چون این
-                پروژه از stylis-plugin-rtl استفاده می‌کند که مقادیر فیزیکی
-                left/right را خودکار Mirror می‌کند؛ نوشتن "right" در نتیجه
-                نهایی به چپ می‌چسبید (دقیقاً همان باگی که کاربر گزارش کرد).
-                این الگو در BackupPage.jsx/UpdatePage.jsx هم برای محتوای
-                LTR مشابه استفاده شده است. */}
+            {/* textAlign برابر "left" است چون stylis-plugin-rtl مقادیر left/right را خودکار
+                قرینه می‌کند و در خروجی نهایی به راست‌چین تبدیل می‌شود؛ همین الگو در
+                BackupPage.jsx/UpdatePage.jsx هم برای محتوای LTR استفاده شده است. */}
             <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "left", mt: 0.25 }}>
               {new Date(notice.created_at).toLocaleString("fa-IR")}
             </Typography>
@@ -270,6 +271,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
           <PriorityBadge priority={notice.priority} />
         </Stack>
       </Box>
+      {/* بخش بازشونده: متن، دکمه دانلود فیش، فرستنده و دکمه آرشیو */}
       <Collapse in={expanded}>
         <Box sx={{ px: 2, pb: 2 }}>
           {notice.body && (
@@ -285,6 +287,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               {notice.body}
             </Typography>
           )}
+          {/* دانلود فیش حقوقی (اگر برای این کاربر فیشی در اطلاعیه وجود دارد) */}
           {isPayroll && (
             <>
               {notice.has_my_payroll_receipt ? (
@@ -311,6 +314,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               )}
             </>
           )}
+          {/* دانلود فیش کارکرد (اگر برای این کاربر کارتی در اطلاعیه وجود دارد) */}
           {isAttendanceCard && (
             <>
               {notice.has_my_attendance_card ? (
@@ -352,8 +356,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                 />
               )}
             </Stack>
-            {/* دکمه آرشیو همیشه در یک ردیف مستقل و کاملاً جداست — طبق
-                بازخورد، محلش نباید بسته به طول Chip های بالا جابه‌جا شود */}
+            {/* دکمه آرشیو در ردیف مستقل قرار دارد تا محلش به طول Chipهای بالا وابسته نباشد */}
             <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
               <Button
                 size="small"
@@ -371,9 +374,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
         </Box>
       </Collapse>
 
-      {/* ⚠️ دیالوگ پیش‌نیاز دسترسی - وقتی سرور برای دانلود فیش ۴۰۳ می‌دهد،
-          به‌جای پیام مبهم، همین باز می‌شود و راه رفع را نشان می‌دهد.
-          بستنش کاربر را به بقیه بخش‌ها برمی‌گرداند. */}
+      {/* دیالوگ پیش‌نیاز دسترسی: وقتی سرور برای دانلود فیش ۴۰۳ می‌دهد باز می‌شود و
+          راه رفع را نشان می‌دهد. */}
       <AccessGateDialog
         open={gateOpen}
         message={gateMessage}
@@ -383,6 +385,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
   );
 }
 
+// کامپوننت اصلی صفحه؛ تب فعال، فهرست‌های دریافتی/آرشیو و صفحه‌بندی آن‌ها را مدیریت می‌کند
 export default function NoticesPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
@@ -396,14 +399,15 @@ export default function NoticesPage() {
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState(null);
   const [noticesTotal, setNoticesTotal] = useState(0);
-  const [noticesPage, setNoticesPage] = useState(1);
+  const [noticesPage, setNoticesPage] = useState(1);  // صفحه فعلی تب دریافتی (از ۱)
   const NOTICES_PAGE_SIZE = 10;
-  const [sentReloadKey, setSentReloadKey] = useState(0);
-  const [availableTargets, setAvailableTargets] = useState(null);
-  const [archivedNotices, setArchivedNotices] = useState(null);
+  const [sentReloadKey, setSentReloadKey] = useState(0);  // افزایش آن جدول «ارسالی» را دوباره بارگذاری می‌کند
+  const [availableTargets, setAvailableTargets] = useState(null);  // مقصدها/مجوزهای ارسال اطلاعیه کاربر؛ null = هنوز لود نشده
+  const [archivedNotices, setArchivedNotices] = useState(null);  // null = هنوز بارگذاری نشده (فقط با اولین ورود به تب آرشیو لود می‌شود)
   const [archivedTotal, setArchivedTotal] = useState(0);
   const [archivedPage, setArchivedPage] = useState(1);
 
+  // یک صفحه از اطلاعیه‌های دریافتی (با فیلتر نوع در نمای اختصاصی) را بارگذاری می‌کند
   function loadNotices(page = noticesPage) {
     fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, noticeType: typeFilter || undefined }).then((data) => {
       setNotices(data.items);
@@ -411,6 +415,7 @@ export default function NoticesPage() {
     });
   }
 
+  // یک صفحه از اطلاعیه‌های آرشیوشده را بارگذاری می‌کند
   function loadArchived(page = archivedPage) {
     fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: "only" }).then((data) => {
       setArchivedNotices(data.items);
@@ -418,6 +423,7 @@ export default function NoticesPage() {
     });
   }
 
+  // با تغییر فیلتر نوع: بارگذاری صفحه اول دریافتی و (در نمای کامل) مجوزهای ارسال
   useEffect(() => {
     loadNotices(1);
     setNoticesPage(1);
@@ -425,15 +431,15 @@ export default function NoticesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter]);
 
+  // بارگذاری تنبل آرشیو: فقط در اولین ورود به تب آرشیو
   useEffect(() => {
     if (tab === "archive" && archivedNotices === null) loadArchived(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  // پیام از Service Worker وقتی یک Push جدید می‌رسد — لیست را بدون Reload
-  // صفحه، دوباره از سرور می‌خوانیم (چه در تب دریافتی، چه ارسالی من). چون
-  // اطلاعیه جدید همیشه بالای لیست می‌آید، صفحه‌بندی «دریافتی» را هم به
-  // صفحه اول برمی‌گردانیم تا همان‌جا دیده شود.
+  // با رسیدن پیام Push جدید از Service Worker، فهرست دریافتی (و در تب ارسالی، جدول ارسالی)
+  // بدون Reload صفحه دوباره خوانده می‌شود؛ صفحه‌بندی دریافتی به صفحه اول برمی‌گردد چون
+  // اطلاعیه جدید همیشه بالای فهرست است.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     function handleMessage(event) {
@@ -448,6 +454,7 @@ export default function NoticesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
+  // کاربر حداقل یک نوع مجوز ارسال اطلاعیه/فیش دارد
   const canCreateAnything =
     availableTargets &&
     (availableTargets.can_target_all ||
@@ -457,34 +464,26 @@ export default function NoticesPage() {
       availableTargets.can_upload_payroll ||
       availableTargets.can_upload_attendance_card);
 
-  // تب «ارسالی» فقط برای کسی که واقعاً مجوز ارسال اطلاعیه دارد نشان داده
-  // می‌شود — طبق درخواست صریح؛ «دریافتی»/«آرشیو» برای همه باقی می‌مانند.
+  // تب «ارسالی» فقط برای دارنده مجوز ارسال اطلاعیه نشان داده می‌شود؛ «دریافتی»/«آرشیو» برای همه
   const visibleTabs = TABS.filter((t) => t.key !== "sent" || canCreateAnything);
 
-  // اگر کاربر همین الان روی تب «ارسالی» بود و بعداً (مثلاً بعد از تغییر
-  // نقش یا اولین بارگذاری availableTargets) این مجوز را نداشت، او را به
-  // تب «دریافتی» برمی‌گردانیم — تا هرگز روی یک تب مخفی/ناموجود گیر نکند.
+  // اگر تب «ارسالی» فعال باشد ولی کاربر مجوز ارسال نداشته باشد (مثلاً پس از بارگذاری
+  // availableTargets)، به تب «دریافتی» برمی‌گردد تا روی تب مخفی نماند.
   useEffect(() => {
     if (tab === "sent" && availableTargets && !canCreateAnything) {
       setTab("received");
     }
   }, [tab, availableTargets, canCreateAnything]);
 
+  // اطلاعیه را در فهرست محلی «خوانده‌شده» علامت می‌زند
   function handleMarkedRead(noticeId) {
     setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));
   }
 
-  // بعد از آرشیو/بازگرداندن یک اطلاعیه، آن اطلاعیه دیگر در لیست فعلی جایی
-  // ندارد (چه در «دریافتی» چه در «آرشیو» — چون فیلتر مقابل شد) — پس فقط
-  // همان لیست را دوباره می‌خوانیم، به‌جای این‌که سعی کنیم وضعیت را محلی
-  // Patch کنیم (که پیچیده و مستعد خطا می‌شد).
+  // بعد از آرشیو/بازگرداندن یک اطلاعیه، آن اطلاعیه از یک فهرست به فهرست دیگر منتقل می‌شود؛
+  // به‌جای تغییر محلی state، هر دو فهرست «دریافتی» و «آرشیو» از سرور دوباره خوانده می‌شوند
+  // (ابتدا فهرست تب فعال) تا با جابه‌جایی بین تب‌ها هر دو به‌روز باشند.
   function handleArchiveChange() {
-    // ⚠️ رفع یک باگ واقعی: قبلاً فقط تب فعلی رفرش می‌شد — اگر کاربر توی
-    // تب «دریافتی» یک اطلاعیه را آرشیو می‌کرد، تب «آرشیو» (اگر قبلاً یک‌بار
-    // دیده شده و در State نگه داشته شده بود) دیگر خودکار به‌روز نمی‌شد؛
-    // با سوییچ به آن تب، لیست قدیمی (بدون همین اطلاعیه‌ی تازه‌آرشیوشده)
-    // دیده می‌شد. حالا هر دو لیست همیشه با هم به‌روز می‌شوند — کاملاً
-    // Ajax، بدون هیچ Refresh صفحه‌ای.
     if (tab === "archive") {
       loadArchived(archivedPage);
       loadNotices(noticesPage);
@@ -494,11 +493,12 @@ export default function NoticesPage() {
     }
   }
 
-  const pageTitle = isFilteredView ? NOTICE_TYPE_META[typeFilter].label : "اطلاعیه‌ها";
+  const pageTitle = isFilteredView ? NOTICE_TYPE_META[typeFilter].label : "اطلاعیه‌ها";  // در نمای اختصاصی، عنوان نوع فیش
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       {!user?.is_superuser && <BackLink to="/my-dashboard" />}
+      {/* عنوان صفحه و دکمه «اطلاعیه جدید» (برای دارندگان مجوز ارسال) */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Typography variant="h5" fontWeight={800}>
           {pageTitle}
@@ -516,15 +516,9 @@ export default function NoticesPage() {
         )}
       </Box>
 
-      {/* در نمای فیلترشده (فیش حقوقی/کارکرد از داشبورد) اصلاً تب نشان داده
-          نمی‌شود — این یک نمای تک‌منظوره است، نه صفحه کامل اطلاعیه‌ها.
-          ⚠️ «دریافتی» و «آرشیو» عمداً به canCreateAnything وابسته نیستند:
-          هر کاربر لاگین‌شده‌ای، حتی بدون هیچ مجوز ارسالی، اطلاعیه دریافت
-          می‌کند و باید بتواند آرشیوشان کند (قبلاً یک باگ واقعی بود: پرسنل
-          بدون نقش خاص، اصلاً هیچ‌کدام از تب‌ها را نمی‌دید). ولی «ارسالی»
-          طبق درخواست صریح فقط برای کسی نشان داده می‌شود که واقعاً مجوز
-          ارسال اطلاعیه دارد — چون برای بقیه، آن تب همیشه خالی و بی‌فایده
-          است. */}
+      {/* نوار تب‌ها؛ در نمای فیلترشده (فیش حقوقی/کارکرد از داشبورد) نمایش داده نمی‌شود.
+          «دریافتی» و «آرشیو» به canCreateAnything وابسته نیستند چون هر کاربر لاگین‌شده
+          اطلاعیه دریافت و آرشیو می‌کند؛ «ارسالی» فقط برای دارنده مجوز ارسال نمایش داده می‌شود. */}
       {!isFilteredView && (
         <Box
           sx={{
@@ -563,6 +557,7 @@ export default function NoticesPage() {
         </Box>
       )}
 
+      {/* تب دریافتی (یا نمای اختصاصی فیش‌ها): کارت‌های اطلاعیه و صفحه‌بندی */}
       {(isFilteredView || tab === "received") && (
         <Stack spacing={1.5}>
           {notices === null ? (
@@ -606,6 +601,7 @@ export default function NoticesPage() {
         </Stack>
       )}
 
+      {/* تب ارسالی: جدول اطلاعیه‌های ارسالی کاربر با امکان حذف */}
       {!isFilteredView && tab === "sent" && (
         <Card variant="outlined" sx={{ borderRadius: 2, p: 1 }}>
           <NoticeReportTable
@@ -617,6 +613,7 @@ export default function NoticesPage() {
         </Card>
       )}
 
+      {/* تب آرشیو: کارت‌های اطلاعیه آرشیوشده و صفحه‌بندی */}
       {!isFilteredView && tab === "archive" && (
         <Stack spacing={1.5}>
           {archivedNotices === null ? (

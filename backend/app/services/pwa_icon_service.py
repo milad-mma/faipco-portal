@@ -1,10 +1,10 @@
 """
 تولید آیکون‌های استاندارد PWA از یک تصویر آپلودشده - تا لوگو روی اندروید،
-iOS و ویندوز نه خیلی کوچک باشد نه خیلی بزرگ (طبق درخواست کاربر).
+iOS و ویندوز اندازه مناسب داشته باشد.
 
-مشکل قبلی: همان فایل خام برای همه‌جا استفاده می‌شد. اندروید آیکون maskable را
-دایره/مربع‌گرد می‌بُرد (لوگوی تمام‌بوم لبه‌هایش حذف می‌شد)، iOS شفافیت را سیاه
-می‌کند و گوشه‌ها را خودش گرد می‌کند، ویندوز آیکون "any" را کامل نشان می‌دهد.
+هر پلتفرم رفتار متفاوتی دارد: اندروید آیکون maskable را دایره/مربع‌گرد می‌بُرد
+(لبه‌های لوگوی تمام‌بوم حذف می‌شود)، iOS شفافیت را سیاه و گوشه‌ها را خودش گرد
+می‌کند، ویندوز آیکون "any" را کامل نشان می‌دهد؛ برای همین هر نسخه جدا ساخته می‌شود.
 
 نسخه‌ها:
   any-192 / any-512      ← purpose "any" (ویندوز، کروم دسکتاپ، iOS اگر apple نباشد)
@@ -12,7 +12,7 @@ iOS و ویندوز نه خیلی کوچک باشد نه خیلی بزرگ (طب
   apple-180              ← apple-touch-icon (iOS): بدون شفافیت، لوگو در ناحیه امن
   favicon-32 / -16       ← تب مرورگر (اگر favicon جداگانه آپلود نشده)
 
-SVG با Pillow رَستر نمی‌شود؛ در آن حالت فایل خام برگردانده می‌شود (مثل قبل).
+SVG با Pillow رَستر نمی‌شود؛ در آن حالت فایل خام برگردانده می‌شود.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from functools import lru_cache
 
 from PIL import Image, ImageColor
 
+# نام نسخه ← (نوع: any/maskable/apple، اندازه ضلع به پیکسل)
 VARIANTS = {
     "any-192": ("any", 192),
     "any-512": ("any", 512),
@@ -34,6 +35,7 @@ VARIANTS = {
 
 
 def _parse_color(value: str, fallback=(255, 255, 255, 255)):
+    """رشته رنگ CSS را به تاپل RGBA تبدیل می‌کند؛ برای مقدار خالی/نامعتبر fallback برمی‌گردد."""
     if not value:
         return fallback
     try:
@@ -60,9 +62,15 @@ def _trim_transparent(img: Image.Image) -> Image.Image:
 
 @lru_cache(maxsize=64)
 def _render_cached(digest: str, raw: bytes, variant: str, icon_scale: int, maskable_scale: int, bg: str, any_bg: str) -> bytes:
+    """
+    یک نسخه آیکون PNG می‌سازد (با کش LRU بر اساس ورودی‌ها).
+    ورودی: هش و بایت تصویر، نام نسخه، درصدهای اشغال و رنگ‌های پس‌زمینه. خروجی: بایت PNG.
+    """
     kind, size = VARIANTS[variant]
+    # بارگذاری تصویر به RGBA و حذف حاشیه شفاف
     source = Image.open(io.BytesIO(raw)).convert("RGBA")
     source = _trim_transparent(source)
+    # انتخاب درصد اشغال و رنگ پس‌زمینه بر اساس نوع آیکون
     if kind == "any":
         occupy = icon_scale
         background = _parse_color(any_bg, (0, 0, 0, 0)) if any_bg else (0, 0, 0, 0)
@@ -71,10 +79,12 @@ def _render_cached(digest: str, raw: bytes, variant: str, icon_scale: int, maska
         background = _parse_color(bg)
         if kind == "apple":
             background = background[:3] + (255,)  # iOS: شفافیت ممنوع
+    # قرار دادن لوگوی تغییر اندازه‌یافته در مرکز بوم
     canvas = Image.new("RGBA", (size, size), background)
     logo = _fit_logo(source, size, occupy)
     offset = ((size - logo.width) // 2, (size - logo.height) // 2)
     canvas.alpha_composite(logo, offset)
+    # خروجی PNG؛ نسخه apple بدون کانال آلفا ذخیره می‌شود
     out = io.BytesIO()
     if kind == "apple":
         canvas.convert("RGB").save(out, format="PNG", optimize=True)
@@ -84,12 +94,16 @@ def _render_cached(digest: str, raw: bytes, variant: str, icon_scale: int, maska
 
 
 def render_icon(raw: bytes, content_type: str, variant: str, settings: dict) -> tuple[bytes, str]:
-    """(bytes, media_type) - برای SVG یا خطای دیکود، فایل خام برمی‌گردد."""
+    """
+    ورودی: بایت تصویر، نوع آن، نام نسخه و تنظیمات آیکون PWA.
+    خروجی: (bytes, media_type) نسخه PNG ساخته‌شده؛ برای SVG یا خطای دیکود، فایل خام برمی‌گردد.
+    خطا: KeyError برای نام نسخه ناشناخته.
+    """
     if variant not in VARIANTS:
         raise KeyError(variant)
     if content_type == "image/svg+xml":
         return raw, content_type
-    digest = hashlib.sha1(raw).hexdigest()
+    digest = hashlib.sha1(raw).hexdigest()  # بخشی از کلید کش lru_cache
     try:
         png = _render_cached(
             digest,

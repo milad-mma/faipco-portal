@@ -1,21 +1,16 @@
+/**
+ * نوار تبریک تولد (ری‌اکشن ایموجی) زیر هر همکار متولد در کارت تولدهای داشبورد.
+ * شامل: کامپوننت اصلی BirthdayReactionBar، دکمه‌ی باز/بسته کردن فهرست تبریک‌گویندگان (ReactorsToggle)
+ * و خود فهرست (ReactorList).
+ */
 import { useState } from "react";
 import { Box, Collapse, Stack, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import EmployeeAvatar from "./EmployeeAvatar";
 import { setBirthdayReaction } from "../api/employees";
 
-/**
- * ⚠️ طبق تصمیمات صریح کاربر:
- *   - چهار ایموجی ثابت، هرکدام با معنای مشخص در فضای اداری.
- *   - معنی هر ایموجی **بعد از انتخاب** نمایش داده می‌شود، نه همیشه -
- *     اگر هر چهار توضیح دائم زیر نوار بودند، کارت داشبورد سه‌برابر
- *     بلندتر می‌شد و بقیه کارت‌ها را هل می‌داد. روی دسکتاپ با نگه‌داشتن
- *     موس (title) هم قابل‌دیدن است، پیش از انتخاب.
- *   - فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است، ولی پیش‌فرض بسته
- *     است تا ارتفاع کارت را اشغال نکند.
- *   - خودِ متولد نمی‌تواند به تولد خودش ری‌اکشن بزند (سمت سرور هم اعمال
- *     می‌شود؛ اینجا فقط نوار را غیرفعال نشان می‌دهیم).
- */
+// چهار ایموجی ثابت تبریک؛ key همان مقداری است که به سرور فرستاده می‌شود و meaning بعد از انتخاب
+// (و روی دسکتاپ به‌صورت title هنگام hover) نمایش داده می‌شود
 const EMOJIS = [
   { key: "party", char: "🎉", meaning: "تبریک پرانرژی و ایجاد نشاط تیمی؛ مناسب برای همه" },
   { key: "cake", char: "🎂", meaning: "استانداردترین تبریک اداری؛ کاملاً رسمی، خنثی و ایمن برای همه رده‌ها" },
@@ -23,20 +18,20 @@ const EMOJIS = [
   { key: "blue_heart", char: "💙", meaning: "نماد وفاداری سازمانی و روحیه تیمی؛ مناسب برای هم‌رده‌ها و اعضای تیم" },
 ];
 
+// نگاشت key ایموجی به کاراکتر آن
 const EMOJI_BY_KEY = Object.fromEntries(EMOJIS.map((e) => [e.key, e.char]));
 
-// ⚠️ طبق درخواست صریح کاربر: فعل باید با تعداد مطابقت کند - «۱ نفر تبریک
-// گفت» در برابر «۳ نفر تبریک گفتند». در یک تابع مشترک نگه داشته شده تا
-// دو جایی که این متن نمایش داده می‌شود هرگز از هم واگرا نشوند.
+// متن تعداد تبریک‌ها با فعل مطابق تعداد («۱ نفر تبریک گفت» / «۳ نفر تبریک گفتند»)؛
+// هر دو محل نمایش این متن از همین تابع استفاده می‌کنند
 function greetingLabel(total) {
   const verb = total === 1 ? "گفت" : "گفتند";
   return `${total.toLocaleString("fa-IR")} نفر تبریک ${verb}`;
 }
 
 /**
- * ⚠️ طبق گزارش کاربر: نسخه قبلی یک Chip ساده بود و هیچ نشانه‌ای نداشت
- * که کلیک‌پذیر است. حالا با رنگ لینک، آیکون فلش (که با باز/بسته شدن
- * می‌چرخد) و زیرخط هنگام Hover، کاملاً واضح است که باید رویش زد.
+ * دکمه‌ی تمام‌عرض «N نفر تبریک گفتند» که فهرست تبریک‌گویندگان را باز/بسته می‌کند.
+ * ورودی: total (تعداد)، open (وضعیت باز بودن فهرست) و onClick.
+ * خروجی: یک <button> با کادر، پس‌زمینه و آیکون فلشی که با باز شدن ۱۸۰ درجه می‌چرخد.
  */
 function ReactorsToggle({ total, open, onClick }) {
   return (
@@ -46,8 +41,7 @@ function ReactorsToggle({ total, open, onClick }) {
       onClick={onClick}
       aria-expanded={open}
       sx={{
-        // ⚠️ طبق گزارش کاربر: نسخه قبلی شبیه دکمه نبود و وسط‌چین هم نبود.
-        // حالا عرض کامل + کادر + پس‌زمینه دارد، پس آشکارا یک دکمه است.
+        // عرض کامل، وسط‌چین، با کادر و پس‌زمینه تا ظاهر دکمه داشته باشد
         mt: 1,
         width: "100%",
         display: "flex",
@@ -80,16 +74,24 @@ function ReactorsToggle({ total, open, onClick }) {
   );
 }
 
+/**
+ * نوار ری‌اکشن تولد برای یک همکار.
+ * ورودی: person (اطلاعات فرد متولد شامل reaction_counts، reactors، my_reaction، is_self) و
+ * onChanged (برای بارگذاری مجدد داده‌ها پس از ثبت ری‌اکشن).
+ * خروجی: دکمه‌های ایموجی با تعداد هرکدام، معنی ایموجی انتخاب‌شده و فهرست تبریک‌گویندگان (پیش‌فرض بسته).
+ * خودِ فرد متولد نوار ایموجی را نمی‌بیند (سمت سرور هم اعمال می‌شود) و فقط تعداد و فهرست را می‌بیند.
+ */
 export default function BirthdayReactionBar({ person, onChanged }) {
   const [busy, setBusy] = useState(false);
-  const [showList, setShowList] = useState(false);
-  const [hint, setHint] = useState(null);
+  const [showList, setShowList] = useState(false); // باز بودن فهرست تبریک‌گویندگان
+  const [hint, setHint] = useState(null); // key ایموجی تازه انتخاب‌شده برای نمایش معنی آن؛ null = چیزی نمایش داده نشود
   const [error, setError] = useState("");
 
-  const counts = person.reaction_counts || {};
+  const counts = person.reaction_counts || {}; // تعداد هر ایموجی به تفکیک key
   const reactors = person.reactors || [];
   const total = reactors.length;
 
+  // ثبت/تغییر/برداشتن ری‌اکشن؛ اگر سرور emoji خالی برگرداند (ری‌اکشن برداشته شد) معنی پنهان می‌شود
   async function handleClick(emojiKey) {
     if (person.is_self || busy) return;
     setError("");
@@ -105,7 +107,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
     }
   }
 
-  // ⚠️ خودِ متولد نوار ری‌اکشن نمی‌بیند - فقط تعداد تبریک‌ها و فهرست.
+  // خودِ متولد نوار ری‌اکشن نمی‌بیند؛ فقط تعداد تبریک‌ها و فهرست (در صورت وجود)
   if (person.is_self) {
     return total > 0 ? (
       <Box sx={{ mt: 0.75 }}>
@@ -117,6 +119,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
 
   return (
     <Box sx={{ mt: 0.75 }}>
+      {/* دکمه‌های ایموجی؛ ایموجی انتخاب‌شده‌ی کاربر با کادر رنگ اصلی مشخص می‌شود */}
       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
         {EMOJIS.map((e) => {
           const n = counts[e.key] || 0;
@@ -141,8 +144,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
                 bgcolor: mine ? "action.selected" : "transparent",
                 border: "1px solid",
                 borderColor: mine ? "primary.main" : "divider",
-                // ⚠️ رنگ صریح متن دکمه - عنصر <button> رنگ پیش‌فرض مرورگر را
-                // می‌گیرد (نه رنگ تم)، پس در دارک‌مود باید صریح تعیین شود.
+                // رنگ صریح متن: عنصر <button> رنگ پیش‌فرض مرورگر را می‌گیرد نه رنگ تم (مهم در دارک‌مود)
                 color: "text.primary",
                 "&:hover": { bgcolor: "action.hover" },
               }}
@@ -154,9 +156,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
                   sx={{
                     fontSize: 10,
                     fontWeight: 700,
-                    // ⚠️ رفع باگ دارک‌مود: قبلاً هیچ رنگی تعیین نشده بود، پس
-                    // عدد رنگ پیش‌فرض دکمه (مشکی) را می‌گرفت و در حالت تیره
-                    // روی پس‌زمینه تیره کاملاً نامرئی می‌شد.
+                    // رنگ صریح عدد از تم تا در دارک‌مود رنگ پیش‌فرض دکمه (مشکی) را نگیرد
                     color: mine ? "primary.main" : "text.secondary",
                   }}
                 >
@@ -168,6 +168,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
         })}
       </Stack>
 
+      {/* خطای ثبت تبریک */}
       {error && (
         <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
           {error}
@@ -186,6 +187,7 @@ export default function BirthdayReactionBar({ person, onChanged }) {
         )}
       </Collapse>
 
+      {/* دکمه و فهرست تبریک‌گویندگان */}
       {total > 0 && (
         <ReactorsToggle total={total} open={showList} onClick={() => setShowList((v) => !v)} />
       )}
@@ -194,13 +196,17 @@ export default function BirthdayReactionBar({ person, onChanged }) {
   );
 }
 
+/**
+ * فهرست تاشوی تبریک‌گویندگان.
+ * ورودی: open (باز/بسته) و reactors (هر مورد: employee_id، has_photo، name، department، emoji).
+ * خروجی: Collapse شامل ردیف‌های آواتار، نام، واحد و ایموجی هر نفر.
+ */
 function ReactorList({ open, reactors }) {
   return (
     <Collapse in={open}>
       <Stack spacing={0.5} sx={{ mt: 0.75, pt: 0.75, borderTop: "1px solid", borderColor: "divider" }}>
-        {/* ⚠️ طبق درخواست صریح کاربر: ترتیب دقیقاً مثل ردیف خودِ فرد متولد -
-            آواتار اول (یعنی سمت راست در RTL)، بعد نام، بعد واحد سازمانی، و
-            در انتها ری‌اکشن آن شخص با یک فاصله کوتاه. */}
+        {/* هر ردیف به همان ترتیب ردیف فرد متولد: آواتار (سمت راست در RTL)، نام، واحد سازمانی
+            و در انتها ری‌اکشن آن شخص. */}
         {reactors.map((r, i) => (
           <Stack key={`${r.user_id}-${i}`} direction="row" alignItems="center" spacing={1}>
             <EmployeeAvatar employeeId={r.employee_id} hasPhoto={r.has_photo} size={24} />
@@ -212,9 +218,8 @@ function ReactorList({ open, reactors }) {
                 </Typography>
               )}
             </Typography>
-            {/* ⚠️ ری‌اکشن بیرون از بلوکِ noWrap است تا اگر نام و واحد بلند
-                بودند و با «…» کوتاه شدند، خودِ ایموجی قربانی نشود و همیشه
-                دیده شود. flexShrink:0 همین را تضمین می‌کند. */}
+            {/* ایموجی بیرون از بلوک noWrap و با flexShrink:0 است تا با کوتاه شدن نام/واحد بلند («…»)
+                همیشه دیده شود. */}
             <Typography sx={{ fontSize: 13, flexShrink: 0 }}>
               {EMOJI_BY_KEY[r.emoji] || "•"}
             </Typography>

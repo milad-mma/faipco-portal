@@ -2,7 +2,7 @@
 نگاشت نام جدول/ستون‌های کاراوب برای «ثبت مرخصی/ماموریت در کارکرد» و
 «نمایش مرخصی/ماموریت در گزارش تردد».
 
-⚠️ طبق درخواست صریح کاربر:
+اصول:
   - هیچ نام جدول/ستونی مستقیم در کد نیست - همه از تنظیمات سایت می‌آیند.
   - هیچ تیک «فعال/غیرفعال» جداگانه‌ای وجود ندارد: هر قابلیت فقط وقتی کار
     می‌کند که جدول‌های لازمش نگاشت شده باشند (مثل بقیه نگاشت‌های پروژه).
@@ -19,6 +19,10 @@
 مقادیر «پیش‌فرض» فقط برای دکمه «پر کردن با نام‌های کاراوب» در پنل هستند -
 تا ادمین ذخیره نکند، هیچ‌کدام استفاده نمی‌شوند.
 
+محتوا: دیکشنری‌های پیش‌فرض LEAVE_SCHEMA_DEFAULTS و ATTENDANCE_SCHEMA_DEFAULTS،
+ثابت‌های ستون‌های الزامی هر قابلیت، validate_schema برای اعتبارسنجی ورودی پنل،
+و کلاس KaraNames برای ساخت نام‌های محصور SQL Server و تشخیص قابلیت‌های فعال.
+
 کلیدها «گروه.نقش» هستند؛ «گروه.table» نام جدول است. در گروه‌های جدول‌دار،
 اگر نام جدول خالی باشد آن گروه غیرفعال است و اگر پر باشد همه ستون‌هایش
 الزامی‌اند. گروه‌های «فقط ستون» (ستون‌های تکمیلی یک جدولِ از قبل نگاشت‌شده)
@@ -28,6 +32,7 @@ from __future__ import annotations
 
 import re
 
+# پیش‌فرض‌های نگاشت تکمیلی تب «مرخصی/ماموریت» (LeaveRequestMapping.kara_schema)
 LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     # ستون‌های تکمیلی جدول درخواست (نام جدول/شناسه در بالای همین تب است)
     "wf_requests.submitted_by": "SubmittedByEmployeeID",
@@ -108,6 +113,7 @@ LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     "cards.branch_code": "BranchCode",
 }
 
+# پیش‌فرض‌های نگاشت تکمیلی تب «نگاشت تردد» (AttendanceMapping.kara_schema)
 ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     # ستون‌های تکمیلی جدول تردد (جدول/کد پرسنلی/تاریخ/ساعت در بالای همین تب است)
     "datafile.id": "Id",
@@ -122,7 +128,7 @@ ATTENDANCE_SCHEMA_DEFAULTS: dict[str, str] = {
     "datafile.direction": "Direction",
     "datafile.vt": "VT",
     "datafile.ac": "AC",
-    # ⚠️ باید صریحاً NULL نوشته شود: پیش‌فرض دیتابیس (DF_DataFile_Clock_No) یک
+    # هنگام درج صریحاً NULL نوشته می‌شود، چون پیش‌فرض دیتابیس (DF_DataFile_Clock_No) یک
     # شماره دستگاه نامعتبر است و با کلید خارجی FK_DataFile_Devices خطا می‌دهد
     "datafile.device_number": "DeviceNumber",
     # لاگ تغییر ترددها
@@ -196,10 +202,12 @@ PUNCH_INSERT_COLUMNS = HOURLY_WRITE_COLUMNS + ("modify", "direction", "vt", "ac"
 # ستون‌هایی که ثبت ارجاع (سرپرست -> مسئول نیروی انسانی) بدون آن‌ها ممکن نیست
 MOVEUP_REQUIRED_COLUMNS = ("request_id", "date", "from_manager", "to_manager")
 
+# الگوی نام امن جدول/ستون (حروف انگلیسی، عدد، زیرخط و فاصله؛ حداکثر ۱۲۸ کاراکتر) برای جلوگیری از تزریق SQL
 _SAFE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,127}$")
 
 
 def _group(key: str) -> str:
+    """بخش «گروه» از کلید «گروه.نقش» را برمی‌گرداند."""
     return key.split(".", 1)[0]
 
 
@@ -208,8 +216,10 @@ def validate_schema(values: dict | None, defaults: dict[str, str]) -> dict[str, 
     فقط کلیدهای شناخته‌شده و نام‌های امن (برای جلوگیری از تزریق در نام
     جدول/ستون). در گروه‌های جدول‌دار: اگر جدول خالی است کل گروه حذف
     می‌شود؛ اگر پر است همه ستون‌هایش باید پر باشند.
+    ورودی: مقادیر ارسالی پنل و دیکشنری پیش‌فرض همان تب. خروجی: dict پاک‌شده؛ در صورت خطا ValueError.
     """
     cleaned: dict[str, str] = {}
+    # مرحله ۱: حذف کلیدهای ناشناخته/خالی و بررسی امن بودن نام‌ها
     for key, value in (values or {}).items():
         if key not in defaults:
             continue
@@ -220,6 +230,7 @@ def validate_schema(values: dict | None, defaults: dict[str, str]) -> dict[str, 
             raise ValueError(f"نام «{value}» برای «{key}» مجاز نیست (فقط حروف انگلیسی، عدد و زیرخط)")
         cleaned[key] = value
 
+    # مرحله ۲: قاعده گروه‌های جدول‌دار (جدول خالی = حذف گروه، جدول پر = همه ستون‌ها الزامی)
     table_groups = {_group(k) for k in defaults if k.endswith(".table")}
     for group in table_groups:
         if f"{group}.table" not in cleaned:
@@ -239,6 +250,7 @@ class KaraNames:
     """
 
     def __init__(self, leave_mapping=None, attendance_mapping=None):
+        """ورودی: نگاشت مرخصی/ماموریت و نگاشت تردد سایت (هرکدام اختیاری). نام‌های kara_schema هر دو را ادغام می‌کند."""
         self.leave = leave_mapping
         self.attendance = attendance_mapping
         self._names: dict[str, str] = {}
@@ -248,24 +260,29 @@ class KaraNames:
     # ---------- دسترسی عمومی ----------
 
     def has(self, group: str, role: str | None = None) -> bool:
+        """آیا نقش داده‌شده (یا بدون role: جدول گروه) نگاشت شده است؟"""
         if role is None:
             return bool(self._names.get(f"{group}.table"))
         return bool(self._names.get(f"{group}.{role}"))
 
     def raw(self, group: str, role: str) -> str:
+        """نام خام نگاشت‌شده «گروه.نقش» را برمی‌گرداند؛ اگر نگاشت نشده باشد RuntimeError."""
         name = self._names.get(f"{group}.{role}")
         if not name:
             raise RuntimeError(f"«{group}.{role}» در تنظیمات سایت نگاشت نشده است")
         return name
 
     def c(self, group: str, role: str) -> str:
+        """نام ستون محصور در [ ] برای استفاده در SQL."""
         return f"[{self.raw(group, role)}]"
 
     def t(self, group: str) -> str:
+        """نام جدول گروه، محصور در [ ]."""
         return self.c(group, "table")
 
     @staticmethod
     def _q(name: str | None, what: str) -> str:
+        """نام را در [ ] محصور می‌کند؛ اگر خالی باشد RuntimeError با عنوان فارسی what."""
         if not name:
             raise RuntimeError(f"«{what}» در تنظیمات سایت نگاشت نشده است")
         return f"[{name}]"
@@ -274,41 +291,50 @@ class KaraNames:
 
     @property
     def requests_table(self) -> str:
+        """نام جدول درخواست‌ها از نگاشت مرخصی/ماموریت."""
         return self._q(getattr(self.leave, "table_name", None), "جدول درخواست‌ها")
 
     @property
     def requests_id(self) -> str:
+        """ستون شناسه جدول درخواست‌ها."""
         return self._q(getattr(self.leave, "request_id_column", None), "ستون شناسه درخواست")
 
     @property
     def employee_table(self) -> str:
+        """جدول پرسنل کاراوب از نگاشت مرخصی/ماموریت."""
         return self._q(getattr(self.leave, "employee_table_name", None), "جدول پرسنل")
 
     @property
     def employee_emp_no(self) -> str:
+        """ستون کد پرسنلی جدول پرسنل."""
         return self._q(getattr(self.leave, "employee_emp_no_column", None), "ستون کد پرسنلی جدول پرسنل")
 
     @property
     def employee_sec_no(self) -> str:
+        """ستون کد واحد جدول پرسنل."""
         return self._q(getattr(self.leave, "employee_sec_no_column", None), "ستون واحد جدول پرسنل")
 
     @property
     def cards_table(self) -> str:
+        """جدول کارت‌ها (انواع مرخصی/ماموریت)."""
         return self._q(getattr(self.leave, "card_lookup_table_name", None), "جدول کارت‌ها")
 
     @property
     def cards_no(self) -> str:
+        """ستون شماره کارت."""
         return self._q(getattr(self.leave, "card_lookup_id_column", None), "ستون شماره کارت")
 
     @property
     def cards_title(self) -> str:
+        """ستون عنوان کارت."""
         return self._q(getattr(self.leave, "card_lookup_desc_column", None), "ستون عنوان کارت")
 
     # جدول تردد: همان نگاشت تب «نگاشت تردد» (فقط روش یک ستون تاریخ + یک ستون ساعت)
     @property
     def has_punch_table(self) -> bool:
+        """آیا جدول تردد با روش single_column و همه ستون‌های اصلی نگاشت شده است؟"""
         a = self.attendance
-        mode = getattr(getattr(a, "mapping_mode", None), "value", getattr(a, "mapping_mode", None))
+        mode = getattr(getattr(a, "mapping_mode", None), "value", getattr(a, "mapping_mode", None))  # Enum یا رشته
         return bool(
             a is not None
             and mode == "single_column"
@@ -320,24 +346,29 @@ class KaraNames:
 
     @property
     def df_table(self) -> str:
+        """نام جدول تردد از نگاشت تردد."""
         return self._q(getattr(self.attendance, "table_name", None), "جدول تردد")
 
     @property
     def df_emp_no(self) -> str:
+        """ستون کد پرسنلی جدول تردد."""
         return self._q(getattr(self.attendance, "personnel_code_column", None), "ستون کد پرسنلی جدول تردد")
 
     @property
     def df_date(self) -> str:
+        """ستون تاریخ جدول تردد."""
         return self._q(getattr(self.attendance, "date_column", None), "ستون تاریخ جدول تردد")
 
     @property
     def df_time(self) -> str:
+        """ستون ساعت جدول تردد."""
         return self._q(getattr(self.attendance, "time_column", None), "ستون ساعت جدول تردد")
 
     # ---------- کدام قابلیت‌ها فعال‌اند ----------
 
     @property
     def has_employee_section(self) -> bool:
+        """آیا جدول پرسنل با ستون‌های کد پرسنلی و واحد نگاشت شده است؟"""
         leave = self.leave
         return bool(
             leave is not None
@@ -348,6 +379,7 @@ class KaraNames:
 
     @property
     def has_cards(self) -> bool:
+        """آیا جدول کارت‌ها و ستون شماره کارت نگاشت شده است؟"""
         leave = self.leave
         return bool(leave is not None and leave.card_lookup_table_name and leave.card_lookup_id_column)
 
@@ -383,12 +415,15 @@ class KaraNames:
 
     @property
     def can_read_hourly_marks(self) -> bool:
+        """آیا خواندن برچسب مرخصی/ماموریت ساعتی از ستون Status جدول تردد ممکن است؟"""
         return self.has_punch_table and self.has("datafile", "status")
 
     @property
     def can_read_daily_marks(self) -> bool:
+        """آیا خواندن مرخصی/ماموریت روزانه (Mor_Mam + نوع روزانه کارت‌ها) ممکن است؟"""
         return self.has("mor_mam") and self.has_cards and self.has("cards", "is_day")
 
     @property
     def can_read_work_calendar(self) -> bool:
+        """آیا خواندن شیفت هر روز از کارکرد روزانه و جدول شیفت‌ها ممکن است؟"""
         return self.has("daily_work") and self.has("shifts")

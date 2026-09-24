@@ -1,5 +1,5 @@
 """
-سرویس بررسی و اعمال آپدیت از پنل — دو بخش کاملاً مستقل:
+سرویس بررسی و اعمال آپدیت از پنل، و اجرای بررسی‌های سلامت (check.sh):
 
 ۱. check_for_update(): فقط می‌پرسد «آخرین نسخه منتشرشده در GitHub چیست؟»
    و با نسخه فعلی مقایسه می‌کند. کاملاً Read-Only، بدون هیچ اثری روی سرور.
@@ -7,17 +7,18 @@
    اختیاری/غیرمسدودکننده: اگر GitHub در دسترس نبود، فقط پیام مناسب
    برمی‌گردد، هیچ بخش دیگری از برنامه تحت تأثیر قرار نمی‌گیرد.
 
-۲. schedule_update()/get_update_status(): دقیقاً همان الگوی امن که برای
-   Restore دیتابیس ساخته شد (systemd-run برای فرار از Cgroup Kill، چون
-   install.sh در پایان کار خودِ سرویس faipco-backend را Restart می‌کند —
-   یعنی همان مشکلی که باعث گیرکردن اولین تلاش Restore شد، این‌جا هم پیش
-   می‌آمد). تفاوت اصلی: به‌جای یک اسکریپت دست‌ساز، مستقیماً همان install.sh
-   واقعی روی سرور اجرا می‌شود — یعنی این قابلیت عملاً معادل اجرای دستی
+۲. schedule_update()/get_update_status(): همان الگوی Restore دیتابیس
+   (systemd-run تا فرآیند هنگام Restart سرویس faipco-backend توسط install.sh
+   همراه Cgroup سرویس کشته نشود). به‌جای یک اسکریپت دست‌ساز، مستقیماً همان
+   install.sh روی سرور اجرا می‌شود — یعنی این قابلیت عملاً معادل اجرای دستی
    sudo bash install.sh از طریق SSH است، فقط از پنل. این یک تصمیم آگاهانه
    و پذیرفته‌شده است (نه یک محدودیت امنیتی سبک‌تر) — چون این عملیات همان
    قدرت کامل نصب/آپدیت (نصب پکیج سیستمی، تغییر تنظیمات Nginx/سیستم‌عامل)
    را از راه دور در اختیار می‌گذارد، فقط پشت همان مجوز Admin کامل که
    برای Backup/Restore هم لازم است.
+
+۳. schedule_checks()/get_check_status(): اجرای scripts/check.sh --log در
+   پس‌زمینه و خواندن نتیجه از /var/log/faipco-check.log.
 """
 from __future__ import annotations
 
@@ -31,13 +32,14 @@ from app.core.config import get_settings
 
 
 class UpdateError(Exception):
+    """خطای قابل‌نمایش به کاربر در راه‌اندازی آپدیت یا بررسی سلامت."""
     pass
 
 
-_UPDATE_LOG_PATH = Path("/var/log/faipco-install.log")
-_UPDATE_OFFSET_MARKER = Path("/tmp/faipco-update-log-offset")
+_UPDATE_LOG_PATH = Path("/var/log/faipco-install.log")  # لاگی که install.sh به آن Append می‌کند
+_UPDATE_OFFSET_MARKER = Path("/tmp/faipco-update-log-offset")  # اندازه لاگ در لحظه شروع آپدیت فعلی
 
-UPDATE_CONFIRMATION_PHRASE = "UPDATE"
+UPDATE_CONFIRMATION_PHRASE = "UPDATE"  # عبارتی که کاربر باید برای تأیید آپدیت بفرستد
 
 
 def _clean_tag(raw: str) -> str:
@@ -48,9 +50,14 @@ def _clean_tag(raw: str) -> str:
 
 
 async def check_for_update() -> dict:
+    """
+    آخرین تگ مخزن GitHub را با APP_VERSION فعلی مقایسه می‌کند (فقط خواندنی).
+    خروجی: dict با checked، current_version، update_channel، latest_version، has_update، release_url.
+    """
     settings = get_settings()
     current = _clean_tag(settings.APP_VERSION)
 
+    # دریافت فهرست تگ‌های مخزن از GitHub API
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             response = await client.get(
@@ -60,9 +67,8 @@ async def check_for_update() -> dict:
             response.raise_for_status()
             tags = response.json()
     except Exception:
-        # عمداً بی‌سروصدا — این قابلیت اختیاری و غیرمسدودکننده است؛ اگر
-        # اینترنت نبود یا GitHub در دسترس نبود، کاربر فقط یک پیام مناسب
-        # می‌بیند، نه یک خطای بحرانی.
+        # بدون خطا برمی‌گردد (checked=False) — اگر اینترنت یا GitHub در دسترس
+        # نباشد، کاربر فقط یک پیام مناسب می‌بیند، نه یک خطای بحرانی.
         return {
             "checked": False,
             "current_version": settings.APP_VERSION,
@@ -72,6 +78,7 @@ async def check_for_update() -> dict:
             "release_url": None,
         }
 
+    # مخزن هیچ تگی ندارد
     if not tags:
         return {
             "checked": True,
@@ -82,7 +89,8 @@ async def check_for_update() -> dict:
             "release_url": None,
         }
 
-    latest = tags[0]["name"]
+    latest = tags[0]["name"]  # GitHub تگ‌ها را جدیدترین اول برمی‌گرداند
+    # نسخه‌های dev/unknown (اجرای خارج از git) هرگز «آپدیت دارد» نشان داده نمی‌شوند
     has_update = current != "dev" and current != "unknown" and _clean_tag(current) != latest
 
     return {
@@ -96,10 +104,14 @@ async def check_for_update() -> dict:
 
 
 def schedule_update(confirm_phrase: str) -> None:
+    """
+    ورودی: عبارت تأیید. اجرای install.sh را در پس‌زمینه (systemd-run، root) راه‌اندازی می‌کند و منتظر اتمام نمی‌ماند.
+    خطا: UpdateError برای عبارت اشتباه، نبود install.sh یا شکست راه‌اندازی.
+    """
     if confirm_phrase != UPDATE_CONFIRMATION_PHRASE:
         raise UpdateError(f'برای تأیید، باید دقیقاً عبارت «{UPDATE_CONFIRMATION_PHRASE}» ارسال شود.')
 
-    install_dir = Path(__file__).resolve().parent.parent.parent.parent
+    install_dir = Path(__file__).resolve().parent.parent.parent.parent  # ریشه پروژه
     install_script = install_dir / "install.sh"
     if not install_script.exists():
         raise UpdateError(f"فایل install.sh پیدا نشد: {install_script}")
@@ -111,13 +123,10 @@ def schedule_update(confirm_phrase: str) -> None:
     current_size = _UPDATE_LOG_PATH.stat().st_size if _UPDATE_LOG_PATH.exists() else 0
     _UPDATE_OFFSET_MARKER.write_text(str(current_size), encoding="utf-8")
 
-    # دقیقاً همان الگوی schedule_restore (نگاه کنید backup_service.py) —
-    # یک Scope کاملاً مستقل از systemd، به‌عنوان root، تا وقتی install.sh
-    # خودش سرویس faipco-backend را Restart می‌کند، این فرآیند خودش کشته
-    # نشود. --setenv=HOME=/root حیاتی است: برخلاف یک نشست تعاملی sudo،
-    # Scope موقت systemd-run این متغیر را ندارد — و install.sh با
-    # «git config --global» کار می‌کند که بدون HOME با خطای
-    # "$HOME not set" متوقف می‌شود.
+    # همان الگوی schedule_restore (backup_service.py): اجرای install.sh در یک
+    # Unit مستقل systemd به‌عنوان root، تا با Restart سرویس faipco-backend کشته نشود.
+    # --setenv=HOME=/root لازم است چون Unit موقت systemd-run متغیر HOME ندارد و
+    # «git config --global» در install.sh بدون آن با خطای "$HOME not set" متوقف می‌شود.
     result = subprocess.run(
         [
             "sudo",
@@ -139,16 +148,16 @@ def schedule_update(confirm_phrase: str) -> None:
         )
 
 
-_CHECK_LOG_PATH = Path("/var/log/faipco-check.log")
+_CHECK_LOG_PATH = Path("/var/log/faipco-check.log")  # خروجی check.sh --log
 
 
 def schedule_checks() -> None:
     """
-    اجرای «بررسی‌های سلامت پروژه» (scripts/check.sh --log) از پنل - مرحله ۰
-    بازسازی ساختار. همان الگوی آپدیت: یک Scope مستقل systemd به‌عنوان root
+    اجرای «بررسی‌های سلامت پروژه» (scripts/check.sh --log) از پنل، با همان الگوی آپدیت: یک Scope مستقل systemd به‌عنوان root
     (تست Migration به ساخت دیتابیس موقت با کاربر postgres نیاز دارد)؛ مجوزش
     در sudoers (install.sh) است. خروجی در /var/log/faipco-check.log.
     فقط می‌خواند/تست می‌کند - هیچ چیزی در پروژه یا دیتابیس واقعی تغییر نمی‌دهد.
+    خطا: UpdateError اگر اسکریپت نباشد، بررسی دیگری در حال اجرا باشد یا راه‌اندازی شکست بخورد.
     """
     install_dir = Path(__file__).resolve().parent.parent.parent.parent
     script = install_dir / "scripts" / "check.sh"
@@ -156,6 +165,7 @@ def schedule_checks() -> None:
         raise UpdateError(f"اسکریپت بررسی پیدا نشد: {script}")
     if get_check_status()["is_running"]:
         raise UpdateError("یک بررسی هنوز در حال اجراست.")
+    # راه‌اندازی check.sh در Unit موقت faipco-check (بدون انتظار برای اتمام)
     result = subprocess.run(
         [
             "sudo",
@@ -180,18 +190,24 @@ def schedule_checks() -> None:
 
 
 def get_check_status() -> dict:
+    """
+    وضعیت آخرین بررسی سلامت را از لاگ و systemctl می‌خواند.
+    خروجی: dict با log، is_running، is_passed، is_failed.
+    """
     log_content = ""
     if _CHECK_LOG_PATH.exists():
         try:
             log_content = _CHECK_LOG_PATH.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             log_content = ""
+    # آیا Unit موقت faipco-check هنوز در حال اجراست
     is_unit_active = False
     try:
         result = subprocess.run(["systemctl", "is-active", "faipco-check"], capture_output=True, timeout=5)
         is_unit_active = result.stdout.decode().strip() in {"active", "activating"}
     except Exception:
         pass
+    # نتیجه نهایی از خط RESULT در لاگ تشخیص داده می‌شود
     is_passed = "[CHECK] RESULT: PASS" in log_content
     is_failed = "[CHECK] RESULT: FAIL" in log_content
     # پروسه تمام شده ولی خط نتیجه در لاگ نیست (کشته شده/قطع شده) → شکست، نه «در حال اجرا» تا ابد
@@ -207,9 +223,14 @@ def get_check_status() -> dict:
 
 
 def get_update_status() -> dict:
+    """
+    وضعیت آپدیت جاری را از بخش جدید لاگ install.sh و systemctl می‌خواند.
+    خروجی: dict با log، is_running، is_finished، is_failed.
+    """
     if not _UPDATE_OFFSET_MARKER.exists() or not _UPDATE_LOG_PATH.exists():
         return {"log": "", "is_running": False, "is_finished": False, "is_failed": False}
 
+    # فقط بخشی از لاگ که بعد از شروع آپدیت فعلی نوشته شده خوانده می‌شود
     try:
         offset = int(_UPDATE_OFFSET_MARKER.read_text(encoding="utf-8").strip())
     except ValueError:
@@ -219,6 +240,7 @@ def get_update_status() -> dict:
         f.seek(offset)
         log_content = f.read().decode("utf-8", errors="ignore")
 
+    # آیا Unit موقت faipco-update هنوز در حال اجراست
     is_unit_active = False
     try:
         result = subprocess.run(
@@ -230,6 +252,7 @@ def get_update_status() -> dict:
     except Exception:
         pass
 
+    # پیام‌های پایانی install.sh برای موفقیت/شکست
     is_finished = "updated successfully" in log_content or "installed successfully" in log_content
     is_failed = "Install failed at line" in log_content
 

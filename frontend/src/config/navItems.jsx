@@ -28,19 +28,10 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 
 /**
- * ⚠️ منبع واحد و مرکزی همه مقصدهای منو-دار پروژه (Single Source of
- * Truth) - قبلاً دو لیست کاملاً جدا و دستی وجود داشت: NAV_ITEMS در
- * Layout.jsx (برای منوی کناری Admin) و EXTRA_ACCESS_ITEMS در
- * ProfilePage.jsx (برای «دسترسی‌های ویژه» کاربران غیر-Admin در نوار
- * پایین). این دوگانگی دقیقاً همان چیزی بود که باعث شد «ارزیابی عملکرد»
- * برای کاربران غیر-Admin با مجوز کامل، هیچ راه دسترسی از UI نداشته
- * باشد - چون فقط به یکی از این دو لیست اضافه شده بود، نه هردو.
- *
- * از این به بعد، هر مقصد جدید فقط **یک‌بار**، همین‌جا اضافه می‌شود -
- * هم Layout.jsx (منوی کناری/نوار پایین Admin) و هم ProfilePage.jsx
- * («دسترسی‌های ویژه») از همین یک آرایه می‌خوانند؛ اگر یک آیتم children
- * داشته باشد، ProfilePage.jsx آن را مسطح (Flatten) می‌کند - چون آن‌جا
- * مفهوم زیرمنو وجود ندارد.
+ * منبع واحد همه‌ی مقصدهای منوی برنامه.
+ * Layout.jsx (منوی کناری/نوار پایین Admin) و ProfilePage.jsx («دسترسی‌های ویژه» کاربران غیر Admin)
+ * هر دو از همین آرایه می‌خوانند؛ ProfilePage.jsx آیتم‌های دارای children را مسطح (Flatten) می‌کند
+ * چون آن‌جا زیرمنو وجود ندارد. هر مقصد جدید فقط یک‌بار همین‌جا اضافه می‌شود.
  *
  * شکل هر آیتم:
  *   label: متن نمایشی
@@ -67,11 +58,12 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
  *   children (اختیاری): آرایه‌ای از همین شکل (بدون children تودرتوی بیشتر)
  */
 export const NAV_ITEMS = [
-  // ⚠️ دسته‌بندی بر اساس «کار کاربر» (طبق درخواست کاربر): از کارهای روزمره
-  // (پرسنل، تردد، اطلاعیه) به سمت کارهای فنی و کم‌تکرار (دسترسی، سامانه).
-  // داخل هر گروه: پرکاربردترین اول، تنظیمات آخر. گروه‌ها (groupOnly) صفحه
-  // مستقل ندارند - کلیک روی عنوان گروه به اولین زیرمنوی در‌دسترس کاربر می‌رود.
+  // ترتیب گروه‌ها از کارهای روزمره (پرسنل، تردد، اطلاعیه) به سمت کارهای فنی و کم‌تکرار (دسترسی، سامانه)؛
+  // داخل هر گروه پرکاربردترین اول و تنظیمات آخر. گروه‌ها (groupOnly) صفحه‌ی مستقل ندارند و
+  // کلیک روی عنوان گروه به اولین زیرمنوی در‌دسترس کاربر می‌رود.
+  // داشبورد مدیریتی (فقط ادمین اصلی)
   { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
+  // گروه پرسنل و سازمان: فهرست پرسنل، واحدها، خودروها و بیمه‌ی تکمیلی
   {
     label: "پرسنل و سازمان",
     path: "/employees",
@@ -99,6 +91,7 @@ export const NAV_ITEMS = [
       },
     ],
   },
+  // گروه حضور و غیاب: گزارش تردد، پرسنل آنلاین، ثبت ورود/خروج و مرخصی/ماموریت
   {
     label: "حضور و غیاب",
     path: "/clock-in-out-report",
@@ -121,7 +114,7 @@ export const NAV_ITEMS = [
         label: "ثبت ورود و خروج",
         path: "/attendance-clock",
         icon: <FingerprintOutlinedIcon />,
-        check: (u) => u?.can_clock_in_out,
+        check: (u) => u?.can_clock_in_out, // فقط کاربران دارای مجوز ثبت تردد؛ برای ادمین اصلی مخفی است
         hiddenForAdmin: true,
       },
       {
@@ -138,6 +131,7 @@ export const NAV_ITEMS = [
       },
     ],
   },
+  // گروه ارتباطات: اطلاعیه‌ها و گزارش آن‌ها، انتقادات و پیشنهادات، پیام‌های تبریک تولد
   {
     label: "ارتباطات",
     path: "/notices",
@@ -165,6 +159,7 @@ export const NAV_ITEMS = [
       },
     ],
   },
+  // گروه ارزیابی عملکرد: ساختار، فرم‌ها، دوره‌ها و گزارش‌های مدیریتی
   {
     label: "ارزیابی عملکرد",
     path: "/performance/structure",
@@ -197,6 +192,7 @@ export const NAV_ITEMS = [
       },
     ],
   },
+  // گروه کاربران و دسترسی: کاربران، نقش/مجوز، انتصاب گروهی و رنج‌های IP مجاز
   {
     label: "کاربران و دسترسی",
     path: "/access",
@@ -219,6 +215,7 @@ export const NAV_ITEMS = [
       { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, check: (u) => u?.can_manage_ip_allowlist },
     ],
   },
+  // گروه سامانه: سایت‌ها، همگام‌سازی، تنظیمات، پشتیبان‌گیری و به‌روزرسانی
   {
     label: "سامانه",
     path: "/sites",
@@ -249,7 +246,11 @@ export const NAV_ITEMS = [
   },
 ];
 
-/** آیا این آیتم (صرف‌نظر از فرزندانش) برای این کاربر مجاز است؟ */
+/**
+ * بررسی نمایش یک آیتم منو برای کاربر. ورودی: آیتم و کاربر جاری؛ خروجی: boolean.
+ * ابتدا adminOnly/hiddenForAdmin، سپس check آیتم؛ اگر check نداشت ولی فرزند داشت،
+ * نمایش داده می‌شود اگر حداقل یکی از فرزندان قابل مشاهده باشد.
+ */
 export function isItemVisible(item, user) {
   if (item.adminOnly && !user?.is_superuser) return false;
   if (item.hiddenForAdmin && user?.is_superuser) return false;

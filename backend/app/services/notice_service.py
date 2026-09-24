@@ -1,6 +1,10 @@
 """
 منطق تجاری سیستم اطلاعیه‌ها + سلسله‌مراتب مجوز ارسال.
 
+شامل: ایجاد/انتشار/حذف نرم اطلاعیه، محاسبه مخاطبان، فهرست اطلاعیه‌های کاربر
+(با فیلتر نوع و آرشیو)، ثبت مشاهده/آرشیو، گزارش‌های فرستنده/Admin/سایت،
+فهرست بازدیدکنندگان و ارسال (مجدد) Push.
+
 منطق تصمیم‌گیری «آیا این کاربر اجازه دارد این Target را هدف بگیرد؟»:
 
 - all (همه سازمان):
@@ -19,8 +23,8 @@
     سرپرست واحدی که آن پرسنل در آن است؛ یا هرکسی که مجوز
     notices.target.employee برای همان Site را داشته باشد.
 
-⚠️ هدف‌گیری بر اساس نقش (role، مثل «همه سرپرستان») طبق درخواست صریح حذف
-شد — دیگر هیچ راهی برای این نوع هدف‌گیری وجود ندارد.
+- role: هدف‌گیری جدید بر اساس نقش مجاز نیست؛ این نوع فقط در داده‌های
+  تاریخی ممکن است وجود داشته باشد.
 
 superuser همیشه به همه چیز دسترسی دارد.
 """
@@ -58,7 +62,7 @@ class NoticePermissionError(Exception):
 
 async def send_publish_notifications(notice_id: int) -> None:
     """
-    ارسال Push به مخاطبان یک اطلاعیه — طراحی‌شده برای اجرا در Background
+    ارسال Push به همه مخاطبان اطلاعیه notice_id — طراحی‌شده برای اجرا در Background
     (بعد از پاسخ HTTP، نه در همان درخواست). چون این تابع مستقل از هر
     Request اجرا می‌شود، Session دیتابیس مخصوص خودش را می‌سازد (Session
     درخواست اصلی تا این لحظه بسته شده است).
@@ -80,14 +84,14 @@ async def send_publish_notifications(notice_id: int) -> None:
                 notice_type=notice.notice_type.value,
             )
         except Exception:
-            # ارسال Push هرگز نباید کل عملیات انتشار اطلاعیه را متوقف کند —
-            # ولی قبلاً این خطا کاملاً بی‌صدا نادیده گرفته می‌شد و هیچ ردی
-            # در لاگ نمی‌ماند. حالا حداقل با جزئیات کامل (Traceback) لاگ
-            # می‌شود تا بشود علت ناموفق‌بودن ارسال Push را در آینده پیدا کرد.
+            # خطای ارسال Push عملیات انتشار را متوقف نمی‌کند؛ فقط با
+            # Traceback کامل لاگ می‌شود تا علت آن قابل پیگیری باشد.
             logger.exception("ارسال Push برای اطلاعیه #%s با خطا مواجه شد", notice_id)
 
 
 class NoticeService:
+    """منطق اصلی اطلاعیه‌ها: مجوز Target، ایجاد/انتشار، فهرست‌ها، گزارش‌ها و Push."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
         self.user_repo = UserRepository(db)
@@ -95,34 +99,40 @@ class NoticeService:
     # ---------- بررسی مجوز هر Target ----------
 
     async def _has_permission(self, user: User, code: str, site_id: int | None = None) -> bool:
+        """
+        بررسی می‌کند کاربر مجوز code را دارد یا نه (superuser همیشه True).
+        با site_id: فقط انتصاب‌های سراسری یا مربوط به همان سایت حساب می‌شوند.
+        بدون site_id: هر انتصابی (سراسری یا سایت‌محور) کافی است.
+        """
         if user.is_superuser:
             return True
-        # ⚠️ رفع همان باگ حیاتی که در require_permission/get_me هم بود:
-        # وقتی site_id اینجا داده نشود (مثل notices.payroll،
-        # notices.attendance_card، notices.target.all
-        # — که همه «آیا این قابلیت را اصلاً دارم» هستند، نه بررسی یک هدف
-        # سایت‌محور مشخص)، get_permission_codes(site_id=None) فقط
-        # انتصاب‌های *سراسری* را می‌دید. از وقتی site_id برای انتصاب نقش
-        # اجباری شد، هیچ انتصاب جدیدی سراسری نیست — یعنی این بررسی همیشه
-        # False برمی‌گشت، حتی برای کاربری که همان مجوز را (فقط سایت‌محور)
-        # واقعاً داشت (دقیقاً همان چیزی که کاربر گزارش کرد: از‌دست‌رفتن
-        # notices.payroll بعد از انتصاب دوباره با سایت مشخص).
-        # وقتی site_id صراحتاً داده شود (برای notices.target.site/
-        # department/employee — که واقعاً می‌خواهند بدانند «آیا این مجوز
-        # برای همین سایت مشخص را دارد»)، همان رفتار دقیق و سایت‌محور قبلی
-        # حفظ می‌شود.
+        # بدون site_id (مثل notices.payroll، notices.attendance_card، notices.target.all)
+        # سؤال این است که «آیا این قابلیت را اصلاً دارم»، پس مجوزهای همه انتصاب‌ها
+        # (از جمله سایت‌محور) بررسی می‌شوند. با site_id (برای notices.target.site/
+        # department/employee) فقط مجوز برای همان سایت مشخص معتبر است.
         if site_id is not None:
             codes = await self.user_repo.get_permission_codes(user.id, site_id=site_id)
         else:
             codes = await self.user_repo.get_all_permission_codes(user.id)
         return code in codes
 
+    async def _has_org_wide_permission(self, user: User, code: str) -> bool:
+        """
+        آیا کاربر مجوز code را از یک انتصاب سراسری (بدون سایت) دارد؟ superuser همیشه True.
+        برای قابلیت‌هایی که روی همه‌ی سایت‌ها اثر دارند (مثل ارسال به کل سازمان).
+        """
+        if user.is_superuser:
+            return True
+        return code in await self.user_repo.get_permission_codes(user.id, site_id=None)
+
     async def _can_target(self, user: User, target_type: NoticeTargetType, target_id: int | None) -> bool:
+        """طبق قواعد ماژول، تعیین می‌کند کاربر اجازه ارسال اطلاعیه به این Target را دارد یا نه."""
         if user.is_superuser:
             return True
 
         if target_type == NoticeTargetType.all:
-            return await self._has_permission(user, "notices.target.all")
+            # ارسال به کل سازمان همه‌ی سایت‌ها را می‌گیرد؛ فقط با انتصاب سراسری
+            return await self._has_org_wide_permission(user, "notices.target.all")
 
         if target_type == NoticeTargetType.site:
             return await self._has_permission(user, "notices.target.site", site_id=target_id)
@@ -132,37 +142,41 @@ class NoticeService:
             if department is None:
                 return False
             if department.supervisor_user_id == user.id:
-                return True
+                return True  # سرپرست مستقیم همان واحد
             return await self._has_permission(user, "notices.target.department", site_id=department.site_id)
 
         if target_type == NoticeTargetType.employee:
             employee = await self.db.get(Employee, target_id)
             if employee is None:
                 return False
+            # سرپرست واحدِ این پرسنل بدون نیاز به مجوز اجازه دارد
             if employee.department_id is not None:
                 department = await self.db.get(Department, employee.department_id)
                 if department is not None and department.supervisor_user_id == user.id:
                     return True
             return await self._has_permission(user, "notices.target.employee", site_id=employee.site_id)
 
-        # ⚠️ هدف‌گیری بر اساس نقش (role) طبق درخواست صریح حذف شد — مجوز
-        # notices.target.role دیگر در سیستم وجود ندارد؛ اگر یک NoticeTarget
-        # با target_type=role (از قبل، در داده‌های تاریخی) وجود داشته باشد،
-        # اینجا همیشه False برمی‌گردد (یعنی دیگر قابل ارسال/تکرار نیست) —
-        # NoticeTargetType.role به‌عمد از Enum سطح دیتابیس حذف نشد، فقط
-        # مسیر استفاده از آن مسدود شد.
+        # target_type=role (و هر نوع دیگر) همیشه False است: مجوز notices.target.role
+        # وجود ندارد و NoticeTargetType.role فقط برای داده‌های تاریخی در Enum
+        # دیتابیس باقی مانده است.
 
         return False
 
     # ---------- عملیات اصلی ----------
 
     async def create_notice(self, sender: User, payload: NoticeCreate) -> Notice:
+        """
+        پس از بررسی مجوز همه Target ها، اطلاعیه را با وضعیت draft ذخیره و برمی‌گرداند.
+        خطا: NoticePermissionError اگر حتی یکی از Target ها مجاز نباشد.
+        """
+        # بررسی مجوز هر Target پیش از ساخت اطلاعیه
         for target in payload.targets:
             if not await self._can_target(sender, target.target_type, target.target_id):
                 raise NoticePermissionError(
                     f"شما اجازه ارسال اطلاعیه به این مقصد را ندارید: {target.target_type.value}"
                 )
 
+        # ساخت اطلاعیه پیش‌نویس به همراه Target ها
         notice = Notice(
             sender_id=sender.id,
             title=payload.title,
@@ -182,9 +196,10 @@ class NoticeService:
         # همچنان معتبر است — نیازی به refresh رابطه نیست (خطر MissingGreenlet).
         return notice
 
-    async def publish_notice(self, notice_id: int) -> Notice | None:
+    async def publish_notice(self, notice_id: int, current_user: User) -> Notice | None:
         """
-        فقط انتشار را ثبت می‌کند و بلافاصله برمی‌گردد — سریع و بدون مکث.
+        وضعیت اطلاعیه‌ی پیش‌نویس را published می‌کند و آن را برمی‌گرداند (None اگر یافت نشود).
+        فقط فرستنده یا superuser، و فقط برای پیش‌نویسِ حذف‌نشده؛ در غیر این صورت NoticePermissionError.
         ارسال Push به کاربران هدف در پس‌زمینه و جداگانه انجام می‌شود
         (به send_publish_notifications در endpoint مراجعه کنید) تا کندی
         شبکه هنگام ارسال چندین Push، پاسخ HTTP را معطل نگه ندارد.
@@ -195,7 +210,12 @@ class NoticeService:
         notice = result.scalar_one_or_none()
         if notice is None:
             return None
+        if notice.sender_id != current_user.id and not current_user.is_superuser:
+            raise NoticePermissionError("شما اجازه انتشار این اطلاعیه را ندارید")
+        if notice.is_deleted or notice.status != NoticeStatus.draft:
+            raise NoticePermissionError("فقط اطلاعیه‌ی پیش‌نویس قابل انتشار است")
         notice.status = NoticeStatus.published
+        # اگر زمان انتشار از قبل تعیین نشده، همین لحظه ثبت می‌شود
         if notice.publish_at is None:
             notice.publish_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -205,11 +225,14 @@ class NoticeService:
         """برای هر Target اطلاعیه، شناسه کاربرانی که باید Push دریافت کنند را برمی‌گرداند."""
         user_ids: set[int] = set()
 
+        # برای هر نوع Target، کاربران مربوط جمع می‌شوند (اجتماع مجموعه‌ها)
         for target in notice.targets:
+            # همه کاربران فعال
             if target.target_type == NoticeTargetType.all:
                 result = await self.db.execute(select(User.id).where(User.is_active.is_(True)))
                 user_ids.update(row[0] for row in result.all())
 
+            # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن سایت
             elif target.target_type == NoticeTargetType.site:
                 result = await self.db.execute(
                     select(User.id)
@@ -222,6 +245,7 @@ class NoticeService:
                 )
                 user_ids.update(row[0] for row in result.all())
 
+            # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن واحد
             elif target.target_type == NoticeTargetType.department:
                 result = await self.db.execute(
                     select(User.id)
@@ -238,16 +262,25 @@ class NoticeService:
                 result = await self.db.execute(select(User.id).where(User.employee_id == target.target_id))
                 user_ids.update(row[0] for row in result.all())
 
+            # Target های تاریخی نوع role: دارندگان آن نقش
             elif target.target_type == NoticeTargetType.role:
                 result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == target.target_id))
                 user_ids.update(row[0] for row in result.all())
 
         return user_ids
 
-    async def list_all(self) -> list[Notice]:
-        result = await self.db.execute(
-            select(Notice).options(selectinload(Notice.targets)).order_by(Notice.created_at.desc())
-        )
+    async def list_all(self, site_ids: set[int] | None = None) -> list[Notice]:
+        """
+        همه اطلاعیه‌ها (با Target ها) به ترتیب جدیدترین.
+        site_ids: اگر داده شود فقط اطلاعیه‌هایی که به یکی از این سایت‌ها می‌رسند (None = همه؛ مجموعه خالی = هیچ).
+        """
+        stmt = select(Notice).options(selectinload(Notice.targets)).order_by(Notice.created_at.desc())
+        if site_ids is not None:
+            reach = await self._notice_ids_reaching_sites(list(site_ids))
+            if reach is None:
+                return []
+            stmt = stmt.where(Notice.id.in_(reach))
+        result = await self.db.execute(stmt)
         return list(result.scalars().unique().all())
 
     async def list_for_user(
@@ -260,25 +293,25 @@ class NoticeService:
     ) -> tuple[list[NoticeOut], int, int]:
         """خروجی: (اطلاعیه‌های این صفحه، تعداد کل، تعداد کل خوانده‌نشده‌ها).
 
-        تعداد خوانده‌نشده‌ها روی **همه** اطلاعیه‌های مطابق فیلترها حساب
-        می‌شود، نه فقط همین صفحه - طبق درخواست کاربر، شمارنده داشبورد باید
-        عدد واقعی باشد حتی اگر فرد هزاران اطلاعیه خوانده‌نشده داشته باشد.
+        اطلاعیه‌های منتشرشده، حذف‌نشده و در بازه اعتبار که به کاربر می‌رسند (سایت، واحد،
+        خودِ پرسنل، نقش یا همه). تعداد خوانده‌نشده‌ها روی همه اطلاعیه‌های مطابق فیلترها
+        حساب می‌شود، نه فقط همین صفحه.
         """
         now = datetime.now(timezone.utc)
 
+        # نقش‌های کاربر (برای Target های تاریخی نوع role)
         result = await self.db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
         role_ids = {row[0] for row in result.all()}
 
+        # شرط‌های تطبیق Target با کاربر؛ «همه» همیشه شامل می‌شود
         target_conditions = [NoticeTarget.target_type == NoticeTargetType.all]
 
-        # ⚠️ طبق درخواست صریح کاربر: پرسنلی که تازه از طریق Sync به پرتال
-        # اضافه شده، نباید اطلاعیه‌های قبل از ورودش را ببیند. مبنا
-        # Employee.created_at است - یعنی دقیقاً همان لحظه‌ای که Sync این
-        # ردیف را ساخته (این ستون فقط هنگام INSERT مقدار می‌گیرد و در
-        # به‌روزرسانی‌های بعدی Sync دست‌نخورده می‌ماند، پس واقعاً «تاریخ
-        # ورود» است، نه آخرین همگام‌سازی).
+        # پرسنل اطلاعیه‌های منتشرشده پیش از ورودش به پرتال را نمی‌بیند. مبنا
+        # Employee.created_at است که فقط هنگام INSERT توسط Sync مقدار می‌گیرد
+        # و در به‌روزرسانی‌های بعدی تغییر نمی‌کند (یعنی «تاریخ ورود»).
         joined_at = None
 
+        # شرط‌های سایت، واحد و خودِ پرسنل (فقط برای کاربران دارای employee_id)
         if user.employee_id is not None:
             employee = await self.db.get(Employee, user.employee_id)
             if employee is not None:
@@ -313,11 +346,12 @@ class NoticeService:
 
         # به‌جای JOIN مستقیم با NoticeTarget (که وقتی یک اطلاعیه چند Target
         # مطابق برای همین کاربر دارد، همان Notice را چندبار برمی‌گرداند و
-        # Pagination درست را خراب می‌کند)، از یک Subquery استفاده می‌کنیم —
+        # Pagination را خراب می‌کند)، از یک Subquery استفاده می‌شود —
         # هر Notice دقیقاً یک‌بار در نتیجه می‌آید، پس LIMIT/OFFSET بدون نیاز
         # به .unique() یا هیچ منطق تکراری‌زدایی در پایتون درست کار می‌کند.
         matching_notice_ids = select(NoticeTarget.notice_id).where(or_(*target_conditions))
 
+        # فیلترهای پایه: منتشرشده، حذف‌نشده، در بازه publish_at/expire_at و مطابق Target
         base_filters = (
             Notice.status == NoticeStatus.published,
             Notice.is_deleted.is_(False),
@@ -326,7 +360,7 @@ class NoticeService:
             Notice.id.in_(matching_notice_ids),
         )
 
-        # ⚠️ فقط اطلاعیه‌هایی که **بعد از** پیوستن این پرسنل منتشر شده‌اند.
+        # فقط اطلاعیه‌هایی که بعد از پیوستن این پرسنل منتشر شده‌اند.
         # مبنای مقایسه publish_at است (زمان واقعی انتشار)، و اگر تعیین
         # نشده باشد به created_at خودِ اطلاعیه برمی‌گردیم - چون اطلاعیه‌ی
         # بدون publish_at بلافاصله منتشر شده است.
@@ -353,18 +387,19 @@ class NoticeService:
         # هر سه حالت EXISTS/NOT EXISTS روی NoticeArchive محدود به user.id —
         # آرشیو کاملاً شخصی است، آرشیو یک نفر روی بقیه اثر ندارد.
         #
-        # ⚠️ استثنا: وقتی notice_type مشخص شده (نمای «فقط فیش‌های حقوقی/کارکرد
+        # استثنا: وقتی notice_type مشخص شده (نمای «فقط فیش‌های حقوقی/کارکرد
         # من» از داشبورد)، اصلاً فیلتر آرشیو اعمال نمی‌شود — چون آنجا هدف
         # «همه اسناد رسمی من» است، نه صندوق ورودی؛ کاربر نباید با آرشیوکردن
         # یک اطلاعیه فیش حقوقی (برای تمیزکردن صندوق ورودی‌اش)، دسترسی به خودِ
         # فیش‌اش را هم از دست بدهد.
         if notice_type is None and archived != "all":
-            archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)
+            archived_subquery = select(NoticeArchive.notice_id).where(NoticeArchive.user_id == user.id)  # اطلاعیه‌های آرشیوشده همین کاربر
             if archived == "only":
                 base_filters = (*base_filters, Notice.id.in_(archived_subquery))
             else:
                 base_filters = (*base_filters, Notice.id.not_in(archived_subquery))
 
+        # تعداد کل و تعداد خوانده‌نشده با همان فیلترها
         count_stmt = select(func.count()).select_from(Notice).where(*base_filters)
         total = (await self.db.execute(count_stmt)).scalar_one()
 
@@ -374,6 +409,7 @@ class NoticeService:
         )
         unread_total = (await self.db.execute(unread_stmt)).scalar_one()
 
+        # اطلاعیه‌های صفحه جاری
         stmt = (
             select(Notice)
             .options(selectinload(Notice.targets))
@@ -387,7 +423,7 @@ class NoticeService:
         if not notices:
             return [], total, unread_total
 
-        # اطلاعیه‌هایی که کاربر جاری قبلاً باز/مشاهده کرده — برای رنگ‌بندی متفاوت
+        # اطلاعیه‌هایی از این صفحه که کاربر جاری باز/مشاهده کرده — برای رنگ‌بندی متفاوت
         # پیام‌های خوانده‌شده در UI
         notice_ids = [n.id for n in notices]
         read_result = await self.db.execute(
@@ -437,8 +473,10 @@ class NoticeService:
                 )
                 attendance_card_notice_ids = {row[0] for row in receipt_result.all()}
 
+        # نام و واحد فرستنده‌ها با یک Query
         sender_details = await self._resolve_sender_details({n.sender_id for n in notices})
 
+        # ساخت خروجی به همراه وضعیت‌های شخصی کاربر
         items = [
             NoticeOut(
                 id=n.id,
@@ -471,8 +509,11 @@ class NoticeService:
         """
         برای پر کردن هوشمند فرم «اطلاعیه جدید» در پنل — فقط سایت‌ها/واحدهایی
         که کاربر واقعاً اجازه دارد به آن‌ها پیام بدهد را برمی‌گرداند.
+        خروجی: dict شامل پرچم‌های مجوز، site_ids، department_ids، محدوده هدف‌گیری پرسنل
+        و فهرست سرپرستان واحدهای مجاز.
         """
-        can_all = await self._has_permission(user, "notices.target.all")
+        # قابلیت‌های سراسری (بدون وابستگی به سایت)
+        can_all = await self._has_org_wide_permission(user, "notices.target.all")
         can_upload_payroll = await self._has_permission(user, "notices.payroll")
         can_upload_attendance_card = await self._has_permission(user, "notices.attendance_card")
 
@@ -481,6 +522,7 @@ class NoticeService:
         sites_result = await self.db.execute(select(Site).where(Site.is_active.is_(True)))
         all_sites = list(sites_result.scalars().all())
 
+        # سایت‌های فعالی که کاربر مجوز notices.target.site برایشان دارد
         allowed_site_ids = set()
         for site in all_sites:
             if await self._has_permission(user, "notices.target.site", site_id=site.id):
@@ -489,6 +531,7 @@ class NoticeService:
         dept_result = await self.db.execute(select(Department))
         all_departments = list(dept_result.scalars().all())
 
+        # واحدهایی که کاربر سرپرستشان است یا برای سایتشان مجوز notices.target.department دارد
         allowed_department_ids = set()
         for dept in all_departments:
             if dept.supervisor_user_id == user.id or await self._has_permission(
@@ -505,6 +548,7 @@ class NoticeService:
         has_broad_employee_permission = user.is_superuser or await self._has_permission(
             user, "notices.target.employee"
         )
+        # اگر مجوز کلی نبود، بررسی مجوز سایت‌محور برای هرکدام از سایت‌ها
         if not has_broad_employee_permission:
             for site in all_sites:
                 if await self._has_permission(user, "notices.target.employee", site_id=site.id):
@@ -515,6 +559,7 @@ class NoticeService:
             {dept.id for dept in all_departments if dept.supervisor_user_id == user.id}
         )
 
+        # تعیین دامنه هدف‌گیری پرسنل: نامحدود، محدود به واحدهای تحت سرپرستی، یا هیچ
         if has_broad_employee_permission:
             can_employee = True
             employee_target_department_ids: list[int] | None = None  # None یعنی بدون محدودیت
@@ -564,10 +609,11 @@ class NoticeService:
 
     async def delete_notice(self, notice_id: int, current_user: User) -> Notice:
         """
-        حذف Soft-Delete: فقط خودِ فرستنده یا superuser اجازه دارد. رکورد فیزیکی
+        حذف Soft-Delete اطلاعیه و برگرداندن آن: فقط خودِ فرستنده یا superuser اجازه دارد. رکورد فیزیکی
         پاک نمی‌شود (تا آمار بازدید و گزارش دست‌نخورده بماند) — فقط is_deleted
         ثبت می‌شود که بلافاصله آن را از لیست دریافتی مخاطبان (list_for_user)
         کنار می‌گذارد، ولی در گزارش فرستنده/Admin با برچسب «حذف شده» باقی می‌ماند.
+        خطا: ValueError اگر یافت نشود، NoticePermissionError اگر کاربر مجاز نباشد.
         """
         notice = await self.db.get(Notice, notice_id)
         if notice is None:
@@ -575,7 +621,7 @@ class NoticeService:
         if notice.sender_id != current_user.id and not current_user.is_superuser:
             raise NoticePermissionError("شما اجازه حذف این اطلاعیه را ندارید")
         if notice.is_deleted:
-            return notice  # قبلاً حذف شده — اجرای دوباره بی‌اثر است
+            return notice  # از قبل حذف شده — اجرای دوباره بی‌اثر است
         notice.is_deleted = True
         notice.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -589,7 +635,7 @@ class NoticeService:
             select(NoticeRead).where(NoticeRead.notice_id == notice_id, NoticeRead.user_id == user_id)
         )
         if result.scalar_one_or_none() is not None:
-            return  # قبلاً ثبت شده — زمان اولین مشاهده حفظ می‌شود
+            return  # از قبل ثبت شده — زمان اولین مشاهده حفظ می‌شود
         self.db.add(NoticeRead(notice_id=notice_id, user_id=user_id))
         await self.db.commit()
 
@@ -600,7 +646,7 @@ class NoticeService:
             select(NoticeArchive).where(NoticeArchive.notice_id == notice_id, NoticeArchive.user_id == user_id)
         )
         if result.scalar_one_or_none() is not None:
-            return
+            return  # از قبل آرشیو شده
         self.db.add(NoticeArchive(notice_id=notice_id, user_id=user_id))
         await self.db.commit()
 
@@ -612,7 +658,7 @@ class NoticeService:
         )
         archive_row = result.scalar_one_or_none()
         if archive_row is None:
-            return
+            return  # آرشیو نشده بود
         await self.db.delete(archive_row)
         await self.db.commit()
 
@@ -642,6 +688,7 @@ class NoticeService:
         return details
 
     async def _resolve_sender_names(self, sender_ids: set[int]) -> dict[int, str]:
+        """نگاشت user_id به نام نمایشی فرستنده (نام پرسنل، یا username برای کاربران بدون پرسنل)."""
         if not sender_ids:
             return {}
         result = await self.db.execute(
@@ -659,17 +706,18 @@ class NoticeService:
     ) -> dict[tuple[NoticeTargetType, int | None], NoticeTargetDescription]:
         """
         توصیف («کارخانه ۱» به‌جای site_id=۱) همه Target های داده‌شده را در چند
-        Query دسته‌ای (نه یک Query جداگانه به‌ازای هر Target) برمی‌گرداند —
-        جایگزین حلقه‌ی قبلی که به‌ازای هر Target یک رفت‌وبرگشت جدا به دیتابیس
-        می‌زد و روی گزارش‌های پرتعداد به‌شدت کند بود.
+        Query دسته‌ای (یک Query به‌ازای هر نوع Target، نه به‌ازای هر Target) برمی‌گرداند.
+        خروجی: نگاشت (target_type, target_id) به NoticeTargetDescription.
         """
         from app.models.site import Site  # پرهیز از Circular Import
 
+        # جداسازی شناسه‌ها بر اساس نوع Target
         site_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.site}
         dept_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.department}
         emp_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.employee}
         role_ids = {t.target_id for t in targets if t.target_type == NoticeTargetType.role}
 
+        # یک Query برای نام‌های هر نوع
         site_names: dict[int, str] = {}
         if site_ids:
             result = await self.db.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
@@ -687,13 +735,14 @@ class NoticeService:
                     Employee.id.in_(emp_ids)
                 )
             )
-            emp_labels = {r[0]: f"{r[1]} {r[2]} ({r[3]})" for r in result.all()}
+            emp_labels = {r[0]: f"{r[1]} {r[2]} ({r[3]})" for r in result.all()}  # «نام نام‌خانوادگی (کد پرسنلی)»
 
         role_names: dict[int, str] = {}
         if role_ids:
             result = await self.db.execute(select(Role.id, Role.name).where(Role.id.in_(role_ids)))
             role_names = dict(result.all())
 
+        # ساخت برچسب هر Target یکتا؛ در نبود رکورد مقصد، برچسب جایگزین با شناسه
         descriptions: dict[tuple[NoticeTargetType, int | None], NoticeTargetDescription] = {}
         for t in targets:
             key = (t.target_type, t.target_id)
@@ -722,12 +771,14 @@ class NoticeService:
         که آن Target را مشترک دارند بازاستفاده می‌شود.
         """
         unique_keys = {(t.target_type, t.target_id) for n in notices for t in n.targets}
+        # مجموعه کاربران هر Target یکتا
         user_ids_by_key: dict[tuple[NoticeTargetType, int | None], set[int]] = {}
 
         if (NoticeTargetType.all, None) in unique_keys:
             result = await self.db.execute(select(User.id).where(User.is_active.is_(True)))
             user_ids_by_key[(NoticeTargetType.all, None)] = {row[0] for row in result.all()}
 
+        # کاربران هر سایت (پرسنل فعال و فعال‌شده)، گروه‌بندی بر اساس site_id
         site_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.site}
         if site_ids:
             result = await self.db.execute(
@@ -745,6 +796,7 @@ class NoticeService:
             for site_id in site_ids:
                 user_ids_by_key[(NoticeTargetType.site, site_id)] = grouped.get(site_id, set())
 
+        # کاربران هر واحد، گروه‌بندی بر اساس department_id
         dept_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.department}
         if dept_ids:
             result = await self.db.execute(
@@ -762,6 +814,7 @@ class NoticeService:
             for dept_id in dept_ids:
                 user_ids_by_key[(NoticeTargetType.department, dept_id)] = grouped.get(dept_id, set())
 
+        # کاربر متصل به هر پرسنل (پرسنل بدون کاربر → مجموعه خالی)
         emp_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.employee}
         if emp_ids:
             result = await self.db.execute(
@@ -772,6 +825,7 @@ class NoticeService:
             for emp_id in emp_ids:
                 user_ids_by_key.setdefault((NoticeTargetType.employee, emp_id), set())
 
+        # دارندگان هر نقش (Target های تاریخی نوع role)
         role_ids = {tid for (ttype, tid) in unique_keys if ttype == NoticeTargetType.role}
         if role_ids:
             result = await self.db.execute(
@@ -783,6 +837,7 @@ class NoticeService:
             for role_id in role_ids:
                 user_ids_by_key[(NoticeTargetType.role, role_id)] = grouped.get(role_id, set())
 
+        # تعداد مخاطب هر اطلاعیه = اندازه اجتماع کاربران Target هایش (بدون شمارش تکراری)
         counts: dict[int, int] = {}
         for notice in notices:
             union_ids: set[int] = set()
@@ -791,10 +846,10 @@ class NoticeService:
             counts[notice.id] = len(union_ids)
         return counts
 
-    async def count_published_this_week(self) -> int:
+    async def count_published_this_week(self, site_ids: set[int] | None = None) -> int:
         """
-        تعداد اطلاعیه‌های منتشرشده کل سیستم در ۷ روز اخیر (نه فقط اطلاعیه‌های
-        کاربر جاری) — برای کارت آمار داشبورد Admin.
+        تعداد اطلاعیه‌های منتشرشده در ۷ روز اخیر (نه فقط اطلاعیه‌های کاربر جاری) — برای کارت آمار داشبورد Admin.
+        site_ids: اگر داده شود فقط اطلاعیه‌هایی که به این سایت‌ها می‌رسند (None = کل سیستم).
         """
         from datetime import timedelta
 
@@ -804,6 +859,11 @@ class NoticeService:
             Notice.is_deleted.is_(False),
             Notice.publish_at >= week_ago,
         )
+        if site_ids is not None:
+            reach = await self._notice_ids_reaching_sites(list(site_ids))
+            if reach is None:
+                return 0
+            stmt = stmt.where(Notice.id.in_(reach))
         result = await self.db.execute(stmt)
         return result.scalar_one()
 
@@ -813,10 +873,8 @@ class NoticeService:
         """
         یک صفحه از گزارش اطلاعیه‌ها (نام فرستنده، توصیف مقصدها، آمار بازدید).
         اگر sender_id داده شود فقط اطلاعیه‌های همان فرستنده («ارسالی من»)،
-        وگرنه همه اطلاعیه‌های سیستم (گزارش کامل Admin). به‌جای واکشی و پردازش
-        همه اطلاعیه‌های سیستم در یک درخواست (که با رشد تعداد اطلاعیه‌ها به‌شدت
-        کند می‌شد)، Pagination در سطح SQL انجام می‌شود — فقط همین صفحه پردازش
-        می‌شود، و آن پردازش هم با Query های دسته‌ای انجام می‌شود، نه N+1.
+        وگرنه همه اطلاعیه‌های سیستم (گزارش کامل Admin). Pagination در سطح SQL
+        انجام می‌شود و فقط همین صفحه، با Query های دسته‌ای (نه N+1)، پردازش می‌شود.
         خروجی: (لیست اطلاعیه‌های همین صفحه, تعداد کل اطلاعیه‌ها).
         """
         base_stmt = select(Notice)
@@ -838,15 +896,28 @@ class NoticeService:
         می‌شوند» نیازمند Join پیچیده‌تری است، و این گزارش خودش اصلاً مجوز
         هدف‌گیری بر اساس نقش را ندارد.
         """
-        if not site_ids:
+        reach = await self._notice_ids_reaching_sites(site_ids)
+        if reach is None:
             return [], 0
+        base_stmt = select(Notice).where(Notice.id.in_(reach))
+        return await self._build_detailed_notices_page(base_stmt, limit, offset)
 
+    async def _notice_ids_reaching_sites(self, site_ids: list[int]):
+        """
+        زیرکوئری شناسه‌ی اطلاعیه‌هایی که به یکی از این سایت‌ها می‌رسند (همه، خود سایت، واحدِ سایت یا پرسنلِ سایت)؛
+        هدف‌گیری بر اساس نقش حساب نمی‌شود. فهرست سایت خالی → None (هیچ اطلاعیه‌ای).
+        """
+        if not site_ids:
+            return None
+
+        # واحدها و پرسنلِ داخل این سایت‌ها (برای تطبیق Target های department/employee)
         dept_result = await self.db.execute(select(Department.id).where(Department.site_id.in_(site_ids)))
         department_ids = [row[0] for row in dept_result.all()]
 
         emp_result = await self.db.execute(select(Employee.id).where(Employee.site_id.in_(site_ids)))
         employee_ids = [row[0] for row in emp_result.all()]
 
+        # شرط‌های تطبیق Target: همه، خود سایت، واحدهای سایت، پرسنل سایت
         target_conditions = [NoticeTarget.target_type == NoticeTargetType.all]
         target_conditions.append(
             and_(NoticeTarget.target_type == NoticeTargetType.site, NoticeTarget.target_id.in_(site_ids))
@@ -866,20 +937,19 @@ class NoticeService:
                 )
             )
 
-        base_stmt = (
-            select(Notice)
-            .where(Notice.id.in_(select(NoticeTarget.notice_id).where(or_(*target_conditions))))
-        )
-        return await self._build_detailed_notices_page(base_stmt, limit, offset)
+        return select(NoticeTarget.notice_id).where(or_(*target_conditions))
 
     async def _build_detailed_notices_page(self, base_stmt, limit: int, offset: int) -> tuple[list[NoticeDetailOut], int]:
         """بخش مشترک get_detailed_notices و get_detailed_notices_for_sites —
-        صفحه‌بندی، پردازش دسته‌ای (نه N+1)، و ساخت خروجی نهایی."""
+        صفحه‌بندی، پردازش دسته‌ای (نه N+1)، و ساخت خروجی نهایی.
+        ورودی: کوئری پایه select(Notice). خروجی: (NoticeDetailOut های صفحه، تعداد کل)."""
 
+        # تعداد کل نتایج کوئری پایه
         total = (
             await self.db.execute(select(func.count()).select_from(base_stmt.subquery()))
         ).scalar_one()
 
+        # اطلاعیه‌های صفحه جاری با Target ها
         stmt = (
             base_stmt.options(selectinload(Notice.targets))
             .order_by(Notice.created_at.desc())
@@ -902,10 +972,12 @@ class NoticeService:
         )
         read_counts = dict(read_result.all())
 
+        # توصیف Target ها و تعداد مخاطبان به‌صورت دسته‌ای
         all_targets = [t for n in notices for t in n.targets]
         target_descriptions_by_key = await self._describe_targets_batch(all_targets)
         audience_counts = await self._resolve_audience_counts_batch(notices)
 
+        # ساخت خروجی نهایی هر اطلاعیه
         detailed: list[NoticeDetailOut] = []
         for notice in notices:
             target_descriptions = [
@@ -937,13 +1009,14 @@ class NoticeService:
         آیا این اطلاعیه مشخص به حداقل یکی از این سایت‌ها می‌رسد — برای اجازه
         «چه کسانی دیده‌اند» به کسی که notices.site_report دارد (نه فقط
         فرستنده/Admin واقعی)، همان منطق get_detailed_notices_for_sites ولی
-        محدود به یک اطلاعیه مشخص.
+        محدود به یک اطلاعیه مشخص. خروجی: True/False.
         """
         targets_result = await self.db.execute(
             select(NoticeTarget.target_type, NoticeTarget.target_id).where(NoticeTarget.notice_id == notice_id)
         )
         targets = targets_result.all()
 
+        # کافی است یکی از Target ها به یکی از سایت‌ها برسد
         for target_type, target_id in targets:
             if target_type == NoticeTargetType.all:
                 return True
@@ -960,7 +1033,8 @@ class NoticeService:
         return False
 
     async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
-        """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down."""
+        """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down (به ترتیب زمان مشاهده)."""
+        # outerjoin با Employee تا کاربران بدون پرسنل هم در فهرست بیایند
         result = await self.db.execute(
             select(
                 NoticeRead.user_id,
@@ -991,13 +1065,14 @@ class NoticeService:
         """
         ارسال دوباره Push — فقط خودِ Push (نه خودِ اطلاعیه، که هیچ تغییری
         نمی‌کند)، و فقط به کسانی که هنوز این اطلاعیه را باز نکرده‌اند (نه
-        کل مخاطبان اولیه — تا کسانی که قبلاً دیده‌اند دوباره اذیت نشوند).
+        کل مخاطبان اولیه — تا کسانی که دیده‌اند دوباره اعلان نگیرند).
 
         فقط خودِ فرستنده یا superuser اجازه دارد — دقیقاً همان مجوز حذف.
 
         عدد برگشتی، تعداد نفراتی است که Push برایشان ارسال شد (نه لزوماً
         تعداد کسانی که واقعاً دریافت کردند — Web Push هیچ تأییدیه تحویل
         واقعی به سرور برنمی‌گرداند).
+        خطا: ValueError اگر یافت نشود، NoticePermissionError اگر مجاز نباشد یا اطلاعیه حذف شده باشد.
         """
         result = await self.db.execute(
             select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
@@ -1010,6 +1085,7 @@ class NoticeService:
         if notice.is_deleted:
             raise NoticePermissionError("این اطلاعیه حذف شده — امکان ارسال مجدد اعلان نیست")
 
+        # مخاطبان فعلی منهای کسانی که اطلاعیه را دیده‌اند
         full_audience = await self._resolve_audience_user_ids(notice)
 
         read_result = await self.db.execute(

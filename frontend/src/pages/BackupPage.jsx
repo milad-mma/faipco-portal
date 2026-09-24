@@ -1,3 +1,6 @@
+// صفحه‌ی پشتیبان‌گیری و نگهداری پرتال.
+// دانلود بکاپ کامل (zip)، بازیابی بکاپ روی همین سرور با پیگیری زنده‌ی لاگ،
+// پاک‌کردن کش اپلیکیشن برای همه‌ی کاربران و تنظیم زمان‌بندی بکاپ خودکار.
 import { useState } from "react";
 import {
   Alert,
@@ -19,16 +22,18 @@ import { bustAppCache } from "../api/system";
 import { monoFontSx } from "../theme";
 import BackupScheduleSettings from "../components/BackupScheduleSettings";
 
-const CONFIRM_PHRASE = "RESTORE";
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 60; // ۳ ثانیه × ۶۰ = تا ۳ دقیقه صبر می‌کنیم
+const CONFIRM_PHRASE = "RESTORE";  // عبارتی که کاربر باید برای تأیید بازیابی تایپ کند
+const POLL_INTERVAL_MS = 3000;  // فاصله‌ی پرسیدن وضعیت بازیابی از سرور
+const MAX_POLL_ATTEMPTS = 60; // حداکثر تعداد پرسش وضعیت (۳ ثانیه × ۶۰ = حدود ۳ دقیقه)
 
+// کامپوننت صفحه‌ی پشتیبان‌گیری؛ ورودی ندارد.
+// وضعیت دانلود، بازیابی و پاک‌کردن کش را نگه می‌دارد و سه کارت عملیاتی را رندر می‌کند.
 export default function BackupPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
-  const [restoreFile, setRestoreFile] = useState(null);
-  const [confirmText, setConfirmText] = useState("");
+  const [restoreFile, setRestoreFile] = useState(null);  // فایل zip انتخاب‌شده برای بازیابی
+  const [confirmText, setConfirmText] = useState("");  // متن تأییدی که کاربر تایپ کرده
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null); // { success, message } | null
   const [restoreLog, setRestoreLog] = useState(""); // خروجی زنده اسکریپت Restore
@@ -36,6 +41,7 @@ export default function BackupPage() {
   const [isBustingCache, setIsBustingCache] = useState(false);
   const [cacheBustResult, setCacheBustResult] = useState(null); // { success, message } | null
 
+  // بکاپ کامل را از سرور می‌گیرد و به‌صورت فایل zip با مهر زمانی در نام، دانلود می‌کند
   async function handleDownload() {
     setDownloadError("");
     setIsDownloading(true);
@@ -49,7 +55,7 @@ export default function BackupPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);  // آزادسازی URL موقت پس از شروع دانلود
     } catch (err) {
       setDownloadError(err.response?.data?.detail || "ساخت بکاپ با خطا مواجه شد.");
     } finally {
@@ -57,6 +63,8 @@ export default function BackupPage() {
     }
   }
 
+  // وضعیت بازیابی را هر چند ثانیه از سرور می‌پرسد و لاگ زنده را نمایش می‌دهد.
+  // ورودی: تعداد تلاش‌های باقی‌مانده. با موفقیت صفحه را بازخوانی می‌کند؛ با خطا یا اتمام تلاش‌ها نتیجه را نشان می‌دهد.
   async function pollRestoreStatus(attemptsLeft) {
     if (attemptsLeft <= 0) {
       setRestoreResult({
@@ -80,15 +88,15 @@ export default function BackupPage() {
         setIsRestoring(false);
         return;
       }
-      // هنوز در حال اجراست — دوباره امتحان کن
+      // هنوز در حال اجراست؛ پرسش بعدی زمان‌بندی می‌شود
       setTimeout(() => pollRestoreStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
     } catch {
-      // طبیعی است: دقیقاً همان چند ثانیه‌ای که سرویس Stop/Start می‌شود، این
-      // درخواست هم موقتاً جواب نمی‌دهد — فقط دوباره امتحان می‌کنیم، خطا نشان نمی‌دهیم
+      // در زمان Stop/Start سرویس، درخواست موقتاً پاسخ نمی‌گیرد؛ بدون نمایش خطا دوباره تلاش می‌شود
       setTimeout(() => pollRestoreStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
     }
   }
 
+  // فایل و عبارت تأیید را بررسی می‌کند، فایل بکاپ را برای بازیابی می‌فرستد و پیگیری وضعیت را شروع می‌کند
   async function handleRestore() {
     setRestoreResult(null);
     setRestoreLog("");
@@ -103,10 +111,8 @@ export default function BackupPage() {
     setIsRestoring(true);
     try {
       await restoreBackupArchive(restoreFile, confirmText);
-      // این پاسخ فقط یعنی «بازیابی شروع شد» — چون سرویس باید قبل از تماس با
-      // pg_restore کامل متوقف بشه، کار واقعی در پس‌زمینه ادامه داره. از همین
-      // لحظه، وضعیت واقعی رو هر چند ثانیه یک‌بار می‌پرسیم و همون‌جا نشون
-      // می‌دیم — نه یه شمارش‌معکوس کور.
+      // این پاسخ یعنی بازیابی شروع شده است؛ سرویس پیش از اجرای pg_restore متوقف می‌شود
+      // و کار در پس‌زمینه ادامه می‌یابد، پس وضعیت واقعی به‌صورت دوره‌ای پرسیده می‌شود
       pollRestoreStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
       setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی با خطا مواجه شد." });
@@ -114,6 +120,7 @@ export default function BackupPage() {
     }
   }
 
+  // درخواست پاک‌کردن کش اپلیکیشن برای همه‌ی کاربران را می‌فرستد و نتیجه را نمایش می‌دهد
   async function handleBustCache() {
     setCacheBustResult(null);
     setIsBustingCache(true);
@@ -139,6 +146,7 @@ export default function BackupPage() {
         یک بکاپ کامل (Schema و داده) از کل پرتال بسازید — قابل بازیابی روی همین سرور، از همین صفحه.
       </Typography>
 
+      {/* کارت دانلود بکاپ: فهرست محتوای بکاپ و دکمه‌ی دانلود */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           چه چیزی داخل بکاپ است؟
@@ -169,6 +177,7 @@ export default function BackupPage() {
         </Button>
       </Card>
 
+      {/* کارت بازیابی: پیام‌های وضعیت، لاگ زنده، انتخاب فایل و تأیید */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3, borderColor: "error.main" }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <WarningAmberOutlinedIcon color="error" fontSize="small" />
@@ -189,6 +198,7 @@ export default function BackupPage() {
           </Alert>
         )}
 
+        {/* لاگ زنده‌ی اسکریپت بازیابی (چپ‌چین) */}
         {restoreLog && (
           <Box
             sx={{
@@ -202,7 +212,7 @@ export default function BackupPage() {
               maxHeight: 260,
               overflowY: "auto",
             }}
-            // ⚠️ direction/textAlign در style خطی، نه sx - stylis-plugin-rtl آن‌ها را قرینه می‌کند
+            // direction/textAlign در style خطی تعریف می‌شوند چون stylis-plugin-rtl مقادیر sx را قرینه می‌کند
             dir="ltr"
             style={{ direction: "ltr", textAlign: "left" }}
           >
@@ -210,6 +220,7 @@ export default function BackupPage() {
           </Box>
         )}
 
+        {/* فرم بازیابی؛ پس از بازیابی موفق پنهان می‌شود */}
         {!restoreResult?.success && (
           <>
             <Alert severity="warning" sx={{ mb: 2 }}>
@@ -264,6 +275,7 @@ export default function BackupPage() {
         )}
       </Card>
 
+      {/* کارت نگهداری اپلیکیشن: پاک‌کردن کش برای همه‌ی کاربران */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mt: 3 }}>
         <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
           نگهداری اپلیکیشن
@@ -300,6 +312,7 @@ export default function BackupPage() {
         </Button>
       </Card>
 
+      {/* تنظیمات زمان‌بندی بکاپ خودکار */}
       <Card variant="outlined" sx={{ p: 3, mt: 3 }}>
         <BackupScheduleSettings />
       </Card>

@@ -1,3 +1,8 @@
+/**
+ * صفحه‌ی گزارش‌های مدیریتی ارزیابی عملکرد.
+ * دو تب دارد: «گزارش یک دوره» (میانگین هر واحد و امتیاز هر پرسنل) و «مقایسه دوره‌ها» (امتیاز دو دوره و تغییر).
+ * جزئیات سؤال‌به‌سؤال هر ارزیابی، نمودار روند فردی، دانلود Excel و ارسال گزارش با ایمیل هم پشتیبانی می‌شود.
+ */
 import { useEffect, useState } from "react";
 import {
   Accordion,
@@ -44,29 +49,27 @@ import {
 } from "../api/evaluationReports";
 import PillTabs from "../components/PillTabs";
 
+// رنگ Chip امتیاز: ≥۷۰ سبز، ≥۵۰ نارنجی، کمتر قرمز؛ بدون امتیاز پیش‌فرض
 function scoreColor(score) {
   if (score == null) return "default";
   return score >= 70 ? "success" : score >= 50 ? "warning" : "error";
 }
 
-// ⚠️ نمایش پاسخ ارزیاب به هر سوال - بسته به نوع سوال، مقدار در فیلد
-// متفاوتی ذخیره شده (همان ساختار EvaluationAnswer در بک‌اند).
+// متن قابل‌نمایش پاسخ ارزیاب به یک سؤال را برمی‌گرداند؛ بسته به نوع سؤال، مقدار در فیلد
+// متفاوتی ذخیره شده است (همان ساختار EvaluationAnswer در بک‌اند).
 function formatAnswerValue(answer) {
   if (answer.text_value) return answer.text_value;
   if (answer.number_value != null) return String(answer.number_value);
   if (answer.date_value) return new Date(answer.date_value).toLocaleDateString("fa-IR");
-  // ⚠️ قبلاً فقط تعداد گزینه‌ها نمایش داده می‌شد و معلوم نبود کدام
-  // انتخاب شده - حالا برچسب واقعی گزینه(های) انتخاب‌شده نشان داده می‌شود.
+  // برای سؤال‌های گزینه‌ای برچسب گزینه(های) انتخاب‌شده؛ اگر برچسب نباشد فقط تعداد گزینه‌ها
   if (answer.selected_option_labels?.length) return answer.selected_option_labels.join("، ");
   if (answer.selected_option_ids?.length) return `${answer.selected_option_ids.length} گزینه انتخاب شده`;
   return "—";
 }
 
 /**
- * ⚠️ طبق گزارش کاربر: کاربر باید بفهمد «از بین چه گزینه‌هایی» انتخاب
- * شده - نه فقط کدام. همه گزینه‌های ممکن نمایش داده می‌شوند و انتخاب‌شده‌ها
- * برجسته‌اند. برای ارزیابی‌های قدیمی که گزینه‌هایشان دیگر موجود نیست،
- * فهرست خالی است و چیزی رندر نمی‌شود (بدون خطا).
+ * همه‌ی گزینه‌های ممکن یک سؤال را با امتیازشان به‌صورت Chip نمایش می‌دهد و گزینه‌های انتخاب‌شده را برجسته می‌کند.
+ * ورودی: options (هر گزینه با is_selected)؛ اگر فهرست خالی باشد (مثلاً گزینه‌ها دیگر موجود نیستند) چیزی رندر نمی‌شود.
  */
 function AnswerOptionsList({ options }) {
   if (!options?.length) return null;
@@ -86,17 +89,9 @@ function AnswerOptionsList({ options }) {
 }
 
 /**
- * ⚠️ طبق درخواست صریح کاربر: جزئیات سوال‌به‌سوال هر شخص در گزارش‌های
- * مدیریتی (هم «گزارش یک دوره»، هم «مقایسه دوره‌ها»).
- *
- * برخلاف نسخه‌ی پرسنلی (MyPerformancePage) که عمداً نظر ارزیاب را
- * نشان نمی‌دهد، اینجا امتیاز + متن کامل پاسخ + نظر ارزیاب هم نمایش
- * داده می‌شود - طبق تصمیم صریح کاربر برای گزارش‌گیری مدیریتی.
- */
-/**
- * ⚠️ امتیاز یک دوره برای یک پرسنل - اگر آن دوره ارزیابی ثبت‌شده داشته
- * باشد، کلیک‌پذیر است و جزئیات سوال‌به‌سوال همان دوره را باز می‌کند؛
- * وگرنه فقط یک خط تیره ساده (بدون رفتار کلیک گمراه‌کننده).
+ * سلول امتیاز یک دوره برای یک پرسنل در جدول مقایسه.
+ * ورودی: امتیاز، شناسه‌ی ارزیابی و onClick؛ اگر ارزیابی ثبت‌شده وجود داشته باشد Chip کلیک‌پذیر است
+ * و جزئیات سؤال‌به‌سؤال را باز می‌کند؛ بدون امتیاز فقط خط تیره نمایش داده می‌شود.
  */
 function ScoreCell({ score, evaluationId, onClick }) {
   if (score == null) return <Typography variant="body2">—</Typography>;
@@ -112,18 +107,15 @@ function ScoreCell({ score, evaluationId, onClick }) {
 }
 
 /**
- * ⚠️ طبق درخواست صریح کاربر: «گزارش روند فردی» - سیر امتیاز یک نفر در
- * طول همه دوره‌های ارزیابی. قبلاً فقط مقایسه سطح واحد وجود داشت و
- * نمی‌شد دید عملکرد یک شخص در طول زمان صعودی بوده یا نزولی.
- *
- * نمودار با SVG ساده رسم می‌شود (نه کتابخانه نموداری) - چون پروژه از
- * قبل هیچ وابستگی نموداری ندارد و اضافه‌کردن یکی فقط برای این صفحه،
- * حجم بسته را بی‌دلیل زیاد می‌کرد.
+ * دیالوگ «روند فردی»: سیر امتیاز یک پرسنل در همه‌ی دوره‌های ارزیابی.
+ * ورودی: siteId، کد پرسنلی و onClose. آمار خلاصه (میانگین/بهترین/ضعیف‌ترین)، نمودار خطی و جدول
+ * تغییر نسبت به دوره‌ی قبل را نشان می‌دهد. نمودار با SVG ساده (بدون کتابخانه‌ی نمودار) رسم می‌شود.
  */
 function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
-  const [trend, setTrend] = useState(null);
+  const [trend, setTrend] = useState(null);  // داده‌ی روند؛ null = در حال بارگذاری یا خطا
   const [error, setError] = useState("");
 
+  // دریافت روند امتیاز پرسنل از سرور
   useEffect(() => {
     fetchEmployeeTrend(siteId, personnelCode)
       .then(setTrend)
@@ -133,11 +125,12 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
       });
   }, [siteId, personnelCode]);
 
-  const points = trend?.points?.filter((p) => p.score != null) || [];
-  const chartWidth = 560;
+  const points = trend?.points?.filter((p) => p.score != null) || [];  // فقط دوره‌هایی که امتیاز دارند روی نمودار می‌آیند
+  const chartWidth = 560;  // ابعاد و حاشیه‌ی نمودار SVG (پیکسل)
   const chartHeight = 180;
   const padding = 28;
 
+  // مختصات SVG نقطه‌ی index را حساب می‌کند: x با فاصله‌ی مساوی (تک‌نقطه در وسط)، y روی مقیاس ۰ تا ۱۰۰
   function pointCoords(index) {
     const usableWidth = chartWidth - padding * 2;
     const x = points.length === 1 ? chartWidth / 2 : padding + (usableWidth * index) / (points.length - 1);
@@ -161,6 +154,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
             {error}
           </Alert>
         )}
+        {/* حالت‌ها: در حال بارگذاری، بدون ارزیابی، یا خلاصه + نمودار + جدول */}
         {trend === null && !error ? (
           <Stack alignItems="center" sx={{ py: 3 }}>
             <CircularProgress size={28} />
@@ -171,6 +165,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
           </Typography>
         ) : (
           <Stack spacing={2}>
+            {/* آمار خلاصه‌ی روند */}
             <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
               <Chip size="small" label={`میانگین: ${Math.round(trend.average_score)}`} color={scoreColor(trend.average_score)} />
               <Chip size="small" label={`بهترین: ${Math.round(trend.best_score)}`} color="success" variant="outlined" />
@@ -181,6 +176,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
             {/* نمودار خطی ساده - محور عمودی همیشه ۰ تا ۱۰۰ */}
             <Box sx={{ overflowX: "auto" }}>
               <svg width={chartWidth} height={chartHeight} style={{ maxWidth: "100%" }}>
+                {/* خطوط راهنمای افقی ۰، ۵۰ و ۱۰۰ */}
                 {[0, 50, 100].map((gridScore) => {
                   const y = padding + ((100 - gridScore) / 100) * (chartHeight - padding * 2);
                   return (
@@ -192,6 +188,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
                     </g>
                   );
                 })}
+                {/* خط اتصال نقاط (فقط با بیش از یک نقطه) */}
                 {points.length > 1 && (
                   <polyline
                     fill="none"
@@ -200,6 +197,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
                     points={points.map((_, i) => { const c = pointCoords(i); return `${c.x},${c.y}`; }).join(" ")}
                   />
                 )}
+                {/* نقطه و برچسب امتیاز هر دوره */}
                 {points.map((point, i) => {
                   const c = pointCoords(i);
                   return (
@@ -214,6 +212,7 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
               </svg>
             </Box>
 
+            {/* جدول امتیاز هر دوره و تغییر نسبت به دوره‌ی قبل */}
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -263,10 +262,16 @@ function EmployeeTrendDialog({ siteId, personnelCode, onClose }) {
   );
 }
 
+/**
+ * دیالوگ جزئیات سؤال‌به‌سؤال ارزیابی یک پرسنل در گزارش‌های مدیریتی (هر دو تب).
+ * ورودی: siteId، employee (با evaluation_id) و onClose.
+ * برخلاف صفحه‌ی پرسنلی (MyPerformancePage)، اینجا امتیاز هر سؤال، پاسخ کامل و نظر ارزیاب نمایش داده می‌شود.
+ */
 function EmployeeAnswersDialog({ siteId, employee, onClose }) {
-  const [answers, setAnswers] = useState(null);
+  const [answers, setAnswers] = useState(null);  // پاسخ‌ها؛ null = در حال بارگذاری
   const [error, setError] = useState("");
 
+  // دریافت پاسخ‌های ارزیابی؛ بدون evaluation_id فهرست خالی می‌شود
   useEffect(() => {
     if (!employee?.evaluation_id) {
       setAnswers([]);
@@ -297,6 +302,7 @@ function EmployeeAnswersDialog({ siteId, employee, onClose }) {
             {error}
           </Alert>
         )}
+        {/* حالت‌ها: در حال بارگذاری، بدون جزئیات، یا فهرست پاسخ‌ها */}
         {answers === null ? (
           <Stack alignItems="center" sx={{ py: 3 }}>
             <CircularProgress size={28} />
@@ -338,12 +344,17 @@ function EmployeeAnswersDialog({ siteId, employee, onClose }) {
   );
 }
 
+/**
+ * دیالوگ ارسال گزارش به ایمیل.
+ * ورودی: open، onClose و onSend(email) که ارسال واقعی را انجام می‌دهد.
+ */
 function EmailDialog({ open, onClose, onSend }) {
   const [email, setEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState(false);  // آیا ایمیل با موفقیت ارسال شده
 
+  // onSend را با ایمیل واردشده صدا می‌زند و پیام موفقیت یا خطا نشان می‌دهد
   async function handleSend() {
     setError("");
     setIsSending(true);
@@ -357,6 +368,7 @@ function EmailDialog({ open, onClose, onSend }) {
     }
   }
 
+  // وضعیت دیالوگ را پاک می‌کند و آن را می‌بندد
   function handleClose() {
     setSuccess(false);
     setEmail("");
@@ -387,18 +399,24 @@ function EmailDialog({ open, onClose, onSend }) {
   );
 }
 
+/**
+ * تب «گزارش یک دوره»: انتخاب دوره، نمایش میانگین سایت و میانگین هر واحد با امتیاز پرسنل.
+ * ورودی: siteId و فهرست دوره‌ها؛ کلیک روی ردیف جزئیات و دکمه‌ی «روند» نمودار روند فردی را باز می‌کند.
+ */
 function SinglePeriodReportTab({ siteId, periods }) {
   const [periodId, setPeriodId] = useState("");
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [detailsEmployee, setDetailsEmployee] = useState(null);
-  const [trendPersonnelCode, setTrendPersonnelCode] = useState(null);
+  const [trendPersonnelCode, setTrendPersonnelCode] = useState(null);  // کد پرسنلی دیالوگ روند؛ null = بسته
 
+  // با تغییر سایت، گزارش قبلی پاک می‌شود
   useEffect(() => {
     setReport(null);
   }, [siteId]);
 
+  // گزارش دوره‌ی انتخاب‌شده را از سرور می‌گیرد
   async function handleLoad() {
     setError("");
     try {
@@ -409,6 +427,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
     }
   }
 
+  // فایل Excel گزارش دوره را دانلود می‌کند
   async function handleDownload() {
     try {
       await downloadSitePeriodReport(siteId, periodId);
@@ -419,6 +438,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
 
   return (
     <Box>
+      {/* نوار ابزار: انتخاب دوره، نمایش گزارش، دانلود و ایمیل */}
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
         <TextField
           select
@@ -457,6 +477,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
 
       {report && (
         <Box>
+          {/* خلاصه‌ی کل سایت: میانگین و تعداد ارزیابی‌ها */}
           <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
             <Typography variant="body2" color="text.secondary">
               میانگین کل سایت:{" "}
@@ -467,6 +488,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
             </Typography>
           </Stack>
 
+          {/* هر واحد در یک Accordion با جدول امتیاز پرسنل */}
           {report.departments.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               هنوز هیچ ارزیابی ثبت‌نهایی‌شده‌ای برای این دوره وجود ندارد.
@@ -516,8 +538,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
                               />
                             </TableCell>
                             <TableCell>
-                              {/* ⚠️ stopPropagation لازم است - وگرنه کلیک روی این
-                                  دکمه، هم‌زمان دیالوگ جزئیات ردیف را هم باز می‌کرد. */}
+                              {/* stopPropagation مانع باز شدن هم‌زمان دیالوگ جزئیات ردیف می‌شود */}
                               <Button
                                 size="small"
                                 startIcon={<TimelineOutlinedIcon />}
@@ -541,6 +562,7 @@ function SinglePeriodReportTab({ siteId, periods }) {
         </Box>
       )}
 
+      {/* دیالوگ‌های ایمیل، روند فردی و جزئیات پاسخ‌ها */}
       <EmailDialog
         open={emailDialogOpen}
         onClose={() => setEmailDialogOpen(false)}
@@ -566,6 +588,10 @@ function SinglePeriodReportTab({ siteId, periods }) {
   );
 }
 
+/**
+ * تب «مقایسه دوره‌ها»: میانگین سایت و هر واحد در دو دوره، امتیاز هر پرسنل در دو دوره و میزان تغییر.
+ * ورودی: siteId و فهرست دوره‌ها؛ کلیک روی امتیاز هر دوره جزئیات همان ارزیابی را باز می‌کند.
+ */
 function ComparisonTab({ siteId, periods }) {
   const [periodIdA, setPeriodIdA] = useState("");
   const [periodIdB, setPeriodIdB] = useState("");
@@ -574,10 +600,12 @@ function ComparisonTab({ siteId, periods }) {
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [detailsEmployee, setDetailsEmployee] = useState(null);
 
+  // با تغییر سایت، نتیجه‌ی مقایسه‌ی قبلی پاک می‌شود
   useEffect(() => {
     setComparison(null);
   }, [siteId]);
 
+  // مقایسه‌ی دو دوره‌ی انتخاب‌شده را از سرور می‌گیرد
   async function handleLoad() {
     setError("");
     try {
@@ -588,6 +616,7 @@ function ComparisonTab({ siteId, periods }) {
     }
   }
 
+  // فایل Excel مقایسه را دانلود می‌کند
   async function handleDownload() {
     try {
       await downloadPeriodComparison(siteId, periodIdA, periodIdB);
@@ -598,6 +627,7 @@ function ComparisonTab({ siteId, periods }) {
 
   return (
     <Box>
+      {/* نوار ابزار: انتخاب دو دوره، دکمه‌ی مقایسه، دانلود و ایمیل */}
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
         <TextField
           select
@@ -650,6 +680,7 @@ function ComparisonTab({ siteId, periods }) {
 
       {comparison && (
         <Box>
+          {/* میانگین کل سایت در هر دو دوره */}
           <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
             <Typography variant="body2">
               {comparison.period_a.title}:{" "}
@@ -661,11 +692,10 @@ function ComparisonTab({ siteId, periods }) {
             </Typography>
           </Stack>
 
-          {/* ⚠️ طبق درخواست صریح کاربر: زیر هر واحد، لیست پرسنل با امتیاز
-              هر دو دوره و میزان تغییر - با کلیک روی هر ردیف، جزئیات
-              سوال‌به‌سوال همان دوره باز می‌شود. */}
+          {/* هر واحد: میانگین دو دوره و تغییر، و زیر آن فهرست پرسنل با امتیاز هر دو دوره و میزان تغییر؛
+              کلیک روی امتیاز هر دوره جزئیات سؤال‌به‌سؤال همان دوره را باز می‌کند */}
           {comparison.departments.map((dept) => {
-            const deptChange =
+            const deptChange =  // تغییر میانگین واحد (دوره‌ی دوم منهای اول)
               dept.period_a_average != null && dept.period_b_average != null
                 ? Math.round(dept.period_b_average - dept.period_a_average)
                 : null;
@@ -710,7 +740,7 @@ function ComparisonTab({ siteId, periods }) {
                         </TableHead>
                         <TableBody>
                           {dept.employees.map((emp) => {
-                            const empChange =
+                            const empChange =  // تغییر امتیاز پرسنل (دوره‌ی دوم منهای اول)
                               emp.period_a_score != null && emp.period_b_score != null
                                 ? Math.round(emp.period_b_score - emp.period_a_score)
                                 : null;
@@ -777,6 +807,7 @@ function ComparisonTab({ siteId, periods }) {
         </Box>
       )}
 
+      {/* دیالوگ‌های ایمیل و جزئیات پاسخ‌ها */}
       <EmailDialog
         open={emailDialogOpen}
         onClose={() => setEmailDialogOpen(false)}
@@ -794,12 +825,16 @@ function ComparisonTab({ siteId, periods }) {
   );
 }
 
+/**
+ * صفحه‌ی اصلی گزارش‌ها: انتخاب سایت و جابه‌جایی بین دو تب گزارش.
+ */
 export default function EvaluationReportsPage() {
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState("");
   const [periods, setPeriods] = useState([]);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(0);  // ۰ = گزارش یک دوره، ۱ = مقایسه دوره‌ها
 
+  // دریافت سایت‌ها و انتخاب اولین سایت به‌صورت پیش‌فرض
   useEffect(() => {
     fetchSites().then((data) => {
       setSites(data);
@@ -807,6 +842,7 @@ export default function EvaluationReportsPage() {
     });
   }, []);
 
+  // با تغییر سایت، دوره‌های ارزیابی همان سایت دریافت می‌شوند
   useEffect(() => {
     if (!siteId) return;
     fetchEvaluationPeriods(siteId).then(setPeriods);
@@ -818,6 +854,7 @@ export default function EvaluationReportsPage() {
         گزارش‌های مدیریتی ارزیابی عملکرد
       </Typography>
 
+      {/* انتخاب سایت */}
       <TextField
         select
         label="سایت"
@@ -832,9 +869,7 @@ export default function EvaluationReportsPage() {
         ))}
       </TextField>
 
-      {/* ⚠️ PillTabs با کلید رشته‌ای کار می‌کند نه ایندکس عددی - اینجا
-          تبدیل می‌شود تا بقیه منطق صفحه (که با 0/1 نوشته شده) دست‌نخورده
-          بماند. */}
+      {/* تب‌ها: PillTabs با کلید رشته‌ای کار می‌کند؛ اینجا به ایندکس عددی ۰/۱ تبدیل می‌شود */}
       <PillTabs
         value={tab === 0 ? "single" : "compare"}
         onChange={(k) => setTab(k === "single" ? 0 : 1)}
@@ -844,6 +879,7 @@ export default function EvaluationReportsPage() {
         ]}
       />
 
+      {/* محتوای تب فعال */}
       {siteId && tab === 0 && <SinglePeriodReportTab siteId={siteId} periods={periods} />}
       {siteId && tab === 1 && <ComparisonTab siteId={siteId} periods={periods} />}
     </Box>

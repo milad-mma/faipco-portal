@@ -1,3 +1,6 @@
+// صفحه‌ی گزارش خودروهای پرسنل.
+// فهرست خودروها را با جست‌وجو، فیلتر سایت و مرتب‌سازی (کارتی در موبایل، جدولی در دسکتاپ) نشان می‌دهد
+// و برای دارندگان مجوز vehicles.manage امکان ویرایش و حذف خودرو را فراهم می‌کند.
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -31,8 +34,9 @@ import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../comp
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { deleteVehicleAdmin, fetchAllVehicles, updateVehicleAdmin } from "../api/vehicles";
 
-const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };
+const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };  // مقدار خالی پلاک ایرانی
 
+// ستون‌های مرتب‌پذیر جدول (key همان فیلد خودرو؛ plate به‌صورت رشته‌ی ترکیبی مقایسه می‌شود)
 const COLUMNS = [
   { key: "employee_name", label: "پرسنل" },
   { key: "site_name", label: "سایت" },
@@ -42,18 +46,15 @@ const COLUMNS = [
   { key: "plate", label: "پلاک" },
 ];
 
+// ورودی: رکورد خودرو؛ خروجی: اجزای پلاک به‌صورت یک رشته‌ی پیوسته (برای جست‌وجو و مرتب‌سازی)
 function plateAsString(v) {
   return `${v.plate_digits1}${v.plate_letter}${v.plate_digits2}${v.plate_iran_code}`;
 }
 
+// دیالوگ ویرایش خودرو (نوع، رنگ، پلاک).
+// ورودی: خودروی در حال ویرایش (null = بسته)، onClose و onSaved که با خودروی به‌روزشده صدا زده می‌شود.
+// یک نمونه‌ی مشترک برای همه‌ی ردیف‌هاست، پس فیلدها با هر تغییر vehicle از نو پر می‌شوند.
 function EditVehicleDialog({ vehicle, onClose, onSaved }) {
-  // ⚠️ رفع یک باگ واقعی: قبلاً مقدار اولیه این چهار state فقط یک‌بار (در
-  // اولین Render خودِ کامپوننت) خوانده می‌شد؛ چون همین یک نمونه از این
-  // Dialog برای ویرایش همه ردیف‌ها استفاده می‌شود (نه یک Dialog جداگانه
-  // per-row)، با زدن «ویرایش» روی یک ردیف دیگر، این مقادیر دیگر به‌روز
-  // نمی‌شدند — همیشه مقادیر خودروی اولی که ویرایش شده بود می‌ماند. رفع شد
-  // با یک useEffect که هر بار vehicle عوض شود (یعنی کاربر ردیف دیگری را
-  // برای ویرایش انتخاب کرده)، همه فیلدها را از نو با مقادیر همان خودرو پر می‌کند.
   const [vehicleType, setVehicleType] = useState("");
   const [color, setColor] = useState("");
   const [plate, setPlate] = useState(EMPTY_PLATE);
@@ -61,6 +62,7 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // پر کردن فیلدهای فرم از روی خودروی انتخاب‌شده، هر بار که vehicle عوض شود
     if (!vehicle) return;
     setVehicleType(vehicle.vehicle_type);
     setColor(vehicle.color);
@@ -73,8 +75,9 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
     setError("");
   }, [vehicle]);
 
-  const canSave = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSaving;
+  const canSave = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSaving;  // همه‌ی فیلدها و پلاک کامل الزامی است
 
+  // تغییرات خودرو را روی سرور ذخیره و نتیجه را به والد می‌دهد
   async function handleSave() {
     if (!canSave) return;
     setError("");
@@ -123,32 +126,33 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
 }
 
 /**
- * گزارش خودروهای پرسنل — برای Admin کامل (ویرایش/حذف)، برای نقش «حراست»
- * فقط‌خواندنی (بدون دکمه ویرایش/حذف) — دقیقاً همان تصمیمی که Backend هم
- * با require_permission("vehicles.manage") فقط برای Admin واقعی اعمال
- * می‌کند؛ این‌جا هم برای تجربه کاربری، همان دکمه‌ها اصلاً برای غیر-Admin
- * نمایش داده نمی‌شوند.
+ * کامپوننت گزارش خودروهای پرسنل؛ ورودی ندارد.
+ * با مجوز vehicles.manage دکمه‌های ویرایش/حذف نمایش داده می‌شوند (Backend هم همین مجوز را بررسی می‌کند)؛
+ * بدون آن (مثلاً نقش حراست) گزارش فقط‌خواندنی است.
  */
 export default function VehiclesReportPage() {
   const { user } = useAuth();
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [vehicles, setVehicles] = useState(null);
   const [search, setSearch] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState(null);
+  const [selectedSiteId, setSelectedSiteId] = useState(null);  // null = همه‌ی سایت‌های مجاز
   const [sortKey, setSortKey] = useState("employee_name");
   const [sortDir, setSortDir] = useState("asc");
-  const [editingVehicle, setEditingVehicle] = useState(null);
-  const [vehicleToDelete, setVehicleToDelete] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const [editingVehicle, setEditingVehicle] = useState(null);  // خودرویی که دیالوگ ویرایشش باز است
+  const [vehicleToDelete, setVehicleToDelete] = useState(null);  // خودرویی که دیالوگ تأیید حذفش باز است
+  const [deletingId, setDeletingId] = useState(null);  // شناسه‌ی خودرویی که حذفش در جریان است
 
+  // خودروهای سایت انتخاب‌شده را از سرور می‌گیرد
   function loadVehicles() {
     fetchAllVehicles(selectedSiteId).then(setVehicles);
   }
 
   useEffect(() => {
+    // بارگذاری مجدد خودروها با تغییر فیلتر سایت
     loadVehicles();
   }, [selectedSiteId]);
 
+  // خودروی انتخاب‌شده را حذف و از فهرست برمی‌دارد
   async function handleConfirmDelete() {
     if (!vehicleToDelete) return;
     setDeletingId(vehicleToDelete.id);
@@ -161,11 +165,13 @@ export default function VehiclesReportPage() {
     }
   }
 
+  // خودروی ویرایش‌شده را در فهرست ادغام و دیالوگ را می‌بندد
   function handleSaved(updated) {
     setVehicles((prev) => prev.map((v) => (v.id === updated.id ? { ...v, ...updated } : v)));
     setEditingVehicle(null);
   }
 
+  // کلیک روی سرستون: برعکس‌کردن جهت همان ستون یا مرتب‌سازی صعودی ستون جدید
   function handleSort(key) {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -175,8 +181,7 @@ export default function VehiclesReportPage() {
     }
   }
 
-  // جست‌وجو + مرتب‌سازی — کاملاً سمت فرانت‌اند (تعداد خودروهای کل پروژه
-  // معمولاً به‌اندازه‌ای نیست که نیاز به صفحه‌بندی/جست‌وجوی سمت سرور باشد).
+  // جست‌وجو و مرتب‌سازی سمت فرانت‌اند روی کل فهرست؛ خروجی: فهرست نمایشی یا null در حال بارگذاری
   const displayedVehicles = useMemo(() => {
     if (vehicles === null) return null;
     const term = search.trim().toLowerCase();
@@ -218,11 +223,11 @@ export default function VehiclesReportPage() {
             ),
           }}
         />
-        {/* فقط برای Admin/کاربر چندسایته معنا دارد — کسی که فقط یک سایت
-            دارد، همان یک گزینه را می‌بیند که چیزی برایش تغییر نمی‌دهد */}
+        {/* فیلتر سایت بر اساس سایت‌های مجاز کاربر برای vehicles.view_all */}
         <SiteFilterSelect value={selectedSiteId} permission="vehicles.view_all" onChange={setSelectedSiteId} />
       </Stack>
 
+      {/* محتوا: بارگذاری / فهرست خالی / کارت‌های موبایل / جدول دسکتاپ */}
       {displayedVehicles === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
@@ -342,8 +347,10 @@ export default function VehiclesReportPage() {
         </Card>
       )}
 
+      {/* دیالوگ ویرایش خودرو */}
       <EditVehicleDialog vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} onSaved={handleSaved} />
 
+      {/* دیالوگ تأیید حذف خودرو */}
       <Dialog open={Boolean(vehicleToDelete)} onClose={() => setVehicleToDelete(null)} maxWidth="xs" fullWidth>
         <DialogTitle>حذف خودرو</DialogTitle>
         <DialogContent>

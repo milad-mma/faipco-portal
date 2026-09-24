@@ -1,11 +1,12 @@
 """
-تست‌های واحد سرویس «پیشنهاد نگاشت بر اساس نام ستون»
-(app/services/mapping_suggestion_service.py) - یک الگوریتم خالص بدون I/O.
+تست‌های واحد سرویس «پیشنهاد نگاشت ستون‌ها» (app/services/mapping_suggestion_service.py)
+- الگوریتم خالص بدون I/O: پیشنهاد بر اساس نام ستون، بر اساس نمونه داده،
+تشخیص الگوهای مقدار (تاریخ، ساعت، ایمیل، موبایل) و پوشش همه مفاهیم نگاشت.
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # افزودن backend/ به مسیر import
 
 from app.services.mapping_suggestion_service import suggest_column_for_field, suggest_mapping
 
@@ -31,6 +32,7 @@ def test_enter_exit_columns_mode():
 
 
 def test_employee_mapping_email_and_mobile():
+    """ستون‌های Email و MobileNumber برای مفاهیم email و mobile پیشنهاد می‌شوند."""
     columns = ["ID", "FirstName", "LastName", "Email", "MobileNumber", "PersonnelCode"]
     result = suggest_mapping(columns, ["personnel_code", "email", "mobile"])
     assert result["email"]["column"] == "Email"
@@ -49,6 +51,7 @@ def test_ambiguous_columns_get_no_false_positive():
 
 
 def test_persian_column_names():
+    """نام ستون‌های فارسی (کدپرسنلی، تاریخ، ساعت) تشخیص داده می‌شوند."""
     columns = ["کدپرسنلی", "تاریخ", "ساعت"]
     result = suggest_mapping(columns, ["personnel_code", "date", "time"])
     assert result["personnel_code"]["column"] == "کدپرسنلی"
@@ -57,10 +60,12 @@ def test_persian_column_names():
 
 
 def test_unknown_concept_returns_none():
+    """مفهوم ناشناخته None برمی‌گرداند."""
     assert suggest_column_for_field(["Emp_No"], "totally_unknown_concept") is None
 
 
 def test_no_matching_column_returns_none():
+    """وقتی هیچ ستونی مطابق نیست، None برمی‌گردد."""
     assert suggest_column_for_field(["RandomColumnXYZ"], "email") is None
 
 
@@ -75,7 +80,7 @@ def test_exact_match_preferred_over_substring_match():
 
 
 # ==============================================================================
-# مرحله سوم — پیشنهاد بر اساس نمونه داده واقعی
+# پیشنهاد بر اساس نمونه داده واقعی
 # ==============================================================================
 
 from app.services.mapping_suggestion_service import (  # noqa: E402
@@ -88,31 +93,35 @@ from app.services.mapping_suggestion_service import (  # noqa: E402
 
 
 def test_persian_date_pattern_detection():
+    """تشخیص الگوی تاریخ شمسی عددی YYYYMMDD و رد مقادیر نامعتبر."""
     assert _looks_like_persian_date([14050524, 14050525, 14050526]) is True
     assert _looks_like_persian_date([14051340]) is False  # ماه ۱۳ نامعتبر
     assert _looks_like_persian_date([25]) is False  # سن، نه تاریخ
 
 
 def test_compressed_time_pattern_detection():
+    """تشخیص الگوی ساعت فشرده HHMM و رد ساعت نامعتبر."""
     assert _looks_like_compressed_time([618, 1401, 2359]) is True
     assert _looks_like_compressed_time([2500]) is False  # ساعت ۲۵ نامعتبر
     assert _looks_like_compressed_time([25]) is True  # یعنی ۰۰:۲۵ - معتبر
 
 
 def test_email_pattern_detection():
+    """تشخیص الگوی ایمیل."""
     assert _looks_like_email(["ali@example.com", "sara@test.ir"]) is True
     assert _looks_like_email(["not-an-email", "12345"]) is False
 
 
 def test_mobile_pattern_detection():
+    """تشخیص الگوی شماره موبایل ایران (۰۹...)."""
     assert _looks_like_mobile(["09123456789", "09351234567"]) is True
     assert _looks_like_mobile(["12345"]) is False
 
 
 def test_sample_based_suggestion_finds_misleadingly_named_column():
     """
-    مهم‌ترین سناریوی مرحله سوم: ستونی که نامش کاملاً گمراه‌کننده/مبهم
-    است (پس مرحله دوم چیزی پیدا نمی‌کند)، ولی مقادیر واقعی‌اش الگوی
+    ستونی که نامش کاملاً گمراه‌کننده/مبهم است (پس پیشنهاد بر اساس نام
+    چیزی پیدا نمی‌کند)، ولی مقادیر واقعی‌اش الگوی
     مشخصی دارند - باید از روی همان مقادیر پیدا شود.
     """
     columns_with_samples = {
@@ -138,13 +147,13 @@ def test_personnel_code_never_guessed_from_samples():
 
 
 # ==============================================================================
-# پوشش کامل مفاهیم - طبق بازخورد صریح، فقط ایمیل/موبایل/تردد قبلاً
-# پوشش داده می‌شد؛ این تست‌ها همه فیلدهای EmployeeMapping و جدول‌های
-# جدا (مرجع، عکس، تقویم) را هم تأیید می‌کنند.
+# پوشش کامل مفاهیم: همه فیلدهای EmployeeMapping و جدول‌های جدا
+# (مرجع، عکس، تقویم)
 # ==============================================================================
 
 
 def test_full_employee_mapping_all_fields():
+    """همه فیلدهای نگاشت پرسنل از روی نام ستون‌های استاندارد پیشنهاد می‌شوند."""
     columns = [
         "Emp_No", "NationalCode", "FirstName", "LastName", "Mobile", "Email",
         "BirthDate", "IsActive", "DeptCode", "PositionCode",
@@ -172,6 +181,7 @@ def test_lookup_table_id_and_name():
 
 
 def test_calendar_table_year_and_month():
+    """ستون‌های Year و Month برای جدول تقویم پیشنهاد می‌شوند."""
     columns = ["Year", "Month", "D1", "D2", "D3"]
     result = suggest_mapping(columns, ["calendar_year", "calendar_month"])
     assert result["calendar_year"]["column"] == "Year"
@@ -179,6 +189,7 @@ def test_calendar_table_year_and_month():
 
 
 def test_photo_table_emp_no_and_thumbnail():
+    """ستون‌های Emp_No و Thumbnail برای جدول عکس پرسنل پیشنهاد می‌شوند."""
     columns = ["Emp_No", "Thumbnail", "FullPhoto"]
     result = suggest_mapping(columns, ["photo_emp_no", "photo_thumbnail"])
     assert result["photo_emp_no"]["column"] == "Emp_No"

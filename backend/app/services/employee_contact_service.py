@@ -25,10 +25,16 @@ from app.sync_engine.adapter_factory import get_adapter
 
 
 class ContactInfoUpdateError(Exception):
+    """خطای قابل‌نمایش به کاربر هنگام ویرایش ایمیل/موبایل (ورودی نامعتبر یا خطای نوشتن در منبع)."""
+
     pass
 
 
 def normalize_mobile(raw: str) -> str:
+    """
+    ورودی: شماره موبایل خام. فقط ارقام را نگه می‌دارد و بررسی می‌کند ۱۱ رقم و با ۰ شروع شود.
+    خروجی: شماره نرمال‌شده؛ در غیر این صورت ContactInfoUpdateError.
+    """
     digits = "".join(ch for ch in raw if ch.isdigit())
     if len(digits) != 11 or not digits.startswith("0"):
         raise ContactInfoUpdateError("شماره موبایل باید ۱۱ رقم و با صفر شروع شود (مثلاً 09123456789)")
@@ -38,6 +44,7 @@ def normalize_mobile(raw: str) -> str:
 async def _get_mapping_and_connection(
     db: AsyncSession, site_id: int
 ) -> tuple[EmployeeMapping | None, SiteConnection | None]:
+    """نگاشت پرسنل سایت و اتصال فعال آن را برمی‌گرداند (هرکدام ممکن است None باشد)."""
     result = await db.execute(select(EmployeeMapping).where(EmployeeMapping.site_id == site_id))
     mapping = result.scalar_one_or_none()
     result = await db.execute(
@@ -50,6 +57,10 @@ async def _get_mapping_and_connection(
 async def _write_back_to_source(
     mapping: EmployeeMapping, connection: SiteConnection, personnel_code: str, source_column: str, value: str
 ) -> None:
+    """
+    مقدار جدید را در ستون source_column ردیفِ همین کد پرسنلی در جدول پرسنل دیتابیس منبع می‌نویسد.
+    خطای درایور/اتصال به ContactInfoUpdateError تبدیل می‌شود.
+    """
     adapter = get_adapter(
         connection.db_type,
         host=connection.host,
@@ -70,6 +81,7 @@ async def update_my_contact_info(
     db: AsyncSession, user: User, *, email: str | None = None, mobile: str | None = None
 ) -> dict[str, bool | None]:
     """
+    ایمیل و/یا موبایل کاربر جاری را در پرتال و (در صورت امکان) در دیتابیس منبع سایت به‌روز می‌کند.
     خروجی: {"email_synced_to_source": bool | None, "mobile_synced_to_source": bool | None}
     - None یعنی آن فیلد اصلاً درخواست تغییر نداشت؛ True/False یعنی درخواست
       تغییر داشت و به دیتابیس اصلی سایت هم نوشته شد یا نه (نگاشت نداشت).
@@ -80,6 +92,7 @@ async def update_my_contact_info(
     result: dict[str, bool | None] = {"email_synced_to_source": None, "mobile_synced_to_source": None}
     normalized_mobile = normalize_mobile(mobile) if mobile is not None else None
 
+    # پرسنل متصل به این حساب کاربری (در صورت وجود)
     employee: Employee | None = None
     if user.employee_id is not None:
         employee = await db.get(Employee, user.employee_id)
@@ -98,8 +111,10 @@ async def update_my_contact_info(
     if employee.site_id is not None:
         mapping, connection = await _get_mapping_and_connection(db, employee.site_id)
 
+    # نوشتن در منبع فقط با نگاشت + اتصال فعال + ستون کد پرسنلی ممکن است
     can_write_back = bool(mapping and connection and mapping.personnel_code_column)
 
+    # ایمیل: در صورت نگاشت ستون ایمیل، در منبع هم نوشته می‌شود
     if email is not None:
         if can_write_back and mapping.email_column:
             await _write_back_to_source(mapping, connection, employee.personnel_code, mapping.email_column, email)
@@ -108,6 +123,7 @@ async def update_my_contact_info(
             result["email_synced_to_source"] = False
         employee.email = email
 
+    # موبایل: در صورت نگاشت ستون موبایل، در منبع هم نوشته می‌شود
     if normalized_mobile is not None:
         if can_write_back and mapping.mobile_column:
             await _write_back_to_source(

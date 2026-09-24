@@ -1,9 +1,12 @@
+"""مدل‌های ورودی/خروجی API بیمه تکمیلی."""
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class InsuranceMemberIn(BaseModel):
+    """یک عضو خانواده در فرم ثبت‌نام (مقادیر خام؛ نرمال‌سازی در insurance_rules)."""
+
     member_type: str
     first_name: str = ""
     last_name: str = ""
@@ -12,16 +15,15 @@ class InsuranceMemberIn(BaseModel):
     marital_status: int | None = None
     national_id: str = ""
     birth_certificate_no: str = ""
-    kafala_status: str | None = None
-    # شناسه موقت سمت کلاینت برای اتصال مدرک آپلودشده قبل از ثبت نهایی
-    client_key: str | None = Field(default=None, max_length=64)
-    # شناسه مدرک آپلودشده (POST /insurance/documents) - برای «کفالت: بله»
-    document_id: int | None = None
-    # عضو موجود (ویرایش): مدرک قبلی نگه داشته شود
-    id: int | None = None
+    kafala_status: str | None = None  # yes / no / None
+    client_key: str | None = Field(default=None, max_length=64)  # شناسه موقت سمت فرم (استفاده نمی‌شود، برای سازگاری)
+    document_id: int | None = None  # شناسه مدرک آپلودشده؛ برای «تکفل: بله» الزامی
+    id: int | None = None  # شناسه عضو قبلی هنگام ویرایش
 
 
 class InsuranceRegistrationIn(BaseModel):
+    """بدنه ثبت/ویرایش ثبت‌نام: فیلدهای قابل ویرایش شخص اصلی + فهرست کامل اعضا."""
+
     father_name: str = ""
     birth_certificate_no: str = ""
     mobile_number: str = ""
@@ -37,6 +39,8 @@ class InsuranceRegistrationIn(BaseModel):
 
 
 class InsuranceDocumentOut(BaseModel):
+    """مشخصات یک مدرک (بدون محتوای فایل)."""
+
     id: int
     file_name: str
     content_type: str
@@ -47,6 +51,8 @@ class InsuranceDocumentOut(BaseModel):
 
 
 class InsuranceMemberOut(BaseModel):
+    """یک عضو خانواده همراه مدرکش، برای نمایش/ویرایش."""
+
     id: int
     member_type: str
     relation_code: int
@@ -67,6 +73,8 @@ class InsuranceMemberOut(BaseModel):
 
 
 class InsuranceRegistrationOut(BaseModel):
+    """ثبت‌نام کامل یک پرسنل با اعضا."""
+
     id: int
     employee_id: int
     personnel_code: str
@@ -95,7 +103,7 @@ class InsuranceRegistrationOut(BaseModel):
 
 
 class InsuranceEmployeeOut(BaseModel):
-    """اطلاعات فقط‌نمایشی شخص اصلی (از پرسنل) + آماده بودن برای ثبت‌نام."""
+    """اطلاعات فقط‌نمایشی شخص اصلی (از جدول پرسنل) و فهرست فیلدهایی که هنوز از کاراوب نیامده‌اند."""
 
     personnel_code: str
     first_name: str
@@ -105,11 +113,12 @@ class InsuranceEmployeeOut(BaseModel):
     birth_date: str | None
     employment_date: str | None
     gender: int | None
-    # چه چیزی کم است (تاریخ تولد/استخدام/جنسیت/کد ملی از Sync نیامده)
-    missing: list[str]
+    missing: list[str]  # نام فیلدهای خالی (مثلاً «تاریخ استخدام»)؛ خالی = آماده ثبت‌نام
 
 
 class InsuranceMyStatusOut(BaseModel):
+    """همه چیزی که صفحه ثبت‌نام پرسنل لازم دارد: وضعیت ماژول، پرسنل، ثبت‌نام قبلی، نرخ‌ها، فهرست‌ها."""
+
     enabled: bool
     employee: InsuranceEmployeeOut | None
     registration: InsuranceRegistrationOut | None
@@ -121,18 +130,24 @@ class InsuranceMyStatusOut(BaseModel):
 
 
 class InsuranceSettingsOut(BaseModel):
+    """تنظیمات ماژول: فعال بودن، جدول نرخ، توضیحات."""
+
     enabled: bool
     rate_table: dict
     notes: list[str]
 
 
 class InsuranceSettingsIn(BaseModel):
+    """به‌روزرسانی جزئی تنظیمات؛ فقط فیلدهای ارسالی تغییر می‌کنند."""
+
     enabled: bool | None = None
     rate_table: dict | None = None
     notes: list[str] | None = None
 
 
 class InsuranceListItemOut(BaseModel):
+    """یک ردیف فهرست مدیریتی ثبت‌نام‌ها."""
+
     id: int
     employee_id: int
     personnel_code: str
@@ -150,6 +165,8 @@ class InsuranceListItemOut(BaseModel):
 
 
 class InsuranceListOut(BaseModel):
+    """فهرست صفحه‌بندی‌شده + آمار: تعداد ثبت‌نام‌شده و تعداد پرسنل فعال."""
+
     items: list[InsuranceListItemOut]
     total: int
     registered: int

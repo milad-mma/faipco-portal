@@ -1,7 +1,9 @@
 """
-مدل BirthdayMessageTemplate — پول متن‌های آماده تبریک تولد که مدیر منابع
-انسانی (و ادمین) مدیریت می‌کنند. هر روز در ساعت تنظیم‌شده، یک متن تصادفی
-از این پول برای هر پرسنلی که امروز تولدش است فرستاده می‌شود.
+مدل BirthdayMessageTemplate: مجموعه متن‌های آماده تبریک تولد.
+
+این متن‌ها را مدیر منابع انسانی و ادمین مدیریت می‌کنند. هر روز در ساعت
+تنظیم‌شده، یک متن تصادفی از این مجموعه برای هر پرسنلی که امروز تولدش است
+فرستاده می‌شود.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from app.db.session import Base
 
 
 class BirthdayMessageTemplate(Base):
+    """یک متن آماده تبریک تولد در جدول birthday_message_templates."""
     __tablename__ = "birthday_message_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)

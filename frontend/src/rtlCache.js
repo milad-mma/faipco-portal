@@ -3,15 +3,12 @@ import { prefixer } from "stylis";
 import rtlPlugin from "@mui/stylis-plugin-rtl";
 
 /**
- * MUI به‌طور پیش‌فرض استایل‌ها را LTR تولید می‌کند.
- * این Cache با @mui/stylis-plugin-rtl (فورک نگهداری‌شده و سازگار با Stylis v4)
- * باعث می‌شود همه استایل‌ها (margin/padding/position و ...) به‌درستی
- * برای چیدمان راست‌به‌چپ تولید شوند.
- *
- * نکته: پکیج قدیمی «stylis-plugin-rtl» از سال ۲۰۲۱ به‌روزرسانی نشده و با
- * نسخه‌های جدید Stylis سازگار نیست؛ به همین دلیل از فورک رسمی MUI استفاده شده.
+ * کش Emotion برای چیدمان راست‌به‌چپ (RTL).
+ * MUI به‌طور پیش‌فرض استایل‌ها را LTR تولید می‌کند؛ این کش با @mui/stylis-plugin-rtl (سازگار با Stylis v4)
+ * همه‌ی استایل‌ها (margin/padding/position و ...) را برای RTL برعکس می‌کند.
+ * پکیج stylis-plugin-rtl با نسخه‌های جدید Stylis سازگار نیست و به همین دلیل از فورک MUI استفاده شده است.
  */
 export const rtlCache = createCache({
-  key: "muirtl",
-  stylisPlugins: [prefixer, rtlPlugin],
+  key: "muirtl", // پیشوند نام کلاس‌های CSS تولیدشده
+  stylisPlugins: [prefixer, rtlPlugin], // افزودن vendor prefix و سپس تبدیل RTL
 });

@@ -1,12 +1,9 @@
 """
-سرویس «تولید انتساب‌های ارزیابی» - برای یک دوره + فرم مشخص، با استفاده
-از get_evaluation_targets (مرحله اول: چه کسی مجاز به ارزیابی چه کسی
-است)، برای تمام پرسنل واجد شرایط، رکوردهای EvaluationAssignment می‌سازد.
+سرویس «تولید انتساب‌های ارزیابی»: برای یک دوره و فرم مشخص، با get_evaluation_targets
+(چه کسی مجاز به ارزیابی چه کسی است) برای همه پرسنل واجد شرایط رکورد EvaluationAssignment می‌سازد.
 
-⚠️ Dynamic بودن (طبق طرح اولیه، بخش ۸): این تابع را می‌توان هر زمان که
-ساختار سازمانی تغییر کرد (پرسنل جدید، سرپرست جدید) دوباره اجرا کرد -
-Assignment های تکراری نادیده گرفته می‌شوند (UniqueConstraint) - یعنی
-Admin مجبور نیست برای هر تغییر، دستی Assignment جدید بسازد.
+اجرای مجدد پس از تغییر ساختار سازمانی (پرسنل یا سرپرست جدید) امن است: جفت‌های موجود
+نادیده گرفته می‌شوند و فقط انتساب‌های جدید اضافه می‌شوند.
 """
 from __future__ import annotations
 
@@ -20,14 +17,23 @@ from app.services.evaluation_structure_service import EvaluationStructureService
 
 
 class EvaluationAssignmentError(Exception):
+    """خطای قابل نمایش به کاربر در تولید انتساب‌ها (مثلاً دوره/فرم یافت نشد)."""
     pass
 
 
 class EvaluationAssignmentService:
+    """سرویس تولید انتساب‌های ارزیابی یک دوره."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: نشست async دیتابیس."""
         self.db = db
 
     async def generate_assignments(self, period_id: int, form_id: int) -> dict:
+        """
+        ورودی: شناسه دوره و فرم. برای هر پرسنل فعال (سایت دوره یا همه، اگر دوره سراسری باشد)
+        اهداف ارزیابی‌اش را پیدا کرده و انتساب‌های جدید را می‌سازد.
+        خروجی: {"created_count", "total_assignments"}؛ اگر دوره/فرم نباشد EvaluationAssignmentError.
+        """
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None:
             raise EvaluationAssignmentError("دوره ارزیابی موردنظر یافت نشد")
@@ -43,6 +49,7 @@ class EvaluationAssignmentService:
         employees = employees_result.scalars().all()
 
         structure_service = EvaluationStructureService(self.db)
+        # جفت‌های (ارزیاب، هدف) موجود برای همین دوره+فرم، تا تکراری ساخته نشوند
         existing_result = await self.db.execute(
             select(EvaluationAssignment.evaluator_employee_id, EvaluationAssignment.target_employee_id).where(
                 EvaluationAssignment.period_id == period_id, EvaluationAssignment.form_id == form_id
@@ -50,6 +57,7 @@ class EvaluationAssignmentService:
         )
         existing_pairs = {(row[0], row[1]) for row in existing_result.all()}
 
+        # برای هر پرسنل، اهداف ارزیابی‌اش را گرفته و انتساب‌های جدید را اضافه می‌کند
         created_count = 0
         for employee in employees:
             resolution = await structure_service.get_evaluation_targets(employee.id)
@@ -65,7 +73,7 @@ class EvaluationAssignmentService:
                         target_employee_id=target.id,
                     )
                 )
-                existing_pairs.add(pair)
+                existing_pairs.add(pair)  # جلوگیری از تکرار در همین اجرا
                 created_count += 1
 
         await self.db.commit()

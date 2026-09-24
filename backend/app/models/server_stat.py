@@ -14,6 +14,7 @@ from app.db.session import Base
 
 
 class ServerStat(Base):
+    """یک نمونه لحظه‌ای از درصد و مقدار مصرف CPU، RAM و دیسک سرور."""
     __tablename__ = "server_stats"
 
     id: Mapped[int] = mapped_column(primary_key=True)

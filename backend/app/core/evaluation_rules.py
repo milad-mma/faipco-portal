@@ -1,11 +1,13 @@
 """
-الگوریتم خالص Resolve کردن اهداف ارزیابی عملکرد - بدون هیچ وابستگی به
-SQLAlchemy/دیتابیس (دقیقاً مثل app/core/backup_schedule_logic.py) تا
-بدون نیاز به یک دیتابیس واقعی قابل‌تست باشد.
+الگوریتم‌های خالص ارزیابی عملکرد، بدون وابستگی به SQLAlchemy/دیتابیس تا بدون
+دیتابیس واقعی قابل‌تست باشند:
+- resolve_evaluation_target_ids: تعیین پرسنلی که هر ارزیاب مجاز به ارزیابی آن‌هاست
+- validate_form_weights: اعتبارسنجی مجموع وزن دسته‌بندی‌ها و سوالات فرم
+- calculate_option_based_question_score / calculate_weighted_average: محاسبه امتیاز
 
-سلسله‌مراتب (طبق تصمیم صریح کاربر):
-    مدیر سایت (چند نفر مجاز)  →  سرپرست‌های واحدهای همان سایت + سایر مدیران همان سایت
-    سرپرست واحد               →  اگر آن واحد سرشیفت دارد: فقط سرشیفت‌ها
+سلسله‌مراتب ارزیابی:
+    مدیر                      →  فقط اهدافی که به‌صورت دستی به او تخصیص داده شده
+    سرپرست واحد               →  اگر آن واحد سرشیفت دارد: سرشیفت‌ها + پرسنلِ بدون سرشیفت
                                    وگرنه: همه پرسنل آن واحد
     سرشیفت واحد                →  فقط زیرمجموعه‌ی اختصاصی خودش
                                    (پرسنل بین سرشیفت‌های یک واحد تقسیم می‌شوند)
@@ -29,29 +31,17 @@ def resolve_evaluation_target_ids(
     unassigned_employees_by_department: dict | None = None,
 ) -> set:
     """
-    خروجی: مجموعه‌ی شناسه‌های پرسنلی که evaluator_employee_id مجاز است
-    ارزیابی کند - اجتماع (Union) اهداف همه نقش‌هایی که هم‌زمان دارد،
-    همیشه بدون خودش.
-
-    ⚠️ بازطراحی: نقش «مدیر» دیگر هیچ قانون خودکاری («مدیر سایت = همه
-    سرپرست‌ها») ندارد - اهداف هر مدیر (manager_ids_of_evaluator) کاملاً
-    از manager_targets_by_manager_id (تخصیص صریح و دستی) خوانده می‌شود؛
-    این طراحی اجازه می‌دهد چارت سازمانی واقعی (مثلاً یک مدیر میانی مثل
-    «مدیر تولید» که فقط بخشی از سرپرست‌ها را ارزیابی می‌کند، یا تخصیص
-    مستقیم یک فرد خاص از یک واحد دیگر به هر مدیری) کاملاً پیاده شود.
-
-    ⚠️ رفع یک نقص واقعی (طبق بازخورد صریح کاربر): وقتی یک واحد سرشیفت
-    دارد ولی بعضی پرسنل هنوز به هیچ سرشیفتی تخصیص داده نشده‌اند، قبلاً
-    آن پرسنل اصلاً توسط کسی ارزیابی نمی‌شدند (نه سرپرست، چون قانون
-    می‌گفت «اگر سرشیفت دارد فقط سرشیفت‌ها را ببین»؛ نه سرشیفتی، چون
-    اصلاً تخصیص داده نشده بودند). حالا: پرسنلِ بدون‌تخصیص، مستقیماً زیر
-    نظر سرپرست باقی می‌مانند - یعنی هیچ‌کس بدون ارزیاب نمی‌ماند.
+    ورودی: شناسه ارزیاب و نگاشت‌های خام نقش‌ها (مدیر/سرپرست/سرشیفت) که از دیتابیس خوانده شده‌اند.
+    خروجی: مجموعه شناسه‌های پرسنلی که ارزیاب مجاز است ارزیابی کند؛ اجتماع اهداف همه نقش‌هایش، بدون خودش.
+    اهداف مدیر فقط از تخصیص دستی (manager_targets_by_manager_id) می‌آیند؛ پرسنل بدون سرشیفت زیر نظر سرپرست می‌مانند.
     """
     target_ids: set = set()
 
+    # نقش مدیر: اهداف تخصیص‌داده‌شده‌ی دستی
     for manager_id in manager_ids_of_evaluator:
         target_ids.update(manager_targets_by_manager_id.get(manager_id, []))
 
+    # نقش سرپرست واحد: سرشیفت‌ها (+ پرسنل بدون تخصیص) یا در نبود سرشیفت، همه پرسنل واحد
     for department_id in department_supervisor_of_departments:
         shift_lead_employee_ids = shift_lead_employees_by_department.get(department_id, [])
         if shift_lead_employee_ids:
@@ -61,6 +51,7 @@ def resolve_evaluation_target_ids(
         else:
             target_ids.update(all_employees_by_department.get(department_id, []))
 
+    # نقش سرشیفت: فقط پرسنل تخصیص‌داده‌شده به همان سرشیفت
     for shift_lead_id in shift_lead_of_shift_lead_ids:
         target_ids.update(shift_assignments_by_shift_lead.get(shift_lead_id, []))
 
@@ -73,8 +64,7 @@ _WEIGHT_TOLERANCE = 0.01  # گرد کردن اعشاری، نه اشکال وا�
 
 def validate_form_weights(categories: list) -> list:
     """
-    الگوریتم خالص اعتبارسنجی وزن یک فرم - قبل از فعال‌شدن یک فرم اجرا
-    می‌شود (نه در حالت Draft، که ممکن است هنوز ناقص باشد). categories:
+    اعتبارسنجی وزن یک فرم؛ قبل از فعال‌شدن فرم اجرا می‌شود (نه در حالت Draft). ورودی categories:
     [{"title": str, "weight": float, "is_active": bool,
       "questions": [{"text": str, "weight": float, "is_active": bool}, ...]}, ...]
 
@@ -86,6 +76,7 @@ def validate_form_weights(categories: list) -> list:
     """
     errors: list = []
 
+    # فقط دسته‌بندی‌های فعال در محاسبه وزن شرکت می‌کنند
     active_categories = [c for c in categories if c.get("is_active", True)]
     if not active_categories:
         errors.append("فرم باید حداقل یک دسته‌بندی فعال داشته باشد")
@@ -95,6 +86,7 @@ def validate_form_weights(categories: list) -> list:
     if abs(category_weight_sum - 100) > _WEIGHT_TOLERANCE:
         errors.append(f"مجموع وزن دسته‌بندی‌های فعال باید ۱۰۰ باشد (الان: {category_weight_sum:g})")
 
+    # بررسی وزن سوالات فعال داخل هر دسته‌بندی فعال
     for category in active_categories:
         active_questions = [q for q in category.get("questions", []) if q.get("is_active", True)]
         title = category.get("title", "")
@@ -110,35 +102,20 @@ def validate_form_weights(categories: list) -> list:
 
 def calculate_option_based_question_score(selected_option_scores: list, max_option_score: float) -> float:
     """
-    امتیاز یک سوال از نوع مبتنی‌بر گزینه (single_choice/multiple_choice/
-    rating/yes_no) - میانگین امتیاز گزینه‌های انتخاب‌شده، سپس نسبت به
-    حداکثر امتیاز ممکن همان سوال (بزرگ‌ترین امتیاز میان همه گزینه‌های
-    آن سوال) به مقیاس ۰ تا ۱۰۰ نرمالایز می‌شود.
-
-    ⚠️ رفع یک باگ واقعی طبق گزارش کاربر: قبلاً این تابع فرض می‌کرد
-    امتیاز گزینه‌ها همیشه از قبل روی مقیاس ۰ تا ۱۰۰ تنظیم شده‌اند - اگر
-    طراح فرم مقیاس دیگری انتخاب می‌کرد (مثلاً ۰ تا ۵، مشابه سوالات
-    امتیازی رایج)، حتی انتخاب «بهترین گزینه ممکن» برای همه سوالات، به‌جای
-    نتیجه‌ی نهایی نزدیک ۱۰۰، عددی تک‌رقمی (نزدیک همان مقیاس اشتباه)
-    می‌داد - چون تابع خام امتیاز گزینه را بدون نرمالایز برمی‌گرداند.
-    حالا صرف‌نظر از این‌که طراح فرم چه مقیاسی برای گزینه‌ها انتخاب کند
-    (۰-۵، ۰-۱۰، ۰-۱۰۰ یا هرچیز دیگر)، نتیجه همیشه درست نرمالایز می‌شود -
-    دقیقاً مشابه نوع «عدد» که نسبت به weight نرمالایز می‌شود.
-
-    ⚠️ برای فرم‌هایی که از قبل طبق قرارداد صحیح (حداکثر امتیاز گزینه =
-    ۱۰۰) ساخته شده بودند، این تغییر کاملاً بدون تأثیر است (چون نرمالایز
-    نسبت به ۱۰۰ همان مقدار قبلی را می‌دهد) - فقط برای فرم‌هایی که مقیاس
-    دیگری استفاده کرده بودند، رفتار درست می‌شود.
+    امتیاز یک سوال مبتنی‌بر گزینه (single_choice/multiple_choice/rating/yes_no).
+    ورودی: امتیاز گزینه‌های انتخاب‌شده و بزرگ‌ترین امتیاز میان همه گزینه‌های آن سوال.
+    خروجی: میانگین امتیاز انتخاب‌ها نسبت به حداکثر، نرمالایزشده به ۰ تا ۱۰۰ (مستقل از مقیاس گزینه‌ها).
     """
+    # بدون انتخاب یا با حداکثر نامعتبر، امتیاز صفر است
     if not selected_option_scores or max_option_score <= 0:
         return 0.0
     average_selected = sum(selected_option_scores) / len(selected_option_scores)
-    return min(100.0, (average_selected / max_option_score) * 100)
+    return min(100.0, (average_selected / max_option_score) * 100)  # سقف ۱۰۰
 
 
 def calculate_weighted_average(weighted_items: list) -> float:
     """
-    الگوریتم خالص مشترک برای هر دو سطح جمع‌بندی امتیاز:
+    میانگین وزنی مشترک برای هر دو سطح جمع‌بندی امتیاز:
         سوال‌ها  -> امتیاز دسته‌بندی
         دسته‌بندی‌ها -> امتیاز نهایی فرم
     weighted_items: [{"weight": float, "score": float}, ...] - چون

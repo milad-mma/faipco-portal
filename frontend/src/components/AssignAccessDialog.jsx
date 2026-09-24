@@ -21,18 +21,28 @@ import { fetchRoles, removeRoleAssignment } from "../api/users";
 import { assignDepartmentSupervisor, fetchDepartments } from "../api/departments";
 import { roleDisplayName } from "../utils/roleLabels";
 
-export default function AssignAccessDialog({ employee, sites, onClose }) {
-  const [roles, setRoles] = useState([]);
-  const [employeeRoles, setEmployeeRoles] = useState([]);
-  const [allDepartments, setAllDepartments] = useState([]);
-  const [supervisedDeptIds, setSupervisedDeptIds] = useState([]);
+/**
+ * دیالوگ مدیریت دسترسی یک پرسنل: نقش‌های سازمانی (به تفکیک سایت) و سرپرستی واحدها.
+ * ورودی: employee (پرسنل انتخاب‌شده؛ null = دیالوگ بسته)، sites (فهرست سایت‌ها) و onClose.
+ * خروجی: Dialog شامل فهرست نقش‌های فعلی با امکان حذف، فرم اختصاص نقش جدید برای یک یا چند سایت،
+ * و فهرست چک‌باکس واحدهای سازمانی برای تعیین سرپرستی.
+ */
+// مقدار ویژه‌ی گزینه‌ی «همه‌ی سایت‌ها» در انتخاب چندگانه (شناسه‌ی سایت‌ها عددی‌اند و تداخلی ندارد)
+const ALL_SITES = "__all__";
 
-  const [roleToAssign, setRoleToAssign] = useState("");
-  const [sitesForRole, setSitesForRole] = useState([]); // چند سایت هم‌زمان — طبق درخواست صریح
+export default function AssignAccessDialog({ employee, sites, onClose }) {
+  const [roles, setRoles] = useState([]); // همه‌ی نقش‌های تعریف‌شده
+  const [employeeRoles, setEmployeeRoles] = useState([]); // انتصاب‌های نقش این پرسنل (هر ردیف: role_id + site_id)
+  const [allDepartments, setAllDepartments] = useState([]);
+  const [supervisedDeptIds, setSupervisedDeptIds] = useState([]); // id واحدهایی که این پرسنل سرپرست آن‌هاست
+
+  const [roleToAssign, setRoleToAssign] = useState(""); // id نقش انتخاب‌شده برای اختصاص
+  const [sitesForRole, setSitesForRole] = useState([]); // سایت‌های انتخاب‌شده برای نقش (چندانتخابی)
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // با تغییر پرسنل، پیام‌ها پاک و نقش‌ها، انتصاب‌ها، واحدها و سرپرستی‌ها از سرور بارگذاری می‌شوند
   useEffect(() => {
     if (!employee) return;
     setError("");
@@ -45,12 +55,15 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
 
   if (!employee) return null;
 
+  // نام سایت از روی id
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
+  // نام نمایشی نقش از روی id (اگر نقش پیدا نشود، خود id)
   const roleLabel = (id) => {
     const found = roles.find((r) => r.id === id);
     return found ? roleDisplayName(found.name) : id;
   };
 
+  // اختصاص نقش انتخاب‌شده برای همه‌ی سایت‌های انتخابی؛ سایت‌هایی که از قبل این نقش را داشتند شمرده و گزارش می‌شوند
   async function handleAssignRole() {
     setError("");
     setSuccess("");
@@ -70,11 +83,13 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
     }
   }
 
+  // حذف یک انتصاب نقش و بارگذاری مجدد فهرست
   async function handleRemoveRole(userRoleId) {
     await removeRoleAssignment(userRoleId);
     setEmployeeRoles(await fetchEmployeeRoles(employee.id));
   }
 
+  // تعیین یا برداشتن این پرسنل به‌عنوان سرپرست یک واحد (برداشتن = سرپرست null)
   async function handleToggleDepartment(departmentId, isChecked) {
     setError("");
     try {
@@ -87,6 +102,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
 
   return (
     <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="xs">
+      {/* عنوان: نام، کد پرسنلی و سایت پرسنل */}
       <DialogTitle>
         دسترسی — {employee.first_name} {employee.last_name}
         <Typography variant="caption" color="text.secondary" display="block">
@@ -94,7 +110,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-        {/* نقش‌های سازمانی فعلی */}
+        {/* نقش‌های سازمانی فعلی؛ انتصاب بدون site_id به‌صورت «سراسری — قدیمی» نمایش داده می‌شود */}
         <Stack spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>
             نقش سازمانی
@@ -123,6 +139,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           ))}
         </Stack>
 
+        {/* انتخاب نقش جدید؛ با تغییر نقش، سایت‌های انتخاب‌شده پاک می‌شوند */}
         <TextField
           select
           size="small"
@@ -140,15 +157,8 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           ))}
         </TextField>
 
-        {/* ⚠️ رفع یک باگ واقعی: قبلاً این فیلد فقط برای نقش «site_manager»
-            نمایش داده می‌شد؛ برای هر نقش دیگری (مثل «حراست»)، هرگز امکان
-            انتخاب سایت نبود و در نتیجه انتصاب همیشه بی‌صدا سراسری
-            (site_id=null) می‌شد — حتی وقتی این ابداً قصد Admin نبود. طبق
-            درخواست صریح، هر انتصاب نقشی حتماً باید به یک سایت مشخص محدود
-            باشد؛ این فیلد برای همه نقش‌ها نمایش داده می‌شود.
-            ⚠️ به‌روزرسانی بعدی: طبق درخواست صریح، حالا چندانتخابی است —
-            یک نقش می‌تواند هم‌زمان برای چند سایت اختصاص یابد (هرکدام یک
-            ردیف جدا در پس‌زمینه، ولی همه در یک اقدام). */}
+        {/* انتخاب چندگانه‌ی سایت‌ها برای نقش انتخاب‌شده (برای همه‌ی نقش‌ها اجباری است)؛
+            هر سایت یک ردیف انتصاب جدا در Backend می‌سازد ولی همه در یک اقدام ثبت می‌شوند. */}
         {roleToAssign && (
           <TextField
             select
@@ -157,14 +167,30 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
             value={sitesForRole}
             onChange={(e) => {
               const { value } = e.target;
-              setSitesForRole(typeof value === "string" ? value.split(",") : value);
+              const next = typeof value === "string" ? value.split(",") : value;
+              // گزینه‌ی «همه‌ی سایت‌ها»: اگر همه انتخاب‌اند همه برداشته می‌شوند، وگرنه همه انتخاب می‌شوند
+              if (next.includes(ALL_SITES)) {
+                const allSelected = sites.every((s) => sitesForRole.includes(s.id));
+                setSitesForRole(allSelected ? [] : sites.map((s) => s.id));
+                return;
+              }
+              setSitesForRole(next);
             }}
             required
+            helperText="برای دسترسی در همه‌جا «همه‌ی سایت‌ها» را بزنید؛ سایت‌هایی که بعداً ساخته شوند خودکار اضافه نمی‌شوند."
             SelectProps={{
               multiple: true,
-              renderValue: (selected) => selected.map((id) => siteLabel(id)).join("، "),
+              renderValue: (selected) =>
+                sites.length > 1 && sites.every((s) => selected.includes(s.id))
+                  ? "همه‌ی سایت‌ها"
+                  : selected.map((id) => siteLabel(id)).join("، "),
             }}
           >
+            {/* انتخاب/برداشتن یک‌جای همه‌ی سایت‌ها */}
+            <MenuItem value={ALL_SITES}>
+              <Checkbox size="small" checked={sites.length > 0 && sites.every((s) => sitesForRole.includes(s.id))} />
+              <b>همه‌ی سایت‌ها</b>
+            </MenuItem>
             {sites.map((s) => (
               <MenuItem key={s.id} value={s.id}>
                 <Checkbox size="small" checked={sitesForRole.includes(s.id)} />
@@ -174,6 +200,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           </TextField>
         )}
 
+        {/* پیام‌ها و دکمه‌ی ثبت نقش (تا انتخاب نقش و حداقل یک سایت غیرفعال است) */}
         {error && <Alert severity="error">{error}</Alert>}
         {success && <Alert severity="success">{success}</Alert>}
         <Button

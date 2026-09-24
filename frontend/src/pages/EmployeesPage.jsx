@@ -1,3 +1,6 @@
+// صفحه‌ی مدیریت پرسنل (پنل Admin).
+// جدول پرسنل با جستجو، فیلتر سایت، صفحه‌بندی و مرتب‌سازی سمت سرور؛ فعال/غیرفعال‌کردن ورود به پرتال،
+// تعیین رمز عبور اختصاصی، پاک‌سازی پرسنل غیرفعال بدون سابقه و افزودن دستی پرسنل.
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -48,9 +51,8 @@ import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
 import { useAuth } from "../context/AuthContext";
 
-// ستون‌های جدول پرسنل — key همان چیزی است که به سرور به‌عنوان sort_by فرستاده
-// می‌شود (مطابق با نگاشت _SORT_COLUMNS در بک‌اند). Sort کاملاً سمت سرور انجام
-// می‌شود، نه روی داده‌های همین صفحه — چون این جدول حالا صفحه‌بندی سمت سرور دارد.
+// ستون‌های جدول پرسنل؛ key همان مقدار sort_by ارسالی به سرور است (مطابق نگاشت _SORT_COLUMNS در بک‌اند).
+// مرتب‌سازی و صفحه‌بندی هر دو سمت سرور انجام می‌شوند.
 const EMPLOYEE_COLUMNS = [
   { key: "personnel_code", label: "کد پرسنلی" },
   { key: "full_name", label: "نام و نام خانوادگی" },
@@ -61,15 +63,18 @@ const EMPLOYEE_COLUMNS = [
   { key: "is_enabled", label: "فعال در پرتال", align: "center" },
 ];
 
-const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
+const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];  // گزینه‌های تعداد سطر در هر صفحه
 
+// دیالوگ تعیین یا حذف رمز عبور اختصاصی یک پرسنل.
+// ورودی: پرسنل (null = بسته)، onClose و onChanged که پس از هر تغییر موفق صدا زده می‌شود.
 function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [success, setSuccess] = useState("");  // پیام موفقیت؛ پس از موفقیت فرم پنهان می‌شود
   const [isSaving, setIsSaving] = useState(false);
 
+  // با تغییر پرسنل، فرم و پیام‌ها خالی می‌شوند
   useEffect(() => {
     setPassword("");
     setConfirmPassword("");
@@ -79,6 +84,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 
   if (!employee) return null;
 
+  // رمز جدید را اعتبارسنجی (حداقل ۱۰ کاراکتر با حرف کوچک، بزرگ و عدد؛ برابر با تکرار) و روی سرور ثبت می‌کند
   async function handleSave() {
     setError("");
     if (password.length < 10 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
@@ -103,6 +109,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
     }
   }
 
+  // پس از تأیید، رمز اختصاصی را حذف و ورود پرسنل را به روش پیش‌فرض برمی‌گرداند
   async function handleReset() {
     if (!window.confirm("رمز عبور اختصاصی این پرسنل حذف شود و روش ورود پیش‌فرض دوباره فعال شود؟")) return;
     setIsSaving(true);
@@ -128,6 +135,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        {/* فیلدهای رمز جدید و تکرار آن؛ پس از موفقیت پنهان می‌شوند */}
         {!success && (
           <>
             <TextField
@@ -153,6 +161,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
       </DialogContent>
       <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
         <Box>
+          {/* دکمه‌ی بازگشت به ورود پیش‌فرض، فقط برای پرسنل دارای رمز اختصاصی */}
           {!success && employee.has_custom_password && (
             <Button color="warning" onClick={handleReset} disabled={isSaving}>
               بازگشت به روش ورود پیش‌فرض
@@ -172,32 +181,36 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
   );
 }
 
+// کامپوننت صفحه‌ی پرسنل؛ ورودی ندارد.
+// فیلترها، مرتب‌سازی و صفحه‌بندی را نگه می‌دارد و جدول پرسنل و دیالوگ‌های رمز، پاک‌سازی و افزودن را رندر می‌کند.
 export default function EmployeesPage() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(0);  // تعداد کل نتایج برای صفحه‌بندی
   const [sites, setSites] = useState([]);
-  const [selectedSite, setSelectedSite] = useState("");
+  const [selectedSite, setSelectedSite] = useState("");  // خالی = همه‌ی سایت‌ها
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);  // نمایش پرسنلی که در منبع Sync غیرفعال شده‌اند
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupPreview, setCleanupPreview] = useState(null); // { count, items } | null
   const [isCleanupLoading, setIsCleanupLoading] = useState(false);
   const [isCleanupDeleting, setIsCleanupDeleting] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState(null);
+  const [cleanupResult, setCleanupResult] = useState(null);  // { success, message } | null
   const [isLoading, setIsLoading] = useState(true);
-  const [togglingId, setTogglingId] = useState(null);
-  const [passwordEmployee, setPasswordEmployee] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);  // شناسه‌ی پرسنلی که تغییر وضعیتش در جریان است
+  const [passwordEmployee, setPasswordEmployee] = useState(null);  // پرسنلی که دیالوگ رمزش باز است
   const [sortBy, setSortBy] = useState("personnel_code");
   const [sortDir, setSortDir] = useState("asc");
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(0);  // شماره‌ی صفحه از صفر (به سرور page + 1 فرستاده می‌شود)
   const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE_OPTIONS[0]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
+  // بارگذاری فهرست سایت‌ها برای فیلتر و دیالوگ افزودن
   useEffect(() => {
     fetchSites().then(setSites);
   }, []);
 
+  // کلیک روی سرستون: برعکس‌کردن جهت یا مرتب‌سازی صعودی ستون جدید و بازگشت به صفحه‌ی اول
   function handleSort(columnKey) {
     if (sortBy === columnKey) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -208,6 +221,7 @@ export default function EmployeesPage() {
     setPage(0);
   }
 
+  // یک صفحه از پرسنل را با فیلترها، مرتب‌سازی و صفحه‌بندی فعلی از سرور می‌گیرد
   function loadEmployees() {
     setIsLoading(true);
     return fetchEmployees({
@@ -227,18 +241,20 @@ export default function EmployeesPage() {
       .finally(() => setIsLoading(false));
   }
 
-  // با تغییر فیلترها/Sort به صفحه اول برگرد (صفحه فعلی ممکن است دیگر معتبر نباشد)
+  // با تغییر فیلترها به صفحه‌ی اول برمی‌گردد (صفحه‌ی فعلی ممکن است دیگر معتبر نباشد)
   useEffect(() => {
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSite, search, showInactive]);
 
+  // بارگذاری پرسنل با تأخیر ۳۰۰ میلی‌ثانیه پس از هر تغییر فیلتر، مرتب‌سازی یا صفحه (debounce)
   useEffect(() => {
     const timer = setTimeout(loadEmployees, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSite, search, showInactive, sortBy, sortDir, page, rowsPerPage]);
 
+  // پس از تأیید، دسترسی پرسنل به پرتال را فعال/غیرفعال می‌کند (مستقل از Sync)
   async function handleToggleEnabled(employee) {
     const nextEnabled = !employee.is_enabled;
     if (
@@ -253,9 +269,8 @@ export default function EmployeesPage() {
     setTogglingId(employee.id);
     try {
       const updated = await setEmployeeEnabled(employee.id, nextEnabled);
-      // فقط is_enabled را از پاسخ Merge می‌کنیم؛ site_name/department_name را
-      // PATCH پر نمی‌کند (فقط GET لیست این دو را با Join برمی‌گرداند)، پس اگر
-      // کل updated را جایگزین کنیم این دو فیلد با null بازنویسی می‌شوند.
+      // فقط is_enabled از پاسخ ادغام می‌شود، چون پاسخ PATCH فیلدهای site_name/department_name را ندارد
+      // (این دو فقط در GET فهرست با Join برمی‌گردند) و جایگزینی کامل آن‌ها را null می‌کرد
       setEmployees((prev) =>
         prev.map((e) => (e.id === employee.id ? { ...e, is_enabled: updated.is_enabled } : e))
       );
@@ -264,6 +279,7 @@ export default function EmployeesPage() {
     }
   }
 
+  // دیالوگ پاک‌سازی را باز و پیش‌نمایش پرسنل غیرفعال بدون سابقه را از سرور می‌گیرد
   async function handleOpenCleanupDialog() {
     setCleanupDialogOpen(true);
     setCleanupResult(null);
@@ -278,6 +294,7 @@ export default function EmployeesPage() {
     }
   }
 
+  // پس از تأیید، پرسنل غیرفعال بدون سابقه را حذف قطعی و نتیجه را نمایش می‌دهد
   async function handleExecuteCleanup() {
     if (!window.confirm(`${cleanupPreview.count} پرسنل برای همیشه حذف می‌شوند. این عمل قابل‌بازگشت نیست. مطمئن هستید؟`)) {
       return;
@@ -287,7 +304,7 @@ export default function EmployeesPage() {
       const { deleted_count } = await executeOrphanedInactiveCleanup();
       setCleanupResult({ success: true, message: `${deleted_count} پرسنل بدون سابقه حذف شدند.` });
       setCleanupPreview(null);
-      // اگر همین الان تیک «نمایش پرسنل غیرفعال» روشن است، لیست را دوباره بگیر تا حذف‌شده‌ها دیگر دیده نشوند
+      // اگر پرسنل غیرفعال در حال نمایش‌اند، فهرست بازخوانی می‌شود تا حذف‌شده‌ها دیده نشوند
       if (showInactive) loadEmployees();
     } catch (err) {
       setCleanupResult({ success: false, message: err.response?.data?.detail || "حذف با خطا مواجه شد." });
@@ -315,6 +332,7 @@ export default function EmployeesPage() {
         )}
       </Stack>
 
+      {/* نوار ابزار: جستجو، فیلتر سایت، نمایش غیرفعال‌ها و دکمه‌ی پاک‌سازی */}
       <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         <TextField
           size="small"
@@ -366,6 +384,7 @@ export default function EmployeesPage() {
         </Tooltip>
       </Box>
 
+      {/* جدول پرسنل با صفحه‌بندی سمت سرور */}
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
         <TableContainer>
           <Table>
@@ -392,6 +411,7 @@ export default function EmployeesPage() {
               </TableRow>
             </TableHead>
             <TableBody>
+              {/* ردیف خالی وقتی نتیجه‌ای نیست */}
               {!isLoading && employees.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={EMPLOYEE_COLUMNS.length + 1}>
@@ -420,6 +440,7 @@ export default function EmployeesPage() {
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
                   <TableCell>{emp.site_name || emp.site_id}</TableCell>
                   <TableCell>{emp.department_name || "—"}</TableCell>
+                  {/* وضعیت و کلید فعال بودن در پرتال */}
                   <TableCell align="center">
                     <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
                       <Chip
@@ -456,6 +477,7 @@ export default function EmployeesPage() {
           </Table>
         </TableContainer>
 
+        {/* صفحه‌بندی */}
         <TablePagination
           component="div"
           count={total}
@@ -472,12 +494,14 @@ export default function EmployeesPage() {
         />
       </Card>
 
+      {/* دیالوگ رمز عبور پرسنل */}
       <SetPasswordDialog
         employee={passwordEmployee}
         onClose={() => setPasswordEmployee(null)}
         onChanged={loadEmployees}
       />
 
+      {/* دیالوگ پاک‌سازی پرسنل غیرفعال بدون سابقه: توضیح، پیش‌نمایش و حذف */}
       <Dialog open={cleanupDialogOpen} onClose={() => setCleanupDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>پاک‌سازی پرسنل غیرفعال بدون سابقه</DialogTitle>
         <DialogContent>
@@ -546,6 +570,7 @@ export default function EmployeesPage() {
         </DialogActions>
       </Dialog>
 
+      {/* دیالوگ افزودن دستی پرسنل */}
       <AddEmployeeDialog
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
@@ -560,9 +585,9 @@ export default function EmployeesPage() {
 }
 
 /**
- * دیالوگ «افزودن دستی پرسنل» — طبق قابلیت مجوز employees.create. فقط
- * برای مواردی که واقعاً در هیچ منبع Sync موجود نیست؛ نتیجه با یک نشانگر
- * (is_manually_created) از رکوردهای معمولی Sync متمایز می‌شود.
+ * دیالوگ «افزودن دستی پرسنل» (مجوز employees.create) برای پرسنلی که در هیچ منبع Sync وجود ندارند.
+ * ورودی: وضعیت باز بودن، onClose، فهرست سایت‌ها و onCreated که پس از ثبت موفق صدا زده می‌شود.
+ * رکورد ساخته‌شده با نشانگر is_manually_created از رکوردهای Sync متمایز می‌شود.
  */
 function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
   const [personnelCode, setPersonnelCode] = useState("");
@@ -570,15 +595,14 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
   const [lastName, setLastName] = useState("");
   const [siteId, setSiteId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [departments, setDepartments] = useState([]);
+  const [departments, setDepartments] = useState([]);  // واحدهای سایت انتخاب‌شده
   const [nationalCode, setNationalCode] = useState("");
   const [mobile, setMobile] = useState("");
   const [positionTitle, setPositionTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // با هر بار باز شدن Dialog، فرم را از نو خالی می‌کنیم — نه این‌که
-  // مقادیر دفعه قبل باقی بماند.
+  // با هر بار باز شدن Dialog، همه‌ی فیلدهای فرم خالی می‌شوند
   useEffect(() => {
     if (open) {
       setPersonnelCode("");
@@ -594,6 +618,7 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
     }
   }, [open]);
 
+  // با تغییر سایت، واحد انتخاب‌شده پاک و واحدهای همان سایت بارگذاری می‌شوند
   useEffect(() => {
     if (!siteId) {
       setDepartments([]);
@@ -603,8 +628,9 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
     fetchDepartments(siteId).then(setDepartments);
   }, [siteId]);
 
-  const canSave = personnelCode.trim() && firstName.trim() && lastName.trim() && siteId && !isSaving;
+  const canSave = personnelCode.trim() && firstName.trim() && lastName.trim() && siteId && !isSaving;  // کد پرسنلی، نام، نام خانوادگی و سایت الزامی‌اند
 
+  // پرسنل جدید را با فیلدهای فرم (اختیاری‌های خالی = null) روی سرور ثبت می‌کند
   async function handleSave() {
     if (!canSave) return;
     setError("");

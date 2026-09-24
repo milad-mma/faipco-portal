@@ -9,12 +9,17 @@ import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
 
+/**
+ * صفحه‌ی ثبت ورود/خروج کاربر جاری.
+ * موقعیت GPS گوشی را می‌گیرد، به سرور می‌فرستد و تاریخچه‌ی ماهانه‌ی ورود/خروج را نمایش می‌دهد.
+ */
 export default function AttendanceClockPage() {
-  const [logs, setLogs] = useState(null);
+  const [logs, setLogs] = useState(null); // لاگ‌های ماه انتخابی؛ null = هنوز بارگذاری نشده
   const [period, setPeriod] = useState({ year: null, month: null }); // null یعنی هنوز از سرور نگرفتیم (ماه جاری پیش‌فرض)
   const [isWorking, setIsWorking] = useState(false); // در حال گرفتن موقعیت + ارسال
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(null); // نتیجه‌ی آخرین ثبت: { success, message }
 
+  // لاگ‌های ماه داده‌شده (یا ماه انتخابی فعلی) را از سرور می‌گیرد و period را با پاسخ سرور همگام می‌کند
   function loadLogs(overridePeriod) {
     const params = overridePeriod || period;
     fetchMyAttendanceLogs({ year: params.year, month: params.month }).then((data) => {
@@ -23,10 +28,12 @@ export default function AttendanceClockPage() {
     });
   }
 
+  // بارگذاری اولیه‌ی تاریخچه
   useEffect(() => {
     loadLogs({ year: null, month: null }); // اولین بار: بدون فیلتر -> سرور خودش ماه جاری را برمی‌گرداند
   }, []);
 
+  // ثبت ورود («in») یا خروج («out»): موقعیت فعلی را می‌گیرد، به سرور می‌فرستد و نتیجه را نمایش می‌دهد
   async function handleClock(action) {
     setResult(null);
     setIsWorking(true);
@@ -56,12 +63,14 @@ export default function AttendanceClockPage() {
         ثبت ورود و خروج
       </Typography>
 
+      {/* هشدار آزمایشی بودن ثبت مبتنی بر GPS */}
       <Alert severity="warning" icon={<ScienceOutlinedIcon />} sx={{ mb: 3 }}>
         <strong>این قابلیت آزمایشی است.</strong> ثبت ورود/خروج رسمی همچنان باید از طریق دستگاه‌های
         تعبیه‌شده در کارخانه انجام شود — این فقط یک ثبت مکمل و آزمایشی مبتنی بر موقعیت GPS گوشی شماست
         و جایگزین سامانه رسمی حضور و غیاب نیست.
       </Alert>
 
+      {/* کارت ثبت: توضیح، پیام نتیجه و دکمه‌های ورود/خروج */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           با زدن هرکدام از دکمه‌های زیر، موقعیت فعلی گوشی شما گرفته و بررسی می‌شود که داخل محدوده
@@ -97,6 +106,7 @@ export default function AttendanceClockPage() {
         </Stack>
       </Card>
 
+      {/* کارت تاریخچه: فیلتر ماه/سال و لیست روزانه‌ی جلسات ورود/خروج */}
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <Stack
           direction="row"
@@ -116,6 +126,7 @@ export default function AttendanceClockPage() {
             disabled={logs === null}
           />
         </Stack>
+        {/* سه حالت: در حال بارگذاری / بدون لاگ / لیست روزها با چیپ‌های ورود و خروج هر جلسه */}
         {logs === null ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
             <CircularProgress size={24} />

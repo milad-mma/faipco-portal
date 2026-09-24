@@ -1,3 +1,9 @@
+/**
+ * صفحه ورود یکپارچه پرتال (مدیران با نام کاربری/رمز، پرسنل با کد پرسنلی/کد ملی).
+ * چیدمان دوپانلی: پنل فرم (در موبایل با هدر برند) و پنل معرفی خدمات (فقط دسکتاپ).
+ * شامل «مرا به خاطر بسپار»، پیشنهاد نصب PWA، حالت آفلاین، درخواست مجوز اعلان پس از ورود
+ * و دیالوگ مسدودسازی IP/VPN هنگام پاسخ ۴۰۳.
+ */
 import { useEffect, useState } from "react";
 import { useNavigate, Link as RouterLink } from "react-router-dom";
 import {
@@ -40,52 +46,53 @@ import { LOGIN_BACKGROUND_URL } from "../api/system";
 import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "../components/BrandLogo";
 
+// فهرست خدمات نمایش‌داده‌شده در پنل معرفی دسکتاپ
 const PROMO_FEATURES = [
   { icon: <EventNoteOutlinedIcon fontSize="small" />, label: "درخواست مرخصی" },
   { icon: <DescriptionOutlinedIcon fontSize="small" />, label: "فیش حقوق و کارکرد" },
   { icon: <CampaignOutlinedIcon fontSize="small" />, label: "اطلاعیه‌ها و ابلاغیه‌های سازمانی" },
 ];
 
-const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";
+const REMEMBERED_USERNAME_KEY = "faipco_remembered_username";  // کلید localStorage برای نام کاربری ذخیره‌شده
 
+// کامپوننت صفحه ورود؛ ورودی ندارد. پس از ورود موفق به صفحه اصلی هدایت می‌کند
 export default function LoginPage() {
   const { login, user } = useAuth();
   const { loginTitle, loginSubtitle, surfaces } = useBranding();
-  const cfg = surfaces.login;
+  const cfg = surfaces.login;  // تنظیمات برندینگ سطح «login» (پس‌زمینه، نمایش عنوان/زیرعنوان)
   const headerTitle = loginTitle;
   const headerSubtitle = loginSubtitle;
   const navigate = useNavigate();
   const { isOnline, isChecking, recheck } = useOnlineStatus();
 
-  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBERED_USERNAME_KEY) || "");
+  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBERED_USERNAME_KEY) || "");  // مقدار اولیه از نام کاربری ذخیره‌شده
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  // پیش‌فرض روشن (مثل نمونه HTML)
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(true); // «مرا به خاطر بسپار»؛ پیش‌فرض روشن
   const [error, setError] = useState("");
-  const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");
+  const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");  // متن دیالوگ مسدودسازی IP؛ رشته خالی = دیالوگ بسته
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [canInstall, setCanInstall] = useState(getIsInstallable());
+  const [canInstall, setCanInstall] = useState(getIsInstallable());  // مرورگر امکان نصب PWA را اعلام کرده است
   const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
-    // اگر کاربر همین الان اینجا (صفحه ورود) نشسته، ولی Session او در پس‌زمینه
-    // معتبر تشخیص داده شد (مثلاً بعد از قطعی موقت اینترنت که با توکن قبلی
-    // خودکار دوباره تأیید شد — نگاه کنید AuthContext)، نباید مجبور به تایپ
-    // دوباره رمز عبور شود؛ همان لحظه به صفحه اصلی هدایت می‌شود.
+    // اگر Session کاربر در پس‌زمینه معتبر تشخیص داده شود (مثلاً بعد از قطعی موقت اینترنت
+    // که با توکن موجود خودکار دوباره تأیید می‌شود؛ AuthContext)، بدون نیاز به ورود
+    // مجدد همان لحظه به صفحه اصلی هدایت می‌شود.
     if (user) {
       navigate("/", { replace: true });
     }
   }, [user, navigate]);
 
   useEffect(() => {
-    // بی‌صدا — اگه به هر دلیلی این درخواست شکست بخوره (مثلاً بک‌اند هنوز
-    // بالا نیومده)، فقط شماره نسخه نشون داده نمی‌شه، صفحه ورود خراب نمی‌شه
+    // دریافت شماره نسخه برنامه؛ خطا (مثلاً در دسترس نبودن Backend) بی‌صدا نادیده گرفته
+    // می‌شود و فقط شماره نسخه نمایش داده نمی‌شود
     fetchAppVersion()
       .then(setAppVersion)
       .catch(() => {});
   }, []);
 
+  // گوش دادن به رویداد pwa-installable-changed تا دکمه نصب با تغییر امکان نصب به‌روز شود
   useEffect(() => {
     function handleInstallableChange() {
       setCanInstall(getIsInstallable());
@@ -94,12 +101,15 @@ export default function LoginPage() {
     return () => window.removeEventListener("pwa-installable-changed", handleInstallableChange);
   }, []);
 
-  const showIosHint = isIos() && !isRunningStandalone();
+  const showIosHint = isIos() && !isRunningStandalone();  // راهنمای نصب دستی فقط در iOS و وقتی برنامه نصب‌شده اجرا نمی‌شود
 
+  // پنجره نصب PWA مرورگر را نمایش می‌دهد
   async function handleInstallClick() {
     await promptPwaInstall();
   }
 
+  // ارسال فرم ورود: ورود، ذخیره/حذف نام کاربری طبق «مرا به خاطر بسپار»، درخواست مجوز اعلان
+  // و هدایت به صفحه اصلی؛ خطای ۴۰۳ (IP غیرمجاز) در دیالوگ جدا و بقیه خطاها بالای فرم نمایش داده می‌شوند
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -143,10 +153,10 @@ export default function LoginPage() {
   }
 
   // ---------------------------------------------------------------------
-  // بخش‌های مشترک بین هر دو طرح (قدیمی/جدید) — یک‌بار تعریف، در هردو
-  // Layout استفاده می‌شود؛ منطق واقعی (Submit، PWA، خطاها) کاملاً مشترک است.
+  // بخش‌های JSX که جداگانه تعریف و در چیدمان اصلی استفاده می‌شوند
   // ---------------------------------------------------------------------
 
+  // دکمه نصب PWA (در صورت امکان) و راهنمای نصب در iOS
   const installPrompt = (
     <>
       {canInstall && (
@@ -168,6 +178,7 @@ export default function LoginPage() {
     </>
   );
 
+  // نمایش حالت آفلاین به‌جای فرم، با دکمه بررسی مجدد اتصال
   const offlineState = (
     <Stack spacing={2} alignItems="center" sx={{ textAlign: "center", py: 2 }}>
       <WifiOffOutlinedIcon sx={{ fontSize: 56 }} color="error" />
@@ -190,6 +201,7 @@ export default function LoginPage() {
     </Stack>
   );
 
+  // دیالوگ مسدودسازی ورود از IP غیرمجاز (مثلاً VPN) با متن تنظیم‌شده در سرور
   const vpnDialog = (
     <Dialog open={Boolean(vpnBlockedMessage)} onClose={() => setVpnBlockedMessage("")} maxWidth="xs" fullWidth>
       <DialogTitle>
@@ -210,7 +222,7 @@ export default function LoginPage() {
   );
 
   // =========================================================================
-  // طرح جدید — دوپانلی، بر اساس personnel_login__1_.html ارسالی کاربر
+  // فرم ورود: شناسه، رمز عبور (با نمایش/مخفی)، «مرا به خاطر بسپار»، لینک فراموشی رمز
   // =========================================================================
   const formFields = (
     <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -292,42 +304,27 @@ export default function LoginPage() {
     </Box>
   );
 
-  // ⚠️ این طراحی (بر اساس personnel_login__1_.html) عمداً تک‌حالته/فقط
-  // روشن است — بدون نسخه تیره طراحی‌شده. اگر رنگ‌ها را از theme.palette
-  // بگیریم (مثل text.primary)، در حالت تیره سیستم/برنامه، آن رنگ‌ها به
-  // مقادیر روشن Dark Theme تبدیل می‌شدند — روی پس‌زمینه ثابت روشن این
-  // صفحه (که Hardcode است، نه از تِم)، متن/بوردر تقریباً نامرئی می‌شد
-  // (دقیقاً باگی که گزارش شد). با پیچیدن این طرح در یک ThemeProvider
-  // مستقل و همیشه‌روشن (modernLightTheme)، تمام کامپوننت‌های MUI داخلش
-  // (TextField، Typography، Button) صرف‌نظر از تنظیم روشن/تیره کاربر،
-  // همیشه رنگ‌بندی درست و خوانا می‌گیرند.
+  // این طرح فقط حالت روشن دارد و پس‌زمینه‌اش ثابت و روشن است؛ برای این‌که رنگ متن/بوردر
+  // در حالت تیره کاربر نامرئی نشود، کل صفحه در ThemeProvider همیشه‌روشن (modernLightTheme)
+  // پیچیده شده تا کامپوننت‌های MUI داخلش همیشه رنگ‌بندی روشن بگیرند.
   return (
     <ThemeProvider theme={modernLightTheme}>
     <Box
       sx={{
         minHeight: "100vh",
         bgcolor: "#F3F7FA",
-        // عکس پس‌زمینه صفحه ورود — قابل تنظیم از پنل Admin («تنظیمات
-        // سامانه»). عمداً مستقیماً همین URL به‌عنوان CSS background-image
-        // استفاده می‌شود، نه یک بررسی جداگانه با JS — اگر Admin هنوز
-        // عکسی تنظیم نکرده باشد، Backend به این آدرس ۴۰۴ می‌دهد، که
-        // مرورگر آن را کاملاً بی‌صدا نادیده می‌گیرد و همان bgcolor ثابت
-        // بالا (به‌جای پس‌زمینه) دیده می‌شود — بدون هیچ خطا/چشمک‌زدن.
+        // عکس پس‌زمینه صفحه ورود (قابل تنظیم در «تنظیمات سامانه» پنل Admin) مستقیماً به‌عنوان
+        // CSS background-image؛ اگر عکسی تنظیم نشده باشد Backend پاسخ ۴۰۴ می‌دهد، مرورگر
+        // آن را بی‌صدا نادیده می‌گیرد و همان bgcolor بالا دیده می‌شود.
         backgroundImage: `url(${LOGIN_BACKGROUND_URL})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
-        // تأکید صریح روی فونت وزیرمتن — با این‌که از theme.js هم به ارث
-        // می‌رسد، این تضمین اضافه (مستقل از هر تغییر احتمالی دیگر در تِم)
-        // اطمینان می‌دهد این صفحه همیشه با وزیرمتن نمایش داده شود.
+        // فونت وزیرمتن به‌صورت صریح (مستقل از تنظیمات تم) برای کل صفحه
         fontFamily: "'Vazirmatn', 'Tahoma', sans-serif",
         position: "relative",
-        // ⚠️ عمداً "block" ساده در موبایل، نه Flex — چیدمان Flex قبلی
-        // (alignItems/justifyContent) نظری باید کارت را به بالا می‌چسباند،
-        // ولی طبق بازخورد مستقیم هنوز فاصله‌ای بالای صفحه دیده می‌شد. با
-        // "block" ساده، کارت (تنها فرزند این Box، بدون position:absolute
-        // در موبایل) دقیقاً همان اولین محتوای صفحه است — هیچ منطق
-        // تراز/وسط‌چینی نیست که بخواهد اشتباه پیش برود.
+        // چیدمان "block" ساده (نه Flex): در موبایل کارت (تنها فرزند، بدون position:absolute)
+        // بدون هیچ فاصله‌ای از بالای صفحه شروع می‌شود؛ در دسکتاپ کارت موقعیت مطلق دارد.
         display: "block",
         p: 0,
       }}
@@ -341,12 +338,9 @@ export default function LoginPage() {
           display: "flex",
           flexDirection: { xs: "column", md: "row" },
           borderRadius: { xs: 0, md: 4 },
-          // دسکتاپ: کارت با موقعیت مطلق، ۲۰۰px فاصله از سمت راست صفحه، وسط
-          // ارتفاع صفحه. ⚠️ عمداً "left" نوشته شده، نه "right" — چون
-          // stylis-plugin-rtl مقادیر فیزیکی left/right را خودکار Mirror
-          // می‌کند (همان الگویی که برای راست‌چین‌کردن تاریخ اطلاعیه هم استفاده
-          // شد) — یعنی این "left: 200px" در خروجی نهایی واقعاً "right: 200px"
-          // فیزیکی می‌شود.
+          // دسکتاپ: کارت با موقعیت مطلق، ۲۰۰px فاصله از سمت راست صفحه و وسط ارتفاع صفحه.
+          // "left" نوشته شده چون stylis-plugin-rtl مقادیر left/right را خودکار قرینه می‌کند
+          // و "left: 200px" در خروجی نهایی به "right: 200px" تبدیل می‌شود.
           position: { md: "absolute" },
           top: { md: "50%" },
           left: { md: "200px" },
@@ -361,11 +355,8 @@ export default function LoginPage() {
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            // ⚠️ باگ واقعی همین‌جا بود: قبلاً "center" بدون شرط بود — چون
-            // این باکس در موبایل کل ارتفاع صفحه (100vh از Paper) را پر
-            // می‌کند، محتوا (هدر برند + فرم) عمودی وسط صفحه می‌افتاد، نه
-            // بالا. در دسکتاپ که کارت ارتفاع محدود و معقول دارد (نه کل
-            // صفحه)، وسط‌چین‌بودن مشکلی ندارد و حتی بهتر است.
+            // موبایل: محتوا (هدر برند + فرم) از بالا شروع می‌شود، چون این باکس کل ارتفاع صفحه
+            // (100vh) را پر می‌کند؛ دسکتاپ: کارت ارتفاع محدود دارد و محتوا عمودی وسط‌چین است.
             justifyContent: { xs: "flex-start", md: "center" },
             bgcolor: "#fff",
             p: { xs: 0, md: 4.5 },
@@ -379,9 +370,8 @@ export default function LoginPage() {
               gap: 1.5,
               background: cfg.background || "linear-gradient(110deg, #3476ad, #2b91a5)",
               color: "#fff",
-              // ⚠️ رفع ناحیه امن: این هدر در موبایل چسبیده به بالای صفحه
-              // است و با viewport-fit=cover زیر Dynamic Island / ناچ
-              // می‌افتاد. صفحه ورود خارج از Layout اصلی رندر می‌شود.
+              // فاصله ناحیه امن بالا: هدر در موبایل به بالای صفحه چسبیده و با viewport-fit=cover
+              // نباید زیر Dynamic Island / ناچ برود (این صفحه خارج از Layout اصلی رندر می‌شود).
               pt: "env(safe-area-inset-top, 0px)",
               px: 2.5,
               py: 2.25,
@@ -403,6 +393,7 @@ export default function LoginPage() {
             </Box>
           </Box>
 
+          {/* عنوان، فرم ورود (یا حالت آفلاین) و شماره نسخه */}
           <Box sx={{ px: { xs: 2.5, md: 0 }, pb: { xs: 4, md: 0 }, maxWidth: 430, mx: { xs: "auto", md: 0 }, width: "100%" }}>
             <Typography variant="h4" fontWeight={800} sx={{ mb: 1 }}>
               ورود به حساب کاربری
@@ -444,14 +435,14 @@ export default function LoginPage() {
             p: 4.5,
             position: "relative",
             overflow: "hidden",
-            // دقیقاً همان دو گرادیانت ترکیبی نمونه HTML کاربر: نقطه‌های
-            // شعاعی ریز (بافت) روی یک گرادیانت خطی آبی→فیروزه‌ای
+            // دو لایه پس‌زمینه: نقطه‌های شعاعی ریز (بافت) روی گرادیانت پنل (طبق تنظیمات برندینگ)
             background:
               "radial-gradient(circle at 18% 15%, rgba(255,255,255,.10) 0 1px, transparent 1.5px), " +
               desktopPanelBackground(cfg.background),
             backgroundSize: "18px 18px, 100% 100%",
           }}
         >
+          {/* لوگو و عنوان برند */}
           <Stack direction="row" spacing={1.5} alignItems="center">
             <BrandLogo surface="login" alt={headerTitle} />
             <Box>
@@ -462,6 +453,7 @@ export default function LoginPage() {
             </Box>
           </Stack>
 
+          {/* متن معرفی و فهرست خدمات */}
           <Box>
             <Typography variant="h5" fontWeight={800} sx={{ mb: 2, lineHeight: 1.8 }}>
               همه خدمات پرسنلی،
@@ -498,6 +490,7 @@ export default function LoginPage() {
         </Box>
       </Paper>
 
+      {/* دیالوگ مسدودسازی IP */}
       {vpnDialog}
     </Box>
     </ThemeProvider>

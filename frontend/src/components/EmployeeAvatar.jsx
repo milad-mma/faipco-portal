@@ -4,20 +4,18 @@ import { fetchBirthdayPhotoThumbnailBlob } from "../api/employees";
 import DefaultPersonAvatar from "./DefaultPersonAvatar";
 
 /**
- * آواتار یک پرسنل - اگر عکسی در کاراوب داشته باشد (که هنگام Sync در
- * photo_thumbnail ذخیره شده) همان نمایش داده می‌شود، وگرنه آیکون پیش‌فرض.
- *
- * ⚠️ مثل داشبورد شخصی، فقط وقتی hasPhoto صریحاً true باشد درخواست تصویر
- * زده می‌شود - وگرنه برای هر نفرِ بدون عکس یک ۴۰۴ اضافه به سرور می‌خورد
- * (در فهرست تبریک‌گویندگان که ممکن است ده‌ها نفر باشند، این مهم است).
- *
- * ⚠️ objectURL در Cleanup آزاد می‌شود تا با باز/بسته شدن مکرر فهرست،
- * حافظه نشت نکند.
+ * آواتار دایره‌ای یک پرسنل: عکس بندانگشتی (photo_thumbnail که هنگام Sync از کاراوب ذخیره شده)
+ * یا آیکون پیش‌فرض در صورت نبود عکس.
+ * ورودی: employeeId، hasPhoto (فقط اگر true باشد تصویر درخواست می‌شود تا برای افراد بدون عکس
+ * درخواست ۴۰۴ اضافه زده نشود) و size (قطر به px، پیش‌فرض 30).
+ * خروجی: کادر دایره‌ای شامل Canvas تصویر یا DefaultPersonAvatar.
  */
 export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(null); // object URL تصویر دریافت‌شده؛ null = نمایش آیکون پیش‌فرض
   const canvasRef = useRef(null);
 
+  // دریافت blob تصویر و ساخت object URL؛ در cleanup درخواست لغو‌شده نادیده گرفته
+  // و object URL آزاد می‌شود تا با باز/بسته شدن مکرر فهرست‌ها حافظه نشت نکند
   useEffect(() => {
     if (!employeeId || !hasPhoto) {
       setPhotoUrl(null);
@@ -38,9 +36,7 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
     };
   }, [employeeId, hasPhoto]);
 
-  // ⚠️ نقاشی روی Canvas پس از آماده‌شدن تصویر. بعد از کشیدن، خودِ
-  // objectURL آزاد می‌شود تا حتی از طریق حافظه هم لینک قابل‌استفاده‌ای
-  // باقی نماند.
+  // کشیدن تصویر روی Canvas با ابعاد اصلی آن، پس از آماده شدن object URL
   useEffect(() => {
     if (!photoUrl || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -69,11 +65,9 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
         color: "text.secondary",
       }}
     >
-      {/* ⚠️ عمداً <img> استفاده نمی‌شود: با Canvas، «ذخیره تصویر» راست‌کلیک
-          کار نمی‌کند و هیچ src قابل‌کپی در DOM نمی‌ماند. این جلوی کاربر
-          عادی را می‌گیرد، ولی جلوگیری کامل ممکن نیست (اسکرین‌شات و تب
-          Network همیشه در دسترس‌اند) - لایه اصلی محافظت، واترمارکِ
-          شناسه بیننده است که سمت سرور روی تصویر حک می‌شود. */}
+      {/* به‌جای <img> از Canvas استفاده می‌شود تا «ذخیره تصویر» با راست‌کلیک کار نکند و src قابل‌کپی
+          در DOM نماند؛ منوی راست‌کلیک، کشیدن و انتخاب هم غیرفعال است. این محافظت کامل نیست
+          (اسکرین‌شات و تب Network)؛ لایه‌ی اصلی محافظت، واترمارک شناسه‌ی بیننده است که سمت سرور روی تصویر حک می‌شود. */}
       <Box
         component="canvas"
         ref={canvasRef}
@@ -90,6 +84,7 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
           pointerEvents: "none",
         }}
       />
+      {/* آیکون پیش‌فرض تا زمانی که تصویری در دست نیست */}
       {!photoUrl && <DefaultPersonAvatar />}
     </Box>
   );

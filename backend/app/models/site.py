@@ -17,12 +17,16 @@ from app.models.base import TimestampMixin
 
 
 class DbType(str, enum.Enum):
+    """نوع دیتابیس منبع یک سایت؛ تعیین می‌کند کدام Adapter برای اتصال استفاده شود."""
+
     mssql = "mssql"
     mysql = "mysql"
     postgresql = "postgresql"
 
 
 class SyncStatus(str, enum.Enum):
+    """وضعیت آخرین Sync یک اتصال سایت (never یعنی هنوز هیچ‌بار اجرا نشده)."""
+
     never = "never"
     success = "success"
     failed = "failed"
@@ -31,11 +35,13 @@ class SyncStatus(str, enum.Enum):
 
 
 class Site(Base, TimestampMixin):
+    """یک سایت (کارخانه/شعبه/سازمان) که پرسنلش از دیتابیس منبع خودش Sync می‌شود."""
+
     __tablename__ = "sites"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    code: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)  # کد یکتای سایت
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -66,7 +72,7 @@ class SiteConnection(Base, TimestampMixin):
     port: Mapped[int] = mapped_column(Integer, nullable=False)
     database_name: Mapped[str] = mapped_column(String(128), nullable=False)
     username: Mapped[str] = mapped_column(String(128), nullable=False)
-    password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # رمز عبور رمزنگاری‌شده با encrypt_secret
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -74,7 +80,7 @@ class SiteConnection(Base, TimestampMixin):
     last_sync_status: Mapped[SyncStatus] = mapped_column(
         Enum(SyncStatus, name="sync_status_enum"), default=SyncStatus.never, nullable=False
     )
-    last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)  # متن خطای آخرین Sync ناموفق
 
     site: Mapped["Site"] = relationship(back_populates="connection")
 
@@ -83,11 +89,9 @@ class AttendanceMappingMode(str, enum.Enum):
     """
     دو الگوی رایج داده خام تردد دستگاه‌های حضور و غیاب:
     - single_column: یک ردیف = یک تردد منفرد (ورود یا خروج، فرقی نمی‌کند)؛
-      چند ردیف در یک روز با date_column/time_column یکسان یعنی چند تردد.
-      این الگوی اصلی/پیش‌فرض این پروژه بوده است.
+      چند ردیف در یک روز یعنی چند تردد. این الگوی پیش‌فرض است.
     - enter_exit_columns: یک ردیف = یک نشست کامل (ورود+خروج با هم)؛ هر
-      ردیف چهار ستون جدا دارد (تاریخ/ساعت ورود، تاریخ/ساعت خروج) - رایج
-      در برخی نرم‌افزارهای حضور و غیاب دیگر.
+      ردیف چهار ستون جدا دارد (تاریخ/ساعت ورود، تاریخ/ساعت خروج).
     """
 
     single_column = "single_column"
@@ -135,7 +139,7 @@ class AttendanceMapping(Base, TimestampMixin):
 
     # نگاشت اختیاری جدول تقویم/تعطیلات — کاملاً مستقل از جدول تردد بالا.
     # اگر calendar_table_name خالی باشد، این قابلیت برای این سایت غیرفعال
-    # است (گزارش تردد بدون رنگ‌آمیزی تعطیلات، دقیقاً مثل قبل کار می‌کند).
+    # است و گزارش تردد بدون رنگ‌آمیزی تعطیلات نمایش داده می‌شود.
     # ساختار مورد انتظار: یک ردیف به‌ازای هر (سال، ماه شمسی)، با ستون‌های
     # روز شماره‌گذاری‌شده (مثلاً D1 تا D31) که هرکدام یا صفر (روز عادی)
     # یا یک عدد غیرصفر (تعطیل) هستند.
@@ -144,11 +148,11 @@ class AttendanceMapping(Base, TimestampMixin):
     calendar_month_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # پیشوند ستون‌های روز — مثلاً "D" یعنی ستون‌ها D1، D2، ...، D31 هستند
     calendar_day_column_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # ⚠️ اختیاری - جدول تقویم مشترک بین چند شعبه (کاراوب: Calen یکتا روی
+    # اختیاری: جدول تقویم مشترک بین چند شعبه (کاراوب: Calen یکتا روی
     # BranchCode+Year+Month): ستون شعبه؛ مقدارش «کد شعبه این سایت» از نگاشت پرسنل است
     calendar_branch_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # ⚠️ ستون‌های تکمیلی جدول تردد، لاگ تغییر تردد، کارکرد روزانه، شیفت‌ها و
+    # ستون‌های تکمیلی جدول تردد، لاگ تغییر تردد، کارکرد روزانه، شیفت‌ها و
     # تقویم شیفت گروهی (app/services/kara_schema.py - ATTENDANCE_SCHEMA_DEFAULTS)
     # برای اعمال مرخصی/ماموریت ساعتی روی تردد و برچسب‌های گزارش تردد.
     # هر بخش فقط اگر نگاشت شده باشد فعال است.

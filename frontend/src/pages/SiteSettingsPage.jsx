@@ -1,3 +1,6 @@
+// صفحه‌ی تنظیمات یک سایت (مسیر /sites/:siteId/settings).
+// تب‌ها: اتصال دیتابیس منبع، Mapping ستون‌های پرسنل، موقعیت GPS، نگاشت تردد کاراوب و نگاشت مرخصی/ماموریت کاراوب.
+// هر تب فرم مستقل خود را با ذخیره/حذف جداگانه دارد و نام جداول/ستون‌های کاراوب از همین‌جا قابل‌تغییر است.
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -43,15 +46,18 @@ import {
   fetchLeaveRequestMapping,
   saveLeaveRequestMapping,
 } from "../api/leaveRequestsAdmin";
+import OrgRootFilterSection from "../components/OrgRootFilterSection";
 import SchemaDiscoveryDialog from "../components/SchemaDiscoveryDialog";
 import PillTabs from "../components/PillTabs";
 
+// انواع دیتابیس منبع قابل اتصال
 const DB_TYPES = [
   { value: "postgresql", label: "PostgreSQL" },
   { value: "mysql", label: "MySQL" },
   { value: "mssql", label: "SQL Server" },
 ];
 
+// مقادیر اولیه‌ی فرم‌های اتصال، Mapping پرسنل و نگاشت تردد (وقتی هنوز چیزی ذخیره نشده)
 const EMPTY_CONNECTION = {
   db_type: "postgresql",
   host: "",
@@ -79,6 +85,8 @@ const EMPTY_MAPPING = {
   department_lookup_table: "",
   department_lookup_id_column: "",
   department_lookup_name_column: "",
+  department_lookup_parent_column: "",
+  root_department_codes: [],
   position_column: "",
   position_lookup_table: "",
   position_lookup_id_column: "",
@@ -104,8 +112,8 @@ const EMPTY_ATTENDANCE_MAPPING = {
   calendar_branch_column: "",
   kara_schema: {},
 };
-// نام‌های واقعی کاراوب برای فیلدهای اصلی تب «نگاشت تردد» - فقط برای دکمه
-// «پر کردن همه فیلدهای خالی با نام‌های کاراوب» (تا ذخیره نشود اثری ندارد)
+// نام‌های پیش‌فرض کاراوب برای فیلدهای اصلی تب «نگاشت تردد»؛ دکمه‌ی «پر کردن با نام‌های کاراوب»
+// فیلدهای خالی را با این‌ها پر می‌کند (تا ذخیره نشود اثری ندارد)
 const KARA_ATTENDANCE_MAIN_DEFAULTS = {
   table_name: "DataFile",
   personnel_code_column: "Emp_No",
@@ -119,6 +127,7 @@ const KARA_ATTENDANCE_MAIN_DEFAULTS = {
   calendar_branch_column: "BranchCode",
 };
 
+// مقدار اولیه‌ی فرم نگاشت مرخصی/ماموریت با نام‌های پیش‌فرض جداول و ستون‌های کاراوب
 const EMPTY_LEAVE_MAPPING = {
   table_name: "WF_Requests",
   request_id_column: "RequestId",
@@ -141,10 +150,10 @@ const EMPTY_LEAVE_MAPPING = {
   persian_start_date_column: "PersianStartDate",
   application_id_column: "ApplicationId",
   source_column: "Source",
-  destination_column: "Distination",
+  destination_column: "Distination",  // املای نام ستون در کاراوب همین است
   branch_code_column: "BranchCode",
   branch_code_value: null,
-  application_id_value: 4,
+  application_id_value: 4,  // مقدار ApplicationId درخواست‌های ثبت‌شده از پرتال
   kara_schema: {},
   action_id_column: "ActionId",
   action_lookup_table_name: "WF_Action",
@@ -173,12 +182,12 @@ const EMPTY_LEAVE_MAPPING = {
   wf_reviews_type_column: "ReviewType",
   wf_reviews_date_column: "ReviewDate",
   wf_reviews_show_to_personal_column: "ShowToPersonal",
-  wf_reviews_approved_type_value: 4,
+  wf_reviews_approved_type_value: 4,  // مقدار ReviewType برای نظر «تأیید»
 };
 
-// ⚠️ طبق درخواست صریح کاربر: هر نام جدول/ستونی که در ثبت کارکرد کاراوب و
-// گزارش مرخصی/ماموریت استفاده می‌شود از همین‌جا قابل‌تغییر است. مقدار
-// پیش‌فرض همان نام واقعی کاراوب است؛ فقط در صورت تفاوت نصب تغییر دهید.
+// عنوان فارسی گروه‌های کلیدهای kara_schema (پیشوند قبل از نقطه در کلید، مثل datafile.table).
+// هر نام جدول/ستون مورد استفاده در ثبت کارکرد و گزارش مرخصی/ماموریت کاراوب از این گروه‌ها قابل‌تغییر است؛
+// پیش‌فرض همان نام واقعی کاراوب است.
 const KARA_SCHEMA_GROUPS = {
   // تب «نگاشت تردد»
   datafile: "ستون‌های تکمیلی جدول تردد (اعمال مرخصی/ماموریت ساعتی؛ Modify/Direction/VT/AC/DeviceNumber برای درج تردد فراموش‌شده)",
@@ -200,13 +209,14 @@ const KARA_SCHEMA_GROUPS = {
   cards: "ستون‌های تکمیلی جدول کارت‌ها",
 };
 
-// ⚠️ طبق درخواست صریح کاربر: بدون تیک فعال/غیرفعال - هر بخش فقط وقتی کار
-// می‌کند که نگاشت شده باشد. گروه جدول‌دار: نام جدول خالی = غیرفعال؛ اگر پر
-// باشد همه ستون‌هایش لازم است. «پر کردن با نام‌های کاراوب» فقط فرم را پر
-// می‌کند - تا ذخیره نشود اعمال نمی‌شود.
+// فیلدهای ستون‌های تکمیلی کاراوب (kara_schema) گروه‌بندی‌شده بر اساس پیشوند کلید.
+// ورودی: مقادیر فعلی، نام‌های پیش‌فرض، onChange(مقادیر جدید) و disabled.
+// هر گروه فقط وقتی فعال است که نگاشت شده باشد: گروه جدول‌دار با نام جدول خالی غیرفعال است و
+// با نام جدول پر همه‌ی ستون‌هایش لازم است. دکمه‌ی «پر کردن» فقط فرم را پر می‌کند و تا ذخیره اعمال نمی‌شود.
 function KaraSchemaFields({ values, defaults, onChange, disabled }) {
   const keys = Object.keys(defaults || {});
   if (keys.length === 0) return null;
+  // گروه‌بندی کلیدها بر اساس پیشوند قبل از نقطه با حفظ ترتیب
   const groups = [];
   for (const key of keys) {
     const group = key.split(".")[0];
@@ -219,12 +229,14 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
   }
   const current = values || {};
 
+  // فیلدهای خالی را با نام‌های پیش‌فرض کاراوب پر می‌کند
   function fillWithDefaults() {
     const next = { ...current };
     for (const key of keys) if (!next[key]) next[key] = defaults[key];
     onChange(next);
   }
 
+  // همه‌ی کلیدهای یک گروه را پاک می‌کند (گروه نگاشت‌نشده می‌شود)
   function clearGroup(groupKeys) {
     const next = { ...current };
     for (const key of groupKeys) delete next[key];
@@ -241,7 +253,7 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
       {groups.map(({ group, keys: groupKeys }) => {
         const tableKey = `${group}.table`;
         const hasTable = groupKeys.includes(tableKey);
-        const mapped = hasTable ? Boolean(current[tableKey]) : groupKeys.some((k) => current[k]);
+        const mapped = hasTable ? Boolean(current[tableKey]) : groupKeys.some((k) => current[k]);  // جدول‌دار: نام جدول پر؛ بدون جدول: حداقل یک ستون پر
         return (
           <Box key={group}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -258,8 +270,8 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {groupKeys.map((key) => {
                 const role = key.split(".")[1];
-                // برچسب: پیش‌فرض کاراوب؛ برای کلیدهای بدون پیش‌فرض (اختیاری، مثل
-                // cards.branch_code) از نام کلید تا فیلد بی‌نام نماند
+                // برچسب فیلد بر اساس نقش کلید یا نام پیش‌فرض کاراوب؛ برای کلیدهای اختیاری بدون پیش‌فرض
+                // (مثل cards.branch_code) از نام نقش استفاده می‌شود
                 const label =
                   role === "table"
                     ? "نام جدول"
@@ -294,6 +306,7 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
   );
 }
 
+// آکاردئون جمع‌شونده‌ی ستون‌های تکمیلی کاراوب با عنوان و توضیح؛ بقیه‌ی ورودی‌ها به KaraSchemaFields داده می‌شوند
 function KaraSchemaAccordion({ title, description, values, defaults, onChange, disabled }) {
   return (
     <Accordion variant="outlined" disableGutters sx={{ borderRadius: 2, "&:before": { display: "none" } }}>
@@ -312,25 +325,28 @@ function KaraSchemaAccordion({ title, description, values, defaults, onChange, d
   );
 }
 
+// کامپوننت صفحه‌ی تنظیمات سایت؛ siteId از URL و تب اولیه از پارامتر ?tab= خوانده می‌شود.
+// همه‌ی تنظیمات سایت را یک‌جا بارگذاری و فرم هر تب را مدیریت می‌کند.
 export default function SiteSettingsPage() {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // تب اولیه از پارامتر ?tab=؛ مقدار نامعتبر یا خالی = connection
   const initialTab = ["mapping", "gps", "attendance-mapping", "leave-mapping"].includes(searchParams.get("tab"))
     ? searchParams.get("tab")
     : "connection";
 
-  const [site, setSite] = useState(null);
+  const [site, setSite] = useState(null);  // اطلاعات سایت؛ null = یافت نشد/در حال بارگذاری
   const [attendanceMappingForm, setAttendanceMappingForm] = useState(EMPTY_ATTENDANCE_MAPPING);
-  const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] = useState(false);
+  const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] = useState(false);  // آیا نگاشت تردد روی سرور ذخیره شده است (برای نمایش دکمه‌ی حذف)
   const [isSavingAttendanceMapping, setIsSavingAttendanceMapping] = useState(false);
   const [attendanceMappingResult, setAttendanceMappingResult] = useState(null); // { success, message } | null
   const [leaveMappingForm, setLeaveMappingForm] = useState(EMPTY_LEAVE_MAPPING);
-  // نام‌های پیش‌فرض کاراوب - فقط برای دکمه «پر کردن با نام‌های کاراوب»
+  // نام‌های پیش‌فرض ستون‌های تکمیلی کاراوب ({ attendance, leave }) برای دکمه‌های «پر کردن»
   const [karaDefaults, setKaraDefaults] = useState(null);
 
-  // ⚠️ طبق درخواست کاربر: یک دکمه که «همه» فیلدهای خالی تب (فیلدهای اصلی +
-  // ستون‌های تکمیلی) را با نام‌های واقعی کاراوب پر کند - نه فقط آکاردئون.
+  // همه‌ی فیلدهای خالی فرم (فیلدهای اصلی و ستون‌های تکمیلی kara_schema) را با نام‌های کاراوب پر می‌کند.
+  // ورودی: فرم، پیش‌فرض‌های اصلی و پیش‌فرض‌های kara_schema؛ خروجی: فرم جدید
   function fillEmpty(form, mainDefaults, schemaDefaults) {
     const next = { ...form };
     for (const [key, value] of Object.entries(mainDefaults)) {
@@ -341,13 +357,16 @@ export default function SiteSettingsPage() {
     next.kara_schema = schema;
     return next;
   }
+  // پر کردن فیلدهای خالی فرم نگاشت تردد با نام‌های کاراوب
   function fillAttendanceWithKara() {
     setAttendanceMappingForm(fillEmpty(attendanceMappingForm, KARA_ATTENDANCE_MAIN_DEFAULTS, karaDefaults?.attendance));
   }
+  // پر کردن فیلدهای خالی فرم مرخصی با نام‌های کاراوب (kara_schema و مقدار شعبه جزو پیش‌فرض‌های اصلی نیستند)
   function fillLeaveWithKara() {
     const { kara_schema: _ignored, branch_code_value: _bv, ...mainDefaults } = EMPTY_LEAVE_MAPPING;
     setLeaveMappingForm(fillEmpty(leaveMappingForm, mainDefaults, karaDefaults?.leave));
   }
+  // بارگذاری نام‌های پیش‌فرض ستون‌های تکمیلی کاراوب از سرور
   useEffect(() => {
     fetchKaraSchemaDefaults()
       .then(setKaraDefaults)
@@ -361,17 +380,19 @@ export default function SiteSettingsPage() {
 
   const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
   const [hasExistingConnection, setHasExistingConnection] = useState(false);
-  const [schemaDiscoveryOpen, setSchemaDiscoveryOpen] = useState(false);
+  const [schemaDiscoveryOpen, setSchemaDiscoveryOpen] = useState(false);  // دیالوگ کشف خودکار جداول/ستون‌های دیتابیس منبع
   const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [hasExistingMapping, setHasExistingMapping] = useState(false);
   const [gpsForm, setGpsForm] = useState({ gps_latitude: "", gps_longitude: "", gps_radius_meters: "" });
   const [isSavingGps, setIsSavingGps] = useState(false);
-  const [gpsResult, setGpsResult] = useState(null);
+  const [gpsResult, setGpsResult] = useState(null);  // { success, message } | null
 
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null); // { success, message } | null
+  const [result, setResult] = useState(null); // نتیجه‌ی ذخیره/حذف تب‌های اتصال و Mapping: { success, message } | null
   const [isSaving, setIsSaving] = useState(false);
 
+  // بارگذاری هم‌زمان سایت، اتصال، Mapping پرسنل، نگاشت تردد و نگاشت مرخصی و پر کردن فرم‌ها؛
+  // هر مورد ذخیره‌نشده (خطا/۴۰۴) null در نظر گرفته می‌شود
   useEffect(() => {
     Promise.all([
       fetchSites().then((sites) => sites.find((s) => String(s.id) === siteId)),
@@ -419,6 +440,8 @@ export default function SiteSettingsPage() {
           department_lookup_table: mapping.department_lookup_table || "",
           department_lookup_id_column: mapping.department_lookup_id_column || "",
           department_lookup_name_column: mapping.department_lookup_name_column || "",
+          department_lookup_parent_column: mapping.department_lookup_parent_column || "",
+          root_department_codes: mapping.root_department_codes || [],
           position_column: mapping.position_column || "",
           position_lookup_table: mapping.position_lookup_table || "",
           position_lookup_id_column: mapping.position_lookup_id_column || "",
@@ -458,6 +481,7 @@ export default function SiteSettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
+  // تغییر تب: پیام‌ها را پاک و تب جدید را در پارامتر ?tab= آدرس ثبت می‌کند
   function handleTabChange(_, value) {
     setTab(value);
     setResult(null);
@@ -465,6 +489,7 @@ export default function SiteSettingsPage() {
     setSearchParams({ tab: value });
   }
 
+  // اطلاعات اتصال دیتابیس منبع را ذخیره می‌کند (رمز خالی = بدون تغییر رمز فعلی)
   async function handleSaveConnection() {
     setError("");
     setResult(null);
@@ -480,6 +505,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // پس از تأیید، اتصال دیتابیس سایت را حذف و فرم را خالی می‌کند
   async function handleDeleteConnection() {
     if (!window.confirm("اتصال دیتابیس این سایت حذف شود؟")) return;
     setIsSaving(true);
@@ -495,6 +521,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // Mapping ستون‌های پرسنل را ذخیره می‌کند
   async function handleSaveMapping() {
     setError("");
     setResult(null);
@@ -510,6 +537,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // پس از تأیید، Mapping ستون‌های پرسنل را حذف و فرم را خالی می‌کند
   async function handleDeleteMapping() {
     if (!window.confirm("Mapping ستون‌های این سایت حذف شود؟")) return;
     setIsSaving(true);
@@ -525,6 +553,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // موقعیت فعلی دستگاه (Geolocation با دقت بالا) را در فیلدهای عرض و طول جغرافیایی می‌گذارد
   function handleUseCurrentLocation() {
     if (!("geolocation" in navigator)) {
       setGpsResult({ success: false, message: "مرورگر شما از موقعیت‌یابی پشتیبانی نمی‌کند." });
@@ -545,6 +574,8 @@ export default function SiteSettingsPage() {
     );
   }
 
+  // موقعیت GPS و شعاع مجاز سایت را ذخیره می‌کند؛ هر سه فیلد باید پر یا هر سه خالی باشند
+  // (خالی = غیرفعال‌شدن محدودیت مکانی)
   async function handleSaveGps() {
     setGpsResult(null);
     setIsSavingGps(true);
@@ -573,6 +604,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // نگاشت تردد (به‌همراه kara_schema) را ذخیره می‌کند
   async function handleSaveAttendanceMapping() {
     setAttendanceMappingResult(null);
     setIsSavingAttendanceMapping(true);
@@ -590,6 +622,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // نگاشت مرخصی/ماموریت را ذخیره و فرم را با مقادیر برگشتی سرور (روی پیش‌فرض‌ها) به‌روز می‌کند
   async function handleSaveLeaveMapping() {
     setLeaveMappingResult(null);
     setIsSavingLeaveMapping(true);
@@ -608,6 +641,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // پس از تأیید، نگاشت مرخصی/ماموریت را حذف و فرم را به پیش‌فرض برمی‌گرداند
   async function handleDeleteLeaveMapping() {
     if (!window.confirm("نگاشت مرخصی/ماموریت این سایت حذف شود؟ ثبت درخواست جدید برای پرسنل این سایت دیگر ممکن نخواهد بود."))
       return;
@@ -628,10 +662,9 @@ export default function SiteSettingsPage() {
   }
 
   /**
-   * پیشنهاد مرحله دوم (بر اساس نام ستون) را که کاربر در
-   * SchemaDiscoveryDialog تأیید کرده، روی فرم Mapping مربوطه اعمال
-   * می‌کند و به تب مربوطه سوییچ می‌کند - این فقط فرم را پر می‌کند،
-   * ذخیره واقعی همچنان نیازمند کلیک صریح روی دکمه «ذخیره» است.
+   * پیشنهاد ستون‌های تأییدشده در SchemaDiscoveryDialog را روی فرم مربوطه اعمال و به تب آن می‌رود.
+   * ورودی: نوع نگاشت (employee، attendance_single، attendance_enter_exit، department_lookup،
+   * position_lookup، photo، calendar)، نام جدول و پیشنهادها. فقط فرم پر می‌شود و ذخیره با دکمه‌ی «ذخیره» است.
    */
   function handleApplySuggestion(mappingType, tableName, suggestions) {
     if (mappingType === "employee") {
@@ -716,6 +749,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // پس از تأیید، نگاشت تردد را حذف و فرم را خالی می‌کند
   async function handleDeleteAttendanceMapping() {
     if (!window.confirm("نگاشت تردد این سایت حذف شود؟ گزارش تردد ماهانه برای پرسنل این سایت دیگر در دسترس نخواهد بود.")) return;
     setIsSavingAttendanceMapping(true);
@@ -734,6 +768,7 @@ export default function SiteSettingsPage() {
     }
   }
 
+  // نشانگر بارگذاری تا رسیدن همه‌ی تنظیمات
   if (isLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -754,8 +789,8 @@ export default function SiteSettingsPage() {
       </Stack>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-        {/* ⚠️ handleTabChange امضای MUI دارد (event, value) - اینجا فقط
-            value پاس داده می‌شود، پس با null فراخوانی می‌شود. */}
+        {/* نوار تب‌ها؛ handleTabChange امضای MUI (event, value) دارد و با null به‌جای event صدا زده می‌شود.
+            در حین ذخیره، تغییر تب غیرفعال است. */}
         <PillTabs
           value={tab}
           onChange={(k) => !isSaving && handleTabChange(null, k)}
@@ -768,6 +803,7 @@ export default function SiteSettingsPage() {
           ]}
         />
 
+        {/* تب اتصال دیتابیس منبع */}
         {tab === "connection" && (
           <Stack spacing={2}>
             <TextField
@@ -821,6 +857,7 @@ export default function SiteSettingsPage() {
               }
             />
 
+            {/* پیام نتیجه و دکمه‌های ذخیره، حذف و کشف ساختار دیتابیس */}
             {(result || error) && (
               <Alert severity={error || !result?.success ? "error" : "success"}>{error || result.message}</Alert>
             )}
@@ -853,8 +890,10 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
 
+        {/* تب Mapping ستون‌های جدول پرسنل */}
         {tab === "mapping" && (
           <Stack spacing={2}>
+            {/* جدول اصلی پرسنل و ستون‌های پایه */}
             <Typography variant="subtitle2" fontWeight={700}>
               جدول اصلی پرسنل
             </Typography>
@@ -942,6 +981,7 @@ export default function SiteSettingsPage() {
 
             <Divider sx={{ my: 1 }} />
 
+            {/* فیلتر شعبه برای دیتابیس پرسنل مشترک */}
             <Typography variant="subtitle2" fontWeight={700}>
               شعبه (اختیاری - برای دیتابیس پرسنل مشترک بین چند سایت)
             </Typography>
@@ -970,6 +1010,7 @@ export default function SiteSettingsPage() {
 
             <Divider sx={{ my: 1 }} />
 
+            {/* واحد سازمانی: ستون کد واحد و جدول Lookup نام واحد */}
             <Typography variant="subtitle2" fontWeight={700}>
               واحد سازمانی (اختیاری)
             </Typography>
@@ -1010,6 +1051,17 @@ export default function SiteSettingsPage() {
 
             <Divider sx={{ my: 1 }} />
 
+            {/* تقسیم درخت واحدها بین سایت‌های هم‌منبع (واحدهای ریشه) */}
+            <OrgRootFilterSection
+              siteId={siteId}
+              mappingForm={mappingForm}
+              setMappingForm={setMappingForm}
+              disabled={isSaving}
+            />
+
+            <Divider sx={{ my: 1 }} />
+
+            {/* سمت: ستون کد سمت و جدول Lookup عنوان سمت */}
             <Typography variant="subtitle2" fontWeight={700}>
               سمت / عنوان شغلی (اختیاری)
             </Typography>
@@ -1050,6 +1102,7 @@ export default function SiteSettingsPage() {
 
             <Divider sx={{ my: 1 }} />
 
+            {/* جدول عکس بندانگشتی پرسنل */}
             <Typography variant="subtitle2" fontWeight={700}>
               عکس پرسنل (اختیاری)
             </Typography>
@@ -1106,6 +1159,7 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
 
+        {/* تب موقعیت GPS و شعاع مجاز سایت */}
         {tab === "gps" && (
           <Stack spacing={2.5}>
             <Alert severity="info">
@@ -1170,6 +1224,7 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
 
+        {/* تب نگاشت جدول تردد دستگاه‌ها */}
         {tab === "attendance-mapping" && (
           <Stack spacing={2.5}>
             <Alert severity="info">
@@ -1222,6 +1277,7 @@ export default function SiteSettingsPage() {
               <MenuItem value="enter_exit_columns">ستون‌های جدای ورود و خروج (هر ردیف = یک نشست کامل)</MenuItem>
             </TextField>
 
+            {/* فیلدهای تاریخ/ساعت بسته به روش نگاشت: تک‌ستونی یا ستون‌های جدای ورود و خروج */}
             {attendanceMappingForm.mapping_mode === "single_column" ? (
               <>
                 <TextField
@@ -1280,6 +1336,7 @@ export default function SiteSettingsPage() {
               </>
             )}
 
+            {/* جدول تقویم و تعطیلات */}
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2" fontWeight={700}>
               تقویم و تعطیلات (اختیاری)
@@ -1334,6 +1391,7 @@ export default function SiteSettingsPage() {
               helperText='برای تقویم مشترک بین چند شعبه (کاراوب: "BranchCode") - مقدارش «کد شعبه این سایت» در نگاشت پرسنل است'
             />
 
+            {/* ستون‌های تکمیلی کاراوب برای گزارش تردد */}
             <KaraSchemaAccordion
               title="مرخصی/ماموریت، تعطیل و غیبت در گزارش تردد (کاراوب)"
               description="جدول، کد پرسنلی، تاریخ و ساعت تردد همان نگاشت بالای همین صفحه است. با نگاشت ستون وضعیت (Status)، مرخصی/ماموریت ساعتی در گزارش دیده می‌شود؛ با کارکرد روزانه و شیفت‌ها، روزهای غیرکاری شیفتی «تعطیل» می‌شوند؛ بقیه ستون‌ها برای اعمال درخواست ساعتی روی تردد لازم‌اند. هر بخش فقط وقتی نگاشت شود فعال است."
@@ -1372,6 +1430,8 @@ export default function SiteSettingsPage() {
           </Stack>
         )}
 
+        {/* تب نگاشت جدول درخواست‌های مرخصی/ماموریت (WF_Requests) و جداول مرجع؛
+            هر بخش آرایه‌ای از [کلید فرم، برچسب] است که به TextField تبدیل می‌شود */}
         {tab === "leave-mapping" && (
           <Stack spacing={2}>
             <Alert
@@ -1624,10 +1684,8 @@ export default function SiteSettingsPage() {
                   sx={{ minWidth: 220 }}
                 />
               ))}
-              {/* ⚠️ فیلد «مقدار رد» حذف شد - با داده واقعی تأیید شد که
-                  ReviewType اصلاً تصمیم (تأیید/رد) را نشان نمی‌دهد و کاراوب
-                  برای هر دو حالت همین یک مقدار را می‌نویسد. تصمیم واقعی
-                  فقط در IsFinalApproved ذخیره می‌شود. */}
+              {/* مقدار ثابت ReviewType؛ کاراوب برای تأیید و رد هر دو همین مقدار را می‌نویسد
+                  و تصمیم واقعی فقط در IsFinalApproved ذخیره می‌شود */}
               <TextField
                 size="small"
                 type="number"
@@ -1643,6 +1701,7 @@ export default function SiteSettingsPage() {
               />
             </Stack>
 
+            {/* ستون‌های تکمیلی کاراوب برای ثبت مرخصی/ماموریت در کارکرد */}
             <KaraSchemaAccordion
               title="نگاشت ثبت مرخصی/ماموریت در کارکرد کاراوب"
               description="ثبت مرخصی/ماموریت روزانه در کارکرد فقط وقتی فعال است که «کاربران کاراوب» و «مرخصی/ماموریت روزانه» نگاشت شده باشند. برای ساعتی، ستون‌های تکمیلی تردد در تب «نگاشت تردد» هم لازم است. جدول تردد دوباره اینجا نگاشت نمی‌شود."
@@ -1680,6 +1739,7 @@ export default function SiteSettingsPage() {
         )}
       </Card>
 
+      {/* دیالوگ کشف ساختار دیتابیس منبع و پیشنهاد ستون‌ها */}
       <SchemaDiscoveryDialog
         open={schemaDiscoveryOpen}
         onClose={() => setSchemaDiscoveryOpen(false)}

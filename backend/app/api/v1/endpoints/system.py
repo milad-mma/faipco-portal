@@ -1,11 +1,23 @@
 """
+Endpoint های تنظیمات و ابزارهای سیستمی (پنل Admin → System):
+
+/system/version                    (GET)  نسخه برنامه — بدون احراز هویت
+/system/usage-stats, /server-stats (GET)  داده خام نمودارهای استفاده و مصرف سرور
+/system/check-update               (GET)  بررسی نسخه جدیدتر در GitHub
+/system/apply-update               (POST) اجرای install.sh در پس‌زمینه
+/system/run-checks, /check-status  اجرای check.sh و وضعیت آن
+/system/update-status              (GET)  وضعیت زنده آپدیت
 /system/cache-bust   (POST)   نصب اجباری Service Worker جدید برای همه کاربران
                                 (پاک‌کردن کامل کش اپلیکیشن — انگار همه دارند
-                                اولین‌بار اپ را باز می‌کنند) — فقط Admin کامل.
+                                اولین‌بار اپ را باز می‌کنند).
 /system/ip-allowlist (GET/PUT) وضعیت کامل قابلیت محدودیت IP: یک متن
                                 ویرایش‌پذیر (هر رنج در یک خط) + کلید
-                                فعال/غیرفعال مستقل — فقط Admin کامل.
+                                فعال/غیرفعال مستقل.
 /system/ip-blocked-message (GET/PUT) پیامی که به کاربر مسدودشده نمایش داده می‌شود.
+/system/login-background           عکس پس‌زمینه صفحه ورود (دریافت عمومی، آپلود/حذف)
+/system/branding, /logo/{slug}, /pwa-icon/{variant}.png  برندینگ، لوگوها و آیکون‌های PWA
+/system/manifest.json, /index.html نسخه‌های پویای Manifest و index.html با برندینگ فعلی
+/system/smtp-settings, /sms-settings  تنظیمات و تست ایمیل و پیامک
 """
 import ipaddress
 import hashlib
@@ -65,6 +77,9 @@ _IPV4_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b")
 
 
 def _normalize_cidr(raw: str) -> str | None:
+    """
+    ورودی: یک رشته IP یا CIDR. خروجی: شکل استاندارد CIDR (IP تکی ← /32)، یا None اگر نامعتبر باشد.
+    """
     try:
         network = ipaddress.ip_network(raw, strict=False)
     except ValueError:
@@ -78,6 +93,7 @@ async def get_app_version():
     نسخه فعلی برنامه — عمداً بدون هیچ احراز هویتی، چون قرار است حتی در
     صفحه ورود (قبل از Login) هم قابل دیدن باشد — مثلاً برای تأیید اینکه
     آخرین Deploy واقعاً روی سرور نشسته، بدون نیاز به SSH یا ورود به پنل.
+    خروجی: version و update_channel.
     """
     settings = get_settings()
     return {"version": settings.APP_VERSION, "update_channel": settings.UPDATE_CHANNEL}
@@ -92,6 +108,7 @@ async def usage_stats(
     داده خام ساعتی استفاده از پرتال (آخرین ۹۰ روز) — برای نمودار «میزان
     استفاده» در پنل Admin. تجمیع روزانه/هفتگی/ماهانه و «کدام ساعت
     شبانه‌روز پرترافیک‌تر است» عمداً در فرانت‌اند انجام می‌شود.
+    مجوز system.backup.
     """
     stats = await get_usage_stats(db)
     return [
@@ -107,7 +124,7 @@ async def server_stats(
     """
     داده خام مصرف CPU/RAM/دیسک خودِ سرور (آخرین ۷ روز، هر ۱۰ دقیقه یک
     نمونه) — برای نمودار «مصرف سرور» در پنل Admin. تجمیع/محاسبه اوج مصرف
-    عمداً در فرانت‌اند انجام می‌شود.
+    عمداً در فرانت‌اند انجام می‌شود. مجوز system.backup.
     """
     stats = await get_server_stats(db)
     return [
@@ -132,7 +149,7 @@ async def check_update(
     """
     بررسی وجود نسخه جدیدتر در GitHub — کاملاً Read-Only. همان مجوز
     Backup/Restore را می‌خواهد چون این قابلیت هم عملاً یک قابلیت
-    سطح-زیرساخت است، نه یک تنظیم معمولی.
+    سطح-زیرساخت است، نه یک تنظیم معمولی. مجوز system.backup.
     """
     return await check_for_update()
 
@@ -145,7 +162,7 @@ async def apply_update(
     current_user: User = Depends(require_permission("system.backup")),
 ):
     """
-    ⚠️ این Endpoint عملاً معادل اجرای دستی «sudo bash install.sh» از طریق
+    این Endpoint عملاً معادل اجرای دستی «sudo bash install.sh» از طریق
     SSH است — نصب/آپدیت کامل (شامل نصب پکیج‌های سیستمی در صورت نیاز، Build
     مجدد فرانت‌اند، Migration های دیتابیس، و Restart سرویس) را از راه دور،
     از همین پنل، راه می‌اندازد. مثل Restore، فقط اعتبارسنجی سریع همین‌جا
@@ -156,12 +173,15 @@ async def apply_update(
     چون این یک عملیات با دسترسی کامل root است، تکیه‌کردن فقط به همان
     Session ورود (که در صورت دزدیده‌شدن Token به‌تنهایی کافی می‌بود) کافی
     نیست.
+    مجوز system.backup. خطا: 401 رمز اشتباه، 400 عبارت تأیید اشتباه/نبود install.sh، 500 خطای پیش‌بینی‌نشده.
     """
+    # تأیید دوباره رمز عبور حساب جاری
     try:
         await AuthService(db).verify_current_credential(current_user, password)
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
+    # راه‌اندازی install.sh در پس‌زمینه
     try:
         schedule_update(confirm_phrase=confirm)
     except UpdateError as e:
@@ -187,6 +207,7 @@ async def run_checks(
     اجرای بررسی‌های سلامت پروژه (مسیرهای API، تست‌ها، Migration ها روی دیتابیس
     موقت) از پنل - فقط خواندن/تست، بدون تغییر در پروژه یا دیتابیس واقعی؛ به
     همین دلیل برخلاف آپدیت، رمز عبور دوباره خواسته نمی‌شود.
+    مجوز system.backup. خطا: 400 اگر اسکریپت نباشد، بررسی دیگری در جریان باشد یا راه‌اندازی شکست بخورد.
     """
     try:
         schedule_checks()
@@ -199,7 +220,7 @@ async def run_checks(
 async def check_status(
     _user=Depends(require_permission("system.backup")),
 ):
-    """وضعیت زنده آخرین اجرای بررسی‌ها - همان الگوی /update-status."""
+    """وضعیت زنده آخرین اجرای بررسی‌ها (log، is_running، is_passed، is_failed). مجوز system.backup."""
     return get_check_status()
 
 
@@ -207,7 +228,7 @@ async def check_status(
 async def update_status(
     _user=Depends(require_permission("system.backup")),
 ):
-    """وضعیت زنده آخرین آپدیت — دقیقاً همان الگوی /backup/restore-status."""
+    """وضعیت زنده آخرین آپدیت (log، is_running، is_finished، is_failed). مجوز system.backup."""
     return get_update_status()
 
 
@@ -215,6 +236,10 @@ async def update_status(
 async def cache_bust(
     _user=Depends(require_permission("system.cache_bust")),
 ):
+    """
+    با تغییر sw.js همه کاربران را وادار به دریافت نسخه تازه اپ می‌کند. مجوز system.cache_bust.
+    خروجی: نسخه جدید cache-bust. خطا: 500 اگر sw.js پیدا نشود یا خطای دیگری رخ دهد.
+    """
     try:
         new_version = bump_app_cache_version()
     except CacheBustError as e:
@@ -235,6 +260,7 @@ async def cache_bust(
 
 
 async def _build_ip_allowlist_state(db: AsyncSession) -> IpAllowlistStateOut:
+    """خروجی: همه CIDR های ذخیره‌شده (مرتب، هر کدام در یک خط)، تعداد آن‌ها و وضعیت فعال بودن محدودیت IP."""
     result = await db.execute(select(IpAllowlistEntry.cidr).order_by(IpAllowlistEntry.cidr))
     cidrs = [row[0] for row in result.all()]
     enabled = await SystemSettingsService(db).get_ip_allowlist_enabled()
@@ -246,6 +272,7 @@ async def get_ip_allowlist(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.ip_allowlist")),
 ):
+    """وضعیت کامل محدودیت IP را برمی‌گرداند. مجوز system.ip_allowlist."""
     return await _build_ip_allowlist_state(db)
 
 
@@ -260,8 +287,9 @@ async def save_ip_allowlist(
     فهرست فعلی دیتابیس می‌شود — خط‌های خالی/نامعتبر نادیده گرفته می‌شوند،
     تکراری‌ها خودکار یکی می‌شوند. برای فهرست‌های بزرگ (حتی چند هزار خط، مثل
     یک فایروال کامل) هم مناسب است: یک Delete کلی + یک Insert دسته‌ای، نه
-    عملیات ردیف‌به‌ردیف.
+    عملیات ردیف‌به‌ردیف. مجوز system.ip_allowlist.
     """
+    # استخراج و استانداردسازی CIDR های معتبر از خطوط متن (set برای حذف تکراری‌ها)
     valid_cidrs: set[str] = set()
     for line in payload.text.splitlines():
         line = line.strip()
@@ -271,6 +299,7 @@ async def save_ip_allowlist(
         if normalized:
             valid_cidrs.add(normalized)
 
+    # جایگزینی کامل فهرست: حذف همه ردیف‌ها و درج فهرست جدید
     await db.execute(delete(IpAllowlistEntry))
     now = datetime.now(timezone.utc)
     for cidr in valid_cidrs:
@@ -287,6 +316,7 @@ async def get_ip_blocked_message(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.ip_allowlist")),
 ):
+    """پیام نمایش‌داده‌شده به IP مسدود را برمی‌گرداند. مجوز system.ip_allowlist."""
     message = await SystemSettingsService(db).get_ip_blocked_message()
     return IpBlockedMessageOut(message=message)
 
@@ -297,6 +327,7 @@ async def update_ip_blocked_message(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.ip_allowlist")),
 ):
+    """پیام مسدودی IP را ذخیره می‌کند. مجوز system.ip_allowlist. خطا: 400 برای متن خالی."""
     try:
         message = await SystemSettingsService(db).set_ip_blocked_message(payload.message)
     except ValueError as e:
@@ -306,17 +337,17 @@ async def update_ip_blocked_message(
 
 # ---------- عکس پس‌زمینه صفحه ورود («تنظیمات سامانه») ----------
 
-ALLOWED_LOGIN_BACKGROUND_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_LOGIN_BACKGROUND_TYPES = {"image/jpeg", "image/png", "image/webp"}  # بر اساس Content-Type اعلام‌شده کلاینت
 MAX_LOGIN_BACKGROUND_SIZE = 8 * 1024 * 1024  # ۸ مگابایت — کافی برای یک عکس پس‌زمینه با کیفیت خوب
 
 
 @router.get("/login-background")
 async def get_login_background(db: AsyncSession = Depends(get_db)):
     """
-    ⚠️ عمداً بدون هیچ احراز هویتی — صفحه ورود قبل از Login نمایش داده
+    عکس پس‌زمینه صفحه ورود را برمی‌گرداند؛ عمداً بدون هیچ احراز هویتی — صفحه ورود قبل از Login نمایش داده
     می‌شود، پس این تصویر باید همان‌جا هم قابل‌دریافت باشد. اگر هنوز چیزی
     آپلود نشده، ۴۰۴ برمی‌گرداند (فرانت‌اند این حالت را با پس‌زمینه پیش‌فرض
-    فعلی جایگزین می‌کند).
+    جایگزین می‌کند).
     """
     result = await SystemSettingsService(db).get_login_background()
     if result is None:
@@ -331,6 +362,10 @@ async def upload_login_background(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
+    """
+    عکس پس‌زمینه صفحه ورود را ذخیره می‌کند. مجوز system.settings.
+    خطا: 400 برای نوع غیرمجاز یا حجم بیش از ۸ مگابایت.
+    """
     if file.content_type not in ALLOWED_LOGIN_BACKGROUND_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -351,6 +386,7 @@ async def delete_login_background(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
+    """عکس پس‌زمینه صفحه ورود را حذف می‌کند (بازگشت به پیش‌فرض). مجوز system.settings."""
     await SystemSettingsService(db).delete_login_background()
     return {"success": True}
 
@@ -360,7 +396,8 @@ async def delete_login_background(
 ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml"}
 MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً خیلی کوچک‌تر از یک عکس پس‌زمینه است
 
-# چهار لوگوی کاملاً مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش:
+# لوگوهای مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش
+# (به‌علاوه لوگوی اختصاصی هر جای نمایش با slug به شکل surface-<name>):
 #   app_logo        → درون‌برنامه‌ای، اندازه‌های بزرگ (اسپلش، پنل کاربری) — هر اندازه‌ای
 #   app_logo_small  → درون‌برنامه‌ای، اندازه‌های کوچک (نوار بالا، صفحه ورود) — اگر
 #                      تنظیم نشود، همان app_logo (با Scale کوچک‌تر) استفاده می‌شود
@@ -372,6 +409,7 @@ _VALID_LOGO_SLUGS = {"app-logo", "app-logo-small", "pwa-icon", "favicon"} | {
 
 
 def _logo_slug_to_key(slug: str) -> str:
+    """slug مسیر (مثل app-logo) را به نام لوگو در سرویس (app_logo) تبدیل می‌کند. خطا: 404 برای slug نامعتبر."""
     if slug not in _VALID_LOGO_SLUGS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع لوگو نامعتبر است")
     return slug.replace("-", "_")
@@ -379,7 +417,7 @@ def _logo_slug_to_key(slug: str) -> str:
 
 @router.get("/branding", response_model=BrandingOut)
 async def get_branding(db: AsyncSession = Depends(get_db)):
-    """⚠️ عمداً بدون احراز هویت — اسپلش‌اسکرین و صفحه ورود قبل از Login این را نیاز دارند."""
+    """تنظیمات کامل برندینگ؛ عمداً بدون احراز هویت — اسپلش‌اسکرین و صفحه ورود قبل از Login این را نیاز دارند."""
     return await SystemSettingsService(db).get_branding()
 
 
@@ -389,14 +427,10 @@ async def update_branding(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    # ⚠️ عمداً exclude_unset=True: صفحه «تنظیمات سامانه» هر گروه از فیلدها
-    # (Manifest، اسپلش‌اسکرین، صفحه ورود، ...) را کاملاً مستقل و جداگانه
-    # ذخیره می‌کند — یعنی هر درخواست فقط شامل همان چند فیلد یک گروه است.
-    # با model_dump() ساده، فیلدهای گروه‌های دیگر (که اصلاً در بدنه
-    # درخواست نبودند) هم به‌عنوان None در نظر گرفته می‌شدند و set_branding
-    # آن‌ها را بی‌صدا به پیش‌فرض برمی‌گرداند — یعنی ذخیره‌کردن یک گروه،
-    # مقادیر گروه‌های دیگر را پاک می‌کرد. exclude_unset فقط همان فیلدهایی
-    # که واقعاً در درخواست حاضر بودند را نگه می‌دارد.
+    """متن‌های برندینگ ارسالی را ذخیره می‌کند (None/خالی = بازگشت به پیش‌فرض). مجوز system.settings."""
+    # exclude_unset=True: صفحه «تنظیمات سامانه» هر گروه از فیلدها (Manifest،
+    # اسپلش‌اسکرین، صفحه ورود، ...) را جداگانه ذخیره می‌کند؛ فقط فیلدهای حاضر در
+    # بدنه درخواست پاس داده می‌شوند تا فیلدهای غایب به‌عنوان None به پیش‌فرض برنگردند.
     return await SystemSettingsService(db).set_branding(**payload.model_dump(exclude_unset=True))
 
 
@@ -407,7 +441,10 @@ async def update_branding_surface(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """تنظیمات یک جای نمایش (لوگو/اندازه/مقیاس/قاب/فونت/رنگ) - فقط کلیدهای ارسالی."""
+    """
+    تنظیمات یک جای نمایش (لوگو/اندازه/مقیاس/قاب/فونت/رنگ) - فقط کلیدهای ارسالی.
+    مجوز system.settings. خطا: 404 برای جای نمایش نامعتبر.
+    """
     try:
         return await SystemSettingsService(db).set_surface(surface, payload.values)
     except ValueError as e:
@@ -420,7 +457,10 @@ async def reset_branding_surface(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """برگرداندن یک جای نمایش به پیش‌فرض (لوگوی اختصاصی‌اش حذف نمی‌شود)."""
+    """
+    برگرداندن یک جای نمایش به پیش‌فرض (لوگوی اختصاصی‌اش حذف نمی‌شود).
+    مجوز system.settings. خطا: 404 برای جای نمایش نامعتبر.
+    """
     try:
         return await SystemSettingsService(db).reset_surface(surface)
     except ValueError as e:
@@ -433,14 +473,14 @@ async def update_pwa_icon_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """مقیاس و پس‌زمینه آیکون‌های تولیدشده PWA (اندروید/iOS/ویندوز)."""
+    """ذخیره مقیاس و پس‌زمینه آیکون‌های تولیدشده PWA (اندروید/iOS/ویندوز). مجوز system.settings."""
     return await SystemSettingsService(db).set_pwa_icon_settings(payload.values)
 
 
 @router.get("/pwa-icon/{variant}.png")
 async def get_pwa_icon_variant(variant: str, db: AsyncSession = Depends(get_db)):
     """
-    ⚠️ بدون احراز هویت (Manifest/مرورگر بدون Header می‌گیرد). آیکون استاندارد
+    بدون احراز هویت (Manifest/مرورگر بدون Header می‌گیرد). آیکون استاندارد
     تولیدشده از آیکون PWA آپلودی: any-192/512، maskable-192/512، apple-180،
     favicon-32/16. اگر آیکونی آپلود نشده: ۴۰۴ (فرانت به فایل‌های ثابت برمی‌گردد).
     """
@@ -451,16 +491,18 @@ async def get_pwa_icon_variant(variant: str, db: AsyncSession = Depends(get_db))
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="آیکون PWA هنوز تنظیم نشده")
     raw, content_type = result
+    # تولید نسخه درخواستی با تنظیمات فعلی آیکون PWA
     settings = branding_surfaces.merged_pwa_icon(await service._get_raw(PWA_ICON_SETTINGS_KEY))
     content, media_type = pwa_icon_service.render_icon(raw, content_type, variant, settings)
-    return Response(content=content, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})
+    return Response(content=content, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})  # کش ۵ دقیقه‌ای مرورگر
 
 
 @router.get("/logo/{slug}")
 async def get_logo(slug: str, db: AsyncSession = Depends(get_db)):
     """
-    ⚠️ بدون احراز هویت — دقیقاً هم‌الگو با /system/login-background.
-    slug یکی از: app-logo، pwa-icon، favicon.
+    فایل یک لوگو را برمی‌گرداند؛ بدون احراز هویت — هم‌الگو با /system/login-background.
+    slug یکی از: app-logo، app-logo-small، pwa-icon، favicon، surface-<name>.
+    خطا: 404 برای slug نامعتبر یا لوگوی تنظیم‌نشده.
     """
     key = _logo_slug_to_key(slug)
     result = await SystemSettingsService(db).get_logo(key)
@@ -477,6 +519,10 @@ async def upload_logo(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
+    """
+    یک لوگو را آپلود و ذخیره می‌کند. مجوز system.settings.
+    خطا: 404 برای slug نامعتبر، 400 برای نوع غیرمجاز یا حجم بیش از ۴ مگابایت.
+    """
     key = _logo_slug_to_key(slug)
     if file.content_type not in ALLOWED_LOGO_TYPES:
         raise HTTPException(
@@ -496,24 +542,25 @@ async def delete_logo(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
+    """یک لوگوی سفارشی را حذف می‌کند (بازگشت به پیش‌فرض). مجوز system.settings. خطا: 404 برای slug نامعتبر."""
     key = _logo_slug_to_key(slug)
     await SystemSettingsService(db).delete_logo(key)
     return {"success": True}
 
 
 def _pwa_icon_version(pwa_settings: dict) -> str:
+    """هش ۸ کاراکتری تنظیمات آیکون PWA؛ به‌عنوان پارامتر نسخه در URL آیکون‌ها برای شکستن کش."""
     return hashlib.sha1(json.dumps(pwa_settings, sort_keys=True).encode()).hexdigest()[:8]
 
 
 @router.get("/manifest.json")
 async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
     """
-    نسخه پویای PWA Manifest — جایگزین فایل ثابت frontend/public/manifest.json
-    (که هرگز نمی‌توانست نام/آیکون سفارشی کارفرما را نشان بدهد). Nginx باید
-    مسیر /manifest.json را به همین Endpoint هدایت کند (به install.sh مراجعه
-    کنید) — نه به فایل ثابت قدیمی.
+    نسخه پویای PWA Manifest با نام و آیکون‌های برندینگ فعلی — بدون احراز هویت.
+    Nginx مسیر /manifest.json را به همین Endpoint هدایت می‌کند (install.sh)،
+    نه به فایل ثابت frontend/public/manifest.json.
 
-    ⚠️ محدودیت واقعی پلتفرم (نه یک نقص این پیاده‌سازی): مرورگرها/سیستم‌عامل‌ها
+    محدودیت پلتفرم (نه یک نقص این پیاده‌سازی): مرورگرها/سیستم‌عامل‌ها
     معمولاً Manifest را فقط هنگام نصب اولیه PWA می‌خوانند؛ برای کسانی که از
     قبل پرتال را روی صفحه اصلی نصب کرده‌اند، تغییر لوگو/اسم اینجا معمولاً
     فقط با حذف‌وبازنصب آن اپ روی گوشی‌شان اعمال می‌شود — نه خودکار.
@@ -532,6 +579,7 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
             {"src": f"/api/v1/system/pwa-icon/maskable-512.png?v={v}", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ]
     else:
+        # بدون آیکون سفارشی: آیکون‌های ثابت داخل Build فرانت
         icons = [
             {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
             {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
@@ -540,8 +588,7 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
 
     manifest = {
         "id": "/",
-        # ⚠️ قبلاً name = عنوان تب مرورگر بود؛ ویندوز/اندروید همین name را
-        # به‌عنوان نام اپ نصب‌شده نشان می‌دهند - حالا فیلد جداگانه دارد.
+        # ویندوز/اندروید name را به‌عنوان نام اپ نصب‌شده نشان می‌دهند؛ مستقل از عنوان تب مرورگر است
         "name": branding["manifest_name"],
         "short_name": branding["manifest_short_name"],
         "description": branding["manifest_description"],
@@ -560,7 +607,7 @@ async def get_dynamic_manifest(db: AsyncSession = Depends(get_db)):
     return Response(content=json.dumps(manifest, ensure_ascii=False), media_type="application/manifest+json")
 
 
-# ---------- index.html پویا — رفع «FAIPCO Portal» ثابت در تب مرورگر قبل از اجرای JS ----------
+# ---------- index.html پویا — عنوان تب مرورگر از برندینگ، حتی قبل از اجرای JS ----------
 
 _FRONTEND_INDEX_HTML_PATH = (
     Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "frontend" / "dist" / "index.html"
@@ -574,13 +621,11 @@ async def get_dynamic_index_html(db: AsyncSession = Depends(get_db)):
     نسخه پویای index.html — جایگزین فایل ثابت frontend/dist/index.html
     برای Fallback مسیرهای SPA (به install.sh مراجعه کنید: location @index_html_dynamic).
 
-    ⚠️ رفع یک محدودیت واقعی که کاربر گزارش داد: چون index.html یک فایل
-    ثابت Build-شده است، تگ <title> آن (که مرورگر تا قبل از اجرای کامل
-    جاوااسکریپت React نشان می‌دهد) همیشه همان مقدار ثابت زمان Build را
-    داشت (مثلاً "FAIPCO Portal") — حتی وقتی Admin اسم را از پنل عوض کرده
-    بود. اینجا، همان فایل HTML بدون تغییر خوانده می‌شود، فقط محتوای همان
-    یک تگ <title> با عنوان واقعی از تنظیمات جایگزین می‌شود — همه‌چیز
-    دیگر (اسکریپت‌ها، لینک‌ها، Manifest) دقیقاً همان خروجی Build اصلی است.
+    چون index.html یک فایل ثابت Build-شده است، تگ <title> آن (که مرورگر تا قبل
+    از اجرای جاوااسکریپت React نشان می‌دهد) مقدار ثابت زمان Build را دارد.
+    این‌جا همان فایل HTML خوانده می‌شود و فقط محتوای تگ <title> با عنوان مرورگر
+    از تنظیمات جایگزین می‌شود — بقیه (اسکریپت‌ها، لینک‌ها، Manifest) همان خروجی Build است.
+    بدون احراز هویت. خطا: 404 اگر فرانت Build نشده باشد.
     """
     if not _FRONTEND_INDEX_HTML_PATH.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فایل index.html پیدا نشد")
@@ -599,7 +644,10 @@ async def get_smtp_settings_endpoint(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """رمز عبور هرگز در پاسخ برنمی‌گردد — فقط has_password (بولی)."""
+    """
+    تنظیمات فعلی SMTP را برمی‌گرداند. مجوز system.settings.
+    رمز عبور هرگز در پاسخ برنمی‌گردد — فقط has_password (بولی).
+    """
     settings = await get_smtp_settings(db)
     return SmtpSettingsOut(
         enabled=settings.enabled,
@@ -621,7 +669,10 @@ async def update_smtp_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """برای رمز عبور: اگر خالی فرستاده شود، رمز قبلاً ذخیره‌شده دست‌نخورده می‌ماند."""
+    """
+    تنظیمات SMTP را ذخیره می‌کند. مجوز system.settings.
+    برای رمز عبور: اگر خالی فرستاده شود، رمز ذخیره‌شده دست‌نخورده می‌ماند.
+    """
     settings = await get_smtp_settings(db)
     settings.enabled = payload.enabled
     settings.host = payload.host
@@ -636,6 +687,7 @@ async def update_smtp_settings(
     settings.password_reset_email_body = payload.password_reset_email_body
     await db.commit()
     await db.refresh(settings)
+    # پاسخ بدون رمز (فقط has_password)
     return SmtpSettingsOut(
         enabled=settings.enabled,
         host=settings.host,
@@ -656,7 +708,10 @@ async def test_smtp_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """یک ایمیل آزمایشی با تنظیمات فعلاً *ذخیره‌شده* SMTP می‌فرستد (نه یک تنظیم موقت وارد‌شده در فرم)."""
+    """
+    یک ایمیل آزمایشی با تنظیمات *ذخیره‌شده* SMTP می‌فرستد (نه یک تنظیم موقت وارد‌شده در فرم).
+    مجوز system.settings. خطا: 400 اگر SMTP تنظیم نشده باشد یا ارسال شکست بخورد.
+    """
     try:
         await send_email(
             db,
@@ -674,7 +729,10 @@ async def get_sms_settings_endpoint(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """API Key هرگز در پاسخ برنمی‌گردد — فقط has_api_key (بولی)."""
+    """
+    تنظیمات فعلی پیامک را برمی‌گرداند. مجوز system.settings.
+    API Key هرگز در پاسخ برنمی‌گردد — فقط has_api_key (بولی).
+    """
     settings = await get_sms_settings(db)
     return SmsSettingsOut(
         enabled=settings.enabled,
@@ -692,7 +750,10 @@ async def update_sms_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """برای API Key: اگر خالی فرستاده شود، مقدار قبلاً ذخیره‌شده دست‌نخورده می‌ماند."""
+    """
+    تنظیمات پیامک را ذخیره می‌کند. مجوز system.settings.
+    برای API Key: اگر خالی فرستاده شود، مقدار ذخیره‌شده دست‌نخورده می‌ماند.
+    """
     settings = await get_sms_settings(db)
     settings.enabled = payload.enabled
     if payload.api_key:
@@ -719,7 +780,10 @@ async def test_sms_settings(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission("system.settings")),
 ):
-    """یک پیامک آزمایشی با تنظیمات فعلاً ذخیره‌شده می‌فرستد (کد تست: 000000)."""
+    """
+    یک پیامک آزمایشی با تنظیمات ذخیره‌شده می‌فرستد (کد تست: 000000).
+    مجوز system.settings. خطا: 400 اگر پیامک تنظیم نشده باشد یا ارسال شکست بخورد.
+    """
     try:
         await send_sms_code(db, to_mobile=payload.to_mobile, code="000000")
     except (SmsNotConfiguredError, SmsError) as e:

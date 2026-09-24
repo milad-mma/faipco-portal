@@ -9,7 +9,10 @@ from abc import ABC, abstractmethod
 
 
 class BaseSiteAdapter(ABC):
+    """کلاس پایه انتزاعی Adapter دیتابیس منبع؛ مشخصات اتصال را نگه می‌دارد و متدهای لازم را تعریف می‌کند."""
+
     def __init__(self, *, host: str, port: int, database: str, username: str, password: str):
+        """مشخصات اتصال (پسورد رمزگشایی‌شده) را ذخیره می‌کند؛ اتصال واقعی در هر متد باز می‌شود."""
         self.host = host
         self.port = port
         self.database = database
@@ -51,23 +54,21 @@ class BaseSiteAdapter(ABC):
         "nullable", "max_length"}], "foreign_keys": [{"column",
         "references_table", "references_column"}]}]}
 
-        ⚠️ foreign_keys فقط روابطی را نشان می‌دهد که رسماً در دیتابیس
-        به‌عنوان Constraint ثبت شده‌اند - در بسیاری از نرم‌افزارهای قدیمی
-        حضور و غیاب/ERP، روابط منطقی وجود دارند بدون این‌که هرگز چنین
-        Constraint ای رسماً تعریف شده باشد؛ نبود FK در این خروجی به‌معنای
-        نبود رابطه واقعی نیست، فقط یعنی رسماً اعلام نشده است.
+        foreign_keys فقط روابطی را نشان می‌دهد که رسماً به‌عنوان Constraint ثبت
+        شده‌اند؛ در بسیاری از نرم‌افزارهای حضور و غیاب/ERP روابط منطقی بدون
+        Constraint وجود دارند، پس نبود FK به‌معنای نبود رابطه نیست.
         """
 
     @abstractmethod
     async def sample_column_values(self, table_name: str, column_name: str, limit: int = 5) -> list:
         """
-        مرحله سوم نگاشت داینامیک - چند مقدار واقعی نمونه از یک ستون
+        مرحله سوم پیشنهاد نگاشت داینامیک - چند مقدار واقعی نمونه از یک ستون
         می‌خواند (نه کل جدول) - برای کمک به تشخیص الگوی داده (مثلاً
         «مقادیر ۸ رقمی در بازه منطقی یعنی احتمالاً تاریخ شمسی فشرده»)
         وقتی نام ستون به‌تنهایی برای پیشنهاد کافی نبوده است.
 
-        ⚠️ فقط خواندن - و فقط برای ستون‌هایی که مدیر یا الگوریتم پیشنهاد
-        صراحتاً درخواست کرده، نه کل جدول.
+        فقط خواندن است و فقط برای ستون‌هایی که مدیر یا الگوریتم پیشنهاد
+        صراحتاً درخواست کرده اجرا می‌شود، نه کل جدول.
         """
 
 
@@ -79,6 +80,7 @@ def build_schema_dict(column_rows: list[dict], fk_rows: list[dict]) -> dict:
     درختی (یک ورودی به‌ازای هر جدول) تبدیل می‌کند.
     """
     tables: dict[str, dict] = {}
+    # ستون‌ها: گروه‌بندی بر اساس نام جدول
     for row in column_rows:
         table_name = row["TABLE_NAME"]
         table = tables.setdefault(table_name, {"name": table_name, "columns": [], "foreign_keys": []})
@@ -90,6 +92,7 @@ def build_schema_dict(column_rows: list[dict], fk_rows: list[dict]) -> dict:
                 "max_length": row.get("CHARACTER_MAXIMUM_LENGTH"),
             }
         )
+    # کلیدهای خارجی: افزودن به همان جدول (یا ساخت ورودی جدید اگر جدول ستونی نداشت)
     for row in fk_rows:
         table_name = row["TABLE_NAME"]
         table = tables.setdefault(table_name, {"name": table_name, "columns": [], "foreign_keys": []})
@@ -100,4 +103,4 @@ def build_schema_dict(column_rows: list[dict], fk_rows: list[dict]) -> dict:
                 "references_column": row["REFERENCED_COLUMN_NAME"],
             }
         )
-    return {"tables": sorted(tables.values(), key=lambda t: t["name"])}
+    return {"tables": sorted(tables.values(), key=lambda t: t["name"])}  # مرتب بر اساس نام جدول

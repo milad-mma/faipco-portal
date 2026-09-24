@@ -1,4 +1,7 @@
-"""Schema های Pydantic برای «گزارش‌های مدیریتی ارزیابی عملکرد»."""
+"""
+Schema های Pydantic برای «گزارش‌های مدیریتی ارزیابی عملکرد»: گزارش سایت/دوره،
+مقایسه دو دوره، روند فردی و ارسال گزارش با ایمیل. خروجی endpointهای evaluation_reports.py.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,6 +10,7 @@ from pydantic import BaseModel, EmailStr
 
 
 class EmployeeScoreOut(BaseModel):
+    """امتیاز یک پرسنل در گزارش دوره؛ درون DepartmentReportEntryOut."""
     first_name: str
     last_name: str
     personnel_code: str
@@ -15,6 +19,7 @@ class EmployeeScoreOut(BaseModel):
 
 
 class DepartmentReportEntryOut(BaseModel):
+    """آمار یک واحد در گزارش دوره (میانگین، کمینه، بیشینه و فهرست پرسنل)."""
     department_id: int
     department_name: str
     average_score: float | None
@@ -25,6 +30,7 @@ class DepartmentReportEntryOut(BaseModel):
 
 
 class SitePeriodReportOut(BaseModel):
+    """گزارش کامل یک دوره برای یک سایت، تفکیک‌شده بر اساس واحد."""
     site_id: int
     site_name: str
     period_id: int
@@ -35,7 +41,7 @@ class SitePeriodReportOut(BaseModel):
 
 
 class EmployeeComparisonOut(BaseModel):
-    """⚠️ امتیاز یک پرسنل در هر دو دوره - برای نمایش زیر هر واحد در «مقایسه دوره‌ها»."""
+    """امتیاز یک پرسنل در هر دو دوره؛ زیر هر واحد در «مقایسه دوره‌ها»."""
 
     first_name: str
     last_name: str
@@ -47,6 +53,7 @@ class EmployeeComparisonOut(BaseModel):
 
 
 class PeriodComparisonEntryOut(BaseModel):
+    """مقایسه میانگین و تعداد یک واحد در دو دوره؛ درون PeriodComparisonOut."""
     department_id: int
     department_name: str
     period_a_average: float | None
@@ -57,12 +64,14 @@ class PeriodComparisonEntryOut(BaseModel):
 
 
 class PeriodInfoOut(BaseModel):
+    """شناسه، عنوان و میانگین کل یک دوره در گزارش مقایسه."""
     id: int
     title: str
     average_score: float | None
 
 
 class PeriodComparisonOut(BaseModel):
+    """گزارش مقایسه دو دوره برای یک سایت."""
     site_id: int
     site_name: str
     period_a: PeriodInfoOut
@@ -71,11 +80,12 @@ class PeriodComparisonOut(BaseModel):
 
 
 class EmailReportIn(BaseModel):
+    """بدنه درخواست ارسال گزارش Excel به یک ایمیل."""
     email: EmailStr
 
 
 class EmployeeTrendPointOut(BaseModel):
-    """⚠️ امتیاز یک نفر در یک دوره - یک نقطه از نمودار روند فردی."""
+    """امتیاز یک نفر در یک دوره؛ یک نقطه از نمودار روند فردی."""
 
     period_id: int
     period_title: str
@@ -85,7 +95,7 @@ class EmployeeTrendPointOut(BaseModel):
 
 
 class EmployeeTrendOut(BaseModel):
-    """⚠️ گزارش روند فردی - سیر امتیاز یک نفر در طول همه دوره‌های ارزیابی."""
+    """گزارش روند فردی: سیر امتیاز یک نفر در همه دوره‌ها همراه میانگین، بهترین و بدترین امتیاز."""
 
     first_name: str
     last_name: str

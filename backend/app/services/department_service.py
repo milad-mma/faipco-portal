@@ -1,4 +1,7 @@
-"""منطق تجاری مدیریت Department ها و انتصاب سرپرست هر واحد."""
+"""
+منطق تجاری مدیریت Department ها: فهرست واحدها (همراه نام سرپرست)، ایجاد واحد
+و انتصاب/حذف سرپرست هر واحد.
+"""
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,10 +12,17 @@ from app.schemas.department import DepartmentCreate, DepartmentOut
 
 
 class DepartmentService:
+    """سرویس واحدهای سازمانی؛ خروجی‌ها به‌صورت DepartmentOut (همراه نام واقعی سرپرست) ساخته می‌شوند."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: AsyncSession دیتابیس پرتال."""
         self.db = db
 
     async def _to_out(self, department: Department, name_by_user_id: dict[int, str] | None = None) -> DepartmentOut:
+        """
+        مدل Department را به DepartmentOut تبدیل می‌کند.
+        اگر name_by_user_id داده شود نام سرپرست از آن خوانده می‌شود، وگرنه با یک Query جدا.
+        """
         supervisor_name = None
         if department.supervisor_user_id is not None:
             if name_by_user_id is not None:
@@ -30,6 +40,7 @@ class DepartmentService:
         )
 
     async def _resolve_single_supervisor_name(self, user_id: int) -> str | None:
+        """نام و نام خانوادگی پرسنلِ متصل به یک User را برمی‌گرداند (یا None)."""
         result = await self.db.execute(
             select(Employee.first_name, Employee.last_name)
             .join(User, User.employee_id == Employee.id)
@@ -38,10 +49,18 @@ class DepartmentService:
         row = result.first()
         return f"{row[0]} {row[1]}" if row else None
 
-    async def list_departments(self, site_id: int | None = None) -> list[DepartmentOut]:
+    async def list_departments(
+        self, site_id: int | None = None, allowed_site_ids: set[int] | None = None
+    ) -> list[DepartmentOut]:
+        """
+        فهرست واحدها را (اختیاری: فقط یک سایت) همراه نام سرپرست هر واحد برمی‌گرداند.
+        allowed_site_ids: فقط واحدهای این سایت‌ها (None = بدون محدودیت).
+        """
         stmt = select(Department)
         if site_id is not None:
             stmt = stmt.where(Department.site_id == site_id)
+        if allowed_site_ids is not None:
+            stmt = stmt.where(Department.site_id.in_(allowed_site_ids))
         result = await self.db.execute(stmt)
         departments = list(result.scalars().all())
 
@@ -60,6 +79,7 @@ class DepartmentService:
         return [await self._to_out(d, name_by_user_id) for d in departments]
 
     async def create_department(self, payload: DepartmentCreate) -> DepartmentOut:
+        """یک واحد جدید می‌سازد، commit می‌کند و خروجی DepartmentOut را برمی‌گرداند."""
         department = Department(site_id=payload.site_id, name=payload.name, code=payload.code)
         self.db.add(department)
         await self.db.commit()
@@ -71,7 +91,8 @@ class DepartmentService:
         سرپرست واحد را از روی یک پرسنل واقعی (که از Sync آمده) تعیین می‌کند.
         اگر آن پرسنل هنوز حساب کاربری نداشته باشد، خودکار ساخته می‌شود.
         یک نفر می‌تواند هم‌زمان سرپرست چند واحد مختلف باشد — همین متد برای
-        هر واحد جداگانه صدا زده می‌شود.
+        هر واحد جداگانه صدا زده می‌شود. employee_id=None سرپرست را برمی‌دارد.
+        خروجی: DepartmentOut، یا None اگر واحد پیدا نشود؛ ValueError اگر پرسنل پیدا نشود.
         """
         department = await self.db.get(Department, department_id)
         if department is None:

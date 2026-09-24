@@ -1,8 +1,8 @@
 """
-ابزار «عکس فوری از مسیرهای API» - مرحله ۰ بازسازی ساختار.
+ابزار «عکس فوری از مسیرهای API».
 
-هدف: هر جابه‌جایی فایل/ماژول در بازسازی، نباید حتی یک مسیر HTTP را تغییر
-دهد، چون فرانت‌اند نصب‌شده و PWA کاربران به همین مسیرها وابسته‌اند.
+هدف: اطمینان از این‌که جابه‌جایی فایل/ماژول‌ها هیچ مسیر HTTP را تغییر ندهد،
+چون فرانت‌اند نصب‌شده و PWA کاربران به همین مسیرها وابسته‌اند.
 
 این ابزار بدون هیچ وابستگی (بدون FastAPI) و فقط با تحلیل ایستای کد،
 فهرست «METHOD /api/v1/path» را از دو منبع می‌سازد:
@@ -26,6 +26,7 @@ import re
 import sys
 from pathlib import Path
 
+# مسیر فایل‌های منبع و فایل مرجع
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 APP_DIR = BACKEND_DIR / "app"
 ENDPOINTS_DIR = APP_DIR / "api" / "v1" / "endpoints"
@@ -33,25 +34,27 @@ ROUTER_FILE = APP_DIR / "api" / "v1" / "router.py"
 MAIN_FILE = APP_DIR / "main.py"
 SNAPSHOT_FILE = Path(__file__).resolve().parent / "api_routes.snapshot.json"
 
-API_PREFIX = "/api/v1"
+API_PREFIX = "/api/v1"  # پیشوند ثبت روتر v1 در main.py
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "websocket"}
 
 
 def _router_prefixes() -> list[tuple[str, str]]:
-    """[(module_name, prefix)] به ترتیب include در router.py - ترتیب مهم است (اولویت مسیرهای هم‌نام)."""
+    """با Regex روی router.py، خروجی: [(module_name, prefix)] به ترتیب include - ترتیب مهم است (اولویت مسیرهای هم‌نام)."""
     src = ROUTER_FILE.read_text(encoding="utf-8")
     pattern = re.compile(r"include_router\(\s*(\w+)\.router\s*,\s*prefix\s*=\s*\"([^\"]*)\"")
     return [(m.group(1), m.group(2)) for m in pattern.finditer(src)]
 
 
 def _decorator_routes(module_path: Path) -> list[tuple[str, str]]:
-    """[(METHOD, path)] از دکوراتورهای @router.<method>("...") - به ترتیب تعریف در فایل."""
+    """ورودی: مسیر فایل endpoint. با تحلیل AST خروجی: [(METHOD, path)] از دکوراتورهای @router.<method>("...")."""
     tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
     routes: list[tuple[str, str]] = []
+    # پیمایش همه توابع و بررسی دکوراتورهایشان
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for dec in node.decorator_list:
+            # فقط فراخوانی‌های router.<method>("path") با مسیر ثابت پذیرفته می‌شوند
             if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
                 continue
             if not (isinstance(dec.func.value, ast.Name) and dec.func.value.id == "router"):
@@ -67,7 +70,7 @@ def _decorator_routes(module_path: Path) -> list[tuple[str, str]]:
 
 
 def _app_level_routes() -> list[str]:
-    """مسیرهایی که مستقیم روی app تعریف شده‌اند (مثل /api/health)."""
+    """با تحلیل AST روی main.py، خروجی: مسیرهایی که مستقیم روی app تعریف شده‌اند (مثل "GET /api/health")."""
     tree = ast.parse(MAIN_FILE.read_text(encoding="utf-8"), filename=str(MAIN_FILE))
     found: list[str] = []
     for node in ast.walk(tree):
@@ -88,7 +91,9 @@ def _app_level_routes() -> list[str]:
 
 
 def collect_routes() -> list[str]:
+    """خروجی: فهرست مرتب و یکتای همه مسیرها به شکل "METHOD /api/v1/prefix/path"."""
     routes: list[str] = _app_level_routes()
+    # ترکیب پیشوند هر روتر با مسیرهای دکوراتورهای فایل همان ماژول
     for module_name, prefix in _router_prefixes():
         module_path = ENDPOINTS_DIR / f"{module_name}.py"
         if not module_path.exists():
@@ -99,12 +104,17 @@ def collect_routes() -> list[str]:
 
 
 def load_snapshot() -> list[str]:
+    """خروجی: فهرست مسیرهای فایل مرجع؛ اگر فایل نباشد لیست خالی."""
     if not SNAPSHOT_FILE.exists():
         return []
     return json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))["routes"]
 
 
 def main(argv: list[str]) -> int:
+    """
+    ورودی: آرگومان‌های خط فرمان (--print / --write). مسیرهای فعلی را چاپ، در مرجع ذخیره یا با مرجع مقایسه می‌کند.
+    خروجی: کد خروج (۰ = مطابق یا فقط مسیر جدید، ۱ = مسیر حذف‌شده، ۲ = نبود مرجع).
+    """
     current = collect_routes()
     if "--print" in argv:
         print("\n".join(current))
@@ -117,6 +127,7 @@ def main(argv: list[str]) -> int:
         print(f"مرجع به‌روز شد: {len(current)} مسیر → {SNAPSHOT_FILE.name}")
         return 0
 
+    # حالت پیش‌فرض: مقایسه با مرجع
     expected = load_snapshot()
     if not expected:
         print("فایل مرجع وجود ندارد - با --write بسازید.")

@@ -1,4 +1,10 @@
-"""Schema های مربوط به «حضور مبتنی بر موقعیت مکانی» و «ثبت ورود/خروج آزمایشی»."""
+"""
+Schema های Pydantic مربوط به «حضور مبتنی بر موقعیت مکانی» (GPS).
+
+شامل مدل ورودی ثبت موقعیت، مدل‌های خروجی لاگ ورود/خروج (برای پرسنل و برای
+گزارش Admin)، مدل‌های افزودن/ویرایش دستی لاگ توسط Admin و مدل‌های خروجی
+نشست‌های حضور آنلاین (Presence Session).
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,6 +13,7 @@ from pydantic import BaseModel
 
 
 class GpsPositionIn(BaseModel):
+    """ورودی ثبت ورود/خروج با GPS: مختصات فعلی دستگاه پرسنل و سایت اختیاری."""
     latitude: float
     longitude: float
     accuracy_meters: float | None = None
@@ -14,6 +21,7 @@ class GpsPositionIn(BaseModel):
 
 
 class GpsActivityLogOut(BaseModel):
+    """یک رکورد لاگ ورود/خروج آن‌طور که به خودِ پرسنل نمایش داده می‌شود (بدون هویت پرسنل)."""
     id: int
     log_type: str
     latitude: float | None
@@ -21,11 +29,11 @@ class GpsActivityLogOut(BaseModel):
     accuracy_meters: float | None
     matched_site_id: int | None
     distance_meters: float | None
-    is_within_geofence: bool
-    is_manual: bool
+    is_within_geofence: bool  # آیا داخل شعاع مجاز سایت بوده
+    is_manual: bool  # ثبت دستی توسط Admin (بدون مختصات واقعی)
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True}  # ساخت مستقیم از شیء ORM
 
 
 class GpsActivityLogAdminOut(GpsActivityLogOut):
@@ -38,6 +46,7 @@ class GpsActivityLogAdminOut(GpsActivityLogOut):
 
 
 class GpsActivityLogPageOut(BaseModel):
+    """یک صفحه از لاگ‌های GPS برای گزارش Admin به‌همراه تعداد کل و ماه گزارش."""
     items: list[GpsActivityLogAdminOut]
     total: int
     year: int
@@ -45,6 +54,7 @@ class GpsActivityLogPageOut(BaseModel):
 
 
 class MyClockLogsOut(BaseModel):
+    """لاگ‌های ورود/خروج خودِ پرسنل در یک ماه شمسی."""
     items: list[GpsActivityLogOut]
     year: int
     month: int
@@ -56,7 +66,7 @@ class GpsManualLogIn(BaseModel):
 
     employee_id: int
     log_type: str  # "check_in" یا "check_out"
-    created_at: datetime
+    created_at: datetime  # زمان واقعی ورود/خروج که Admin اعلام می‌کند
     site_id: int | None = None
 
 
@@ -70,13 +80,14 @@ class GpsLogUpdateIn(BaseModel):
 
 
 class PresenceSessionAdminOut(BaseModel):
+    """یک نشست حضور آنلاین (اتصال تا قطع اتصال) یک پرسنل برای گزارش Admin."""
     id: int
     employee_id: int
     employee_name: str
     personnel_code: str
     connected_at: datetime
     disconnected_at: datetime | None
-    duration_seconds: int | None
+    duration_seconds: int | None  # None یعنی نشست هنوز باز است
     is_online_now: bool
     matched_site_name: str | None
     last_distance_meters: float | None
@@ -84,5 +95,6 @@ class PresenceSessionAdminOut(BaseModel):
 
 
 class PresenceSessionPageOut(BaseModel):
+    """یک صفحه از نشست‌های حضور آنلاین به‌همراه تعداد کل."""
     items: list[PresenceSessionAdminOut]
     total: int

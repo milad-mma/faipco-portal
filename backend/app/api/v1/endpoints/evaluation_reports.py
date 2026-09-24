@@ -1,7 +1,7 @@
 """
-Endpoint های «گزارش‌های مدیریتی ارزیابی عملکرد» - گزارش یک دوره برای یک
-سایت (میانگین واحدها) و مقایسه دو دوره - با امکان دریافت خروجی Excel و
-ارسال همان خروجی به ایمیل.
+Endpoint های «گزارش‌های مدیریتی ارزیابی عملکرد»: گزارش یک دوره برای یک سایت (آمار واحدها)،
+مقایسه دو دوره، روند فردی و جزئیات سوال‌به‌سوال یک ارزیابی؛ با خروجی Excel و ارسال آن به ایمیل.
+همه endpointها نیازمند مجوز سایتیِ performance.reports.view هستند.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -34,6 +34,7 @@ async def get_site_period_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """گزارش یک دوره برای یک سایت، تفکیک‌شده بر اساس واحد؛ نیازمند مجوز گزارش سایت، 404 اگر سایت/دوره نباشد."""
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         return await EvaluationReportsService(db).get_site_period_report(site_id, period_id)
@@ -49,13 +50,8 @@ async def get_evaluation_answers_for_report(
     current_user: User = Depends(get_current_user),
 ):
     """
-    ⚠️ جزئیات سوال‌به‌سوال یک ارزیابی، برای گزارش‌های مدیریتی (هم گزارش
-    یک دوره، هم مقایسه دوره‌ها). برخلاف نسخه‌ی پرسنلی، اینجا امتیاز و
-    متن کامل پاسخ و نظر ارزیاب هم برگردانده می‌شود (طبق تصمیم صریح کاربر).
-
-    ⚠️ امنیت: علاوه بر مجوز گزارش‌گیری همان سایت، بررسی می‌شود که این
-    ارزیابی واقعاً متعلق به همان سایت باشد - تا با دانستن یک
-    evaluation_id دلخواه نشود جزئیات ارزیابی سایت دیگری را خواند.
+    جزئیات سوال‌به‌سوال یک ارزیابی برای گزارش‌های مدیریتی، شامل امتیاز، پاسخ کامل و نظر ارزیاب.
+    علاوه بر مجوز گزارش سایت، تعلق ارزیابی به همان سایت بررسی می‌شود؛ در غیر این صورت 404.
     """
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
@@ -71,7 +67,7 @@ async def get_employee_trend(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """⚠️ گزارش روند فردی - سیر امتیاز یک نفر در طول همه دوره‌های ارزیابی، به‌ترتیب زمانی."""
+    """روند فردی: امتیاز یک نفر در همه دوره‌ها به ترتیب زمانی؛ نیازمند مجوز گزارش سایت، 404 اگر یافت نشود."""
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         return await EvaluationReportsService(db).get_employee_trend(site_id, personnel_code)
@@ -86,13 +82,12 @@ async def export_site_period_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """فایل Excel گزارش دوره (همراه شیت ریز سوال/جواب‌ها) را برمی‌گرداند؛ نیازمند مجوز گزارش سایت، 404."""
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         service = EvaluationReportsService(db)
         report = await service.get_site_period_report(site_id, period_id)
-        # ⚠️ ریز سوال/جواب‌ها در شیت جداگانه - طبق گزارش کاربر که در
-        # خروجی Excel موجود نبود. برای نسخه ایمیل‌شده هم همین داده می‌رود
-        # تا دو خروجی از هم واگرا نشوند.
+        # ریز سوال/جواب‌ها برای شیت جداگانه؛ همین داده در نسخه ایمیلی هم استفاده می‌شود
         answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -113,18 +108,21 @@ async def email_site_period_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    همان فایل Excel گزارش دوره را به ایمیل داده‌شده می‌فرستد و {"sent": True} برمی‌گرداند.
+    نیازمند مجوز گزارش سایت. خطاها: 404 سایت/دوره یافت نشد، 400 خطای ارسال ایمیل.
+    """
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         service = EvaluationReportsService(db)
         report = await service.get_site_period_report(site_id, period_id)
-        # ⚠️ ریز سوال/جواب‌ها در شیت جداگانه - طبق گزارش کاربر که در
-        # خروجی Excel موجود نبود. برای نسخه ایمیل‌شده هم همین داده می‌رود
-        # تا دو خروجی از هم واگرا نشوند.
+        # ریز سوال/جواب‌ها برای شیت جداگانه؛ همان داده‌ای که در خروجی دانلودی استفاده می‌شود
         answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     content = build_site_period_report_xlsx(report, answers)
     filename = f"performance-report-{site_id}-{period_id}.xlsx"
+    # ارسال ایمیل با فایل Excel پیوست
     try:
         await send_email(
             db,
@@ -146,6 +144,7 @@ async def get_period_comparison(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """مقایسه دو دوره برای یک سایت به تفکیک واحد و پرسنل؛ نیازمند مجوز گزارش سایت، 404 اگر دوره/سایت نباشد."""
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         return await EvaluationReportsService(db).get_period_comparison(site_id, period_id_a, period_id_b)
@@ -161,6 +160,7 @@ async def export_period_comparison(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """فایل Excel مقایسه دو دوره را برمی‌گرداند؛ نیازمند مجوز گزارش سایت، 404."""
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         comparison = await EvaluationReportsService(db).get_period_comparison(site_id, period_id_a, period_id_b)
@@ -184,6 +184,10 @@ async def email_period_comparison(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    فایل Excel مقایسه دو دوره را به ایمیل داده‌شده می‌فرستد و {"sent": True} برمی‌گرداند.
+    نیازمند مجوز گزارش سایت. خطاها: 404 دوره/سایت یافت نشد، 400 خطای ارسال ایمیل.
+    """
     await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
     try:
         comparison = await EvaluationReportsService(db).get_period_comparison(site_id, period_id_a, period_id_b)
@@ -191,6 +195,7 @@ async def email_period_comparison(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     content = build_period_comparison_xlsx(comparison)
     filename = f"performance-comparison-{site_id}-{period_id_a}-{period_id_b}.xlsx"
+    # ارسال ایمیل با فایل Excel پیوست
     try:
         await send_email(
             db,

@@ -1,3 +1,7 @@
+/**
+ * پیکربندی Vite: پلاگین React و vite-plugin-pwa (Service Worker دستی src/sw.js با استراتژی injectManifest)،
+ * پورت سرور توسعه و پوشه‌ی خروجی Build.
+ */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -7,38 +11,30 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // injectManifest (نه generateSW پیش‌فرض): چون کد Push/Notification
-      // کاملاً دستی خودمان را می‌خواهیم (src/sw.js)، نه یک Service Worker
-      // خودکارساخته — فقط لیست Precache (که نام فایل‌هایش با هر Build
-      // تغییر می‌کند) را Workbox خودکار داخلش تزریق می‌کند.
+      // injectManifest: Service Worker دستی src/sw.js (با کد Push/Notification) استفاده می‌شود
+      // و Workbox فقط فهرست Precache (که نام فایل‌هایش با هر Build تغییر می‌کند) را داخل آن تزریق می‌کند
       strategies: "injectManifest",
-      srcDir: "src",
-      filename: "sw.js",
-      // چون ثبت Service Worker را خودمان دستی مدیریت می‌کنیم
-      // (src/utils/serviceWorker.js — با منطق تشخیص نسخه جدید و Reload
-      // خودکار)، از تزریق خودکار اسکریپت ثبت توسط این پلاگین صرف‌نظر می‌کنیم.
+      srcDir: "src", // پوشه‌ی فایل Service Worker
+      filename: "sw.js", // نام فایل Service Worker در ورودی و خروجی
+      // اسکریپت ثبت خودکار تزریق نمی‌شود؛ ثبت و تشخیص نسخه‌ی جدید در src/utils/serviceWorker.js انجام می‌شود
       injectRegister: null,
-      // manifest.json را خودمان دستی نگه می‌داریم (public/manifest.json)
-      // — چون از قبل کاملاً و دقیق تنظیم شده (RTL فارسی، آیکون‌های
-      // Maskable و...)؛ نمی‌خواهیم این پلاگین یکی دیگر تولید/بازنویسی کند.
+      // manifest توسط پلاگین تولید نمی‌شود؛ فایل دستی public/manifest.json (RTL فارسی، آیکون‌های Maskable و ...) استفاده می‌شود
       manifest: false,
       injectManifest: {
-        // باید حتماً js/css/html را شامل شود، وگرنه App Shell کامل
-        // Precache نمی‌شود و در قطعی آفلاین با ChunkLoadError/صفحه سفید
-        // مواجه می‌شویم.
+        // الگوی فایل‌های Precache؛ js/css/html برای پوسته‌ی کامل برنامه لازم‌اند تا در قطعی اینترنت
+        // ChunkLoadError/صفحه‌ی سفید رخ ندهد
         globPatterns: ["**/*.{js,css,html,svg,woff,woff2}"],
       },
       devOptions: {
-        // فقط در Build واقعی فعال است — سرور Dev از HMR خودِ Vite استفاده
-        // می‌کند، نیازی به Service Worker موقع توسعه نیست.
+        // Service Worker در سرور توسعه غیرفعال است و فقط در Build ساخته می‌شود
         enabled: false,
       },
     }),
   ],
   server: {
-    port: 3000,
+    port: 3000, // پورت سرور توسعه
   },
   build: {
-    outDir: "dist",
+    outDir: "dist", // پوشه‌ی خروجی Build
   },
 });

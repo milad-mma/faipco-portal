@@ -23,89 +23,71 @@ import AccessGateDialog from "../components/AccessGateDialog";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 
 /**
- * گزارش تردد ماهانه شخصی — از دستگاه‌های حضور و غیاب واقعی، در همان SQL
- * Server سایت خودِ کاربر (فقط اگر برای آن سایت یک نگاشت تردد تنظیم شده
- * باشد). ستون‌های تردد کاملاً پویا هستند — بر اساس بیشترین تعداد تردد در
- * بین همه روزهای همان ماه.
- *
- * ⚠️ طبق درخواست صریح: داده خام را دقیقاً همان‌طور که در دیتابیس ثبت
- * شده نشان می‌دهد — گروه‌بندی فقط بر اساس همان ستون تاریخ خام دستگاه
- * است، بدون هیچ پردازش/ترکیب اضافه‌ای. به‌جای «ورود/خروج» (که فرض
- * می‌کرد رکورد اول = ورود، دوم = خروج)، هر تردد فقط با شماره ترتیبی
- * («تردد ۱»، «تردد ۲»، ...) نمایش داده می‌شود.
- *
- * روزهای تعطیل (طبق نگاشت تقویم اختیاری هر سایت) با رنگ قرمز مشخص
- * می‌شوند — اگر آن سایت نگاشت تقویم نداشته باشد، is_holiday همیشه false
- * است و هیچ روزی رنگی نمی‌شود.
- *
- * ⚠️ نام روز هفته (weekday، شنبه تا جمعه) یک محاسبه خالص تقویمی از خودِ
- * تاریخ است (Backend: jalali_weekday_name) — نه داده‌ای که از جدول
- * تقویم/تعطیلات خوانده شود؛ پس همیشه در دسترس است، حتی برای سایتی که
- * اصلاً نگاشت تقویم ندارد.
- *
- * ⚠️ طبق بازخورد صریح، نمایش کارتی برای موبایل حذف شد - همیشه همین
- * جدول (در همه اندازه صفحه) با یک اسکرول‌بار افقی *بالای* جدول هم
- * (علاوه‌بر اسکرول‌بار طبیعی پایین خودِ جدول، کاملاً هماهنگ با آن) - تا
- * برای دیدن ستون‌های سمت راست/چپ وقتی تعداد ستون‌های تردد زیاد است،
- * نیازی به اسکرول‌کردن تا پایین صفحه نباشد.
- *
- * ⚠️ کاملاً مستقل از صفحه «گزارش ورود و خروج» (ClockInOutReportPage —
- * سیستم آزمایشی GPS) — این یک منبع داده متفاوت (دستگاه حضور و غیاب واقعی
- * کارخانه) و یک صفحه کاملاً جدا است.
+ * گزارش تردد ماهانه‌ی شخصی از دستگاه‌های حضور و غیاب کارخانه.
+ * داده از SQL Server سایت خودِ کاربر خوانده می‌شود (فقط اگر برای آن سایت نگاشت تردد تنظیم شده باشد).
+ * هر روز ماه یک ردیف است و ترددها با شماره‌ی ترتیبی («تردد ۱»، «تردد ۲»، ...) نمایش داده می‌شوند؛
+ * تعداد ستون‌های تردد پویا و برابر بیشترین تعداد تردد در روزهای همان ماه است.
+ * روزهای تعطیل (از نگاشت تقویم سایت) قرمز، غیبت زرد و مرخصی/ماموریت روزانه و ساعتی با چیپ مشخص می‌شوند.
+ * نام روز هفته در Backend از خود تاریخ محاسبه می‌شود و همیشه موجود است.
+ * جدول در همه‌ی اندازه‌ها یک اسکرول‌بار افقی بالای خود دارد که با اسکرول خود جدول همگام است.
+ * این صفحه از «گزارش ورود و خروج» GPS (ClockInOutReportPage) مستقل است و منبع داده‌ی متفاوتی دارد.
+ * دسترسی به گزارش با AccessGateDialog محدود می‌شود (ارزیابی‌های معوق یا اطلاعیه‌های نخوانده).
  */
-// ⚠️ مرخصی/ماموریت (فقط سایت‌های کاراوب): روزانه از Mor_Mam، ساعتی از
-// علامت (Status) خودِ تردد - بازه از همان تردد تا تردد بعدی.
-// ⚠️ طبق درخواست صریح کاربر: تعطیل و غیبت هم مثل مرخصی/ماموریت برچسب
-// دارند - غیبت (زرد) = روز کاری گذشته بدون تردد و بدون مرخصی/ماموریت.
+// رنگ چیپ هر نوع غیبت: مرخصی (سبز)، ماموریت (آبی)، سایر (زرد)
+// مرخصی/ماموریت روزانه از جدول Mor_Mam و ساعتی از علامت (Status) خودِ تردد می‌آید
 const KIND_COLOR = { leave: "success", mission: "info", other: "warning" };
+// چیپ وضعیت روز: تعطیل (قرمز) و غیبت (زرد = روز کاری گذشته بدون تردد و بدون مرخصی/ماموریت)
 const STATUS_CHIPS = {
   holiday: { label: "تعطیل", color: "error" },
   absent: { label: "غیبت", color: "warning" },
 };
 
+// تعداد دقیقه را به رشته‌ی «ساعت:دقیقه» تبدیل می‌کند (مثلاً 103 -> 1:43)
 function formatMinutes(minutes) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-// طبق خواست کاربر فقط عنوان و مدت - مثلاً «مرخصی ساعتی استحقاقی (1:43)»
+// متن چیپ/تولتیپ یک غیبت ساعتی: عنوان به همراه مدت در پرانتز، مثلاً «مرخصی ساعتی استحقاقی (1:43)»
 function hourlyText(mark) {
   return mark.minutes ? `${mark.label} (${formatMinutes(mark.minutes)})` : mark.label;
 }
 
-// برچسب کوچک و قابل‌شکستن در چند خط - تا جدول در موبایل جا شود
+// استایل چیپ فشرده با متن قابل‌شکستن در چند خط، تا جدول در موبایل جا شود
 const compactChipSx = {
   height: "auto",
   fontSize: { xs: "0.62rem", sm: "0.7rem" },
   "& .MuiChip-label": { px: 0.75, py: 0.25, whiteSpace: "normal", lineHeight: 1.35 },
 };
 
+/**
+ * کامپوننت صفحه‌ی گزارش تردد ماهانه.
+ * ماه انتخابی را از سرور می‌گیرد و جدول روزانه‌ی ترددها را با ستون‌های پویا رندر می‌کند.
+ */
 export default function MonthlyAttendanceReportPage() {
   const theme = useTheme();
-  const [period, setPeriod] = useState({ year: null, month: null }); // مقدار اولیه از پاسخ سرور پر می‌شود
-  const [report, setReport] = useState(null);
+  const [period, setPeriod] = useState({ year: null, month: null }); // ماه انتخابی؛ مقدار اولیه از پاسخ سرور (ماه جاری) پر می‌شود
+  const [report, setReport] = useState(null); // پاسخ سرور: { year, month, days, max_transits_in_month }
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  // ⚠️ از Hook مشترک استفاده می‌شود تا وضعیت با برگشت به صفحه یا
-  // بازگشت فوکوس خودکار تازه شود - بدون نیاز به رفرش دستی.
+  // وضعیت محدودیت دسترسی از Hook مشترک؛ با برگشت به صفحه یا بازگشت فوکوس خودکار تازه می‌شود
   const { status: gateStatus } = useAccessGateStatus();
-  const [gateOpen, setGateOpen] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false); // باز بودن دیالوگ محدودیت دسترسی
 
-  // ⚠️ با هر تغییر وضعیت، دیالوگ هم‌گام می‌شود: اگر کاربر پیش‌نیاز را
-  // انجام داد و برگشت، دیالوگ خودکار بسته می‌شود (نه اینکه هشدار
-  // قدیمی تا رفرش دستی باقی بماند).
+  // با هر تغییر وضعیت، دیالوگ همگام می‌شود: اگر کاربر پیش‌نیاز را انجام داد و برگشت، دیالوگ خودکار بسته می‌شود
   useEffect(() => {
     if (!gateStatus) return;
     setGateOpen(Boolean(gateStatus.blocked_features?.["attendance_report"]));
   }, [gateStatus]);
 
 
-  const topScrollRef = useRef(null);
-  const tableScrollRef = useRef(null);
-  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const topScrollRef = useRef(null); // ظرف اسکرول‌بار افقی بالای جدول
+  const tableScrollRef = useRef(null); // ظرف خود جدول (TableContainer)
+  const [tableScrollWidth, setTableScrollWidth] = useState(0); // عرض قابل‌اسکرول جدول برای هم‌عرض کردن اسکرول‌بار بالا
   const isSyncingScroll = useRef(false); // جلوگیری از حلقه بی‌نهایت بین دو onScroll
 
+  // با هر تغییر ماه/سال، گزارش را از سرور می‌گیرد و period را با پاسخ سرور همگام می‌کند
   useEffect(() => {
     setIsLoading(true);
     setError("");
@@ -125,6 +107,7 @@ export default function MonthlyAttendanceReportPage() {
     report?.days?.some((d) => d.day_status || (d.hourly_absences && d.hourly_absences.length))
   );
 
+  // رنگ پس‌زمینه‌ی ردیف یک روز: تعطیل قرمز کم‌رنگ، غیبت روزانه به رنگ نوع آن، غیبت زرد، در غیر این صورت بدون رنگ
   function rowBackground(day) {
     if (day.is_holiday) return "rgba(211, 47, 47, 0.08)";
     if (day.daily_absence) return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
@@ -140,6 +123,7 @@ export default function MonthlyAttendanceReportPage() {
     }
   }, [report, transitColumnCount]);
 
+  // اسکرول افقی نوار بالایی را به جدول منتقل می‌کند (با قفل برای جلوگیری از حلقه‌ی رفت‌وبرگشت)
   function handleTopScroll() {
     if (isSyncingScroll.current) return;
     isSyncingScroll.current = true;
@@ -149,6 +133,7 @@ export default function MonthlyAttendanceReportPage() {
     isSyncingScroll.current = false;
   }
 
+  // اسکرول افقی جدول را به نوار بالایی منتقل می‌کند
   function handleTableScroll() {
     if (isSyncingScroll.current) return;
     isSyncingScroll.current = true;
@@ -165,11 +150,13 @@ export default function MonthlyAttendanceReportPage() {
         گزارش تردد ماهانه
       </Typography>
 
+      {/* توضیح منبع داده‌ی گزارش */}
       <Alert severity="info" sx={{ mb: 3 }}>
         همکار گرامی، گزارش حاضر بر اساس اطلاعات ثبت‌شده مربوط به ورود و خروج شما، از طریق دستگاه‌های ثبت
         و کنترل تردد مستقر در محوطه کارخانه، تهیه و تنظیم گردیده است.
       </Alert>
 
+      {/* فیلتر ماه/سال شمسی */}
       <Box sx={{ mb: 3 }}>
         <JalaliMonthYearFilter
           year={period.year}
@@ -179,6 +166,7 @@ export default function MonthlyAttendanceReportPage() {
         />
       </Box>
 
+      {/* راهنمای رنگ چیپ‌ها؛ فقط وقتی در این ماه غیبت/مرخصی/تعطیلی وجود دارد */}
       {hasAbsences && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
           <Chip size="small" color="success" variant="outlined" label="مرخصی" />
@@ -194,12 +182,14 @@ export default function MonthlyAttendanceReportPage() {
         </Alert>
       )}
 
+      {/* بارگذاری اولیه / جدول گزارش با اسکرول‌بار افقی بالایی همگام‌شده */}
       {isLoading && !report ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
         </Box>
       ) : report ? (
         <>
+          {/* اسکرول‌بار افقی بالای جدول: یک Box خالی هم‌عرض جدول */}
           <Box ref={topScrollRef} onScroll={handleTopScroll} sx={{ overflowX: "auto", overflowY: "hidden", mb: 0.5 }}>
             <Box sx={{ width: tableScrollWidth, height: 1 }} />
           </Box>
@@ -213,7 +203,7 @@ export default function MonthlyAttendanceReportPage() {
             <Table
               size="small"
               sx={{
-                // ⚠️ طبق درخواست کاربر: فشرده‌تر تا در موبایل کامل دیده شود
+                // سلول‌های فشرده تا جدول در موبایل کامل دیده شود
                 "& .MuiTableCell-root": {
                   px: { xs: 0.5, sm: 1 },
                   py: { xs: 0.5, sm: 0.75 },
@@ -222,6 +212,7 @@ export default function MonthlyAttendanceReportPage() {
                 },
               }}
             >
+              {/* سرستون‌ها: روز، تاریخ، وضعیت (اختیاری) و ستون‌های پویای تردد */}
               <TableHead>
                 <TableRow>
                   <TableCell>روز</TableCell>
@@ -234,6 +225,7 @@ export default function MonthlyAttendanceReportPage() {
                   ))}
                 </TableRow>
               </TableHead>
+              {/* یک ردیف به ازای هر روز ماه */}
               <TableBody>
                 {report.days.map((day) => (
                   <TableRow key={day.date} hover sx={{ bgcolor: rowBackground(day) }}>
@@ -257,7 +249,7 @@ export default function MonthlyAttendanceReportPage() {
                     </TableCell>
                     {hasAbsences && (
                       <TableCell sx={{ "&&": { whiteSpace: "normal" }, minWidth: { xs: 84, sm: 120 }, maxWidth: 220 }}>
-                        {/* طبق خواست کاربر: چند مرخصی/ماموریت در یک روز زیر هم، نه کنار هم */}
+                        {/* چیپ غیبت روزانه یا وضعیت روز، و زیر آن چیپ‌های غیبت ساعتی (زیر هم) */}
                         <Stack direction="column" spacing={0.5} alignItems="flex-start">
                           {day.daily_absence ? (
                             <Chip
@@ -289,8 +281,9 @@ export default function MonthlyAttendanceReportPage() {
                         </Stack>
                       </TableCell>
                     )}
+                    {/* ستون‌های تردد: ساعت هر تردد؛ اگر تردد علامت مرخصی/ماموریت داشته باشد رنگی و با تولتیپ */}
                     {Array.from({ length: transitColumnCount }, (_, i) => {
-                      const mark = day.transit_marks?.[i];
+                      const mark = day.transit_marks?.[i]; // علامت مرخصی/ماموریت ساعتی متصل به این تردد
                       const cell = (
                         <TableCell
                           key={i}
@@ -324,6 +317,7 @@ export default function MonthlyAttendanceReportPage() {
         </>
       ) : null}
 
+      {/* دیالوگ محدودیت دسترسی: ارزیابی‌های معوق یا اطلاعیه‌های نخوانده */}
       <AccessGateDialog
         open={gateOpen}
         gate={gateStatus?.blocked_features?.["attendance_report"]}

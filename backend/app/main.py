@@ -1,5 +1,7 @@
 """
-نقطه ورود اصلی برنامه FAIPCO Portal.
+نقطه ورود اصلی برنامه FAIPCO Portal: ساخت شیء FastAPI، چرخه عمر (همگام‌سازی
+برندینگ index.html و استارت/توقف Scheduler)، CORS، ثبت روتر v1، Middleware
+شمارش استفاده و endpoint سلامت.
 اجرا: uvicorn app.main:app --reload
 """
 import asyncio
@@ -18,14 +20,14 @@ settings = get_settings()
 
 
 async def sync_index_html_branding() -> None:
-    """هر بار سرویس بالا می‌آید (از جمله بعد از Build مجدد فرانت در آپدیت)، عنوان
-    تنظیم‌شده در پنل داخل dist/index.html نوشته می‌شود - وگرنه تا ذخیره بعدی
-    برندینگ، فایل تازه‌ساخته‌شده عنوان ثابت زمان Build را داشت."""
+    """هنگام بالا آمدن سرویس، عنوان و نام کوتاه تنظیم‌شده در پنل را داخل dist/index.html می‌نویسد
+    تا فایل تازه Build‌شده فرانت همیشه برندینگ فعلی را داشته باشد. خطا فقط لاگ می‌شود."""
     try:
         from app.db.session import AsyncSessionLocal
         from app.services.index_html_branding import write_index_html_branding
         from app.services.system_settings_service import SystemSettingsService
 
+        # خواندن برندینگ از تنظیمات سیستم
         async with AsyncSessionLocal() as db:
             branding = await SystemSettingsService(db).get_branding()
         write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
@@ -35,50 +37,40 @@ async def sync_index_html_branding() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """چرخه عمر برنامه: در شروع برندینگ را همگام و Scheduler را استارت می‌کند، در پایان Scheduler را متوقف می‌کند."""
     await sync_index_html_branding()
     await start_scheduler()
     yield
     stop_scheduler()
 
 
+# شیء اصلی برنامه FastAPI
 app = FastAPI(
     title=settings.APP_NAME,
     version="0.1.0",
     lifespan=lifespan,
-    # مستندات تعاملی API (Swagger/ReDoc) فقط وقتی DEBUG=true فعال است —
-    # روی Production این‌ها نقشه کامل هر Endpoint را بدون نیاز به ورود در
-    # اختیار هرکسی می‌گذارند؛ چیزی که یک مهاجم را از حدس‌زدن/Fuzz کردن
-    # مسیرها بی‌نیاز می‌کند. توسعه‌دهنده‌ها می‌توانند موقتاً DEBUG=true را
-    # روی سرور خودشان (نه Production واقعی) فعال کنند.
+    # مستندات تعاملی API (Swagger/ReDoc/OpenAPI) فقط وقتی DEBUG=true است فعال‌اند
+    # تا نقشه Endpointها روی Production بدون ورود در دسترس نباشد.
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
     openapi_url="/api/openapi.json" if settings.DEBUG else None,
 )
 
+# تنظیم CORS از روی CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    # قبلاً True بود — همراه با allow_origins=["*"] (که در Production واقعی
-    # تنظیم می‌شود)، این ترکیب باعث می‌شد Starlette به‌جای فرستادن "*" خام،
-    # مقدار Origin هر درخواست را عیناً در پاسخ منعکس کند (رفتار شناخته‌شده
-    # Starlette برای دورزدن محدودیت مرورگرها روی wildcard+credentials) —
-    # یعنی عملاً هر سایتی می‌توانست درخواست Cross-Origin با Credentials
-    # بفرستد. چون این پروژه هیچ‌جا از Cookie برای احراز هویت استفاده نمی‌کند
-    # (فقط Bearer Token از localStorage، که به‌طور خودکار توسط مرورگر برای
-    # درخواست‌های Cross-Origin فرستاده نمی‌شود)، اصلاً نیازی به Credentials
-    # در CORS نیست — False کردنش این حفره را کاملاً می‌بندد، بدون تأثیر بر
-    # عملکرد فعلی (چون فرانت‌اند همیشه Same-Origin وصل می‌شود).
+    # Credentials در CORS غیرفعال است: احراز هویت فقط با Bearer Token (نه Cookie) انجام می‌شود،
+    # و ترکیب allow_origins=["*"] با allow_credentials=True باعث می‌شد Starlette هر Origin را منعکس کند.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+app.include_router(api_router, prefix=settings.API_V1_PREFIX)  # همه endpointهای v1 زیر /api/v1
 
-# نگه‌داشتن ارجاع تسک‌های پس‌زمینه — یک گوچای شناخته‌شده asyncio: اگر تسکی
-# که با create_task ساخته شده هیچ‌جا نگه داشته نشود، ممکن است قبل از تمام
-# شدن Garbage Collect شود. با افزودن به این Set (و حذف در پایان)، این خطر
-# از بین می‌رود.
+# نگه‌داشتن ارجاع تسک‌های پس‌زمینه تا قبل از اتمام Garbage Collect نشوند
+# (تسک در پایان کار با done_callback از Set حذف می‌شود).
 _background_tasks: set[asyncio.Task] = set()
 
 
@@ -95,6 +87,7 @@ async def track_usage_middleware(request: Request, call_next):
     شکست بخورد (که در خودِ record_usage با try/except پوشانده شده)، تأثیری
     روی درخواست اصلی ندارد.
     """
+    # فقط درخواست‌های API دارای هدر Authorization شمارش می‌شوند
     if request.url.path.startswith(settings.API_V1_PREFIX) and "authorization" in request.headers:
         task = asyncio.create_task(record_usage())
         _background_tasks.add(task)
@@ -105,5 +98,5 @@ async def track_usage_middleware(request: Request, call_next):
 
 @app.get("/api/health", tags=["health"])
 async def health_check():
-    """برای بررسی سلامت سرویس توسط Nginx/Monitoring استفاده می‌شود."""
+    """endpoint سلامت برای Nginx/Monitoring؛ خروجی: وضعیت ok و نام برنامه."""
     return {"status": "ok", "app": settings.APP_NAME}

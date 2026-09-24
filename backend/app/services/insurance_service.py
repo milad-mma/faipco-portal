@@ -1,13 +1,13 @@
 """
-سرویس ماژول «بیمه تکمیلی» - بازسازی سامانه قدیمی داخل پرتال.
+سرویس ماژول «بیمه تکمیلی».
 
-منطق فرم و اعتبارسنجی عیناً همان سامانه قدیمی است (core/insurance_rules.py)؛
-تفاوت‌ها فقط امنیتی/زیرساختی‌اند:
-- هویت فرد از نشست پرتال (نه کد ملی به‌عنوان رمز)
-- مدارک در دیتابیس پرتال (bytea) تا در بکاپ/بازیابی بمانند، با بررسی
-  MIME واقعی محتوا (نه فقط پسوند) و محدودیت ۱۰ مگابایت
-- هر مدرک فقط توسط صاحبش یا دارنده مجوز insurance.view قابل دانلود است
-- ثبت مجدد = ویرایش (جایگزینی کامل، مثل سامانه قدیمی) در یک تراکنش
+این سرویس تمام عملیات دیتابیسی ماژول را انجام می‌دهد:
+- خواندن/ذخیره تنظیمات ماژول (فعال/غیرفعال، جدول نرخ، نکات) در جدول system_settings
+- ساخت نمای اطلاعات پرسنلی و وضعیت ثبت‌نام هر فرد
+- آپلود، دانلود و حذف مدارک کفالت (فایل‌ها به‌صورت bytea در دیتابیس پرتال)
+- ثبت/ویرایش فرم ثبت‌نام (اعتبارسنجی با core/insurance_rules و جایگزینی کامل اعضا)
+- فهرست، جزئیات و خروجی Excel برای مدیران
+- پاک‌سازی مدارک آپلودشده‌ای که هرگز به فرم نهایی متصل نشده‌اند
 """
 from __future__ import annotations
 
@@ -34,35 +34,45 @@ from app.schemas.insurance import (
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_KEY = "insurance_settings"  # JSON: enabled / rate_table / notes
-# مدارک آپلودشده ولی هنوز به عضوی وصل‌نشده (قبل از ثبت نهایی فرم) به همین
-# عضو موقت وصل می‌شوند و در ثبت نهایی جابه‌جا می‌شوند؛ مدارک یتیم قدیمی‌تر از
-# ۲۴ ساعت پاک می‌شوند.
+# کلید رکورد تنظیمات ماژول در جدول system_settings؛ مقدار آن JSON با کلیدهای
+# enabled / rate_table / notes است.
+SETTINGS_KEY = "insurance_settings"
+
+# مدرکی که قبل از ثبت نهایی فرم آپلود می‌شود به یک عضو موقت با
+# member_type="pending" وصل می‌شود. اگر این عضو موقت بیش از این تعداد ساعت
+# بماند (یعنی فرم هرگز ثبت نشده)، زمان‌بند آن را همراه مدرکش پاک می‌کند.
 PENDING_MAX_AGE_HOURS = 24
 
 
 class InsuranceError(Exception):
-    pass
+    """خطای قابل نمایش به کاربر (پیام فارسی در متن استثنا)."""
 
 
 class InsuranceDisabledError(InsuranceError):
-    pass
+    """وقتی ماژول از پنل غیرفعال شده و عملیات ثبت/آپلود مجاز نیست."""
 
 
 class InsuranceService:
+    """عملیات ماژول بیمه تکمیلی روی یک نشست دیتابیس (AsyncSession)."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
     # ---------- تنظیمات ----------
 
     async def get_settings(self) -> dict:
+        """
+        تنظیمات ماژول را از system_settings می‌خواند.
+        خروجی همیشه سه کلید enabled / rate_table / notes دارد؛ اگر رکوردی نباشد
+        یا JSON آن خراب/ناقص باشد، مقدارهای پیش‌فرض insurance_rules برمی‌گردد.
+        """
         row = await self.db.get(SystemSetting, SETTINGS_KEY)
         stored: dict = {}
         if row is not None:
             try:
                 stored = json.loads(row.value) or {}
             except (ValueError, TypeError):
-                stored = {}
+                stored = {}  # مقدار خراب در دیتابیس → مثل نبودن رکورد رفتار می‌شود
         return {
             "enabled": bool(stored.get("enabled", True)),
             "rate_table": self._sanitize_rate_table(stored.get("rate_table")) or rules.DEFAULT_RATE_TABLE,
@@ -70,6 +80,11 @@ class InsuranceService:
         }
 
     async def update_settings(self, patch: dict) -> dict:
+        """
+        بخشی از تنظیمات را تغییر می‌دهد و کل تنظیمات جدید را برمی‌گرداند.
+        فقط کلیدهایی که در patch مقدار غیر None دارند اعمال می‌شوند؛ جدول نرخ
+        نامعتبر باعث خطای InsuranceError می‌شود.
+        """
         current = await self.get_settings()
         if "enabled" in patch and patch["enabled"] is not None:
             current["enabled"] = bool(patch["enabled"])
@@ -80,6 +95,7 @@ class InsuranceService:
             current["rate_table"] = table
         if patch.get("notes") is not None:
             current["notes"] = self._sanitize_notes(patch["notes"]) or []
+        # ذخیره: رکورد موجود به‌روز می‌شود، وگرنه رکورد جدید ساخته می‌شود
         row = await self.db.get(SystemSetting, SETTINGS_KEY)
         if row is None:
             self.db.add(SystemSetting(key=SETTINGS_KEY, value=json.dumps(current, ensure_ascii=False)))
@@ -90,6 +106,12 @@ class InsuranceService:
 
     @staticmethod
     def _sanitize_rate_table(value) -> dict | None:
+        """
+        ساختار جدول نرخ ورودی را پاک‌سازی می‌کند و نسخه‌ی امن آن را برمی‌گرداند.
+        سطرهای بدون برچسب سن یا با مبلغ غیرعددی حذف می‌شوند، متن‌ها کوتاه می‌شوند
+        و حداکثر ۵۰ سطر نگه داشته می‌شود. اگر ساختار یا همه‌ی سطرها نامعتبر باشند
+        None برمی‌گردد.
+        """
         if not isinstance(value, dict):
             return None
         rows_in = value.get("rows")
@@ -104,11 +126,12 @@ class InsuranceService:
                 non_dep = int(r.get("non_dependent") or 0)
                 dep = int(r.get("dependent") or 0)
             except (TypeError, ValueError):
-                continue
+                continue  # مبلغ غیرعددی → این سطر نادیده گرفته می‌شود
             if label:
                 rows.append({"age_label": label, "non_dependent": max(0, non_dep), "dependent": max(0, dep)})
         if not rows:
             return None
+        # عنوان ستون‌ها و واحد پول با مقدار پیش‌فرض در صورت خالی بودن
         return {
             "unit": str(value.get("unit") or "تومان").strip()[:20],
             "age_header": str(value.get("age_header") or "سن").strip()[:40],
@@ -119,15 +142,24 @@ class InsuranceService:
 
     @staticmethod
     def _sanitize_notes(value) -> list[str] | None:
+        """
+        فهرست نکات (کادر آبی) را پاک‌سازی می‌کند: هر مورد به رشته‌ی حداکثر ۵۰۰
+        کاراکتری تبدیل می‌شود، موارد خالی حذف می‌شوند و حداکثر ۳۰ مورد می‌ماند.
+        متن ساده است؛ نشانه‌های **پررنگ** و __زیرخط__ در فرانت رندر می‌شوند.
+        """
         if not isinstance(value, list):
             return None
-        # متن ساده؛ **پررنگ** و __زیرخط__ در فرانت رندر می‌شود (بدون HTML)
         return [str(n).strip()[:500] for n in value[:30] if str(n).strip()]
 
     # ---------- وضعیت شخصی ----------
 
     @staticmethod
     def employee_view(employee: Employee) -> InsuranceEmployeeOut:
+        """
+        از رکورد پرسنل، اطلاعات لازم برای فرم بیمه را می‌سازد.
+        کد ملی و موبایل نرمال می‌شوند (ارقام فارسی → انگلیسی) و فهرست missing
+        نام فیلدهایی را دارد که در پرتال خالی‌اند و بدون آن‌ها ثبت‌نام ممکن نیست.
+        """
         missing = []
         if not employee.national_code:
             missing.append("کد ملی")
@@ -150,6 +182,7 @@ class InsuranceService:
         )
 
     async def get_registration(self, employee_id: int) -> InsuranceRegistration | None:
+        """ثبت‌نام یک پرسنل را همراه اعضا و مدرک هر عضو می‌خواند؛ اگر نباشد None."""
         result = await self.db.execute(
             select(InsuranceRegistration)
             .options(selectinload(InsuranceRegistration.members).selectinload(InsuranceMember.document))
@@ -158,6 +191,12 @@ class InsuranceService:
         return result.scalar_one_or_none()
 
     async def my_status(self, employee: Employee | None) -> dict:
+        """
+        داده‌ی کامل صفحه‌ی بیمه برای کاربر جاری را می‌سازد: وضعیت فعال بودن،
+        اطلاعات پرسنلی، ثبت‌نام قبلی (اگر باشد)، جدول نرخ، نکات و فهرست‌های ثابت
+        (بانک‌ها، انواع حساب، انواع عضو). اگر کاربر به پرسنلی وصل نباشد
+        employee و registration خالی برمی‌گردند.
+        """
         settings = await self.get_settings()
         registration = await self.get_registration(employee.id) if employee else None
         return {
@@ -168,6 +207,7 @@ class InsuranceService:
             "notes": settings["notes"],
             "bank_codes": rules.BANK_CODES,
             "account_types": rules.ACCOUNT_TYPES,
+            # کلید gender هر نوع عضو فقط برای اعتبارسنجی سرور است و به کلاینت نمی‌رود
             "member_types": {k: {kk: vv for kk, vv in v.items() if kk != "gender"} for k, v in rules.MEMBER_TYPES.items()},
         }
 
@@ -177,18 +217,21 @@ class InsuranceService:
         self, employee: Employee, file_name: str, content_type: str, content: bytes
     ) -> InsuranceDocument:
         """
-        آپلود مدرک قبل از ثبت نهایی (مثل upload_doc.php). به یک «عضو موقت»
-        (member_type=pending) در ثبت‌نام همین پرسنل وصل می‌شود تا در ثبت
-        نهایی به عضو واقعی منتقل شود. مالکیت: فقط همین پرسنل.
+        یک فایل مدرک را برای پرسنل ذخیره می‌کند و رکورد مدرک را برمی‌گرداند.
+        ورودی: پرسنل، نام فایل، نوع اعلام‌شده توسط کلاینت (استفاده نمی‌شود) و بایت‌ها.
+        فایل به یک عضو موقت (pending) در ثبت‌نام همین پرسنل وصل می‌شود تا هنگام
+        ثبت نهایی فرم به عضو واقعی منتقل شود.
         """
         if not await self._is_enabled():
             raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است.")
         if len(content) > rules.DOCUMENT_MAX_BYTES:
             raise InsuranceError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد.")
+        # نوع فایل از امضای بایت‌های ابتدایی تشخیص داده می‌شود، نه از پسوند یا Content-Type
         detected = _sniff_content_type(content)
         if detected not in rules.DOCUMENT_ALLOWED_TYPES:
             raise InsuranceError("فقط فایل تصویری (JPG/PNG/GIF/WEBP/BMP/TIFF) یا PDF پذیرفته می‌شود.")
         registration = await self._get_or_create_shell(employee)
+        # عضو موقت نگهدارنده‌ی مدرک؛ همه فیلدها خالی و sort_order بزرگ تا آخر لیست بماند
         holder = InsuranceMember(
             registration_id=registration.id,
             member_type="pending",
@@ -207,7 +250,8 @@ class InsuranceService:
             sort_order=9999,
         )
         self.db.add(holder)
-        await self.db.flush()
+        await self.db.flush()  # برای گرفتن holder.id
+        # نام فایل بدون جداکننده‌ی مسیر و حداکثر ۲۵۵ کاراکتر
         safe_name = (file_name or "document").replace("/", "_").replace("\\", "_")[:255]
         doc = InsuranceDocument(
             member_id=holder.id, file_name=safe_name, content_type=detected, size_bytes=len(content), data=content
@@ -218,6 +262,11 @@ class InsuranceService:
         return doc
 
     async def get_document_for_download(self, document_id: int, employee_id: int | None, can_view_all: bool):
+        """
+        مدرک را برای دانلود برمی‌گرداند اگر درخواست‌کننده مجاز باشد.
+        مجاز = صاحب مدرک (employee_id همان پرسنل ثبت‌نام) یا can_view_all=True
+        (مجوز insurance.view). در غیر این صورت یا اگر مدرک نباشد None.
+        """
         result = await self.db.execute(
             select(InsuranceDocument, InsuranceRegistration.employee_id)
             .join(InsuranceMember, InsuranceMember.id == InsuranceDocument.member_id)
@@ -233,6 +282,11 @@ class InsuranceService:
         return doc
 
     async def delete_own_document(self, document_id: int, employee_id: int) -> bool:
+        """
+        مدرک متعلق به پرسنل را حذف می‌کند. اگر مدرک به عضو موقت وصل بود، آن عضو
+        هم پاک می‌شود. خروجی True یعنی حذف شد، False یعنی مدرک پیدا نشد یا مال
+        این پرسنل نبود.
+        """
         doc = await self.get_document_for_download(document_id, employee_id, can_view_all=False)
         if doc is None:
             return False
@@ -246,6 +300,12 @@ class InsuranceService:
     # ---------- ثبت / ویرایش ----------
 
     async def save(self, employee: Employee, payload: InsuranceRegistrationIn) -> InsuranceRegistration:
+        """
+        فرم ثبت‌نام را اعتبارسنجی و ذخیره می‌کند و ثبت‌نام نهایی را برمی‌گرداند.
+        ثبت مجدد یعنی ویرایش: اطلاعات شخص اصلی به‌روز می‌شود و همه‌ی اعضای
+        قبلی با اعضای فرم جدید جایگزین می‌شوند. مدارکی که در فرم جدید ارجاع
+        داده شده‌اند به عضو جدید منتقل می‌شوند؛ بقیه همراه عضو قبلی حذف می‌شوند.
+        """
         if not await self._is_enabled():
             raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است.")
         view = self.employee_view(employee)
@@ -254,6 +314,7 @@ class InsuranceService:
                 "اطلاعات پرسنلی شما کامل نیست (" + "، ".join(view.missing) + "). لطفاً به واحد منابع انسانی اطلاع دهید."
             )
 
+        # اعتبارسنجی فیلدهای شخص اصلی و اعضا با قواعد ماژول؛ خروجی داده‌ی نرمال‌شده است
         main = rules.validate_main(payload.model_dump(exclude={"members"}), view.national_id or "")
         employee_info = {"gender": view.gender, "first_name": employee.first_name, "last_name": employee.last_name}
         members = rules.validate_members(
@@ -261,12 +322,10 @@ class InsuranceService:
         )
 
         registration = await self._get_or_create_shell(employee)
-        # همه اعضای قبلی حذف می‌شوند (جایگزینی کامل، مثل سامانه قدیمی)؛ مدارک
-        # آپلودشده‌ای که در فرم جدید ارجاع داده شده‌اند نگه داشته می‌شوند.
         existing_members = {m.id: m for m in registration.members}
         referenced_doc_ids = {m.document_id for m in payload.members if m.document_id}
 
-        # مدارک قابل استفاده: مدارک همین ثبت‌نام (pending یا اعضای قبلی)
+        # هر مدرک ارجاع‌شده باید متعلق به همین ثبت‌نام باشد (عضو موقت یا عضو قبلی)
         docs_result = await self.db.execute(
             select(InsuranceDocument)
             .join(InsuranceMember, InsuranceMember.id == InsuranceDocument.member_id)
@@ -277,13 +336,13 @@ class InsuranceService:
             if doc_id not in own_docs:
                 raise InsuranceError("مدرک ارجاع‌شده یافت نشد یا متعلق به شما نیست.")
 
-        # مدرک اجباری برای کفالت «بله»
+        # عضوی که کفالتش «بله» است باید مدرک داشته باشد
         for spec, m_in in zip(members, payload.members):
             if spec["kafala_status"] == "yes" and not m_in.document_id:
                 cfg = rules.MEMBER_TYPES[spec["member_type"]]
                 raise InsuranceError(f"آپلود مدرک کفالت یا حضانت برای {cfg['title']} اجباری است.")
 
-        # به‌روزرسانی شخص اصلی
+        # فیلدهای هویتی شخص اصلی همیشه از رکورد پرسنل (نه از فرم) نوشته می‌شوند
         registration.personnel_code = employee.personnel_code
         registration.first_name = employee.first_name
         registration.last_name = employee.last_name
@@ -291,30 +350,32 @@ class InsuranceService:
         registration.gender = view.gender or 0
         registration.national_id = view.national_id or ""
         registration.employment_date = view.employment_date or ""
+        # بقیه‌ی فیلدهای فرم (تأهل، شماره حساب، ...) از خروجی اعتبارسنجی
         for key, value in main.items():
             setattr(registration, key, value)
 
-        # اعضای جدید
+        # ساخت اعضای جدید و انتقال مدرک ارجاع‌شده به عضو جدید
         new_members: list[InsuranceMember] = []
         for spec, m_in in zip(members, payload.members):
-            spec.pop("client_key", None)
+            spec.pop("client_key", None)  # شناسه‌ی سمت کلاینت؛ ستون دیتابیس نیست
             member = InsuranceMember(registration_id=registration.id, **spec)
             self.db.add(member)
-            await self.db.flush()
+            await self.db.flush()  # برای گرفتن member.id
             if m_in.document_id and spec["kafala_status"] == "yes":
                 doc = own_docs[m_in.document_id]
                 doc.member_id = member.id
             new_members.append(member)
         await self.db.flush()
 
-        # حذف اعضای قبلی + عضوهای موقت با DELETE مستقیم (cascade دیتابیس فقط
-        # مدارکی را پاک می‌کند که هنوز به عضو قدیمی وصل‌اند؛ مدارک منتقل‌شده می‌مانند)
+        # حذف اعضای قبلی و عضوهای موقت با DELETE مستقیم: cascade دیتابیس فقط
+        # مدارکی را پاک می‌کند که هنوز به عضو قدیمی وصل‌اند؛ مدارک منتقل‌شده می‌مانند
         if existing_members:
             await self.db.execute(delete(InsuranceMember).where(InsuranceMember.id.in_(list(existing_members))))
         await self.db.commit()
         return await self.get_registration(employee.id)
 
     async def delete_registration(self, employee_id: int) -> bool:
+        """ثبت‌نام پرسنل را همراه اعضا و مدارک (cascade) حذف می‌کند؛ False اگر نبود."""
         registration = await self.get_registration(employee_id)
         if registration is None:
             return False
@@ -327,6 +388,13 @@ class InsuranceService:
     async def list_registrations(
         self, site_ids: set[int] | None, search: str | None, page: int, page_size: int
     ) -> InsuranceListOut:
+        """
+        فهرست صفحه‌بندی‌شده‌ی ثبت‌نام‌ها برای صفحه‌ی مدیریت.
+        ورودی: مجموعه سایت‌های مجاز (None = همه)، عبارت جستجو، شماره و اندازه صفحه.
+        خروجی: آیتم‌ها + total (با جستجو) + registered (کل ثبت‌نام‌ها) +
+        eligible (پرسنل فعال) برای نمایش آمار.
+        """
+        # کوئری اصلی: ثبت‌نام + پرسنل + سایت + واحد
         base = (
             select(InsuranceRegistration, Employee, Site.id, Site.name, Department.name)
             .join(Employee, Employee.id == InsuranceRegistration.employee_id)
@@ -337,12 +405,14 @@ class InsuranceService:
             Employee, Employee.id == InsuranceRegistration.employee_id
         )
         eligible_q = select(func.count()).select_from(Employee).where(Employee.is_active.is_(True))
+        # محدودیت سایت روی هر سه کوئری اعمال می‌شود
         if site_ids is not None:
             base = base.where(Employee.site_id.in_(site_ids))
             count_q = count_q.where(Employee.site_id.in_(site_ids))
             eligible_q = eligible_q.where(Employee.site_id.in_(site_ids))
         registered = (await self.db.execute(count_q)).scalar_one()
         eligible = (await self.db.execute(eligible_q)).scalar_one()
+        # جستجو روی کد پرسنلی، نام، نام خانوادگی و کد ملی
         if search:
             term = f"%{search.strip()}%"
             cond = (
@@ -354,8 +424,10 @@ class InsuranceService:
             base = base.where(cond)
             count_q = count_q.where(cond)
         total = (await self.db.execute(count_q)).scalar_one()
+        # جدیدترین ویرایش اول؛ صفحه‌بندی با limit/offset
         base = base.order_by(InsuranceRegistration.updated_at.desc()).limit(page_size).offset((page - 1) * page_size)
         rows = (await self.db.execute(base)).all()
+        # تعداد اعضا و مدارک هر ثبت‌نامِ همین صفحه با دو کوئری گروهی (عضو موقت شمرده نمی‌شود)
         reg_ids = [r[0].id for r in rows]
         members_count: dict[int, int] = {}
         docs_count: dict[int, int] = {}
@@ -395,6 +467,10 @@ class InsuranceService:
         return InsuranceListOut(items=items, total=total, registered=registered, eligible=eligible)
 
     async def get_registration_by_id(self, registration_id: int, site_ids: set[int] | None):
+        """
+        یک ثبت‌نام را با شناسه برای مدیر می‌خواند (همراه اعضا و مدارک).
+        اگر site_ids داده شده و پرسنل در آن سایت‌ها نباشد None برمی‌گردد.
+        """
         result = await self.db.execute(
             select(InsuranceRegistration, Employee.site_id)
             .options(selectinload(InsuranceRegistration.members).selectinload(InsuranceMember.document))
@@ -410,7 +486,11 @@ class InsuranceService:
         return registration
 
     async def export_xlsx(self, site_ids: set[int] | None) -> bytes:
-        """خروجی Excel با همان ۲۹ ستون و ترتیب سامانه قدیمی (admin/export.php)."""
+        """
+        خروجی Excel ثبت‌نام‌ها را می‌سازد و بایت‌های فایل xlsx را برمی‌گرداند.
+        هر شخص (بیمه‌شده‌ی اصلی و هر عضو خانواده) یک سطر ۲۹ ستونی است:
+        ۷ ستون کد ثابت + ۱۲ ستون مشخصات فرد + ۱۰ ستون حساب/ارجاع به شخص اصلی.
+        """
         from openpyxl import Workbook
 
         q = (
@@ -438,6 +518,7 @@ class InsuranceService:
         ws.append(headers)
 
         def shared(reg: InsuranceRegistration) -> list[str]:
+            """۷ ستون اول: کدهای ثابت بیمه‌گر که برای همه یکسان است."""
             return [
                 str(rules.GROUP_CODE), str(rules.BASE_INSURANCE_CODE), str(rules.REQUEST_REASON),
                 str(rules.EMPLOYMENT_TYPE), str(rules.PREVIOUS_INSURANCE_CODE), str(rules.COVERAGE_MONTHS),
@@ -445,6 +526,7 @@ class InsuranceService:
             ]  # fmt: skip
 
         def tail(reg: InsuranceRegistration) -> list[str]:
+            """۱۰ ستون آخر: اطلاعات حساب و ارجاع به شخص اصلی (برای همه اعضای یک ثبت‌نام یکسان)."""
             return [
                 reg.employment_date, reg.insurance_no, str(reg.bank_code), reg.account_number, reg.sheba,
                 str(reg.account_type), reg.account_owner, reg.account_owner_national_id,
@@ -452,6 +534,7 @@ class InsuranceService:
             ]  # fmt: skip
 
         for reg in registrations:
+            # فهرست اشخاص هر ثبت‌نام: اول شخص اصلی، سپس اعضای واقعی (عضو موقت حذف می‌شود)
             people = [
                 (reg.personnel_code, reg.first_name, reg.last_name, reg.father_name, reg.birth_date, reg.gender,
                  reg.marital_status, reg.national_id, reg.birth_certificate_no, reg.mobile_number,
@@ -473,7 +556,7 @@ class InsuranceService:
                     "مجرد" if marital == rules.MARITAL_SINGLE else "متاهل",
                     nid, cert, mobile, str(rel), str(dep),
                 ] + tail(reg)  # fmt: skip
-                ws.append([str(v) for v in row])  # همه رشته تا صفر ابتدایی حفظ شود
+                ws.append([str(v) for v in row])  # همه‌ی مقادیر رشته تا صفر ابتدایی کدها حفظ شود
         for col in ws.columns:
             ws.column_dimensions[col[0].column_letter].width = 16
         out = io.BytesIO()
@@ -483,10 +566,15 @@ class InsuranceService:
     # ---------- کمکی ----------
 
     async def _is_enabled(self) -> bool:
+        """True اگر ماژول در تنظیمات فعال باشد."""
         return (await self.get_settings())["enabled"]
 
     async def _get_or_create_shell(self, employee: Employee) -> InsuranceRegistration:
-        """ثبت‌نام (احتمالاً ناقص) این پرسنل - برای نگه‌داشتن مدارک قبل از ثبت نهایی."""
+        """
+        ثبت‌نام پرسنل را برمی‌گرداند؛ اگر وجود نداشت یک رکورد خالی (پوسته) با
+        اطلاعات هویتی پرسنل می‌سازد. این پوسته قبل از ثبت نهایی فقط برای
+        نگه‌داشتن مدارک آپلودشده استفاده می‌شود.
+        """
         registration = await self.get_registration(employee.id)
         if registration is not None:
             return registration
@@ -514,11 +602,15 @@ class InsuranceService:
         )
         self.db.add(registration)
         await self.db.flush()
-        await self.db.refresh(registration, attribute_names=["members"])
+        await self.db.refresh(registration, attribute_names=["members"])  # بارگذاری رابطه‌ی members (خالی)
         return registration
 
     async def cleanup_pending_documents(self) -> int:
-        """مدارک یتیم (آپلودشده ولی هرگز ثبت‌نشده) قدیمی‌تر از ۲۴ ساعت - برای زمان‌بند."""
+        """
+        عضوهای موقت (pending) را که مدرک ندارند یا مدرکشان قدیمی‌تر از
+        PENDING_MAX_AGE_HOURS است حذف می‌کند (مدرک با cascade پاک می‌شود).
+        توسط زمان‌بند صدا زده می‌شود؛ تعداد حذف‌شده‌ها را برمی‌گرداند.
+        """
         cutoff = datetime.now(timezone.utc).timestamp() - PENDING_MAX_AGE_HOURS * 3600
         result = await self.db.execute(
             select(InsuranceMember)
@@ -537,7 +629,11 @@ class InsuranceService:
 
 
 def _sniff_content_type(content: bytes) -> str:
-    """نوع واقعی فایل از امضای محتوا (نه پسوند/Content-Type کلاینت)."""
+    """
+    نوع فایل را از بایت‌های ابتدایی (magic number) تشخیص می‌دهد و MIME آن را
+    برمی‌گرداند. برای فرمت‌های ناشناخته "application/octet-stream" برمی‌گردد
+    که در فهرست مجاز نیست و آپلود را رد می‌کند.
+    """
     head = content[:16]
     if head.startswith(b"%PDF"):
         return "application/pdf"

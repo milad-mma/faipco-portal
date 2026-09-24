@@ -1,9 +1,16 @@
+/**
+ * صفحه فراموشی رمز عبور.
+ * کاربر شناسه ورود و کانال (پیامک یا ایمیل) را انتخاب می‌کند. در کانال ایمیل لینک بازنشانی
+ * ارسال می‌شود؛ در کانال پیامک ابتدا کد تأیید بررسی و سپس فرم رمز جدید نمایش داده می‌شود.
+ * مدت اعتبار کد/لینک با شمارش معکوس نشان داده می‌شود.
+ */
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { Alert, Box, Button, Link, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { forgotPasswordRequest, resetPasswordRequest, verifyResetCodeRequest } from "../api/auth";
 import AuthPageShell from "../components/AuthPageShell";
 
+// ثانیه باقی‌مانده را می‌گیرد و رشته «MM:SS» برای شمارش معکوس برمی‌گرداند
 function formatCountdown(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -14,15 +21,13 @@ function formatCountdown(totalSeconds) {
  * نسخه ناقص مخاطب (masked_contact) با جهت صریح LTR نمایش داده می‌شود -
  * چون این رشته (ترکیب اعداد لاتین و ستاره) اگر بدون این ایزوله‌سازی
  * وسط یک جمله فارسی راست‌به‌چپ قرار بگیرد، الگوریتم دوجهته یونیکد
- * می‌تواند ترتیب نمایشی آن را جابه‌جا کند (باگ گزارش‌شده).
+ * می‌تواند ترتیب نمایشی آن را جابه‌جا کند.
+ * ورودی: value (رشته ماسک‌شده)؛ خروجی: عنصر <bdi dir="ltr">.
  */
 function MaskedContact({ value }) {
-  // ⚠️ عمداً از خصیصه HTML واقعی dir استفاده شده، نه فقط CSS direction -
-  // چون این پروژه از stylis-plugin-rtl برای تبدیل خودکار همه استایل‌های
-  // CSS-in-JS به راست‌به‌چپ استفاده می‌کند؛ این افزونه فقط روی CSS اثر
-  // می‌گذارد، نه خصیصه‌های HTML - پس dir="ltr" مستقل از هر تبدیل احتمالی
-  // این افزونه، مستقیماً به الگوریتم دوجهته بومی مرورگر می‌رسد و تضمین
-  // می‌کند این رشته همیشه به ترتیب واقعی‌اش (نه معکوس) نمایش داده شود.
+  // از خصیصه HTML یعنی dir استفاده شده، نه CSS direction: پروژه از stylis-plugin-rtl
+  // استفاده می‌کند که فقط استایل‌های CSS-in-JS را برمی‌گرداند و روی خصیصه‌های HTML
+  // اثری ندارد؛ پس dir="ltr" مستقیماً به الگوریتم دوجهته مرورگر می‌رسد و ترتیب رشته حفظ می‌شود.
   return (
     <Box component="bdi" dir="ltr" sx={{ unicodeBidi: "isolate" }}>
       {value}
@@ -45,14 +50,16 @@ export default function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [maskedContact, setMaskedContact] = useState("");
+  const [maskedContact, setMaskedContact] = useState("");  // شماره/ایمیل ماسک‌شده مقصد که سرور برمی‌گرداند
   const [step, setStep] = useState("request"); // "request" | "sms-verify-code" | "sms-new-password" | "done"
-  const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(null);  // ثانیه‌های باقی‌مانده اعتبار کد/لینک؛ null = نامشخص، 0 = منقضی
 
   const [smsCode, setSmsCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  // شمارش معکوس: وقتی remainingSeconds مقدار گرفت، هر ثانیه یکی کم می‌کند تا به صفر برسد؛
+  // وابستگی فقط «null بودن یا نبودن» است تا تایمر با هر تیک از نو ساخته نشود
   useEffect(() => {
     if (remainingSeconds === null || remainingSeconds <= 0) return undefined;
     const timer = setInterval(() => {
@@ -68,6 +75,8 @@ export default function ForgotPasswordPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remainingSeconds !== null]);
 
+  // مرحله اول: درخواست بازنشانی با شناسه و کانال را ارسال می‌کند، مخاطب ماسک‌شده و مدت اعتبار را ذخیره
+  // و به مرحله بررسی کد (پیامک) یا مرحله پایانی (ایمیل) می‌رود
   async function handleRequestSubmit(e) {
     e.preventDefault();
     setError("");
@@ -84,6 +93,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
+  // مرحله پیامک: کد تأیید را بررسی می‌کند و در صورت صحت به فرم رمز جدید می‌رود
   async function handleVerifyCodeSubmit(e) {
     e.preventDefault();
     setError("");
@@ -98,6 +108,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
+  // مرحله پیامک: یکسان بودن رمز و تکرار را بررسی و رمز جدید را با همان کد پیامکی ثبت می‌کند
   async function handleNewPasswordSubmit(e) {
     e.preventDefault();
     setError("");
@@ -117,6 +128,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
+  // بعد از انقضای کد، فرم را به مرحله درخواست اولیه برمی‌گرداند
   function handleRequestAgain() {
     setStep("request");
     setRemainingSeconds(null);
@@ -124,7 +136,7 @@ export default function ForgotPasswordPage() {
     setError("");
   }
 
-  const expired = remainingSeconds === 0;
+  const expired = remainingSeconds === 0;  // اعتبار کد/لینک تمام شده است
 
   return (
     <AuthPageShell
@@ -133,6 +145,7 @@ export default function ForgotPasswordPage() {
         step === "request" ? "برای بازنشانی رمز عبور، شناسه ورود و روش دریافت را انتخاب نمایید." : undefined
       }
     >
+      {/* مرحله ۱: انتخاب کانال و وارد کردن شناسه ورود */}
       {step === "request" && (
         <Box
           component="form"
@@ -170,6 +183,7 @@ export default function ForgotPasswordPage() {
         </Box>
       )}
 
+      {/* مرحله ۲ (پیامک): وارد کردن کد تأیید با نمایش شمارش معکوس؛ پس از انقضا دکمه درخواست مجدد */}
       {step === "sms-verify-code" && (
         <Box
           component="form"
@@ -220,6 +234,7 @@ export default function ForgotPasswordPage() {
         </Box>
       )}
 
+      {/* مرحله ۳ (پیامک): فرم رمز عبور جدید و تکرار آن */}
       {step === "sms-new-password" && (
         <Box
           component="form"
@@ -261,6 +276,7 @@ export default function ForgotPasswordPage() {
         </Box>
       )}
 
+      {/* مرحله پایانی: پیام ارسال لینک (ایمیل) یا موفقیت تغییر رمز (پیامک) */}
       {step === "done" && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {channel === "email" ? (
@@ -289,6 +305,7 @@ export default function ForgotPasswordPage() {
         </Box>
       )}
 
+      {/* لینک بازگشت به صفحه ورود */}
       <Typography variant="body2" textAlign="center" sx={{ mt: 3 }}>
         <Link component={RouterLink} to="/login">
           بازگشت به صفحه ورود

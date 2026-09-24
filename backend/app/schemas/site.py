@@ -1,4 +1,7 @@
-"""Schema های Pydantic برای مدیریت Site، اتصال دیتابیس و Mapping ستون‌ها."""
+"""
+Schema های Pydantic برای مدیریت Site: ایجاد/نمایش سایت، GPS و وضعیت فعال بودن،
+اطلاعات اتصال دیتابیس منبع، نگاشت ستون‌های پرسنل و نگاشت جدول تردد/تقویم.
+"""
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
 from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, validate_schema
@@ -7,12 +10,16 @@ from app.models.site import AttendanceMappingMode, DbType, SyncStatus
 
 
 class SiteCreate(BaseModel):
+    """ورودی ایجاد سایت جدید (POST /sites)."""
+
     name: str
     code: str = Field(max_length=32)
     description: str | None = None
 
 
 class SiteOut(BaseModel):
+    """خروجی اطلاعات یک سایت در Endpoint های /sites."""
+
     id: int
     name: str
     code: str
@@ -43,6 +50,8 @@ class SiteActiveUpdate(BaseModel):
 
 
 class SiteConnectionIn(BaseModel):
+    """ورودی ثبت/ویرایش اطلاعات اتصال دیتابیس منبع سایت (PUT /sites/{id}/connection)."""
+
     db_type: DbType
     host: str
     port: int
@@ -55,6 +64,8 @@ class SiteConnectionIn(BaseModel):
 
 
 class SiteConnectionOut(BaseModel):
+    """خروجی اطلاعات اتصال سایت (بدون رمز عبور)."""
+
     id: int
     site_id: int
     db_type: DbType
@@ -76,6 +87,8 @@ class SiteConnectionActiveUpdate(BaseModel):
 
 
 class EmployeeMappingIn(BaseModel):
+    """ورودی نگاشت جدول/ستون‌های پرسنل دیتابیس منبع به فیلدهای Employee (PUT /sites/{id}/mapping)."""
+
     table_name: str
     personnel_code_column: str
     national_code_column: str | None = None
@@ -96,6 +109,10 @@ class EmployeeMappingIn(BaseModel):
     department_lookup_table: str | None = None
     department_lookup_id_column: str | None = None
     department_lookup_name_column: str | None = None
+    # اختیاری: ستون واحد بالادست در جدول واحدها (کاراوب: TFather) و واحدهای ریشه‌ی این سایت
+    # (برای چند سایت با یک دیتابیس منبع مشترک؛ فهرست خالی = بدون فیلتر درختی)
+    department_lookup_parent_column: str | None = None
+    root_department_codes: list[str] = Field(default_factory=list)
     # اختیاری: نگاشت سمت/عنوان شغلی — دقیقاً همان الگوی واحد سازمانی بالا
     position_column: str | None = None
     position_lookup_table: str | None = None
@@ -107,7 +124,56 @@ class EmployeeMappingIn(BaseModel):
     photo_thumbnail_column: str | None = None
 
 
+    @field_validator("root_department_codes", mode="before")
+    @classmethod
+    def _clean_roots(cls, value):
+        """کدهای ریشه را به رشته‌ی trim‌شده تبدیل می‌کند و موارد خالی و تکراری را حذف می‌کند (ترتیب حفظ می‌شود)."""
+        if value is None:
+            return []
+        cleaned: list[str] = []
+        for item in value:
+            text = str(item).strip() if item is not None else ""
+            if text.endswith(".0") and text[:-2].isdigit():
+                text = text[:-2]
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+
+class OrgPreviewUnitOut(BaseModel):
+    """یک واحد درخت منبع در پیش‌نمایش فیلتر واحد ریشه (POST /sites/{id}/mapping/org-preview)."""
+
+    code: str
+    name: str
+    parent: str | None
+    site_id: int | None  # سایتی که این واحد با قاعده‌ی نزدیک‌ترین ریشه به آن می‌رسد؛ None = بی‌سایت
+    is_root: bool
+    active_employees: int  # پرسنل فعال منبع که مستقیماً در همین واحدند
+
+
+class OrgPreviewSiteOut(BaseModel):
+    """خلاصه‌ی هر سایت هم‌منبع در پیش‌نمایش فیلتر واحد ریشه."""
+
+    site_id: int
+    site_name: str
+    is_current: bool  # سایتی که تنظیماتش در حال ویرایش است
+    roots: list[str]
+    unit_count: int
+    active_employee_count: int
+
+
+class OrgPreviewOut(BaseModel):
+    """خروجی پیش‌نمایش: واحدها، سایت‌ها، پرسنل بی‌سایت و خطای تنظیمات (در صورت وجود)."""
+
+    units: list[OrgPreviewUnitOut]
+    sites: list[OrgPreviewSiteOut]
+    unassigned_active_employees: int
+    error: str | None = None
+
+
 class EmployeeMappingOut(EmployeeMappingIn):
+    """خروجی نگاشت پرسنل ذخیره‌شده یک سایت."""
+
     id: int
     site_id: int
 
@@ -156,10 +222,12 @@ class AttendanceMappingIn(BaseModel):
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
+        """کلیدهای kara_schema را با فهرست مجاز ATTENDANCE_SCHEMA_DEFAULTS اعتبارسنجی و پاک‌سازی می‌کند."""
         return validate_schema(value, ATTENDANCE_SCHEMA_DEFAULTS)
 
     @model_validator(mode="after")
     def _validate_columns_for_mode(self) -> "AttendanceMappingIn":
+        """بررسی می‌کند ستون‌های الزامیِ روش نگاشت انتخاب‌شده (mapping_mode) پر شده باشند؛ در غیر این صورت ValueError."""
         if self.mapping_mode == AttendanceMappingMode.single_column:
             if not (self.date_column and self.time_column):
                 raise ValueError("برای روش «یک ستون تاریخ + یک ستون ساعت»، هر دو فیلد الزامی هستند")
@@ -172,12 +240,15 @@ class AttendanceMappingIn(BaseModel):
 
 
 class AttendanceMappingOut(AttendanceMappingIn):
+    """خروجی نگاشت تردد ذخیره‌شده یک سایت."""
+
     id: int
     site_id: int
 
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
+        """مقدار ذخیره‌شده را بدون اعتبارسنجی مجدد به dict تبدیل می‌کند (None → {})."""
         return dict(value or {})
 
     model_config = ConfigDict(from_attributes=True)

@@ -5,18 +5,18 @@ import LinkifiedText from "./LinkifiedText";
 
 /**
  * ویرایشگر «اعلان تغییرات پرتال» برای ادمین.
- *
- * ⚠️ نکته مهم برای ادمین: با تغییر عنوان یا متن، نسخه اعلان خودکار بالا
- * می‌رود و همه کاربران - حتی آن‌هایی که قبلاً «دیگر نمایش نده» زده‌اند -
- * اعلان جدید را می‌بینند. این عمدی است: وگرنه یک‌بار رد کردن یعنی هرگز
- * ندیدن هیچ اعلان بعدی.
+ * بدون ورودی (props). فرم فعال/غیرفعال، عنوان و متن اعلان را همراه با پیش‌نمایش لینک‌ها رسم می‌کند
+ * و با «ذخیره و انتشار» به سرور می‌فرستد.
+ * با تغییر عنوان یا متن، سرور نسخه‌ی اعلان را بالا می‌برد و اعلان برای همه‌ی کاربران
+ * (حتی کسانی که «دیگر نمایش نده» زده‌اند) دوباره نمایش داده می‌شود.
  */
 export default function AnnouncementSettings() {
-  const [form, setForm] = useState(null);
+  const [form, setForm] = useState(null); // {enabled, title, body, version}؛ null = در حال بارگذاری
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState("");
+  const [saved, setSaved] = useState(""); // پیام موفقیت ذخیره
   const [isSaving, setIsSaving] = useState(false);
 
+  // بارگذاری تنظیمات فعلی؛ در صورت خطا فرم خالی نمایش داده می‌شود
   useEffect(() => {
     fetchAnnouncementSettings()
       .then(setForm)
@@ -26,6 +26,7 @@ export default function AnnouncementSettings() {
       });
   }, []);
 
+  // ذخیره‌ی فرم در سرور و نمایش شماره‌ی نسخه‌ی جدید اعلان
   async function handleSave() {
     setError("");
     setSaved("");
@@ -45,6 +46,7 @@ export default function AnnouncementSettings() {
     }
   }
 
+  // لودر تا زمان دریافت تنظیمات
   if (form === null) {
     return (
       <Stack alignItems="center" sx={{ py: 3 }}>
@@ -63,6 +65,7 @@ export default function AnnouncementSettings() {
         (دفعه بعد دوباره می‌بیند) یا «دیگر نمایش نده» را انتخاب کند.
       </Typography>
 
+      {/* پیام‌های خطا و موفقیت */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -74,11 +77,13 @@ export default function AnnouncementSettings() {
         </Alert>
       )}
 
+      {/* هشدار نمایش مجدد اعلان برای همه پس از تغییر */}
       <Alert severity="info" sx={{ mb: 2 }}>
         با تغییر عنوان یا متن، این اعلان برای <strong>همه کاربران</strong> دوباره نمایش داده می‌شود —
         حتی کسانی که قبلاً «دیگر نمایش نده» را زده بودند.
       </Alert>
 
+      {/* فیلدهای فرم */}
       <Stack spacing={2}>
         <FormControlLabel
           control={
@@ -109,6 +114,7 @@ export default function AnnouncementSettings() {
           helperText="شکست خطوط حفظ می‌شود. برای لینک: [متن لینک](https://example.com) یا مسیر داخلی پرتال مثل [درخواست مرخصی](/leave-requests)؛ آدرس خام https://... هم خودکار لینک می‌شود."
           inputProps={{ dir: "auto" }}
         />
+        {/* پیش‌نمایش لینک‌ها؛ فقط وقتی متن شامل «[» یا آدرس http باشد نمایش داده می‌شود */}
         {/[\[]|https?:\/\//.test(form.body) && (
           <Box sx={{ p: 1.5, border: "1px dashed", borderColor: "divider", borderRadius: 1 }}>
             <Typography variant="caption" color="text.secondary">

@@ -1,4 +1,8 @@
-"""سرویس قابلیت «خودروهای من» — ثبت خودشخصی پرسنل + گزارش Admin/حراست."""
+"""
+سرویس قابلیت «خودروهای من».
+شامل عملیات self-service پرسنل (فهرست، ثبت، حذف خودروی خود) و عملیات
+گزارش/ویرایش/حذف برای Admin و حراست با محدودسازی بر اساس سایت.
+"""
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,18 +13,23 @@ from app.schemas.vehicle import VehicleAdminOut, VehicleIn
 
 
 class VehicleService:
+    """عملیات دیتابیسی خودروها روی یک AsyncSession."""
+
     def __init__(self, db: AsyncSession):
+        """ورودی: Session دیتابیس."""
         self.db = db
 
     # ---------- Self-service (خودِ پرسنل) ----------
 
     async def list_for_employee(self, employee_id: int) -> list[Vehicle]:
+        """ورودی: شناسه پرسنل. خروجی: خودروهای او به ترتیب جدیدترین."""
         result = await self.db.execute(
             select(Vehicle).where(Vehicle.employee_id == employee_id).order_by(Vehicle.created_at.desc())
         )
         return list(result.scalars().all())
 
     async def create_for_employee(self, employee_id: int, payload: VehicleIn) -> Vehicle:
+        """یک خودرو برای پرسنل می‌سازد، commit می‌کند و رکورد ذخیره‌شده را برمی‌گرداند."""
         vehicle = Vehicle(employee_id=employee_id, **payload.model_dump())
         self.db.add(vehicle)
         await self.db.commit()
@@ -43,10 +52,12 @@ class VehicleService:
 
     async def list_all(self, accessible_site_ids: set[int] | None) -> list[VehicleAdminOut]:
         """
+        گزارش همه خودروها همراه با نام پرسنل، کد پرسنلی، سایت و واحد.
         accessible_site_ids=None یعنی بدون محدودیت (Admin واقعی) — در غیر
         این صورت فقط خودروهای پرسنلِ همان سایت‌ها (ایزوله‌سازی چندسایتی،
         دقیقاً مثل GET /employees).
         """
+        # کوئری خودرو + پرسنل + نام سایت + نام واحد (واحد اختیاری است، پس outer join)
         stmt = (
             select(Vehicle, Employee, Site.name, Department.name)
             .join(Employee, Employee.id == Vehicle.employee_id)
@@ -58,6 +69,7 @@ class VehicleService:
             stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
         result = await self.db.execute(stmt)
 
+        # تبدیل هر ردیف به خروجی گزارش
         return [
             VehicleAdminOut(
                 id=v.id,
@@ -78,6 +90,7 @@ class VehicleService:
         ]
 
     async def admin_update(self, vehicle_id: int, payload: VehicleIn) -> Vehicle | None:
+        """همه فیلدهای خودرو را از payload جایگزین می‌کند. خروجی: خودرو یا None اگر پیدا نشود."""
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if vehicle is None:
             return None
@@ -88,6 +101,7 @@ class VehicleService:
         return vehicle
 
     async def admin_delete(self, vehicle_id: int) -> bool:
+        """خودرو را بدون بررسی مالکیت حذف می‌کند. خروجی: آیا پیدا و حذف شد."""
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if vehicle is None:
             return False

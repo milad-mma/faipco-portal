@@ -4,10 +4,9 @@ import { useLocation } from "react-router-dom";
 import { useOnlineStatus } from "../context/OnlineStatusContext";
 
 /**
- * بنر شناور قرمز — فقط وقتی کاربر داخل برنامه است و اتصال قطع می‌شود.
- * توی صفحه ورود عمداً نمایش داده نمی‌شود، چون آنجا یک بلوک تمام‌صفحه
- * اختصاصی (OfflineLoginBlock در LoginPage) جای این بنر را می‌گیرد — نمایش
- * هردو با هم فقط شلوغی بصری اضافه می‌کرد.
+ * بنر شناور قرمز «اتصال اینترنت قطع شده» که هنگام آفلاین شدن بالای صفحه نمایش داده می‌شود.
+ * بدون ورودی (props)؛ وضعیت اتصال را از OnlineStatusContext می‌خواند.
+ * در صفحه‌ی ورود نمایش داده نمی‌شود، چون آنجا بلوک تمام‌صفحه‌ی OfflineLoginBlock (در LoginPage) همین نقش را دارد.
  */
 export default function OfflineBanner() {
   const { isOnline } = useOnlineStatus();
