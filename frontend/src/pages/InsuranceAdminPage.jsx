@@ -264,8 +264,8 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
             {reg?.first_name} {reg?.last_name} ارسال می‌شود:
           </Typography>
           <Alert severity="info" icon={false}>
-            مدرک ارائه‌شده برای {rejectTarget?.first_name} {rejectTarget?.last_name} مورد تأیید نیست. لطفاً جهت ویرایش
-            ثبت‌نام به سامانه مراجعه نمائید.
+            مدرک ارائه‌شده برای {rejectTarget?.first_name} {rejectTarget?.last_name} مورد تأیید نیست. لطفاً جهت پیگیری
+            علت رد مدارک به واحد منابع انسانی مراجعه نمائید.
           </Alert>
         </DialogContent>
         <DialogActions>

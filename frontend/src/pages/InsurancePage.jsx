@@ -92,7 +92,7 @@ function uploadErrorMessage(err) {
 
 // مدرک کفالت این عضو توسط مدیر رد شده و هنوز مدرک جدیدی جایگزین نشده است
 const isDocRejected = (m) => Boolean(m.document_rejected_at) && !m.document;
-const REJECTED_DOC_TEXT = "مدرک این عضو تأیید نشد؛ لطفاً ثبت‌نام را ویرایش و مدرک جدید آپلود کنید.";
+const REJECTED_DOC_TEXT = "مدرک این عضو تأیید نشد. علت را از واحد منابع انسانی پیگیری و مدرک جدید را آپلود کنید.";
 
 // فقط قالب تاریخ شمسی «YYYY/MM/DD» را بررسی می‌کند (درستی روز/ماه سمت سرور)
 const validateJalali = (d) => /^\d{4}\/\d{2}\/\d{2}$/.test(toEn(d).trim());
@@ -634,7 +634,7 @@ export default function InsurancePage() {
         </Stack>
         {rejected.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            مدرک ارائه‌شده برای {rejected.map((m) => `${m.first_name} ${memberLastName(m)}`).join("، ")} مورد تأیید نیست. لطفاً با «ویرایش ثبت نام» مدرک جدید آپلود کنید.
+            مدرک ارائه‌شده برای {rejected.map((m) => `${m.first_name} ${memberLastName(m)}`).join("، ")} مورد تأیید نیست. لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید؛ مدرک جدید را با «ویرایش ثبت نام» آپلود کنید.
           </Alert>
         )}
 

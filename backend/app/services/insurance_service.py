@@ -554,7 +554,7 @@ class InsuranceService:
             title="مدرک بیمه تکمیلی تأیید نشد",
             body=(
                 f"مدرک ارائه‌شده برای {member_name} مورد تأیید نیست. "
-                "لطفاً جهت ویرایش ثبت‌نام به سامانه مراجعه نمائید."
+                "لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید."
             ),
             priority=NoticePriority.high,
             status=NoticeStatus.published,
