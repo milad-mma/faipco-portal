@@ -69,6 +69,22 @@ function validateNationalId(raw) {
   const check = parseInt(id[9], 10);
   return rem < 2 ? check === rem : check === 11 - rem;
 }
+/**
+ * پیام خطای قابل‌فهم برای آپلود مدرک: پیام سرور اگر متنی باشد، وگرنه بر اساس نوع خطا
+ * (پایان زمان، قطع ارتباط، حجم زیاد در سرور، خطای سرور) و در نهایت پیام عمومی همراه کد وضعیت.
+ */
+function uploadErrorMessage(err) {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) return "فایل به‌درستی ارسال نشد؛ لطفاً دوباره انتخاب کنید.";
+  if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT")
+    return "ارسال فایل بیش از حد طول کشید؛ اتصال اینترنت را بررسی و دوباره تلاش کنید یا فایل کم‌حجم‌تری انتخاب کنید.";
+  if (!err.response) return "ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.";
+  if (err.response.status === 413) return "حجم فایل برای سرور بیش از حد مجاز است.";
+  if (err.response.status >= 500) return `خطای سرور هنگام ذخیره فایل (کد ${err.response.status})؛ لطفاً به واحد فناوری اطلاع دهید.`;
+  return `آپلود فایل با خطا مواجه شد (کد ${err.response.status}).`;
+}
+
 // فقط قالب تاریخ شمسی «YYYY/MM/DD» را بررسی می‌کند (درستی روز/ماه سمت سرور)
 const validateJalali = (d) => /^\d{4}\/\d{2}\/\d{2}$/.test(toEn(d).trim());
 
@@ -147,7 +163,7 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
       const doc = await uploadInsuranceDocument(file, setUploadPct);
       onChange({ ...member, document: doc, document_id: doc.id });
     } catch (e2) {
-      setUploadErr(e2.response?.data?.detail || "آپلود فایل با خطا مواجه شد.");
+      setUploadErr(uploadErrorMessage(e2));
     } finally {
       setUploadPct(null);
       if (fileRef.current) fileRef.current.value = ""; // تا انتخاب دوباره‌ی همان فایل هم رویداد بدهد

@@ -26,6 +26,7 @@ export async function uploadInsuranceDocument(file, onProgress) {
   formData.append("file", file);
   const { data } = await apiClient.post("/insurance/me/documents", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 3 * 60 * 1000, // عکس گوشی (چند مگابایت) روی اینترنت همراه بیش از ۲۰ ثانیه‌ی پیش‌فرض طول می‌کشد
     onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded * 100) / e.total) : 0),
   });
   return data; // { id, file_name, content_type, size_bytes, uploaded_at }
