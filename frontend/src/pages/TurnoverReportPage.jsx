@@ -568,14 +568,17 @@ function CategoriesTab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(null); // شناسه‌ی متنی که در حال ذخیره است
   const [edit, setEdit] = useState(null); // { id?, ...EMPTY_CAT }
+  const [refreshing, setRefreshing] = useState(false);
 
-  function load() {
+  function load(refresh = false) {
     setError("");
-    fetchTurnoverCategories()
+    setRefreshing(refresh);
+    fetchTurnoverCategories(refresh)
       .then(setData)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت دسته‌ها با خطا مواجه شد."));
+      .catch((err) => setError(err.response?.data?.detail || "دریافت دسته‌ها با خطا مواجه شد."))
+      .finally(() => setRefreshing(false));
   }
-  useEffect(load, []);
+  useEffect(() => load(), []);
 
   async function assign(alias, categoryId) {
     setSaving(alias.id);
@@ -622,12 +625,21 @@ function CategoriesTab() {
       {error && <Alert severity="error">{error}</Alert>}
       {data.count_error && <Alert severity="warning">تعداد متن‌ها محاسبه نشد: {data.count_error}</Alert>}
       <Alert severity="info">
-        علت ترک کار در منبع متن آزاد است. هر متن مختلف (بعد از یکسان‌سازی املا مثل «استعفاء» = «استعفا») یک ردیف پایین
-        دارد که باید به یک دسته وصل شود. متن‌های تازه خودکار با وضعیت «دسته‌بندی نشده» اضافه می‌شوند.
+        این فهرست مستقیم از کاراوب خوانده می‌شود: فقط متن‌هایی که الان روی پرسنل قطع‌همکاری‌شده ثبت‌اند نمایش داده
+        می‌شوند (املای مشابه مثل «استعفاء» و «استعفا» یکی حساب می‌شود). متن تازه با وضعیت «دسته‌بندی نشده» می‌آید؛ متنی
+        که در کاراوب دیگر استفاده نشود از فهرست می‌رود، ولی دسته‌اش به خاطر سپرده می‌شود.
         {!canManage && " برای تغییر دسته‌بندی مجوز «ویرایش دسته‌بندی علت‌های ترک کار» لازم است."}
       </Alert>
 
-      <Section title={`متن‌های علت ترک کار${uncategorized.length ? ` — ${fa(uncategorized.length)} مورد دسته‌بندی نشده` : ""}`}>
+      <Section
+        title={`متن‌های علت ترک کار${uncategorized.length ? ` — ${fa(uncategorized.length)} مورد دسته‌بندی نشده` : ""}`}
+        subtitle="تغییرات کاراوب حداکثر ۵ دقیقه بعد دیده می‌شود؛ برای دیدن فوری «به‌روزرسانی» را بزنید"
+        action={
+          <Button size="small" startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshOutlinedIcon />} onClick={() => load(true)} disabled={refreshing}>
+            به‌روزرسانی
+          </Button>
+        }
+      >
         <TableContainer>
           <Table size="small">
             <TableHead>

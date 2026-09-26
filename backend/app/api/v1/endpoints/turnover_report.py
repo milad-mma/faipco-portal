@@ -133,12 +133,16 @@ async def export_turnover_report(
 
 @router.get("/categories")
 async def get_categories(
+    refresh: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    دسته‌ها و متن‌های علت ترک کار. تعداد هر متن از سایت‌هایی محاسبه می‌شود که کاربر برایشان reports.turnover دارد
-    (اگر خواندن منبع ناموفق باشد، تعداد خالی برمی‌گردد و فهرست همچنان نمایش داده می‌شود).
+    دسته‌ها و متن‌های علت ترک کار. فهرست متن‌ها پویا است: فقط متن‌هایی که همین حالا در منبع روی پرسنل
+    قطع‌همکاری‌شده ثبت‌اند (تعداد > ۰) برمی‌گردند؛ دسته‌ی متن‌های حذف‌شده در دیتابیس می‌ماند تا اگر دوباره
+    استفاده شدند خودکار همان دسته را بگیرند. دارنده‌ی reports.turnover_categories (کل سیستم) متن‌های همه‌ی
+    سایت‌ها را می‌بیند و بقیه فقط سایت‌های مجاز خودشان را. اگر خواندن منبع ناموفق باشد، همه‌ی متن‌های ذخیره‌شده
+    بدون تعداد برمی‌گردند. refresh=true داده‌ی تازه از منبع می‌خواند (بدون Cache پنج‌دقیقه‌ای).
     """
     codes = await UserRepository(db).get_all_permission_codes(current_user.id)
     can_manage = current_user.is_superuser or "reports.turnover_categories" in codes
@@ -147,17 +151,19 @@ async def get_categories(
     service = TurnoverReportService(db)
     counts = None
     count_error = None
-    allowed = await get_sites_with_permission(db, current_user, "reports.turnover")
+    allowed = None if can_manage else await get_sites_with_permission(db, current_user, "reports.turnover")
     if allowed is None or allowed:
         sites = await service.configured_sites(allowed)
         try:
-            counts = await service.reason_counts([s["id"] for s in sites])
+            counts = await service.reason_counts([s["id"] for s in sites], refresh=refresh)
         except TurnoverReportError as e:
             count_error = str(e)
     aliases = await service.list_aliases(counts)
-    if not can_manage:
-        # متن‌ها بین سایت‌ها مشترک‌اند؛ کسی که فقط گزارش سایت خودش را می‌بیند، فقط متن‌های همان سایت‌ها را می‌بیند
+    if counts is not None:
+        # فقط متن‌هایی که الان در منبع استفاده می‌شوند
         aliases = [a for a in aliases if a["count"]]
+    elif not can_manage:
+        aliases = []  # بدون تعداد معلوم نیست کدام متن مال سایت‌های این کاربر است
     return {
         "can_manage": can_manage,
         "categories": await service.list_categories(),

@@ -20,9 +20,12 @@ export async function downloadTurnoverExport(params) {
   return data;
 }
 
-// دسته‌ها و متن‌های علت ترک کار (با تعداد)
-export async function fetchTurnoverCategories() {
-  const { data } = await apiClient.get("/reports/turnover/categories", { timeout: 90_000 });
+// دسته‌ها و متن‌های علت ترک کار که الان در منبع استفاده می‌شوند (با تعداد)؛ refresh = بدون Cache
+export async function fetchTurnoverCategories(refresh = false) {
+  const { data } = await apiClient.get("/reports/turnover/categories", {
+    params: refresh ? { refresh: true } : {},
+    timeout: 90_000,
+  });
   return data; // { can_manage, categories, aliases, count_error }
 }
 

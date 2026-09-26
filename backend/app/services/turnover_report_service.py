@@ -288,11 +288,11 @@ class TurnoverReportService:
         report["generated_at"] = datetime.now(timezone.utc).isoformat()
         return report
 
-    async def reason_counts(self, site_ids: list[int]) -> Counter:
+    async def reason_counts(self, site_ids: list[int], refresh: bool = False) -> Counter:
         """تعداد هر متن نرمال‌شده‌ی علت در بین ترک‌کرده‌های سایت‌ها (برای صفحه‌ی دسته‌بندی)."""
         counts: Counter = Counter()
         for sid in site_ids:
-            data = await self.load_site(sid)
+            data = await self.load_site(sid, refresh=refresh)
             counts.update(r.reason_norm for r in data["records"] if r.left)
         # متن‌های تازه (هنوز در جدول نیامده) هم ثبت می‌شوند تا در فهرست دسته‌بندی دیده شوند
         seen = {}
