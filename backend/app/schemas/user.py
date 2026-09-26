@@ -55,6 +55,8 @@ class UserOut(BaseModel):
     can_manage_vehicles: bool = False  # vehicles.manage — ویرایش/حذف خودروی هر پرسنلی
     can_view_insurance: bool = False  # insurance.view یا insurance.manage — فهرست/خروجی بیمه تکمیلی
     can_manage_insurance: bool = False  # insurance.manage — تنظیمات بیمه تکمیلی
+    can_view_turnover_report: bool = False  # reports.turnover — گزارش جذب و ترک کار
+    can_manage_turnover_categories: bool = False  # reports.turnover_categories — دسته‌بندی علت ترک کار
     insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت

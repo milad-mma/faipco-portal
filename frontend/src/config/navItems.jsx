@@ -19,6 +19,7 @@ import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import HealthAndSafetyOutlinedIcon from "@mui/icons-material/HealthAndSafetyOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
@@ -88,6 +89,12 @@ export const NAV_ITEMS = [
         path: "/insurance/admin",
         icon: <HealthAndSafetyOutlinedIcon />,
         check: (u) => u?.can_view_insurance,
+      },
+      {
+        label: "گزارش جذب و ترک کار",
+        path: "/reports/turnover",
+        icon: <InsightsOutlinedIcon />,
+        check: (u) => u?.can_view_turnover_report || u?.can_manage_turnover_categories,
       },
     ],
   },

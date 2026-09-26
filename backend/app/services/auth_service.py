@@ -241,6 +241,8 @@ class AuthService:
             user.is_superuser or "insurance.view" in permission_codes or "insurance.manage" in permission_codes
         )
         base.can_manage_insurance = user.is_superuser or "insurance.manage" in permission_codes
+        base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
+        base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
         # ماژول بیمه تکمیلی سراسری است (نه به‌ازای سایت)؛ خواندن سبک از تنظیمات
         try:
             from app.services.insurance_service import InsuranceService

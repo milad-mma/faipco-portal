@@ -260,3 +260,5 @@ Migration های ۰۷۵ تا ۰۷۸ نام‌های تازه را فقط برا�
 ## چند سایت با یک دیتابیس کاراوب
 
 تقسیم پرسنل یک کاراوب مشترک بین چند سایت پرتال بر اساس درخت واحدها (`Sections.TFather`) و قاعده‌ی «نزدیک‌ترین ریشه»: [multi-site.md](multi-site.md).
+
+گزارش جذب و ترک کار (خواندن مستقیم آمار از `Employee` با `Emp_Date`/`End_Date`/`Cut_Reason`/`Grade_No`، بدون Sync پرسنل قطع‌همکاری‌شده): [turnover-report.md](turnover-report.md).

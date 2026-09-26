@@ -122,7 +122,34 @@ class EmployeeMappingIn(BaseModel):
     photo_table: str | None = None
     photo_emp_no_column: str | None = None
     photo_thumbnail_column: str | None = None
+    # اختیاری: گزارش جذب و ترک کار (تاریخ/علت ترک کار، مدرک تحصیلی و Lookup آن، ماه شروع آمار)
+    termination_date_column: str | None = None
+    termination_reason_column: str | None = None
+    education_column: str | None = None
+    education_lookup_table: str | None = None
+    education_lookup_id_column: str | None = None
+    education_lookup_name_column: str | None = None
+    turnover_start_month: str | None = None
 
+    @field_validator("turnover_start_month", mode="before")
+    @classmethod
+    def _clean_start_month(cls, value):
+        """ماه شروع آمار را به قالب «YYYY/MM» درمی‌آورد (ارقام فارسی هم پذیرفته می‌شوند)؛ خالی → None."""
+        if value is None:
+            return None
+        text = str(value).strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+        if not text:
+            return None
+        parts = text.replace("-", "/").split("/")
+        if len(parts) == 1 and parts[0].isdigit() and len(parts[0]) == 6:
+            parts = [parts[0][:4], parts[0][4:]]
+        try:
+            year, month = int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            raise ValueError("ماه شروع آمار باید به شکل 1403/06 باشد")
+        if not (1300 <= year <= 1500 and 1 <= month <= 12):
+            raise ValueError("ماه شروع آمار باید به شکل 1403/06 باشد")
+        return f"{year:04d}/{month:02d}"
 
     @field_validator("root_department_codes", mode="before")
     @classmethod

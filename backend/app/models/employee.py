@@ -170,4 +170,15 @@ class EmployeeMapping(Base, TimestampMixin):
     photo_emp_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     photo_thumbnail_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    # اختیاری (گزارش جذب و ترک کار — Migration 089): فقط برای خواندن مستقیم آمار از منبع؛
+    # پرسنل قطع‌همکاری‌شده وارد پرتال نمی‌شوند. کاراوب: End_Date / Cut_Reason / Grade_No + Grades
+    termination_date_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    termination_reason_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    education_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    education_lookup_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    education_lookup_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    education_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # ماه شروع آمار این سایت (مثل «1403/06» = شروع کار با سیستم منبع)؛ خالی = از اولین داده
+    turnover_start_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+
     site: Mapped["Site"] = relationship()

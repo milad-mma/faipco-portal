@@ -32,6 +32,7 @@ const NoticesPage = lazyPage(() => import("./pages/NoticesPage"));
 const MyVehiclesPage = lazyPage(() => import("./pages/MyVehiclesPage"));
 const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
 const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
+const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
 const LeaveRequestsAdminListPage = lazyPage(() => import("./pages/LeaveRequestsAdminListPage"));
 const LeaveRequestStructurePage = lazyPage(() => import("./pages/LeaveRequestStructurePage"));
@@ -236,6 +237,14 @@ export default function App() {
           <Route
             path="/insurance/admin"
             element={<PermissionRoute check={(u) => u?.can_view_insurance}><InsuranceAdminPage /></PermissionRoute>}
+          />
+          <Route
+            path="/reports/turnover"
+            element={
+              <PermissionRoute check={(u) => u?.can_view_turnover_report || u?.can_manage_turnover_categories}>
+                <TurnoverReportPage />
+              </PermissionRoute>
+            }
           />
           <Route path="/leave-requests" element={<LeaveRequestPage />} />
           <Route

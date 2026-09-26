@@ -94,6 +94,13 @@ const EMPTY_MAPPING = {
   photo_table: "",
   photo_emp_no_column: "",
   photo_thumbnail_column: "",
+  termination_date_column: "",
+  termination_reason_column: "",
+  education_column: "",
+  education_lookup_table: "",
+  education_lookup_id_column: "",
+  education_lookup_name_column: "",
+  turnover_start_month: "",
 };
 const EMPTY_ATTENDANCE_MAPPING = {
   table_name: "",
@@ -449,6 +456,13 @@ export default function SiteSettingsPage() {
           photo_table: mapping.photo_table || "",
           photo_emp_no_column: mapping.photo_emp_no_column || "",
           photo_thumbnail_column: mapping.photo_thumbnail_column || "",
+          termination_date_column: mapping.termination_date_column || "",
+          termination_reason_column: mapping.termination_reason_column || "",
+          education_column: mapping.education_column || "",
+          education_lookup_table: mapping.education_lookup_table || "",
+          education_lookup_id_column: mapping.education_lookup_id_column || "",
+          education_lookup_name_column: mapping.education_lookup_name_column || "",
+          turnover_start_month: mapping.turnover_start_month || "",
         });
         setHasExistingMapping(true);
       }
@@ -531,7 +545,12 @@ export default function SiteSettingsPage() {
       setHasExistingMapping(true);
       setResult({ success: true, message: "Mapping ستون‌ها ذخیره شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "ذخیره Mapping با خطا مواجه شد." });
+      // خطای اعتبارسنجی 422 آرایه‌ای از اشیاء است، نه متن
+      const detail = err.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((d) => String(d.msg || "").replace(/^Value error, /, "")).join("، ")
+        : detail;
+      setResult({ success: false, message: message || "ذخیره Mapping با خطا مواجه شد." });
     } finally {
       setIsSaving(false);
     }
@@ -1129,6 +1148,68 @@ export default function SiteSettingsPage() {
               value={mappingForm.photo_thumbnail_column}
               onChange={(e) => setMappingForm({ ...mappingForm, photo_thumbnail_column: e.target.value })}
               helperText="مثال: ThumbnailImg"
+              disabled={isSaving}
+            />
+
+            <Divider sx={{ my: 1 }} />
+
+            {/* گزارش جذب و ترک کار: فقط برای خواندن آمار از منبع؛ پرسنل قطع‌همکاری‌شده وارد پرتال نمی‌شوند */}
+            <Typography variant="subtitle2" fontWeight={700}>
+              گزارش جذب و ترک کار (اختیاری)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              این ستون‌ها فقط برای محاسبه‌ی آمار مستقیماً از جدول پرسنل منبع خوانده می‌شوند. ستون تاریخ استخدام (بالا) و
+              ستون تاریخ ترک کار برای گزارش الزامی‌اند؛ وضعیت فعال/غیرفعال، واحد، جنسیت، تاریخ تولد و سمت از همین فرم
+              استفاده می‌شوند.
+            </Typography>
+            <TextField
+              label="ستون تاریخ ترک کار شمسی"
+              value={mappingForm.termination_date_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, termination_date_column: e.target.value })}
+              helperText="کاراوب: End_Date"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون علت ترک کار"
+              value={mappingForm.termination_reason_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, termination_reason_column: e.target.value })}
+              helperText="کاراوب: Cut_Reason (متن آزاد؛ در صفحه‌ی گزارش دسته‌بندی می‌شود)"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ماه شروع آمار"
+              value={mappingForm.turnover_start_month}
+              onChange={(e) => setMappingForm({ ...mappingForm, turnover_start_month: e.target.value })}
+              helperText="ماه شروع کار با سیستم منبع، مثل 1403/06؛ آمار قبل از آن نمایش داده نمی‌شود"
+              inputProps={{ dir: "ltr" }}
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون کد مدرک تحصیلی در جدول پرسنل"
+              value={mappingForm.education_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, education_column: e.target.value })}
+              helperText="کاراوب: Grade_No"
+              disabled={isSaving}
+            />
+            <TextField
+              label="جدول Lookup مدرک تحصیلی"
+              value={mappingForm.education_lookup_table}
+              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_table: e.target.value })}
+              helperText="کاراوب: Grades"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون کد در جدول Lookup مدرک"
+              value={mappingForm.education_lookup_id_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_id_column: e.target.value })}
+              helperText="کاراوب: Grade_No"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون عنوان مدرک در جدول Lookup"
+              value={mappingForm.education_lookup_name_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_name_column: e.target.value })}
+              helperText="کاراوب: Title"
               disabled={isSaving}
             />
 

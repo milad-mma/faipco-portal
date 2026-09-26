@@ -199,6 +199,11 @@ class SiteService:
 
         await self.db.commit()
         await self.db.refresh(mapping)
+        # داده‌ی خام گزارش جذب و ترک کار با نگاشت قبلی خوانده شده بود؛ همه پاک می‌شوند چون تقسیم
+        # واحدها بین سایت‌های هم‌منبع به ریشه‌های این سایت هم وابسته است
+        from app.services.turnover_report_service import clear_cache
+
+        clear_cache()
         return mapping
 
     async def _ensure_roots_not_shared(self, site_id: int, roots: list[str]) -> None:
