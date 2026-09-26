@@ -69,10 +69,12 @@ export async function fetchInsuranceRegistration(id) {
   return data;
 }
 
-// رد مدرک کفالت یک عضو (حذف فایل + اطلاعیه برای ثبت‌نام‌کننده)؛ خروجی: { member_name, notice_id }
-export async function rejectInsuranceDocument(registrationId, memberId) {
+// رد مدرک کفالت یک عضو (حذف فایل + اطلاعیه برای ثبت‌نام‌کننده)؛ notice: { title, body } ویرایش‌شده (اختیاری)
+// خروجی: { member_name, notice_id }
+export async function rejectInsuranceDocument(registrationId, memberId, notice) {
   const { data } = await apiClient.post(
-    `/insurance/registrations/${registrationId}/members/${memberId}/reject-document`
+    `/insurance/registrations/${registrationId}/members/${memberId}/reject-document`,
+    notice || {}
   );
   return data;
 }

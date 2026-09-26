@@ -57,6 +57,8 @@ import {
 // برچسب کدهای عددی جنسیت/تأهل و عنوان فارسی انواع عضو
 const GENDER_LABEL = { 1: "مرد", 2: "زن" };
 const MARITAL_LABEL = { 2: "مجرد", 3: "متاهل" };
+// عبارتی که در عنوان/متن اطلاعیه‌ی رد مدرک با نام و نام خانوادگی عضو جایگزین می‌شود (هم‌نام با بک‌اند)
+const MEMBER_PLACEHOLDER = "{نام عضو}";
 const RELATION_LABEL = { spouse: "همسر", son: "فرزند پسر", daughter: "فرزند دختر", father: "پدر", mother: "مادر" };
 // تاریخ ISO را به تاریخ شمسی کوتاه تبدیل می‌کند؛ خالی → «—»
 const faDate = (iso) => (iso ? new Date(iso).toLocaleDateString("fa-IR") : "—");
@@ -82,6 +84,23 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [rejectTarget, setRejectTarget] = useState(null); // عضوی که پنجره‌ی تأیید رد مدرکش باز است
   const [notice, setNotice] = useState(""); // پیام موفقیت رد مدرک
+  const [rejectText, setRejectText] = useState({ title: "", body: "" }); // متن قابل ویرایش اطلاعیه‌ی رد
+
+  // باز کردن پنجره‌ی رد: متن پیش‌فرض از تنظیمات خوانده و «{نام عضو}» با نام عضو جایگزین می‌شود
+  async function openReject(member) {
+    const name = `${member.first_name} ${member.last_name}`.trim();
+    let title = "مدرک بیمه تکمیلی تأیید نشد";
+    let body = `مدرک ارائه‌شده برای ${MEMBER_PLACEHOLDER} مورد تأیید نیست. لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید.`;
+    try {
+      const s = await fetchInsuranceSettings();
+      title = s.reject_notice_title || title;
+      body = s.reject_notice_body || body;
+    } catch {
+      // تنظیمات در دسترس نبود؛ متن پیش‌فرض
+    }
+    setRejectText({ title: title.split(MEMBER_PLACEHOLDER).join(name), body: body.split(MEMBER_PLACEHOLDER).join(name) });
+    setRejectTarget(member);
+  }
 
   // بارگذاری جزئیات (هنگام باز شدن یا تغییر شناسه و بعد از رد مدرک)
   function loadDetail() {
@@ -97,7 +116,10 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
     setBusy(true);
     setError("");
     try {
-      const res = await rejectInsuranceDocument(reg.id, member.id);
+      const res = await rejectInsuranceDocument(reg.id, member.id, {
+        title: rejectText.title.trim(),
+        body: rejectText.body.trim(),
+      });
       setNotice(`مدرک ${res.member_name} رد شد و اطلاعیه برای ${reg.first_name} ${reg.last_name} ارسال شد.`);
       setRejectTarget(null);
       loadDetail();
@@ -224,7 +246,7 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
                                 دانلود
                               </Button>
                               {canManage && (
-                                <Button size="small" color="error" onClick={() => setRejectTarget(m)} disabled={busy}>
+                                <Button size="small" color="error" onClick={() => openReject(m)} disabled={busy}>
                                   رد مدرک
                                 </Button>
                               )}
@@ -256,23 +278,39 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
       </DialogActions>
 
       {/* تأیید رد مدرک با متن اطلاعیه‌ای که برای ثبت‌نام‌کننده فرستاده می‌شود */}
-      <Dialog open={Boolean(rejectTarget)} onClose={() => !busy && setRejectTarget(null)} maxWidth="xs" fullWidth>
+      <Dialog open={Boolean(rejectTarget)} onClose={() => !busy && setRejectTarget(null)} maxWidth="sm" fullWidth>
         <DialogTitle>رد مدرک</DialogTitle>
         <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" sx={{ mb: 2 }}>
             مدرک <b>{rejectTarget?.first_name} {rejectTarget?.last_name}</b> حذف می‌شود و این اطلاعیه برای{" "}
-            {reg?.first_name} {reg?.last_name} ارسال می‌شود:
+            {reg?.first_name} {reg?.last_name} ارسال می‌شود. می‌توانید عنوان و متن را برای همین مورد ویرایش کنید:
           </Typography>
-          <Alert severity="info" icon={false}>
-            مدرک ارائه‌شده برای {rejectTarget?.first_name} {rejectTarget?.last_name} مورد تأیید نیست. لطفاً جهت پیگیری
-            علت رد مدارک به واحد منابع انسانی مراجعه نمائید.
-          </Alert>
+          <Stack spacing={2}>
+            <TextField
+              label="عنوان اطلاعیه"
+              value={rejectText.title}
+              onChange={(e) => setRejectText({ ...rejectText, title: e.target.value })}
+              inputProps={{ maxLength: 255 }}
+              fullWidth
+              disabled={busy}
+            />
+            <TextField
+              label="متن اطلاعیه"
+              value={rejectText.body}
+              onChange={(e) => setRejectText({ ...rejectText, body: e.target.value })}
+              inputProps={{ maxLength: 2000 }}
+              multiline
+              minRows={3}
+              fullWidth
+              disabled={busy}
+            />
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRejectTarget(null)} disabled={busy}>
             انصراف
           </Button>
-          <Button color="error" variant="contained" onClick={handleReject} disabled={busy}>
+          <Button color="error" variant="contained" onClick={handleReject} disabled={busy || !rejectText.title.trim() || !rejectText.body.trim()}>
             رد مدرک و ارسال اطلاعیه
           </Button>
         </DialogActions>
@@ -631,6 +669,49 @@ function SettingsTab() {
           ذخیره جدول و توضیحات
         </Button>
       </Box>
+
+      {/* متن پیش‌فرض اطلاعیه‌ی رد مدرک؛ در پنجره‌ی رد هر مورد هم قابل ویرایش است */}
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+          اطلاعیه‌ی رد مدرک
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          وقتی مدرک یک عضو رد می‌شود، این اطلاعیه (همراه نوتیف) برای ثبت‌نام‌کننده فرستاده می‌شود. عبارت{" "}
+          <b>{MEMBER_PLACEHOLDER}</b> با نام و نام خانوادگی آن عضو جایگزین می‌شود. متن خالی یعنی متن پیش‌فرض.
+        </Typography>
+        <Stack spacing={2}>
+          <TextField
+            label="عنوان اطلاعیه"
+            value={settings.reject_notice_title || ""}
+            onChange={(e) => setSettings({ ...settings, reject_notice_title: e.target.value })}
+            inputProps={{ maxLength: 255 }}
+            fullWidth
+          />
+          <TextField
+            label="متن اطلاعیه"
+            value={settings.reject_notice_body || ""}
+            onChange={(e) => setSettings({ ...settings, reject_notice_body: e.target.value })}
+            inputProps={{ maxLength: 2000 }}
+            multiline
+            minRows={3}
+            fullWidth
+          />
+        </Stack>
+        <Button
+          variant="contained"
+          sx={{ mt: 2 }}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+          disabled={saving}
+          onClick={() =>
+            save(
+              { reject_notice_title: settings.reject_notice_title || "", reject_notice_body: settings.reject_notice_body || "" },
+              "متن اطلاعیه‌ی رد مدرک ذخیره شد."
+            )
+          }
+        >
+          ذخیره متن اطلاعیه
+        </Button>
+      </Card>
     </Stack>
   );
 }

@@ -45,6 +45,16 @@ SETTINGS_KEY = "insurance_settings"
 # بماند (یعنی فرم هرگز ثبت نشده)، زمان‌بند آن را همراه مدرکش پاک می‌کند.
 PENDING_MAX_AGE_HOURS = 24
 
+# اطلاعیه‌ی رد مدرک: متن پیش‌فرض (قابل ویرایش در تنظیمات)؛ «{نام عضو}» با نام و نام خانوادگی عضو جایگزین می‌شود
+MEMBER_NAME_PLACEHOLDER = "{نام عضو}"
+DEFAULT_REJECT_NOTICE_TITLE = "مدرک بیمه تکمیلی تأیید نشد"
+DEFAULT_REJECT_NOTICE_BODY = (
+    "مدرک ارائه‌شده برای {نام عضو} مورد تأیید نیست. "
+    "لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید."
+)
+REJECT_TITLE_MAX = 255
+REJECT_BODY_MAX = 2000
+
 
 class InsuranceError(Exception):
     """خطای قابل نمایش به کاربر (پیام فارسی در متن استثنا)."""
@@ -79,6 +89,8 @@ class InsuranceService:
             "enabled": bool(stored.get("enabled", True)),
             "rate_table": self._sanitize_rate_table(stored.get("rate_table")) or rules.DEFAULT_RATE_TABLE,
             "notes": self._sanitize_notes(stored.get("notes")) or list(rules.DEFAULT_NOTES),
+            "reject_notice_title": (str(stored.get("reject_notice_title") or "").strip() or DEFAULT_REJECT_NOTICE_TITLE)[:REJECT_TITLE_MAX],
+            "reject_notice_body": (str(stored.get("reject_notice_body") or "").strip() or DEFAULT_REJECT_NOTICE_BODY)[:REJECT_BODY_MAX],
         }
 
     async def update_settings(self, patch: dict) -> dict:
@@ -97,6 +109,11 @@ class InsuranceService:
             current["rate_table"] = table
         if patch.get("notes") is not None:
             current["notes"] = self._sanitize_notes(patch["notes"]) or []
+        # متن خالی = برگشت به متن پیش‌فرض
+        if patch.get("reject_notice_title") is not None:
+            current["reject_notice_title"] = str(patch["reject_notice_title"]).strip()[:REJECT_TITLE_MAX] or DEFAULT_REJECT_NOTICE_TITLE
+        if patch.get("reject_notice_body") is not None:
+            current["reject_notice_body"] = str(patch["reject_notice_body"]).strip()[:REJECT_BODY_MAX] or DEFAULT_REJECT_NOTICE_BODY
         # ذخیره: رکورد موجود به‌روز می‌شود، وگرنه رکورد جدید ساخته می‌شود
         row = await self.db.get(SystemSetting, SETTINGS_KEY)
         if row is None:
@@ -527,13 +544,20 @@ class InsuranceService:
         return None
 
     async def reject_document(
-        self, registration_id: int, member_id: int, site_ids: set[int] | None, sender: User
+        self,
+        registration_id: int,
+        member_id: int,
+        site_ids: set[int] | None,
+        sender: User,
+        title: str | None = None,
+        body: str | None = None,
     ) -> tuple[str, int] | None:
         """
         مدرک یک عضو را رد می‌کند: فایل حذف، زمان رد روی عضو ثبت و یک اطلاعیه‌ی منتشرشده برای پرسنل
         ثبت‌نام‌کننده ساخته می‌شود. ورودی: شناسه ثبت‌نام و عضو، سایت‌های مجاز مدیر (None = همه) و فرستنده.
         خروجی: (نام عضو، شناسه اطلاعیه) برای ارسال Push؛ ثبت‌نام/عضو ناموجود یا خارج از سایت‌ها → None؛
-        عضو بدون مدرک → InsuranceError.
+        عضو بدون مدرک → InsuranceError. title/body: متن ویرایش‌شده در پنجره‌ی رد (خالی = متن تنظیمات)؛
+        «{نام عضو}» در هر دو با نام عضو جایگزین می‌شود.
         """
         registration = await self.get_registration_by_id(registration_id, site_ids)
         if registration is None:
@@ -545,17 +569,19 @@ class InsuranceService:
             raise InsuranceError("این عضو مدرکی برای رد کردن ندارد.")
 
         member_name = f"{member.first_name} {member.last_name}".strip()
+        settings = await self.get_settings()
+        notice_title = ((title or "").strip() or settings["reject_notice_title"]).replace(MEMBER_NAME_PLACEHOLDER, member_name)
+        notice_body = ((body or "").strip() or settings["reject_notice_body"]).replace(MEMBER_NAME_PLACEHOLDER, member_name)
+        if len(notice_title) > REJECT_TITLE_MAX or len(notice_body) > REJECT_BODY_MAX:
+            raise InsuranceError("عنوان یا متن اطلاعیه بیش از حد طولانی است.")
         await self.db.delete(member.document)
         member.document_rejected_at = datetime.now(timezone.utc)
 
         # اطلاعیه‌ی شخصی برای ثبت‌نام‌کننده (مثل پیام تبریک تولد: هدف فقط همان پرسنل)
         notice = Notice(
             sender_id=sender.id,
-            title="مدرک بیمه تکمیلی تأیید نشد",
-            body=(
-                f"مدرک ارائه‌شده برای {member_name} مورد تأیید نیست. "
-                "لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید."
-            ),
+            title=notice_title,
+            body=notice_body,
             priority=NoticePriority.high,
             status=NoticeStatus.published,
             notice_type=NoticeType.normal,

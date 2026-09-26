@@ -35,6 +35,7 @@ from app.schemas.insurance import (
     InsuranceMyStatusOut,
     InsuranceRegistrationIn,
     InsuranceRegistrationOut,
+    InsuranceRejectDocumentIn,
     InsuranceRejectDocumentOut,
     InsuranceSettingsIn,
     InsuranceSettingsOut,
@@ -236,6 +237,7 @@ async def reject_member_document(
     registration_id: int,
     member_id: int,
     background_tasks: BackgroundTasks,
+    payload: InsuranceRejectDocumentIn | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("insurance.manage")),
 ):
@@ -246,7 +248,14 @@ async def reject_member_document(
     """
     sites = await get_sites_with_permission(db, current_user, "insurance.manage")
     try:
-        result = await InsuranceService(db).reject_document(registration_id, member_id, sites, current_user)
+        result = await InsuranceService(db).reject_document(
+            registration_id,
+            member_id,
+            sites,
+            current_user,
+            title=payload.title if payload else None,
+            body=payload.body if payload else None,
+        )
     except InsuranceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if result is None:

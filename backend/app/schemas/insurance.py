@@ -136,6 +136,8 @@ class InsuranceSettingsOut(BaseModel):
     enabled: bool
     rate_table: dict
     notes: list[str]
+    reject_notice_title: str = ""  # عنوان اطلاعیه‌ی رد مدرک؛ «{نام عضو}» جایگزین می‌شود
+    reject_notice_body: str = ""  # متن اطلاعیه‌ی رد مدرک
 
 
 class InsuranceSettingsIn(BaseModel):
@@ -144,6 +146,8 @@ class InsuranceSettingsIn(BaseModel):
     enabled: bool | None = None
     rate_table: dict | None = None
     notes: list[str] | None = None
+    reject_notice_title: str | None = Field(default=None, max_length=255)
+    reject_notice_body: str | None = Field(default=None, max_length=2000)
 
 
 class InsuranceListItemOut(BaseModel):
@@ -165,6 +169,13 @@ class InsuranceListItemOut(BaseModel):
     rejected_documents_count: int = 0  # اعضایی که مدرکشان رد شده و هنوز دوباره ثبت نشده‌اند
     created_at: datetime
     updated_at: datetime
+
+
+class InsuranceRejectDocumentIn(BaseModel):
+    """متن اطلاعیه‌ی رد مدرک که مدیر در پنجره‌ی تأیید ویرایش کرده (اختیاری؛ خالی = متن تنظیمات)."""
+
+    title: str | None = Field(default=None, max_length=255)
+    body: str | None = Field(default=None, max_length=2000)
 
 
 class InsuranceRejectDocumentOut(BaseModel):
