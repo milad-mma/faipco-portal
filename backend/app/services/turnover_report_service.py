@@ -122,11 +122,24 @@ class TurnoverReportService:
         adapter = sync._build_adapter(conn)
         try:
             rows = await adapter.fetch_rows(mapping.table_name, main_columns)
-            history_rows = (
-                await adapter.fetch_rows(history_table, list(dict.fromkeys(main_columns + [order_col])))
-                if use_history
-                else []
-            )
+            history_rows: list[dict] = []
+            history_missing: list[str] = []
+            if use_history:
+                # جدول تاریخچه همه‌ی ستون‌های جدول پرسنل را ندارد (کاراوب: LogEmployee بدون Gender و Birth_Date)؛
+                # فقط ستون‌های موجود خوانده و بقیه از ردیف فعلی همان شخص پر می‌شوند (مشخصاتی که عوض نمی‌شوند)
+                history_cols = await self._table_columns(adapter, history_table)
+                if history_cols is None:
+                    raise TurnoverReportError(f"جدول تاریخچه‌ی «{history_table}» در دیتابیس منبع پیدا نشد.")
+                required = [c for c in (emp_col, hire_col, term_col, order_col, fields["active"]) if c]
+                missing_required = [c for c in required if c.lower() not in history_cols]
+                if missing_required:
+                    raise TurnoverReportError(
+                        f"جدول تاریخچه‌ی «{history_table}» این ستون‌ها را ندارد: " + "، ".join(missing_required)
+                    )
+                wanted = list(dict.fromkeys(main_columns + [order_col]))
+                available = [c for c in wanted if c.lower() in history_cols]
+                history_missing = [c for c in wanted if c.lower() not in history_cols]
+                history_rows = await adapter.fetch_rows(history_table, available)
             org_scope = await sync._resolve_org_scope(site_id, conn, mapping, adapter)
             dept_names = await sync._load_lookup_table(
                 adapter, mapping.department_lookup_table, mapping.department_lookup_id_column, mapping.department_lookup_name_column
@@ -137,13 +150,23 @@ class TurnoverReportService:
             education_names = await sync._load_lookup_table(
                 adapter, mapping.education_lookup_table, mapping.education_lookup_id_column, mapping.education_lookup_name_column
             )
+        except TurnoverReportError:
+            raise
         except SyncError as e:
             raise TurnoverReportError(str(e)) from e
         except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری منبع با پیام قابل فهم
             logger.exception("خواندن داده‌ی گزارش جذب و ترک کار (سایت %s) ناموفق بود", site_id)
             raise TurnoverReportError(
-                "خواندن اطلاعات از دیتابیس منبع ناموفق بود؛ اتصال، نگاشت پرسنل و جدول تاریخچه را بررسی کنید."
+                "خواندن اطلاعات از دیتابیس منبع ناموفق بود؛ اتصال، نگاشت پرسنل و جدول تاریخچه را بررسی کنید. "
+                f"({type(e).__name__}: {str(e)[:200]})"
             ) from e
+
+        if history_missing:
+            current_by_emp = {str(r.get(emp_col)).strip(): r for r in rows if r.get(emp_col) is not None}
+            for hrow in history_rows:
+                cur = current_by_emp.get(str(hrow.get(emp_col)).strip())
+                for col in history_missing:
+                    hrow[col] = cur.get(col) if cur else None
 
         def _is_left(row) -> bool:
             """وضعیت «قطع همکاری» یک ردیف (با ستون وضعیت، وگرنه وجود تاریخ ترک کار)."""
@@ -215,6 +238,16 @@ class TurnoverReportService:
         }
         _site_cache[site_id] = (time.monotonic(), data)
         return data
+
+    @staticmethod
+    async def _table_columns(adapter, table: str) -> set[str] | None:
+        """نام ستون‌های یک جدول منبع (حروف کوچک) از فراداده‌ی دیتابیس؛ جدول ناموجود → None."""
+        schema = await adapter.discover_schema()
+        name = table.split(".")[-1].strip("[]").lower()
+        for t in schema.get("tables", []):
+            if str(t.get("name", "")).split(".")[-1].lower() == name:
+                return {str(c.get("name", "")).lower() for c in t.get("columns", [])}
+        return None
 
     # --- دسته‌ها ---
     async def list_categories(self) -> list[dict]:
