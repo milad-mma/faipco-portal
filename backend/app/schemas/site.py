@@ -130,6 +130,9 @@ class EmployeeMappingIn(BaseModel):
     education_lookup_id_column: str | None = None
     education_lookup_name_column: str | None = None
     turnover_start_month: str | None = None
+    # اختیاری: جدول تاریخچه‌ی پرسنل (LogEmployee) و ستون زمان تغییر (ChangeDate) برای دوره‌های استخدام مجدد
+    history_table: str | None = None
+    history_order_column: str | None = None
 
     @field_validator("turnover_start_month", mode="before")
     @classmethod

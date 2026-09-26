@@ -29,6 +29,7 @@ from app.services.turnover_metrics import (
     RETENTION_POINTS,
     Record,
     compute_report,
+    merge_history,
     normalize_reason,
     parse_jalali_int,
     parse_month,
@@ -111,11 +112,21 @@ class TurnoverReportService:
             "education": (mapping.education_column or "").strip(),
             "branch": (mapping.branch_code_column or "").strip(),
         }
+        emp_col = (mapping.personnel_code_column or "").strip()
+        history_table = (mapping.history_table or "").strip()
+        order_col = (mapping.history_order_column or "").strip()
+        use_history = bool(history_table and order_col and emp_col)
         columns = list(dict.fromkeys(v for v in fields.values() if v))
+        # کد پرسنلی فقط برای ترکیب ردیف فعلی با تاریخچه خوانده می‌شود و در هیچ خروجی/Cache نمی‌ماند
+        main_columns = columns + ([emp_col] if use_history and emp_col not in columns else [])
         adapter = sync._build_adapter(conn)
         try:
-            rows = await adapter.fetch_rows(mapping.table_name, columns)
-            rows = sync._filter_branch(mapping, rows)
+            rows = await adapter.fetch_rows(mapping.table_name, main_columns)
+            history_rows = (
+                await adapter.fetch_rows(history_table, list(dict.fromkeys(main_columns + [order_col])))
+                if use_history
+                else []
+            )
             org_scope = await sync._resolve_org_scope(site_id, conn, mapping, adapter)
             dept_names = await sync._load_lookup_table(
                 adapter, mapping.department_lookup_table, mapping.department_lookup_id_column, mapping.department_lookup_name_column
@@ -130,52 +141,72 @@ class TurnoverReportService:
             raise TurnoverReportError(str(e)) from e
         except Exception as e:  # noqa: BLE001 - خطای اتصال/کوئری منبع با پیام قابل فهم
             logger.exception("خواندن داده‌ی گزارش جذب و ترک کار (سایت %s) ناموفق بود", site_id)
-            raise TurnoverReportError("خواندن اطلاعات از دیتابیس منبع ناموفق بود؛ اتصال و نگاشت پرسنل را بررسی کنید.") from e
+            raise TurnoverReportError(
+                "خواندن اطلاعات از دیتابیس منبع ناموفق بود؛ اتصال، نگاشت پرسنل و جدول تاریخچه را بررسی کنید."
+            ) from e
 
+        def _is_left(row) -> bool:
+            """وضعیت «قطع همکاری» یک ردیف (با ستون وضعیت، وگرنه وجود تاریخ ترک کار)."""
+            if fields["active"]:
+                raw_active = row.get(fields["active"])
+                active = sync._coerce_is_active(raw_active)
+                if mapping.is_active_inverted and raw_active is not None:  # NULL در ستون برعکس (IsCut) = فعال
+                    active = not active
+                return not active
+            return parse_jalali_int(row.get(term_col)) is not None
+
+        # دوره‌های استخدام: ردیف فعلی هر نفر + دوره‌های خاتمه‌یافته‌ی قبلی از تاریخچه (استخدام مجدد)
+        if use_history:
+            episodes = merge_history(
+                rows, history_rows, emp_col=emp_col, hire_col=hire_col, term_col=term_col, order_col=order_col, is_left=_is_left
+            )
+        else:
+            episodes = [(row, False, False) for row in rows]
+
+        # فیلتر شعبه و درخت واحدها روی هر دوره با واحد/شعبه‌ی همان دوره
+        branch_col = (mapping.branch_code_column or "").strip()
+        branch_val = (mapping.branch_code_value or "").strip()
+        assignment = org_scope[0] if org_scope is not None else None
         unassigned = 0
-        if org_scope is not None:
-            assignment, _siblings = org_scope
-            own = []
-            for r in rows:
-                owner = assignment.get(normalize_code(r.get(fields["dept"])))
-                if owner == site_id:
-                    own.append(r)
-                elif owner is None:
-                    unassigned += 1  # واحدش زیر هیچ ریشه‌ای نیست (یا دیگر وجود ندارد)؛ در هشدار گزارش شمرده می‌شود
-            rows = own
+        history_episodes = 0
 
         def _code(row, key):
             col = fields[key]
             return normalize_code(row.get(col)) if col else None
 
         records = []
-        for row in rows:
+        for row, rehire, from_history in episodes:
+            if branch_col and branch_val and str(row.get(branch_col) or "").strip() != branch_val:
+                continue
+            if assignment is not None:
+                owner = assignment.get(normalize_code(row.get(fields["dept"])))
+                if owner != site_id:
+                    if owner is None:
+                        unassigned += 1  # واحدش زیر هیچ ریشه‌ای نیست (یا دیگر وجود ندارد)؛ در هشدار گزارش شمرده می‌شود
+                    continue
+            left = _is_left(row)
             term = parse_jalali_int(row.get(term_col))
-            if fields["active"]:
-                raw_active = row.get(fields["active"])
-                active = sync._coerce_is_active(raw_active)
-                if mapping.is_active_inverted and raw_active is not None:  # NULL در ستون برعکس (IsCut) = فعال
-                    active = not active
-                left = not active
-            else:
-                left = term is not None
+            history_episodes += 1 if from_history else 0
             reason_raw = str(row.get(fields["reason"]) or "") if fields["reason"] else ""
             records.append(
                 Record(
                     hire=parse_jalali_int(row.get(hire_col)),
                     term=term if left else None,
                     left=left,
-                    reason_raw=reason_raw.strip(),
-                    reason_norm=normalize_reason(reason_raw),
+                    reason_raw=reason_raw.strip() if left else "",
+                    reason_norm=normalize_reason(reason_raw) if left else "",
                     dept=_code(row, "dept"),
                     gender=sync._normalize_gender(row.get(fields["gender"])) if fields["gender"] else None,
                     birth=parse_jalali_int(row.get(fields["birth"])) if fields["birth"] else None,
                     position=_code(row, "position"),
                     education=_code(row, "education"),
+                    rehire=rehire,
                 )
             )
         data = {
             "unassigned": unassigned,
+            "history_episodes": history_episodes,
+            "history_enabled": use_history,
             "conn_key": (conn.db_type, (conn.host or "").strip().lower(), conn.port, (conn.database_name or "").strip().lower()),
             "records": records,
             "dept_names": dept_names,
@@ -284,6 +315,10 @@ class TurnoverReportService:
         unassigned = sum(unassigned_by_source.values())
         if unassigned:
             report["warnings"]["unassigned_unit"] = unassigned
+        report["history"] = {
+            "enabled": any(d.get("history_enabled") for _sid, d in loaded),
+            "episodes": sum(d.get("history_episodes", 0) for _sid, d in loaded),
+        }
         report["categories"] = categories
         report["generated_at"] = datetime.now(timezone.utc).isoformat()
         return report
@@ -340,6 +375,7 @@ def build_xlsx(report: dict, title: str) -> bytes:
         ["پرسنل انتهای دوره", k["end_headcount"]],
         ["میانگین پرسنل", k["avg_headcount"]],
         ["استخدام", k["hires"]],
+        ["استخدام مجدد (برگشت پس از ترک کار)", k.get("rehires")],
         ["ترک کار", k["separations"]],
         ["خالص", k["net"]],
         ["نرخ ترک کار دوره (%)", k["turnover_rate_period"]],
@@ -360,11 +396,11 @@ def build_xlsx(report: dict, title: str) -> bytes:
     groups = ["voluntary", "involuntary", "probation", "other", "uncategorized"]
     sheet(
         "ماهانه",
-        ["ماه", "پرسنل اول ماه", "پرسنل آخر ماه", "میانگین پرسنل", "استخدام", "ترک کار", "خالص"]
+        ["ماه", "پرسنل اول ماه", "پرسنل آخر ماه", "میانگین پرسنل", "استخدام", "استخدام مجدد", "ترک کار", "خالص"]
         + [GROUP_LABELS[g] for g in groups]
         + ["نرخ ترک (%)", "نرخ ترک به خواست کارگر (%)", "نرخ جذب (%)", "نرخ متحرک ۱۲ماهه (%)"],
         [
-            [m["month"], m["start_headcount"], m["end_headcount"], m["avg_headcount"], m["hires"], m["separations"], m["net"]]
+            [m["month"], m["start_headcount"], m["end_headcount"], m["avg_headcount"], m["hires"], m.get("rehires", 0), m["separations"], m["net"]]
             + [m["by_group"][g] for g in groups]
             + [m["turnover_rate"], m["voluntary_rate"], m["hire_rate"], m["rolling12_rate"]]
             for m in report["monthly"]

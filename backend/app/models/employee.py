@@ -180,5 +180,9 @@ class EmployeeMapping(Base, TimestampMixin):
     education_lookup_name_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # ماه شروع آمار این سایت (مثل «1403/06» = شروع کار با سیستم منبع)؛ خالی = از اولین داده
     turnover_start_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # اختیاری (Migration 090): جدول تاریخچه‌ی تغییرات پرسنل با همان ستون‌های جدول پرسنل (کاراوب: LogEmployee)
+    # و ستون زمان تغییر (ChangeDate). کاراوب برای استخدام مجدد رکورد جدید نمی‌سازد؛ دوره‌های قبلی فقط اینجا می‌مانند.
+    history_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    history_order_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     site: Mapped["Site"] = relationship()

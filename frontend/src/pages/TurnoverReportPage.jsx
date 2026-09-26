@@ -292,6 +292,13 @@ function ReportTab({ onGoCategories }) {
         </Alert>
       )}
 
+      {report.history && !report.history.enabled && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          جدول تاریخچه‌ی پرسنل تنظیم نشده است؛ ترک کارِ کسانی که بعداً دوباره استخدام شده‌اند در گزارش نمی‌آید (کاراوب
+          برای استخدام مجدد همان رکورد را دوباره فعال می‌کند). در «تنظیمات سایت ← نگاشت پرسنل» جدول تاریخچه را LogEmployee
+          و ستون زمان تغییر را ChangeDate بگذارید.
+        </Alert>
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         بازه‌ی گزارش: {report.range.from_month} تا {report.range.to_month} ({fa(k.months)} ماه) — شروع آمار: {report.range.start_month}
       </Typography>
@@ -300,7 +307,8 @@ function ReportTab({ onGoCategories }) {
       <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
         {[
           ["پرسنل ابتدا / انتهای دوره", `${fa(k.start_headcount)} ← ${fa(k.end_headcount)}`, "پرسنل شاغل روز اول بازه و روز آخر بازه", `میانگین ${fa(k.avg_headcount, 1)} نفر`],
-          ["استخدام", fa(k.hires), "تعداد استخدام با تاریخ استخدام داخل بازه", `نرخ جذب سالانه‌شده ${pct(k.hire_rate_annualized)}`],
+          ["استخدام", fa(k.hires), "تعداد استخدام با تاریخ استخدام داخل بازه (هر دوره‌ی استخدام جدا؛ برگشت پس از ترک کار هم یک استخدام است)", `نرخ جذب سالانه‌شده ${pct(k.hire_rate_annualized)}`],
+          ["استخدام مجدد", fa(k.rehires), "استخدام کسانی که قبلاً در همین سازمان ترک کار کرده بودند (از جدول تاریخچه‌ی کاراوب)", `${pct(k.rehire_share)} از استخدام‌ها`],
           ["ترک کار", fa(k.separations), "تعداد قطع همکاری با تاریخ ترک کار داخل بازه (بدون موارد خارج از آمار)", `خالص ${k.net > 0 ? "+" : ""}${fa(k.net)}`],
           ["نرخ ترک کار (سالانه‌شده)", pct(k.turnover_rate_annualized), "میانگین نرخ ماهانه × ۱۲. نرخ ماهانه = ترک کار ماه ÷ میانگین پرسنل ماه × ۱۰۰ (استاندارد SHRM)", `کل دوره ${pct(k.turnover_rate_period)}`],
           ["ترک به خواست کارگر", pct(k.voluntary_rate_annualized), "استعفا و ترک کار — سالانه‌شده", `${fa(k.by_group.voluntary)} نفر`],
@@ -518,7 +526,7 @@ function ReportTab({ onGoCategories }) {
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
-                    {["ماه", "اول ماه", "استخدام", "ترک", "آخر ماه", "کارگر", "کارفرما", "نرخ ترک", "متحرک ۱۲ماهه"].map((h) => (
+                    {["ماه", "اول ماه", "استخدام", "مجدد", "ترک", "آخر ماه", "کارگر", "کارفرما", "نرخ ترک", "متحرک ۱۲ماهه"].map((h) => (
                       <TableCell key={h} sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>{h}</TableCell>
                     ))}
                   </TableRow>
@@ -529,6 +537,7 @@ function ReportTab({ onGoCategories }) {
                       <TableCell dir="ltr" sx={{ textAlign: "end" }}>{m.month}</TableCell>
                       <TableCell>{fa(m.start_headcount)}</TableCell>
                       <TableCell>{fa(m.hires)}</TableCell>
+                      <TableCell>{fa(m.rehires)}</TableCell>
                       <TableCell>{fa(m.separations)}</TableCell>
                       <TableCell>{fa(m.end_headcount)}</TableCell>
                       <TableCell>{fa(m.by_group.voluntary)}</TableCell>

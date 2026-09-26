@@ -163,6 +163,73 @@ class Record:
     birth: int | None
     position: str | None
     education: str | None
+    rehire: bool = False  # این دوره‌ی استخدام، برگشت همان شخص بعد از یک ترک کار قبلی است
+
+
+# ---------- ساخت دوره‌های استخدام از تاریخچه ----------
+
+def merge_history(
+    current_rows: list[dict],
+    history_rows: list[dict],
+    *,
+    emp_col: str,
+    hire_col: str,
+    term_col: str,
+    order_col: str,
+    is_left,
+) -> list[tuple[dict, bool, bool]]:
+    """
+    کاراوب برای استخدام مجدد رکورد جدید نمی‌سازد: همان رکورد پرسنل دوباره فعال و تاریخ استخدام عوض
+    می‌شود، پس دوره‌های قبلی فقط در جدول تاریخچه (LogEmployee، یک ردیف به ازای هر تغییر) می‌مانند.
+    این تابع از تاریخچه و ردیف‌های فعلی، «دوره‌های استخدام» را می‌سازد:
+    - هر (شخص، تاریخ استخدام) یک دوره است و آخرین وضعیت آن دوره ملاک است (ردیف فعلی بر تاریخچه مقدم است)؛
+    - دوره‌ی تاریخچه فقط اگر آخرین وضعیتش «ترک کار با تاریخ» باشد نگه داشته می‌شود؛ دوره‌ی بدون ترک کار
+      در تاریخچه یعنی اصلاح تاریخ استخدام (نه دوره‌ی واقعی) و کنار گذاشته می‌شود؛
+    - دوره‌ای که قبلش همان شخص یک دوره‌ی خاتمه‌یافته دارد «استخدام مجدد» است.
+    خروجی: [(ردیف، استخدام مجدد؟، از تاریخچه؟)]؛ ردیف فعلی بدون کد پرسنلی بدون تغییر برمی‌گردد.
+    is_left(row): آیا وضعیت این ردیف «قطع همکاری» است.
+    """
+    groups: dict[tuple[str, int], tuple[tuple, dict, bool]] = {}
+    passthrough: list[tuple[dict, bool, bool]] = []
+
+    def _key(row):
+        raw = row.get(emp_col)
+        emp = str(raw).strip() if raw is not None else ""
+        if emp.endswith(".0") and emp[:-2].isdigit():
+            emp = emp[:-2]
+        return emp, parse_jalali_int(row.get(hire_col))
+
+    for row in history_rows:
+        emp, hire = _key(row)
+        if not emp or hire is None:
+            continue
+        order = row.get(order_col)
+        rank = (0, order is not None, str(order) if order is not None else "")
+        current = groups.get((emp, hire))
+        if current is None or rank >= current[0]:
+            groups[(emp, hire)] = (rank, row, False)
+    for row in current_rows:
+        emp, hire = _key(row)
+        if not emp or hire is None:
+            passthrough.append((row, False, False))
+            continue
+        groups[(emp, hire)] = ((1, True, ""), row, True)
+
+    by_emp: dict[str, list[tuple[int, dict, bool]]] = defaultdict(list)
+    for (emp, hire), (_rank, row, is_current) in groups.items():
+        if is_current or (is_left(row) and parse_jalali_int(row.get(term_col)) is not None):
+            by_emp[emp].append((hire, row, is_current))
+
+    result = list(passthrough)
+    for episodes in by_emp.values():
+        episodes.sort(key=lambda e: e[0])
+        ended_before = False
+        for hire, row, is_current in episodes:
+            result.append((row, ended_before, not is_current))
+            term = parse_jalali_int(row.get(term_col))
+            if is_left(row) and term is not None:
+                ended_before = True
+    return result
 
 
 def _pct(num: float, den: float) -> float | None:
@@ -225,7 +292,7 @@ def monthly_series(prepared: list[tuple[Record, int | None, str]], first_idx: in
     for idx in range(first_idx, last_idx + 1):
         y, m = index_to_month(idx)
         ms, me = y * 10000 + m * 100 + 1, y * 10000 + m * 100 + 31
-        start = end = hires = seps = 0
+        start = end = hires = seps = rehires = 0
         by_group: Counter = Counter()
         by_category: Counter = Counter()
         for rec, cat_id, group in prepared:
@@ -235,6 +302,8 @@ def monthly_series(prepared: list[tuple[Record, int | None, str]], first_idx: in
                 end += 1
             if ms <= rec.hire <= me:
                 hires += 1
+                if rec.rehire:
+                    rehires += 1
             if rec.left and ms <= rec.term <= me:
                 seps += 1
                 by_group[group] += 1
@@ -247,6 +316,7 @@ def monthly_series(prepared: list[tuple[Record, int | None, str]], first_idx: in
             "end_headcount": end,
             "avg_headcount": avg,
             "hires": hires,
+            "rehires": rehires,
             "separations": seps,
             "net": hires - seps,
             "by_group": {g: by_group.get(g, 0) for g in ("voluntary", "involuntary", "probation", "other", "uncategorized")},
@@ -339,6 +409,8 @@ def compute_report(
         "end_headcount": months[-1]["end_headcount"] if months else 0,
         "avg_headcount": _round(_mean([m["avg_headcount"] for m in months])),
         "hires": total_hires,
+        "rehires": sum(m["rehires"] for m in months),
+        "rehire_share": _pct(sum(m["rehires"] for m in months), total_hires),
         "separations": total_seps,
         "net": total_hires - total_seps,
         "by_group": group_totals,
@@ -369,6 +441,7 @@ def compute_report(
             "year": year,
             "months": len(rows),
             "hires": sum(r["hires"] for r in rows),
+            "rehires": sum(r["rehires"] for r in rows),
             "separations": sum(r["separations"] for r in rows),
             "net": sum(r["net"] for r in rows),
             "by_group": {g: sum(r["by_group"][g] for r in rows) for g in group_totals},

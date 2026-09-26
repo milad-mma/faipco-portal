@@ -101,6 +101,8 @@ const EMPTY_MAPPING = {
   education_lookup_id_column: "",
   education_lookup_name_column: "",
   turnover_start_month: "",
+  history_table: "",
+  history_order_column: "",
 };
 const EMPTY_ATTENDANCE_MAPPING = {
   table_name: "",
@@ -463,6 +465,8 @@ export default function SiteSettingsPage() {
           education_lookup_id_column: mapping.education_lookup_id_column || "",
           education_lookup_name_column: mapping.education_lookup_name_column || "",
           turnover_start_month: mapping.turnover_start_month || "",
+          history_table: mapping.history_table || "",
+          history_order_column: mapping.history_order_column || "",
         });
         setHasExistingMapping(true);
       }
@@ -1210,6 +1214,25 @@ export default function SiteSettingsPage() {
               value={mappingForm.education_lookup_name_column}
               onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_name_column: e.target.value })}
               helperText="کاراوب: Title"
+              disabled={isSaving}
+            />
+            <Typography variant="caption" color="text.secondary">
+              کاراوب برای استخدام مجدد رکورد جدید نمی‌سازد و همان رکورد پرسنل را دوباره فعال می‌کند؛ دوره‌های قبلی (ترک کار
+              پیش از برگشت) فقط در جدول تاریخچه می‌ماند. با پر کردن دو فیلد زیر، گزارش آن دوره‌ها و «استخدام مجدد» را هم
+              حساب می‌کند. جدول تاریخچه باید همان ستون‌های جدول پرسنل را داشته باشد.
+            </Typography>
+            <TextField
+              label="جدول تاریخچه‌ی پرسنل"
+              value={mappingForm.history_table}
+              onChange={(e) => setMappingForm({ ...mappingForm, history_table: e.target.value })}
+              helperText="کاراوب: LogEmployee"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون زمان تغییر در جدول تاریخچه"
+              value={mappingForm.history_order_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, history_order_column: e.target.value })}
+              helperText="کاراوب: ChangeDate"
               disabled={isSaving}
             />
 

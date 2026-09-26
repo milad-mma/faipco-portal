@@ -185,3 +185,74 @@ def test_filters_and_range_clamp():
     assert report["kpis"]["separations"] == 1 and report["kpis"]["start_headcount"] == 1
     # گزینه‌های واحد از کل داده (قبل از فیلتر) ساخته می‌شوند
     assert {d["code"] for d in report["department_options"]} == {"10", "20"}
+
+
+# ---------- دوره‌های استخدام از تاریخچه (استخدام مجدد در کاراوب) ----------
+
+def _is_left(row):
+    return row.get("IsCut") == 1
+
+
+def _merge(current, history):
+    from app.services.turnover_metrics import merge_history
+
+    return merge_history(
+        current, history, emp_col="Emp_No", hire_col="Emp_Date", term_col="End_Date", order_col="ChangeDate", is_left=_is_left
+    )
+
+
+def test_merge_history_rehire_like_kara():
+    # نمونه‌ی واقعی 225932: تعدیل، برگشت و ترک در همان روز، برگشت دوباره
+    history = [
+        {"Emp_No": 225932, "Emp_Date": 14010524, "End_Date": None, "IsCut": 0, "ChangeDate": "2024-07-02"},
+        {"Emp_No": 225932, "Emp_Date": 14010524, "End_Date": 14050101, "IsCut": 1, "ChangeDate": "2026-04-22"},
+        {"Emp_No": 225932, "Emp_Date": 14050216, "End_Date": 14050216, "IsCut": 1, "ChangeDate": "2026-05-05"},
+        {"Emp_No": 225932, "Emp_Date": 14050618, "End_Date": None, "IsCut": 0, "ChangeDate": "2026-09-20"},
+    ]
+    current = [{"Emp_No": 225932, "Emp_Date": 14050618, "End_Date": None, "IsCut": 0}]
+    episodes = sorted(_merge(current, history), key=lambda e: e[0]["Emp_Date"])
+    assert [(e[0]["Emp_Date"], e[1], e[2]) for e in episodes] == [
+        (14010524, False, True),
+        (14050216, True, True),
+        (14050618, True, False),
+    ]
+
+
+def test_merge_history_ignores_corrections_and_uses_latest_state():
+    history = [
+        # اصلاح تاریخ استخدام (بدون ترک کار در بین) → دوره‌ی جدا نیست
+        {"Emp_No": 1, "Emp_Date": 14030101, "End_Date": None, "IsCut": 0, "ChangeDate": "2024-07-01"},
+        # ترک کاری که بعداً لغو شد (همان تاریخ استخدام دوباره فعال) → آخرین وضعیت شاغل است، ولی ردیف فعلی ملاک است
+        {"Emp_No": 2, "Emp_Date": 14020101, "End_Date": 14030101, "IsCut": 1, "ChangeDate": "2024-07-01"},
+        {"Emp_No": 2, "Emp_Date": 14020101, "End_Date": None, "IsCut": 0, "ChangeDate": "2024-08-01"},
+        # تاریخ ترک کار اصلاح شد → آخرین مقدار
+        {"Emp_No": 3, "Emp_Date": 14020101, "End_Date": 14030101, "IsCut": 1, "ChangeDate": "2024-07-01"},
+        {"Emp_No": 3, "Emp_Date": 14020101, "End_Date": 14030115, "IsCut": 1, "ChangeDate": "2024-07-05"},
+    ]
+    current = [
+        {"Emp_No": 1, "Emp_Date": 14030105, "End_Date": None, "IsCut": 0},
+        {"Emp_No": 2, "Emp_Date": 14020101, "End_Date": None, "IsCut": 0},
+        {"Emp_No": 3, "Emp_Date": 14020101, "End_Date": 14030120, "IsCut": 1},
+    ]
+    episodes = _merge(current, history)
+    assert len(episodes) == 3
+    assert all(not rehire and not from_history for _row, rehire, from_history in episodes)
+    assert next(r for r, *_ in episodes if r["Emp_No"] == 3)["End_Date"] == 14030120
+
+
+def test_rehire_counted_in_report():
+    records = [
+        rec(14010101, 14040101, "تعدیل"),
+        Record(14040301, None, False, "", "", "10", 1, None, "51", "6", rehire=True),
+    ]
+    report = compute_report(
+        records,
+        alias_category=ALIASES,
+        categories=CATEGORIES,
+        start_idx=month_index(1403, 6),
+        from_idx=None,
+        to_idx=None,
+        today=14050101,
+    )
+    assert report["kpis"]["rehires"] == 1 and report["kpis"]["hires"] == 1
+    assert report["kpis"]["rehire_share"] == 100.0
