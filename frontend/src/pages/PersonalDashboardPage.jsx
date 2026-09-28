@@ -507,10 +507,10 @@ export default function PersonalDashboardPage() {
         <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
         <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
-        {/* کاشی «بیمه تکمیلی»؛ اگر ماژول از پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
+        {/* کاشی «ثبت نام بیمه تکمیلی»؛ اگر ماژول از پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
         <ToolCard
           icon={<HealthAndSafetyOutlinedIcon />}
-          label="بیمه تکمیلی"
+          label="ثبت نام بیمه تکمیلی"
           disabled={Boolean(user?.insurance_disabled)}
           onClick={() => navigate("/insurance")}
         />
