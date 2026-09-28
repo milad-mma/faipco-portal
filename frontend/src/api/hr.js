@@ -51,10 +51,14 @@ export async function sendBirthdayGreetingsNow() {
   return data; // { sent_count, message }
 }
 
-// GET /hr/birthdays/export؛ خروجی Excel متولدین (month خالی = همه‌ی ماه‌ها، هر ماه یک برگه)؛ خروجی: Blob
-export async function downloadBirthdaysExport(month) {
+// GET /hr/birthdays/export؛ خروجی Excel متولدین (month خالی = همه‌ی ماه‌ها، هر ماه یک برگه؛
+// siteId خالی = همه‌ی سایت‌های مجاز)؛ خروجی: Blob
+export async function downloadBirthdaysExport({ month, siteId } = {}) {
+  const params = {};
+  if (month) params.month = month;
+  if (siteId) params.site_id = siteId;
   const { data } = await apiClient.get("/hr/birthdays/export", {
-    params: month ? { month } : {},
+    params,
     responseType: "blob",
     timeout: 60000,
   });

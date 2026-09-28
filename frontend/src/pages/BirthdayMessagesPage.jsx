@@ -39,6 +39,7 @@ import {
 } from "../api/hr";
 import { fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
+import SiteFilterSelect from "../components/SiteFilterSelect";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);  // گزینه‌های ساعت ۰ تا ۲۳
 const MINUTES = [0, 15, 30, 45];  // گزینه‌های دقیقه با گام ۱۵ دقیقه
@@ -89,6 +90,7 @@ export default function BirthdayMessagesPage() {
   const [sendNowResult, setSendNowResult] = useState(null);  // { success, message } نتیجه ارسال فوری | null
 
   const [exportMonth, setExportMonth] = useState("");  // "" = همه‌ی ماه‌ها
+  const [exportSiteId, setExportSiteId] = useState(null);  // null = همه‌ی سایت‌های مجاز
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
@@ -97,8 +99,8 @@ export default function BirthdayMessagesPage() {
     setIsExporting(true);
     setExportError("");
     try {
-      const blob = await downloadBirthdaysExport(exportMonth || undefined);
-      const suffix = exportMonth ? `-${JALALI_MONTHS[exportMonth - 1]}` : "";
+      const blob = await downloadBirthdaysExport({ month: exportMonth || undefined, siteId: exportSiteId });
+      const suffix = (exportSiteId ? `-site${exportSiteId}` : "") + (exportMonth ? `-${JALALI_MONTHS[exportMonth - 1]}` : "");
       saveBlob(blob, `birthdays${suffix}.xlsx`);
     } catch (err) {
       setExportError(await blobErrorMessage(err));
@@ -257,6 +259,7 @@ export default function BirthdayMessagesPage() {
           نام و نام خانوادگی، کد پرسنلی، واحد و تاریخ تولد پرسنل فعال. با «همه‌ی ماه‌ها» هر ماه در یک برگه‌ی جدا می‌آید.
         </Typography>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+          <SiteFilterSelect value={exportSiteId} onChange={setExportSiteId} permission="hr.birthday_messages" />
           <TextField
             select
             size="small"

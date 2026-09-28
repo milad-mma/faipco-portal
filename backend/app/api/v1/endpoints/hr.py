@@ -207,13 +207,14 @@ def _birthdays_xlsx(rows_by_month: dict[int, list[dict]], months: list[int], sho
 @router.get("/birthdays/export")
 async def export_birthdays(
     month: int | None = Query(default=None, ge=1, le=12),
+    site_id: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("hr.birthday_messages")),
 ):
     """
     خروجی Excel متولدین به تفکیک ماه شمسی: برگه‌ی «خلاصه» و یک برگه برای هر ماه (یا فقط ماه month) با
     نام و نام خانوادگی، کد پرسنلی، واحد و تاریخ تولد؛ مرتب بر اساس روز. فقط پرسنل فعال سایت‌هایی که کاربر
-    برایشان hr.birthday_messages دارد (این گزارش داخلی است و تنظیم «نمایش تولد در داشبورد» پرسنل را در نظر نمی‌گیرد).
+    برایشان hr.birthday_messages دارد؛ با site_id فقط همان سایت (سایت غیرمجاز → 403). (این گزارش داخلی است و تنظیم «نمایش تولد در داشبورد» پرسنل را در نظر نمی‌گیرد).
     """
     sites = await get_sites_with_permission(db, user, "hr.birthday_messages")  # None = همه‌ی سایت‌ها
     stmt = (
@@ -227,7 +228,11 @@ async def export_birthdays(
             Employee.birth_day.is_not(None),
         )
     )
-    if sites is not None:
+    if site_id is not None:
+        if sites is not None and site_id not in sites:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="به این سایت دسترسی ندارید.")
+        stmt = stmt.where(Employee.site_id == site_id)
+    elif sites is not None:
         stmt = stmt.where(Employee.site_id.in_(sites))
     if month is not None:
         stmt = stmt.where(Employee.birth_month == month)
@@ -253,7 +258,7 @@ async def export_birthdays(
 
     months = [month] if month is not None else list(range(1, 13))
     content = await asyncio.to_thread(_birthdays_xlsx, rows_by_month, months, len(site_names) > 1)
-    suffix = f"-{month:02d}" if month is not None else ""
+    suffix = (f"-site{site_id}" if site_id is not None else "") + (f"-{month:02d}" if month is not None else "")
     filename = f"birthdays{suffix}-{datetime.now().strftime('%Y%m%d')}.xlsx"
     return Response(
         content=content,
