@@ -5,6 +5,7 @@
  */
 import axios from "axios";
 import { normalizeSearchText } from "../utils/searchText";
+import { isAndroidApp } from "../utils/androidApp";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
 
@@ -22,6 +23,8 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // پرتال داخل اپ اندروید (فقط اطلاعاتی؛ تصمیم امنیتی سمت سرور با وضعیت گوشی گرفته می‌شود)
+  if (isAndroidApp()) config.headers["X-Client-App"] = "android";
   // متن جست‌وجو (پارامتر search/q) با ارقام فارسی/عربی و ي/ك عربی هم مقادیر لاتین/فارسی را پیدا کند
   if (config.params) {
     for (const key of SEARCH_PARAM_KEYS) {

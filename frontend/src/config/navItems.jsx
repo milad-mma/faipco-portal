@@ -12,6 +12,7 @@ import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import PhoneAndroidOutlinedIcon from "@mui/icons-material/PhoneAndroidOutlined";
 import GppMaybeOutlinedIcon from "@mui/icons-material/GppMaybeOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -117,6 +118,19 @@ export const NAV_ITEMS = [
         path: "/presence-report",
         icon: <WifiTetheringOutlinedIcon />,
         check: (u) => u?.can_view_attendance_logs,
+      },
+      {
+        label: "گوشی‌ها و اپ اندروید",
+        path: "/mobile-devices",
+        icon: <PhoneAndroidOutlinedIcon />,
+        check: (u) => u?.can_manage_mobile_devices || u?.can_manage_mobile_app,
+      },
+      {
+        label: "اپ اندروید",
+        path: "/mobile-app",
+        icon: <PhoneAndroidOutlinedIcon />,
+        check: (u) => Boolean(u?.employee_id),
+        hiddenForAdmin: true,
       },
       {
         label: "ثبت ورود و خروج",

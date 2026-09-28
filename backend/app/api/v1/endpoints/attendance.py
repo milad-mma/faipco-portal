@@ -215,6 +215,7 @@ async def list_all_logs(
                 distance_meters=log.distance_meters,
                 is_within_geofence=log.is_within_geofence,
                 is_manual=log.is_manual,
+                source=log.source or "web",
                 created_at=log.created_at,
                 employee_id=log.employee_id,
                 employee_name=employee_name,
@@ -324,12 +325,13 @@ async def delete_log(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
 
 
-async def _authenticate_websocket_user(token: str) -> tuple[User, bool] | None:
+async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tuple[User, bool] | None:
     """
     احراز هویت WebSocket از روی access token در Query Param (?token=...)، چون مرورگر اجازه‌ی
     هدر Authorization روی WebSocket را نمی‌دهد.
     خروجی: (کاربر، آیا پایش GPS برایش فعال است) اگر توکن معتبر و کاربر به پرسنل متصل باشد؛ وگرنه None.
-    «آنلاین بودن در اپ» برای همه‌ی پرسنل ثبت می‌شود؛ پایش محدوده‌ی GPS فقط برای دارندگان attendance.clock_in_out.
+    «آنلاین بودن در اپ» برای همه‌ی پرسنل ثبت می‌شود؛ پایش محدوده‌ی GPS برای دارندگان attendance.clock_in_out و
+    برای همه‌ی پرسنلی که از داخل اپ اندروید وصل شده‌اند (in_app؛ پرتال در اپ ?app=android می‌فرستد).
     """
     # توکن باید از نوع access و دارای شناسه‌ی کاربر باشد
     payload = decode_token(token)
@@ -344,7 +346,7 @@ async def _authenticate_websocket_user(token: str) -> tuple[User, bool] | None:
         if user is None or user.employee_id is None or not user.is_active:
             return None
         # همه‌ی انتصاب‌های نقش (سراسری + سایت‌محور) دیده می‌شوند
-        gps_enabled = user.is_superuser or "attendance.clock_in_out" in (
+        gps_enabled = in_app or user.is_superuser or "attendance.clock_in_out" in (
             await UserRepository(db).get_all_permission_codes(user.id)
         )
         return user, gps_enabled
@@ -381,7 +383,7 @@ def _client_label(user_agent: str | None) -> str | None:
 
 
 @router.websocket("/presence-ws")
-async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
+async def presence_websocket(websocket: WebSocket, token: str = Query(...), app: str | None = Query(default=None)):
     """
     WebSocket نشانگر زنده‌ی «آنلاین/آفلاین» پرسنل (توکن در ?token=). دو نوع نشست ثبت می‌شود:
 
@@ -394,7 +396,8 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
     بسته نشده، با Job دوره‌ای (close_stale_presence_sessions) با همان آخرین زمان دیده‌شده بسته می‌شود.
     توکن نامعتبر یا کاربر بدون پرسنل: بستن با کد 4401 (کلاینت دوباره تلاش نمی‌کند).
     """
-    auth = await _authenticate_websocket_user(token)
+    in_app = app == "android"
+    auth = await _authenticate_websocket_user(token, in_app=in_app)
     if auth is None:
         await websocket.close(code=4401)  # کد سفارشی: احراز هویت ناموفق
         return
@@ -409,7 +412,7 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
             kind="app",
             connected_at=now,
             last_seen_at=now,
-            client=_client_label(websocket.headers.get("user-agent")),
+            client=("اپ اندروید" if in_app else _client_label(websocket.headers.get("user-agent"))),
         )
         db.add(app_session)
         await db.commit()

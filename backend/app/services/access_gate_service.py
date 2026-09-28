@@ -43,8 +43,13 @@ ALL_FEATURES = [
 # دو نوع اجبار، مستقل از هم
 GATE_UNREAD_NOTICES = "unread_notices"
 GATE_PENDING_EVALUATIONS = "pending_evaluations"
+# اپ اندروید نصب و متصل، با دسترسی موقعیت «همیشه» (فقط روی گوشی اندروید؛ آیفون، کامپیوتر و معاف‌ها قفل نمی‌شوند)
+GATE_LOCATION_APP = "location_app"
 
-ALL_GATES = [GATE_UNREAD_NOTICES, GATE_PENDING_EVALUATIONS]
+ALL_GATES = [GATE_UNREAD_NOTICES, GATE_PENDING_EVALUATIONS, GATE_LOCATION_APP]
+LOCATION_APP_MESSAGE = (
+    "برای دسترسی به این بخش باید اپ اندروید FAIPCO را نصب و فعال کنید و دسترسی موقعیت را روی «همیشه مجاز» بگذارید."
+)
 
 
 def setting_key(gate: str, feature: str) -> str:
@@ -196,6 +201,13 @@ class AccessGateService:
         if user.is_superuser:
             return
 
+        # پیش‌نیاز اپ اندروید با دسترسی موقعیت (User-Agent درخواست جاری از ContextVar)
+        if await self.is_gate_enabled(GATE_LOCATION_APP, feature):
+            from app.services.mobile_app_service import location_app_blocked
+
+            if await location_app_blocked(self.db, user):
+                raise AccessGateBlocked(LOCATION_APP_MESSAGE, GATE_LOCATION_APP)
+
         # پیش‌نیاز اول: اطلاعیه‌های خوانده‌نشده
         if await self.is_gate_enabled(GATE_UNREAD_NOTICES, feature):
             unread = await self.count_unread_notices(user)
@@ -228,15 +240,21 @@ class AccessGateService:
                 "pending_evaluations": 0,
                 "pending_by_period": [],
                 "blocked_features": {},
+                "location_app_blocked": False,
             }
 
         unread = await self.count_unread_notices(user)
         pending = await self.count_pending_evaluations(user)
+        from app.services.mobile_app_service import location_app_blocked
 
-        # برای هر قابلیت، اولین پیش‌نیاز فعالِ برآورده‌نشده (اول اطلاعیه، بعد ارزیابی) ثبت می‌شود
+        app_blocked = await location_app_blocked(self.db, user)
+
+        # برای هر قابلیت، اولین پیش‌نیاز فعالِ برآورده‌نشده (اپ اندروید، اطلاعیه، ارزیابی) ثبت می‌شود
         blocked: dict[str, str] = {}
         for feature in ALL_FEATURES:
-            if unread > 0 and await self.is_gate_enabled(GATE_UNREAD_NOTICES, feature):
+            if app_blocked and await self.is_gate_enabled(GATE_LOCATION_APP, feature):
+                blocked[feature] = GATE_LOCATION_APP
+            elif unread > 0 and await self.is_gate_enabled(GATE_UNREAD_NOTICES, feature):
                 blocked[feature] = GATE_UNREAD_NOTICES
             elif pending > 0 and await self.is_gate_enabled(GATE_PENDING_EVALUATIONS, feature):
                 blocked[feature] = GATE_PENDING_EVALUATIONS
@@ -246,4 +264,5 @@ class AccessGateService:
             "pending_evaluations": pending,
             "pending_by_period": await self.pending_evaluations_by_period(user) if pending else [],
             "blocked_features": blocked,
+            "location_app_blocked": app_blocked,
         }

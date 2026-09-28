@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  اپ اندروید FAIPCO: پرتال داخل TWA (Chrome) + بخش بومی Geofencing برای ثبت خودکار ورود/خروج.
+  جزئیات: docs/android-app.md در مخزن پرتال.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- باز کردن Chrome برای TWA در اندروید ۱۱ به بعد -->
+    <queries>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".FaipcoApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Faipco"
+        tools:targetApi="34">
+
+        <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
+
+        <!-- ورود به اپ: پرتال تمام‌صفحه در TWA -->
+        <activity
+            android:name=".MainLauncherActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Faipco.Launcher">
+            <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="@string/launchUrl" />
+            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/colorPrimary" />
+            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/white" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE" android:resource="@mipmap/ic_launcher" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/white" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION" android:value="300" />
+            <meta-data android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY" android:value="ir.faipco.portal.fileprovider" />
+            <meta-data android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION" android:value="portrait" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${portalHost}" />
+            </intent-filter>
+        </activity>
+
+        <!-- بخش بومی: اتصال گوشی به حساب و راهنمای دسترسی‌ها (از پرتال با intent://pair یا intent://setup) -->
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true"
+            android:label="@string/setup_title"
+            android:theme="@style/Theme.Faipco"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="faipco" android:host="pair" />
+                <data android:scheme="faipco" android:host="setup" />
+            </intent-filter>
+        </activity>
+
+        <!-- اجازه‌ی اعلان پرتال (Chrome) با نام اپ -->
+        <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity" />
+
+        <service
+            android:name=".DelegationService"
+            android:enabled="true"
+            android:exported="true">
+            <meta-data android:name="android.support.customtabs.trusted.SMALL_ICON" android:resource="@drawable/ic_notification" />
+            <intent-filter>
+                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="ir.faipco.portal.fileprovider"
+            android:grantUriPermissions="true"
+            android:exported="false">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/filepaths" />
+        </provider>
+
+        <!-- رویداد ورود/خروج (Geofencing گوگل یا موتور داخلی اندروید) -->
+        <receiver android:name=".GeofenceReceiver" android:exported="false" />
+
+        <!-- بعد از روشن شدن گوشی یا آپدیت اپ، محدوده‌ها دوباره ثبت می‌شوند (سیستم آن‌ها را پاک می‌کند) -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef } from "react";
 import { getCurrentPosition } from "./geolocation";
+import { isAndroidApp } from "./androidApp";
 
 const HEARTBEAT_INTERVAL_MS = 45_000; // باید کمتر از Timeout سمت سرور (۹۰ ثانیه) باشد
 const RECONNECT_DELAY_MS = 5_000; // فاصله‌ی تلاش مجدد برای اتصال پس از قطع
@@ -26,7 +27,9 @@ function buildPresenceWsUrl(token) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     wsBase = `${wsProtocol}//${window.location.host}${apiBase}`;
   }
-  return `${wsBase}/attendance/presence-ws?token=${encodeURIComponent(token)}`;
+  // داخل اپ اندروید: سرور پایش محدوده‌ی GPS را برای همه‌ی پرسنل فعال می‌کند و دستگاه را «اپ اندروید» ثبت می‌کند
+  const appParam = isAndroidApp() ? "&app=android" : "";
+  return `${wsBase}/attendance/presence-ws?token=${encodeURIComponent(token)}${appParam}`;
 }
 
 /**

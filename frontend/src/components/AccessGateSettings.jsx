@@ -34,9 +34,11 @@ const FEATURE_LABELS = {
 const GATE_LABELS = {
   unread_notices: "خواندن اطلاعیه‌ها",
   pending_evaluations: "تکمیل ارزیابی‌ها",
+  location_app: "اپ اندروید و موقعیت",
 };
 
-const GATES = ["unread_notices", "pending_evaluations"]; // ترتیب ستون‌های جدول
+// location_app: فقط روی گوشی اندروید اعمال می‌شود (آیفون، کامپیوتر و پرسنل معاف قفل نمی‌شوند)
+const GATES = ["unread_notices", "pending_evaluations", "location_app"]; // ترتیب ستون‌های جدول
 // ترتیب ردیف‌های جدول
 const FEATURES = [
   "payroll_receipt",

@@ -31,6 +31,7 @@ class GpsActivityLogOut(BaseModel):
     distance_meters: float | None
     is_within_geofence: bool  # آیا داخل شعاع مجاز سایت بوده
     is_manual: bool  # ثبت دستی توسط Admin (بدون مختصات واقعی)
+    source: str = "web"  # web | manual | geofence (ثبت خودکار اپ اندروید)
     created_at: datetime
 
     model_config = {"from_attributes": True}  # ساخت مستقیم از شیء ORM

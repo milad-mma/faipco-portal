@@ -104,6 +104,7 @@ class GpsAttendanceService:
             matched_site_id=geofence.matched_site.id if geofence.matched_site else None,
             distance_meters=geofence.distance_meters,
             is_within_geofence=geofence.is_within,
+            source="web",
             created_at=datetime.now(timezone.utc),
         )
         self.db.add(log)
@@ -185,6 +186,7 @@ class GpsAttendanceService:
             distance_meters=None,
             is_within_geofence=True,
             is_manual=True,
+            source="manual",
             created_at=created_at,
         )
         self.db.add(log)

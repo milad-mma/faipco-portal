@@ -45,6 +45,7 @@ import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
 import { searchFilterOptions } from "../utils/searchText";
+import PhoneAndroidOutlinedIcon from "@mui/icons-material/PhoneAndroidOutlined";
 
 const PAGE_SIZE = 50; // تعداد ردیف (روز-پرسنل) در هر صفحه
 const ATTENDANCE_PILOT_ROLE = "attendance-pilot"; // نقش پرسنلی که مجاز به ثبت ورود/خروج GPS هستند
@@ -242,6 +243,11 @@ function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
             {log.is_manual && (
               <Tooltip title="این رکورد دستی ثبت/ویرایش شده">
                 <StarIcon sx={{ fontSize: 14 }} />
+              </Tooltip>
+            )}
+            {log.source === "geofence" && !log.is_manual && (
+              <Tooltip title="ثبت خودکار با اپ اندروید (Geofencing)">
+                <PhoneAndroidOutlinedIcon sx={{ fontSize: 14 }} />
               </Tooltip>
             )}
           </Stack>

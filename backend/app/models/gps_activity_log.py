@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -51,5 +51,11 @@ class GpsActivityLog(Base):
     # خودِ پرسنل با GPS واقعی) — در گزارش با یک ستاره کنار زمان مشخص می‌شود.
     # این رکوردها latitude/longitude ندارند، به همین دلیل آن دو ستون Nullable هستند.
     is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # منبع رکورد: web (دکمه‌ی ثبت در پرتال)، manual (ثبت/ویرایش مدیر) یا geofence (ثبت خودکار اپ اندروید)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="web", server_default="web")
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mobile_devices.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

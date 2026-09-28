@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.request_context import current_client_app, current_user_agent
+
 from app.core.config import get_settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.router import api_router
@@ -31,6 +33,11 @@ async def sync_index_html_branding() -> None:
         async with AsyncSessionLocal() as db:
             branding = await SystemSettingsService(db).get_branding()
         write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
+        # اثر انگشت کلید امضای اپ اندروید در assetlinks.json (بعد از هر Build فرانت دوباره نوشته می‌شود)
+        from app.services.mobile_app_service import get_mobile_settings, write_assetlinks
+
+        async with AsyncSessionLocal() as db:
+            write_assetlinks((await get_mobile_settings(db)).signing_sha256)
     except Exception:  # noqa: BLE001 - نباید مانع بالا آمدن سرویس شود
         logging.getLogger(__name__).exception("همگام‌سازی عنوان index.html در شروع ناموفق بود")
 
@@ -72,6 +79,18 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)  # همه endpoint
 # نگه‌داشتن ارجاع تسک‌های پس‌زمینه تا قبل از اتمام Garbage Collect نشوند
 # (تسک در پایان کار با done_callback از Set حذف می‌شود).
 _background_tasks: set[asyncio.Task] = set()
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """User-Agent و هدر X-Client-App درخواست را برای لایه‌ی سرویس (ContextVar) در دسترس می‌گذارد."""
+    ua_token = current_user_agent.set(request.headers.get("user-agent", ""))
+    app_token = current_client_app.set(request.headers.get("x-client-app", ""))
+    try:
+        return await call_next(request)
+    finally:
+        current_user_agent.reset(ua_token)
+        current_client_app.reset(app_token)
 
 
 @app.middleware("http")

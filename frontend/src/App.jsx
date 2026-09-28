@@ -52,6 +52,8 @@ const BackupPage = lazyPage(() => import("./pages/BackupPage"));
 const UpdatePage = lazyPage(() => import("./pages/UpdatePage"));
 const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
 const LoginSecurityPage = lazyPage(() => import("./pages/LoginSecurityPage"));
+const MobileDevicesPage = lazyPage(() => import("./pages/MobileDevicesPage"));
+const MobileAppPage = lazyPage(() => import("./pages/MobileAppPage"));
 const AttendanceClockPage = lazyPage(() => import("./pages/AttendanceClockPage"));
 const MonthlyAttendanceReportPage = lazyPage(() => import("./pages/MonthlyAttendanceReportPage"));
 const PresenceReportPage = lazyPage(() => import("./pages/PresenceReportPage"));
@@ -210,6 +212,15 @@ export default function App() {
             path="/ip-allowlist"
             element={<PermissionRoute check={(u) => u?.can_manage_ip_allowlist}><IpAllowlistPage /></PermissionRoute>}
           />
+          <Route
+            path="/mobile-devices"
+            element={
+              <PermissionRoute check={(u) => u?.can_manage_mobile_devices || u?.can_manage_mobile_app}>
+                <MobileDevicesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route path="/mobile-app" element={<MobileAppPage />} />
           <Route
             path="/login-security"
             element={<PermissionRoute check={(u) => u?.can_manage_login_security}><LoginSecurityPage /></PermissionRoute>}

@@ -13,7 +13,9 @@ import { useNavigate } from "react-router-dom";
  */
 export default function AccessGateDialog({ open, gate, count, message, byPeriod, onClose }) {
   const navigate = useNavigate();
-  const isNotices = gate !== "pending_evaluations"; // هر مقداری غیر از ارزیابی، حالت اطلاعیه در نظر گرفته می‌شود
+  // پیش‌نیاز اپ اندروید: از نوع gate یا (وقتی از پاسخ ۴۰۳ باز شده) از متن پیام سرور تشخیص داده می‌شود
+  const isLocationApp = gate === "location_app" || String(message || "").includes("اپ اندروید");
+  const isNotices = !isLocationApp && gate !== "pending_evaluations"; // بقیه‌ی حالت‌ها: اطلاعیه
 
   // عدد فقط وقتی در متن می‌آید که تعداد مثبت معلوم باشد؛ در غیر این صورت
   // (مثلاً باز شدن از پاسخ ۴۰۳ بدون تعداد) متن عمومی و بدون عدد نمایش داده می‌شود.
@@ -23,7 +25,9 @@ export default function AccessGateDialog({ open, gate, count, message, byPeriod,
   // متن بدنه: پیام سرور در اولویت است، وگرنه متن پیش‌فرض بر اساس نوع پیش‌نیاز
   const body =
     message ||
-    (isNotices
+    (isLocationApp
+      ? "برای دسترسی به این بخش باید اپ اندروید FAIPCO را نصب و فعال کنید و دسترسی موقعیت را روی «همیشه مجاز» بگذارید."
+      : isNotices
       ? `برای دسترسی به این بخش، ابتدا باید ${countText}اطلاعیه خوانده‌نشده خود را مطالعه کنید.`
       : `برای دسترسی به این بخش، ابتدا باید ${countText}ارزیابی انجام‌نشده خود را تکمیل کنید.`);
 
@@ -41,7 +45,7 @@ export default function AccessGateDialog({ open, gate, count, message, byPeriod,
           {body}
         </Typography>
         {/* فهرست دوره‌های ارزیابی و تعداد موارد ناتمام هر دوره (فقط برای پیش‌نیاز ارزیابی) */}
-        {!isNotices && byPeriod?.length > 0 && (
+        {!isNotices && !isLocationApp && byPeriod?.length > 0 && (
           <Box sx={{ mt: 1.5, pt: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
               دوره‌های مربوطه:
@@ -68,10 +72,10 @@ export default function AccessGateDialog({ open, gate, count, message, byPeriod,
             onClose();
             // صفحه‌ی ارزیابی تب را با کلید آن (personnel) می‌خواند، نه با شماره؛
             // این آدرس کاربر را مستقیم به تب «پرسنل من» می‌برد.
-            navigate(isNotices ? "/notices" : "/my-performance?tab=personnel");
+            navigate(isLocationApp ? "/mobile-app" : isNotices ? "/notices" : "/my-performance?tab=personnel");
           }}
         >
-          {isNotices ? "مشاهده اطلاعیه‌ها" : "انجام ارزیابی‌ها"}
+          {isLocationApp ? "نصب و فعال‌سازی اپ" : isNotices ? "مشاهده اطلاعیه‌ها" : "انجام ارزیابی‌ها"}
         </Button>
       </DialogActions>
     </Dialog>

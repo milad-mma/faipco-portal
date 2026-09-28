@@ -102,3 +102,11 @@ def jalali_weekday_name(year: int, month: int, day: int) -> str:
     """
     gregorian_date = jdatetime.date(year, month, day).togregorian()
     return _PERSIAN_WEEKDAY_NAMES[gregorian_date.weekday()]
+
+
+def to_tehran_time_str(value: datetime) -> str:
+    """زمان (با timezone) → «HH:MM» به وقت تهران با ارقام فارسی (برای متن اعلان‌ها)."""
+    from zoneinfo import ZoneInfo
+
+    text = value.astimezone(ZoneInfo("Asia/Tehran")).strftime("%H:%M")
+    return text.translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))

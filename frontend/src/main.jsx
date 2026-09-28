@@ -25,6 +25,10 @@ import UpdatePrompt from "./components/UpdatePrompt";
 import MandatoryPasswordChangeGuard from "./components/MandatoryPasswordChangeGuard";
 import OfflineBanner from "./components/OfflineBanner";
 import App from "./App";
+import { detectAndroidApp } from "./utils/androidApp";
+
+// اجرای داخل اپ اندروید (TWA) قبل از هر درخواست تشخیص داده می‌شود
+detectAndroidApp();
 
 registerServiceWorker(); // ثبت Service Worker برای Precache و Push
 
