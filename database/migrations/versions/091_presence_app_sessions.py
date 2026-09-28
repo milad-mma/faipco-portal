@@ -26,12 +26,12 @@ def upgrade() -> None:
     op.add_column("presence_sessions", sa.Column("kind", sa.String(10), nullable=False, server_default="gps"))
     op.add_column("presence_sessions", sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("presence_sessions", sa.Column("client", sa.String(120), nullable=True))
-    op.create_index("ix_presence_sessions_open", "presence_sessions", ["kind", "disconnected_at"])
+    op.create_index("ix_presence_sessions_kind_open", "presence_sessions", ["kind", "disconnected_at"])
     op.execute("UPDATE presence_sessions SET disconnected_at = connected_at, duration_seconds = NULL WHERE disconnected_at IS NULL")
 
 
 def downgrade() -> None:
-    op.drop_index("ix_presence_sessions_open", table_name="presence_sessions")
+    op.drop_index("ix_presence_sessions_kind_open", table_name="presence_sessions")
     op.drop_column("presence_sessions", "client")
     op.drop_column("presence_sessions", "last_seen_at")
     op.drop_column("presence_sessions", "kind")
