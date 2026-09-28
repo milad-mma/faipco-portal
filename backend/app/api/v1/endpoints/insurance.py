@@ -124,17 +124,14 @@ async def download_document(
     """
     بایت‌های مدرک را با MIME واقعی آن برمی‌گرداند.
     inline=true برای نمایش در مرورگر (پیش‌نمایش)، وگرنه دانلود.
-    دسترسی: صاحب مدرک، مدیر کل، یا کسی که insurance.view/manage در حداقل یک سایت دارد.
+    دسترسی: صاحب مدرک، یا کسی که insurance.view/manage را برای سایتِ پرسنل صاحب مدرک دارد
+    (مسئول بیمه‌ی یک سایت مدارک سایت‌های دیگر را نمی‌بیند).
     """
-    # تعیین اینکه کاربر حق دیدن مدارک همه را دارد یا فقط مدارک خودش
-    can_view_all = current_user.is_superuser
-    if not can_view_all:
-        for code in ("insurance.view", "insurance.manage"):
-            sites = await get_sites_with_permission(db, current_user, code)
-            if sites is None or sites:  # None = همه سایت‌ها، مجموعه غیرخالی = حداقل یک سایت
-                can_view_all = True
-                break
-    doc = await InsuranceService(db).get_document_for_download(document_id, current_user.employee_id, can_view_all)
+    # سایت‌های مجاز کاربر (None = همه)؛ پرسنل عادی بدون مجوز مجموعه‌ی خالی دارد و فقط مدارک خودش را می‌گیرد
+    view_sites = await get_sites_with_permission(db, current_user, "insurance.view")
+    manage_sites = await get_sites_with_permission(db, current_user, "insurance.manage")
+    allowed = None if view_sites is None or manage_sites is None else (view_sites | manage_sites)
+    doc = await InsuranceService(db).get_document_for_download(document_id, current_user.employee_id, allowed)
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مدرک یافت نشد")
     disposition = "inline" if inline else "attachment"

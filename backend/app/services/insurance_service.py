@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core import insurance_rules as rules
+from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name
 from app.models.employee import Department, Employee
 from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
@@ -44,6 +46,8 @@ SETTINGS_KEY = "insurance_settings"
 # member_type="pending" وصل می‌شود. اگر این عضو موقت بیش از این تعداد ساعت
 # بماند (یعنی فرم هرگز ثبت نشده)، زمان‌بند آن را همراه مدرکش پاک می‌کند.
 PENDING_MAX_AGE_HOURS = 24
+# حداکثر تعداد مدرک آپلودشده‌ای که هنوز در فرم ثبت نشده (جلوگیری از پر کردن دیتابیس با آپلود پشت‌سرهم)
+MAX_PENDING_DOCUMENTS = 10
 
 # اطلاعیه‌ی رد مدرک: متن پیش‌فرض (قابل ویرایش در تنظیمات)؛ «{نام عضو}» با نام و نام خانوادگی عضو جایگزین می‌شود
 MEMBER_NAME_PLACEHOLDER = "{نام عضو}"
@@ -252,7 +256,24 @@ class InsuranceService:
         detected = _sniff_content_type(content)
         if detected not in rules.DOCUMENT_ALLOWED_TYPES:
             raise InsuranceError("فقط فایل تصویری (JPG/PNG/GIF/WEBP/BMP/TIFF) یا PDF پذیرفته می‌شود.")
+        # بررسی کامل و پاک‌سازی: تصویر دوباره ذخیره می‌شود (محتوای جاسازی‌شده و GPS/متادیتا حذف)،
+        # PDF رمزدار یا دارای اسکریپت/فایل پیوست رد می‌شود. پردازش CPU در thread جدا
+        try:
+            content, detected = await asyncio.to_thread(sanitize_document, content, detected)
+        except DocumentRejected as e:
+            raise InsuranceError(str(e)) from e
+        if len(content) > rules.DOCUMENT_MAX_BYTES:
+            raise InsuranceError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد.")
         registration = await self._get_or_create_shell(employee)
+        pending_count = await self.db.scalar(
+            select(func.count(InsuranceMember.id)).where(
+                InsuranceMember.registration_id == registration.id, InsuranceMember.member_type == "pending"
+            )
+        )
+        if (pending_count or 0) >= MAX_PENDING_DOCUMENTS:
+            raise InsuranceError(
+                f"حداکثر {MAX_PENDING_DOCUMENTS} مدرک ثبت‌نشده مجاز است؛ لطفاً فرم را ثبت کنید یا مدارک اضافه را حذف کنید."
+            )
         # عضو موقت نگهدارنده‌ی مدرک؛ همه فیلدها خالی و sort_order بزرگ تا آخر لیست بماند
         holder = InsuranceMember(
             registration_id=registration.id,
@@ -273,8 +294,8 @@ class InsuranceService:
         )
         self.db.add(holder)
         await self.db.flush()  # برای گرفتن holder.id
-        # نام فایل بدون جداکننده‌ی مسیر و حداکثر ۲۵۵ کاراکتر
-        safe_name = (file_name or "document").replace("/", "_").replace("\\", "_")[:255]
+        # نام فایل بدون کاراکتر کنترلی/خطرناک و با پسوند مطابق نوع واقعی (بعد از پاک‌سازی ممکن است عوض شده باشد)
+        safe_name = sanitize_file_name(file_name, detected)
         doc = InsuranceDocument(
             member_id=holder.id, file_name=safe_name, content_type=detected, size_bytes=len(content), data=content
         )
@@ -283,25 +304,31 @@ class InsuranceService:
         await self.db.refresh(doc)
         return doc
 
-    async def get_document_for_download(self, document_id: int, employee_id: int | None, can_view_all: bool):
+    async def get_document_for_download(
+        self, document_id: int, employee_id: int | None, allowed_site_ids: set[int] | None = frozenset()
+    ):
         """
         مدرک را برای دانلود برمی‌گرداند اگر درخواست‌کننده مجاز باشد.
-        مجاز = صاحب مدرک (employee_id همان پرسنل ثبت‌نام) یا can_view_all=True
-        (مجوز insurance.view). در غیر این صورت یا اگر مدرک نباشد None.
+        مجاز = صاحب مدرک (employee_id همان پرسنل ثبت‌نام)، یا مدیری که برای سایتِ پرسنل صاحب مدرک
+        مجوز دارد (allowed_site_ids؛ None = همه‌ی سایت‌ها، مجموعه‌ی خالی = فقط مدارک خودش).
+        در غیر این صورت یا اگر مدرک نباشد None (مثل «پیدا نشد» تا وجود مدرک هم لو نرود).
         """
         result = await self.db.execute(
-            select(InsuranceDocument, InsuranceRegistration.employee_id)
+            select(InsuranceDocument, InsuranceRegistration.employee_id, Employee.site_id)
             .join(InsuranceMember, InsuranceMember.id == InsuranceDocument.member_id)
             .join(InsuranceRegistration, InsuranceRegistration.id == InsuranceMember.registration_id)
+            .join(Employee, Employee.id == InsuranceRegistration.employee_id)
             .where(InsuranceDocument.id == document_id)
         )
         row = result.first()
         if row is None:
             return None
-        doc, owner_employee_id = row
-        if not can_view_all and owner_employee_id != employee_id:
-            return None
-        return doc
+        doc, owner_employee_id, owner_site_id = row
+        if employee_id is not None and owner_employee_id == employee_id:
+            return doc
+        if allowed_site_ids is None or owner_site_id in allowed_site_ids:
+            return doc
+        return None
 
     async def delete_own_document(self, document_id: int, employee_id: int) -> bool:
         """
@@ -309,7 +336,7 @@ class InsuranceService:
         هم پاک می‌شود. خروجی True یعنی حذف شد، False یعنی مدرک پیدا نشد یا مال
         این پرسنل نبود.
         """
-        doc = await self.get_document_for_download(document_id, employee_id, can_view_all=False)
+        doc = await self.get_document_for_download(document_id, employee_id)
         if doc is None:
             return False
         member = await self.db.get(InsuranceMember, doc.member_id)
