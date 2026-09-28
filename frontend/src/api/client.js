@@ -4,6 +4,7 @@
  * و درخواست را تکرار می‌کند؛ درخواست‌های هم‌زمان در صف منتظر نتیجه‌ی رفرش می‌مانند.
  */
 import axios from "axios";
+import { normalizeSearchText } from "../utils/searchText";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
 
@@ -13,11 +14,21 @@ export const apiClient = axios.create({
   timeout: 20_000,
 });
 
+const SEARCH_PARAM_KEYS = ["search", "q"]; // نام پارامترهای جست‌وجو که قبل از ارسال یکسان‌سازی می‌شوند
+
 // --- تزریق خودکار Access Token در هر درخواست ---
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // متن جست‌وجو (پارامتر search/q) با ارقام فارسی/عربی و ي/ك عربی هم مقادیر لاتین/فارسی را پیدا کند
+  if (config.params) {
+    for (const key of SEARCH_PARAM_KEYS) {
+      if (typeof config.params[key] === "string") {
+        config.params = { ...config.params, [key]: normalizeSearchText(config.params[key]) };
+      }
+    }
   }
   return config;
 });

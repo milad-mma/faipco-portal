@@ -5,14 +5,16 @@
  * flexDirection: "row-reverse" (که در سند RTL عناصر را از چپ به راست می‌چیند) تثبیت می‌شود.
  */
 import { Box, MenuItem, Select, TextField } from "@mui/material";
+import { normalizeSearchText, toPersianDigits } from "../utils/searchText";
 
 // ۱۶ حرف مجاز روی پلاک خودروهای شخصی ایران (بدون حروف مخصوص دسته‌های خاص مثل تاکسی،
 // معلولین و نیروی انتظامی)
 const PLATE_LETTERS = ["ب", "ج", "د", "س", "ص", "ط", "ق", "ل", "م", "ن", "و", "ه", "ی", "ت", "ع", "ا"];
 
-// فقط ارقام لاتین را نگه می‌دارد و به حداکثر طول مشخص کوتاه می‌کند
+// ارقام فارسی/عربی را لاتین می‌کند، فقط ارقام را نگه می‌دارد و به حداکثر طول کوتاه می‌کند.
+// مقدار ذخیره‌شده همیشه لاتین است و فقط نمایش با ارقام فارسی است (toPersianDigits).
 function onlyDigits(value, maxLen) {
-  return value.replace(/[^0-9]/g, "").slice(0, maxLen);
+  return normalizeSearchText(value).replace(/[^0-9]/g, "").slice(0, maxLen);
 }
 
 /**
@@ -62,7 +64,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
       >
         {/* دو رقم اول */}
         <TextField
-          value={digits1}
+          value={toPersianDigits(digits1)}
           onChange={(e) => update("digits1", onlyDigits(e.target.value, 2))}
           disabled={disabled}
           placeholder="۱۲"
@@ -96,7 +98,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
         </Select>
         {/* سه رقم وسط */}
         <TextField
-          value={digits2}
+          value={toPersianDigits(digits2)}
           onChange={(e) => update("digits2", onlyDigits(e.target.value, 3))}
           disabled={disabled}
           placeholder="۳۴۵"
@@ -126,7 +128,7 @@ export default function IranianLicensePlateInput({ value, onChange, disabled }) 
       >
         <Box sx={{ fontSize: 11, fontWeight: 800, color: "#16324F", mb: 0.25 }}>ایران</Box>
         <TextField
-          value={iranCode}
+          value={toPersianDigits(iranCode)}
           onChange={(e) => update("iranCode", onlyDigits(e.target.value, 2))}
           disabled={disabled}
           placeholder="۶۷"
@@ -198,13 +200,13 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
       >
         {/* دو رقم، حرف و سه رقم با حداقل عرض ثابت برای هر بخش */}
         <Box component="span" sx={{ minWidth: 26, textAlign: "center" }}>
-          {digits1}
+          {toPersianDigits(digits1)}
         </Box>
         <Box component="span" sx={{ minWidth: 16, textAlign: "center" }}>
           {letter}
         </Box>
         <Box component="span" sx={{ minWidth: 38, textAlign: "center" }}>
-          {digits2}
+          {toPersianDigits(digits2)}
         </Box>
       </Box>
       <Box
@@ -222,7 +224,7 @@ export function PlateDisplay({ digits1, letter, digits2, iranCode }) {
       >
         {/* بخش «ایران» و کد استان */}
         <Box sx={{ fontSize: 8, fontWeight: 800, color: "#16324F" }}>ایران</Box>
-        <Box sx={{ fontSize: 13, fontWeight: 800, color: "#16324F" }}>{iranCode}</Box>
+        <Box sx={{ fontSize: 13, fontWeight: 800, color: "#16324F" }}>{toPersianDigits(iranCode)}</Box>
       </Box>
     </Box>
   );

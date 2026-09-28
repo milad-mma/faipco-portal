@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import WeakPasswordError, hash_password, validate_password_strength
 from app.models.employee import Employee
 from app.models.password_reset_token import PasswordResetChannel, PasswordResetToken
+from app.core.text_normalize import normalize_search_text
 from app.models.user import User
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
 from app.services.sms_service import SmsError, SmsNotConfiguredError, send_sms_code
@@ -88,10 +89,13 @@ def _fake_masked_mobile(identifier: str) -> str:
 
 
 async def _find_user_by_identifier(db: AsyncSession, identifier: str) -> User | None:
-    """کاربر را با نام‌کاربری یا کد پرسنلی (همان دو روش ورود) پیدا می‌کند؛ اگر نبود None."""
+    """کاربر را با نام‌کاربری یا کد پرسنلی (همان دو روش ورود) پیدا می‌کند؛ اگر نبود None.
+    ارقام فارسی/عربی شناسه به لاتین تبدیل می‌شوند (نام کاربری خام هم امتحان می‌شود)."""
+    raw = identifier
+    identifier = normalize_search_text(identifier)
     # ابتدا جست‌وجو بر اساس username
-    result = await db.execute(select(User).where(User.username == identifier))
-    user = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.username.in_({identifier, raw})))
+    user = result.scalars().first()
     if user is not None:
         return user
 

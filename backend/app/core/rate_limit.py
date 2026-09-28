@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rate_limit import LoginAttempt, MessageRateLimit
+from app.core.text_normalize import normalize_search_text
 
 # ---------- قفل موقت ورود ----------
 
@@ -33,10 +34,15 @@ def _tier_seconds(fail_count: int) -> int:
     return 60 * 60  # از ۹ تلاش ناموفق به بعد، همیشه ۱ ساعت
 
 
+def _login_key(identifier: str) -> str:
+    """کلید شمارنده‌ی تلاش ورود: «۱۲۳» و «123» یک شمارنده دارند (وگرنه تعداد تلاش مجاز دو برابر می‌شد)."""
+    return normalize_search_text(identifier).lower()
+
+
 async def check_login_lockout(db: AsyncSession, identifier: str) -> float | None:
     """اگر این شناسه (یوزرنیم یا کد پرسنلی) الان قفل باشد، تعداد ثانیه
     باقی‌مانده تا باز شدن قفل را برمی‌گرداند؛ در غیر این‌صورت None."""
-    key = identifier.strip().lower()  # شناسه بدون حساسیت به حروف و فاصله
+    key = _login_key(identifier)  # شناسه بدون حساسیت به حروف، فاصله و ارقام فارسی/لاتین
     result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == key))
     record = result.scalar_one_or_none()
     if record is None or record.locked_until is None:
@@ -50,7 +56,7 @@ async def record_failed_login(db: AsyncSession, identifier: str) -> None:
     ورودی: session و شناسه ورود. یک تلاش ناموفق ثبت می‌کند (fail_count یکی زیاد می‌شود)
     و در هر مضرب ۳، قفل پلکانی جدید (locked_until) اعمال می‌شود.
     """
-    key = identifier.strip().lower()
+    key = _login_key(identifier)
     now = datetime.now(timezone.utc)
 
     # UPSERT اتمیک — اگر رکورد از قبل هست، fail_count را در همان دستور
@@ -78,7 +84,7 @@ async def record_failed_login(db: AsyncSession, identifier: str) -> None:
 
 async def reset_login_attempts(db: AsyncSession, identifier: str) -> None:
     """بعد از یک ورود موفق صدا زده می‌شود — سابقه تلاش‌های ناموفق پاک می‌شود."""
-    key = identifier.strip().lower()
+    key = _login_key(identifier)
     await db.execute(delete(LoginAttempt).where(LoginAttempt.identifier == key))
     await db.commit()
 

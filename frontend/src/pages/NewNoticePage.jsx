@@ -40,6 +40,7 @@ import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
 import PillTabs from "../components/PillTabs";
+import { searchFilterOptions } from "../utils/searchText";
 
 // برچسب و رنگ گزینه‌های اولویت
 const PRIORITY_LABELS = {
@@ -527,6 +528,7 @@ export default function NewNoticePage() {
                 {/* انتخاب چند سایت */}
                 {allowedSites.length > 0 && (
                   <Autocomplete
+                    filterOptions={searchFilterOptions}
                     multiple
                     disabled={isSubmitting}
                     options={allowedSites}

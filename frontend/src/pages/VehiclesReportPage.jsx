@@ -33,6 +33,7 @@ import { useAuth } from "../context/AuthContext";
 import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../components/IranianLicensePlateInput";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { deleteVehicleAdmin, fetchAllVehicles, updateVehicleAdmin } from "../api/vehicles";
+import { matchesSearch } from "../utils/searchText";
 
 const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };  // مقدار خالی پلاک ایرانی
 
@@ -184,12 +185,9 @@ export default function VehiclesReportPage() {
   // جست‌وجو و مرتب‌سازی سمت فرانت‌اند روی کل فهرست؛ خروجی: فهرست نمایشی یا null در حال بارگذاری
   const displayedVehicles = useMemo(() => {
     if (vehicles === null) return null;
-    const term = search.trim().toLowerCase();
-    const filtered = term
+    const filtered = search.trim()
       ? vehicles.filter((v) =>
-          [v.employee_name, v.site_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)]
-            .filter(Boolean)
-            .some((field) => field.toLowerCase().includes(term))
+          matchesSearch(search, [v.employee_name, v.site_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)])
         )
       : vehicles;
 

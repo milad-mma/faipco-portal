@@ -31,6 +31,7 @@ import {
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import { discoverSiteSchema, suggestMappingForSite } from "../api/sites";
+import { searchKey } from "../utils/searchText";
 
 /**
  * انواع نگاشت و مفاهیم (فیلدهای) موردنیاز هر کدام برای درخواست پیشنهاد (بر اساس نام ستون/نمونه داده).
@@ -244,7 +245,7 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
   // جدول‌هایی که نام خودشان یا یکی از ستون‌هایشان شامل عبارت جست‌وجو باشد
   const filteredTables = useMemo(() => {
     if (!schema) return [];
-    const term = search.trim().toLowerCase();
+    const term = searchKey(search);
     if (!term) return schema.tables;
     return schema.tables.filter(
       (t) => t.name.toLowerCase().includes(term) || t.columns.some((c) => c.name.toLowerCase().includes(term))

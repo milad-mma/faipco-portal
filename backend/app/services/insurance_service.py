@@ -21,6 +21,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.text_normalize import normalize_search_text
 from app.core import insurance_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name
 from app.models.employee import Department, Employee
@@ -468,8 +469,9 @@ class InsuranceService:
         registered = (await self.db.execute(count_q)).scalar_one()
         eligible = (await self.db.execute(eligible_q)).scalar_one()
         # جستجو روی کد پرسنلی، نام، نام خانوادگی و کد ملی
+        search = normalize_search_text(search)  # ارقام فارسی/عربی و ي/ك ← لاتین/فارسی
         if search:
-            term = f"%{search.strip()}%"
+            term = f"%{search}%"
             cond = (
                 Employee.personnel_code.ilike(term)
                 | Employee.first_name.ilike(term)

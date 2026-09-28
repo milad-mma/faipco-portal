@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Autocomplete, TextField } from "@mui/material";
 import { fetchEmployees } from "../api/employees";
+import { searchFilterOptions } from "../utils/searchText";
 
 /**
  * انتخابگر پرسنل با جست‌وجوی زنده (Autocomplete)، محدود به یک سایت و/یا واحدهای سازمانی مشخص.
@@ -25,6 +26,7 @@ export default function EmployeePicker({ siteId, departmentIds, label, onSelect,
 
   return (
     <Autocomplete
+      filterOptions={searchFilterOptions}
       size="small"
       options={options}
       getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}

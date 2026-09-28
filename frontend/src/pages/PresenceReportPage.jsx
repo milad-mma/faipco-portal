@@ -30,6 +30,7 @@ import { fetchPresenceSessions } from "../api/attendance";
 import { fetchEmployees } from "../api/employees";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { monoFontSx } from "../theme";
+import { searchFilterOptions } from "../utils/searchText";
 
 const PAGE_SIZE = 50;  // تعداد ردیف در هر صفحه
 
@@ -126,6 +127,7 @@ export default function PresenceReportPage() {
           }}
         />
         <Autocomplete
+          filterOptions={searchFilterOptions}
           sx={{ minWidth: 260 }}
           options={employeeOptions}
           getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}

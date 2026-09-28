@@ -36,6 +36,7 @@ import {
   fetchAllLeaveRequestsForSite,
   fetchLeaveRequestTypes,
 } from "../api/leaveRequestsAdmin";
+import { matchesSearch } from "../utils/searchText";
 
 // برچسب و رنگ چیپ هر وضعیت درخواست
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
@@ -471,13 +472,10 @@ export default function LeaveRequestsAdminListPage() {
   // ردیف‌های جدول: اعمال جست‌وجوی متنی (نام، نوع، توضیحات، شماره پرسنلی) و سپس مرتب‌سازی
   const visibleRequests = useMemo(() => {
     if (!requests) return [];
-    const term = search.trim().toLowerCase();
     let filtered = requests;
-    if (term) {
+    if (search.trim()) {
       filtered = requests.filter((item) =>
-        [item.requester_name, item.type_title, item.description, String(item.emp_no)]
-          .filter(Boolean)
-          .some((field) => String(field).toLowerCase().includes(term))
+        matchesSearch(search, [item.requester_name, item.type_title, item.description, item.emp_no])
       );
     }
     // ستون‌های تاریخ به‌صورت عددی (timestamp) و بقیه به‌صورت رشته مقایسه می‌شوند

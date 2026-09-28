@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.deps import get_current_user, require_permission
+from app.core.text_normalize import normalize_search_text
 from app.core.site_access import get_accessible_site_ids, get_sites_with_permission
 from app.services.employee_cleanup_service import (
     delete_orphaned_inactive_employees,
@@ -121,8 +122,9 @@ async def list_employees(
             stmt = stmt.where(Employee.site_id.in_(accessible_site_ids))
         if department_id:
             stmt = stmt.where(Employee.department_id.in_(department_id))
-        if search:
-            pattern = f"%{search.strip()}%"
+        search_text = normalize_search_text(search)  # ارقام فارسی/عربی و ي/ك ← لاتین/فارسی
+        if search_text:
+            pattern = f"%{search_text}%"
             stmt = stmt.where(
                 or_(
                     Employee.first_name.ilike(pattern),

@@ -47,6 +47,7 @@ import {
   setLeaveRequestModuleDisabled,
   updateLeaveRequestType,
 } from "../api/leaveRequestsAdmin";
+import { searchFilterOptions } from "../utils/searchText";
 
 /**
  * بخش مدیریت نوع‌های درخواست یک سایت.
@@ -200,6 +201,7 @@ function TypesSection({ siteId, onError }) {
       {actionLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
+            filterOptions={searchFilterOptions}
             options={actionLookup}
             getOptionLabel={(item) => `${item.title} (ActionId=${item.action_id})`}
             onChange={(_, item) => {
@@ -225,6 +227,7 @@ function TypesSection({ siteId, onError }) {
       {operationLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
+            filterOptions={searchFilterOptions}
             options={operationLookup}
             getOptionLabel={(item) => `${item.title} (OperationId=${item.operation_id})`}
             onChange={(_, item) => {
@@ -242,6 +245,7 @@ function TypesSection({ siteId, onError }) {
       {cardLookup.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
           <Autocomplete
+            filterOptions={searchFilterOptions}
             options={cardLookup}
             getOptionLabel={(item) => `${item.title} (Card_No=${item.card_no})`}
             onChange={(_, item) => {

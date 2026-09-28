@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.text_normalize import normalize_search_text
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -74,7 +75,11 @@ class AuthService:
         خروجی: User در صورت تطبیق (و ثبت last_login_at)، وگرنه None تا login() روش کد پرسنلی/کد ملی را امتحان کند.
         خطا: AuthError اگر رمز درست ولی حساب غیرفعال باشد.
         """
-        user = await self.repo.get_by_username(username)
+        # نام کاربری با ارقام فارسی/عربی هم پیدا شود (کد پرسنلی با کیبورد فارسی)؛ رمز عبور دست نمی‌خورد
+        normalized = normalize_search_text(username)
+        user = await self.repo.get_by_username(normalized)
+        if user is None and normalized != username:
+            user = await self.repo.get_by_username(username)
         if user is None or not verify_password(password, user.password_hash):
             return None
         if not user.is_active:

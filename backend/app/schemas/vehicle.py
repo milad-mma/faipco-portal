@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.text_normalize import normalize_search_text
+
 # ۱۶ حرف مجاز پلاک ایران؛ هم‌الگو با PLATE_LETTERS در IranianLicensePlateInput.jsx
 # (فرانت‌اند) — این‌جا تکرار شده تا اعتبارسنجی سمت Backend مستقل از فرانت‌اند باشد.
 ALLOWED_PLATE_LETTERS = {"ب", "ج", "د", "س", "ص", "ط", "ق", "ل", "م", "ن", "و", "ه", "ی", "ت", "ع", "ا"}
@@ -24,23 +26,26 @@ class VehicleIn(BaseModel):
     @field_validator("plate_digits1", "plate_iran_code")
     @classmethod
     def validate_two_digits(cls, v: str) -> str:
-        """بررسی می‌کند مقدار دقیقاً ۲ رقم باشد."""
-        if not v.isdigit() or len(v) != 2:
+        """ارقام فارسی/عربی را لاتین می‌کند و بررسی می‌کند مقدار دقیقاً ۲ رقم باشد."""
+        v = normalize_search_text(v)
+        if not (v.isascii() and v.isdigit()) or len(v) != 2:
             raise ValueError("باید دقیقاً ۲ رقم باشد")
         return v
 
     @field_validator("plate_digits2")
     @classmethod
     def validate_three_digits(cls, v: str) -> str:
-        """بررسی می‌کند مقدار دقیقاً ۳ رقم باشد."""
-        if not v.isdigit() or len(v) != 3:
+        """ارقام فارسی/عربی را لاتین می‌کند و بررسی می‌کند مقدار دقیقاً ۳ رقم باشد."""
+        v = normalize_search_text(v)
+        if not (v.isascii() and v.isdigit()) or len(v) != 3:
             raise ValueError("باید دقیقاً ۳ رقم باشد")
         return v
 
     @field_validator("plate_letter")
     @classmethod
     def validate_letter(cls, v: str) -> str:
-        """بررسی می‌کند حرف پلاک در ALLOWED_PLATE_LETTERS باشد."""
+        """«ي» عربی را «ی» می‌کند و بررسی می‌کند حرف پلاک در ALLOWED_PLATE_LETTERS باشد."""
+        v = normalize_search_text(v)
         if v not in ALLOWED_PLATE_LETTERS:
             raise ValueError("حرف پلاک نامعتبر است")
         return v

@@ -44,6 +44,7 @@ import SiteFilterSelect from "../components/SiteFilterSelect";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import { groupLogsByDay } from "../utils/attendanceGrouping";
 import { monoFontSx } from "../theme";
+import { searchFilterOptions } from "../utils/searchText";
 
 const PAGE_SIZE = 50; // تعداد ردیف (روز-پرسنل) در هر صفحه
 const ATTENDANCE_PILOT_ROLE = "attendance-pilot"; // نقش پرسنلی که مجاز به ثبت ورود/خروج GPS هستند
@@ -155,6 +156,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           />
         ) : (
           <Autocomplete
+            filterOptions={searchFilterOptions}
             options={employeeOptions}
             getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}
             value={employee}
@@ -184,6 +186,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
         <JalaliDateTimePicker value={dateValue} onChange={setDateValue} label="تاریخ و ساعت (شمسی)" />
 
         <Autocomplete
+          filterOptions={searchFilterOptions}
           options={siteOptions}
           getOptionLabel={(o) => o.name}
           value={site}
@@ -432,6 +435,7 @@ export default function ClockInOutReportPage() {
           }}
         />
         <Autocomplete
+          filterOptions={searchFilterOptions}
           sx={{ minWidth: 260 }}
           options={employeeOptions}
           getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}

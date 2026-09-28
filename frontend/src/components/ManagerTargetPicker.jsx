@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Autocomplete, Box, Chip, Stack, TextField, Typography } from "@mui/material";
 import { fetchManagerCandidates } from "../api/evaluationStructure";
+import { searchFilterOptions } from "../utils/searchText";
 
 /**
  * انتخابگر افزودن فرد به فهرست ارزیابی یک مدیر.
@@ -57,6 +58,7 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
 
       {/* جست‌وجو در کل پرسنل؛ افراد تحت ارزیابی مدیر دیگر غیرفعال‌اند. value همیشه null است تا بعد از انتخاب خالی شود */}
       <Autocomplete
+        filterOptions={searchFilterOptions}
         options={availableCandidates}
         getOptionLabel={(c) => `${c.first_name} ${c.last_name} (${c.personnel_code})`}
         getOptionDisabled={(c) => Boolean(c.evaluated_by_name)}
