@@ -147,3 +147,9 @@ export async function fetchBirthdayPhotoThumbnailBlob(employeeId) {
   });
   return data;
 }
+
+// POST /employees/{id}/unlock-login؛ رفع قفل موقت ورود پرسنل بعد از تلاش‌های ناموفق؛ خروجی: { unlocked }
+export async function unlockEmployeeLogin(employeeId) {
+  const { data } = await apiClient.post(`/employees/${employeeId}/unlock-login`);
+  return data;
+}

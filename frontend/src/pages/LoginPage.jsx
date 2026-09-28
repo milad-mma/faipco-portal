@@ -45,6 +45,7 @@ import { modernLightTheme } from "../theme";
 import { LOGIN_BACKGROUND_URL } from "../api/system";
 import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "../components/BrandLogo";
+import CaptchaField from "../components/CaptchaField";
 
 // فهرست خدمات نمایش‌داده‌شده در پنل معرفی دسکتاپ
 const PROMO_FEATURES = [
@@ -72,6 +73,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [vpnBlockedMessage, setVpnBlockedMessage] = useState("");  // متن دیالوگ مسدودسازی IP؛ رشته خالی = دیالوگ بسته
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaVisible, setCaptchaVisible] = useState(false);  // سرور بعد از چند تلاش ناموفق کپچا می‌خواهد
+  const [captcha, setCaptcha] = useState(null);  // { captcha_id, captcha_answer }
+  const [captchaReload, setCaptchaReload] = useState(0);  // کپچا یک‌بارمصرف است؛ بعد از هر تلاش ناموفق تازه می‌شود
   const [canInstall, setCanInstall] = useState(getIsInstallable());  // مرورگر امکان نصب PWA را اعلام کرده است
   const [appVersion, setAppVersion] = useState("");
 
@@ -117,7 +121,7 @@ export default function LoginPage() {
     try {
       // فرم ورود یکپارچه است: همین دو فیلد هم برای مدیریت (نام کاربری/رمز عبور)
       // و هم برای پرسنل (کد پرسنلی/کد ملی) کار می‌کند — Backend خودش تشخیص می‌دهد.
-      await login(username, password);
+      await login(username, password, captchaVisible ? captcha : null);
 
       // «مرا به خاطر بسپار» — فقط نام کاربری (هرگز رمز عبور، به دلایل
       // امنیتی) در همین دستگاه ذخیره می‌شود تا دفعه بعد از‌پیش پر شده باشد.
@@ -146,6 +150,13 @@ export default function LoginPage() {
         );
       } else {
         setError(err.response?.data?.detail || "ورود با خطا مواجه شد. اطلاعات وارد‌شده را بررسی کنید.");
+      }
+      // کپچا: نمایش از اولین پاسخی که captcha_required دارد؛ اگر نمایش داده شده، چالش مصرف‌شده عوض می‌شود
+      if (err.response?.data?.captcha_required) {
+        if (captchaVisible) setCaptchaReload((k) => k + 1);
+        else setCaptchaVisible(true);
+      } else if (captchaVisible) {
+        setCaptchaReload((k) => k + 1);
       }
     } finally {
       setIsSubmitting(false);
@@ -275,6 +286,9 @@ export default function LoginPage() {
           ),
         }}
       />
+      {captchaVisible && (
+        <CaptchaField purpose="login" value={captcha} onChange={setCaptcha} reloadKey={captchaReload} disabled={isSubmitting} />
+      )}
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <FormControlLabel
           control={

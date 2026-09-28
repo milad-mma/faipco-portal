@@ -51,6 +51,7 @@ const BulkRoleAssignmentPage = lazyPage(() => import("./pages/BulkRoleAssignment
 const BackupPage = lazyPage(() => import("./pages/BackupPage"));
 const UpdatePage = lazyPage(() => import("./pages/UpdatePage"));
 const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
+const LoginSecurityPage = lazyPage(() => import("./pages/LoginSecurityPage"));
 const AttendanceClockPage = lazyPage(() => import("./pages/AttendanceClockPage"));
 const MonthlyAttendanceReportPage = lazyPage(() => import("./pages/MonthlyAttendanceReportPage"));
 const PresenceReportPage = lazyPage(() => import("./pages/PresenceReportPage"));
@@ -208,6 +209,10 @@ export default function App() {
           <Route
             path="/ip-allowlist"
             element={<PermissionRoute check={(u) => u?.can_manage_ip_allowlist}><IpAllowlistPage /></PermissionRoute>}
+          />
+          <Route
+            path="/login-security"
+            element={<PermissionRoute check={(u) => u?.can_manage_login_security}><LoginSecurityPage /></PermissionRoute>}
           />
           <Route
             path="/clock-in-out-report"

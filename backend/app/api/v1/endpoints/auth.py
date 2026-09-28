@@ -4,13 +4,15 @@ Endpointهای احراز هویت (Authentication).
 - me / me/password / me/contact-info: اطلاعات، رمز عبور و اطلاعات تماس کاربر جاری.
 - forgot-password / verify-reset-code / reset-password: جریان بازنشانی رمز عبور با ایمیل یا پیامک.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user
 from app.core.ip_allowlist import get_client_ip
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
+from app.services import login_security_service as login_security
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -43,12 +45,19 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     """
     ورود یکپارچه: username/password برای مدیریت (یوزرنیم + رمز) و پرسنل (کد پرسنلی + کد ملی)؛ تشخیص در AuthService.login().
     دسترسی: عمومی. خروجی: access و refresh token.
-    خطاها: 403 (IP مجاز نیست)، 429 (قفل موقت، با هدر Retry-After)، 401 (اطلاعات نادرست).
+    خطاها: 403 (IP مجاز نیست)، 429 (قفل موقت شناسه یا مسدودیت IP، با هدر Retry-After)، 401 (اطلاعات نادرست
+    یا کپچای لازم/اشتباه). بدنه‌ی 401 فیلد captcha_required دارد: True یعنی تلاش بعدی باید با captcha_id و
+    captcha_answer (از GET /auth/captcha) فرستاده شود.
     """
     service = AuthService(db)
     try:
         access_token, refresh_token = await service.login(
-            payload.username, payload.password, client_ip=get_client_ip(request)
+            payload.username,
+            payload.password,
+            client_ip=get_client_ip(request),
+            captcha_id=payload.captcha_id,
+            captcha_answer=payload.captcha_answer,
+            user_agent=request.headers.get("user-agent"),
         )
     except AuthIpBlockedError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -59,8 +68,24 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
             headers={"Retry-After": str(e.retry_after_seconds)},
         )
     except AuthError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": str(e), "captcha_required": bool(getattr(e, "captcha_required", False))},
+        )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.get("/captcha")
+async def get_captcha(purpose: str = Query(default="login", pattern="^(login|forgot)$"), db: AsyncSession = Depends(get_db)):
+    """
+    کپچای تصویری داخلی. دسترسی: عمومی. خروجی: {required, captcha_id, image (data URL PNG), expires_in}.
+    purpose=forgot: اگر کپچای فراموشی رمز خاموش باشد فقط {required: false} برمی‌گردد.
+    purpose=login: همیشه چالش می‌سازد (فرانت فقط بعد از پاسخ captcha_required آن را صدا می‌زند).
+    """
+    cfg = await login_security.get_login_security_settings(db)
+    if purpose == "forgot" and not (cfg.captcha_enabled and cfg.captcha_on_forgot_password):
+        return {"required": False}
+    return {"required": True, **(await login_security.create_captcha(db))}
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -130,6 +155,27 @@ async def forgot_password(
     همیشه masked_contact و expires_in_seconds برمی‌گرداند، حتی برای شناسه‌ی نامعتبر (ماسک ساختگی)،
     تا وجود حساب قابل تشخیص نباشد. خطا: 503 فقط اگر سرویس ایمیل/پیامک تنظیم‌نشده یا قطع باشد.
     """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    cfg = await login_security.get_login_security_settings(db)
+    # مسدودیت IP همین‌جا هم اعمال می‌شود (جلوی ارسال انبوه پیامک/ایمیل از یک IP)
+    ip_remaining = await login_security.ip_block_remaining(db, cfg, client_ip)
+    if ip_remaining is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"به‌خاطر تلاش‌های ناموفق زیاد از این شبکه، درخواست موقتاً مسدود شده — {int(ip_remaining) // 60 + 1} دقیقه دیگر امتحان کنید.",
+        )
+    if cfg.captcha_enabled and cfg.captcha_on_forgot_password:
+        if not payload.captcha_id or not payload.captcha_answer:
+            return JSONResponse(status_code=400, content={"detail": "لطفاً کد امنیتی تصویر را وارد کنید.", "captcha_required": True})
+        if not await login_security.verify_captcha(db, payload.captcha_id, payload.captcha_answer):
+            await login_security.record_other_failure(db, cfg, "captcha_failed", client_ip, payload.identifier, user_agent)
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "کد امنیتی اشتباه یا منقضی است؛ کد جدید را وارد کنید.", "captcha_required": True},
+            )
+    await login_security.log_event(db, "forgot_password", client_ip, payload.identifier, user_agent)
+
     settings = get_settings()
     reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"  # آدرس صفحه‌ی بازنشانی در فرانت‌اند
     try:
@@ -174,7 +220,11 @@ async def verify_reset_code_endpoint(
     try:
         await verify_reset_token(db, payload.token)
     except PasswordResetError as e:
-        await record_failed_login(db, lockout_key)
+        cfg = await login_security.get_login_security_settings(db)
+        await record_failed_login(db, lockout_key, cfg.attempts_per_tier, login_security.lock_seconds(cfg))
+        await login_security.record_other_failure(
+            db, cfg, "reset_code_failed", client_ip, None, request.headers.get("user-agent")
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     await reset_login_attempts(db, lockout_key)  # موفقیت: شمارنده‌ی تلاش‌ها صفر می‌شود
@@ -204,7 +254,11 @@ async def reset_password_endpoint(
     try:
         await reset_password(db, payload.token, payload.new_password)
     except PasswordResetError as e:
-        await record_failed_login(db, lockout_key)
+        cfg = await login_security.get_login_security_settings(db)
+        await record_failed_login(db, lockout_key, cfg.attempts_per_tier, login_security.lock_seconds(cfg))
+        await login_security.record_other_failure(
+            db, cfg, "reset_code_failed", client_ip, None, request.headers.get("user-agent")
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     await reset_login_attempts(db, lockout_key)

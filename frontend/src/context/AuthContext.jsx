@@ -61,9 +61,9 @@ export function AuthProvider({ children }) {
   }, [isOnline]);
 
   // ورود کاربر: توکن‌ها را می‌گیرد و ذخیره می‌کند، سپس کاربر جاری را می‌خواند؛ خروجی: کاربر جاری
-  async function login(username, password) {
+  async function login(username, password, captcha = null) {
     // فرم ورود یکپارچه است: هم مدیر (نام کاربری/رمز) و هم پرسنل (کد پرسنلی/کد ملی)؛ تشخیص در Backend انجام می‌شود
-    const tokens = await loginRequest(username, password);
+    const tokens = await loginRequest(username, password, captcha);
     localStorage.setItem("access_token", tokens.access_token);
     localStorage.setItem("refresh_token", tokens.refresh_token);
     const currentUser = await fetchCurrentUser();

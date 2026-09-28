@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     insurance,
     leave_requests,
     leave_requests_admin,
+    login_security,
     mapping_suggestions,
     monthly_attendance,
     notices,
@@ -50,6 +51,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(push.router, prefix="/push", tags=["push"])
 api_router.include_router(backup.router, prefix="/backup", tags=["backup"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
+api_router.include_router(login_security.router, prefix="/login-security", tags=["login-security"])
 # حضور و غیاب، منابع انسانی، خودروها، بیمه، انتقادات و پیشنهاد نگاشت
 api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 api_router.include_router(monthly_attendance.router, prefix="/monthly-attendance", tags=["monthly-attendance"])

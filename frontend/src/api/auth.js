@@ -4,9 +4,10 @@
  */
 import { apiClient } from "./client";
 
-// POST /auth/login با نام کاربری و رمز؛ خروجی: توکن‌های دسترسی و رفرش
-export async function loginRequest(username, password) {
-  const { data } = await apiClient.post("/auth/login", { username, password });
+// POST /auth/login با نام کاربری و رمز (و در صورت نیاز کپچا: { captcha_id, captcha_answer })؛
+// خروجی: توکن‌های دسترسی و رفرش. پاسخ 401 فیلد captcha_required دارد.
+export async function loginRequest(username, password, captcha = null) {
+  const { data } = await apiClient.post("/auth/login", { username, password, ...(captcha || {}) });
   return data; // { access_token, refresh_token, token_type }
 }
 
@@ -25,8 +26,8 @@ export async function changePasswordRequest(currentPassword, newPassword) {
 }
 
 // POST /auth/forgot-password؛ ارسال کد بازیابی از طریق کانال انتخابی (پیش‌فرض پیامک)؛ خروجی: پاسخ سرور
-export async function forgotPasswordRequest(identifier, channel = "sms") {
-  const { data } = await apiClient.post("/auth/forgot-password", { identifier, channel });
+export async function forgotPasswordRequest(identifier, channel = "sms", captcha = null) {
+  const { data } = await apiClient.post("/auth/forgot-password", { identifier, channel, ...(captcha || {}) });
   return data;
 }
 
@@ -48,5 +49,12 @@ export async function updateMyContactInfo({ email, mobile }) {
   if (email !== undefined) payload.email = email;
   if (mobile !== undefined) payload.mobile = mobile;
   const { data } = await apiClient.put("/auth/me/contact-info", payload);
+  return data;
+}
+
+// GET /auth/captcha؛ کپچای تصویری داخلی. purpose: "login" | "forgot"
+// خروجی: { required, captcha_id?, image? (data URL), expires_in? }
+export async function fetchCaptcha(purpose = "login") {
+  const { data } = await apiClient.get("/auth/captcha", { params: { purpose } });
   return data;
 }

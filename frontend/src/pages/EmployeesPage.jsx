@@ -43,6 +43,7 @@ import {
   fetchEmployees,
   previewOrphanedInactiveCleanup,
   resetEmployeePassword,
+  unlockEmployeeLogin,
   setEmployeeEnabled,
   setEmployeePassword,
 } from "../api/employees";
@@ -73,9 +74,25 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");  // پیام موفقیت؛ پس از موفقیت فرم پنهان می‌شود
   const [isSaving, setIsSaving] = useState(false);
+  const [unlockMessage, setUnlockMessage] = useState(null);  // { success, message } نتیجه‌ی رفع قفل ورود
+
+  // رفع قفل موقت ورود (بعد از تلاش‌های ناموفق پیاپی)
+  async function handleUnlock() {
+    setUnlockMessage(null);
+    try {
+      const { unlocked } = await unlockEmployeeLogin(employee.id);
+      setUnlockMessage({
+        success: true,
+        message: unlocked ? "قفل ورود این پرسنل برداشته شد و می‌تواند دوباره وارد شود." : "ورود این پرسنل قفل نبود.",
+      });
+    } catch (err) {
+      setUnlockMessage({ success: false, message: err.response?.data?.detail || "رفع قفل ورود ناموفق بود." });
+    }
+  }
 
   // با تغییر پرسنل، فرم و پیام‌ها خالی می‌شوند
   useEffect(() => {
+    setUnlockMessage(null);
     setPassword("");
     setConfirmPassword("");
     setError("");
@@ -158,9 +175,17 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         )}
         {error && <Alert severity="error">{error}</Alert>}
         {success && <Alert severity="success">{success}</Alert>}
+        {unlockMessage && (
+          <Alert severity={unlockMessage.success ? "success" : "error"} sx={{ mt: 1.5 }}>
+            {unlockMessage.message}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
         <Box>
+          <Button onClick={handleUnlock} disabled={isSaving}>
+            رفع قفل ورود
+          </Button>
           {/* دکمه‌ی بازگشت به ورود پیش‌فرض، فقط برای پرسنل دارای رمز اختصاصی */}
           {!success && employee.has_custom_password && (
             <Button color="warning" onClick={handleReset} disabled={isSaving}>

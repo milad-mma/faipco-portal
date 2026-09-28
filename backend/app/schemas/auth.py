@@ -9,6 +9,8 @@ class LoginRequest(BaseModel):
     """بدنه‌ی POST /auth/login (username = یوزرنیم یا کد پرسنلی، password = رمز یا کد ملی)."""
     username: str
     password: str = Field(min_length=1)
+    captcha_id: str | None = Field(default=None, max_length=36)  # وقتی پاسخ قبلی captcha_required داشت
+    captcha_answer: str | None = Field(default=None, max_length=20)
 
 
 class RefreshRequest(BaseModel):
@@ -26,6 +28,8 @@ class ForgotPasswordRequest(BaseModel):
     """بدنه‌ی POST /auth/forgot-password."""
     identifier: str = Field(min_length=1)  # نام‌کاربری یا کد پرسنلی - همان دو روش ورود
     channel: str = Field(default="sms", pattern="^(email|sms)$")  # کانال ارسال: email یا sms
+    captcha_id: str | None = Field(default=None, max_length=36)  # اگر کپچای فراموشی رمز روشن باشد الزامی است
+    captcha_answer: str | None = Field(default=None, max_length=20)
 
 
 class VerifyResetCodeRequest(BaseModel):

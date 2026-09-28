@@ -12,6 +12,7 @@ import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import VpnLockOutlinedIcon from "@mui/icons-material/VpnLockOutlined";
+import GppMaybeOutlinedIcon from "@mui/icons-material/GppMaybeOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
@@ -220,6 +221,7 @@ export const NAV_ITEMS = [
         check: (u) => u?.can_manage_users,
       },
       { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, check: (u) => u?.can_manage_ip_allowlist },
+      { label: "امنیت ورود", path: "/login-security", icon: <GppMaybeOutlinedIcon />, check: (u) => u?.can_manage_login_security },
     ],
   },
   // گروه سامانه: سایت‌ها، همگام‌سازی، تنظیمات، پشتیبان‌گیری و به‌روزرسانی

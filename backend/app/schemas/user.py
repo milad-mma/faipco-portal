@@ -45,6 +45,7 @@ class UserOut(BaseModel):
     can_manage_users: bool = False  # users.manage — «مدیریت دسترسی» و «انتصاب دسته‌جمعی نقش»
     can_manage_roles: bool = False  # roles.manage — «مدیریت نقش/مجوز»
     can_manage_ip_allowlist: bool = False  # system.ip_allowlist — «رنج‌های IP مجاز»
+    can_manage_login_security: bool = False  # system.login_security — «امنیت ورود»
     can_view_feedback: bool = False  # feedback.view یا feedback.view_all — مشاهده انتقادات و پیشنهادات
     can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
     # فلگ‌های مجوزهایی که در بک‌اند با require_permission/get_sites_with_permission چک می‌شوند؛

@@ -27,7 +27,8 @@ from app.models.leave_request import LeaveRequestMapping
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.core.ip_allowlist import is_ip_allowed, is_ip_allowlist_enforced
-from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
+from app.core.rate_limit import check_login_lockout, reset_login_attempts
+from app.services import login_security_service as login_security
 from app.core.site_access import get_sites_with_permission
 from app.services.system_settings_service import SystemSettingsService
 from app.schemas.user import UserOut
@@ -51,6 +52,24 @@ class AuthLockedError(AuthError):
         else:
             human = f"{retry_after_seconds} ثانیه"
         super().__init__(f"به‌خاطر تلاش‌های ناموفق پیاپی، ورود موقتاً قفل شده — {human} دیگر دوباره امتحان کنید.")
+
+
+class AuthCaptchaError(AuthError):
+    """کپچا لازم است و وارد نشده یا اشتباه است (پاسخ 401 با captcha_required=True)."""
+
+    captcha_required = True
+
+
+class AuthIpRateLimitedError(AuthLockedError):
+    """IP به‌خاطر تلاش‌های ناموفق زیاد (روی شناسه‌های مختلف) موقتاً مسدود است."""
+
+    def __init__(self, retry_after_seconds: int):
+        """ورودی: ثانیه‌های باقی‌مانده تا رفع مسدودیت."""
+        super().__init__(retry_after_seconds)
+        minutes = max(1, (retry_after_seconds + 59) // 60)
+        self.args = (
+            f"به‌خاطر تلاش‌های ناموفق زیاد از این شبکه، ورود موقتاً مسدود شده — {minutes} دقیقه دیگر دوباره امتحان کنید.",
+        )
 
 
 class AuthIpBlockedError(AuthError):
@@ -89,7 +108,15 @@ class AuthService:
         await self.db.commit()
         return user
 
-    async def login(self, identifier: str, credential: str, client_ip: str | None = None) -> tuple[str, str]:
+    async def login(
+        self,
+        identifier: str,
+        credential: str,
+        client_ip: str | None = None,
+        captcha_id: str | None = None,
+        captcha_answer: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[str, str]:
         """
         ورود یکپارچه؛ ورودی: شناسه (یوزرنیم/کد پرسنلی)، اعتبار (رمز/کد ملی) و IP کلاینت. خروجی: (access_token, refresh_token).
         ترتیب: بررسی IP مجاز (AuthIpBlockedError) ← قفل موقت این شناسه (AuthLockedError، حتی با رمز درست)
@@ -101,10 +128,27 @@ class AuthService:
                 message = await SystemSettingsService(self.db).get_ip_blocked_message()
                 raise AuthIpBlockedError(message)
 
+        ip = client_ip or "unknown"
+        cfg = await login_security.get_login_security_settings(self.db)
+
+        # مسدودیت IP (تلاش ناموفق زیاد روی شناسه‌های مختلف از یک IP؛ IPهای معاف مستثنا هستند)
+        ip_remaining = await login_security.ip_block_remaining(self.db, cfg, ip)
+        if ip_remaining is not None:
+            raise AuthIpRateLimitedError(retry_after_seconds=int(ip_remaining) + 1)
+
         # قفل موقت پس از تلاش‌های ناموفق پیاپی روی همین شناسه
         locked_remaining = await check_login_lockout(self.db, identifier)
         if locked_remaining is not None:
+            await login_security.log_event(self.db, "login_locked", ip, identifier, user_agent)
             raise AuthLockedError(retry_after_seconds=int(locked_remaining) + 1)
+
+        # کپچا بعد از چند تلاش ناموفق روی همین شناسه یا همین IP (پیش از بررسی رمز)
+        if await login_security.captcha_required_for_login(self.db, cfg, identifier, ip):
+            if not captcha_id or not captcha_answer:
+                raise AuthCaptchaError("لطفاً کد امنیتی تصویر را وارد کنید.")
+            if not await login_security.verify_captcha(self.db, captcha_id, captcha_answer):
+                await login_security.record_other_failure(self.db, cfg, "captcha_failed", ip, identifier, user_agent)
+                raise AuthCaptchaError("کد امنیتی اشتباه یا منقضی است؛ کد جدید را وارد کنید.")
 
         user = await self.authenticate(identifier, credential)
 
@@ -112,7 +156,7 @@ class AuthService:
         if user is None:
             employee = await self.repo.find_employee_for_login(identifier, credential)
             if employee is None:
-                await record_failed_login(self.db, identifier)
+                await login_security.record_login_failure(self.db, cfg, identifier, ip, user_agent)
                 # لاگ تشخیصی بدون ذخیره‌ی خودِ کد ملی/رمز (PII): فقط طول ورودی و اینکه آیا نرمال‌سازی
                 # (ارقام فارسی/عربی یا کاراکتر نامرئی) مقدار را تغییر داده است
                 normalized = normalize_login_credential(credential)
@@ -124,7 +168,10 @@ class AuthService:
                     len(credential),
                     credential.strip() != normalized,
                 )
-                raise AuthError("اطلاعات ورود اشتباه است")
+                error = AuthError("اطلاعات ورود اشتباه است")
+                # اگر تلاش بعدی کپچا لازم دارد، فرانت همین حالا کادر کپچا را نشان می‌دهد
+                error.captcha_required = await login_security.captcha_required_for_login(self.db, cfg, identifier, ip)
+                raise error
             user = await self.repo.get_or_create_employee_user(employee)  # حساب پرسنل در اولین ورود ساخته می‌شود
 
         await reset_login_attempts(self.db, identifier)  # ورود موفق: شمارنده‌ی تلاش‌ها صفر می‌شود
@@ -234,6 +281,7 @@ class AuthService:
         base.can_manage_users = user.is_superuser or "users.manage" in permission_codes
         base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes
         base.can_manage_ip_allowlist = user.is_superuser or "system.ip_allowlist" in permission_codes
+        base.can_manage_login_security = user.is_superuser or "system.login_security" in permission_codes
         base.can_view_feedback = (
             user.is_superuser or "feedback.view" in permission_codes or "feedback.view_all" in permission_codes
         )

@@ -2,8 +2,9 @@
 Rate Limiting — نسخه پایگاه‌داده‌ای (نه درون‌حافظه‌ای) — دو قابلیت مستقل:
 
 1. قفل موقت ورود بعد از تلاش‌های ناموفق پیاپی (Login Lockout پلکانی):
-   ۳ تلاش اشتباه → ۶۰ ثانیه قفل، ۳ تای بعدی (مجموع ۶) → ۵ دقیقه،
-   ۳ تای بعدی (مجموع ۹ به بعد) → ۱ ساعت (و همان‌جا می‌ماند).
+   پیش‌فرض: ۳ تلاش اشتباه → ۶۰ ثانیه قفل، ۳ تای بعدی (مجموع ۶) → ۵ دقیقه،
+   ۳ تای بعدی (مجموع ۹ به بعد) → ۱ ساعت (و همان‌جا می‌ماند). تعداد و مدت‌ها از «امنیت ورود»
+   (login_security_service) قابل تنظیم‌اند.
 
 2. محدودیت ارسال اطلاعیه: هر کاربر حداکثر یک اطلاعیه در هر ۶۰ ثانیه.
 
@@ -13,6 +14,7 @@ Rate Limiting — نسخه پایگاه‌داده‌ای (نه درون‌حا�
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
@@ -25,13 +27,16 @@ from app.core.text_normalize import normalize_search_text
 # ---------- قفل موقت ورود ----------
 
 
-def _tier_seconds(fail_count: int) -> int:
-    """ورودی: تعداد تلاش ناموفق. خروجی: مدت قفل پلکانی به ثانیه (۶۰ ثانیه، ۵ دقیقه یا ۱ ساعت)."""
-    if fail_count <= 3:
-        return 60
-    if fail_count <= 6:
-        return 5 * 60
-    return 60 * 60  # از ۹ تلاش ناموفق به بعد، همیشه ۱ ساعت
+DEFAULT_ATTEMPTS_PER_TIER = 3  # هر چند تلاش ناموفق یک پله‌ی قفل
+DEFAULT_LOCK_SECONDS = (60, 5 * 60, 60 * 60)  # مدت قفل پله‌ها؛ از آخرین پله به بعد همان می‌ماند
+
+
+def _tier_seconds(fail_count: int, attempts_per_tier: int = DEFAULT_ATTEMPTS_PER_TIER,
+                  lock_seconds: tuple[int, ...] | list[int] = DEFAULT_LOCK_SECONDS) -> int:
+    """ورودی: تعداد تلاش ناموفق و تنظیم پله‌ها. خروجی: مدت قفل پله‌ی فعلی به ثانیه."""
+    tier = max(1, math.ceil(fail_count / max(1, attempts_per_tier)))
+    seconds = list(lock_seconds) or list(DEFAULT_LOCK_SECONDS)
+    return int(seconds[min(tier, len(seconds)) - 1])
 
 
 def _login_key(identifier: str) -> str:
@@ -51,10 +56,16 @@ async def check_login_lockout(db: AsyncSession, identifier: str) -> float | None
     return remaining if remaining > 0 else None
 
 
-async def record_failed_login(db: AsyncSession, identifier: str) -> None:
+async def record_failed_login(
+    db: AsyncSession,
+    identifier: str,
+    attempts_per_tier: int = DEFAULT_ATTEMPTS_PER_TIER,
+    lock_seconds: tuple[int, ...] | list[int] = DEFAULT_LOCK_SECONDS,
+) -> int:
     """
-    ورودی: session و شناسه ورود. یک تلاش ناموفق ثبت می‌کند (fail_count یکی زیاد می‌شود)
-    و در هر مضرب ۳، قفل پلکانی جدید (locked_until) اعمال می‌شود.
+    ورودی: session، شناسه ورود و تنظیم پله‌ها (از تنظیمات امنیت ورود). یک تلاش ناموفق ثبت می‌کند
+    (fail_count یکی زیاد می‌شود) و در هر مضرب attempts_per_tier، قفل پلکانی جدید اعمال می‌شود.
+    خروجی: fail_count به‌روزشده.
     """
     key = _login_key(identifier)
     now = datetime.now(timezone.utc)
@@ -76,10 +87,32 @@ async def record_failed_login(db: AsyncSession, identifier: str) -> None:
     # خواندن مقدار به‌روزشده fail_count بعد از UPSERT
     result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == key))
     record = result.scalar_one()
-    # فقط دقیقاً وقتی به یک آستانه (۳، ۶، ۹، ۱۲، ...) می‌رسد، قفل تازه اعمال می‌شود
-    if record.fail_count % 3 == 0:
-        record.locked_until = now + timedelta(seconds=_tier_seconds(record.fail_count))
+    # فقط دقیقاً وقتی به یک آستانه (مثلاً ۳، ۶، ۹، ...) می‌رسد، قفل تازه اعمال می‌شود
+    per_tier = max(1, attempts_per_tier)
+    if record.fail_count % per_tier == 0:
+        record.locked_until = now + timedelta(seconds=_tier_seconds(record.fail_count, per_tier, lock_seconds))
         await db.commit()
+    return record.fail_count
+
+
+async def get_fail_count(db: AsyncSession, identifier: str) -> int:
+    """تعداد تلاش‌های ناموفق پیاپی ثبت‌شده برای این شناسه (۰ اگر سابقه‌ای نیست)."""
+    result = await db.execute(select(LoginAttempt.fail_count).where(LoginAttempt.identifier == _login_key(identifier)))
+    return result.scalar_one_or_none() or 0
+
+
+async def lock_key_for(db: AsyncSession, identifier: str, seconds: int) -> None:
+    """کلید داده‌شده (مثلاً ip:1.2.3.4) را تا seconds ثانیه‌ی بعد قفل می‌کند (UPSERT اتمیک)."""
+    key = _login_key(identifier)
+    now = datetime.now(timezone.utc)
+    until = now + timedelta(seconds=seconds)
+    stmt = (
+        pg_insert(LoginAttempt)
+        .values(identifier=key, fail_count=0, locked_until=until, updated_at=now)
+        .on_conflict_do_update(index_elements=["identifier"], set_={"locked_until": until, "updated_at": now})
+    )
+    await db.execute(stmt)
+    await db.commit()
 
 
 async def reset_login_attempts(db: AsyncSession, identifier: str) -> None:

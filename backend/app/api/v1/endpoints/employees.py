@@ -774,6 +774,25 @@ async def set_employee_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.post("/{employee_id}/unlock-login")
+async def unlock_employee_login(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("users.manage")),
+):
+    """
+    رفع قفل موقت ورود یک پرسنل (کد پرسنلی و نام کاربری حسابش) بعد از تلاش‌های ناموفق.
+    مجوز: users.manage برای سایت آن پرسنل. خروجی: {unlocked: تعداد قفل‌های پاک‌شده}.
+    """
+    from app.services.login_security_service import unlock_employee
+
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage")
+    return {"unlocked": len(await unlock_employee(db, employee))}
+
+
 @router.delete("/{employee_id}/password", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_employee_password(
     employee_id: int,

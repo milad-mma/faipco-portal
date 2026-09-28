@@ -61,6 +61,8 @@ _EVALUATION_REMINDER_LOCK_KEY = 875312005
 _BIRTHDAY_REACTION_LOCK_KEY = 875312006
 _PRESENCE_CLEANUP_LOCK_KEY = 875312007
 PRESENCE_CLEANUP_JOB_ID = "close_stale_presence_sessions"
+_LOGIN_SECURITY_CLEANUP_LOCK_KEY = 875312008
+LOGIN_SECURITY_CLEANUP_JOB_ID = "login_security_cleanup"
 # آمار مصرف سرور هر ۱۰ دقیقه نمونه‌برداری می‌شود؛ Job هر ۲ دقیقه بر اساس آخرین
 # نمونه ثبت‌شده در دیتابیس بررسی می‌کند که وقتش رسیده یا نه.
 SERVER_STATS_CHECK_INTERVAL_MINUTES = 2  # فاصله تیک بررسی
@@ -174,6 +176,24 @@ async def _close_stale_presence_sessions_job() -> None:
             logger.exception("بستن نشست‌های حضور رهاشده ناموفق بود")
         finally:
             await _advisory_unlock(db, _PRESENCE_CLEANUP_LOCK_KEY)
+
+
+async def _login_security_cleanup_job() -> None:
+    """حذف گزارش‌های امنیت ورود قدیمی‌تر از مدت نگهداری و چالش‌های منقضی کپچا (روزانه)."""
+    from app.services.login_security_service import cleanup
+
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _LOGIN_SECURITY_CLEANUP_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            events, captchas = await cleanup(db)
+            if events or captchas:
+                logger.info("پاک‌سازی امنیت ورود: %s رویداد قدیمی و %s کپچای منقضی حذف شد", events, captchas)
+        except Exception:  # noqa: BLE001
+            logger.exception("پاک‌سازی امنیت ورود ناموفق بود")
+        finally:
+            await _advisory_unlock(db, _LOGIN_SECURITY_CLEANUP_LOCK_KEY)
 
 
 async def _record_server_stats_job() -> None:
@@ -376,6 +396,17 @@ async def start_scheduler() -> None:
         misfire_grace_time=3 * 60 * 60,
     )
     logger.info("Scheduler خلاصه تبریک تولد هر روز ساعت ۲۰:۰۰ ارسال می‌شود")
+
+    # پاک‌سازی روزانه‌ی گزارش امنیت ورود و کپچاهای منقضی (ساعت ۳:۱۰ بامداد)
+    scheduler.add_job(
+        _login_security_cleanup_job,
+        trigger="cron",
+        hour=3,
+        minute=10,
+        id=LOGIN_SECURITY_CLEANUP_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=12 * 60 * 60,
+    )
 
     scheduler.start()
 

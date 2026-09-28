@@ -9,6 +9,7 @@ import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { Alert, Box, Button, Link, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { forgotPasswordRequest, resetPasswordRequest, verifyResetCodeRequest } from "../api/auth";
 import AuthPageShell from "../components/AuthPageShell";
+import CaptchaField from "../components/CaptchaField";
 
 // ثانیه باقی‌مانده را می‌گیرد و رشته «MM:SS» برای شمارش معکوس برمی‌گرداند
 function formatCountdown(totalSeconds) {
@@ -48,6 +49,9 @@ export default function ForgotPasswordPage() {
   const navigate = useNavigate();
   const [channel, setChannel] = useState("sms");
   const [identifier, setIdentifier] = useState("");
+  const [captchaNeeded, setCaptchaNeeded] = useState(true);  // تا وقتی سرور نگوید لازم نیست، کپچا نمایش داده می‌شود
+  const [captcha, setCaptcha] = useState(null);  // { captcha_id, captcha_answer }
+  const [captchaReload, setCaptchaReload] = useState(0);  // کپچا یک‌بارمصرف است
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [maskedContact, setMaskedContact] = useState("");  // شماره/ایمیل ماسک‌شده مقصد که سرور برمی‌گرداند
@@ -82,12 +86,14 @@ export default function ForgotPasswordPage() {
     setError("");
     setIsSubmitting(true);
     try {
-      const result = await forgotPasswordRequest(identifier.trim(), channel);
+      const result = await forgotPasswordRequest(identifier.trim(), channel, captchaNeeded ? captcha : null);
       setMaskedContact(result.masked_contact || "");
       setRemainingSeconds(result.expires_in_seconds ?? null);
       setStep(channel === "sms" ? "sms-verify-code" : "done");
     } catch (err) {
       setError(err.response?.data?.detail || "ارسال درخواست با خطا مواجه شد.");
+      if (err.response?.data?.captcha_required) setCaptchaNeeded(true);
+      setCaptchaReload((k) => k + 1);  // چالش قبلی در سرور مصرف شده است
     } finally {
       setIsSubmitting(false);
     }
@@ -170,6 +176,16 @@ export default function ForgotPasswordPage() {
             autoFocus
             fullWidth
           />
+          {captchaNeeded && (
+            <CaptchaField
+              purpose="forgot"
+              value={captcha}
+              onChange={setCaptcha}
+              reloadKey={captchaReload}
+              onNotRequired={() => setCaptchaNeeded(false)}
+              disabled={isSubmitting}
+            />
+          )}
           {error && <Alert severity="error">{error}</Alert>}
           <Button
             type="submit"
