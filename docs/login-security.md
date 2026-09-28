@@ -24,6 +24,7 @@
 - هر چالش یک‌بارمصرف است و ۳ دقیقه اعتبار دارد. فقط هش HMAC پاسخ (با `SECRET_KEY`) در `captcha_challenges` ذخیره می‌شود.
 - `GET /auth/captcha?purpose=login|forgot`: برای `forgot`، اگر کپچای فراموشی رمز خاموش باشد، پاسخ `{required: false}` است.
 - **ورود:** پاسخ 401 فیلد `captcha_required` دارد و فرانت با آن کادر کپچا را نشان می‌دهد. درخواست بعدی `captcha_id` و `captcha_answer` را می‌فرستد.
+- **بعد از رفرش:** صفحه‌ی ورود هنگام باز شدن و با تغییر شناسه (با تأخیر ۵۰۰ میلی‌ثانیه) `GET /auth/captcha-status?identifier=` را صدا می‌زند. اگر همین IP یا همین شناسه به آستانه رسیده باشد، کپچا از همان ابتدا نمایش داده می‌شود.
 
 ## ترتیب بررسی در ورود
 1. فهرست IPهای مجاز (قابلیت قبلی)
@@ -59,4 +60,5 @@ IP از `X-Forwarded-For` خوانده می‌شود (`get_client_ip`). اگر �
 - `GET /login-security/events`
 - `GET /login-security/summary`
 - `GET /auth/captcha`
+- `GET /auth/captcha-status`
 - `POST /employees/{id}/unlock-login`

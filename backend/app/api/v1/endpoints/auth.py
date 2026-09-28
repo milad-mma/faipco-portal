@@ -75,6 +75,22 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
+@router.get("/captcha-status")
+async def captcha_status(
+    request: Request,
+    identifier: str | None = Query(default=None, max_length=255),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    آیا ورود بعدی کپچا لازم دارد؟ (بر اساس IP درخواست و، اگر داده شود، شناسه). دسترسی: عمومی.
+    فرانت هنگام باز شدن صفحه‌ی ورود و بعد از وارد کردن شناسه صدا می‌زند تا بعد از رفرش هم کپچا از
+    همان ابتدا نمایش داده شود. خروجی: {required}. چیزی درباره‌ی وجود حساب برنمی‌گرداند.
+    """
+    cfg = await login_security.get_login_security_settings(db)
+    required = await login_security.captcha_required_for_login(db, cfg, (identifier or "").strip(), get_client_ip(request))
+    return {"required": required}
+
+
 @router.get("/captcha")
 async def get_captcha(purpose: str = Query(default="login", pattern="^(login|forgot)$"), db: AsyncSession = Depends(get_db)):
     """

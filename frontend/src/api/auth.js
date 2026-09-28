@@ -58,3 +58,9 @@ export async function fetchCaptcha(purpose = "login") {
   const { data } = await apiClient.get("/auth/captcha", { params: { purpose } });
   return data;
 }
+
+// GET /auth/captcha-status؛ آیا ورود بعدی کپچا لازم دارد (بر اساس IP و شناسه)؛ خروجی: { required }
+export async function fetchCaptchaStatus(identifier = "") {
+  const { data } = await apiClient.get("/auth/captcha-status", { params: identifier ? { identifier } : {} });
+  return data;
+}

@@ -1,5 +1,5 @@
 {
-  "count": 283,
+  "count": 284,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -46,6 +46,7 @@
     "GET /api/v1/attendance/my-logs",
     "GET /api/v1/attendance/presence-sessions",
     "GET /api/v1/auth/captcha",
+    "GET /api/v1/auth/captcha-status",
     "GET /api/v1/auth/me",
     "GET /api/v1/backup/export",
     "GET /api/v1/backup/restore-status",

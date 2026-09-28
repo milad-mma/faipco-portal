@@ -46,6 +46,7 @@ import { LOGIN_BACKGROUND_URL } from "../api/system";
 import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "../components/BrandLogo";
 import CaptchaField from "../components/CaptchaField";
+import { fetchCaptchaStatus } from "../api/auth";
 
 // فهرست خدمات نمایش‌داده‌شده در پنل معرفی دسکتاپ
 const PROMO_FEATURES = [
@@ -76,6 +77,20 @@ export default function LoginPage() {
   const [captchaVisible, setCaptchaVisible] = useState(false);  // سرور بعد از چند تلاش ناموفق کپچا می‌خواهد
   const [captcha, setCaptcha] = useState(null);  // { captcha_id, captcha_answer }
   const [captchaReload, setCaptchaReload] = useState(0);  // کپچا یک‌بارمصرف است؛ بعد از هر تلاش ناموفق تازه می‌شود
+
+  // بعد از رفرش صفحه هم اگر این IP یا این شناسه به آستانه‌ی کپچا رسیده باشد، کپچا از همان ابتدا نمایش داده شود.
+  // با باز شدن صفحه و با تغییر شناسه (با تأخیر ۵۰۰ میلی‌ثانیه) بررسی می‌شود؛ کپچای نمایش‌داده‌شده پنهان نمی‌شود.
+  useEffect(() => {
+    if (captchaVisible) return undefined;
+    const timer = setTimeout(() => {
+      fetchCaptchaStatus(username.trim())
+        .then(({ required }) => {
+          if (required) setCaptchaVisible(true);
+        })
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [username, captchaVisible]);
   const [canInstall, setCanInstall] = useState(getIsInstallable());  // مرورگر امکان نصب PWA را اعلام کرده است
   const [appVersion, setAppVersion] = useState("");
 
