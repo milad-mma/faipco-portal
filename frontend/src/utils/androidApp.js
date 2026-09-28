@@ -53,9 +53,14 @@ export function isAndroidBrowser() {
   return isAndroidUa() && !isAndroidApp();
 }
 
+// اگر اپ نصب‌شده این بخش را نداشته باشد (مثلاً نسخه‌ی قدیمی بدون بخش بومی)، Chrome به‌جای Play Store
+// به همین صفحه با app_outdated=1 برمی‌گردد و راهنمای نصب نسخه‌ی جدید نمایش داده می‌شود.
 function openIntent(path, params = {}) {
   const query = new URLSearchParams(params).toString();
-  window.location.href = `intent://${path}${query ? `?${query}` : ""}#Intent;scheme=faipco;package=${ANDROID_PACKAGE};end`;
+  const fallback = encodeURIComponent(`${window.location.origin}/mobile-app?app_outdated=1`);
+  window.location.href =
+    `intent://${path}${query ? `?${query}` : ""}#Intent;scheme=faipco;package=${ANDROID_PACKAGE};` +
+    `S.browser_fallback_url=${fallback};end`;
 }
 
 // باز کردن بخش بومی اپ برای اتصال این گوشی به حساب با کد یک‌بارمصرف

@@ -26,7 +26,7 @@ import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import { APK_DOWNLOAD_PATH, fetchMyMobileStatus } from "../api/mobile";
 import { isAndroidApp, isAndroidBrowser, openNativeSetup } from "../utils/androidApp";
-import { startPairing } from "../components/MobileAppPrompt";
+import { prefetchPairingCode, startPairing } from "../components/MobileAppPrompt";
 
 const faDateTime = (iso) =>
   iso ? new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "—";
@@ -45,11 +45,17 @@ export default function MobileAppPage() {
   const [busy, setBusy] = useState(false);
   const inApp = isAndroidApp();
   const inAndroidBrowser = isAndroidBrowser();
+  // Chrome به اینجا برگشته چون اپ نصب‌شده بخش فعال‌سازی را نداشت (نسخه‌ی قدیمی)
+  const appOutdated = new URLSearchParams(window.location.search).get("app_outdated") === "1";
 
   const load = () =>
     fetchMyMobileStatus()
       .then(setStatus)
       .catch((err) => setError(err.response?.data?.detail || "دریافت وضعیت ناموفق بود."));
+
+  useEffect(() => {
+    if (inApp && status && status.devices.length === 0) prefetchPairingCode();
+  }, [inApp, status]);
 
   useEffect(() => {
     load();
@@ -91,6 +97,22 @@ export default function MobileAppPage() {
       ) : (
         <Stack spacing={2}>
           {status.exempt && <Alert severity="info">شما از الزام نصب اپ معاف شده‌اید.</Alert>}
+
+          {appOutdated && (
+            <Alert
+              severity="warning"
+              action={
+                latest ? (
+                  <Button color="inherit" size="small" href={APK_DOWNLOAD_PATH}>
+                    دانلود نسخه‌ی جدید
+                  </Button>
+                ) : null
+              }
+            >
+              اپ نصب‌شده روی این گوشی بخش فعال‌سازی را ندارد؛ احتمالاً نسخه‌ی قدیمی است. آن را حذف کنید و نسخه‌ی جدید را
+              نصب کنید.{!latest && " (نسخه‌ی جدید هنوز در پرتال منتشر نشده است.)"}
+            </Alert>
+          )}
 
           {inApp && (
             <Card variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>

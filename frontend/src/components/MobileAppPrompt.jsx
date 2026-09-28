@@ -30,7 +30,28 @@ function sessionSet(key, value) {
   }
 }
 
+// کد اتصال از قبل گرفته می‌شود تا باز کردن بخش بومی مستقیم در همان لمس کاربر انجام شود؛ Chrome باز کردن
+// اپ دیگر را بعد از یک درخواست شبکه (بدون لمس کاربر) ممکن است نپذیرد. اعتبار کد ۱۰ دقیقه است.
+let prefetched = null; // { code, at }
+const PREFETCH_MAX_AGE_MS = 8 * 60 * 1000;
+
+export function prefetchPairingCode() {
+  if (prefetched && Date.now() - prefetched.at < PREFETCH_MAX_AGE_MS) return Promise.resolve();
+  return createPairingCode()
+    .then(({ code }) => {
+      prefetched = { code, at: Date.now() };
+    })
+    .catch(() => {});
+}
+
 export async function startPairing() {
+  if (prefetched && Date.now() - prefetched.at < PREFETCH_MAX_AGE_MS) {
+    const { code } = prefetched;
+    prefetched = null; // یک‌بارمصرف
+    openNativePairing(code);
+    prefetchPairingCode(); // برای تلاش دوباره
+    return;
+  }
   const { code } = await createPairingCode();
   openNativePairing(code);
 }
@@ -57,6 +78,11 @@ export default function MobileAppPrompt({ user }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
+
+  const needsPairing = inApp && status && !status.exempt && status.devices.length === 0;
+  useEffect(() => {
+    if (needsPairing) prefetchPairingCode();
+  }, [needsPairing]);
 
   if (!status || status.exempt) return null;
 
