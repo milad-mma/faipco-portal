@@ -12,6 +12,14 @@ import { Box, CircularProgress, IconButton, Stack, TextField, Tooltip } from "@m
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { fetchCaptcha } from "../api/auth";
 
+// CSP سرور (img-src 'self' blob:) تصویر data: را مسدود می‌کند؛ تصویر به Blob و آدرس blob: تبدیل می‌شود
+function dataUrlToObjectUrl(dataUrl) {
+  const [header, base64] = String(dataUrl).split(",");
+  const mime = /data:([^;]+)/.exec(header)?.[1] || "image/png";
+  const bytes = Uint8Array.from(atob(base64 || ""), (c) => c.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], { type: mime }));
+}
+
 export default function CaptchaField({ purpose = "login", value, onChange, reloadKey = 0, onNotRequired, disabled }) {
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -28,7 +36,7 @@ export default function CaptchaField({ purpose = "login", value, onChange, reloa
         onNotRequired?.();
         return;
       }
-      setImage(data.image);
+      setImage(dataUrlToObjectUrl(data.image));
       onChange({ captcha_id: data.captcha_id, captcha_answer: "" });
     } catch {
       setError("دریافت کد امنیتی ناموفق بود؛ دکمه‌ی تازه‌سازی را بزنید.");
@@ -41,6 +49,12 @@ export default function CaptchaField({ purpose = "login", value, onChange, reloa
   useEffect(() => {
     load();
   }, [load, reloadKey]);
+
+  // آزادسازی آدرس blob: تصویر قبلی
+  useEffect(() => {
+    if (!image) return undefined;
+    return () => URL.revokeObjectURL(image);
+  }, [image]);
 
   return (
     <Stack direction="row" spacing={1} alignItems="center">
