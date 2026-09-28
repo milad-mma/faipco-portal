@@ -99,8 +99,9 @@ export default function Layout() {
   const isPersonnelNav = !user?.is_superuser;
 
   // نشانگر زنده‌ی آنلاین/آفلاین با WebSocket: تا وقتی این کامپوننت mount است یک Session باز می‌ماند
-  // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند. فقط برای کاربرانی با can_clock_in_out فعال است.
-  usePresenceMonitor(Boolean(user?.can_clock_in_out));
+  // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند.
+  // آنلاین بودن در اپ برای همه‌ی پرسنل؛ پایش GPS فقط برای دارندگان مجوز ثبت تردد
+  usePresenceMonitor(Boolean(user?.employee_id), Boolean(user?.can_clock_in_out));
 
   // وضعیت باز/بسته‌ی زیرمنوها (کلید: مسیر والد)؛ گروهی که خودش یا یکی از فرزندانش فعال است، پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -27,7 +27,13 @@ class PresenceSession(Base):
         ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
+    # نوع نشست (Migration 091): "app" = اپ پرتال باز است (همه‌ی پرسنل، بدون GPS)؛
+    # "gps" = اپ باز و موقعیت داخل محدوده‌ی سایت (فقط دارندگان attendance.clock_in_out)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="gps", server_default="gps")
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # زمان آخرین Heartbeat؛ نشستی که مدتی Heartbeat نگرفته (ری‌استارت سرور، قطع ناگهانی) با همین زمان بسته می‌شود
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    client: Mapped[str | None] = mapped_column(String(120), nullable=True)  # برچسب دستگاه/مرورگر
     # تا وقتی NULL است یعنی همین الان آنلاین است
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # هنگام قطع اتصال محاسبه می‌شود

@@ -1,9 +1,11 @@
 /**
  * صفحه گزارش «پرسنل آنلاین» (آزمایشی).
- * جلسات حضور پرسنل را نشان می‌دهد: بازه‌هایی که اپ باز بوده و موقعیت GPS داخل محدوده مجاز سایت بوده؛
- * با فیلتر سایت، پرسنل و «فقط آنلاین‌های فعلی» و صفحه‌بندی سمت سرور.
+ * دو نوع گزارش: «آنلاین در اپ» (هر پرسنلی که پرتال را باز کرده، بدون نیاز به GPS) و «حضور در محدوده
+ * (GPS)» (بازه‌هایی که اپ باز بوده و موقعیت داخل محدوده‌ی مجاز سایت بوده)؛ با فیلتر سایت، پرسنل و
+ * «فقط آنلاین‌های فعلی» و صفحه‌بندی سمت سرور.
  */
 import { useEffect, useState } from "react";
+import PillTabs from "../components/PillTabs";
 import {
   Alert,
   Autocomplete,
@@ -50,6 +52,7 @@ export default function PresenceReportPage() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [onlyOnline, setOnlyOnline] = useState(false);
+  const [kind, setKind] = useState("app"); // "app" = آنلاین در اپ، "gps" = حضور در محدوده
 
   const [employeeOptions, setEmployeeOptions] = useState([]);  // گزینه‌های Autocomplete پرسنل
   const [employeeSearch, setEmployeeSearch] = useState("");  // متن تایپ‌شده در Autocomplete برای جست‌وجوی پرسنل
@@ -63,15 +66,26 @@ export default function PresenceReportPage() {
       employeeId: selectedEmployee?.id,
       siteId: selectedSiteId,
       onlyOnline,
+      kind,
     }).then((data) => {
       setSessions(data.items);
       setTotal(data.total);
     });
-  }, [page, selectedEmployee, selectedSiteId, onlyOnline]);
+  }, [page, selectedEmployee, selectedSiteId, onlyOnline, kind]);
 
-  // با تغییر متن جست‌وجو، حداکثر ۲۰ پرسنل منطبق برای گزینه‌های فیلتر گرفته می‌شود
+  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه بعد از آخرین حرف (نه یک درخواست برای هر حرف)؛
+  // پاسخ جست‌وجوی قدیمی‌تر روی نتیجه‌ی جدیدتر نوشته نمی‌شود
   useEffect(() => {
-    fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchEmployees({ search: employeeSearch, pageSize: 20 })
+        .then((data) => !cancelled && setEmployeeOptions(data.items || []))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [employeeSearch]);
 
   return (
@@ -83,9 +97,22 @@ export default function PresenceReportPage() {
         این قابلیت آزمایشی است — پایین همین صفحه، توضیح کامل نحوه کار این مانیتورینگ و ارتباطش با GPS
         آمده.
       </Alert>
+      <PillTabs
+        tabs={[
+          { key: "app", label: "آنلاین در اپ (همه‌ی پرسنل)" },
+          { key: "gps", label: "حضور در محدوده (GPS)" },
+        ]}
+        value={kind}
+        onChange={(k) => {
+          setKind(k);
+          setPage(1);
+        }}
+        sx={{ mb: 2, maxWidth: 560 }}
+      />
       <Alert severity="info" sx={{ mb: 3 }}>
-        هر ردیف یک بازه زمانی واقعی است که پرسنل هم اپ را باز داشته، هم داخل محدوده مجاز کارخانه بوده
-        — نه یک لحظه تکی. اگر خارج از محدوده باشد، اصلاً هیچ ردیفی ثبت نمی‌شود.
+        {kind === "app"
+          ? "هر ردیف یک بازه‌ی واقعی است که پرسنل پرتال را باز داشته — بدون توجه به موقعیت GPS. هر دستگاه یا تب باز یک ردیف جداست."
+          : "هر ردیف یک بازه‌ی واقعی است که پرسنل هم اپ را باز داشته، هم داخل محدوده‌ی مجاز سایت بوده — فقط برای پرسنلی که مجوز ثبت تردد GPS دارند. اگر خارج از محدوده باشد، ردیفی ثبت نمی‌شود."}
       </Alert>
 
       {/* نوار فیلترها؛ تغییر هر فیلتر صفحه را به ۱ برمی‌گرداند */}
@@ -140,7 +167,7 @@ export default function PresenceReportPage() {
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
                   <TableCell>وضعیت</TableCell>
-                  <TableCell>سایت</TableCell>
+                  <TableCell>{kind === "app" ? "دستگاه" : "سایت"}</TableCell>
                   <TableCell>شروع</TableCell>
                   <TableCell>پایان</TableCell>
                   <TableCell>مدت‌زمان</TableCell>
@@ -162,12 +189,16 @@ export default function PresenceReportPage() {
                         <Chip size="small" variant="outlined" label="آفلاین شده" />
                       )}
                     </TableCell>
-                    <TableCell>{s.matched_site_name || "—"}</TableCell>
+                    <TableCell>{(kind === "app" ? s.client : s.matched_site_name) || "—"}</TableCell>
                     <TableCell sx={monoFontSx}>{new Date(s.connected_at).toLocaleString("fa-IR")}</TableCell>
                     <TableCell sx={monoFontSx}>
                       {s.disconnected_at ? new Date(s.disconnected_at).toLocaleString("fa-IR") : "—"}
                     </TableCell>
-                    <TableCell sx={monoFontSx}>{formatDuration(s.duration_seconds)}</TableCell>
+                    <TableCell sx={monoFontSx}>
+                      {s.disconnected_at
+                        ? formatDuration(s.duration_seconds)
+                        : `${formatDuration(Math.max(0, Math.round((Date.now() - new Date(s.connected_at).getTime()) / 1000)))} تا الان`}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -194,11 +225,13 @@ export default function PresenceReportPage() {
         </Typography>
         <Typography variant="body2" color="text.secondary" component="div">
           <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-            <li>وقتی پرسنل اپ را باز می‌کند، یک اتصال زنده (WebSocket) به سرور برقرار می‌شود — دقیقاً مثل نشانگر آنلاین یک سیستم چت</li>
-            <li>هر ۴۵ ثانیه، مرورگر موقعیت GPS فعلی را از طریق همین اتصال به سرور می‌فرستد</li>
+            <li>وقتی هر پرسنلی پرتال را باز می‌کند، یک اتصال زنده (WebSocket) به سرور برقرار می‌شود — دقیقاً مثل نشانگر آنلاین یک سیستم چت — و یک ردیف «آنلاین در اپ» باز می‌شود؛ این نوع به GPS نیازی ندارد</li>
+            <li>هر ۴۵ ثانیه یک پیام «هنوز باز است» فرستاده می‌شود؛ برای پرسنلی که مجوز ثبت تردد GPS دارند، همراه موقعیت GPS</li>
             <li>سرور فاصله را تا نزدیک‌ترین کارخانه (طبق تنظیمات GPS همان سایت) حساب می‌کند</li>
             <li><strong>فقط اگر داخل محدوده مجاز باشد</strong>، یک ردیف «آنلاین» ثبت/ادامه داده می‌شود؛ به‌محض خروج از محدوده، همان ردیف با زمان دقیق بسته می‌شود — هیچ لاگی برای زمان بیرون از محدوده ثبت نمی‌شود</li>
-            <li>لحظه‌ای که اپ بسته شود، اینترنت قطع شود، یا شبکه بی‌صدا از کار بیفتد، سرور خودش این را تشخیص می‌دهد و همان لحظه را «پایان» ثبت می‌کند — مدت‌زمان همیشه دقیق است، نه تخمینی</li>
+            <li>لحظه‌ای که اپ بسته شود، اینترنت قطع شود، یا شبکه بی‌صدا از کار بیفتد، سرور خودش این را تشخیص می‌دهد و همان لحظه را «پایان» ثبت می‌کند</li>
+            <li>اگر سرور ری‌استارت شود، ردیف‌های باز با زمان آخرین پیام دریافتی بسته می‌شوند (حداکثر چند دقیقه بعد) و دیگر به‌اشتباه «الان آنلاین» نمی‌مانند</li>
+            <li>روی گوشی، مرورگر وقتی اپ به پس‌زمینه برود یا صفحه خاموش شود معمولاً اتصال را قطع می‌کند؛ پس این گزارش «باز بودن اپ» را نشان می‌دهد، نه حضور واقعی سر کار</li>
           </ul>
         </Typography>
       </Box>

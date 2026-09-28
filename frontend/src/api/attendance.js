@@ -52,7 +52,8 @@ export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employee
 }
 
 // جلسات حضور (جفت ورود-خروج) را با فیلتر پرسنل/فقط حاضرین/سایت و صفحه‌بندی برمی‌گرداند
-export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline, siteId } = {}) {
+// kind: "app" = باز بودن اپ (همه‌ی پرسنل)، "gps" = حضور در محدوده‌ی سایت با GPS
+export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline, siteId, kind = "app" } = {}) {
   const { data } = await apiClient.get("/attendance/presence-sessions", {
     params: {
       page,
@@ -60,6 +61,7 @@ export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeI
       employee_id: employeeId || undefined,
       only_online: onlyOnline || undefined,
       site_id: siteId ?? undefined,
+      kind,
     },
   });
   return data; // { items, total }

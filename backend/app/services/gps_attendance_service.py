@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
@@ -300,6 +300,7 @@ class GpsAttendanceService:
         employee_id: int | None = None,
         only_online: bool = False,
         site_ids: set[int] | None = None,
+        kind: str | None = None,
     ) -> tuple[list[PresenceSession], int]:
         """
         یک صفحه از نشست‌های حضور آنلاین (مبتنی بر WebSocket) و تعداد کل را برمی‌گرداند.
@@ -310,8 +311,14 @@ class GpsAttendanceService:
         filters = []
         if employee_id is not None:
             filters.append(PresenceSession.employee_id == employee_id)
+        if kind:
+            filters.append(PresenceSession.kind == kind)
         if only_online:
-            filters.append(PresenceSession.disconnected_at.is_(None))  # نشست باز = بدون زمان قطع
+            # نشست باز و زنده: بدون زمان قطع و با Heartbeat اخیر (نشست رهاشده‌ای که هنوز Job نبسته، آنلاین نیست)
+            filters.append(PresenceSession.disconnected_at.is_(None))
+            filters.append(
+                func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at) >= presence_alive_since()
+            )
         if site_ids is not None:
             filters.append(
                 PresenceSession.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
@@ -331,3 +338,43 @@ class GpsAttendanceService:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all()), total
+
+
+# ---------- نشست‌های حضور رهاشده ----------
+
+# نشستی که این مدت Heartbeat نگرفته، زنده نیست (Heartbeat هر ۴۵ ثانیه، Timeout سرور ۹۰ ثانیه)
+PRESENCE_STALE_SECONDS = 180
+
+
+def presence_alive_since() -> datetime:
+    """مرز زمانی «زنده»: نشستی که آخرین Heartbeat آن قبل از این لحظه است، رهاشده حساب می‌شود."""
+    return datetime.now(timezone.utc) - timedelta(seconds=PRESENCE_STALE_SECONDS)
+
+
+def is_presence_alive(session: PresenceSession) -> bool:
+    """آیا نشست همین الان آنلاین است (باز و با Heartbeat اخیر)."""
+    if session.disconnected_at is not None:
+        return False
+    last = session.last_seen_at or session.connected_at
+    return last is not None and last >= presence_alive_since()
+
+
+async def close_stale_presence_sessions(db: AsyncSession) -> int:
+    """
+    نشست‌های بازی را که Heartbeat اخیر ندارند (ری‌استارت سرور، قطع ناگهانی Worker، ...) با زمان آخرین
+    Heartbeat می‌بندد؛ مدت هم تا همان لحظه حساب می‌شود. خروجی: تعداد نشست‌های بسته‌شده.
+    """
+    last_seen = func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at)
+    result = await db.execute(
+        update(PresenceSession)
+        .where(PresenceSession.disconnected_at.is_(None), last_seen < presence_alive_since())
+        .values(
+            disconnected_at=last_seen,
+            duration_seconds=func.cast(
+                func.extract("epoch", last_seen - PresenceSession.connected_at), Integer
+            ),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return result.rowcount or 0

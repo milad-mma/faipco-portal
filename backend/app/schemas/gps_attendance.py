@@ -89,6 +89,9 @@ class PresenceSessionAdminOut(BaseModel):
     disconnected_at: datetime | None
     duration_seconds: int | None  # None یعنی نشست هنوز باز است
     is_online_now: bool
+    kind: str = "gps"  # app = باز بودن اپ، gps = حضور در محدوده
+    last_seen_at: datetime | None = None
+    client: str | None = None
     matched_site_name: str | None
     last_distance_meters: float | None
     is_within_geofence: bool | None

@@ -47,7 +47,12 @@ from app.schemas.gps_attendance import (
     PresenceSessionAdminOut,
     PresenceSessionPageOut,
 )
-from app.services.gps_attendance_service import GpsAttendanceError, GpsAttendanceService, check_geofence
+from app.services.gps_attendance_service import (
+    GpsAttendanceError,
+    GpsAttendanceService,
+    check_geofence,
+    is_presence_alive,
+)
 
 logger = logging.getLogger("faipco.attendance")
 router = APIRouter()
@@ -319,11 +324,12 @@ async def delete_log(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
 
 
-async def _authenticate_websocket_user(token: str) -> User | None:
+async def _authenticate_websocket_user(token: str) -> tuple[User, bool] | None:
     """
     احراز هویت WebSocket از روی access token در Query Param (?token=...)، چون مرورگر اجازه‌ی
     هدر Authorization روی WebSocket را نمی‌دهد.
-    کاربر را برمی‌گرداند اگر توکن معتبر، به پرسنل متصل و دارای مجوز attendance.clock_in_out باشد؛ وگرنه None.
+    خروجی: (کاربر، آیا پایش GPS برایش فعال است) اگر توکن معتبر و کاربر به پرسنل متصل باشد؛ وگرنه None.
+    «آنلاین بودن در اپ» برای همه‌ی پرسنل ثبت می‌شود؛ پایش محدوده‌ی GPS فقط برای دارندگان attendance.clock_in_out.
     """
     # توکن باید از نوع access و دارای شناسه‌ی کاربر باشد
     payload = decode_token(token)
@@ -335,49 +341,91 @@ async def _authenticate_websocket_user(token: str) -> User | None:
 
     async with AsyncSessionLocal() as db:
         user = await UserRepository(db).get_by_id(int(user_id))
-        if user is None or user.employee_id is None:
+        if user is None or user.employee_id is None or not user.is_active:
             return None
-        # بررسی «آیا این قابلیت برای کاربر فعال است» (نه محدود به یک سایت)؛
         # همه‌ی انتصاب‌های نقش (سراسری + سایت‌محور) دیده می‌شوند
-        has_permission = user.is_superuser or "attendance.clock_in_out" in (
+        gps_enabled = user.is_superuser or "attendance.clock_in_out" in (
             await UserRepository(db).get_all_permission_codes(user.id)
         )
-        return user if has_permission else None
+        return user, gps_enabled
+
+
+def _client_label(user_agent: str | None) -> str | None:
+    """برچسب کوتاه دستگاه/مرورگر از User-Agent برای گزارش (مثل «اندروید · Chrome»)."""
+    ua = (user_agent or "").lower()
+    if not ua:
+        return None
+    if "android" in ua:
+        device = "اندروید"
+    elif "iphone" in ua or "ipad" in ua:
+        device = "iOS"
+    elif "windows" in ua:
+        device = "ویندوز"
+    elif "mac os" in ua or "macintosh" in ua:
+        device = "مک"
+    elif "linux" in ua:
+        device = "لینوکس"
+    else:
+        device = "نامشخص"
+    if "edg/" in ua:
+        browser = "Edge"
+    elif "firefox" in ua:
+        browser = "Firefox"
+    elif "chrome" in ua or "crios" in ua:
+        browser = "Chrome"
+    elif "safari" in ua:
+        browser = "Safari"
+    else:
+        browser = ""
+    return f"{device} · {browser}" if browser else device
 
 
 @router.websocket("/presence-ws")
 async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
     """
-    WebSocket نشانگر زنده‌ی «آنلاین/آفلاین» برای کاربر دارای مجوز attendance.clock_in_out (توکن در ?token=).
-    ورودی: پیام‌های JSON Heartbeat با latitude/longitude/accuracy_meters/site_id هر ۳۰-۶۰ ثانیه.
-    خروجی: برای هر Heartbeat یک JSON وضعیت (logged / outside_geofence / low_accuracy / no_position).
+    WebSocket نشانگر زنده‌ی «آنلاین/آفلاین» پرسنل (توکن در ?token=). دو نوع نشست ثبت می‌شود:
 
-    - Socket وصل می‌شود ولی تا وقتی یک Heartbeat داخل محدوده‌ی سایت تأیید نشود، هیچ Session ای ساخته نمی‌شود
-    - اولین Heartbeat داخل محدوده یک PresenceSession با connected_at همان لحظه می‌سازد
-    - Heartbeat خارج از محدوده، قطع Socket یا سکوت بیش از _HEARTBEAT_TIMEOUT_SECONDS، Session را با
-      disconnected_at و duration_seconds دقیق می‌بندد؛ ورود دوباره به محدوده Session جدیدی می‌سازد
-    - اگر هیچ سایتی موقعیت GPS نداشته باشد، همه‌ی Heartbeat ها «داخل محدوده» شمرده می‌شوند
-    - توکن نامعتبر یا بدون مجوز: بستن با کد 4401
+    - «اپ» (kind=app): برای هر پرسنلی که پرتال را باز کرده، از لحظه‌ی اتصال تا قطع؛ بدون نیاز به GPS.
+    - «GPS» (kind=gps): فقط برای دارندگان attendance.clock_in_out، بازه‌هایی که موقعیت داخل محدوده‌ی سایت است:
+      اولین Heartbeat داخل محدوده نشست را باز می‌کند؛ Heartbeat خارج از محدوده، قطع یا سکوت آن را می‌بندد.
+
+    ورودی: Heartbeat های JSON هر ۴۵ ثانیه (با latitude/longitude/accuracy_meters برای پایش GPS، یا خالی).
+    هر Heartbeat زمان last_seen_at نشست‌های باز را تازه می‌کند؛ نشستی که به‌خاطر ری‌استارت سرور یا قطع ناگهانی
+    بسته نشده، با Job دوره‌ای (close_stale_presence_sessions) با همان آخرین زمان دیده‌شده بسته می‌شود.
+    توکن نامعتبر یا کاربر بدون پرسنل: بستن با کد 4401 (کلاینت دوباره تلاش نمی‌کند).
     """
-    user = await _authenticate_websocket_user(token)
-    if user is None:
+    auth = await _authenticate_websocket_user(token)
+    if auth is None:
         await websocket.close(code=4401)  # کد سفارشی: احراز هویت ناموفق
         return
+    user, gps_enabled = auth
 
     await websocket.accept()
 
     async with AsyncSessionLocal() as db:
-        session: PresenceSession | None = None  # Session باز فعلی (None = خارج از محدوده یا هنوز تأیید نشده)
+        now = datetime.now(timezone.utc)
+        app_session = PresenceSession(
+            employee_id=user.employee_id,
+            kind="app",
+            connected_at=now,
+            last_seen_at=now,
+            client=_client_label(websocket.headers.get("user-agent")),
+        )
+        db.add(app_session)
+        await db.commit()
+        session: PresenceSession | None = None  # نشست GPS باز فعلی (None = خارج از محدوده یا هنوز تأیید نشده)
 
-        async def close_open_session() -> None:
-            """Session باز را با زمان قطع و مدت دقیق می‌بندد و commit می‌کند (اگر Session ای باز باشد)."""
-            nonlocal session
-            if session is None:
+        async def close_session(target: PresenceSession | None) -> None:
+            """نشست را با زمان قطع و مدت دقیق می‌بندد (اگر باز باشد)."""
+            if target is None or target.disconnected_at is not None:
                 return
-            now = datetime.now(timezone.utc)
-            session.disconnected_at = now
-            session.duration_seconds = int((now - session.connected_at).total_seconds())
-            await db.commit()
+            end = datetime.now(timezone.utc)
+            target.disconnected_at = end
+            target.duration_seconds = int((end - target.connected_at).total_seconds())
+
+        async def close_gps_session() -> None:
+            nonlocal session
+            await close_session(session)
             session = None
 
         try:
@@ -388,19 +436,33 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                 except asyncio.TimeoutError:  # سکوت طولانی = قطع‌شده
                     logger.info("Presence WS for employee %s: heartbeat timeout, closing.", user.employee_id)
                     break
+                if not isinstance(data, dict):
+                    data = {}
+
+                # هر Heartbeat یعنی اپ هنوز باز است
+                seen = datetime.now(timezone.utc)
+                app_session.last_seen_at = seen
+                if session is not None:
+                    session.last_seen_at = seen  # نشست GPS باز هم با هر Heartbeat زنده می‌ماند
+
+                if not gps_enabled:
+                    await db.commit()
+                    await websocket.send_json({"status": "online"})
+                    continue
 
                 latitude = data.get("latitude")
                 longitude = data.get("longitude")
                 if latitude is None or longitude is None:
-                    # بدون موقعیت نمی‌شود محدوده را تأیید کرد؛ Heartbeat نادیده گرفته می‌شود ولی
-                    # یک پاسخ تشخیصی برمی‌گردد تا مشکل (مثلاً رد دسترسی GPS در مرورگر) قابل‌تشخیص باشد
+                    # بدون موقعیت نمی‌شود محدوده را تأیید کرد؛ یک پاسخ تشخیصی برمی‌گردد تا مشکل
+                    # (مثلاً رد دسترسی GPS در مرورگر) قابل‌تشخیص باشد. نشست «اپ» همچنان ادامه دارد.
+                    await db.commit()
                     await websocket.send_json({"status": "no_position", "message": "موقعیتی در این Heartbeat ارسال نشده بود."})
                     continue
 
                 accuracy_meters = data.get("accuracy_meters")
                 if accuracy_meters is not None and accuracy_meters > _MAX_TRUSTED_ACCURACY_METERS:
-                    # موقعیت با خطای زیاد قابل‌اعتماد نیست: نه Session باز بسته می‌شود (ممکن است هنوز حاضر باشد)
-                    # و نه چیزی با این داده ثبت می‌شود؛ فقط این Heartbeat رد می‌شود
+                    # موقعیت با خطای زیاد قابل‌اعتماد نیست: نشست GPS نه بسته می‌شود و نه چیزی با این داده ثبت می‌شود
+                    await db.commit()
                     await websocket.send_json(
                         {
                             "status": "low_accuracy",
@@ -414,30 +476,28 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
                 geofence = await check_geofence(db, data.get("site_id"), latitude, longitude)
 
                 if not geofence.is_within:
-                    # پاسخ قبل از پایان تراکنش ساخته می‌شود (بعد از rollback اشیاء منقضی می‌شوند)
                     payload = {
                         "status": "outside_geofence",
                         "matched_site_name": geofence.matched_site.name if geofence.matched_site else None,
                         "distance_meters": geofence.distance_meters,
                         "allowed_radius_meters": geofence.matched_site.gps_radius_meters if geofence.matched_site else None,
                     }
-                    # خارج از محدوده: Session باز (اگر باشد) بسته می‌شود و چیز جدیدی ثبت نمی‌شود
-                    await close_open_session()
-                    # کوئری check_geofence تراکنشی باز کرده بود؛ اگر commit نشد، باید بسته شود تا
-                    # اتصال دیتابیس تا Heartbeat بعدی (و در عمل تا قطع Socket) از Pool گرفته نماند
-                    if db.in_transaction():
-                        await db.rollback()
+                    # خارج از محدوده: نشست GPS (اگر باشد) بسته می‌شود. commit (نه rollback) تا اتصال به Pool
+                    # برگردد و اشیاء نشست‌ها منقضی نشوند
+                    await close_gps_session()
+                    await db.commit()
                     await websocket.send_json(payload)
                     continue
 
-                # داخل محدوده: اگر Session بازی نیست، همین لحظه یکی ساخته می‌شود
+                # داخل محدوده: اگر نشست GPS بازی نیست، همین لحظه یکی ساخته می‌شود
                 if session is None:
                     session = PresenceSession(
-                        employee_id=user.employee_id, connected_at=datetime.now(timezone.utc)
+                        employee_id=user.employee_id, kind="gps", connected_at=seen, last_seen_at=seen,
+                        client=app_session.client,
                     )
                     db.add(session)
 
-                # آخرین موقعیت و سایت منطبق روی Session به‌روز می‌شود
+                # آخرین موقعیت و سایت منطبق روی نشست به‌روز می‌شود
                 session.last_latitude = latitude
                 session.last_longitude = longitude
                 session.last_accuracy_meters = data.get("accuracy_meters")
@@ -457,7 +517,13 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...)):
         except Exception:
             logger.exception("Presence WS for employee %s ended with an unexpected error", user.employee_id)
         finally:
-            await close_open_session()  # در هر حالت خروج، Session باز بسته می‌شود
+            # در هر حالت خروج، نشست‌های باز بسته می‌شوند
+            try:
+                await close_gps_session()
+                await close_session(app_session)
+                await db.commit()
+            except Exception:  # noqa: BLE001 - اگر این هم نشد، Job نشست‌های رهاشده را می‌بندد
+                logger.exception("بستن نشست حضور پرسنل %s ناموفق بود", user.employee_id)
 
 
 @router.get("/presence-sessions", response_model=PresenceSessionPageOut)
@@ -467,11 +533,13 @@ async def list_presence_sessions(
     employee_id: int | None = None,
     only_online: bool = False,
     site_id: int | None = None,
+    kind: str = Query(default="app", pattern="^(app|gps)$"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     گزارش صفحه‌بندی‌شده‌ی Session های آنلاین/آفلاین با مدت دقیق هرکدام، برای Admin/hr-manager.
+    kind: "app" = باز بودن اپ (همه‌ی پرسنل، بدون GPS)، "gps" = حضور در محدوده‌ی سایت با GPS.
     فیلتر اختیاری روی پرسنل، فقط آنلاین‌ها و سایت. مجوز attendance.view_logs سایت‌محور بررسی می‌شود؛
     403 اگر برای هیچ سایتی نداشته باشد. ایزوله‌سازی چندسایتی همان الگوی list_all_logs است.
     """
@@ -488,7 +556,7 @@ async def list_presence_sessions(
 
     sessions, total = await GpsAttendanceService(db).get_presence_sessions_page(
         page=page, page_size=page_size, employee_id=employee_id, only_online=only_online,
-        site_ids=accessible_site_ids,
+        site_ids=accessible_site_ids, kind=kind,
     )
     if not sessions:
         return PresenceSessionPageOut(items=[], total=total)
@@ -519,7 +587,10 @@ async def list_presence_sessions(
                 connected_at=s.connected_at,
                 disconnected_at=s.disconnected_at,
                 duration_seconds=s.duration_seconds,
-                is_online_now=s.disconnected_at is None,
+                is_online_now=is_presence_alive(s),
+                kind=s.kind,
+                last_seen_at=s.last_seen_at,
+                client=s.client,
                 matched_site_name=matched_site.name if matched_site else None,
                 last_distance_meters=s.last_distance_meters,
                 is_within_geofence=s.is_within_geofence,

@@ -327,9 +327,18 @@ export default function ClockInOutReportPage() {
     };
   }, [page, selectedEmployee, selectedSiteId, period.year, period.month, reloadKey]);
 
-  // جستجوی پرسنل برای فیلتر بالای صفحه
+  // جستجوی پرسنل برای فیلتر بالای صفحه؛ با تأخیر ۳۰۰ میلی‌ثانیه بعد از آخرین حرف (نه یک درخواست برای هر حرف)
   useEffect(() => {
-    fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) => setEmployeeOptions(data.items || []));
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchEmployees({ search: employeeSearch, pageSize: 20 })
+        .then((data) => !cancelled && setEmployeeOptions(data.items || []))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [employeeSearch]);
 
   // سایت‌های قابل انتخاب در دیالوگ: فقط سایت‌هایی که کاربر برایشان مجوز مدیریت رکورد دارد

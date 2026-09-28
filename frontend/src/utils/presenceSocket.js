@@ -1,6 +1,7 @@
 /**
  * هوک usePresenceMonitor: اتصال WebSocket حضور آنلاین پرسنل.
- * تا وقتی برنامه باز است اتصال را نگه می‌دارد، به صورت دوره‌ای Heartbeat همراه موقعیت GPS می‌فرستد،
+ * تا وقتی برنامه باز است اتصال را نگه می‌دارد (نشست «اپ» برای همه‌ی پرسنل)، به صورت دوره‌ای Heartbeat
+ * می‌فرستد — فقط برای دارندگان مجوز ثبت تردد GPS همراه موقعیت (نشست «GPS») —
  * پس از قطع اتصال دوباره وصل می‌شود و همه‌ی مراحل را با پیشوند [Presence] در Console لاگ می‌کند.
  */
 import { useEffect, useRef } from "react";
@@ -8,6 +9,7 @@ import { getCurrentPosition } from "./geolocation";
 
 const HEARTBEAT_INTERVAL_MS = 45_000; // باید کمتر از Timeout سمت سرور (۹۰ ثانیه) باشد
 const RECONNECT_DELAY_MS = 5_000; // فاصله‌ی تلاش مجدد برای اتصال پس از قطع
+const AUTH_FAILED_CODE = 4401; // سرور اتصال را رد کرد (توکن نامعتبر یا کاربر بدون پرسنل): تلاش مجدد بی‌فایده است
 const LOG_PREFIX = "[Presence]"; // پیشوند لاگ‌های Console
 
 /**
@@ -30,10 +32,11 @@ function buildPresenceWsUrl(token) {
 /**
  * مانند نشانگر آنلاین در سیستم‌های چت، تا وقتی کامپوننت mount است یک اتصال WebSocket باز نگه می‌دارد؛
  * سرور لحظه‌ی وصل شدن را شروع Session و لحظه‌ی قطع شدن (بستن تب یا قطعی شبکه) را پایان Session ثبت می‌کند.
- * ورودی: enabled (فقط برای پرسنل دارای مجوز ثبت ورود/خروج GPS، تا از بقیه دسترسی مکان خواسته نشود). خروجی ندارد.
+ * ورودی: enabled (کاربر متصل به پرسنل) و gpsEnabled (فقط پرسنل دارای مجوز ثبت ورود/خروج GPS؛ از بقیه
+ * دسترسی مکان خواسته نمی‌شود و Heartbeat بدون موقعیت فرستاده می‌شود). خروجی ندارد.
  * همه‌ی مراحل (اتصال، Heartbeat، پاسخ سرور، قطعی) با پیشوند "[Presence]" در Console لاگ می‌شوند.
  */
-export function usePresenceMonitor(enabled) {
+export function usePresenceMonitor(enabled, gpsEnabled = false) {
   const socketRef = useRef(null); // اتصال WebSocket فعلی
   const heartbeatIntervalRef = useRef(null); // شناسه‌ی setInterval ارسال Heartbeat
   const reconnectTimeoutRef = useRef(null); // شناسه‌ی setTimeout اتصال مجدد
@@ -42,12 +45,12 @@ export function usePresenceMonitor(enabled) {
   // با فعال شدن، پس از بررسی پشتیبانی مرورگر اتصال برقرار می‌شود؛ هنگام unmount یا غیرفعال شدن همه‌چیز بسته می‌شود
   useEffect(() => {
     if (!enabled) {
-      console.info(`${LOG_PREFIX} غیرفعال است (کاربر مجوز attendance.clock_in_out ندارد).`);
+      console.info(`${LOG_PREFIX} غیرفعال است (کاربر به پرسنل متصل نیست).`);
       return undefined;
     }
-    if (!("geolocation" in navigator)) {
-      console.warn(`${LOG_PREFIX} مرورگر از Geolocation پشتیبانی نمی‌کند.`);
-      return undefined;
+    const useGps = gpsEnabled && "geolocation" in navigator;
+    if (gpsEnabled && !useGps) {
+      console.warn(`${LOG_PREFIX} مرورگر از Geolocation پشتیبانی نمی‌کند؛ فقط آنلاین بودن در اپ ثبت می‌شود.`);
     }
     if (!("WebSocket" in window)) {
       console.warn(`${LOG_PREFIX} مرورگر از WebSocket پشتیبانی نمی‌کند.`);
@@ -61,6 +64,11 @@ export function usePresenceMonitor(enabled) {
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.warn(`${LOG_PREFIX} تلاش برای ارسال Heartbeat ولی اتصال باز نیست.`);
+        return;
+      }
+      // بدون پایش GPS: فقط اعلام «اپ باز است»
+      if (!useGps) {
+        socket.send(JSON.stringify({}));
         return;
       }
       // enableHighAccuracy برای استفاده از GPS واقعی لازم است چون محدوده‌ی مجاز سایت‌ها ۱۰۰ تا ۳۰۰ متر است
@@ -137,6 +145,10 @@ export function usePresenceMonitor(enabled) {
       socket.onclose = (event) => {
         console.warn(`${LOG_PREFIX} اتصال قطع شد (کد ${event.code}) — تلاش مجدد در ${RECONNECT_DELAY_MS / 1000} ثانیه...`);
         clearInterval(heartbeatIntervalRef.current);
+        if (event.code === AUTH_FAILED_CODE) {
+          console.warn(`${LOG_PREFIX} سرور اتصال را نپذیرفت؛ تا ورود دوباره تلاش نمی‌شود.`);
+          return;
+        }
         if (!stoppedRef.current) {
           reconnectTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
         }
@@ -158,5 +170,5 @@ export function usePresenceMonitor(enabled) {
       clearTimeout(reconnectTimeoutRef.current);
       socketRef.current?.close();
     };
-  }, [enabled]);
+  }, [enabled, gpsEnabled]);
 }
