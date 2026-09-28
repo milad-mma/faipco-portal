@@ -25,9 +25,11 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import {
   addBirthdayTemplate,
   deleteBirthdayTemplate,
+  downloadBirthdaysExport,
   fetchBirthdayEnabled,
   fetchBirthdaySendTime,
   fetchBirthdayTemplates,
@@ -40,6 +42,34 @@ import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);  // گزینه‌های ساعت ۰ تا ۲۳
 const MINUTES = [0, 15, 30, 45];  // گزینه‌های دقیقه با گام ۱۵ دقیقه
+const JALALI_MONTHS = [
+  "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+  "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+];
+
+// ذخیره‌ی Blob دریافتی به‌صورت فایل در مرورگر
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// پیام خطای سرور از پاسخ Blob (در دانلود، بدنه‌ی خطا هم Blob است)
+async function blobErrorMessage(err) {
+  const data = err?.response?.data;
+  try {
+    if (data instanceof Blob) {
+      const parsed = JSON.parse(await data.text());
+      if (typeof parsed?.detail === "string") return parsed.detail;
+    }
+  } catch {
+    /* پاسخ JSON نیست */
+  }
+  return "دریافت فایل Excel ناموفق بود.";
+}
 
 // کامپوننت صفحه؛ داده متن‌ها، تنظیمات ارسال و متولدین امروز را بارگذاری و مدیریت می‌کند
 export default function BirthdayMessagesPage() {
@@ -57,6 +87,25 @@ export default function BirthdayMessagesPage() {
 
   const [isSendingNow, setIsSendingNow] = useState(false);
   const [sendNowResult, setSendNowResult] = useState(null);  // { success, message } نتیجه ارسال فوری | null
+
+  const [exportMonth, setExportMonth] = useState("");  // "" = همه‌ی ماه‌ها
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  // دانلود Excel متولدین ماه انتخابی (یا همه‌ی ماه‌ها با یک برگه برای هر ماه)
+  async function handleExport() {
+    setIsExporting(true);
+    setExportError("");
+    try {
+      const blob = await downloadBirthdaysExport(exportMonth || undefined);
+      const suffix = exportMonth ? `-${JALALI_MONTHS[exportMonth - 1]}` : "";
+      saveBlob(blob, `birthdays${suffix}.xlsx`);
+    } catch (err) {
+      setExportError(await blobErrorMessage(err));
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   // فهرست متن‌های تبریک را از سرور می‌گیرد
   function loadTemplates() {
@@ -196,6 +245,46 @@ export default function BirthdayMessagesPage() {
               </Stack>
             ))}
           </Stack>
+        )}
+      </Card>
+
+      {/* ---------- خروجی Excel متولدین ---------- */}
+      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+          خروجی Excel متولدین
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+          نام و نام خانوادگی، کد پرسنلی، واحد و تاریخ تولد پرسنل فعال. با «همه‌ی ماه‌ها» هر ماه در یک برگه‌ی جدا می‌آید.
+        </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+          <TextField
+            select
+            size="small"
+            label="ماه تولد"
+            value={exportMonth}
+            onChange={(e) => setExportMonth(e.target.value)}
+            sx={{ minWidth: 220 }}
+          >
+            <MenuItem value="">همه‌ی ماه‌ها (هر ماه یک برگه)</MenuItem>
+            {JALALI_MONTHS.map((name, i) => (
+              <MenuItem key={name} value={i + 1}>
+                {name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Button
+            variant="outlined"
+            startIcon={isExporting ? <CircularProgress size={16} /> : <FileDownloadOutlinedIcon />}
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            دانلود Excel
+          </Button>
+        </Stack>
+        {exportError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {exportError}
+          </Alert>
         )}
       </Card>
 

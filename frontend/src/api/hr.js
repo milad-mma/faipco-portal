@@ -50,3 +50,13 @@ export async function sendBirthdayGreetingsNow() {
   const { data } = await apiClient.post("/hr/birthday-send-now");
   return data; // { sent_count, message }
 }
+
+// GET /hr/birthdays/export؛ خروجی Excel متولدین (month خالی = همه‌ی ماه‌ها، هر ماه یک برگه)؛ خروجی: Blob
+export async function downloadBirthdaysExport(month) {
+  const { data } = await apiClient.get("/hr/birthdays/export", {
+    params: month ? { month } : {},
+    responseType: "blob",
+    timeout: 60000,
+  });
+  return data;
+}
