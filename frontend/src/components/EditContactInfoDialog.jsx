@@ -85,6 +85,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
       <DialogTitle>مشخصات کاربری</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          <Alert severity="info">فقط ایمیل و شماره موبایل قابل تغییر هستند.</Alert>
           <TextField
             label="ایمیل"
             type="email"
@@ -132,7 +133,7 @@ export default function EditContactInfoDialog({ open, onClose }) {
                 />
               ))}
               <Typography variant="caption" color="text.secondary">
-                این مشخصات از سیستم پرسنلی خوانده می‌شوند و فقط قابل مشاهده‌اند؛ برای اصلاح به واحد منابع انسانی مراجعه کنید.
+                سایر مشخصات از سیستم پرسنلی خوانده می‌شوند؛ برای اصلاح آن‌ها به واحد منابع انسانی مراجعه کنید.
               </Typography>
             </>
           )}
