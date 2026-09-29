@@ -3,7 +3,7 @@
  * فرم شامل موضوع، عنوان و متن (همه اجباری) و گزینه ارسال ناشناس است؛
  * فعال شدن ارسال ناشناس منوط به تأیید متن اطلاع‌رسانی محرمانگی است.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -24,7 +24,7 @@ import {
 } from "@mui/material";
 import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import BackLink from "../components/BackLink";
-import { submitFeedback } from "../api/feedback";
+import { fetchFeedbackSettings, submitFeedback } from "../api/feedback";
 
 const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام (کلید = مقدار ارسالی به سرور)
   complaint: "انتقاد",
@@ -32,7 +32,11 @@ const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام (
   comment: "نظر",
 };
 
-// متن اطلاع‌رسانی شرایط محرمانگی که پیش از فعال شدن ارسال ناشناس نمایش داده می‌شود
+// متن کوتاه شرایط محرمانگی وقتی «آشکار شدن هویت با الفاظ نامناسب» خاموش است
+const ANONYMITY_NOTICE_SHORT =
+  "همکار گرامی، اطمینان خاطر داشته باشید که انتقادات، پیشنهادات و نظرات شما به‌صورت کاملاً محرمانه و ناشناس ثبت شده و صرفاً در اختیار مدیر این واحد قرار خواهد گرفت.";
+
+// متن اطلاع‌رسانی شرایط محرمانگی که پیش از فعال شدن ارسال ناشناس نمایش داده می‌شود (آشکار شدن هویت روشن)
 const ANONYMITY_NOTICE_TEXT =
   "همکار گرامی، اطمینان خاطر داشته باشید که انتقادات، پیشنهادات و نظرات شما به‌صورت کاملاً محرمانه و ناشناس ثبت شده و صرفاً در اختیار مدیر این واحد قرار خواهد گرفت. بدیهی است حفظ محرمانگی و ناشناس بودن پیام‌ها، مشروط به رعایت شئونات و ادبیات مناسب در بیان نظرات است. در صورت استفاده از الفاظ رکیک، توهین‌آمیز یا ناسزا، پیام به صورت خودکار توسط سامانه بررسی شده و از حالت محرمانه و ناشناس خارج شده و هویت ارسال‌کننده قابل شناسایی خواهد بود. در این صورت، مسئولیت و عواقب ناشی از محتوای پیام بر عهده ارسال‌کننده خواهد بود.";
 
@@ -51,6 +55,13 @@ export default function FeedbackSubmitPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);  // true = پیام ثبت شد و فرم جای خود را به پیام موفقیت می‌دهد
+  const [profanityReveal, setProfanityReveal] = useState(true);  // پیش‌فرض متن کامل؛ از سرور خوانده می‌شود
+
+  useEffect(() => {
+    fetchFeedbackSettings()
+      .then((d) => setProfanityReveal(d.profanity_reveal_enabled !== false))
+      .catch(() => {});
+  }, []);
 
   // تیک زدن فقط دیالوگ تأیید را باز می‌کند؛ برداشتن تیک مستقیماً حالت ناشناس را خاموش می‌کند
   function handleAnonymousCheckboxChange(e) {
@@ -173,7 +184,7 @@ export default function FeedbackSubmitPage() {
         <DialogTitle>ارسال ناشناس</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ whiteSpace: "pre-line", lineHeight: 2 }}>
-            {ANONYMITY_NOTICE_TEXT}
+            {profanityReveal ? ANONYMITY_NOTICE_TEXT : ANONYMITY_NOTICE_SHORT}
           </Typography>
         </DialogContent>
         <DialogActions>

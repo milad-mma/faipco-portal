@@ -15,6 +15,7 @@ Endpoint های «انتقادات و پیشنهادات».
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_superuser
@@ -129,3 +130,34 @@ async def delete_prohibited_phrase(
     deleted = await FeedbackService(db).delete_prohibited_phrase(phrase_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="یافت نشد")
+
+
+
+# ---------- تنظیم آشکار شدن هویت با الفاظ نامناسب ----------
+
+
+class FeedbackSettingsIn(BaseModel):
+    """بدنه‌ی PUT /feedback/settings."""
+    profanity_reveal_enabled: bool
+
+
+@router.get("/settings")
+async def get_feedback_settings(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """
+    تنظیمات عمومی انتقادات و پیشنهادات (برای همه‌ی کاربران؛ صفحه‌ی ارسال متن شرایط ناشناس را با آن انتخاب می‌کند).
+    profanity_reveal_enabled: آیا الفاظ نامناسب هویت فرستنده‌ی ناشناس را آشکار می‌کند.
+    """
+    return {"profanity_reveal_enabled": await FeedbackService(db).is_profanity_reveal_enabled()}
+
+
+@router.put("/settings")
+async def put_feedback_settings(
+    payload: FeedbackSettingsIn,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_superuser),
+):
+    """روشن/خاموش کردن آشکار شدن هویت با الفاظ نامناسب. فقط Admin واقعی (superuser)."""
+    return {"profanity_reveal_enabled": await FeedbackService(db).set_profanity_reveal_enabled(payload.profanity_reveal_enabled)}

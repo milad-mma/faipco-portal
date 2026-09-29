@@ -1,5 +1,5 @@
 {
-  "count": 307,
+  "count": 309,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -65,6 +65,7 @@
     "GET /api/v1/employees/{employee_id}/supervised-departments",
     "GET /api/v1/feedback",
     "GET /api/v1/feedback/prohibited-phrases",
+    "GET /api/v1/feedback/settings",
     "GET /api/v1/hr/birthday-enabled",
     "GET /api/v1/hr/birthday-send-time",
     "GET /api/v1/hr/birthday-templates",
@@ -267,6 +268,7 @@
     "PUT /api/v1/backup/settings",
     "PUT /api/v1/departments/{department_id}/supervisor",
     "PUT /api/v1/employees/{employee_id}/password",
+    "PUT /api/v1/feedback/settings",
     "PUT /api/v1/hr/birthday-enabled",
     "PUT /api/v1/hr/birthday-send-time",
     "PUT /api/v1/insurance/me",

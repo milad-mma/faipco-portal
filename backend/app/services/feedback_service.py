@@ -25,6 +25,7 @@ from app.core.profanity_filter import contains_prohibited_phrase
 from app.core.site_access import get_sites_with_permission
 from app.models.employee import Employee
 from app.models.feedback import FeedbackCategory, FeedbackMessage, ProhibitedPhrase
+from app.models.system_setting import SystemSetting
 from app.models.site import Site
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 from app.services.push_service import PushService
@@ -35,6 +36,9 @@ FEEDBACK_RATE_LIMIT_SECONDS = 60  # حداقل فاصله بین دو پیام �
 
 logger = logging.getLogger(__name__)
 
+
+
+PROFANITY_REVEAL_KEY = "feedback_profanity_reveal_enabled"  # system_settings؛ نبودِ ردیف = روشن
 
 class FeedbackAccessDenied(Exception):
     """کاربر مجوز مشاهده انتقادات و پیشنهادات را ندارد."""
@@ -51,6 +55,25 @@ class FeedbackService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def is_profanity_reveal_enabled(self) -> bool:
+        """
+        آشکار شدن هویت فرستنده‌ی پیام ناشناس در صورت الفاظ نامناسب (پیش‌فرض روشن = رفتار قبلی).
+        خاموش: هیچ پیام ناشناسی (قدیم یا جدید) به‌خاطر الفاظ نامناسب آشکار نمی‌شود، برچسب «حاوی الفاظ نامناسب»
+        نمایش داده نمی‌شود و متن شرایط ارسال ناشناس کوتاه می‌شود. ستون contains_profanity همچنان ثبت می‌شود.
+        """
+        row = await self.db.get(SystemSetting, PROFANITY_REVEAL_KEY)
+        return row is None or row.value != "false"
+
+    async def set_profanity_reveal_enabled(self, enabled: bool) -> bool:
+        row = await self.db.get(SystemSetting, PROFANITY_REVEAL_KEY)
+        value = "true" if enabled else "false"
+        if row is None:
+            self.db.add(SystemSetting(key=PROFANITY_REVEAL_KEY, value=value))
+        else:
+            row.value = value
+        await self.db.commit()
+        return enabled
 
     async def _get_prohibited_phrases(self) -> list[str]:
         """متن همه عبارات نامناسب ثبت‌شده را برمی‌گرداند."""
@@ -235,11 +258,13 @@ class FeedbackService:
         # فقط Admin واقعی همیشه فرستنده را می‌بیند؛ دارنده مجوز (حتی مجوز
         # سراسری feedback.view_all) تابع قانون محرمانگی/ناشناس‌بودن است.
         always_reveal_sender = current_user.is_superuser
+        profanity_reveal = await self.is_profanity_reveal_enabled()
 
         out = []
         # ساخت خروجی؛ فرستنده فقط وقتی آشکار است که: بیننده superuser باشد، یا ناشناس درخواست نشده، یا پیام حاوی الفاظ نامناسب باشد
         for feedback, sender, employee, site_id_val, site_name in rows:
-            reveal_sender = always_reveal_sender or not feedback.is_anonymous_requested or feedback.contains_profanity
+            flagged = profanity_reveal and feedback.contains_profanity  # قابلیت خاموش = الفاظ نامناسب اثری ندارد
+            reveal_sender = always_reveal_sender or not feedback.is_anonymous_requested or flagged
             sender_name = f"{employee.first_name} {employee.last_name}" if employee else (sender.username or "—")
             out.append(
                 FeedbackMessageOut(
@@ -248,7 +273,7 @@ class FeedbackService:
                     title=feedback.title,
                     message=feedback.message,
                     is_anonymous_requested=feedback.is_anonymous_requested,
-                    contains_profanity=feedback.contains_profanity,
+                    contains_profanity=flagged,
                     created_at=feedback.created_at,
                     sender_id=sender.id if reveal_sender else None,
                     sender_name=sender_name if reveal_sender else None,

@@ -11,9 +11,11 @@ import {
   Card,
   Chip,
   CircularProgress,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
+  Switch,
   Tab,
   Table,
   TableBody,
@@ -36,7 +38,9 @@ import {
   deleteFeedback,
   deleteProhibitedPhrase,
   fetchFeedback,
+  fetchFeedbackSettings,
   fetchProhibitedPhrases,
+  saveFeedbackSettings,
 } from "../api/feedback";
 
 const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام
@@ -391,6 +395,25 @@ function ProhibitedWordsManager() {
   const [newPhrase, setNewPhrase] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [revealEnabled, setRevealEnabled] = useState(null);  // آشکار شدن هویت با الفاظ نامناسب؛ null = در حال بارگذاری
+
+  useEffect(() => {
+    fetchFeedbackSettings()
+      .then((d) => setRevealEnabled(d.profanity_reveal_enabled !== false))
+      .catch(() => setRevealEnabled(true));
+  }, []);
+
+  // روشن/خاموش کردن کل قابلیت آشکار شدن هویت
+  async function handleToggleReveal(e) {
+    const next = e.target.checked;
+    setError("");
+    try {
+      const d = await saveFeedbackSettings(next);
+      setRevealEnabled(d.profanity_reveal_enabled);
+    } catch (err) {
+      setError(err.response?.data?.detail || "ذخیره‌ی تنظیم با خطا مواجه شد.");
+    }
+  }
 
   // فهرست عبارات را از سرور می‌گیرد
   function loadPhrases() {
@@ -432,9 +455,21 @@ function ProhibitedWordsManager() {
 
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+      {revealEnabled !== null && (
+        <Box sx={{ mb: 2, p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}>
+          <FormControlLabel
+            control={<Switch checked={revealEnabled} onChange={handleToggleReveal} />}
+            label={revealEnabled ? "آشکار شدن هویت با الفاظ نامناسب: روشن" : "آشکار شدن هویت با الفاظ نامناسب: خاموش"}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            خاموش: هیچ پیام ناشناسی به‌خاطر الفاظ نامناسب آشکار نمی‌شود (پیام‌های قبلی هم)، برچسب «حاوی الفاظ نامناسب»
+            نمایش داده نمی‌شود و در صفحه‌ی ارسال، متن شرایط ناشناس فقط جمله‌ی اول (محرمانه بودن) را نشان می‌دهد.
+          </Typography>
+        </Box>
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         اگر متن یک پیام حاوی هرکدام از این کلمات/عبارات باشد، آن پیام حتی اگر «ناشناس» ارسال شده باشد،
-        هویت فرستنده‌اش برای دارنده مجوز مشاهده هم آشکار می‌شود.
+        هویت فرستنده‌اش برای دارنده مجوز مشاهده هم آشکار می‌شود{revealEnabled === false ? " (فعلاً خاموش است)" : ""}.
       </Typography>
 
       {error && (

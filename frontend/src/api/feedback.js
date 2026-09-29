@@ -61,3 +61,15 @@ export async function addProhibitedPhrase(phrase) {
 export async function deleteProhibitedPhrase(id) {
   await apiClient.delete(`/feedback/prohibited-phrases/${id}`);
 }
+
+// GET /feedback/settings؛ خروجی: { profanity_reveal_enabled }
+export async function fetchFeedbackSettings() {
+  const { data } = await apiClient.get("/feedback/settings");
+  return data;
+}
+
+// PUT /feedback/settings (فقط superuser)؛ روشن/خاموش کردن آشکار شدن هویت با الفاظ نامناسب
+export async function saveFeedbackSettings(profanityRevealEnabled) {
+  const { data } = await apiClient.put("/feedback/settings", { profanity_reveal_enabled: profanityRevealEnabled });
+  return data;
+}
