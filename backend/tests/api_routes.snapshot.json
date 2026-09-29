@@ -1,5 +1,5 @@
 {
-  "count": 305,
+  "count": 307,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -158,6 +158,7 @@
     "GET /api/v1/system/login-background",
     "GET /api/v1/system/logo/{slug}",
     "GET /api/v1/system/manifest.json",
+    "GET /api/v1/system/mobile-app-feature",
     "GET /api/v1/system/pwa-icon/{variant}.png",
     "GET /api/v1/system/server-stats",
     "GET /api/v1/system/sms-settings",
@@ -303,6 +304,7 @@
     "PUT /api/v1/system/branding/surfaces/{surface}",
     "PUT /api/v1/system/ip-allowlist",
     "PUT /api/v1/system/ip-blocked-message",
+    "PUT /api/v1/system/mobile-app-feature",
     "PUT /api/v1/system/sms-settings",
     "PUT /api/v1/system/smtp-settings",
     "WEBSOCKET /api/v1/attendance/presence-ws"

@@ -104,7 +104,7 @@ export default function Layout() {
   // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند.
   // آنلاین بودن در اپ برای همه‌ی پرسنل؛ پایش GPS فقط برای دارندگان مجوز ثبت تردد
   // داخل اپ اندروید پایش GPS برای همه‌ی پرسنل فعال است
-  usePresenceMonitor(Boolean(user?.employee_id), Boolean(user?.can_clock_in_out) || isAndroidApp());
+  usePresenceMonitor(Boolean(user?.employee_id), Boolean(user?.can_clock_in_out) || (isAndroidApp() && Boolean(user?.mobile_app_enabled)));
 
   // وضعیت باز/بسته‌ی زیرمنوها (کلید: مسیر والد)؛ گروهی که خودش یا یکی از فرزندانش فعال است، پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {

@@ -282,8 +282,15 @@ class AuthService:
         base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes
         base.can_manage_ip_allowlist = user.is_superuser or "system.ip_allowlist" in permission_codes
         base.can_manage_login_security = user.is_superuser or "system.login_security" in permission_codes
-        base.can_manage_mobile_devices = user.is_superuser or "mobile.devices" in permission_codes
-        base.can_manage_mobile_app = user.is_superuser or "system.mobile_app" in permission_codes
+        from app.services.mobile_app_service import is_feature_enabled
+
+        base.mobile_app_enabled = await is_feature_enabled(self.db)
+        base.can_manage_mobile_devices = base.mobile_app_enabled and (
+            user.is_superuser or "mobile.devices" in permission_codes
+        )
+        base.can_manage_mobile_app = base.mobile_app_enabled and (
+            user.is_superuser or "system.mobile_app" in permission_codes
+        )
         base.can_view_feedback = (
             user.is_superuser or "feedback.view" in permission_codes or "feedback.view_all" in permission_codes
         )

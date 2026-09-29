@@ -129,7 +129,7 @@ export const NAV_ITEMS = [
         label: "اپ اندروید",
         path: "/mobile-app",
         icon: <PhoneAndroidOutlinedIcon />,
-        check: (u) => Boolean(u?.employee_id),
+        check: (u) => Boolean(u?.employee_id) && Boolean(u?.mobile_app_enabled),
         hiddenForAdmin: true,
       },
       {

@@ -23,6 +23,7 @@ import {
 import SmtpSettings from "../components/SmtpSettings";
 import SmsSettings from "../components/SmsSettings";
 import AccessGateSettings from "../components/AccessGateSettings";
+import MobileAppFeatureSettings from "../components/MobileAppFeatureSettings";
 import BrandingSurfaceEditor from "../components/BrandingSurfaceEditor";
 import PwaIconSettings from "../components/PwaIconSettings";
 import { SURFACE_META } from "../config/brandingSurfaces";
@@ -436,6 +437,10 @@ export default function SystemSettingsPage() {
 
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <SmsSettings />
+        </Card>
+
+        <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+          <MobileAppFeatureSettings />
         </Card>
 
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>

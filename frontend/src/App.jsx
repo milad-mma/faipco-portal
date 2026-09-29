@@ -220,7 +220,14 @@ export default function App() {
               </PermissionRoute>
             }
           />
-          <Route path="/mobile-app" element={<MobileAppPage />} />
+          <Route
+            path="/mobile-app"
+            element={
+              <PermissionRoute check={(u) => u?.mobile_app_enabled}>
+                <MobileAppPage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="/login-security"
             element={<PermissionRoute check={(u) => u?.can_manage_login_security}><LoginSecurityPage /></PermissionRoute>}

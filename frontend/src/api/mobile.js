@@ -102,3 +102,14 @@ export async function uploadRelease({ file, versionCode, versionName, notes }, o
 export async function deleteRelease(id) {
   await apiClient.delete(`/mobile/app/releases/${id}`);
 }
+
+// GET/PUT /system/mobile-app-feature؛ کلید اصلی قابلیت اپ اندروید (مجوز system.settings)
+export async function fetchMobileAppFeature() {
+  const { data } = await apiClient.get("/system/mobile-app-feature");
+  return data;
+}
+
+export async function saveMobileAppFeature(enabled) {
+  const { data } = await apiClient.put("/system/mobile-app-feature", { enabled });
+  return data;
+}

@@ -325,7 +325,7 @@ async def delete_log(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رکورد یافت نشد")
 
 
-async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tuple[User, bool] | None:
+async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tuple[User, bool, bool] | None:
     """
     احراز هویت WebSocket از روی access token در Query Param (?token=...)، چون مرورگر اجازه‌ی
     هدر Authorization روی WebSocket را نمی‌دهد.
@@ -345,11 +345,16 @@ async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tupl
         user = await UserRepository(db).get_by_id(int(user_id))
         if user is None or user.employee_id is None or not user.is_active:
             return None
+        # «داخل اپ» فقط وقتی قابلیت اپ اندروید روشن است اثر دارد
+        if in_app:
+            from app.services.mobile_app_service import is_feature_enabled
+
+            in_app = await is_feature_enabled(db)
         # همه‌ی انتصاب‌های نقش (سراسری + سایت‌محور) دیده می‌شوند
         gps_enabled = in_app or user.is_superuser or "attendance.clock_in_out" in (
             await UserRepository(db).get_all_permission_codes(user.id)
         )
-        return user, gps_enabled
+        return user, gps_enabled, in_app
 
 
 def _client_label(user_agent: str | None) -> str | None:
@@ -401,7 +406,7 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...), app:
     if auth is None:
         await websocket.close(code=4401)  # کد سفارشی: احراز هویت ناموفق
         return
-    user, gps_enabled = auth
+    user, gps_enabled, in_app = auth
 
     await websocket.accept()
 

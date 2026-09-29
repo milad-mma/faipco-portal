@@ -73,6 +73,32 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# ---------------------------------------------------------------- کلید اصلی قابلیت
+
+FEATURE_KEY = "mobile_app_feature_enabled"
+
+
+async def is_feature_enabled(db: AsyncSession) -> bool:
+    """
+    کلید اصلی قابلیت اپ اندروید (پیش‌فرض خاموش). خاموش = انگار قابلیت وجود ندارد: همه‌ی Endpointهای /mobile
+    (به‌جز همین کلید) 404، منوها و یادآورها پنهان، پیش‌نیاز «اپ اندروید و موقعیت» بی‌اثر و پایش GPS «داخل اپ» غیرفعال.
+    داده‌ها (گوشی‌ها، رویدادها، نسخه‌ها، تنظیمات) حذف نمی‌شوند و با روشن کردن دوباره برمی‌گردند.
+    """
+    row = await db.get(SystemSetting, FEATURE_KEY)
+    return row is not None and row.value == "true"
+
+
+async def set_feature_enabled(db: AsyncSession, enabled: bool) -> bool:
+    row = await db.get(SystemSetting, FEATURE_KEY)
+    value = "true" if enabled else "false"
+    if row is None:
+        db.add(SystemSetting(key=FEATURE_KEY, value=value))
+    else:
+        row.value = value
+    await db.commit()
+    return enabled
+
+
 # ---------------------------------------------------------------- تنظیمات
 
 
@@ -465,6 +491,8 @@ async def location_app_required(db: AsyncSession, user: User, user_agent: str | 
     فقط برای پرسنل (نه superuser)، فقط روی گوشی اندروید (User-Agent؛ آیفون و کامپیوتر معاف‌اند) و نه معاف‌شده‌ها.
     """
     if user.is_superuser or user.employee_id is None:
+        return False
+    if not await is_feature_enabled(db):
         return False
     ua = user_agent if user_agent is not None else current_user_agent.get()
     if not is_android_user_agent(ua):

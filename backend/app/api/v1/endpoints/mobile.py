@@ -43,7 +43,14 @@ from app.schemas.mobile import (
 )
 from app.services import mobile_app_service as svc
 
-router = APIRouter()
+async def require_feature(db: AsyncSession = Depends(get_db)) -> None:
+    """قابلیت اپ اندروید خاموش است ← 404 (انگار این Endpointها وجود ندارند)."""
+    if not await svc.is_feature_enabled(db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+# همه‌ی مسیرهای این روتر پشت کلید اصلی قابلیت‌اند؛ خود کلید: GET/PUT /system/mobile-app-feature
+router = APIRouter(dependencies=[Depends(require_feature)])
 MAX_APK_BYTES = 24 * 1024 * 1024  # سقف Nginx برای بدنه ۲۵ مگابایت است
 
 
@@ -479,3 +486,4 @@ async def delete_release(
     if row is not None:
         await db.delete(row)
         await db.commit()
+

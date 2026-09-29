@@ -65,12 +65,13 @@ export default function MobileAppPrompt({ user }) {
   const inApp = isAndroidApp();
   const inAndroidBrowser = isAndroidBrowser();
 
+  const featureOn = Boolean(user?.mobile_app_enabled);
   const load = useCallback(() => {
-    if (!user?.employee_id || (!inApp && !inAndroidBrowser)) return;
+    if (!featureOn || !user?.employee_id || (!inApp && !inAndroidBrowser)) return;
     fetchMyMobileStatus()
       .then(setStatus)
       .catch(() => {});
-  }, [user?.employee_id, inApp, inAndroidBrowser]);
+  }, [featureOn, user?.employee_id, inApp, inAndroidBrowser]);
 
   useEffect(() => {
     load();
@@ -84,7 +85,7 @@ export default function MobileAppPrompt({ user }) {
     if (needsPairing) prefetchPairingCode();
   }, [needsPairing]);
 
-  if (!status || status.exempt) return null;
+  if (!featureOn || !status || status.exempt) return null;
 
   const dismiss = () => {
     sessionSet(DISMISS_KEY, "1");

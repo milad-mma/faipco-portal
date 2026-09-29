@@ -20,6 +20,7 @@ import {
   Typography,
 } from "@mui/material";
 import { fetchAccessGateSettings, updateAccessGateSetting } from "../api/accessGate";
+import { useAuth } from "../context/AuthContext";
 
 // برچسب فارسی قابلیت‌هایی که می‌توان دسترسی به آن‌ها را مشروط کرد (کلید = نام قابلیت در Backend)
 const FEATURE_LABELS = {
@@ -38,7 +39,7 @@ const GATE_LABELS = {
 };
 
 // location_app: فقط روی گوشی اندروید اعمال می‌شود (آیفون، کامپیوتر و پرسنل معاف قفل نمی‌شوند)
-const GATES = ["unread_notices", "pending_evaluations", "location_app"]; // ترتیب ستون‌های جدول
+const ALL_GATES = ["unread_notices", "pending_evaluations", "location_app"]; // ترتیب ستون‌های جدول
 // ترتیب ردیف‌های جدول
 const FEATURES = [
   "payroll_receipt",
@@ -49,6 +50,9 @@ const FEATURES = [
 ];
 
 export default function AccessGateSettings() {
+  const { user } = useAuth();
+  // ستون «اپ اندروید و موقعیت» فقط وقتی قابلیت اپ اندروید روشن است
+  const GATES = ALL_GATES.filter((g) => g !== "location_app" || user?.mobile_app_enabled);
   const [settings, setSettings] = useState(null); // فهرست {gate, feature, enabled}؛ null = در حال بارگذاری
   const [error, setError] = useState("");
   const [savingKey, setSavingKey] = useState(null); // کلید "gate:feature" سوییچی که در حال ذخیره است

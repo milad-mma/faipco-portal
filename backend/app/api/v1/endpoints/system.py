@@ -30,6 +30,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import delete, select
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_permission
@@ -789,3 +790,32 @@ async def test_sms_settings(
     except (SmsNotConfiguredError, SmsError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"success": True, "message": "پیامک آزمایشی با موفقیت ارسال شد."}
+
+
+
+# ---------------------------------------------------------------- کلید اصلی قابلیت اپ اندروید
+
+
+class MobileAppFeatureIn(BaseModel):
+    """بدنه‌ی PUT /system/mobile-app-feature."""
+    enabled: bool
+
+
+@router.get("/mobile-app-feature")
+async def get_mobile_app_feature(db: AsyncSession = Depends(get_db), _user=Depends(require_permission("system.settings"))):
+    """وضعیت کلید اصلی قابلیت اپ اندروید (docs/android-app.md). مجوز: system.settings."""
+    from app.services.mobile_app_service import is_feature_enabled
+
+    return {"enabled": await is_feature_enabled(db)}
+
+
+@router.put("/mobile-app-feature")
+async def put_mobile_app_feature(
+    payload: MobileAppFeatureIn,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission("system.settings")),
+):
+    """روشن/خاموش کردن کل قابلیت اپ اندروید؛ خاموش = انگار وجود ندارد. داده‌ها حذف نمی‌شوند."""
+    from app.services.mobile_app_service import set_feature_enabled
+
+    return {"enabled": await set_feature_enabled(db, payload.enabled)}
