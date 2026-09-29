@@ -300,14 +300,22 @@ def render_payroll_receipt_pdf(
 
     # ---------- نوار مشخصات: پس‌زمینه طوسی کم‌رنگ، از راست: کد پرسنلی، نام، مرکز هزینه ----------
     if header_rows:
-        info_col_width_pts = (doc.width / len(header_rows)) - 12  # منهای Padding داخلی سلول
+        # عرض سلول‌ها: پیش‌فرض مساوی؛ «کد پرسنلی» (عدد کوتاه) ۴۰٪ کوچک‌تر و همان مقدار به «نام و نام خانوادگی» اضافه
+        share = doc.width / len(header_rows)
+        info_widths = [share] * len(header_rows)
+        code_idx = next((i for i, r in enumerate(header_rows) if "کد پرسنلی" in r["label"]), None)
+        name_idx = next((i for i, r in enumerate(header_rows) if "نام" in r["label"] and "کد" not in r["label"]), None)
+        if code_idx is not None and name_idx is not None and code_idx != name_idx:
+            moved = share * 0.4
+            info_widths[code_idx] -= moved
+            info_widths[name_idx] += moved
         info_cells = []
-        for row in header_rows:
-            cell_html = _build_label_value_html(row["label"], row["value"], font_name, font_bold, 9, info_col_width_pts)
+        for row, width in zip(header_rows, info_widths):
+            cell_html = _build_label_value_html(row["label"], row["value"], font_name, font_bold, 9, width - 12)  # منهای Padding
             info_cells.append(Paragraph(cell_html, info_cell_style))
         # ترتیب سلول‌ها همان ترتیب سند است (چپ به راست: مرکز هزینه، نام، کد پرسنلی)
         # که کد پرسنلی را در سمت راست قرار می‌دهد؛ Reverse لازم نیست.
-        info_table = Table([info_cells], colWidths=[doc.width / len(info_cells)] * len(info_cells))
+        info_table = Table([info_cells], colWidths=info_widths)
         info_table.setStyle(
             TableStyle(
                 [
@@ -330,7 +338,8 @@ def render_payroll_receipt_pdf(
     # نه جدول‌های تودرتو در یک سلول، تا ReportLab بتواند آن را بین صفحات بشکند.
     # عرض ستون‌ها یکسان نیست و نسبت‌ها از CSS گزارش اصلی گرفته شده‌اند؛ «سایر» به‌خاطر
     # برچسب‌های بلندتر (مثل «دستمزد و مزایای مشمول بیمه تامین اجتماعی») پهن‌تر است.
-    column_weights = {"وام": 0.19, "کسور": 0.21, "مزایا": 0.24, "سایر": 0.36}
+    # «کسور» پهن‌تر شد (اعداد ۱۰ رقمی مثل ۱٫۲۰۲٫۵۸۱٫۴۵۰ در یک خط) و همان مقدار از «سایر» کم شد.
+    column_weights = {"وام": 0.19, "کسور": 0.24, "مزایا": 0.24, "سایر": 0.33}
     default_weight = 1 / len(column_titles)  # وزن Sectionهای ناشناخته
     total_weight = sum(column_weights.get(t, default_weight) for t in column_titles)
 
@@ -342,7 +351,9 @@ def render_payroll_receipt_pdf(
     # ۵۸pt = حدود ۴۶٫۸pt عرض بزرگ‌ترین عدد با Tahoma + ۴pt Padding + حاشیه اطمینان.
     # این حداقل فقط برای «وام» است؛ اعمال آن روی «کسور» و «مزایا» برچسب‌هایشان را بیشتر می‌شکند
     # و ارتفاع جدول را زیاد می‌کند.
-    min_value_width_pts_by_column = {"وام": 58}
+    # «کسور»: ۶۰pt = ۵۴٫۲pt عرض عدد ۱۰ رقمی با جداکننده (Tahoma 8pt) + ۴pt Padding + حاشیه؛ با وزن ۰٫۲۴ برچسب‌هایش
+    # هنوز کمی پهن‌تر از قبل می‌ماند (~۷۲pt در برابر ~۶۹pt).
+    min_value_width_pts_by_column = {"وام": 58, "کسور": 60}
     value_width_map = {
         t: max(w * 0.4, min_value_width_pts_by_column.get(t, 0)) for t, w in col_width_map.items()
     }
