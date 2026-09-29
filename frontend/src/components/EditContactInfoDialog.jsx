@@ -6,14 +6,32 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Stack,
   TextField,
+  Typography,
 } from "@mui/material";
 import { updateMyContactInfo } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 
+const GENDER_LABELS = { 1: "مرد", 2: "زن" };
+
+// مشخصات فقط‌خواندنی: [کلید در /auth/me، برچسب، قالب‌بندی اختیاری]
+const READONLY_FIELDS = [
+  ["full_name", "نام و نام خانوادگی"],
+  ["hire_date_jalali", "تاریخ استخدام"],
+  ["position_title", "سمت"],
+  ["department_name", "واحد"],
+  ["education_title", "مدرک تحصیلی"],
+  ["birth_date_jalali", "تاریخ تولد"],
+  ["national_code", "کد ملی"],
+  ["gender", "جنسیت", (v) => GENDER_LABELS[v] || "—"],
+  ["address", "آدرس"],
+];
+
 /**
- * دیالوگ ویرایش ایمیل و موبایل شخصی کاربر جاری از پنل کاربری.
+ * دیالوگ «مشخصات کاربری»: ویرایش ایمیل و موبایل، به‌علاوه‌ی مشخصات فقط‌خواندنی از سیستم منبع (کاراوب):
+ * نام و نام خانوادگی، تاریخ استخدام، سمت، واحد، مدرک تحصیلی، تاریخ تولد، کد ملی، جنسیت و آدرس. تغییر این موارد فقط از کاراوب ممکن است.
  * ورودی: open و onClose. خروجی: Dialog با دو فیلد (موبایل اجباری) و پیام نتیجه.
  * اگر در نگاشت ستون‌های سایت کاربر، ستون ایمیل/موبایل مشخص شده باشد، Backend مقدار جدید را
  * در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌کند (Write-back)، نه فقط در دیتابیس پرتال.
@@ -86,6 +104,38 @@ export default function EditContactInfoDialog({ open, onClose }) {
           />
           {error && <Alert severity="error">{error}</Alert>}
           {successMessage && <Alert severity="success">{successMessage}</Alert>}
+
+          {user?.employee_id && (
+            <>
+              <Divider />
+              {READONLY_FIELDS.map(([key, label, format]) => (
+                <TextField
+                  key={key}
+                  label={label}
+                  value={
+                    key === "full_name"
+                      ? [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "—"
+                      : format
+                        ? format(user?.[key])
+                        : user?.[key] || "—"
+                  }
+                  fullWidth
+                  multiline={key === "address"}
+                  InputProps={{ readOnly: true }}
+                  inputProps={
+                    key === "national_code" || key.endsWith("_jalali")
+                      ? { dir: "ltr", style: { textAlign: "right" } }
+                      : undefined
+                  }
+                  variant="filled"
+                  size="small"
+                />
+              ))}
+              <Typography variant="caption" color="text.secondary">
+                این مشخصات از سیستم پرسنلی خوانده می‌شوند و فقط قابل مشاهده‌اند؛ برای اصلاح به واحد منابع انسانی مراجعه کنید.
+              </Typography>
+            </>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

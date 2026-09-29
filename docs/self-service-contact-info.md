@@ -86,3 +86,22 @@ Sync خودکار بعدی (فاصله آن از پنل قابل‌تنظیم ا
 است و ایمیل، مقصد لینک بازیابی با ایمیل — نگاه کنید
 [sms-password-reset.md](sms-password-reset.md) و
 [smtp-and-password-reset.md](smtp-and-password-reset.md).
+
+## مشخصات فقط‌خواندنی (Migration 094)
+دیالوگ «مشخصات کاربری» در پنل کاربری، زیر ایمیل و موبایل (که قابل ویرایش‌اند)، این مشخصات را **فقط برای خواندن** نشان می‌دهد. همه از `/auth/me` می‌آیند و حاصل Sync از منبع‌اند:
+
+| مشخصه | فیلد پرتال | نگاشت سایت (کاراوب) |
+|---|---|---|
+| نام و نام خانوادگی | `first_name` + `last_name` | `first_name_column` / `last_name_column` (Name / Family) |
+| تاریخ استخدام | `hire_date_jalali` | `hire_date_column` (Emp_Date) |
+| سمت | `position_title` | `position_column` + Lookup (Pos_No → Position) |
+| واحد | نام `department` | `department_column` + Lookup (Sec_No → Sections) |
+| مدرک تحصیلی | `education_title` (جدید) | همان نگاشت گزارش ترک کار: `education_column` + Lookup (Grade_No → Grades.Title) |
+| تاریخ تولد | `birth_date_jalali` | `birth_date_column` (Birth_Date) |
+| کد ملی | `national_code` | `national_code_column` (NationalId) |
+| جنسیت | `gender` (۱ مرد، ۲ زن) | `gender_column` (Gender) |
+| آدرس | `address` (جدید) | `address_column` (جدید، Address) |
+
+- **نگاشت آدرس:** Migration 094 برای نگاشت‌هایی که جدولشان `Employee` است، `address_column` را `Address` می‌گذارد. در «تنظیمات سایت ← نگاشت پرسنل» قابل تغییر است.
+- **اولین نمایش:** بعد از استقرار، این مقادیر با اولین Sync پر می‌شوند.
+- **اصلاح مشخصات:** برای اصلاح، باید مقدار در کاراوب عوض شود. پرتال این فیلدها را به منبع نمی‌نویسد و کاربر هم نمی‌تواند ویرایششان کند.

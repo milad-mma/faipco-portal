@@ -66,6 +66,8 @@ class Employee(Base, TimestampMixin):
 
     # نام سمت/عنوان شغلی به‌صورت متن (بدون جدول و Foreign Key جدا)، چون فقط برای نمایش است.
     position_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    education_title: Mapped[str | None] = mapped_column(String(128), nullable=True)  # عنوان مدرک از منبع (Lookup)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)  # آدرس از منبع؛ فقط خواندنی در پرتال
 
     # تصویر بندانگشتی پرسنل (از جدول EmployeeExtendedInfo، ستون ThumbnailImg، معمولاً GIF)
     # برای نمایش آواتار کوچک؛ تصویر اصلی با کیفیت بالا همگام‌سازی نمی‌شود.
@@ -119,6 +121,7 @@ class EmployeeMapping(Base, TimestampMixin):
     last_name_column: Mapped[str] = mapped_column(String(128), nullable=False)
     mobile_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     email_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    address_column: Mapped[str | None] = mapped_column(String(128), nullable=True)  # کاراوب: Address
 
     # اختیاری: ستون تاریخ تولد شمسی خام در مبدأ (مثل «۱۳۷۰/۰۵/۲۱»)؛ Sync Engine از آن
     # روز/ماه تولد و تاریخ کامل را بدون تبدیل تقویم استخراج می‌کند.

@@ -28,6 +28,13 @@ class UserOut(BaseModel):
     department_id: int | None = None
     department_name: str | None = None
     position_title: str | None = None
+    # مشخصات فقط‌خواندنی (Sync از منبع) برای «مشخصات کاربری»
+    hire_date_jalali: str | None = None
+    education_title: str | None = None
+    birth_date_jalali: str | None = None
+    national_code: str | None = None
+    gender: int | None = None  # ۱ = مرد، ۲ = زن (همان _normalize_gender سینک)
+    address: str | None = None
     has_photo: bool = False
     hide_birthday_in_dashboard: bool = False
     can_clock_in_out: bool = False  # آیا مجوز آزمایشی «ثبت ورود/خروج مبتنی بر GPS» را دارد

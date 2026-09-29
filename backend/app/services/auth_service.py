@@ -353,6 +353,13 @@ class AuthService:
         base.department_id = employee.department_id
         base.department_name = department_name
         base.position_title = employee.position_title
+        # مشخصات فقط‌خواندنی «مشخصات کاربری» (از منبع؛ کاربر نمی‌تواند ویرایش کند)
+        base.hire_date_jalali = employee.hire_date_jalali
+        base.education_title = employee.education_title
+        base.birth_date_jalali = employee.birth_date_jalali
+        base.national_code = employee.national_code
+        base.gender = employee.gender
+        base.address = employee.address
         # اولویت با ایمیل Employee (همان الگوی password_reset_service.py)؛ User.email معمولاً فقط
         # برای کاربران بدون Employee مقدار دارد
         base.email = employee.email or user.email

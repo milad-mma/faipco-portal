@@ -100,6 +100,13 @@ class SyncService:
                 mapping.position_lookup_id_column,
                 mapping.position_lookup_name_column,
             )
+            # مدرک تحصیلی (همان نگاشت گزارش جذب و ترک کار)
+            education_lookup = await self._load_lookup_table(
+                adapter,
+                mapping.education_lookup_table,
+                mapping.education_lookup_id_column,
+                mapping.education_lookup_name_column,
+            )
 
             # فیلتر واحد ریشه (فقط اگر ریشه تعریف شده باشد)
             protected_codes: set[str] = set()  # کدهایی که در منبع هستند ولی مال این سایت نیستند
@@ -125,6 +132,7 @@ class SyncService:
                 position_lookup,
                 mapping.is_active_inverted,
                 transfer_from_site_ids=sibling_site_ids,
+                education_lookup=education_lookup,
             )
 
             # همگام‌سازی عکس‌ها جدا از بقیه؛ خطای آن فقط لاگ می‌شود
@@ -351,6 +359,10 @@ class SyncService:
             columns["department_raw"] = mapping.department_column
         if mapping.position_column:
             columns["position_raw"] = mapping.position_column
+        if (mapping.education_column or "").strip():
+            columns["education_raw"] = mapping.education_column.strip()
+        if (mapping.address_column or "").strip():
+            columns["address"] = mapping.address_column.strip()
         if (mapping.branch_code_column or "").strip():
             columns["branch_code_raw"] = mapping.branch_code_column.strip()
         return columns
@@ -697,6 +709,7 @@ class SyncService:
         position_lookup: dict[str, str],
         is_active_inverted: bool = False,
         transfer_from_site_ids: set[int] | None = None,
+        education_lookup: dict[str, str] | None = None,
     ) -> tuple[int, int, int, set[str], int]:
         """
         ردیف‌های خام منبع را به رکوردهای Employee این سایت تبدیل و Insert/Update می‌کند.
@@ -788,6 +801,18 @@ class SyncService:
                 if position_code:
                     position_title = position_lookup.get(position_code, position_code)
 
+            # مدرک تحصیلی: ترجمه کد با جدول Lookup (در نبود، خود کد)
+            education_title = None
+            if "education_raw" in columns:
+                raw_edu = row.get(columns["education_raw"])
+                edu_code = str(raw_edu).strip() if raw_edu not in (None, "") else None
+                if edu_code:
+                    education_title = (education_lookup or {}).get(edu_code, edu_code)
+            address = None
+            if "address" in columns:
+                raw_address = row.get(columns["address"])
+                address = " ".join(str(raw_address).split())[:500] if raw_address not in (None, "") else None
+
             # وضعیت فعال بودن در منبع (بدون ستون وضعیت: فعال)
             if "is_active_raw" in columns:
                 is_active = self._coerce_is_active(row.get(columns["is_active_raw"]))
@@ -842,6 +867,8 @@ class SyncService:
                         hire_date_jalali=hire_date_jalali,
                         gender=gender,
                         position_title=position_title,
+                        education_title=education_title,
+                        address=address,
                         # is_enabled عمداً اینجا تنظیم نمی‌شود — مقدار پیش‌فرض
                         # ستون (True) اعمال می‌شود؛ این فیلد فقط دستی از پنل تغییر می‌کند.
                         last_synced_at=now,
@@ -868,6 +895,10 @@ class SyncService:
                     existing.gender = gender
                 if "position_raw" in columns:
                     existing.position_title = position_title
+                if "education_raw" in columns:
+                    existing.education_title = education_title
+                if "address" in columns:
+                    existing.address = address
                 if has_department_mapping:
                     existing.department_id = department_id
                 existing.is_active = is_active

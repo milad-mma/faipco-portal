@@ -74,6 +74,7 @@ const EMPTY_MAPPING = {
   last_name_column: "",
   mobile_column: "",
   email_column: "",
+  address_column: "",
   birth_date_column: "",
   hire_date_column: "",
   gender_column: "",
@@ -438,6 +439,7 @@ export default function SiteSettingsPage() {
           last_name_column: mapping.last_name_column,
           mobile_column: mapping.mobile_column || "",
           email_column: mapping.email_column || "",
+          address_column: mapping.address_column || "",
           birth_date_column: mapping.birth_date_column || "",
           hire_date_column: mapping.hire_date_column || "",
           gender_column: mapping.gender_column || "",
@@ -964,6 +966,13 @@ export default function SiteSettingsPage() {
               helperText="برای «فراموشی رمز عبور» و ارسال بکاپ به ایمیل استفاده می‌شود"
             />
             <TextField
+              label="ستون آدرس (اختیاری)"
+              value={mappingForm.address_column}
+              onChange={(e) => setMappingForm({ ...mappingForm, address_column: e.target.value })}
+              helperText="کاراوب: Address — فقط‌خواندنی در «مشخصات کاربری» پنل پرسنل"
+              disabled={isSaving}
+            />
+            <TextField
               label="ستون تاریخ تولد شمسی (اختیاری — برای کارت «متولدین روز جاری» در داشبورد)"
               value={mappingForm.birth_date_column}
               onChange={(e) => setMappingForm({ ...mappingForm, birth_date_column: e.target.value })}
@@ -1189,7 +1198,7 @@ export default function SiteSettingsPage() {
               disabled={isSaving}
             />
             <TextField
-              label="ستون کد مدرک تحصیلی در جدول پرسنل"
+              label="ستون کد مدرک تحصیلی در جدول پرسنل (گزارش ترک کار و «مشخصات کاربری»)"
               value={mappingForm.education_column}
               onChange={(e) => setMappingForm({ ...mappingForm, education_column: e.target.value })}
               helperText="کاراوب: Grade_No"

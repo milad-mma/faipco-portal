@@ -96,6 +96,7 @@ class EmployeeMappingIn(BaseModel):
     last_name_column: str
     mobile_column: str | None = None
     email_column: str | None = None
+    address_column: str | None = None  # کاراوب: Address (نمایش فقط‌خواندنی در «مشخصات کاربری»)
     birth_date_column: str | None = None
     hire_date_column: str | None = None
     gender_column: str | None = None
