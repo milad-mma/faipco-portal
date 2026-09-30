@@ -28,6 +28,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import BackLink from "../components/BackLink";
 import FamilySummary from "../components/FamilySummary";
+import JalaliCalendarField from "../components/JalaliCalendarField";
 import { deleteMyFamilyDocument, downloadFamilyDocument, fetchMyFamily, saveMyFamily, uploadFamilyDocument } from "../api/family";
 import {
   CHILD_TYPES,
@@ -35,7 +36,6 @@ import {
   MEMBER_LABEL,
   STATUS_COLOR,
   allowedDocuments,
-  formatJalaliInput,
   memberFieldApplies,
   memberFieldKey,
   saveBlob,
@@ -112,12 +112,13 @@ function FieldInput({ def, mode, value, onChange, options }) {
       </TextField>
     );
   }
+  if (def.kind === "date") {
+    // همه‌ی تاریخ‌های این فرم (تولد، ازدواج، طلاق) گذشته‌اند؛ فقط از تقویم شمسی انتخاب می‌شوند
+    return <JalaliCalendarField label={def.label} required={required} value={value} onChange={onChange} disableFuture clearable={!required} />;
+  }
   const inputProps = {};
   let transform = (v) => v;
-  if (def.kind === "date") {
-    transform = formatJalaliInput;
-    inputProps.inputMode = "numeric";
-  } else if (def.kind === "national_id") {
+  if (def.kind === "national_id") {
     transform = (v) => toEn(v).replace(/\D/g, "").slice(0, 10);
     inputProps.inputMode = "numeric";
   } else if (def.kind === "mobile") {
@@ -130,7 +131,6 @@ function FieldInput({ def, mode, value, onChange, options }) {
       size="small"
       label={label}
       value={value || ""}
-      placeholder={def.kind === "date" ? "۱۴۰۰/۰۱/۰۱" : undefined}
       onChange={(e) => onChange(transform(e.target.value))}
       inputProps={{ ...inputProps, maxLength: def.kind === "text" ? 100 : undefined, dir: def.kind === "text" ? undefined : "ltr" }}
     />
@@ -226,7 +226,7 @@ function MemberCard({ member, title, formSettings, form, onChange, onRemove, onD
           const key = memberFieldKey(fieldDefs, member.member_type, col);
           if (!key && !alwaysRequired) return null;
           const mode = alwaysRequired ? "required" : formSettings.fields[key];
-          if (mode === "hidden" || !memberFieldApplies(member.member_type, col, member)) return null;
+          if (mode === "hidden" || !memberFieldApplies(member.member_type, col, member, formSettings.son_max_age)) return null;
           const def = alwaysRequired ? { label: "تاریخ تولد", kind: "date" } : defByKey[key];
           const options = col === "relation" ? formSettings.relations : col === "custody" ? formSettings.custody_options : null;
           return (

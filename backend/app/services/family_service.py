@@ -112,6 +112,8 @@ class FamilyService:
             "fields": settings["fields"],
             "documents": {k: {"mode": v["mode"]} for k, v in settings["documents"].items()},
             "notes": settings["notes"],
+            # سؤال‌های تحصیل و گواهی تحصیل پسر از این سن به بعد پرسیده می‌شوند
+            "son_max_age": settings["rules"]["child"]["son_max_age"],
             **self.settings_meta(),
         }
 
@@ -391,11 +393,11 @@ class FamilyService:
                 docs.append(doc)
             return docs
 
-        profile_docs = take(payload.get("document_ids") or [], rules.allowed_documents(settings, normalized, None), "پرونده")
+        profile_docs = take(payload.get("document_ids") or [], rules.allowed_documents(settings, normalized, None, today), "پرونده")
         member_docs: list[list[FamilyDocument]] = []
         for spec, raw in zip(normalized["members"], ordered):
             who = rules.MEMBER_TYPES[spec["member_type"]] + f" «{spec['first_name']}»"
-            member_docs.append(take(raw.get("document_ids") or [], rules.allowed_documents(settings, normalized, spec), who))
+            member_docs.append(take(raw.get("document_ids") or [], rules.allowed_documents(settings, normalized, spec, today), who))
 
         # مدارک اجباری
         check = {
@@ -403,7 +405,7 @@ class FamilyService:
             "docs": [{"doc_type": d.doc_type} for d in profile_docs],
             "members": [{**spec, "docs": [{"doc_type": d.doc_type} for d in docs]} for spec, docs in zip(normalized["members"], member_docs)],
         }
-        missing = rules.missing_documents(settings, check)
+        missing = rules.missing_documents(settings, check, today)
         if missing:
             raise FamilyError("مدارک زیر را پیوست کنید: " + "، ".join(missing))
 
@@ -622,7 +624,7 @@ class FamilyService:
             "evaluation_approved": rules.evaluate(profile.approved_data, emp.gender, profile.insurance_days, settings, as_of)
             if profile.approved_data
             else None,
-            "missing_documents": rules.missing_documents(settings, current) if profile.status != "draft" else [],
+            "missing_documents": rules.missing_documents(settings, current, today_jalali()) if profile.status != "draft" else [],
             "warnings": rules.warnings(current, settings, today_jalali()),
             "logs": [
                 {

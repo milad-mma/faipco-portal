@@ -91,6 +91,7 @@ def test_validate_errors():
     with pytest.raises(r.FamilyRuleError, match="آینده"):
         r.validate_payload(p, s, TODAY)
     p = married_payload()
+    p["members"][1]["birth_date"] = "1385/01/01"  # بالای ۱۸ سال → وضعیت تحصیل اجباری
     del p["members"][1]["is_student"]
     with pytest.raises(r.FamilyRuleError, match="وضعیت تحصیل"):
         r.validate_payload(p, s, TODAY)
@@ -112,13 +113,13 @@ def test_hidden_field_is_dropped_and_not_required():
 def test_missing_documents_conditional():
     s = r.sanitize_settings(None)
     data = r.validate_payload(married_payload(), s, TODAY)
-    missing = r.missing_documents(s, data)
+    missing = r.missing_documents(s, data, TODAY)
     assert "سند ازدواج" in missing
     assert any("شناسنامه" in x for x in missing)
     assert not any("تحصیل" in x for x in missing)
     s["documents"]["birth_certificate"]["mode"] = "optional"
     data["docs"] = [{"doc_type": "marriage_certificate"}]
-    assert r.missing_documents(s, data) == []
+    assert r.missing_documents(s, data, TODAY) == []
 
 
 # ---------- شمول ----------
@@ -241,3 +242,28 @@ def test_warnings_son_age_and_expiry():
     w = r.warnings(data, s, TODAY)
     assert any("18 سالگی" in x for x in w)
     assert any("منقضی شده" in x for x in w)
+
+
+def test_son_study_only_after_max_age():
+    s = r.sanitize_settings(None)
+    p = married_payload()
+    p["members"][1]["is_student"] = True  # پسر ۷ ساله: سؤال تحصیل موضوعیت ندارد
+    data = r.validate_payload(p, s, TODAY)
+    assert data["members"][1]["is_student"] is None
+    assert not any("تحصیل" in x for x in r.missing_documents(s, data, TODAY))
+    # پسر ۱۹ ساله‌ی محصل → گواهی اشتغال به تحصیل اجباری
+    p["members"][1].update(birth_date="1386/01/01", is_student=True)
+    data = r.validate_payload(p, s, TODAY)
+    assert data["members"][1]["is_student"] is True
+    assert any("گواهی اشتغال به تحصیل" in x for x in r.missing_documents(s, data, TODAY))
+    # HR سن سقف را ۲۰ کند → برای همین پسر دیگر لازم نیست
+    s2 = settings(son_max_age=20)
+    data = r.validate_payload(p, s2, TODAY)
+    assert data["members"][1]["is_student"] is None
+    assert not any("تحصیل" in x for x in r.missing_documents(s2, data, TODAY))
+
+
+def test_warning_son_over_age_without_study_status():
+    s = r.sanitize_settings(None)
+    data = {"members": [{"member_type": "son", "first_name": "علی", "last_name": "ب", "birth_date": "1385/01/01", "is_student": None}]}
+    assert any("وضعیت تحصیل" in w for w in r.warnings(data, s, TODAY))

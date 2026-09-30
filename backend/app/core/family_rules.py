@@ -84,7 +84,7 @@ DOC_TYPES: dict[str, dict] = {
     "separation_document": {"label": "حکم طلاق / گواهی فوت همسر", "scope": "profile", "default": "required", "hint": "وقتی مطلقه یا همسر فوت‌شده هستید"},
     "head_of_household": {"label": "گواهی سرپرستی خانوار", "scope": "profile", "default": "required", "hint": "وقتی سرپرست خانوار هستید"},
     "birth_certificate": {"label": "تصویر شناسنامه", "scope": "member", "default": "required", "hint": "برای همسر و هر فرزند"},
-    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسری که در حال تحصیل است", "renewal": 12},
+    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسری که به سن سقف (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "renewal": 12},
     "disability_certificate": {"label": "گواهی از کار افتادگی", "scope": "member", "default": "required", "hint": "برای عضوی که از کار افتاده است"},
     "custody_ruling": {"label": "حکم حضانت", "scope": "member", "default": "optional", "hint": "برای فرزندی که پس از طلاق حضانتش با شماست"},
 }  # fmt: skip
@@ -337,7 +337,9 @@ _MEMBER_TEXT = ("first_name", "last_name", "father_name", "birth_certificate_no"
                 "employer_name", "other_parent_name", "education_level", "school_name")  # fmt: skip
 _MEMBER_BOOL = ("is_employed", "is_insured", "receives_child_allowance", "is_disabled", "is_student", "is_married")
 # ترتیب مهم است: پاسخ‌های بله/خیر اول پردازش می‌شوند تا فیلدهای وابسته (نام محل کار، مقطع تحصیلی، ...) بدانند مرتبط‌اند یا نه
-MEMBER_COLUMNS = _MEMBER_BOOL + _MEMBER_TEXT + ("national_id", "birth_date", "mobile", "relation", "custody", "marriage_date")
+# تاریخ تولد پیش از همه (سؤال‌های تحصیل پسر فقط بالای سن سقف پرسیده می‌شوند)
+MEMBER_COLUMNS = ("birth_date",) + _MEMBER_BOOL + _MEMBER_TEXT + ("national_id", "mobile", "relation", "custody", "marriage_date")
+SON_STUDY_COLUMNS = ("is_student", "education_level", "school_name")
 
 
 def _to_bool(value) -> bool | None:
@@ -365,8 +367,18 @@ def _member_field_key(member_type: str, column: str) -> str | None:
     return None
 
 
-def _member_field_applies(member_type: str, column: str, member: dict) -> bool:
-    """فیلدهای وابسته فقط وقتی پاسخ والد «بله» است معنی دارند."""
+def son_reached_max_age(member: dict, settings: dict, today: tuple[int, int, int]) -> bool:
+    """پسری که در تاریخ today به سن سقف تنظیم‌شده (پیش‌فرض ۱۸) رسیده یا از آن گذشته است."""
+    if member.get("member_type") != "son":
+        return False
+    birth = parse_jalali(member.get("birth_date"))
+    return birth is not None and age_on(birth, today) >= settings["rules"]["child"]["son_max_age"]
+
+
+def _member_field_applies(member_type: str, column: str, member: dict, settings: dict, today) -> bool:
+    """فیلدهای وابسته فقط وقتی پاسخ والد «بله» است معنی دارند؛ سؤال‌های تحصیل پسر فقط بالای سن سقف."""
+    if member_type == "son" and column in SON_STUDY_COLUMNS and not son_reached_max_age(member, settings, today):
+        return False
     if column in ("employer_name", "is_insured"):
         return member.get("is_employed") is True
     if column in ("education_level", "school_name"):
@@ -480,7 +492,7 @@ def validate_payload(payload: dict, settings: dict, today: tuple[int, int, int])
                 m[col] = None
                 continue
             mode = "required" if always_required else fields.get(key, "optional")
-            if mode == "hidden" or not _member_field_applies(mtype, col, m):
+            if mode == "hidden" or not _member_field_applies(mtype, col, m, settings, today):
                 m[col] = None
                 continue
             label = f"{_FIELD_LABELS.get(col, col)} {who}"
@@ -520,8 +532,8 @@ _FIELD_LABELS = {
 # ---------- مدارک ----------
 
 
-def document_condition(doc_type: str, data: dict, member: dict | None) -> bool:
-    """آیا این نوع مدرک با پاسخ‌های فرم موضوعیت دارد؟"""
+def document_condition(doc_type: str, data: dict, member: dict | None, settings: dict, today) -> bool:
+    """آیا این نوع مدرک با پاسخ‌های فرم (و سن فرزند در تاریخ today) موضوعیت دارد؟"""
     marital = data.get("marital_status")
     if doc_type == "marriage_certificate":
         return marital == "married"
@@ -535,7 +547,8 @@ def document_condition(doc_type: str, data: dict, member: dict | None) -> bool:
     if doc_type == "birth_certificate":
         return True
     if doc_type == "student_certificate":
-        return mtype == "son" and member.get("is_student") is True
+        # پسری که به سن سقف رسیده و در حال تحصیل است
+        return son_reached_max_age(member, settings, today) and member.get("is_student") is True
     if doc_type == "disability_certificate":
         return member.get("is_disabled") is True
     if doc_type == "custody_ruling":
@@ -543,23 +556,23 @@ def document_condition(doc_type: str, data: dict, member: dict | None) -> bool:
     return False
 
 
-def allowed_documents(settings: dict, data: dict, member: dict | None) -> list[str]:
+def allowed_documents(settings: dict, data: dict, member: dict | None, today) -> list[str]:
     """انواع مدرکی که برای پرونده (member=None) یا یک عضو قابل آپلود است (مخفی‌ها حذف)."""
     scope = "profile" if member is None else "member"
     return [
         k for k, spec in DOC_TYPES.items()
-        if spec["scope"] == scope and settings["documents"][k]["mode"] != "hidden" and document_condition(k, data, member)
+        if spec["scope"] == scope and settings["documents"][k]["mode"] != "hidden" and document_condition(k, data, member, settings, today)
     ]  # fmt: skip
 
 
-def missing_documents(settings: dict, data: dict) -> list[str]:
+def missing_documents(settings: dict, data: dict, today) -> list[str]:
     """
     مدارک اجباریِ موضوع‌دار که در data پیوست نشده‌اند (پیام‌های فارسی).
     data["docs"] و member["docs"]: فهرست {doc_type, ...} پیوست‌شده.
     """
     missing: list[str] = []
     have = {d.get("doc_type") for d in data.get("docs") or []}
-    for k in allowed_documents(settings, data, None):
+    for k in allowed_documents(settings, data, None, today):
         if settings["documents"][k]["mode"] == "required" and k not in have:
             missing.append(DOC_TYPES[k]["label"])
     counters = {"son": 0, "daughter": 0}
@@ -571,7 +584,7 @@ def missing_documents(settings: dict, data: dict) -> list[str]:
         else:
             who = "همسر"
         mh = {d.get("doc_type") for d in m.get("docs") or []}
-        for k in allowed_documents(settings, data, m):
+        for k in allowed_documents(settings, data, m, today):
             if settings["documents"][k]["mode"] == "required" and k not in mh:
                 missing.append(f"{DOC_TYPES[k]['label']} ({who})")
     return missing
@@ -789,6 +802,9 @@ def warnings(data: dict, settings: dict, today: tuple[int, int, int]) -> list[st
                 reach = (birth[0] + son_max, birth[1], 29 if birth[1] == 12 and birth[2] == 30 else birth[2])
                 if today <= reach <= add_months(today, warn_months):
                     out.append(f"{_member_name(m)} در {format_jalali(reach)} به {son_max} سالگی می‌رسد")
+    for m in data.get("members") or []:
+        if son_reached_max_age(m, settings, today) and m.get("is_student") is None and m.get("is_disabled") is not True:
+            out.append(f"{_member_name(m)} {son_max} سال یا بیشتر دارد و وضعیت تحصیل / گواهی تحصیل او ثبت نشده است")
     warn_days = alerts.get("doc_expiry_warning_days") or 0
     # مقایسه‌ی شمسی بدون تبدیل تقویم: بازه‌ی روز به ماه گرد می‌شود (هر ۳۰ روز یک ماه، حداقل یک ماه)
     horizon = add_months(today, max(1, round(warn_days / 30))) if warn_days else today

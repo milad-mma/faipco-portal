@@ -54,7 +54,8 @@ import {
   updateFamilySettings,
 } from "../api/family";
 import FamilySummary from "../components/FamilySummary";
-import { MEMBER_LABEL, STATUS_COLOR, formatJalaliInput, saveBlob, toEn } from "../utils/family";
+import JalaliCalendarField from "../components/JalaliCalendarField";
+import { MEMBER_LABEL, STATUS_COLOR, saveBlob, toEn } from "../utils/family";
 
 /**
  * پنل منابع انسانی «مشخصات خانوادگی» (مسیر /family/admin):
@@ -150,14 +151,7 @@ function NoteDialog({ open, title, label, confirmText, color = "primary", withDa
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
           {withDate && (
-            <TextField
-              size="small"
-              label="تاریخ اثر (خالی = امروز)"
-              placeholder="۱۴۰۵/۰۷/۰۱"
-              value={date}
-              onChange={(e) => setDate(formatJalaliInput(e.target.value))}
-              inputProps={{ dir: "ltr", inputMode: "numeric" }}
-            />
+            <JalaliCalendarField label="تاریخ اثر (خالی = امروز)" value={date} onChange={(v) => setDate(v || "")} />
           )}
           <TextField multiline minRows={3} label={label} value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 2000 }} />
           {error && <Alert severity="error">{typeof error === "string" ? error : "خطا"}</Alert>}
@@ -495,16 +489,7 @@ function ListTab({ canManage, formSettings }) {
             </TextField>
           </Grid>
           <Grid item xs={6} md={1.5}>
-            <TextField
-              fullWidth
-              size="small"
-              label="تاریخ مبنا"
-              placeholder="امروز"
-              value={filters.asOf}
-              error={!asOfValid}
-              onChange={(e) => setFilter({ asOf: formatJalaliInput(e.target.value) })}
-              inputProps={{ dir: "ltr", inputMode: "numeric" }}
-            />
+            <JalaliCalendarField label="تاریخ مبنا (خالی = امروز)" value={filters.asOf} onChange={(v) => setFilter({ asOf: v || "" })} />
           </Grid>
           <Grid item xs={6} md={1.5}>
             <Button fullWidth variant="outlined" startIcon={exporting ? <CircularProgress size={16} /> : <FileDownloadOutlinedIcon />} onClick={handleExport} disabled={exporting}>
@@ -797,7 +782,7 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
             </Divider>
           </Grid>
           <Grid item xs={12} md={4}>
-            <NumberField label="سن سقف پسر (سال)" value={cr.son_max_age} onChange={(v) => setRule("child", "son_max_age", v ?? 18)} disabled={ro} allowEmpty={false} helperText="مشمول تا قبل از رسیدن به این سن" />
+            <NumberField label="سن سقف پسر (سال)" value={cr.son_max_age} onChange={(v) => setRule("child", "son_max_age", v ?? 18)} disabled={ro} allowEmpty={false} helperText="مشمول تا قبل از این سن؛ از این سن به بعد وضعیت تحصیل و گواهی اشتغال به تحصیل از پرسنل خواسته می‌شود" />
           </Grid>
           <Grid item xs={12} md={4}>
             <NumberField label="سقف سن پسر در حال تحصیل — خالی = بدون سقف" value={cr.son_student_max_age} onChange={(v) => setRule("child", "son_student_max_age", v)} disabled={ro} />
