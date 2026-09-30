@@ -66,6 +66,9 @@ class UserOut(BaseModel):
     can_manage_vehicles: bool = False  # vehicles.manage — ویرایش/حذف خودروی هر پرسنلی
     can_view_insurance: bool = False  # insurance.view یا insurance.manage — فهرست/خروجی بیمه تکمیلی
     can_manage_insurance: bool = False  # insurance.manage — تنظیمات بیمه تکمیلی
+    can_view_family: bool = False  # family.view یا family.manage — مشخصات خانوادگی پرسنل (حق تاهل/اولاد)
+    can_manage_family: bool = False  # family.manage — تأیید/رد، سابقه بیمه و تنظیم قواعد
+    family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده
     can_view_turnover_report: bool = False  # reports.turnover — گزارش جذب و ترک کار
     can_manage_turnover_categories: bool = False  # reports.turnover_categories — دسته‌بندی علت ترک کار
     insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)

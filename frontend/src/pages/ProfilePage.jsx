@@ -32,6 +32,7 @@ import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
+import FamilyRestroomOutlinedIcon from "@mui/icons-material/FamilyRestroomOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
@@ -319,6 +320,14 @@ export default function ProfilePage() {
             </ListItemIcon>
             <ListItemText primary="مشخصات کاربری" />
           </ListItemButton>
+          {user?.employee_id && (
+            <ListItemButton onClick={() => navigate("/family")}>
+              <ListItemIcon>
+                <FamilyRestroomOutlinedIcon />
+              </ListItemIcon>
+              <ListItemText primary="مشخصات خانوادگی" secondary={user?.family_disabled ? "غیرفعال" : undefined} />
+            </ListItemButton>
+          )}
           <ListItemButton onClick={() => setPasswordDialogOpen(true)}>
             <ListItemIcon>
               <LockResetOutlinedIcon />

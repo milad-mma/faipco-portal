@@ -303,6 +303,14 @@ class AuthService:
             user.is_superuser or "insurance.view" in permission_codes or "insurance.manage" in permission_codes
         )
         base.can_manage_insurance = user.is_superuser or "insurance.manage" in permission_codes
+        base.can_view_family = user.is_superuser or "family.view" in permission_codes or "family.manage" in permission_codes
+        base.can_manage_family = user.is_superuser or "family.manage" in permission_codes
+        try:
+            from app.services.family_service import FamilyService
+
+            base.family_disabled = not (await FamilyService(self.db).get_settings())["enabled"]
+        except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
+            base.family_disabled = False
         base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
         base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
         # ماژول بیمه تکمیلی سراسری است (نه به‌ازای سایت)؛ خواندن سبک از تنظیمات

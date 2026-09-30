@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.core.text_normalize import normalize_search_text
 from app.core import insurance_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name
+from app.core.document_sanitizer import sniff_content_type as _sniff_content_type
 from app.models.employee import Department, Employee
 from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
@@ -786,27 +787,3 @@ class InsuranceService:
         if removed:
             await self.db.commit()
         return removed
-
-
-def _sniff_content_type(content: bytes) -> str:
-    """
-    نوع فایل را از بایت‌های ابتدایی (magic number) تشخیص می‌دهد و MIME آن را
-    برمی‌گرداند. برای فرمت‌های ناشناخته "application/octet-stream" برمی‌گردد
-    که در فهرست مجاز نیست و آپلود را رد می‌کند.
-    """
-    head = content[:16]
-    if head.startswith(b"%PDF"):
-        return "application/pdf"
-    if head.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if head.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if head.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif"
-    if head.startswith(b"RIFF") and content[8:12] == b"WEBP":
-        return "image/webp"
-    if head.startswith(b"BM"):
-        return "image/bmp"
-    if head.startswith((b"II*\x00", b"MM\x00*")):
-        return "image/tiff"
-    return "application/octet-stream"

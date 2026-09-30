@@ -20,6 +20,7 @@ import GroupAddOutlinedIcon from "@mui/icons-material/GroupAddOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
+import FamilyRestroomOutlinedIcon from "@mui/icons-material/FamilyRestroomOutlined";
 import HealthAndSafetyOutlinedIcon from "@mui/icons-material/HealthAndSafetyOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
@@ -91,6 +92,12 @@ export const NAV_ITEMS = [
         path: "/insurance/admin",
         icon: <HealthAndSafetyOutlinedIcon />,
         check: (u) => u?.can_view_insurance,
+      },
+      {
+        label: "مشخصات خانوادگی پرسنل",
+        path: "/family/admin",
+        icon: <FamilyRestroomOutlinedIcon />,
+        check: (u) => u?.can_view_family,
       },
       {
         label: "گزارش جذب و ترک کار",

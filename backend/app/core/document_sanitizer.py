@@ -118,3 +118,27 @@ def sanitize_file_name(name: str | None, content_type: str) -> str:
     stem = text.rsplit(".", 1)[0] if "." in text else text
     stem = re.sub(r"\s+", " ", stem).strip(" ._")[:100] or "document"
     return stem + _EXT.get(content_type, "")
+
+
+def sniff_content_type(content: bytes) -> str:
+    """
+    نوع فایل را از بایت‌های ابتدایی (magic number) تشخیص می‌دهد و MIME آن را
+    برمی‌گرداند. برای فرمت‌های ناشناخته "application/octet-stream" برمی‌گردد
+    که در فهرست مجاز نیست و آپلود را رد می‌کند.
+    """
+    head = content[:16]
+    if head.startswith(b"%PDF"):
+        return "application/pdf"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
+    if head.startswith(b"BM"):
+        return "image/bmp"
+    if head.startswith((b"II*\x00", b"MM\x00*")):
+        return "image/tiff"
+    return "application/octet-stream"

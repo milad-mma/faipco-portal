@@ -157,6 +157,19 @@ async def _cleanup_insurance_pending_documents_job() -> None:
             logger.exception("پاک‌سازی مدارک موقت بیمه تکمیلی ناموفق بود")
 
 
+async def _cleanup_family_unlinked_documents_job() -> None:
+    """Job دوره‌ای: مدارک «مشخصات خانوادگی» که آپلود شده ولی در فرم ثبت نشده‌اند (قدیمی‌تر از ۷۲ ساعت) پاک می‌شوند."""
+    from app.services.family_service import FamilyService
+
+    async with AsyncSessionLocal() as db:
+        try:
+            removed = await FamilyService(db).cleanup_unlinked_documents()
+            if removed:
+                logger.info("%s مدرک ثبت‌نشده‌ی مشخصات خانوادگی پاک شد", removed)
+        except Exception:  # noqa: BLE001
+            logger.exception("پاک‌سازی مدارک ثبت‌نشده‌ی مشخصات خانوادگی ناموفق بود")
+
+
 async def _close_stale_presence_sessions_job() -> None:
     """
     Job هر ۲ دقیقه: نشست‌های «آنلاین» که Heartbeat اخیر ندارند (مثلاً بعد از ری‌استارت سرویس) را با زمان
@@ -355,6 +368,13 @@ async def start_scheduler() -> None:
         trigger="interval",
         hours=6,
         id="insurance_pending_cleanup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _cleanup_family_unlinked_documents_job,
+        trigger="interval",
+        hours=6,
+        id="family_unlinked_cleanup",
         replace_existing=True,
     )
 

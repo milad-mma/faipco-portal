@@ -32,6 +32,8 @@ const NoticesPage = lazyPage(() => import("./pages/NoticesPage"));
 const MyVehiclesPage = lazyPage(() => import("./pages/MyVehiclesPage"));
 const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
 const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
+const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
+const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
 const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
 const LeaveRequestsAdminListPage = lazyPage(() => import("./pages/LeaveRequestsAdminListPage"));
@@ -257,6 +259,11 @@ export default function App() {
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
           <Route path="/insurance" element={<InsurancePage />} />
+          <Route path="/family" element={<FamilyPage />} />
+          <Route
+            path="/family/admin"
+            element={<PermissionRoute check={(u) => u?.can_view_family}><FamilyAdminPage /></PermissionRoute>}
+          />
           <Route
             path="/insurance/admin"
             element={<PermissionRoute check={(u) => u?.can_view_insurance}><InsuranceAdminPage /></PermissionRoute>}
