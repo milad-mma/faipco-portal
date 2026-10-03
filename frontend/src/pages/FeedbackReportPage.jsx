@@ -344,8 +344,23 @@ function FeedbackMessagesList({ canDelete }) {
         </Card>
       ) : (
         <Stack spacing={1.5}>
-          {messages.map((m) => (
-            <Card key={m.id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+          {messages.map((m) => {
+            // پاسخ تازه از فرستنده (گفتگوی باز): کارت با حاشیه و پس‌زمینه‌ی نارنجی و بالای فهرست (ترتیب از سرور)
+            const needsAction = m.awaiting_reviewer && m.reply_count > 0;
+            return (
+            <Card
+              key={m.id}
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                p: 2,
+                ...(needsAction && {
+                  borderColor: "warning.main",
+                  borderWidth: 2,
+                  bgcolor: (t) => (t.palette.mode === "dark" ? "rgba(255,167,38,0.10)" : "#fff8e1"),
+                }),
+              }}
+            >
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                 <Typography
                   variant="body2"
@@ -378,13 +393,13 @@ function FeedbackMessagesList({ canDelete }) {
                   />
                   {m.site_name && <Chip size="small" label={m.site_name} variant="outlined" />}
                   <Chip size="small" label={FEEDBACK_STATUS_LABELS[m.status] || m.status} color={FEEDBACK_STATUS_COLORS[m.status] || "default"} />
-                  {m.awaiting_reviewer && m.reply_count > 0 && <Chip size="small" label="پاسخ جدید از فرستنده" color="warning" variant="outlined" />}
+                  {needsAction && <Chip size="small" label="پاسخ جدید از فرستنده" color="warning" />}
                   {m.contains_profanity && (
                     <Chip size="small" label="حاوی الفاظ نامناسب — هویت آشکار شد" color="warning" />
                   )}
                 </Stack>
                 <Stack direction="row" spacing={0.5} alignItems="center">
-                  <Button size="small" startIcon={<ForumOutlinedIcon />} onClick={() => setOpenThreadId(m.id)}>
+                  <Button size="small" color={needsAction ? "warning" : "primary"} variant={needsAction ? "contained" : "text"} startIcon={<ForumOutlinedIcon />} onClick={() => setOpenThreadId(m.id)}>
                     {m.reply_count ? `گفتگو (${m.reply_count.toLocaleString("fa-IR")})` : m.can_reply ? "پاسخ" : "گفتگو"}
                   </Button>
                   {canDelete && (
@@ -404,7 +419,8 @@ function FeedbackMessagesList({ canDelete }) {
                 {m.message}
               </Typography>
             </Card>
-          ))}
+            );
+          })}
           {/* صفحه‌بندی سمت سرور؛ تغییر تعداد در صفحه به صفحه اول برمی‌گرداند */}
           <TablePagination
             component="div"

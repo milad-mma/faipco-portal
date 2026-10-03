@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, desc, false, func, or_, select
+from sqlalchemy import and_, case, desc, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.profanity_filter import contains_prohibited_phrase
@@ -250,13 +250,34 @@ class FeedbackService:
         if not has_access:
             raise FeedbackAccessDenied("اجازه مشاهده انتقادات و پیشنهادات را ندارید")
 
-        # کوئری اصلی: پیام + فرستنده + پرسنل و سایت فرستنده، جدیدترین اول
+        # آخرین پاسخ هر پیام از فرستنده است؟ (زیرکوئری) — پیام‌هایی که فرستنده در گفتگویشان پاسخ تازه داده و بسته نیستند،
+        # «نیازمند اقدام بازبین»اند و بالای فهرست می‌آیند (به ترتیب زمان آخرین پاسخ)؛ بقیه جدیدترین اول.
+        last_reply_from_sender = (
+            select(FeedbackReply.is_from_sender)
+            .where(FeedbackReply.feedback_id == FeedbackMessage.id)
+            .order_by(desc(FeedbackReply.created_at), desc(FeedbackReply.id))
+            .limit(1)
+            .correlate(FeedbackMessage)
+            .scalar_subquery()
+        )
+        last_reply_at = (
+            select(func.max(FeedbackReply.created_at))
+            .where(FeedbackReply.feedback_id == FeedbackMessage.id)
+            .correlate(FeedbackMessage)
+            .scalar_subquery()
+        )
+        needs_action = case(
+            (and_(FeedbackMessage.status != FeedbackStatus.closed.value, last_reply_from_sender.is_(True)), 0),
+            else_=1,
+        )
+
+        # کوئری اصلی: پیام + فرستنده + پرسنل و سایت فرستنده
         query = (
             select(FeedbackMessage, User, Employee, Site.id, Site.name)
             .join(User, User.id == FeedbackMessage.sender_id)
             .outerjoin(Employee, Employee.id == User.employee_id)
             .outerjoin(Site, Site.id == Employee.site_id)
-            .order_by(desc(FeedbackMessage.created_at))
+            .order_by(needs_action, desc(case((needs_action == 0, last_reply_at), else_=FeedbackMessage.created_at)))
         )
 
         profanity_reveal = await self.is_profanity_reveal_enabled()
