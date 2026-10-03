@@ -10,6 +10,12 @@ export async function fetchMyMobileStatus() {
 }
 
 // POST /mobile/pairing-code؛ خروجی: { code, expires_in }
+// POST /mobile/link؛ اتصال خودکار این گوشی (کد ساخته‌شده توسط اپ) به حساب کاربر واردشده
+export async function linkDevice(link) {
+  const { data } = await apiClient.post("/mobile/link", { link });
+  return data;
+}
+
 export async function createPairingCode() {
   const { data } = await apiClient.post("/mobile/pairing-code");
   return data;

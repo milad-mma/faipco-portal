@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 SETTINGS_KEY = "mobile_app"
 PAIRING_TTL_MINUTES = 10
+# اتصال خودکار: کد تصادفی‌ای که خود اپ ساخته و در آدرس پرتال (#link=...) فرستاده؛ پرتال بعد از ورود کاربر آن را
+# به حساب او وصل می‌کند و بخش بومی اپ با همان کد توکن دستگاه می‌گیرد
+LINK_TTL_MINUTES = 15
 # کد پیام‌ها برای وضعیت گوشی؛ BLOCKING_ISSUES مانع «سالم» بودن‌اند، بقیه فقط هشدارند
 ISSUE_LABELS = {
     "revoked": "این گوشی توسط مدیر باطل شده است",
@@ -181,28 +184,86 @@ class DeviceAuthError(Exception):
     """کد اتصال یا توکن دستگاه نامعتبر (پیام فارسی)."""
 
 
+class DeviceLinkExpiredError(DeviceAuthError):
+    """کد اتصال قبلاً مصرف شده یا منقضی است (اپ دیگر تلاش نمی‌کند)."""
+
+
+def _link_hash(link: str) -> str:
+    """هش کد اتصال خودکار با پیشوند جدا، تا هرگز با کد اتصال دستی (همان جدول) یکی نشود."""
+    return _hash("link:" + link)
+
+
+async def claim_device_link(db: AsyncSession, user: User, link: str) -> bool:
+    """
+    اتصال خودکار: کد ساخته‌شده توسط اپ را به کاربر واردشده وصل می‌کند (بدون هیچ اقدام کاربر).
+    کد قبلاً مصرف‌شده دوباره وصل نمی‌شود (False). کد وصل‌شده ولی هنوز مصرف‌نشده به کاربر فعلی منتقل می‌شود.
+    """
+    now = _now()
+    await db.execute(delete(DevicePairingCode).where(DevicePairingCode.expires_at < now - timedelta(days=1)))
+    row = (
+        await db.execute(select(DevicePairingCode).where(DevicePairingCode.code_hash == _link_hash(link)))
+    ).scalar_one_or_none()
+    if row is not None and row.used_at is not None:
+        await db.commit()
+        return False
+    if row is None:
+        db.add(
+            DevicePairingCode(code_hash=_link_hash(link), user_id=user.id, expires_at=now + timedelta(minutes=LINK_TTL_MINUTES))
+        )
+    else:
+        row.user_id = user.id
+        row.expires_at = now + timedelta(minutes=LINK_TTL_MINUTES)
+    await db.commit()
+    return True
+
+
 async def register_device(db: AsyncSession, payload: DeviceRegisterIn, ip: str | None) -> tuple[MobileDevice, str]:
     """کد اتصال را مصرف می‌کند و دستگاه + توکن تازه می‌سازد. نصب قبلی همین گوشی (همان device_uid) باطل می‌شود."""
     now = _now()
+    # کد اتصال دستی (از پرتال) یا کد اتصال خودکار (ساخته‌ی خود اپ)
     pairing = (
-        await db.execute(select(DevicePairingCode).where(DevicePairingCode.code_hash == _hash(payload.code)))
-    ).scalar_one_or_none()
-    if pairing is None or pairing.used_at is not None or pairing.expires_at < now:
-        raise DeviceAuthError("کد اتصال نامعتبر یا منقضی است؛ از داخل پرتال دوباره «فعال‌سازی» را بزنید.")
+        await db.execute(
+            select(DevicePairingCode).where(
+                DevicePairingCode.code_hash.in_([_hash(payload.code), _link_hash(payload.code)])
+            )
+        )
+    ).scalars().first()
+    if pairing is None:
+        # اتصال خودکار: هنوز کسی در پرتال با این کد وارد نشده؛ اپ کمی بعد دوباره می‌پرسد
+        raise DeviceAuthError("این گوشی هنوز به حسابی وصل نشده است؛ داخل اپ وارد پرتال شوید.")
+    if pairing.used_at is not None or pairing.expires_at < now:
+        raise DeviceLinkExpiredError("کد اتصال نامعتبر یا منقضی است؛ اپ را ببندید و دوباره باز کنید.")
     user = await db.get(User, pairing.user_id)
     if user is None or not user.is_active:
         raise DeviceAuthError("حساب کاربری فعال نیست.")
     pairing.used_at = now
 
-    # همان گوشی قبلاً (برای همین یا کاربر دیگری) ثبت شده: نسخه‌ی قبلی باطل می‌شود
-    old = await db.execute(
-        select(MobileDevice).where(MobileDevice.device_uid == payload.device_uid, MobileDevice.revoked_at.is_(None))
-    )
-    for device in old.scalars().all():
-        device.revoked_at = now
-        device.revoked_reason = "اتصال دوباره‌ی همین گوشی"
-
+    old = (
+        await db.execute(
+            select(MobileDevice).where(MobileDevice.device_uid == payload.device_uid, MobileDevice.revoked_at.is_(None))
+        )
+    ).scalars().all()
     token = secrets.token_urlsafe(40)
+    # همان گوشی، همان کاربر (مثلاً اتصال خودکار در هر باز شدن اپ): همان رکورد با توکن تازه، بدون ردیف جدید
+    same = next((d for d in old if d.user_id == user.id), None)
+    if same is not None:
+        same.token_hash = _hash(token)
+        same.employee_id = user.employee_id
+        for field in ("manufacturer", "model", "os_version", "sdk_int", "app_version_code", "app_version_name"):
+            setattr(same, field, getattr(payload, field))
+        same.last_ip = (ip or "")[:64] or same.last_ip
+        for device in old:
+            if device is not same:
+                device.revoked_at = now
+                device.revoked_reason = "اتصال دوباره‌ی همین گوشی"
+        await db.commit()
+        await db.refresh(same)
+        return same, token
+    # همان گوشی قبلاً برای کاربر دیگری ثبت شده (حساب عوض شده): نسخه‌ی قبلی باطل می‌شود
+    for device in old:
+        device.revoked_at = now
+        device.revoked_reason = "اتصال همین گوشی به حساب دیگر"
+
     device = MobileDevice(
         user_id=user.id,
         employee_id=user.employee_id,

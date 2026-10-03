@@ -1,5 +1,5 @@
 {
-  "count": 324,
+  "count": 325,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -229,6 +229,7 @@
     "POST /api/v1/mobile/devices/register",
     "POST /api/v1/mobile/devices/{device_id}/revoke",
     "POST /api/v1/mobile/exemptions",
+    "POST /api/v1/mobile/link",
     "POST /api/v1/mobile/pairing-code",
     "POST /api/v1/notices",
     "POST /api/v1/notices/attendance-card",

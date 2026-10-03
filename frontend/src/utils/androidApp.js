@@ -3,10 +3,15 @@
  *
  * - اپ پرتال را با آدرس /?source=android-app باز می‌کند؛ این نشانه در localStorage می‌ماند (در TWA حافظه‌ی
  *   مرورگر مخصوص همین سایت است). document.referrer هم در اولین باز شدن android-app://ir.faipco.portal است.
- * - پرتال با آدرس intent:// بخش بومی اپ را باز می‌کند (اتصال گوشی با کد یک‌بارمصرف، یا بررسی دسترسی‌ها).
+ * - اتصال خودکار: اپ یک کد تصادفی در آدرس (#link=...) می‌فرستد؛ پرتال بعد از ورود کاربر آن را به حساب او وصل
+ *   می‌کند (MobileAppPrompt) و بخش بومی اپ خودش توکن دستگاه را می‌گیرد. کد فقط وقتی پذیرفته می‌شود که صفحه واقعاً
+ *   از اپ باز شده باشد (document.referrer = android-app://ir.faipco.portal)، تا لینکِ فرستاده‌شده توسط دیگری
+ *   گوشی او را به حساب شما وصل نکند.
+ * - پرتال با آدرس intent:// بخش بومی اپ را باز می‌کند (اتصال دستی با کد یک‌بارمصرف، یا بررسی دسترسی‌ها).
  */
 export const ANDROID_PACKAGE = "ir.faipco.portal";
 const APP_FLAG_KEY = "faipco_android_app";
+const LINK_KEY = "faipco_device_link"; // sessionStorage: کد اتصال خودکار تا بعد از ورود کاربر
 
 function safeGet(key) {
   try {
@@ -31,6 +36,22 @@ export function detectAndroidApp() {
     const fromApp =
       params.get("source") === "android-app" || String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`);
     if (fromApp) safeSet(APP_FLAG_KEY, "1");
+    // کد اتصال خودکار در بخش # آدرس (به سرور فرستاده و در لاگ ثبت نمی‌شود)
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const link = hash.get("link");
+    if (link) {
+      const reallyFromApp = String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`);
+      if (reallyFromApp && /^[A-Za-z0-9_-]{16,100}$/.test(link)) {
+        try {
+          sessionStorage.setItem(LINK_KEY, link);
+        } catch {
+          /* بدون حافظه: اتصال دستی */
+        }
+      }
+      hash.delete("link");
+      const rest = hash.toString();
+      window.history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? `#${rest}` : ""));
+    }
     if (params.get("source") === "android-app") {
       params.delete("source");
       const query = params.toString();
@@ -71,4 +92,21 @@ export function openNativePairing(code) {
 // باز کردن راهنمای دسترسی‌های بخش بومی (گوشی از قبل متصل است)
 export function openNativeSetup() {
   openIntent("setup");
+}
+
+// کد اتصال خودکار؛ null اگر نباشد (بعد از ارسال موفق با clearDeviceLink پاک می‌شود)
+export function peekDeviceLink() {
+  try {
+    return sessionStorage.getItem(LINK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearDeviceLink() {
+  try {
+    sessionStorage.removeItem(LINK_KEY);
+  } catch {
+    /* بدون حافظه */
+  }
 }

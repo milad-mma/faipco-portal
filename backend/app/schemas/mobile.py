@@ -35,6 +35,12 @@ class MobileAppSettings(BaseModel):
         return text
 
 
+class DeviceLinkIn(BaseModel):
+    """بدنه‌ی POST /mobile/link: کد اتصال خودکار که اپ در آدرس پرتال فرستاده است."""
+
+    link: str = Field(min_length=16, max_length=100)
+
+
 class DeviceRegisterIn(BaseModel):
     """بدنه‌ی POST /mobile/devices/register (از بخش بومی اپ)."""
 

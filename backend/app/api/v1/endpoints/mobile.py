@@ -34,6 +34,7 @@ from app.models.mobile_device import GeofenceEvent, MobileAppExemption, MobileAp
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.mobile import (
+    DeviceLinkIn,
     DeviceOut,
     DeviceRegisterIn,
     DeviceStatusIn,
@@ -69,9 +70,14 @@ async def current_device(
 
 @router.post("/devices/register")
 async def register_device(payload: DeviceRegisterIn, request: Request, db: AsyncSession = Depends(get_db)):
-    """کد اتصال (از پرتال) → توکن دستگاه. خروجی: {device_id, device_token}. کد نامعتبر/منقضی → 400."""
+    """
+    کد اتصال (دستی از پرتال یا خودکار ساخته‌ی اپ) → توکن دستگاه. خروجی: {device_id, device_token}.
+    هنوز وصل نشده → 400 (اپ دوباره می‌پرسد)؛ مصرف‌شده/منقضی → 410 (اپ دیگر نمی‌پرسد).
+    """
     try:
         device, token = await svc.register_device(db, payload, get_client_ip(request))
+    except svc.DeviceLinkExpiredError as e:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except svc.DeviceAuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"device_id": device.id, "device_token": token}
@@ -111,6 +117,19 @@ async def pairing_code(current_user: User = Depends(get_current_user), db: Async
     if current_user.employee_id is None:
         raise HTTPException(status_code=400, detail="حساب شما به پرسنل متصل نیست.")
     return await svc.create_pairing_code(db, current_user)
+
+
+@router.post("/link")
+async def link_device(
+    payload: DeviceLinkIn, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """
+    اتصال خودکار گوشی: کدی که اپ هنگام باز کردن پرتال فرستاده به حساب کاربر واردشده وصل می‌شود؛ بخش بومی اپ
+    خودش با همان کد توکن دستگاه می‌گیرد. خروجی: {linked}. فقط کاربر متصل به پرسنل.
+    """
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=400, detail="حساب شما به پرسنل متصل نیست.")
+    return {"linked": await svc.claim_device_link(db, current_user, payload.link)}
 
 
 @router.get("/me")
