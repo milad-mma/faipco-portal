@@ -41,6 +41,7 @@ const KIND_COLOR = { leave: "success", mission: "info", other: "warning" };
 const STATUS_CHIPS = {
   holiday: { label: "تعطیل", color: "error" },
   absent: { label: "غیبت", color: "warning" },
+  not_employed: { label: "قبل از استخدام", color: "default" }, // روزهای پیش از تاریخ استخدام (غیبت حساب نمی‌شوند)
 };
 
 // تعداد دقیقه را به رشته‌ی «ساعت:دقیقه» تبدیل می‌کند (مثلاً 103 -> 1:43)
@@ -135,6 +136,7 @@ export default function MonthlyAttendanceReportPage() {
 
   // رنگ پس‌زمینه‌ی ردیف یک روز: تعطیل قرمز کم‌رنگ، غیبت روزانه به رنگ نوع آن، غیبت زرد، در غیر این صورت بدون رنگ
   function rowBackground(day) {
+    if (day.day_status === "not_employed") return alpha(theme.palette.text.disabled, 0.08);
     if (day.is_holiday) return "rgba(211, 47, 47, 0.08)";
     if (day.daily_absence) return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
     if (day.day_status === "absent") return alpha(theme.palette.warning.main, 0.14);

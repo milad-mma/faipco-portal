@@ -111,6 +111,18 @@ async def monthly_attendance_report(
             kara_names=kara_names,
             type_titles=type_titles,
             branch_value=await get_site_branch_value(db, employee.site_id),
+            hire_date=_jalali_to_int(employee.hire_date_jalali),
         )
     except MonthlyAttendanceError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
+def _jalali_to_int(value: str | None) -> int | None:
+    """«1405/07/01» → 14050701 (تاریخ استخدام از کاراوب)؛ خالی/نامعتبر → None."""
+    parts = str(value or "").strip().replace("-", "/").split("/")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    y, m, d = (int(p) for p in parts)
+    if not (1300 <= y <= 1500 and 1 <= m <= 12 and 1 <= d <= 31):
+        return None
+    return y * 10000 + m * 100 + d

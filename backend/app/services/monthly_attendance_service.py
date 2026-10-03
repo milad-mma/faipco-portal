@@ -375,9 +375,11 @@ async def get_monthly_attendance(
     kara_names=None,
     type_titles: dict[int, str] | None = None,
     branch_value: str | None = None,
+    hire_date: int | None = None,
 ) -> dict:
     """
     گزارش تردد ماهانه‌ی یک پرسنل را می‌سازد.
+    hire_date: تاریخ استخدام (YYYYMMDD شمسی)؛ روزهای قبل از آن «قبل از استخدام» هستند و غیبت نمی‌گیرند.
     ورودی: اتصال و نگاشت سایت، کد پرسنلی (عددی)، سال/ماه شمسی، نام‌های کاراوب (اختیاری)،
     عنوان انواع مرخصی پرتال (card_no -> عنوان) و کد شعبه.
     خروجی: {"year", "month", "max_transits_in_month", "days": [...]} با یک آیتم برای هر روز ماه
@@ -516,9 +518,14 @@ async def get_monthly_attendance(
         # وضعیت روز:
         #   holiday = تعطیل تقویمی یا روز غیرکاری شیفت خودِ فرد (کارکرد روزانه)
         #   leave/mission/other = نوع مرخصی/ماموریت روزانه
+        #   not_employed = قبل از تاریخ استخدام (بدون تردد)
         #   absent  = روز کاری گذشته، بدون هیچ تردد و بدون مرخصی/ماموریت روزانه (امروز و آینده هرگز غیبت نمی‌گیرند)
         is_off = day in holidays or bool(overlay and overlay.get("work_calendar", {}).get(date_int))
-        if is_off:
+        before_hire = hire_date is not None and date_int < hire_date and not transits
+        if before_hire:
+            # پرسنل هنوز استخدام نشده بود: نه غیبت، نه مرخصی
+            day_status = "not_employed"
+        elif is_off:
             day_status = "holiday"
         elif daily_mark is not None:
             day_status = daily_mark["kind"]
