@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="colorPrimary">#16324F</color>
-    <color name="white">#FFFFFF</color>
-    <color name="ok">#2E7D32</color>
-    <color name="bad">#C62828</color>
-    <color name="warn">#ED6C02</color>
-    <color name="muted">#5F6B7A</color>
-</resources>

@@ -21,6 +21,7 @@ import NotFoundPage from "./pages/NotFoundPage";
 // صفحه‌ها به‌صورت تنبل (هر صفحه یک chunk جدا) بارگذاری می‌شوند تا بار اول فقط کد لازم دانلود و اجرا شود؛
 // ورود و داشبورد شخصی (پرکاربردترین مسیرها) مستقیم import شده‌اند
 const ForgotPasswordPage = lazyPage(() => import("./pages/ForgotPasswordPage"));
+const PublicAppDownloadPage = lazyPage(() => import("./pages/PublicAppDownloadPage"));
 const ResetPasswordPage = lazyPage(() => import("./pages/ResetPasswordPage"));
 const DashboardPage = lazyPage(() => import("./pages/DashboardPage"));
 const EmployeesPage = lazyPage(() => import("./pages/EmployeesPage"));
@@ -98,6 +99,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        {/* دانلود عمومی اپ اندروید (برای QR کد و پیامک) */}
+        <Route path="/app" element={<PublicAppDownloadPage />} />
 
         {/* مسیرهای داخلی: نیازمند ورود و نمایش داخل Layout اصلی (منو و نوار بالا) */}
         <Route

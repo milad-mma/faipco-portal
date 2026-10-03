@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <files-path name="twa_shared" path="twa_shared/" />
-    <!-- تصویر Splash که androidbrowserhelper به Chrome می‌دهد -->
-    <files-path name="twa_splash" path="twa_splash/" />
-</paths>
