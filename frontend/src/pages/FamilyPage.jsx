@@ -113,8 +113,9 @@ function FieldInput({ def, mode, value, onChange, options }) {
     );
   }
   if (def.kind === "date") {
-    // همه‌ی تاریخ‌های این فرم (تولد، ازدواج، طلاق) گذشته‌اند؛ فقط از تقویم شمسی انتخاب می‌شوند
-    return <JalaliCalendarField label={def.label} required={required} value={value} onChange={onChange} disableFuture clearable={!required} />;
+    // تاریخ‌ها فقط از تقویم شمسی انتخاب می‌شوند؛ تولد/ازدواج/طلاق گذشته‌اند
+    // def.future: تاریخ آینده مجاز است (مثل تاریخ اعتبار گواهی تحصیل)
+    return <JalaliCalendarField label={def.label} required={required} value={value} onChange={onChange} disableFuture={!def.future} clearable={!required} />;
   }
   const inputProps = {};
   let transform = (v) => v;
@@ -226,7 +227,7 @@ function MemberCard({ member, title, formSettings, form, onChange, onRemove, onD
           const key = memberFieldKey(fieldDefs, member.member_type, col);
           if (!key && !alwaysRequired) return null;
           const mode = alwaysRequired ? "required" : formSettings.fields[key];
-          if (mode === "hidden" || !memberFieldApplies(member.member_type, col, member, formSettings.son_max_age)) return null;
+          if (mode === "hidden" || !memberFieldApplies(member.member_type, col, member, formSettings)) return null;
           const def = alwaysRequired ? { label: "تاریخ تولد", kind: "date" } : defByKey[key];
           const options = col === "relation" ? formSettings.relations : col === "custody" ? formSettings.custody_options : null;
           return (

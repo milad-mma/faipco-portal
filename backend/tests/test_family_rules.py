@@ -155,8 +155,9 @@ def test_son_age_and_student_extension():
     son = next(c for c in ev["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is False and "18" in son["reason"]
     # دانشجو ولی گواهی معتبر ندارد
-    p["members"][1]["is_student"] = True
+    p["members"][1].update(is_student=True, student_cert_expiry="1406/01/01")
     data, s = _data(p)
+    data["members"][1]["student_cert_expiry"] = None  # بدون تاریخ اعتبار: انقضا = آپلود + دوره تمدید
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is False and "گواهی" in son["reason"]
     # گواهی تازه → مشمول؛ گواهی قدیمی (بیش از ۱۲ ماه) → غیرمشمول
@@ -252,7 +253,7 @@ def test_son_study_only_after_max_age():
     assert data["members"][1]["is_student"] is None
     assert not any("تحصیل" in x for x in r.missing_documents(s, data, TODAY))
     # پسر ۱۹ ساله‌ی محصل → گواهی اشتغال به تحصیل اجباری
-    p["members"][1].update(birth_date="1386/01/01", is_student=True)
+    p["members"][1].update(birth_date="1386/01/01", is_student=True, student_cert_expiry="1406/01/01")
     data = r.validate_payload(p, s, TODAY)
     assert data["members"][1]["is_student"] is True
     assert any("گواهی اشتغال به تحصیل" in x for x in r.missing_documents(s, data, TODAY))
@@ -267,3 +268,54 @@ def test_warning_son_over_age_without_study_status():
     s = r.sanitize_settings(None)
     data = {"members": [{"member_type": "son", "first_name": "علی", "last_name": "ب", "birth_date": "1385/01/01", "is_student": None}]}
     assert any("وضعیت تحصیل" in w for w in r.warnings(data, s, TODAY))
+
+
+def test_daughter_study_after_age():
+    s = r.sanitize_settings(None)
+    p = married_payload()
+    p["members"][2]["is_student"] = True  # دختر ۵ ساله: سؤال تحصیل موضوعیت ندارد
+    data = r.validate_payload(p, s, TODAY)
+    assert data["members"][2]["is_student"] is None
+    # دختر ۲۰ ساله: وضعیت تحصیل اجباری
+    p["members"][2]["birth_date"] = "1385/03/01"
+    del p["members"][2]["is_student"]
+    with pytest.raises(r.FamilyRuleError, match="وضعیت تحصیل"):
+        r.validate_payload(p, s, TODAY)
+    # محصل → گواهی اشتغال به تحصیل اجباری
+    p["members"][2].update(is_student=True, student_cert_expiry="1406/01/01")
+    data = r.validate_payload(p, s, TODAY)
+    assert any("گواهی اشتغال به تحصیل (دختر 1)" == x for x in r.missing_documents(s, data, TODAY))
+    # شمول: پیش‌فرض تحصیل شرط نیست؛ با روشن کردن daughter_require_study گواهی معتبر لازم است
+    d = lambda st: next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, st, TODAY)["child"]["children"] if c["member_type"] == "daughter")
+    assert d(s)["eligible"] is True
+    s2 = settings(daughter_require_study=True)
+    assert d(s2)["eligible"] is False and "گواهی" in d(s2)["reason"]
+    data["members"][2]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1405/06/01"}]
+    assert d(s2)["eligible"] is True
+    data["members"][2]["is_student"] = False
+    assert d(s2)["eligible"] is False
+
+
+def test_student_certificate_expiry_date():
+    s = r.sanitize_settings(None)
+    p = married_payload()
+    p["members"][1].update(birth_date="1386/01/01", is_student=True)  # پسر ۱۹ ساله‌ی محصل
+    with pytest.raises(r.FamilyRuleError, match="اعتبار گواهی"):
+        r.validate_payload(p, s, TODAY)  # تاریخ اعتبار اجباری
+    p["members"][1]["student_cert_expiry"] = "1405/01/01"
+    with pytest.raises(r.FamilyRuleError, match="گذشته"):
+        r.validate_payload(p, s, TODAY)
+    p["members"][1]["student_cert_expiry"] = "1406/06/31"
+    data = r.validate_payload(p, s, TODAY)
+    assert data["members"][1]["student_cert_expiry"] == "1406/06/31"
+    # زیر سن یا غیرمحصل → فیلد ذخیره نمی‌شود
+    p2 = married_payload()
+    p2["members"][1]["student_cert_expiry"] = "1406/06/31"
+    assert r.validate_payload(p2, s, TODAY)["members"][1]["student_cert_expiry"] is None
+    # تاریخ اعتبار مبنای انقضاست (نه تاریخ آپلود + دوره تمدید)
+    data["members"][1]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1403/01/01"}]
+    son = lambda as_of: next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, as_of)["child"]["children"] if c["member_type"] == "son")
+    assert son(TODAY)["eligible"] is True
+    assert son((1406, 7, 1))["eligible"] is False
+    w = r.warnings(data, s, (1406, 6, 15))
+    assert any("1406/06/31 منقضی می‌شود" in x for x in w)

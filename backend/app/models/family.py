@@ -90,6 +90,7 @@ class FamilyMember(Base):
     school_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_married: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # دختر
     marriage_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    student_cert_expiry: Mapped[str | None] = mapped_column(String(10), nullable=True)  # تاریخ اعتبار گواهی تحصیل (شمسی)
 
     profile: Mapped[FamilyProfile] = relationship(back_populates="members")
     documents: Mapped[list["FamilyDocument"]] = relationship(back_populates="member", order_by="FamilyDocument.id")

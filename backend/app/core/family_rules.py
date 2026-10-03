@@ -67,6 +67,7 @@ FIELD_DEFS: list[dict] = [
     {"key": "child.other_parent_name", "label": "نام و نام خانوادگی پدر/مادر دیگر", "kind": "text", "default": "optional"},
     {"key": "child.custody", "label": "حضانت فرزند", "kind": "choice", "default": "optional"},
     {"key": "child.is_disabled", "label": "فرزند از کار افتاده است؟", "kind": "bool", "default": "optional"},
+    {"key": "child.student_cert_expiry", "label": "تاریخ اعتبار گواهی اشتغال به تحصیل", "kind": "date", "default": "required", "future": True},
     {"key": "son.is_student", "label": "پسر در حال تحصیل است؟", "kind": "bool", "default": "required"},
     {"key": "son.education_level", "label": "مقطع تحصیلی پسر", "kind": "text", "default": "optional"},
     {"key": "son.school_name", "label": "نام مدرسه / دانشگاه پسر", "kind": "text", "default": "optional"},
@@ -74,6 +75,9 @@ FIELD_DEFS: list[dict] = [
     {"key": "daughter.is_married", "label": "دختر ازدواج کرده است؟", "kind": "bool", "default": "required"},
     {"key": "daughter.marriage_date", "label": "تاریخ ازدواج دختر", "kind": "date", "default": "optional"},
     {"key": "daughter.is_employed", "label": "دختر شاغل است؟", "kind": "bool", "default": "required"},
+    {"key": "daughter.is_student", "label": "دختر در حال تحصیل است؟", "kind": "bool", "default": "required"},
+    {"key": "daughter.education_level", "label": "مقطع تحصیلی دختر", "kind": "text", "default": "optional"},
+    {"key": "daughter.school_name", "label": "نام مدرسه / دانشگاه دختر", "kind": "text", "default": "optional"},
 ]  # fmt: skip
 FIELD_KEYS = {f["key"] for f in FIELD_DEFS}
 _FIELD_KIND = {f["key"]: f["kind"] for f in FIELD_DEFS}
@@ -84,7 +88,7 @@ DOC_TYPES: dict[str, dict] = {
     "separation_document": {"label": "حکم طلاق / گواهی فوت همسر", "scope": "profile", "default": "required", "hint": "وقتی مطلقه یا همسر فوت‌شده هستید"},
     "head_of_household": {"label": "گواهی سرپرستی خانوار", "scope": "profile", "default": "required", "hint": "وقتی سرپرست خانوار هستید"},
     "birth_certificate": {"label": "تصویر شناسنامه", "scope": "member", "default": "required", "hint": "برای همسر و هر فرزند"},
-    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسری که به سن سقف (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "renewal": 12},
+    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسر یا دختری که به سن تعیین‌شده (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "renewal": 12},
     "disability_certificate": {"label": "گواهی از کار افتادگی", "scope": "member", "default": "required", "hint": "برای عضوی که از کار افتاده است"},
     "custody_ruling": {"label": "حکم حضانت", "scope": "member", "default": "optional", "hint": "برای فرزندی که پس از طلاق حضانتش با شماست"},
 }  # fmt: skip
@@ -119,6 +123,9 @@ DEFAULT_RULES: dict = {
         "daughter_stop_on_employment": True,
         "daughter_max_age": None,
         "daughter_extend_if_disabled": True,
+        "daughter_study_age": 18,  # از این سن وضعیت تحصیل و گواهی تحصیل دختر پرسیده می‌شود
+        "daughter_require_study": False,  # دختر بالای آن سن فقط اگر در حال تحصیل باشد مشمول است
+        "daughter_require_valid_student_certificate": True,
     },
 }
 
@@ -294,6 +301,9 @@ def sanitize_settings(value) -> dict:
             "daughter_stop_on_employment": _b(c_in, cd, "daughter_stop_on_employment"),
             "daughter_max_age": _n(c_in, cd, "daughter_max_age", 1, 99),
             "daughter_extend_if_disabled": _b(c_in, cd, "daughter_extend_if_disabled"),
+            "daughter_study_age": _n(c_in, cd, "daughter_study_age", 1, 99) or cd["daughter_study_age"],
+            "daughter_require_study": _b(c_in, cd, "daughter_require_study"),
+            "daughter_require_valid_student_certificate": _b(c_in, cd, "daughter_require_valid_student_certificate"),
         },
     }
     a_in = src.get("alerts") if isinstance(src.get("alerts"), dict) else {}
@@ -338,8 +348,10 @@ _MEMBER_TEXT = ("first_name", "last_name", "father_name", "birth_certificate_no"
 _MEMBER_BOOL = ("is_employed", "is_insured", "receives_child_allowance", "is_disabled", "is_student", "is_married")
 # ترتیب مهم است: پاسخ‌های بله/خیر اول پردازش می‌شوند تا فیلدهای وابسته (نام محل کار، مقطع تحصیلی، ...) بدانند مرتبط‌اند یا نه
 # تاریخ تولد پیش از همه (سؤال‌های تحصیل پسر فقط بالای سن سقف پرسیده می‌شوند)
-MEMBER_COLUMNS = ("birth_date",) + _MEMBER_BOOL + _MEMBER_TEXT + ("national_id", "mobile", "relation", "custody", "marriage_date")
-SON_STUDY_COLUMNS = ("is_student", "education_level", "school_name")
+MEMBER_COLUMNS = ("birth_date",) + _MEMBER_BOOL + _MEMBER_TEXT + (
+    "national_id", "mobile", "relation", "custody", "marriage_date", "student_cert_expiry",
+)  # fmt: skip
+STUDY_COLUMNS = ("is_student", "education_level", "school_name")
 
 
 def _to_bool(value) -> bool | None:
@@ -367,22 +379,35 @@ def _member_field_key(member_type: str, column: str) -> str | None:
     return None
 
 
-def son_reached_max_age(member: dict, settings: dict, today: tuple[int, int, int]) -> bool:
-    """پسری که در تاریخ today به سن سقف تنظیم‌شده (پیش‌فرض ۱۸) رسیده یا از آن گذشته است."""
-    if member.get("member_type") != "son":
-        return False
+def study_age(member_type: str, settings: dict) -> int | None:
+    """سنی که از آن به بعد وضعیت تحصیل و گواهی تحصیل فرزند پرسیده می‌شود (پسر: سن سقف، دختر: سن تحصیل)."""
+    cr = settings["rules"]["child"]
+    return {"son": cr["son_max_age"], "daughter": cr["daughter_study_age"]}.get(member_type)
+
+
+def child_reached_study_age(member: dict, settings: dict, today: tuple[int, int, int]) -> bool:
+    """پسر/دختری که در تاریخ today به سن تعیین‌شده در تنظیمات (پیش‌فرض ۱۸) رسیده یا از آن گذشته است."""
+    limit = study_age(member.get("member_type"), settings)
     birth = parse_jalali(member.get("birth_date"))
-    return birth is not None and age_on(birth, today) >= settings["rules"]["child"]["son_max_age"]
+    return limit is not None and birth is not None and age_on(birth, today) >= limit
 
 
 def _member_field_applies(member_type: str, column: str, member: dict, settings: dict, today) -> bool:
     """فیلدهای وابسته فقط وقتی پاسخ والد «بله» است معنی دارند؛ سؤال‌های تحصیل پسر فقط بالای سن سقف."""
-    if member_type == "son" and column in SON_STUDY_COLUMNS and not son_reached_max_age(member, settings, today):
+    if member_type in CHILD_TYPES and column in STUDY_COLUMNS and not child_reached_study_age(member, settings, today):
         return False
     if column in ("employer_name", "is_insured"):
         return member.get("is_employed") is True
     if column in ("education_level", "school_name"):
         return member.get("is_student") is True
+    if column == "student_cert_expiry":
+        # همراه گواهی اشتغال به تحصیل (فرزند بالای سن تعیین‌شده که در حال تحصیل است، و مدرک مخفی نشده باشد)
+        return (
+            member_type in CHILD_TYPES
+            and member.get("is_student") is True
+            and child_reached_study_age(member, settings, today)
+            and settings["documents"]["student_certificate"]["mode"] != "hidden"
+        )
     if column == "marriage_date" and member_type == "daughter":
         return member.get("is_married") is True
     return True
@@ -507,6 +532,8 @@ def validate_payload(payload: dict, settings: dict, today: tuple[int, int, int])
             m[col] = value
         if m.get("birth_date") and parse_jalali(m["birth_date"]) > today:
             raise FamilyRuleError(f"تاریخ تولد {who} نمی‌تواند در آینده باشد.")
+        if m.get("student_cert_expiry") and parse_jalali(m["student_cert_expiry"]) < today:
+            raise FamilyRuleError(f"اعتبار گواهی اشتغال به تحصیل {who} گذشته است؛ گواهی جدید و معتبر پیوست کنید.")
         if m.get("national_id"):
             if m["national_id"] in seen_nid:
                 raise FamilyRuleError(f"کد ملی {who} تکراری است.")
@@ -519,6 +546,7 @@ def validate_payload(payload: dict, settings: dict, today: tuple[int, int, int])
 
 
 _FIELD_LABELS = {
+    "student_cert_expiry": "تاریخ اعتبار گواهی تحصیل",
     "father_name": "نام پدر", "national_id": "کد ملی", "birth_certificate_no": "شماره شناسنامه",
     "birth_date": "تاریخ تولد", "marriage_certificate_no": "شماره سند ازدواج", "mobile": "موبایل",
     "is_employed": "وضعیت اشتغال", "employer_name": "نام محل کار", "is_insured": "وضعیت بیمه",
@@ -547,8 +575,8 @@ def document_condition(doc_type: str, data: dict, member: dict | None, settings:
     if doc_type == "birth_certificate":
         return True
     if doc_type == "student_certificate":
-        # پسری که به سن سقف رسیده و در حال تحصیل است
-        return son_reached_max_age(member, settings, today) and member.get("is_student") is True
+        # پسر/دختری که به سن تعیین‌شده رسیده و در حال تحصیل است
+        return child_reached_study_age(member, settings, today) and member.get("is_student") is True
     if doc_type == "disability_certificate":
         return member.get("is_disabled") is True
     if doc_type == "custody_ruling":
@@ -590,8 +618,13 @@ def missing_documents(settings: dict, data: dict, today) -> list[str]:
     return missing
 
 
-def document_expiry(settings: dict, doc: dict) -> tuple[int, int, int] | None:
-    """تاریخ انقضای یک مدرک = تاریخ آپلود (شمسی) + دوره تمدید تنظیم‌شده؛ بدون دوره → None."""
+def document_expiry(settings: dict, doc: dict, member: dict | None = None) -> tuple[int, int, int] | None:
+    """
+    تاریخ انقضای یک مدرک. گواهی اشتغال به تحصیل: «تاریخ اعتبار» واردشده برای همان فرزند (اگر باشد)؛
+    بقیه (و گواهی بدون تاریخ اعتبار): تاریخ آپلود (شمسی) + دوره تمدید تنظیم‌شده؛ بدون دوره → None.
+    """
+    if doc.get("doc_type") == "student_certificate" and member and parse_jalali(member.get("student_cert_expiry")):
+        return parse_jalali(member.get("student_cert_expiry"))
     months = (settings["documents"].get(doc.get("doc_type")) or {}).get("renewal_months")
     uploaded = parse_jalali(doc.get("uploaded"))
     if not months or uploaded is None:
@@ -769,6 +802,14 @@ def _child_eligible(kid: dict, data: dict, settings: dict, as_of, age: int | Non
         if cr["daughter_extend_if_disabled"] and disabled:
             return True, "مشمول (از کار افتاده)"
         return False, f"دختر {cr['daughter_max_age']} سال یا بیشتر"
+    if cr["daughter_require_study"] and age >= cr["daughter_study_age"]:
+        if cr["daughter_extend_if_disabled"] and disabled:
+            return True, "مشمول (از کار افتاده)"
+        if kid.get("is_student") is not True:
+            return False, f"دختر {cr['daughter_study_age']} سال یا بیشتر و در حال تحصیل نیست"
+        if cr["daughter_require_valid_student_certificate"] and not _has_valid_doc(kid, "student_certificate", settings, as_of):
+            return False, "گواهی تحصیل معتبر ندارد"
+        return True, "مشمول (در حال تحصیل)"
     return True, "مشمول"
 
 
@@ -776,7 +817,7 @@ def _has_valid_doc(member: dict, doc_type: str, settings: dict, as_of) -> bool:
     for doc in member.get("docs") or []:
         if doc.get("doc_type") != doc_type:
             continue
-        expiry = document_expiry(settings, doc)
+        expiry = document_expiry(settings, doc, member)
         if expiry is None or expiry >= as_of:
             return True
     return False
@@ -803,14 +844,15 @@ def warnings(data: dict, settings: dict, today: tuple[int, int, int]) -> list[st
                 if today <= reach <= add_months(today, warn_months):
                     out.append(f"{_member_name(m)} در {format_jalali(reach)} به {son_max} سالگی می‌رسد")
     for m in data.get("members") or []:
-        if son_reached_max_age(m, settings, today) and m.get("is_student") is None and m.get("is_disabled") is not True:
-            out.append(f"{_member_name(m)} {son_max} سال یا بیشتر دارد و وضعیت تحصیل / گواهی تحصیل او ثبت نشده است")
+        if child_reached_study_age(m, settings, today) and m.get("is_student") is None and m.get("is_disabled") is not True:
+            limit = study_age(m.get("member_type"), settings)
+            out.append(f"{_member_name(m)} {limit} سال یا بیشتر دارد و وضعیت تحصیل / گواهی تحصیل او ثبت نشده است")
     warn_days = alerts.get("doc_expiry_warning_days") or 0
     # مقایسه‌ی شمسی بدون تبدیل تقویم: بازه‌ی روز به ماه گرد می‌شود (هر ۳۰ روز یک ماه، حداقل یک ماه)
     horizon = add_months(today, max(1, round(warn_days / 30))) if warn_days else today
 
-    def _check(doc: dict, owner: str):
-        expiry = document_expiry(settings, doc)
+    def _check(doc: dict, owner: str, member: dict | None = None):
+        expiry = document_expiry(settings, doc, member)
         if expiry is None:
             return
         label = DOC_TYPES.get(doc.get("doc_type"), {}).get("label", "مدرک")
@@ -823,5 +865,5 @@ def warnings(data: dict, settings: dict, today: tuple[int, int, int]) -> list[st
         _check(doc, "")
     for m in data.get("members") or []:
         for doc in m.get("docs") or []:
-            _check(doc, _member_name(m))
+            _check(doc, _member_name(m), m)
     return [w.replace("  ", " ") for w in out]

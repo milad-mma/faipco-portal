@@ -802,10 +802,27 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
           <Grid item xs={12} md={4}>
             <NumberField label="سن سقف دختر — خالی = بدون سقف" value={cr.daughter_max_age} onChange={(v) => setRule("child", "daughter_max_age", v)} disabled={ro} />
           </Grid>
+          <Grid item xs={12} md={4}>
+            <NumberField
+              label="سن پرسیدن وضعیت تحصیل دختر (سال)"
+              value={cr.daughter_study_age}
+              onChange={(v) => setRule("child", "daughter_study_age", v ?? 18)}
+              disabled={ro}
+              allowEmpty={false}
+              helperText="از این سن به بعد وضعیت تحصیل و گواهی اشتغال به تحصیل از پرسنل خواسته می‌شود"
+            />
+          </Grid>
           <Grid item xs={12}>
             <SwitchRow label="دختر با ازدواج از شمول خارج می‌شود" checked={cr.daughter_stop_on_marriage} onChange={(v) => setRule("child", "daughter_stop_on_marriage", v)} disabled={ro} />
             <SwitchRow label="دختر با اشتغال از شمول خارج می‌شود" checked={cr.daughter_stop_on_employment} onChange={(v) => setRule("child", "daughter_stop_on_employment", v)} disabled={ro} />
             <SwitchRow label="دختر بالای سن سقف، اگر از کار افتاده باشد مشمول است" checked={cr.daughter_extend_if_disabled} onChange={(v) => setRule("child", "daughter_extend_if_disabled", v)} disabled={ro} />
+            <SwitchRow label="دختر بالای سن تحصیل، فقط اگر در حال تحصیل باشد مشمول است" checked={cr.daughter_require_study} onChange={(v) => setRule("child", "daughter_require_study", v)} disabled={ro} />
+            <SwitchRow
+              label="برای شمول دختر محصل، گواهی تحصیل معتبر (منقضی‌نشده) لازم است"
+              checked={cr.daughter_require_valid_student_certificate}
+              onChange={(v) => setRule("child", "daughter_require_valid_student_certificate", v)}
+              disabled={ro || !cr.daughter_require_study}
+            />
           </Grid>
         </Grid>
       </Card>

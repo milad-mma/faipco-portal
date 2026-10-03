@@ -112,8 +112,9 @@ class FamilyService:
             "fields": settings["fields"],
             "documents": {k: {"mode": v["mode"]} for k, v in settings["documents"].items()},
             "notes": settings["notes"],
-            # سؤال‌های تحصیل و گواهی تحصیل پسر از این سن به بعد پرسیده می‌شوند
+            # سؤال‌های تحصیل و گواهی تحصیل پسر/دختر از این سن به بعد پرسیده می‌شوند
             "son_max_age": settings["rules"]["child"]["son_max_age"],
+            "daughter_study_age": settings["rules"]["child"]["daughter_study_age"],
             **self.settings_meta(),
         }
 
@@ -151,8 +152,8 @@ class FamilyService:
         return profile, employee
 
     @staticmethod
-    def _doc_out(doc: FamilyDocument, settings: dict, today: tuple[int, int, int]) -> dict:
-        expiry = rules.document_expiry(settings, {"doc_type": doc.doc_type, "uploaded": doc.uploaded_jalali})
+    def _doc_out(doc: FamilyDocument, settings: dict, today: tuple[int, int, int], member: dict | None = None) -> dict:
+        expiry = rules.document_expiry(settings, {"doc_type": doc.doc_type, "uploaded": doc.uploaded_jalali}, member)
         return {
             "id": doc.id,
             "doc_type": doc.doc_type,
@@ -175,7 +176,9 @@ class FamilyService:
                 member_type=m.member_type,
                 first_name=m.first_name,
                 last_name=m.last_name,
-                documents=[self._doc_out(d, settings, today) for d in m.documents if d.linked and not d.archived],
+                documents=[
+                    self._doc_out(d, settings, today, item) for d in m.documents if d.linked and not d.archived
+                ],
             )
             members.append(item)
         return {
@@ -777,7 +780,8 @@ class FamilyService:
                         rules.MEMBER_TYPES.get(m["member_type"], m["member_type"]), m["first_name"], m["last_name"],
                         m.get("national_id") or "", m.get("birth_date") or "", k["age"] if k and k["age"] is not None else "",
                         rules.RELATIONS.get(m.get("relation"), ""), yes_no[m.get("is_disabled")],
-                        yes_no[m.get("is_student")] if m["member_type"] == "son" else "",
+                        yes_no[m.get("is_student")] if m["member_type"] != "spouse" else "",
+                        m.get("student_cert_expiry") or "",
                         yes_no[m.get("is_married")] if m["member_type"] == "daughter" else "",
                         yes_no[m.get("is_employed")],
                         (yes_no[k["eligible"]] if k else "") if m["member_type"] != "spouse" else "",
@@ -787,7 +791,7 @@ class FamilyService:
         ws2.sheet_view.rightToLeft = True
         ws2.append([
             "کد پرسنلی", "پرسنل", "نسبت", "نام", "نام خانوادگی", "کد ملی", "تاریخ تولد", "سن", "نوع فرزند",
-            "از کار افتاده", "در حال تحصیل", "ازدواج کرده", "شاغل", "واجد شرایط حق اولاد", "علت",
+            "از کار افتاده", "در حال تحصیل", "اعتبار گواهی تحصیل", "ازدواج کرده", "شاغل", "واجد شرایط حق اولاد", "علت",
         ])  # fmt: skip
         for r in members_rows:
             ws2.append(r)

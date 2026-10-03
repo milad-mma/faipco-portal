@@ -32,6 +32,7 @@ class FamilyMemberIn(BaseModel):
     school_name: str | None = None
     is_married: bool | None = None
     marriage_date: str | None = None
+    student_cert_expiry: str | None = None
     document_ids: list[int] = Field(default_factory=list, max_length=20)
 
 
@@ -88,6 +89,7 @@ class FamilyMemberOut(BaseModel):
     school_name: str | None = None
     is_married: bool | None = None
     marriage_date: str | None = None
+    student_cert_expiry: str | None = None
     documents: list[FamilyDocumentOut] = []
 
 

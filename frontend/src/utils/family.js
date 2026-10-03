@@ -8,9 +8,9 @@ export const MEMBER_COLUMNS = {
   spouse: ["father_name", "national_id", "birth_certificate_no", "birth_date", "marriage_certificate_no", "mobile",
     "is_employed", "employer_name", "is_insured", "receives_child_allowance", "is_disabled"],
   son: ["birth_date", "national_id", "birth_certificate_no", "relation", "other_parent_name", "custody", "is_disabled",
-    "is_student", "education_level", "school_name", "is_employed"],
+    "is_student", "education_level", "school_name", "student_cert_expiry", "is_employed"],
   daughter: ["birth_date", "national_id", "birth_certificate_no", "relation", "other_parent_name", "custody", "is_disabled",
-    "is_married", "marriage_date", "is_employed"],
+    "is_married", "marriage_date", "is_employed", "is_student", "education_level", "school_name", "student_cert_expiry"],
 }; // prettier-ignore
 export const MEMBER_LABEL = { spouse: "همسر", son: "پسر", daughter: "دختر" };
 export const STATUS_COLOR = { none: "default", draft: "default", pending: "warning", approved: "success", rejected: "error", returned: "info" };
@@ -35,18 +35,26 @@ export function ageFromJalali(value) {
   return age;
 }
 
-// پسری که به سن سقف تنظیم‌شده توسط منابع انسانی (پیش‌فرض ۱۸) رسیده یا از آن گذشته است
-export function sonReachedMaxAge(member, sonMaxAge) {
-  if (member?.member_type !== "son") return false;
+// پسر/دختری که به سن تعیین‌شده توسط منابع انسانی (پیش‌فرض ۱۸) رسیده یا از آن گذشته است.
+// studyAges: { son: سن سقف پسر، daughter: سن پرسیدن تحصیل دختر } از تنظیمات فرم
+export function childReachedStudyAge(member, studyAges) {
+  const limit = studyAges?.[member?.member_type];
+  if (!CHILD_TYPES.includes(member?.member_type)) return false;
   const age = ageFromJalali(member.birth_date);
-  return age !== null && age >= (sonMaxAge || 18);
+  return age !== null && age >= (limit || 18);
 }
 
-const SON_STUDY_COLUMNS = ["is_student", "education_level", "school_name"];
+const STUDY_COLUMNS = ["is_student", "education_level", "school_name", "student_cert_expiry"];
 
-// فیلدهای وابسته فقط وقتی پاسخ والد «بله» است نمایش داده می‌شوند؛ سؤال‌های تحصیل پسر فقط بالای سن سقف
-export function memberFieldApplies(memberType, column, member, sonMaxAge) {
-  if (memberType === "son" && SON_STUDY_COLUMNS.includes(column) && !sonReachedMaxAge(member, sonMaxAge)) return false;
+// سن‌های تحصیل از تنظیمات فرم کارمند
+export const studyAgesOf = (formSettings) => ({ son: formSettings?.son_max_age, daughter: formSettings?.daughter_study_age });
+
+// فیلدهای وابسته فقط وقتی پاسخ والد «بله» است نمایش داده می‌شوند؛ سؤال‌های تحصیل فرزند فقط بالای سن تعیین‌شده.
+// تاریخ اعتبار گواهی تحصیل همراه خود گواهی (فرزند محصل بالای سن تعیین‌شده، و مدرک مخفی نشده باشد)
+export function memberFieldApplies(memberType, column, member, formSettings) {
+  const studyAges = studyAgesOf(formSettings);
+  if (CHILD_TYPES.includes(memberType) && STUDY_COLUMNS.includes(column) && !childReachedStudyAge(member, studyAges)) return false;
+  if (column === "student_cert_expiry") return member.is_student === true && formSettings?.documents?.student_certificate?.mode !== "hidden";
   if (column === "employer_name" || column === "is_insured") return member.is_employed === true;
   if (column === "education_level" || column === "school_name") return member.is_student === true;
   if (column === "marriage_date" && memberType === "daughter") return member.is_married === true;
@@ -54,7 +62,7 @@ export function memberFieldApplies(memberType, column, member, sonMaxAge) {
 }
 
 // آیا نوع مدرک با پاسخ‌های فرم موضوعیت دارد؟ member=null یعنی مدرک کل پرونده
-export function documentCondition(docType, form, member, sonMaxAge) {
+export function documentCondition(docType, form, member, studyAges) {
   const marital = form.marital_status;
   if (docType === "marriage_certificate") return marital === "married";
   if (docType === "separation_document") return marital === "divorced" || marital === "widowed";
@@ -62,7 +70,7 @@ export function documentCondition(docType, form, member, sonMaxAge) {
   if (!member) return false;
   const t = member.member_type;
   if (docType === "birth_certificate") return true;
-  if (docType === "student_certificate") return sonReachedMaxAge(member, sonMaxAge) && member.is_student === true;
+  if (docType === "student_certificate") return childReachedStudyAge(member, studyAges) && member.is_student === true;
   if (docType === "disability_certificate") return member.is_disabled === true;
   if (docType === "custody_ruling") return CHILD_TYPES.includes(t) && marital === "divorced" && member.custody === "employee";
   return false;
@@ -72,7 +80,7 @@ export function documentCondition(docType, form, member, sonMaxAge) {
 export function allowedDocuments(formSettings, form, member) {
   const scope = member ? "member" : "profile";
   return Object.entries(formSettings.doc_types)
-    .filter(([key, spec]) => spec.scope === scope && formSettings.documents[key]?.mode !== "hidden" && documentCondition(key, form, member, formSettings.son_max_age))
+    .filter(([key, spec]) => spec.scope === scope && formSettings.documents[key]?.mode !== "hidden" && documentCondition(key, form, member, studyAgesOf(formSettings)))
     .map(([key]) => key);
 }
 
