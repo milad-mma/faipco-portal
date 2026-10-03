@@ -93,6 +93,7 @@ DOC_TYPES: dict[str, dict] = {
     "birth_certificate": {"label": "تصویر شناسنامه", "scope": "member", "default": "required", "hint": "برای همسر و هر فرزند"},
     "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسر یا دختری که به سن تعیین‌شده (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "expiry_field": "student_cert_expiry"},
     "disability_certificate": {"label": "گواهی از کار افتادگی", "scope": "member", "default": "required", "hint": "برای عضوی که از کار افتاده است"},
+    "insurance_history": {"label": "پرینت سوابق بیمه (سامانه تأمین اجتماعی)", "scope": "profile", "default": "required", "hint": "وقتی پرسنل سابقه‌ی بیمه‌ی پیش از استخدام اعلام کرده است"},
     "custody_ruling": {"label": "حکم حضانت", "scope": "member", "default": "optional", "hint": "برای فرزندی که پس از طلاق حضانتش با شماست"},
 }  # fmt: skip
 
@@ -153,6 +154,17 @@ CHILD_FEMALE_MODES = {
 
 DEFAULT_ALERTS = {"son_age_warning_months": 3, "doc_expiry_warning_days": 30}
 
+# سابقه‌ی بیمه: خودکار از تاریخ استخدام + سابقه‌ی پیش از استخدام که خود پرسنل اعلام می‌کند (+ اصلاح منابع انسانی)
+DEFAULT_INSURANCE = {"auto_from_hire_date": True, "ask_employee_prior": True}
+INSURANCE_SOURCES = {
+    "hr": "اصلاح منابع انسانی",
+    "auto": "خودکار از تاریخ استخدام",
+    "employee": "اعلام پرسنل",
+    "auto_employee": "تاریخ استخدام + اعلام پرسنل",
+    "hr_prior": "سابقه‌ی قبلی (منابع انسانی)",
+    "auto_hr_prior": "تاریخ استخدام + سابقه‌ی قبلی (منابع انسانی)",
+}
+
 DEFAULT_SETTINGS: dict = {
     "enabled": True,
     "lock_after_approval": False,
@@ -163,6 +175,7 @@ DEFAULT_SETTINGS: dict = {
     },
     "rules": DEFAULT_RULES,
     "alerts": DEFAULT_ALERTS,
+    "insurance": DEFAULT_INSURANCE,
 }
 
 
@@ -217,6 +230,42 @@ def age_on(birth: tuple[int, int, int], ref: tuple[int, int, int]) -> int:
     if (ref[1], ref[2]) < (birth[1], birth[2]):
         years -= 1
     return years
+
+
+def jalali_to_gregorian(t: tuple[int, int, int]):
+    """تاریخ شمسی → datetime.date میلادی (همان الگوریتم jdatetime)."""
+    import datetime as _dt
+
+    jy, jm, jd = t
+    jy += 1595
+    days = -355668 + (365 * jy) + ((jy // 33) * 8) + (((jy % 33) + 3) // 4) + jd
+    days += (jm - 1) * 31 if jm < 7 else ((jm - 7) * 30) + 186
+    gy = 400 * (days // 146097)
+    days %= 146097
+    if days > 36524:
+        days -= 1
+        gy += 100 * (days // 36524)
+        days %= 36524
+        if days >= 365:
+            days += 1
+    gy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        gy += (days - 1) // 365
+        days = (days - 1) % 365
+    gd = days + 1
+    leap = (gy % 4 == 0 and gy % 100 != 0) or gy % 400 == 0
+    month_days = [0, 31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    gm = 1
+    while gm < 12 and gd > month_days[gm]:
+        gd -= month_days[gm]
+        gm += 1
+    return _dt.date(gy, gm, gd)
+
+
+def days_between(start: tuple[int, int, int], end: tuple[int, int, int]) -> int:
+    """تعداد روز از start تا end (هر دو شمسی)؛ منفی نمی‌شود."""
+    return max(0, (jalali_to_gregorian(end) - jalali_to_gregorian(start)).days)
 
 
 def is_valid_national_id(value: str) -> bool:
@@ -315,6 +364,10 @@ def sanitize_settings(value) -> dict:
         if "doc_expiry_warning_days" in a_in
         else DEFAULT_ALERTS["doc_expiry_warning_days"],
     }
+    i_in = src.get("insurance") if isinstance(src.get("insurance"), dict) else {}
+    out["insurance"] = {
+        k: bool(i_in[k]) if i_in.get(k) is not None else v for k, v in DEFAULT_INSURANCE.items()
+    }
     return out
 
 
@@ -353,7 +406,7 @@ def merge_settings(current: dict, patch: dict) -> dict:
     for key, value in (patch or {}).items():
         if value is None:
             continue
-        if key in ("fields", "alerts") and isinstance(value, dict):
+        if key in ("fields", "alerts", "insurance") and isinstance(value, dict):
             merged[key] = {**current.get(key, {}), **value}
         elif key == "documents" and isinstance(value, dict):
             merged["documents"] = {
@@ -470,7 +523,58 @@ def _normalize_value(kind: str, raw, label: str):
     return text[:TEXT_MAX]
 
 
-def validate_payload(payload: dict, settings: dict, today: tuple[int, int, int]) -> dict:
+def prior_insurance_needed(settings: dict, since_hire_days: int | None, has_children: bool) -> bool:
+    """
+    آیا باید سابقه‌ی بیمه‌ی پیش از استخدام از پرسنل پرسیده شود؟ فقط وقتی یکی از قواعد فعال حداقل سابقه دارد
+    (حق اولاد فقط برای دارندگان فرزند) و سابقه‌ی همین شرکت (خودکار از تاریخ استخدام) به آن حد نمی‌رسد.
+    """
+    if not settings["insurance"]["ask_employee_prior"]:
+        return False
+    rules = settings["rules"]
+    mins = []
+    if rules["marriage"]["enabled"] and rules["marriage"]["min_insurance_days"]:
+        mins.append(rules["marriage"]["min_insurance_days"])
+    if has_children and rules["child"]["enabled"] and rules["child"]["min_insurance_days"]:
+        mins.append(rules["child"]["min_insurance_days"])
+    if not mins:
+        return False
+    if settings["insurance"]["auto_from_hire_date"] and since_hire_days is not None and since_hire_days >= max(mins):
+        return False
+    return True
+
+
+def total_insurance_days(
+    settings: dict,
+    since_hire_days: int | None,
+    prior_days: int | None,
+    hr_override: int | None,
+    prior_by_hr: bool = False,
+) -> tuple[int | None, str | None]:
+    """
+    سابقه‌ی بیمه‌ی نهایی و منبع آن: «کل سابقه»ی ثبت‌شده توسط منابع انسانی (اگر باشد) مقدم است؛ وگرنه
+    روزهای پس از استخدام (اگر محاسبه‌ی خودکار روشن باشد) + سابقه‌ی پیش از استخدام
+    (prior_by_hr: ثبت منابع انسانی، وگرنه اعلام پرسنل).
+    """
+    if hr_override is not None:
+        return hr_override, "hr"
+    auto = since_hire_days if settings["insurance"]["auto_from_hire_date"] and since_hire_days is not None else None
+    prior_key = "hr_prior" if prior_by_hr else "employee"
+    if auto is None and prior_days is None:
+        return None, None
+    if auto is not None and prior_days:
+        return auto + prior_days, f"auto_{prior_key}"
+    if auto is not None:
+        return auto, "auto"
+    return prior_days, prior_key
+
+
+def validate_payload(
+    payload: dict,
+    settings: dict,
+    today: tuple[int, int, int],
+    since_hire_days: int | None = None,
+    ask_prior: bool = False,
+) -> dict:
     """
     فرم کارمند را با تنظیمات فیلدها اعتبارسنجی و نرمال می‌کند.
     خروجی: {marital_status, marriage_date, separation_date, is_head_of_household, has_children, members: [...]}
@@ -500,6 +604,15 @@ def validate_payload(payload: dict, settings: dict, today: tuple[int, int, int])
     out["marriage_date"] = profile_field("marriage_date", marital == "married")
     out["separation_date"] = profile_field("separation_date", marital in ("divorced", "widowed"))
     out["is_head_of_household"] = profile_field("is_head_of_household", True)
+    out["prior_insurance_days"] = None
+    # ask_prior=False: سؤال سابقه‌ی پیش از استخدام پرسیده نمی‌شود (مثلاً منابع انسانی سابقه را خودش ثبت کرده)
+    if ask_prior and prior_insurance_needed(settings, since_hire_days, has_children):
+        raw_prior = to_english_digits(payload.get("prior_insurance_days")).strip()
+        if raw_prior == "" or raw_prior == "None":
+            raise FamilyRuleError("«سابقه‌ی بیمه‌ی پیش از استخدام (روز)» را وارد کنید (اگر سابقه ندارید، صفر).")
+        if not raw_prior.isdigit() or int(raw_prior) > 20000:
+            raise FamilyRuleError("سابقه‌ی بیمه‌ی پیش از استخدام نامعتبر است.")
+        out["prior_insurance_days"] = int(raw_prior)
     for key in ("marriage_date", "separation_date"):
         if out[key] and parse_jalali(out[key]) > today:
             raise FamilyRuleError("تاریخ ازدواج / طلاق نمی‌تواند در آینده باشد.")
@@ -599,6 +712,8 @@ def document_condition(doc_type: str, data: dict, member: dict | None, settings:
         return marital in ("divorced", "widowed")
     if doc_type == "head_of_household":
         return data.get("is_head_of_household") is True
+    if doc_type == "insurance_history":
+        return (data.get("prior_insurance_days") or 0) > 0
     if member is None:
         return False
     mtype = member.get("member_type")

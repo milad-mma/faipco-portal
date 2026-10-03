@@ -64,6 +64,38 @@ def today_jalali() -> tuple[int, int, int]:
     return get_current_jalali_date()
 
 
+def since_hire_days(employee: Employee, as_of: tuple[int, int, int]) -> int | None:
+    """روزهای سپری‌شده از تاریخ استخدام (از کاراوب) تا as_of؛ تاریخ نامعتبر/خالی → None."""
+    hire = rules.parse_jalali(getattr(employee, "hire_date_jalali", None))
+    if hire is None or hire > as_of:
+        return None
+    return rules.days_between(hire, as_of)
+
+
+def insurance_info(
+    settings: dict, employee: Employee, profile: FamilyProfile | None, data: dict | None, as_of
+) -> dict:
+    """
+    سابقه‌ی بیمه‌ی یک پرسنل در تاریخ as_of با منبع و اجزا.
+    data: نسخه‌ی پرونده (تأییدشده یا جاری) برای سابقه‌ی پیش از استخدامِ اعلام‌شده توسط پرسنل.
+    """
+    since = since_hire_days(employee, as_of)
+    hr_prior = profile.hr_prior_insurance_days if profile else None
+    employee_prior = (data or {}).get("prior_insurance_days")
+    prior = hr_prior if hr_prior is not None else employee_prior
+    override = profile.insurance_days if profile else None
+    days, source = rules.total_insurance_days(settings, since, prior, override, prior_by_hr=hr_prior is not None)
+    return {
+        "days": days,
+        "source": source,
+        "source_label": rules.INSURANCE_SOURCES.get(source) if source else None,
+        "since_hire_days": since,
+        "employee_prior_days": employee_prior,
+        "hr_prior_days": hr_prior,
+        "hr_total_days": override,
+    }
+
+
 class FamilyService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -189,6 +221,7 @@ class FamilyService:
             "separation_date": profile.separation_date,
             "is_head_of_household": profile.is_head_of_household,
             "has_children": profile.has_children,
+            "prior_insurance_days": profile.prior_insurance_days,
             "submitted_at": profile.submitted_at,
             "reviewed_at": profile.reviewed_at,
             "review_note": profile.review_note,
@@ -220,6 +253,7 @@ class FamilyService:
             "separation_date": profile.separation_date,
             "is_head_of_household": profile.is_head_of_household,
             "has_children": profile.has_children,
+            "prior_insurance_days": profile.prior_insurance_days,
             "docs": docs_meta([d for d in profile.documents if d.member_id is None]),
             "members": [
                 {
@@ -261,6 +295,18 @@ class FamilyService:
             else None,
             "profile": self.profile_out(profile, settings) if profile else None,
             "form": self.form_for_employee(settings),
+            # آیا سؤال «سابقه‌ی بیمه‌ی پیش از استخدام» پرسیده شود (با/بدون فرزند)؛ اگر منابع انسانی خودش سابقه را
+            # ثبت کرده باشد پرسیده نمی‌شود
+            "prior_insurance": self._prior_flags(employee, profile, settings) if employee else None,
+        }
+
+    @staticmethod
+    def _prior_flags(employee: Employee, profile: FamilyProfile | None, settings: dict) -> dict:
+        hr_set = profile is not None and (profile.insurance_days is not None or profile.hr_prior_insurance_days is not None)
+        since = since_hire_days(employee, today_jalali())
+        return {
+            "with_children": not hr_set and rules.prior_insurance_needed(settings, since, True),
+            "without_children": not hr_set and rules.prior_insurance_needed(settings, since, False),
         }
 
     async def _get_or_create_shell(self, employee: Employee) -> FamilyProfile:
@@ -373,7 +419,14 @@ class FamilyService:
             m for m in members_in if m.get("member_type") != "spouse"
         ]
         try:
-            normalized = rules.validate_payload({**payload, "members": ordered}, settings, today)
+            flags = self._prior_flags(employee, profile, settings)
+            normalized = rules.validate_payload(
+                {**payload, "members": ordered},
+                settings,
+                today,
+                since_hire_days(employee, today),
+                ask_prior=flags["with_children"] or flags["without_children"],
+            )
         except rules.FamilyRuleError as e:
             raise FamilyError(str(e)) from e
 
@@ -445,6 +498,7 @@ class FamilyService:
         profile.separation_date = normalized["separation_date"]
         profile.is_head_of_household = normalized["is_head_of_household"]
         profile.has_children = normalized["has_children"]
+        profile.prior_insurance_days = normalized["prior_insurance_days"]
         profile.status = "pending"
         profile.submitted_at = datetime.now(timezone.utc)
         profile.review_note = None
@@ -574,7 +628,10 @@ class FamilyService:
             "marital_status": None,
             "sons": 0,
             "daughters": 0,
-            "insurance_days": profile.insurance_days if profile else None,
+            "insurance_days": None,
+            "insurance_source": None,
+            "insurance_hr_total": profile.insurance_days if profile else None,
+            "insurance_hr_prior": profile.hr_prior_insurance_days if profile else None,
             "marriage_eligible": None,
             "eligible_children": None,
             "has_pending_changes": bool(profile and profile.status != "approved" and profile.approved_data),
@@ -582,6 +639,10 @@ class FamilyService:
             "effective_date": profile.effective_date if profile else None,
             "submitted_at": profile.submitted_at if profile else None,
         }
+        # سابقه‌ی بیمه بر اساس نسخه‌ی تأییدشده (سابقه‌ی پیش از استخدامِ اعلام‌شده)، وگرنه نسخه‌ی جاری
+        ins_data = (profile.approved_data or (self.snapshot(profile) if status != "none" else None)) if profile else None
+        ins = insurance_info(settings, emp, profile, ins_data, as_of)
+        item["insurance_days"], item["insurance_source"] = ins["days"], ins["source_label"]
         if profile is None or status == "none":
             return item
         current = self.snapshot(profile)
@@ -590,7 +651,7 @@ class FamilyService:
         item["daughters"] = sum(1 for m in current["members"] if m["member_type"] == "daughter")
         item["warnings"] = rules.warnings(current, settings, today)
         if profile.approved_data:
-            ev = rules.evaluate(profile.approved_data, emp.gender, profile.insurance_days, settings, as_of)
+            ev = rules.evaluate(profile.approved_data, emp.gender, ins["days"], settings, as_of)
             item["marriage_eligible"] = ev["marriage"]["eligible"]
             item["eligible_children"] = ev["child"]["eligible_count"]
         return item
@@ -608,6 +669,8 @@ class FamilyService:
             )
         ).scalars().all()
         site = await self.db.get(Site, emp.site_id)
+        ins_current = insurance_info(settings, emp, profile, current, as_of)
+        ins_approved = insurance_info(settings, emp, profile, profile.approved_data, as_of) if profile.approved_data else None
         return {
             "employee": {
                 "id": emp.id,
@@ -621,10 +684,12 @@ class FamilyService:
             },
             "profile": self.profile_out(profile, settings),
             "insurance_days": profile.insurance_days,
+            "insurance": ins_current,  # سابقه‌ی بیمه با منبع و اجزا (نسخه‌ی جاری)
+            "insurance_approved": ins_approved,
             "hr_note": profile.hr_note,
             "approved_data": profile.approved_data,
-            "evaluation_current": rules.evaluate(current, emp.gender, profile.insurance_days, settings, as_of),
-            "evaluation_approved": rules.evaluate(profile.approved_data, emp.gender, profile.insurance_days, settings, as_of)
+            "evaluation_current": rules.evaluate(current, emp.gender, ins_current["days"], settings, as_of),
+            "evaluation_approved": rules.evaluate(profile.approved_data, emp.gender, ins_approved["days"], settings, as_of)
             if profile.approved_data
             else None,
             "missing_documents": rules.missing_documents(settings, current, today_jalali()) if profile.status != "draft" else [],
@@ -713,13 +778,89 @@ class FamilyService:
         elif payload.get("insurance_days") is not None:
             profile.insurance_days = int(payload["insurance_days"])
             changes.append(f"سابقه بیمه: {profile.insurance_days} روز")
+        if payload.get("clear_hr_prior_insurance_days"):
+            profile.hr_prior_insurance_days = None
+            changes.append("سابقه‌ی قبلی (منابع انسانی): پاک شد")
+        elif payload.get("hr_prior_insurance_days") is not None:
+            profile.hr_prior_insurance_days = int(payload["hr_prior_insurance_days"])
+            changes.append(f"سابقه‌ی قبلی (منابع انسانی): {profile.hr_prior_insurance_days} روز")
         if payload.get("hr_note") is not None:
             profile.hr_note = payload["hr_note"].strip() or None
             changes.append("یادداشت داخلی")
         if changes:
             self._log(profile, "hr_fields", user, note="، ".join(changes))
         await self.db.commit()
-        return {"profile_id": profile.id, "insurance_days": profile.insurance_days, "hr_note": profile.hr_note}
+        return {
+            "profile_id": profile.id,
+            "insurance_days": profile.insurance_days,
+            "hr_prior_insurance_days": profile.hr_prior_insurance_days,
+            "hr_note": profile.hr_note,
+        }
+
+    async def import_insurance_days(
+        self, site_ids: set[int] | None, user: User, content: bytes, mode: str, site_id: int | None = None
+    ) -> dict:
+        """
+        ورود گروهی سابقه‌ی بیمه از Excel: ستون «کد پرسنلی» و ستون روز (عنوان شامل «روز» یا «سابقه»؛
+        بدون عنوان مناسب: ستون اول و دوم). mode=prior → «سابقه‌ی پیش از استخدام» (با محاسبه‌ی خودکار جمع می‌شود)،
+        mode=total → «کل سابقه» (جایگزین محاسبه). سلول خالی نادیده گرفته می‌شود.
+        خروجی: {updated, not_found, invalid, ambiguous}
+        """
+        from openpyxl import load_workbook
+
+        if mode not in ("prior", "total"):
+            raise FamilyError("نوع ورود نامعتبر است.")
+        try:
+            wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except Exception as e:  # noqa: BLE001
+            raise FamilyError("فایل Excel قابل خواندن نیست (فقط xlsx).") from e
+        rows = list(wb.active.iter_rows(values_only=True))
+        if not rows:
+            raise FamilyError("فایل خالی است.")
+        header = [normalize_search_text(str(c or "")) for c in rows[0]]
+        code_col = next((i for i, h in enumerate(header) if "کد" in h or "پرسنلی" in h), None)
+        days_col = next((i for i, h in enumerate(header) if "روز" in h or "سابقه" in h), None)
+        start = 1
+        if code_col is None or days_col is None:
+            code_col, days_col, start = 0, 1, 0  # بدون سطر عنوان
+
+        q = select(Employee)
+        if site_ids is not None:
+            q = q.where(Employee.site_id.in_(site_ids))
+        if site_id is not None:
+            q = q.where(Employee.site_id == site_id)
+        by_code: dict[str, list[Employee]] = {}
+        for emp in (await self.db.execute(q)).scalars().all():
+            by_code.setdefault(normalize_search_text(emp.personnel_code), []).append(emp)
+
+        updated, not_found, invalid, ambiguous = 0, [], [], []
+        label = "سابقه‌ی قبلی (منابع انسانی)" if mode == "prior" else "کل سابقه بیمه"
+        for idx, row in enumerate(rows[start:], start=start + 1):
+            if row is None or len(row) <= max(code_col, days_col):
+                continue
+            code = normalize_search_text(str(row[code_col] or "")).removesuffix(".0")
+            raw_days = normalize_search_text(str(row[days_col] if row[days_col] is not None else "")).removesuffix(".0")
+            if not code or not raw_days:
+                continue
+            if not raw_days.isdigit() or int(raw_days) > 20000:
+                invalid.append(f"ردیف {idx}: {code}")
+                continue
+            emps = by_code.get(code) or []
+            if not emps:
+                not_found.append(code)
+                continue
+            if len(emps) > 1:
+                ambiguous.append(code)  # کد تکراری در چند سایت: با انتخاب سایت دوباره وارد کنید
+                continue
+            profile = await self._get_or_create_shell(emps[0])
+            if mode == "prior":
+                profile.hr_prior_insurance_days = int(raw_days)
+            else:
+                profile.insurance_days = int(raw_days)
+            self._log(profile, "hr_fields", user, note=f"ورود از Excel — {label}: {int(raw_days)} روز")
+            updated += 1
+        await self.db.commit()
+        return {"updated": updated, "not_found": not_found, "invalid": invalid, "ambiguous": ambiguous}
 
     async def export_xlsx(self, site_ids: set[int] | None, as_of: tuple[int, int, int]) -> bytes:
         """
@@ -747,15 +888,16 @@ class FamilyService:
         ws.append([f"تاریخ مبنا: {rules.format_jalali(as_of)} — شمول بر اساس آخرین نسخه‌ی تأییدشده و تنظیمات فعلی"])
         ws.append([
             "کد پرسنلی", "نام", "نام خانوادگی", "سایت", "واحد", "وضعیت پرونده", "وضعیت تاهل", "سرپرست خانوار",
-            "تعداد پسر", "تعداد دختر", "سابقه بیمه (روز)", "مشمول حق تاهل", "علت", "فرزندان واجد شرایط حق اولاد",
+            "تعداد پسر", "تعداد دختر", "سابقه بیمه (روز)", "منبع سابقه بیمه", "مشمول حق تاهل", "علت", "فرزندان واجد شرایط حق اولاد",
             "تاریخ اثر", "تغییرات تأییدنشده", "هشدارها",
         ])  # fmt: skip
         members_rows = []
         for item in data["items"]:
             p = profiles.get(item["employee_id"])
             approved = p.approved_data if p else None
+            # همان سابقه‌ی بیمه‌ی فهرست (خودکار از تاریخ استخدام + سابقه‌ی قبلی، یا اصلاح منابع انسانی)
             ev = (
-                rules.evaluate(approved, genders.get(item["employee_id"]), p.insurance_days, settings, as_of)
+                rules.evaluate(approved, genders.get(item["employee_id"]), item["insurance_days"], settings, as_of)
                 if approved
                 else None
             )
@@ -766,7 +908,7 @@ class FamilyService:
                 rules.MARITAL_STATUSES.get(src.get("marital_status"), "—"), yes_no[src.get("is_head_of_household")],
                 sum(1 for m in src.get("members", []) if m["member_type"] == "son"),
                 sum(1 for m in src.get("members", []) if m["member_type"] == "daughter"),
-                p.insurance_days if p and p.insurance_days is not None else "",
+                item["insurance_days"] if item["insurance_days"] is not None else "", item["insurance_source"] or "",
                 yes_no[ev["marriage"]["eligible"]] if ev else "—", ev["marriage"]["reason"] if ev else "",
                 ev["child"]["eligible_count"] if ev else "", item["effective_date"] or "",
                 "بله" if item["has_pending_changes"] else "", "؛ ".join(item["warnings"]),

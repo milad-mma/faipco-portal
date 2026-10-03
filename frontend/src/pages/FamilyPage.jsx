@@ -62,7 +62,7 @@ function emptyMember(type) {
 function profileToForm(profile, formSettings) {
   const unlinked = (profile?.unlinked_documents || []).filter((d) => formSettings?.doc_types[d.doc_type]?.scope === "profile");
   if (!profile || profile.status === "draft") {
-    return { marital_status: "", marriage_date: "", separation_date: "", is_head_of_household: null, has_children: null, documents: unlinked, members: [] };
+    return { marital_status: "", marriage_date: "", separation_date: "", is_head_of_household: null, has_children: null, prior_insurance_days: "", documents: unlinked, members: [] };
   }
   return {
     marital_status: profile.marital_status || "",
@@ -70,6 +70,7 @@ function profileToForm(profile, formSettings) {
     separation_date: profile.separation_date || "",
     is_head_of_household: profile.is_head_of_household,
     has_children: profile.has_children,
+    prior_insurance_days: profile.prior_insurance_days ?? "",
     documents: [...(profile.documents || []), ...unlinked],
     members: (profile.members || []).map((m) => ({ ...m, key: ++memberSeq, documents: m.documents || [] })),
   };
@@ -365,6 +366,7 @@ export default function FamilyPage() {
         separation_date: form.separation_date || null,
         is_head_of_household: form.is_head_of_household,
         has_children: form.has_children,
+        prior_insurance_days: askPrior && String(form.prior_insurance_days) !== "" ? Number(form.prior_insurance_days) : null,
         // مدرکی که با پاسخ‌های فعلی موضوعیت ندارد (و جایگاهش پنهان شده) فرستاده نمی‌شود
         document_ids: form.documents.filter((d) => profileDocTypes.includes(d.doc_type)).map((d) => d.id),
         members: form.members.map((m) => {
@@ -386,6 +388,8 @@ export default function FamilyPage() {
   }
 
   const profileDocTypes = allowedDocuments(formSettings, form, null);
+  // سؤال سابقه‌ی بیمه‌ی پیش از استخدام (فقط وقتی سابقه‌ی همین شرکت کافی نیست؛ تصمیم سمت سرور)
+  const askPrior = Boolean(form.has_children ? data.prior_insurance?.with_children : data.prior_insurance?.without_children);
   const spouse = form.members.find((m) => m.member_type === "spouse");
   const sons = form.members.filter((m) => m.member_type === "son");
   const daughters = form.members.filter((m) => m.member_type === "daughter");
@@ -493,9 +497,9 @@ export default function FamilyPage() {
                 </Grid>
               )}
             </Grid>
-            {profileDocTypes.length > 0 && (
+            {profileDocTypes.filter((dt) => dt !== "insurance_history").length > 0 && (
               <Stack spacing={1} sx={{ mt: 1.5 }}>
-                {profileDocTypes.map((dt) => (
+                {profileDocTypes.filter((dt) => dt !== "insurance_history").map((dt) => (
                   <DocSlot
                     key={dt}
                     docType={dt}
@@ -571,6 +575,38 @@ export default function FamilyPage() {
               </Stack>
             )}
           </SectionCard>
+
+          {askPrior && (
+            <SectionCard num={spouse ? 4 : 3} title="سابقه‌ی بیمه‌ی پیش از استخدام">
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                مجموع روزهای بیمه‌ی شما پیش از استخدام در این شرکت را از سامانه‌ی تأمین اجتماعی (سوابق بیمه) وارد و پرینت آن را پیوست کنید. اگر سابقه‌ی
+                قبلی ندارید، صفر وارد کنید.
+              </Typography>
+              <TextField
+                size="small"
+                label="سابقه‌ی بیمه‌ی پیش از استخدام (روز) *"
+                value={form.prior_insurance_days}
+                onChange={(e) => set({ prior_insurance_days: toEn(e.target.value).replace(/\D/g, "").slice(0, 5) })}
+                inputProps={{ dir: "ltr", inputMode: "numeric" }}
+                sx={{ maxWidth: 320 }}
+                fullWidth
+              />
+              {profileDocTypes.includes("insurance_history") && (
+                <Box sx={{ mt: 1.5 }}>
+                  <DocSlot
+                    docType="insurance_history"
+                    formSettings={formSettings}
+                    docs={form.documents.filter((d) => d.doc_type === "insurance_history")}
+                    onAdd={(doc) => setForm((f) => ({ ...f, documents: [...f.documents, doc] }))}
+                    onRemove={(doc) => {
+                      removeDoc(doc);
+                      setForm((f) => ({ ...f, documents: f.documents.filter((d) => d.id !== doc.id) }));
+                    }}
+                  />
+                </Box>
+              )}
+            </SectionCard>
+          )}
 
           <Stack direction="row" spacing={1.5} sx={{ mb: 4 }}>
             <Button variant="contained" size="large" onClick={handleSubmit} disabled={saving} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : null}>

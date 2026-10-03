@@ -53,6 +53,9 @@ export default function FamilySummary({ profile, formSettings, onOpenDoc }) {
         {profile.separation_date && <ReadRow label="تاریخ طلاق / فوت همسر" value={profile.separation_date} />}
         {profile.is_head_of_household !== null && <ReadRow label="سرپرست خانوار" value={yesNo(profile.is_head_of_household)} />}
         <ReadRow label="دارای فرزند" value={yesNo(profile.has_children)} />
+        {profile.prior_insurance_days !== null && profile.prior_insurance_days !== undefined && (
+          <ReadRow label="سابقه‌ی بیمه‌ی پیش از استخدام" value={`${Number(profile.prior_insurance_days).toLocaleString("fa-IR")} روز`} />
+        )}
         {docList(profile.documents)}
       </Box>
       {(profile.members || []).map((m) => {

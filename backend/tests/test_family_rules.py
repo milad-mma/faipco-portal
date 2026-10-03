@@ -338,3 +338,43 @@ def test_son_and_daughter_rules_are_symmetric():
     son_fields = [f["key"].split(".", 1)[1] for f in r.FIELD_DEFS if f["key"].startswith("son.")]
     daughter_fields = [f["key"].split(".", 1)[1] for f in r.FIELD_DEFS if f["key"].startswith("daughter.")]
     assert son_fields == daughter_fields
+
+
+def test_jalali_days_between():
+    assert r.jalali_to_gregorian((1403, 1, 1)).isoformat() == "2024-03-20"
+    assert r.jalali_to_gregorian((1399, 12, 30)).isoformat() == "2021-03-20"  # اسفند کبیسه
+    assert r.days_between((1403, 7, 12), (1405, 7, 12)) == 731
+    assert r.days_between((1405, 7, 12), (1403, 7, 12)) == 0
+
+
+def test_insurance_auto_prior_and_override():
+    s = r.sanitize_settings(None)
+    assert r.total_insurance_days(s, 800, None, None) == (800, "auto")
+    assert r.total_insurance_days(s, 300, 500, None) == (800, "auto_employee")
+    assert r.total_insurance_days(s, 300, 500, None, prior_by_hr=True) == (800, "auto_hr_prior")
+    assert r.total_insurance_days(s, 300, 500, 100) == (100, "hr")
+    s["insurance"]["auto_from_hire_date"] = False
+    assert r.total_insurance_days(s, 300, None, None) == (None, None)
+    assert r.total_insurance_days(s, 300, 500, None) == (500, "employee")
+
+
+def test_prior_insurance_question():
+    s = r.sanitize_settings(None)
+    # فقط حق اولاد حداقل سابقه دارد (۷۲۰): بدون فرزند پرسیده نمی‌شود؛ با فرزند و سابقه‌ی کم پرسیده می‌شود
+    assert r.prior_insurance_needed(s, 100, False) is False
+    assert r.prior_insurance_needed(s, 100, True) is True
+    assert r.prior_insurance_needed(s, 800, True) is False
+    p = married_payload()
+    with pytest.raises(r.FamilyRuleError, match="پیش از استخدام"):
+        r.validate_payload(p, s, TODAY, since_hire_days=100, ask_prior=True)
+    p["prior_insurance_days"] = "۴۰۰"
+    data = r.validate_payload(p, s, TODAY, since_hire_days=100, ask_prior=True)
+    assert data["prior_insurance_days"] == 400
+    assert "پرینت سوابق بیمه (سامانه تأمین اجتماعی)" in r.missing_documents(s, data, TODAY)
+    p["prior_insurance_days"] = "0"
+    data = r.validate_payload(p, s, TODAY, since_hire_days=100, ask_prior=True)
+    assert not any("سوابق بیمه" in x for x in r.missing_documents(s, data, TODAY))
+    # سابقه‌ی همین شرکت کافی است، یا منابع انسانی خودش ثبت کرده → پرسیده نمی‌شود
+    p.pop("prior_insurance_days")
+    assert r.validate_payload(p, s, TODAY, since_hire_days=800, ask_prior=True)["prior_insurance_days"] is None
+    assert r.validate_payload(p, s, TODAY, since_hire_days=100, ask_prior=False)["prior_insurance_days"] is None

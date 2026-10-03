@@ -69,6 +69,7 @@ export function documentCondition(docType, form, member, studyAges) {
   if (docType === "marriage_certificate") return marital === "married";
   if (docType === "separation_document") return marital === "divorced" || marital === "widowed";
   if (docType === "head_of_household") return form.is_head_of_household === true;
+  if (docType === "insurance_history") return Number(form.prior_insurance_days || 0) > 0;
   if (!member) return false;
   const t = member.member_type;
   if (docType === "birth_certificate") return true;

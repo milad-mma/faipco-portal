@@ -44,7 +44,10 @@ class FamilyProfile(Base, TimestampMixin):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # فقط منابع انسانی: سابقه‌ی پرداخت حق بیمه (روز) و یادداشت داخلی (به کارمند نمایش داده نمی‌شود)
-    insurance_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    insurance_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # «کل سابقه» (جایگزین محاسبه)
+    hr_prior_insurance_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # سابقه‌ی پیش از استخدام (منابع انسانی)
+    # سابقه‌ی بیمه‌ی پیش از استخدام که خود پرسنل در فرم اعلام کرده (با روزهای پس از استخدام جمع می‌شود)
+    prior_insurance_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hr_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     employee = relationship("Employee")

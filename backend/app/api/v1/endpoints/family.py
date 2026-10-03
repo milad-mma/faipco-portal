@@ -15,7 +15,8 @@ Endpoint های ماژول «مشخصات خانوادگی» (پیشوند /fami
   POST   /family/profiles/{id}/approve               تأیید (با تاریخ اثر)
   POST   /family/profiles/{id}/reject                رد (با دلیل)
   POST   /family/profiles/{id}/return                بازگشت برای ویرایش (حتی پرونده‌ی قفل)
-  PUT    /family/employees/{employee_id}/hr-fields   سابقه بیمه (روز) و یادداشت داخلی
+  PUT    /family/employees/{employee_id}/hr-fields   سابقه‌ی قبلی / کل سابقه بیمه و یادداشت داخلی
+  POST   /family/insurance-days/import               ورود گروهی سابقه بیمه از Excel (mode=prior|total)
   GET    /family/export                              خروجی Excel
 """
 from datetime import datetime
@@ -278,6 +279,30 @@ async def update_hr_fields(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
     return result
+
+
+@router.post("/insurance-days/import")
+async def import_insurance_days(
+    file: UploadFile = File(...),
+    mode: str = Form("prior"),
+    site_id: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ورود گروهی سابقه بیمه از Excel (ستون «کد پرسنلی» و ستون «سابقه (روز)»).
+    mode=prior: سابقه‌ی پیش از استخدام (با روزهای پس از استخدام جمع می‌شود)؛ mode=total: کل سابقه.
+    """
+    sites = await _manage_sites(db, current_user)
+    if site_id is not None and sites is not None and site_id not in sites:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="به این سایت دسترسی ندارید")
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حجم فایل نباید بیشتر از ۵ مگابایت باشد.")
+    try:
+        return await FamilyService(db).import_insurance_days(sites, current_user, content, mode, site_id)
+    except FamilyError as e:
+        _raise(e)
 
 
 @router.get("/export")

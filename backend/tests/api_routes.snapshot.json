@@ -1,5 +1,5 @@
 {
-  "count": 323,
+  "count": 324,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -207,6 +207,7 @@
     "POST /api/v1/employees/cleanup-orphaned-inactive/execute",
     "POST /api/v1/employees/{employee_id}/roles",
     "POST /api/v1/employees/{employee_id}/unlock-login",
+    "POST /api/v1/family/insurance-days/import",
     "POST /api/v1/family/me/documents",
     "POST /api/v1/family/profiles/{profile_id}/approve",
     "POST /api/v1/family/profiles/{profile_id}/reject",

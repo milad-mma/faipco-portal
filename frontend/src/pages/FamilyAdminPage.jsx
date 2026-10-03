@@ -37,12 +37,14 @@ import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { useAuth } from "../context/AuthContext";
 import {
   approveFamilyProfile,
+  importFamilyInsuranceDays,
   downloadFamilyDocument,
   downloadFamilyExport,
   fetchFamilyProfile,
@@ -70,7 +72,7 @@ const FLAGS = {
   marriage: "مشمول حق تاهل",
   children: "دارای فرزند واجد شرایط",
   warnings: "دارای هشدار",
-  no_insurance_days: "بدون سابقه بیمه ثبت‌شده",
+  no_insurance_days: "سابقه بیمه نامشخص",
   pending_changes: "تغییرات تأییدنشده",
 };
 const fa = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("fa-IR"));
@@ -169,23 +171,32 @@ function NoteDialog({ open, title, label, confirmText, color = "primary", withDa
   );
 }
 
+// سابقه بیمه‌ی یک پرسنل: «سابقه‌ی پیش از استخدام» (با روزهای پس از استخدام جمع می‌شود) یا «کل سابقه» (جایگزین محاسبه)
+// target: { employee_id, name, hr_prior, hr_total, hr_note?, withNote?, info? }
 function HrFieldsDialog({ target, onClose, onSaved }) {
-  const [days, setDays] = useState("");
+  const [prior, setPrior] = useState("");
+  const [total, setTotal] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (target) {
-      setDays(target.insurance_days ?? "");
+      setPrior(target.hr_prior ?? "");
+      setTotal(target.hr_total ?? "");
       setNote(target.hr_note ?? "");
       setError("");
     }
   }, [target]);
+  const digits = (v) => toEn(v).replace(/\D/g, "").slice(0, 5);
   async function submit() {
     setBusy(true);
     try {
-      const d = String(days).trim();
-      const payload = d === "" ? { clear_insurance_days: true } : { insurance_days: Number(toEn(d)) };
+      const p = String(prior).trim();
+      const t = String(total).trim();
+      const payload = {
+        ...(p === "" ? { clear_hr_prior_insurance_days: true } : { hr_prior_insurance_days: Number(p) }),
+        ...(t === "" ? { clear_insurance_days: true } : { insurance_days: Number(t) }),
+      };
       if (target.withNote) payload.hr_note = note;
       await updateFamilyHrFields(target.employee_id, payload);
       onSaved();
@@ -195,18 +206,37 @@ function HrFieldsDialog({ target, onClose, onSaved }) {
       setBusy(false);
     }
   }
+  const info = target?.info;
   return (
     <Dialog open={Boolean(target)} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>سابقه بیمه {target ? `— ${target.name}` : ""}</DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
+          {info && (
+            <Alert severity="info" icon={false}>
+              <Typography variant="body2">
+                روزهای پس از استخدام: <b>{info.since_hire_days === null ? "تاریخ استخدام ثبت نشده" : fa(info.since_hire_days)}</b>
+              </Typography>
+              <Typography variant="body2">
+                سابقه‌ی قبلی اعلام‌شده توسط پرسنل: <b>{info.employee_prior_days === null || info.employee_prior_days === undefined ? "—" : fa(info.employee_prior_days)}</b>
+              </Typography>
+            </Alert>
+          )}
           <TextField
             size="small"
-            label="سابقه پرداخت حق بیمه (روز)"
-            value={days}
-            onChange={(e) => setDays(toEn(e.target.value).replace(/\D/g, "").slice(0, 5))}
+            label="سابقه‌ی بیمه‌ی پیش از استخدام (روز)"
+            value={prior}
+            onChange={(e) => setPrior(digits(e.target.value))}
             inputProps={{ dir: "ltr", inputMode: "numeric" }}
-            helperText="خالی = ثبت نشده. این مقدار فقط برای منابع انسانی است و به پرسنل نمایش داده نمی‌شود."
+            helperText="با روزهای پس از استخدام جمع می‌شود و بر عدد اعلام‌شده توسط پرسنل مقدم است. خالی = ثبت نشده."
+          />
+          <TextField
+            size="small"
+            label="کل سابقه‌ی بیمه (روز) — فقط برای موارد استثنا"
+            value={total}
+            onChange={(e) => setTotal(digits(e.target.value))}
+            inputProps={{ dir: "ltr", inputMode: "numeric" }}
+            helperText="اگر پر شود، جایگزین محاسبه‌ی خودکار می‌شود و با گذشت زمان زیاد نمی‌شود. خالی = محاسبه‌ی خودکار."
           />
           {target?.withNote && (
             <TextField multiline minRows={2} label="یادداشت داخلی" value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 4000 }} />
@@ -220,6 +250,72 @@ function HrFieldsDialog({ target, onClose, onSaved }) {
         </Button>
         <Button variant="contained" onClick={submit} disabled={busy}>
           ذخیره
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ورود گروهی سابقه بیمه از Excel
+function InsuranceImportDialog({ open, onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [mode, setMode] = useState("prior");
+  const [siteId, setSiteId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (open) {
+      setFile(null);
+      setResult(null);
+      setError("");
+    }
+  }, [open]);
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await importFamilyInsuranceDays(file, mode, siteId);
+      setResult(res);
+      onDone();
+    } catch (err) {
+      setError(typeof err.response?.data?.detail === "string" ? err.response.data.detail : "ورود فایل با خطا مواجه شد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>ورود سابقه بیمه از Excel</DialogTitle>
+      <DialogContent>
+        <Stack spacing={1.5} sx={{ mt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            فایل xlsx با یک ستون «کد پرسنلی» و یک ستون «سابقه (روز)». ردیف‌های خالی نادیده گرفته می‌شوند.
+          </Typography>
+          <TextField select size="small" label="مقدار ستون روز" value={mode} onChange={(e) => setMode(e.target.value)}>
+            <MenuItem value="prior">سابقه‌ی بیمه‌ی پیش از استخدام (با روزهای پس از استخدام جمع می‌شود)</MenuItem>
+            <MenuItem value="total">کل سابقه‌ی بیمه (جایگزین محاسبه‌ی خودکار)</MenuItem>
+          </TextField>
+          <SiteFilterSelect value={siteId} permission="family.manage" onChange={setSiteId} sx={{ width: "100%" }} />
+          <Button component="label" variant="outlined">
+            {file ? file.name : "انتخاب فایل Excel"}
+            <input hidden type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          </Button>
+          {error && <Alert severity="error">{error}</Alert>}
+          {result && (
+            <Alert severity={result.not_found.length || result.invalid.length || result.ambiguous.length ? "warning" : "success"}>
+              <div>{fa(result.updated)} نفر به‌روز شد.</div>
+              {result.not_found.length > 0 && <div>کد پرسنلی پیدا نشد: {result.not_found.join("، ")}</div>}
+              {result.invalid.length > 0 && <div>مقدار نامعتبر: {result.invalid.join("، ")}</div>}
+              {result.ambiguous.length > 0 && <div>کد تکراری در چند سایت (سایت را انتخاب کنید): {result.ambiguous.join("، ")}</div>}
+            </Alert>
+          )}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>بستن</Button>
+        <Button variant="contained" onClick={submit} disabled={busy || !file}>
+          ورود
         </Button>
       </DialogActions>
     </Dialog>
@@ -291,9 +387,22 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
               <Chip variant="outlined" label={`سایت: ${emp.site_name || "—"}`} />
               <Chip
                 variant="outlined"
-                color={detail.insurance_days === null ? "warning" : "default"}
-                label={`سابقه بیمه: ${detail.insurance_days === null ? "ثبت نشده" : `${fa(detail.insurance_days)} روز`}`}
-                onClick={canManage ? () => setHrTarget({ employee_id: emp.id, name: `${emp.first_name} ${emp.last_name}`, insurance_days: detail.insurance_days, hr_note: detail.hr_note, withNote: true }) : undefined}
+                color={detail.insurance?.days === null ? "warning" : "default"}
+                label={`سابقه بیمه: ${detail.insurance?.days === null ? "نامشخص" : `${fa(detail.insurance.days)} روز (${detail.insurance.source_label})`}`}
+                onClick={
+                  canManage
+                    ? () =>
+                        setHrTarget({
+                          employee_id: emp.id,
+                          name: `${emp.first_name} ${emp.last_name}`,
+                          hr_prior: detail.insurance?.hr_prior_days,
+                          hr_total: detail.insurance?.hr_total_days,
+                          hr_note: detail.hr_note,
+                          withNote: true,
+                          info: detail.insurance,
+                        })
+                    : undefined
+                }
                 icon={canManage ? <EditOutlinedIcon /> : undefined}
               />
               {p.effective_date && <Chip variant="outlined" label={`تاریخ اثر: ${p.effective_date}`} />}
@@ -415,6 +524,7 @@ function ListTab({ canManage, formSettings }) {
   const [detailId, setDetailId] = useState(null);
   const [hrTarget, setHrTarget] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const asOfValid = !filters.asOf || /^\d{4}\/\d{2}\/\d{2}$/.test(filters.asOf);
   const params = {
@@ -506,6 +616,12 @@ function ListTab({ canManage, formSettings }) {
             <Chip size="small" variant="outlined" label={`مشمول حق تاهل: ${fa(s.marriage_eligible)}`} />
             <Chip size="small" variant="outlined" label={`فرزندان واجد شرایط: ${fa(s.eligible_children)}`} />
             {s.warnings > 0 && <Chip size="small" color="error" variant="outlined" label={`دارای هشدار: ${fa(s.warnings)}`} onClick={() => setFilter({ flag: "warnings" })} />}
+            <Box sx={{ flex: 1 }} />
+            {canManage && (
+              <Button size="small" startIcon={<UploadFileOutlinedIcon />} onClick={() => setImportOpen(true)}>
+                ورود سابقه بیمه از Excel
+              </Button>
+            )}
           </Stack>
         )}
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
@@ -565,17 +681,28 @@ function ListTab({ canManage, formSettings }) {
                       {item.status === "none" ? "—" : `${fa(item.sons)} / ${fa(item.daughters)}`}
                     </TableCell>
                     <TableCell align="center">
-                      {canManage ? (
-                        <Button
-                          size="small"
-                          color={item.insurance_days === null ? "warning" : "inherit"}
-                          onClick={() => setHrTarget({ employee_id: item.employee_id, name: `${item.first_name} ${item.last_name}`, insurance_days: item.insurance_days })}
-                        >
-                          {item.insurance_days === null ? "ثبت" : fa(item.insurance_days)}
-                        </Button>
-                      ) : (
-                        fa(item.insurance_days)
-                      )}
+                      <Tooltip title={item.insurance_source || "تاریخ استخدام ثبت نشده"}>
+                        <span>
+                          {canManage ? (
+                            <Button
+                              size="small"
+                              color={item.insurance_days === null ? "warning" : "inherit"}
+                              onClick={() =>
+                                setHrTarget({
+                                  employee_id: item.employee_id,
+                                  name: `${item.first_name} ${item.last_name}`,
+                                  hr_prior: item.insurance_hr_prior,
+                                  hr_total: item.insurance_hr_total,
+                                })
+                              }
+                            >
+                              {item.insurance_days === null ? "ثبت" : fa(item.insurance_days)}
+                            </Button>
+                          ) : (
+                            fa(item.insurance_days)
+                          )}
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell align="center">
                       <EligibleIcon value={item.marriage_eligible} />
@@ -633,6 +760,7 @@ function ListTab({ canManage, formSettings }) {
           load();
         }}
       />
+      <InsuranceImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
     </Box>
   );
 }
@@ -783,6 +911,27 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
           onChange={(e) => setS({ ...s, notes: e.target.value.split("\n") })}
           disabled={ro}
         />
+      </Card>
+
+      <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+        <Typography fontWeight={800}>سابقه بیمه</Typography>
+        <Typography variant="caption" color="text.secondary">
+          سابقه = روزهای پس از تاریخ استخدام (کاراوب) + سابقه‌ی پیش از استخدام. منابع انسانی می‌تواند برای هر نفر سابقه‌ی قبلی یا کل سابقه را دستی یا از Excel ثبت کند.
+        </Typography>
+        <Stack sx={{ mt: 1 }}>
+          <SwitchRow
+            label="روزهای پس از تاریخ استخدام خودکار جزو سابقه‌ی بیمه حساب شود"
+            checked={s.insurance.auto_from_hire_date}
+            onChange={(v) => setS({ ...s, insurance: { ...s.insurance, auto_from_hire_date: v } })}
+            disabled={ro}
+          />
+          <SwitchRow
+            label="اگر سابقه‌ی همین شرکت کافی نیست، سابقه‌ی بیمه‌ی پیش از استخدام (با پرینت سوابق) از خود پرسنل پرسیده شود"
+            checked={s.insurance.ask_employee_prior}
+            onChange={(v) => setS({ ...s, insurance: { ...s.insurance, ask_employee_prior: v } })}
+            disabled={ro}
+          />
+        </Stack>
       </Card>
 
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>

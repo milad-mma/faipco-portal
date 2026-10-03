@@ -44,6 +44,7 @@ class FamilyProfileIn(BaseModel):
     separation_date: str | None = None
     is_head_of_household: bool | None = None
     has_children: bool | None = None
+    prior_insurance_days: int | None = Field(default=None, ge=0, le=20000)
     document_ids: list[int] = Field(default_factory=list, max_length=20)
     members: list[FamilyMemberIn] = Field(default_factory=list, max_length=20)
 
@@ -103,6 +104,7 @@ class FamilyProfileOut(BaseModel):
     separation_date: str | None = None
     is_head_of_household: bool | None = None
     has_children: bool | None = None
+    prior_insurance_days: int | None = None
     submitted_at: datetime | None = None
     reviewed_at: datetime | None = None
     review_note: str | None = None
@@ -120,6 +122,7 @@ class FamilyMyStatusOut(BaseModel):
     employee: dict | None = None  # {first_name, last_name, personnel_code, gender}
     profile: FamilyProfileOut | None = None
     form: dict  # تنظیمات فیلدها/مدارک/نکات + فهرست گزینه‌ها برای ساخت فرم
+    prior_insurance: dict | None = None  # {with_children, without_children}: پرسیدن سابقه‌ی بیمه‌ی پیش از استخدام
 
 
 class FamilyListItemOut(BaseModel):
@@ -136,6 +139,9 @@ class FamilyListItemOut(BaseModel):
     sons: int = 0
     daughters: int = 0
     insurance_days: int | None = None
+    insurance_source: str | None = None
+    insurance_hr_total: int | None = None
+    insurance_hr_prior: int | None = None
     marriage_eligible: bool | None = None
     eligible_children: int | None = None
     has_pending_changes: bool = False
@@ -154,6 +160,8 @@ class FamilyDetailOut(BaseModel):
     employee: dict
     profile: FamilyProfileOut
     insurance_days: int | None = None
+    insurance: dict | None = None
+    insurance_approved: dict | None = None
     hr_note: str | None = None
     approved_data: dict | None = None
     evaluation_current: dict  # شمول بر اساس نسخه‌ی جاری (برای بررسی قبل از تأیید)
@@ -176,6 +184,8 @@ class FamilyHrFieldsIn(BaseModel):
     insurance_days: int | None = Field(default=None, ge=0, le=20000)
     hr_note: str | None = Field(default=None, max_length=4000)
     clear_insurance_days: bool = False
+    hr_prior_insurance_days: int | None = Field(default=None, ge=0, le=20000)
+    clear_hr_prior_insurance_days: bool = False
 
 
 class FamilySettingsIn(BaseModel):
@@ -188,3 +198,4 @@ class FamilySettingsIn(BaseModel):
     documents: dict[str, dict] | None = None
     rules: dict[str, dict] | None = None
     alerts: dict[str, int | None] | None = None
+    insurance: dict[str, bool] | None = None

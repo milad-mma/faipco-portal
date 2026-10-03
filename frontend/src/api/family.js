@@ -84,6 +84,19 @@ export async function updateFamilyHrFields(employeeId, payload) {
   return data;
 }
 
+// ورود گروهی سابقه بیمه از Excel؛ mode: prior (پیش از استخدام) | total (کل سابقه) → { updated, not_found, invalid, ambiguous }
+export async function importFamilyInsuranceDays(file, mode, siteId) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("mode", mode);
+  if (siteId) formData.append("site_id", siteId);
+  const { data } = await apiClient.post("/family/insurance-days/import", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 2 * 60 * 1000,
+  });
+  return data;
+}
+
 export async function downloadFamilyExport(params = {}) {
   const { data } = await apiClient.get("/family/export", { params, responseType: "blob" });
   return data;
