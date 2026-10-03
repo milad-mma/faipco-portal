@@ -126,9 +126,9 @@ export default function PersonalDashboardPage() {
 
   // بارگذاری اولیه: اطلاعیه‌های اخیر، متولدین امروز و شمارنده درخواست‌های در انتظار
   useEffect(() => {
-    // ۱۰ اطلاعیه اخیر گرفته می‌شود (دسکتاپ ۱۰ و موبایل ۵ مورد نمایش می‌دهد). شمارنده
+    // ۲۰ اطلاعیه اخیر گرفته می‌شود (دسکتاپ ۱۰ مورد، یا ۲۰ وقتی امروز تولدی نیست و کارت تمام ستون است؛ موبایل ۵ مورد). شمارنده
     // «خوانده‌نشده» از unread_total سرور است، یعنی همه اطلاعیه‌های خوانده‌نشده، نه فقط موارد نمایش‌داده‌شده.
-    swr("dashboard:notices", () => fetchMyNotices({ page: 1, pageSize: 10, archived: "all" }), (data) => {
+    swr("dashboard:notices", () => fetchMyNotices({ page: 1, pageSize: 20, archived: "all" }), (data) => {
       setRecentNotices(data.items);
       setUnreadCount(data.unread_total ?? data.items.filter((n) => !n.is_read).length);
     }).catch(() => setRecentNotices((prev) => prev ?? []));
@@ -211,9 +211,13 @@ export default function PersonalDashboardPage() {
         // دسکتاپ: کارت‌های ستون اصلی ارتفاع طبیعی خود را دارند و با بلند شدن «متولدین امروز»
         // کشیده نمی‌شوند؛ کارت متولدین هم‌قد ردیف‌های میان‌برها + ابزارها است و فهرستش داخل کارت اسکرول می‌خورد.
         gridTemplateRows: { md: "auto auto auto auto" },
+        // امروز تولدی نیست (کارت متولدین نمایش داده نمی‌شود): «اطلاعیه‌های اخیر» کل ستون کناری را پر می‌کند تا جای خالی نماند
         gridTemplateAreas: {
           xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
-          md: `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
+          md:
+            birthdays !== null && birthdays.length === 0
+              ? `"profile recent" "stats recent" "actions recent" "tools recent"`
+              : `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
         },
       }}
     >
@@ -466,7 +470,7 @@ export default function PersonalDashboardPage() {
           </Typography>
         ) : (
           <Stack spacing={1}>
-            {recentNotices.slice(0, isDesktop ? 10 : 5).map((n) => (
+            {recentNotices.slice(0, isDesktop ? (birthdays !== null && birthdays.length === 0 ? 20 : 10) : 5).map((n) => (
               <Stack
                 key={n.id}
                 direction="row"
