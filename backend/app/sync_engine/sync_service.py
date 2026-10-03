@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.org_tree import OrgTreeError, assign_units_to_sites, build_parent_map, normalize_code
 from app.core.security import decrypt_secret, normalize_login_credential
 from app.models.employee import Department, Employee, EmployeeMapping
+from app.models.notice import NoticeTarget, NoticeTargetType
 from app.models.site import Site, SiteConnection, SyncStatus
 from app.models.site_transfer import SiteTransfer
 from app.models.sync_log import SyncLog, SyncRunStatus
@@ -119,9 +120,19 @@ class SyncService:
                 raw_rows, owned_elsewhere, unassigned_codes, skipped_unassigned, warning = self._split_rows_by_org(
                     site_id, columns, raw_rows, assignment, department_lookup
                 )
-                protected_codes, pending = await self._protected_codes(site_id, owned_elsewhere, unassigned_codes)
+                protected_codes, pending = await self._protected_codes(site_id, owned_elsewhere)
                 if pending:
                     note = f"{pending} نفر هنوز در این سایت‌اند ولی واحدشان متعلق به سایت دیگری است و منتظر Sync آن سایت برای انتقال‌اند."
+                    warning = f"{warning} | {note}" if warning else note
+                # پرسنلی که قبلاً (مثلاً پیش از تعیین/تغییر ریشه) وارد این سایت شده‌اند ولی واحدشان دیگر زیر هیچ ریشه‌ای نیست
+                # غیرفعال می‌شوند؛ مگر تعدادشان مشکوک زیاد باشد (احتمال تنظیم اشتباه ریشه) که فقط هشدار داده می‌شود.
+                stale_unassigned, keep_unassigned = await self._unassigned_guard(site_id, unassigned_codes)
+                if keep_unassigned:
+                    protected_codes |= unassigned_codes
+                    note = (
+                        f"{stale_unassigned} نفر از پرسنل فعال این سایت زیر هیچ ریشه‌ای نیستند؛ چون بیش از نیمی از پرسنل سایت‌اند "
+                        "غیرفعال نشدند. ریشه‌های سایت را بررسی کنید."
+                    )
                     warning = f"{warning} | {note}" if warning else note
 
             inserted, updated, skipped_inactive, seen_codes, transferred = await self._upsert_employees(
@@ -146,6 +157,13 @@ class SyncService:
                 )
 
             deactivated = await self._deactivate_missing(site_id, seen_codes | protected_codes)
+
+            # واحدهایی که در درخت منبع دیگر مال این سایت نیستند (و پرسنل فعالی در این سایت ندارند) حذف می‌شوند
+            if org_scope is not None:
+                removed_units = await self._remove_foreign_departments(site_id, org_scope[0])
+                if removed_units:
+                    note = f"{len(removed_units)} واحد که دیگر زیر ریشه‌های این سایت نیست حذف شد: " + "، ".join(removed_units[:20])
+                    warning = f"{warning} | {note}" if warning else note
 
             # ثبت نتیجه موفق
             log.status = SyncRunStatus.success
@@ -456,17 +474,73 @@ class SyncService:
             raise SyncError(str(e)) from e
         return assignment, set(roots_by_site) - {site_id}
 
-    async def _protected_codes(
-        self, site_id: int, owned_elsewhere: dict[str, int], unassigned_codes: set[str]
-    ) -> tuple[set[str], int]:
+    async def _unassigned_guard(self, site_id: int, unassigned_codes: set[str]) -> tuple[int, bool]:
+        """
+        پرسنل فعال (غیردستی) این سایت را که واحدشان در منبع زیر هیچ ریشه‌ای نیست می‌شمارد.
+        خروجی: (تعداد، آیا باید محافظت شوند). محافظت فقط وقتی است که تعداد مشکوک زیاد باشد
+        (بیش از ۵ نفر و بیش از نیمی از پرسنل فعال سایت) تا ریشه‌ی اشتباه، سایت را خالی نکند.
+        """
+        if not unassigned_codes:
+            return 0, False
+        result = await self.db.execute(
+            select(Employee.personnel_code).where(
+                Employee.site_id == site_id,
+                Employee.is_active.is_(True),
+                Employee.is_manually_created.is_(False),
+            )
+        )
+        active_codes = [code for (code,) in result.all()]
+        stale = sum(1 for code in active_codes if code in unassigned_codes)
+        return stale, stale > 5 and stale * 2 > len(active_codes)
+
+    async def _remove_foreign_departments(self, site_id: int, assignment: dict[str, int | None]) -> list[str]:
+        """
+        واحدهای این سایت را که کدشان در درخت منبع هست ولی به سایت دیگری می‌رسد یا زیر هیچ ریشه‌ای نیست حذف می‌کند
+        (مثلاً واحدهایی که پیش از تعیین/تغییر ریشه وارد شده‌اند). واحد دستی (کدی که در درخت منبع نیست)، واحدی که هنوز
+        پرسنل فعال در این سایت دارد و واحدی که مخاطب اطلاعیه بوده دست نمی‌خورد. پرسنل غیرفعالِ آن واحد بدون واحد می‌مانند.
+        خروجی: نام واحدهای حذف‌شده.
+        """
+        result = await self.db.execute(select(Department).where(Department.site_id == site_id))
+        candidates = [
+            dept
+            for dept in result.scalars().all()
+            if (code := normalize_code(dept.code)) in assignment and assignment[code] != site_id
+        ]
+        if not candidates:
+            return []
+        ids = [dept.id for dept in candidates]
+        busy_result = await self.db.execute(
+            select(Employee.department_id).where(
+                Employee.department_id.in_(ids), Employee.is_active.is_(True)
+            ).distinct()
+        )
+        busy = {dept_id for (dept_id,) in busy_result.all()}
+        noticed_result = await self.db.execute(
+            select(NoticeTarget.target_id).where(
+                NoticeTarget.target_type == NoticeTargetType.department, NoticeTarget.target_id.in_(ids)
+            ).distinct()
+        )
+        busy |= {dept_id for (dept_id,) in noticed_result.all()}
+        removed: list[str] = []
+        for dept in candidates:
+            if dept.id in busy:
+                continue
+            removed.append(f"{dept.name} ({dept.code})")
+            await self.db.delete(dept)
+        if removed:
+            await self.db.flush()
+            logger.info("سایت %s: %s واحد خارج از ریشه‌ها حذف شد", site_id, len(removed))
+        return removed
+
+    async def _protected_codes(self, site_id: int, owned_elsewhere: dict[str, int]) -> tuple[set[str], int]:
         """
         کدهای پرسنلی‌ای را که رکوردشان در این سایت نباید غیرفعال شود مشخص می‌کند:
-        - بی‌سایت‌ها همیشه (تا تنظیم ریشه‌ها، رکورد فعلی‌شان دست نمی‌خورد)؛
-        - متعلق به سایت دیگر فقط تا وقتی آن سایت هنوز رکوردی برایشان ندارد (منتظر انتقال)؛
-          اگر آن سایت رکورد دارد، نسخه‌ی این سایت تکراری است و غیرفعال می‌شود.
+        متعلق به سایت دیگر فقط تا وقتی آن سایت هنوز رکوردی برایشان ندارد (منتظر انتقال)؛
+        اگر آن سایت رکورد دارد، نسخه‌ی این سایت تکراری است و غیرفعال می‌شود.
+        (بی‌سایت‌ها جدا در _unassigned_guard بررسی می‌شوند.)
         خروجی: (مجموعه کدهای محافظت‌شده، تعداد رکوردهای این سایت که منتظر انتقال‌اند).
         """
-        protected = set(unassigned_codes)
+        protected: set[str] = set()
         if not owned_elsewhere:
             return protected, 0
         # کدهایی که سایت مالکشان هنوز رکوردی ندارد

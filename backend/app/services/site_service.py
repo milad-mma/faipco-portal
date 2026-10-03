@@ -184,17 +184,21 @@ class SiteService:
 
     async def upsert_mapping(self, site_id: int, payload: EmployeeMappingIn) -> EmployeeMapping:
         """
-        نگاشت پرسنل سایت را می‌سازد یا همه فیلدهایش را با payload جایگزین می‌کند و آن را برمی‌گرداند.
+        نگاشت پرسنل سایت را می‌سازد یا فیلدهای ارسال‌شده در payload را جایگزین می‌کند و آن را برمی‌گرداند.
         اگر واحد ریشه‌ای در payload ریشه‌ی یک سایت هم‌منبع دیگر هم باشد، OrgTreeError می‌دهد (ذخیره نمی‌شود).
         """
-        await self._ensure_roots_not_shared(site_id, payload.root_department_codes)
         mapping = await self.get_mapping(site_id)
+        # فیلدی که در درخواست نیامده (مثلاً فرم قدیمیِ کش‌شده در مرورگر که هنوز ریشه‌ها را نمی‌شناسد)
+        # مقدار ذخیره‌شده را پاک نمی‌کند؛ فقط فیلدهای ارسال‌شده (حتی خالی) جایگزین می‌شوند.
+        sent = payload.model_dump(exclude_unset=True)
+        roots = payload.root_department_codes if "root_department_codes" in sent or mapping is None else (mapping.root_department_codes or [])
+        await self._ensure_roots_not_shared(site_id, roots)
 
         if mapping is None:
             mapping = EmployeeMapping(site_id=site_id, **payload.model_dump())
             self.db.add(mapping)
         else:
-            for field, value in payload.model_dump().items():
+            for field, value in sent.items():
                 setattr(mapping, field, value)
 
         await self.db.commit()
