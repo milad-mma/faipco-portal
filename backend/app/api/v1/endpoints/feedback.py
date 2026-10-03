@@ -6,6 +6,9 @@ Endpoint های «انتقادات و پیشنهادات».
                                           feedback.view (سایت‌محور) / feedback.view_all (سراسری)
                                           قابل‌فیلتر بر اساس فرستنده، سایت، و بازه تاریخ
 /feedback/{id}                 (DELETE) حذف یک پیام - فقط Admin واقعی
+/feedback/{id}/replies         (GET/POST) گفتگوی یک پیام برای بازبین؛ POST فقط با feedback.reply (سایت‌محور)
+/feedback/{id}/status          (PUT)    تغییر وضعیت پیگیری - feedback.reply
+/feedback/mine                 (GET)    پیام‌های خودِ کاربر؛ /mine/{id} گفتگو؛ /mine/{id}/replies پاسخ فرستنده
 /feedback/prohibited-phrases   (GET/POST/DELETE) - فقط Admin واقعی (superuser)
 
 امنیتی: فرستنده همیشه از خودِ کاربر لاگین‌شده (سشن) خوانده می‌شود - هرگز
@@ -20,16 +23,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_superuser
 from app.db.session import get_db
-from app.models.feedback import FeedbackCategory
+from app.models.feedback import FeedbackCategory, FeedbackStatus
 from app.models.user import User
 from app.schemas.feedback import (
     FeedbackListOut,
     FeedbackMessageOut,
+    FeedbackReplyIn,
+    FeedbackStatusIn,
     FeedbackSubmitIn,
+    FeedbackThreadOut,
+    MyFeedbackItemOut,
     ProhibitedPhraseIn,
     ProhibitedPhraseOut,
 )
-from app.services.feedback_service import FeedbackAccessDenied, FeedbackRateLimitExceeded, FeedbackService
+from app.services.feedback_service import (
+    FeedbackAccessDenied,
+    FeedbackClosed,
+    FeedbackNotFound,
+    FeedbackRateLimitExceeded,
+    FeedbackService,
+)
 
 router = APIRouter()
 
@@ -59,6 +72,7 @@ async def list_feedback(
     site_id: int | None = Query(default=None),
     category: FeedbackCategory | None = Query(default=None),
     is_anonymous: bool | None = Query(default=None),
+    status_filter: FeedbackStatus | None = Query(default=None, alias="status"),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -77,6 +91,7 @@ async def list_feedback(
             site_id=site_id,
             category=category,
             is_anonymous=is_anonymous,
+            status=status_filter,
             date_from=date_from,
             date_to=date_to,
             page=page,
@@ -84,6 +99,101 @@ async def list_feedback(
         )
     except FeedbackAccessDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+# ---------- پیام‌های خودِ کاربر (باید پیش از مسیرهای /{feedback_id} تعریف شوند) ----------
+
+
+@router.get("/mine", response_model=list[MyFeedbackItemOut])
+async def list_my_feedback(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """پیام‌های خودِ کاربر جاری با وضعیت، تعداد پاسخ و نشانگر «پاسخ جدید». دسترسی: هر کاربر لاگین‌شده."""
+    return await FeedbackService(db).list_my_feedback(current_user)
+
+
+@router.get("/mine/unread-count")
+async def my_feedback_unread_count(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """تعداد پیام‌های کاربر با پاسخ بازبینِ دیده‌نشده (نشانگر داشبورد). خروجی: {count}."""
+    return {"count": await FeedbackService(db).my_unread_count(current_user)}
+
+
+@router.get("/mine/{feedback_id}")
+async def get_my_feedback_thread(
+    feedback_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """گفتگوی یکی از پیام‌های خودِ کاربر {message, replies}؛ مشاهده «دیده شد» را ثبت می‌کند. خطا: 404."""
+    try:
+        return await FeedbackService(db).get_my_thread(current_user, feedback_id)
+    except FeedbackNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/mine/{feedback_id}/replies")
+async def add_my_feedback_reply(
+    feedback_id: int,
+    payload: FeedbackReplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    پاسخ فرستنده در گفتگوی پیام خودش؛ خروجی گفتگوی به‌روز. خطا: 404 نبود پیام، 409 گفتگوی بسته،
+    429 محدودیت نرخ. الفاظ نامناسب مثل پیام اصلی هویت را (اگر قابلیت روشن باشد) آشکار می‌کند.
+    """
+    try:
+        return await FeedbackService(db).add_my_reply(current_user, feedback_id, payload.body)
+    except FeedbackNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except FeedbackClosed as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except FeedbackRateLimitExceeded as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+
+
+# ---------- گفتگو برای بازبین ----------
+
+
+@router.get("/{feedback_id}/replies", response_model=FeedbackThreadOut)
+async def get_feedback_thread(
+    feedback_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """گفتگوی یک پیام برای بازبین (همان محدوده‌ی دید فهرست). خطا: 403 بدون مجوز، 404 خارج از محدوده/حذف‌شده."""
+    try:
+        return await FeedbackService(db).get_thread(current_user, feedback_id)
+    except FeedbackAccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except FeedbackNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/{feedback_id}/replies", response_model=FeedbackThreadOut)
+async def add_feedback_reply(
+    feedback_id: int,
+    payload: FeedbackReplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """پاسخ بازبین با نام خودش؛ وضعیت «پاسخ داده شد» و اعلان عمومی به فرستنده. دسترسی: feedback.reply برای سایت فرستنده."""
+    try:
+        return await FeedbackService(db).add_reviewer_reply(current_user, feedback_id, payload.body)
+    except FeedbackAccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except FeedbackNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/{feedback_id}/status", response_model=FeedbackThreadOut)
+async def set_feedback_status(
+    feedback_id: int,
+    payload: FeedbackStatusIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """تغییر وضعیت پیگیری (جدید / در دست بررسی / پاسخ داده شد / بسته). دسترسی: feedback.reply برای سایت فرستنده."""
+    try:
+        return await FeedbackService(db).set_status(current_user, feedback_id, payload.status)
+    except FeedbackAccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except FeedbackNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.delete("/{feedback_id}", status_code=status.HTTP_204_NO_CONTENT)

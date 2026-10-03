@@ -31,6 +31,7 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
+import { fetchMyFeedbackUnreadCount } from "../api/feedback";
 import { swr } from "../api/swrCache";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
@@ -64,7 +65,8 @@ function DisabledChip() {
  * کاشی یک ابزار در شبکه ابزارها.
  * ورودی: آیکون، عنوان، comingSoon/disabled (غیرقابل کلیک و کم‌رنگ با برچسب مربوط) و onClick.
  */
-function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
+// badge: شمارنده‌ی اختیاری روی آیکون (مثلاً پاسخ‌های دیده‌نشده‌ی انتقادات و پیشنهادات)؛ صفر = پنهان
+function ToolCard({ icon, label, comingSoon, disabled, onClick, badge = 0 }) {
   return (
     <Card
       variant="outlined"
@@ -89,7 +91,9 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick }) {
       {comingSoon && <ComingSoonChip />}
       {disabled && !comingSoon && <DisabledChip />}
       {/* در دسکتاپ آیکون و متن بزرگ‌تر است (کاشی‌ها در دسکتاپ بلندترند) */}
-      <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
+      <Badge color="error" badgeContent={badge} invisible={!badge} sx={{ "& .MuiBadge-badge": { overflow: "visible" } }}>
+        <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
+      </Badge>
       <Typography
         variant="caption"
         fontWeight={700}
@@ -113,6 +117,7 @@ export default function PersonalDashboardPage() {
   const [birthdays, setBirthdays] = useState(null);  // متولدین امروز؛ null = در حال بارگذاری
   const [photoUrl, setPhotoUrl] = useState(null);  // Object URL عکس پرسنلی؛ null = بدون عکس
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);  // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
+  const [feedbackUnread, setFeedbackUnread] = useState(0);  // پیام‌های انتقادات و پیشنهادات کاربر با پاسخ دیده‌نشده
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));  // برای تعیین تعداد اطلاعیه‌های اخیر
 
   // متولدین امروز را (با رعایت تنظیم حریم خصوصی) بارگذاری می‌کند؛ جدا تعریف شده تا پس از
@@ -138,6 +143,8 @@ export default function PersonalDashboardPage() {
     swr("dashboard:pendingLeaveCount", fetchPendingLeaveRequestCount, (data) =>
       setPendingLeaveCount(data.pending_count || 0)
     ).catch(() => {});
+    // پاسخ‌های دیده‌نشده‌ی بازبین به پیام‌های انتقادات و پیشنهادات این کاربر
+    swr("dashboard:feedbackUnread", fetchMyFeedbackUnreadCount, (count) => setFeedbackUnread(count || 0)).catch(() => {});
   }, []);
 
   // دریافت عکس پرسنلی به‌صورت Blob، فقط اگر برای کاربر عکس ثبت شده باشد (has_photo از /auth/me)
@@ -509,7 +516,12 @@ export default function PersonalDashboardPage() {
         <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
         <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
         <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
-        <ToolCard icon={<ForumOutlinedIcon />} label="انتقادات و پیشنهادات" onClick={() => navigate("/feedback")} />
+        <ToolCard
+          icon={<ForumOutlinedIcon />}
+          label="انتقادات و پیشنهادات"
+          badge={feedbackUnread}
+          onClick={() => navigate(feedbackUnread ? "/feedback?tab=mine" : "/feedback")}
+        />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
         {/* کاشی «ثبت نام بیمه تکمیلی»؛ اگر ماژول از پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
         <ToolCard

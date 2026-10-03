@@ -181,6 +181,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `vehicles.manage` | 032 | `can_manage_vehicles` | ویرایش/حذف خودروی هر پرسنل |
 | `feedback.view` | 040 | `can_view_feedback` | «انتقادات و پیشنهادات» سایت(های) انتصاب |
 | `feedback.view_all` | 040 | `can_view_feedback` | همان، کل سازمان |
+| `feedback.reply` | 099 | `can_reply_feedback` | پاسخ به انتقادات و پیشنهادات و تغییر وضعیت (سایت‌محور؛ مشاهده‌ی همان سایت‌ها را هم می‌دهد) |
 | `performance.structure.manage` | 050 | `can_manage_performance_structure` | «ساختار ارزیابی» — سایت‌محور |
 | `performance.periods.manage` | 051 | `can_manage_performance_periods` | «دوره‌های ارزیابی» — سایت‌محور |
 | `performance.forms.manage` | 051 | `can_manage_performance_forms` | «فرم‌های ارزیابی» — سایت‌محور |

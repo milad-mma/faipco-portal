@@ -57,6 +57,7 @@ class UserOut(BaseModel):
     can_manage_mobile_app: bool = False  # system.mobile_app — تنظیمات اپ اندروید و APK
     mobile_app_enabled: bool = False  # کلید اصلی قابلیت اپ اندروید؛ خاموش = منوها، یادآورها و پیش‌نیاز آن پنهان
     can_view_feedback: bool = False  # feedback.view یا feedback.view_all — مشاهده انتقادات و پیشنهادات
+    can_reply_feedback: bool = False  # feedback.reply — پاسخ به انتقادات و پیشنهادات و تغییر وضعیت (سایت‌محور)
     can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
     # فلگ‌های مجوزهایی که در بک‌اند با require_permission/get_sites_with_permission چک می‌شوند؛
     # هر فلگ True، منو/مسیر متناظر را در فرانت‌اند باز می‌کند

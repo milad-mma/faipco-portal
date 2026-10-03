@@ -15,12 +15,13 @@ export async function submitFeedback({ category, title, message, isAnonymous }) 
   return data;
 }
 
-// GET /feedback با فیلترهای فرستنده/سایت/دسته/ناشناس/بازه‌ی تاریخ؛ خروجی: { items, total, page, page_size }
+// GET /feedback با فیلترهای فرستنده/سایت/دسته/ناشناس/وضعیت/بازه‌ی تاریخ؛ خروجی: { items, total, page, page_size }
 export async function fetchFeedback({
   senderId,
   siteId,
   category,
   isAnonymous,
+  status,
   dateFrom,
   dateTo,
   page,
@@ -31,6 +32,7 @@ export async function fetchFeedback({
   if (siteId) params.site_id = siteId;
   if (category) params.category = category;
   if (isAnonymous !== undefined && isAnonymous !== "") params.is_anonymous = isAnonymous;
+  if (status) params.status = status;
   if (dateFrom) params.date_from = dateFrom;
   if (dateTo) params.date_to = dateTo;
   if (page) params.page = page;
@@ -71,5 +73,49 @@ export async function fetchFeedbackSettings() {
 // PUT /feedback/settings (فقط superuser)؛ روشن/خاموش کردن آشکار شدن هویت با الفاظ نامناسب
 export async function saveFeedbackSettings(profanityRevealEnabled) {
   const { data } = await apiClient.put("/feedback/settings", { profanity_reveal_enabled: profanityRevealEnabled });
+  return data;
+}
+
+// ---------- گفتگو (پاسخ بازبین / پیگیری فرستنده) ----------
+
+// GET /feedback/mine؛ پیام‌های خودِ کاربر با وضعیت، تعداد پاسخ و has_new_reply
+export async function fetchMyFeedback() {
+  const { data } = await apiClient.get("/feedback/mine");
+  return data;
+}
+
+// GET /feedback/mine/unread-count؛ خروجی: { count } — پیام‌های با پاسخ دیده‌نشده (نشانگر داشبورد)
+export async function fetchMyFeedbackUnreadCount() {
+  const { data } = await apiClient.get("/feedback/mine/unread-count");
+  return data.count || 0;
+}
+
+// GET /feedback/mine/{id}؛ گفتگوی یکی از پیام‌های خودِ کاربر { message, replies } (و ثبت «دیده شد»)
+export async function fetchMyFeedbackThread(id) {
+  const { data } = await apiClient.get(`/feedback/mine/${id}`);
+  return data;
+}
+
+// POST /feedback/mine/{id}/replies؛ پاسخ فرستنده؛ خروجی گفتگوی به‌روز (409 = گفتگو بسته است)
+export async function replyToMyFeedback(id, body) {
+  const { data } = await apiClient.post(`/feedback/mine/${id}/replies`, { body });
+  return data;
+}
+
+// GET /feedback/{id}/replies؛ گفتگوی یک پیام برای بازبین { message, replies }
+export async function fetchFeedbackThread(id) {
+  const { data } = await apiClient.get(`/feedback/${id}/replies`);
+  return data;
+}
+
+// POST /feedback/{id}/replies؛ پاسخ بازبین (feedback.reply)؛ خروجی گفتگوی به‌روز
+export async function replyToFeedback(id, body) {
+  const { data } = await apiClient.post(`/feedback/${id}/replies`, { body });
+  return data;
+}
+
+// PUT /feedback/{id}/status؛ وضعیت: new | in_review | answered | closed (feedback.reply)
+export async function setFeedbackStatus(id, status) {
+  const { data } = await apiClient.put(`/feedback/${id}/status`, { status });
   return data;
 }

@@ -1,12 +1,13 @@
 /**
- * صفحه ارسال انتقاد/پیشنهاد/نظر توسط پرسنل.
+ * صفحه انتقادات و پیشنهادات پرسنل با دو تب: «ارسال پیام» و «پیام‌های من» (?tab=mine؛ لینک اعلان پاسخ).
  * فرم شامل موضوع، عنوان و متن (همه اجباری) و گزینه ارسال ناشناس است؛
  * فعال شدن ارسال ناشناس منوط به تأیید متن اطلاع‌رسانی محرمانگی است.
  */
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
+  Badge,
   Box,
   Button,
   Card,
@@ -24,7 +25,9 @@ import {
 } from "@mui/material";
 import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import BackLink from "../components/BackLink";
-import { fetchFeedbackSettings, submitFeedback } from "../api/feedback";
+import PillTabs from "../components/PillTabs";
+import MyFeedbackList from "../components/MyFeedbackList";
+import { fetchFeedbackSettings, fetchMyFeedbackUnreadCount, submitFeedback } from "../api/feedback";
 
 const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام (کلید = مقدار ارسالی به سرور)
   complaint: "انتقاد",
@@ -47,6 +50,9 @@ const ANONYMITY_NOTICE_TEXT =
  */
 export default function FeedbackSubmitPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "mine" ? "mine" : "new"; // تب فعال از URL (لینک اعلان: ?tab=mine)
+  const [unread, setUnread] = useState(0); // پیام‌های با پاسخ دیده‌نشده (نشانگر تب)
   const [category, setCategory] = useState("");
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
@@ -61,7 +67,12 @@ export default function FeedbackSubmitPage() {
     fetchFeedbackSettings()
       .then((d) => setProfanityReveal(d.profanity_reveal_enabled !== false))
       .catch(() => {});
+    fetchMyFeedbackUnreadCount().then(setUnread).catch(() => {});
   }, []);
+
+  function changeTab(next) {
+    setSearchParams(next === "mine" ? { tab: "mine" } : {}, { replace: true });
+  }
 
   // تیک زدن فقط دیالوگ تأیید را باز می‌کند؛ برداشتن تیک مستقیماً حالت ناشناس را خاموش می‌کند
   function handleAnonymousCheckboxChange(e) {
@@ -102,20 +113,44 @@ export default function FeedbackSubmitPage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
         انتقادات و پیشنهادات
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        نظر، انتقاد یا پیشنهاد خود را با ما در میان بگذارید.
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        نظر، انتقاد یا پیشنهاد خود را با ما در میان بگذارید. پاسخ بازبین در «پیام‌های من» نمایش داده می‌شود.
       </Typography>
 
+      <PillTabs
+        value={tab}
+        onChange={changeTab}
+        tabs={[
+          { key: "new", label: "ارسال پیام" },
+          {
+            key: "mine",
+            label: (
+              <Badge color="error" badgeContent={unread} invisible={!unread} sx={{ "& .MuiBadge-badge": { right: -14 } }}>
+                پیام‌های من
+              </Badge>
+            ),
+          },
+        ]}
+      />
+
+      {tab === "mine" && <MyFeedbackList onUnreadChange={setUnread} />}
+
       {/* کارت فرم: پس از ارسال موفق، پیام موفقیت و دکمه بازگشت جایگزین فرم می‌شود */}
+      {tab === "new" && (
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         {success ? (
           <Stack spacing={2} alignItems="flex-start">
             <Alert severity="success" sx={{ width: "100%" }}>
-              پیام شما با موفقیت ثبت شد. سپاس از وقتی که گذاشتید.
+              پیام شما با موفقیت ثبت شد. سپاس از وقتی که گذاشتید. پاسخ احتمالی بازبین را در «پیام‌های من» می‌بینید.
             </Alert>
-            <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/my-dashboard")}>
-              بازگشت به داشبورد
-            </Button>
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" onClick={() => { setSuccess(false); changeTab("mine"); }}>
+                پیام‌های من
+              </Button>
+              <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/my-dashboard")}>
+                بازگشت به داشبورد
+              </Button>
+            </Stack>
           </Stack>
         ) : (
           <Stack spacing={2.5}>
@@ -178,6 +213,7 @@ export default function FeedbackSubmitPage() {
           </Stack>
         )}
       </Card>
+      )}
 
       {/* دیالوگ متن محرمانگی با دکمه‌های «انصراف» و «موافقم» */}
       <Dialog open={noticeDialogOpen} onClose={() => setNoticeDialogOpen(false)} maxWidth="xs" fullWidth>

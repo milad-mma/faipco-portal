@@ -1,6 +1,7 @@
 /**
  * صفحه گزارش «انتقادات و پیشنهادات» در پنل ادمین.
- * شامل فهرست صفحه‌بندی‌شده پیام‌ها با فیلتر سمت سرور (فرستنده/سایت/موضوع/ناشناس/بازه تاریخ شمسی)
+ * شامل فهرست صفحه‌بندی‌شده پیام‌ها با فیلتر سمت سرور (فرستنده/سایت/موضوع/ناشناس/وضعیت/بازه تاریخ شمسی)،
+ * گفتگوی هر پیام (پاسخ با نام بازبین؛ فرستنده‌ی ناشناس همچنان بی‌نام) برای دارنده‌ی feedback.reply،
  * و برای Admin، تب مدیریت کلمات نامناسب که ناشناس بودن پیام را لغو می‌کنند.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +12,10 @@ import {
   Card,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   IconButton,
   MenuItem,
@@ -29,7 +34,9 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import PillTabs from "../components/PillTabs";
+import FeedbackThread, { FEEDBACK_STATUS_COLORS, FEEDBACK_STATUS_LABELS } from "../components/FeedbackThread";
 import { useAuth } from "../context/AuthContext";
 import JalaliDateSelect from "../components/JalaliDateSelect";
 import { jalaliToGregorian } from "../utils/jalaliDate";
@@ -39,8 +46,11 @@ import {
   deleteProhibitedPhrase,
   fetchFeedback,
   fetchFeedbackSettings,
+  fetchFeedbackThread,
   fetchProhibitedPhrases,
+  replyToFeedback,
   saveFeedbackSettings,
+  setFeedbackStatus,
 } from "../api/feedback";
 
 const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام
@@ -109,6 +119,8 @@ function FeedbackMessagesList({ canDelete }) {
   const [siteFilter, setSiteFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [anonymousFilter, setAnonymousFilter] = useState(""); // "" | "true" | "false"
+  const [statusFilter, setStatusFilter] = useState(""); // "" | new | in_review | answered | closed
+  const [openThreadId, setOpenThreadId] = useState(null); // پیامی که گفتگویش در دیالوگ باز است
   const [dateFromParts, setDateFromParts] = useState(EMPTY_DATE_PARTS);
   const [dateToParts, setDateToParts] = useState(EMPTY_DATE_PARTS);
 
@@ -146,6 +158,7 @@ function FeedbackMessagesList({ canDelete }) {
       siteId: siteFilter || undefined,
       category: categoryFilter || undefined,
       isAnonymous: anonymousFilter === "" ? undefined : anonymousFilter === "true",
+      status: statusFilter || undefined,
       dateFrom: dateFromIso,
       dateTo: dateToIso,
       page: page + 1,
@@ -157,13 +170,18 @@ function FeedbackMessagesList({ canDelete }) {
       })
       .catch((err) => setError(err.response?.data?.detail || "دریافت پیام‌ها با خطا مواجه شد."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso, page, rowsPerPage]);
+  }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, statusFilter, dateFromIso, dateToIso, page, rowsPerPage]);
 
   // با تغییر هر فیلتر به صفحه اول برمی‌گردد تا کاربر روی صفحه‌ای که دیگر ردیفی
   // ندارد نماند.
   useEffect(() => {
     setPage(0);
-  }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, dateFromIso, dateToIso]);
+  }, [senderFilter, siteFilter, categoryFilter, anonymousFilter, statusFilter, dateFromIso, dateToIso]);
+
+  // پس از پاسخ/تغییر وضعیت در دیالوگ، کارت همان پیام در فهرست به‌روز می‌شود (بدون بارگذاری دوباره)
+  function handleMessageUpdated(updated) {
+    setMessages((prev) => prev?.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)) ?? prev);
+  }
 
   // گزینه‌های یکتای فیلتر فرستنده به‌صورت [sender_id, sender_name] از پیام‌های بدون فیلتر
   const senderOptions = useMemo(() => {
@@ -264,6 +282,21 @@ function FeedbackMessagesList({ canDelete }) {
             <MenuItem value="true">فقط ناشناس</MenuItem>
             <MenuItem value="false">فقط غیرناشناس</MenuItem>
           </TextField>
+          <TextField
+            select
+            size="small"
+            label="وضعیت"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value="">همه</MenuItem>
+            {Object.entries(FEEDBACK_STATUS_LABELS).map(([value, label]) => (
+              <MenuItem key={value} value={value}>
+                {label}
+              </MenuItem>
+            ))}
+          </TextField>
         </Stack>
 
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
@@ -344,15 +377,22 @@ function FeedbackMessagesList({ canDelete }) {
                     variant="outlined"
                   />
                   {m.site_name && <Chip size="small" label={m.site_name} variant="outlined" />}
+                  <Chip size="small" label={FEEDBACK_STATUS_LABELS[m.status] || m.status} color={FEEDBACK_STATUS_COLORS[m.status] || "default"} />
+                  {m.awaiting_reviewer && m.reply_count > 0 && <Chip size="small" label="پاسخ جدید از فرستنده" color="warning" variant="outlined" />}
                   {m.contains_profanity && (
                     <Chip size="small" label="حاوی الفاظ نامناسب — هویت آشکار شد" color="warning" />
                   )}
                 </Stack>
-                {canDelete && (
-                  <IconButton size="small" color="error" onClick={() => handleDelete(m.id)} aria-label="حذف پیام">
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
-                )}
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <Button size="small" startIcon={<ForumOutlinedIcon />} onClick={() => setOpenThreadId(m.id)}>
+                    {m.reply_count ? `گفتگو (${m.reply_count.toLocaleString("fa-IR")})` : m.can_reply ? "پاسخ" : "گفتگو"}
+                  </Button>
+                  {canDelete && (
+                    <IconButton size="small" color="error" onClick={() => handleDelete(m.id)} aria-label="حذف پیام">
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Stack>
               </Stack>
 
               {m.title && (
@@ -382,7 +422,130 @@ function FeedbackMessagesList({ canDelete }) {
           />
         </Stack>
       )}
+
+      {openThreadId !== null && (
+        <FeedbackThreadDialog id={openThreadId} onClose={() => setOpenThreadId(null)} onUpdated={handleMessageUpdated} />
+      )}
     </Box>
+  );
+}
+
+/**
+ * دیالوگ گفتگوی یک پیام برای بازبین. پاسخ و تغییر وضعیت فقط اگر Backend برای این پیام can_reply=true داده باشد
+ * (مجوز feedback.reply برای سایت فرستنده). هویت فرستنده‌ی ناشناس در پیام و پاسخ‌هایش پنهان می‌ماند.
+ * ورودی: id پیام، onClose، onUpdated(message) برای به‌روزرسانی کارت فهرست.
+ */
+function FeedbackThreadDialog({ id, onClose, onUpdated }) {
+  const [thread, setThread] = useState(null); // { message, replies }؛ null = در حال بارگذاری
+  const [error, setError] = useState("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+
+  useEffect(() => {
+    fetchFeedbackThread(id)
+      .then(setThread)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت گفتگو با خطا مواجه شد."));
+  }, [id]);
+
+  function applyThread(data) {
+    setThread(data);
+    onUpdated(data.message);
+  }
+
+  async function handleStatus(status) {
+    setError("");
+    setIsChangingStatus(true);
+    try {
+      applyThread(await setFeedbackStatus(id, status));
+    } catch (err) {
+      setError(err.response?.data?.detail || "تغییر وضعیت با خطا مواجه شد.");
+    } finally {
+      setIsChangingStatus(false);
+    }
+  }
+
+  const m = thread?.message;
+  const closed = m?.status === "closed";
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+          <span>گفتگو</span>
+          {m && <Chip size="small" label={FEEDBACK_STATUS_LABELS[m.status] || m.status} color={FEEDBACK_STATUS_COLORS[m.status] || "default"} />}
+        </Stack>
+      </DialogTitle>
+      <DialogContent dividers>
+        {error && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {error}
+          </Alert>
+        )}
+        {thread === null && !error ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : (
+          m && (
+            <Stack spacing={2}>
+              {/* پیام اصلی */}
+              <Box sx={{ p: 1.5, borderRadius: 2, border: 1, borderColor: "divider" }}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mb: 0.5 }}>
+                  <Typography variant="caption" fontWeight={700}>
+                    {m.sender_name || "ناشناس"}
+                    {m.sender_name && m.is_anonymous_requested ? " (ناشناس)" : ""}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {new Date(m.created_at).toLocaleString("fa-IR")}
+                  </Typography>
+                </Stack>
+                {m.title && (
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                    {m.title}
+                  </Typography>
+                )}
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {m.message}
+                </Typography>
+              </Box>
+              {m.can_reply && (
+                <Typography variant="caption" color="text.secondary">
+                  پاسخ شما با نام خودتان برای فرستنده نمایش داده می‌شود. هویت فرستنده‌ی ناشناس برای شما پنهان می‌ماند؛
+                  از او نخواهید خودش را معرفی کند.
+                </Typography>
+              )}
+              <FeedbackThread
+                replies={thread.replies}
+                canReply={m.can_reply}
+                closed={closed}
+                onSend={async (body) => applyThread(await replyToFeedback(id, body))}
+              />
+            </Stack>
+          )
+        )}
+      </DialogContent>
+      <DialogActions sx={{ flexWrap: "wrap", gap: 0.5 }}>
+        {m?.can_reply && (
+          <>
+            {m.status === "new" && (
+              <Button size="small" disabled={isChangingStatus} onClick={() => handleStatus("in_review")}>
+                در دست بررسی
+              </Button>
+            )}
+            {closed ? (
+              <Button size="small" disabled={isChangingStatus} onClick={() => handleStatus(m.reply_count ? "answered" : "in_review")}>
+                بازگشایی
+              </Button>
+            ) : (
+              <Button size="small" color="warning" disabled={isChangingStatus} onClick={() => handleStatus("closed")}>
+                بستن گفتگو
+              </Button>
+            )}
+          </>
+        )}
+        <Box sx={{ flexGrow: 1 }} />
+        <Button onClick={onClose}>بستن پنجره</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

@@ -18,7 +18,7 @@ import enum
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -30,6 +30,14 @@ class FeedbackCategory(str, enum.Enum):
     complaint = "complaint"  # انتقاد
     suggestion = "suggestion"  # پیشنهاد
     comment = "comment"  # نظر
+
+
+class FeedbackStatus(str, enum.Enum):
+    """وضعیت پیگیری یک پیام (توسط بازبین دارنده‌ی feedback.reply تغییر می‌کند)."""
+    new = "new"  # جدید، هنوز پاسخی ندارد
+    in_review = "in_review"  # در دست بررسی
+    answered = "answered"  # بازبین پاسخ داده (خودکار با اولین پاسخ)
+    closed = "closed"  # بسته؛ فرستنده دیگر نمی‌تواند بنویسد
 
 
 class FeedbackMessage(Base, TimestampMixin):
@@ -58,6 +66,29 @@ class FeedbackMessage(Base, TimestampMixin):
     deleted_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # گفتگو (Migration 099): وضعیت پیگیری و آخرین زمانی که فرستنده گفتگوی این پیام را دیده
+    # (برای نشانگر «پاسخ جدید» خودِ فرستنده؛ به بازبین هرگز نشان داده نمی‌شود)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=FeedbackStatus.new.value, server_default="new")
+    sender_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FeedbackReply(Base, TimestampMixin):
+    """
+    یک پاسخ در گفتگوی یک پیام؛ هر دو طرف (بازبین با مجوز feedback.reply، و فرستنده‌ی پیام) می‌نویسند.
+    ناشناس بودن فرستنده در نمایش حفظ می‌شود (feedback_service): پاسخ‌های فرستنده با برچسب «فرستنده» می‌آیند،
+    پاسخ‌های بازبین با نام خودش. is_from_sender مستقل از author_user_id ذخیره می‌شود تا با حذف کاربر طرف گفتگو معلوم بماند.
+    """
+
+    __tablename__ = "feedback_replies"
+    __table_args__ = (Index("ix_feedback_replies_feedback_created", "feedback_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback_messages.id", ondelete="CASCADE"), nullable=False)
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    is_from_sender: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # فقط برای پاسخ فرستنده معنا دارد؛ مثل پیام اصلی، در لحظه‌ی ثبت محاسبه می‌شود و روی پیام اصلی هم اثر می‌گذارد
+    contains_profanity: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class ProhibitedPhrase(Base, TimestampMixin):
