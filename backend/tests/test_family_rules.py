@@ -56,7 +56,8 @@ def test_sanitize_defaults_and_merge():
     assert "bad.key" not in s["fields"]
     assert s["rules"]["child"]["son_study_age"] == 20
     assert s["rules"]["child"]["max_children"] is None
-    assert s["documents"]["student_certificate"]["renewal_months"] == 12
+    assert s["documents"]["student_certificate"]["renewal_months"] is None  # انقضا فقط از تاریخ اعتبار
+    assert r.sanitize_settings({"documents": {"student_certificate": {"renewal_months": 12}}})["documents"]["student_certificate"]["renewal_months"] is None
     m = r.merge_settings(s, {"rules": {"marriage": {"female_mode": "married"}}, "documents": {"custody_ruling": {"mode": "required"}}})
     assert m["rules"]["marriage"]["female_mode"] == "married"
     assert m["rules"]["child"]["son_study_age"] == 20  # بقیه دست‌نخورده
@@ -157,14 +158,13 @@ def test_son_age_and_student_extension():
     # دانشجو ولی گواهی معتبر ندارد
     p["members"][1].update(is_student=True, student_cert_expiry="1406/01/01")
     data, s = _data(p)
-    data["members"][1]["student_cert_expiry"] = None  # بدون تاریخ اعتبار: انقضا = آپلود + دوره تمدید
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is False and "گواهی" in son["reason"]
-    # گواهی تازه → مشمول؛ گواهی قدیمی (بیش از ۱۲ ماه) → غیرمشمول
-    data["members"][1]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1405/01/10"}]
+    # گواهی با تاریخ اعتبار آینده → مشمول؛ تاریخ اعتبار گذشته → غیرمشمول (تاریخ آپلود اثری ندارد)
+    data["members"][1]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1403/01/10"}]
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is True
-    data["members"][1]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1403/01/10"}]
+    data["members"][1]["student_cert_expiry"] = "1405/06/31"
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is False
     # HR سقف سن پسر را ۲۵ می‌کند
@@ -240,6 +240,7 @@ def test_warnings_son_age_and_expiry():
     p["members"][1]["birth_date"] = "1387/08/20"  # ۱۸ سالگی در ۱۴۰۵/۰۸/۲۰
     data, s = _data(p)
     data["members"][1]["docs"] = [{"doc_type": "student_certificate", "uploaded": "1404/07/01"}]
+    data["members"][1]["student_cert_expiry"] = "1405/07/01"
     w = r.warnings(data, s, TODAY)
     assert any("18 سالگی" in x for x in w)
     assert any("منقضی شده" in x for x in w)

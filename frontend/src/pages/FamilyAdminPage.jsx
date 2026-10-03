@@ -852,7 +852,7 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
           مدارک
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً گواهی تحصیل فقط برای پسر یا دختری که به سن شروع شرط تحصیل رسیده و در حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است.
+          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً گواهی تحصیل فقط برای پسر یا دختری که به سن شروع شرط تحصیل رسیده و در حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است؛ انقضای گواهی اشتغال به تحصیل از «تاریخ اعتبار» همان گواهی محاسبه می‌شود.
         </Typography>
         <Stack spacing={1.25}>
           {Object.entries(meta.doc_types).map(([key, spec]) => (
@@ -882,12 +882,19 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
                 </TextField>
               </Grid>
               <Grid item xs={6} md={4}>
-                <NumberField
-                  label="تمدید هر چند ماه — خالی = ندارد"
-                  value={s.documents[key].renewal_months}
-                  disabled={ro}
-                  onChange={(v) => setS({ ...s, documents: { ...s.documents, [key]: { ...s.documents[key], renewal_months: v } } })}
-                />
+                {spec.expiry_field ? (
+                  // گواهی اشتغال به تحصیل: انقضا = «تاریخ اعتبار» که پرسنل همراه گواهی وارد می‌کند (دوره تمدید ندارد)
+                  <Typography variant="caption" color="text.secondary">
+                    انقضا: «تاریخ اعتبار گواهی» که پرسنل همراه گواهی وارد می‌کند
+                  </Typography>
+                ) : (
+                  <NumberField
+                    label="تمدید هر چند ماه — خالی = ندارد"
+                    value={s.documents[key].renewal_months}
+                    disabled={ro}
+                    onChange={(v) => setS({ ...s, documents: { ...s.documents, [key]: { ...s.documents[key], renewal_months: v } } })}
+                  />
+                )}
               </Grid>
             </Grid>
           ))}

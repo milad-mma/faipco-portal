@@ -91,7 +91,7 @@ DOC_TYPES: dict[str, dict] = {
     "separation_document": {"label": "حکم طلاق / گواهی فوت همسر", "scope": "profile", "default": "required", "hint": "وقتی مطلقه یا همسر فوت‌شده هستید"},
     "head_of_household": {"label": "گواهی سرپرستی خانوار", "scope": "profile", "default": "required", "hint": "وقتی سرپرست خانوار هستید"},
     "birth_certificate": {"label": "تصویر شناسنامه", "scope": "member", "default": "required", "hint": "برای همسر و هر فرزند"},
-    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسر یا دختری که به سن تعیین‌شده (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "renewal": 12},
+    "student_certificate": {"label": "گواهی اشتغال به تحصیل", "scope": "member", "default": "required", "hint": "برای پسر یا دختری که به سن تعیین‌شده (پیش‌فرض ۱۸ سال) رسیده و در حال تحصیل است", "expiry_field": "student_cert_expiry"},
     "disability_certificate": {"label": "گواهی از کار افتادگی", "scope": "member", "default": "required", "hint": "برای عضوی که از کار افتاده است"},
     "custody_ruling": {"label": "حکم حضانت", "scope": "member", "default": "optional", "hint": "برای فرزندی که پس از طلاق حضانتش با شماست"},
 }  # fmt: skip
@@ -272,6 +272,8 @@ def sanitize_settings(value) -> dict:
         d = docs_in.get(key) if isinstance(docs_in.get(key), dict) else {}
         mode = d.get("mode")
         renewal = _int_or_none(d.get("renewal_months"), 1, 120) if "renewal_months" in d else spec.get("renewal")
+        if spec.get("expiry_field"):
+            renewal = None  # انقضا فقط از «تاریخ اعتبار» واردشده توسط پرسنل (دوره تمدید ندارد)
         out["documents"][key] = {"mode": mode if mode in FIELD_MODES else spec["default"], "renewal_months": renewal}
 
     rules_in = src.get("rules") if isinstance(src.get("rules"), dict) else {}
@@ -648,11 +650,13 @@ def missing_documents(settings: dict, data: dict, today) -> list[str]:
 
 def document_expiry(settings: dict, doc: dict, member: dict | None = None) -> tuple[int, int, int] | None:
     """
-    تاریخ انقضای یک مدرک. گواهی اشتغال به تحصیل: «تاریخ اعتبار» واردشده برای همان فرزند (اگر باشد)؛
-    بقیه (و گواهی بدون تاریخ اعتبار): تاریخ آپلود (شمسی) + دوره تمدید تنظیم‌شده؛ بدون دوره → None.
+    تاریخ انقضای یک مدرک. مدرکی که expiry_field دارد (گواهی اشتغال به تحصیل): فقط «تاریخ اعتبار» واردشده
+    برای همان فرزند؛ بقیه: تاریخ آپلود (شمسی) + دوره تمدید تنظیم‌شده؛ بدون دوره → None.
     """
-    if doc.get("doc_type") == "student_certificate" and member and parse_jalali(member.get("student_cert_expiry")):
-        return parse_jalali(member.get("student_cert_expiry"))
+    expiry_field = (DOC_TYPES.get(doc.get("doc_type")) or {}).get("expiry_field")
+    if expiry_field:
+        # گواهی اشتغال به تحصیل: فقط تاریخ اعتبار همان فرزند (خالی = بدون انقضا)
+        return parse_jalali((member or {}).get(expiry_field))
     months = (settings["documents"].get(doc.get("doc_type")) or {}).get("renewal_months")
     uploaded = parse_jalali(doc.get("uploaded"))
     if not months or uploaded is None:
