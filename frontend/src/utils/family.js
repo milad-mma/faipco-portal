@@ -3,14 +3,16 @@ import { gregorianToJalali } from "./jalaliDate";
 
 export const CHILD_TYPES = ["son", "daughter"];
 
+const CHILD_COLUMNS = ["birth_date", "national_id", "birth_certificate_no", "relation", "other_parent_name", "custody", "is_disabled",
+  "is_student", "education_level", "school_name", "student_cert_expiry", "is_employed", "is_married", "marriage_date"]; // prettier-ignore
+
 // ترتیب ستون‌های هر نوع عضو در فرم
 export const MEMBER_COLUMNS = {
   spouse: ["father_name", "national_id", "birth_certificate_no", "birth_date", "marriage_certificate_no", "mobile",
     "is_employed", "employer_name", "is_insured", "receives_child_allowance", "is_disabled"],
-  son: ["birth_date", "national_id", "birth_certificate_no", "relation", "other_parent_name", "custody", "is_disabled",
-    "is_student", "education_level", "school_name", "student_cert_expiry", "is_employed"],
-  daughter: ["birth_date", "national_id", "birth_certificate_no", "relation", "other_parent_name", "custody", "is_disabled",
-    "is_married", "marriage_date", "is_employed", "is_student", "education_level", "school_name", "student_cert_expiry"],
+  // پسر و دختر: ستون‌های یکسان با ترتیب یکسان
+  son: CHILD_COLUMNS,
+  daughter: CHILD_COLUMNS,
 }; // prettier-ignore
 export const MEMBER_LABEL = { spouse: "همسر", son: "پسر", daughter: "دختر" };
 export const STATUS_COLOR = { none: "default", draft: "default", pending: "warning", approved: "success", rejected: "error", returned: "info" };
@@ -36,7 +38,7 @@ export function ageFromJalali(value) {
 }
 
 // پسر/دختری که به سن تعیین‌شده توسط منابع انسانی (پیش‌فرض ۱۸) رسیده یا از آن گذشته است.
-// studyAges: { son: سن سقف پسر، daughter: سن پرسیدن تحصیل دختر } از تنظیمات فرم
+// studyAges: { son, daughter }: «سن شروع شرط تحصیل» هر کدام از تنظیمات فرم
 export function childReachedStudyAge(member, studyAges) {
   const limit = studyAges?.[member?.member_type];
   if (!CHILD_TYPES.includes(member?.member_type)) return false;
@@ -47,7 +49,7 @@ export function childReachedStudyAge(member, studyAges) {
 const STUDY_COLUMNS = ["is_student", "education_level", "school_name", "student_cert_expiry"];
 
 // سن‌های تحصیل از تنظیمات فرم کارمند
-export const studyAgesOf = (formSettings) => ({ son: formSettings?.son_max_age, daughter: formSettings?.daughter_study_age });
+export const studyAgesOf = (formSettings) => ({ son: formSettings?.son_study_age, daughter: formSettings?.daughter_study_age });
 
 // فیلدهای وابسته فقط وقتی پاسخ والد «بله» است نمایش داده می‌شوند؛ سؤال‌های تحصیل فرزند فقط بالای سن تعیین‌شده.
 // تاریخ اعتبار گواهی تحصیل همراه خود گواهی (فرزند محصل بالای سن تعیین‌شده، و مدرک مخفی نشده باشد)
@@ -57,7 +59,7 @@ export function memberFieldApplies(memberType, column, member, formSettings) {
   if (column === "student_cert_expiry") return member.is_student === true && formSettings?.documents?.student_certificate?.mode !== "hidden";
   if (column === "employer_name" || column === "is_insured") return member.is_employed === true;
   if (column === "education_level" || column === "school_name") return member.is_student === true;
-  if (column === "marriage_date" && memberType === "daughter") return member.is_married === true;
+  if (column === "marriage_date" && CHILD_TYPES.includes(memberType)) return member.is_married === true;
   return true;
 }
 

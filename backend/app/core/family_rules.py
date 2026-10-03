@@ -68,16 +68,19 @@ FIELD_DEFS: list[dict] = [
     {"key": "child.custody", "label": "حضانت فرزند", "kind": "choice", "default": "optional"},
     {"key": "child.is_disabled", "label": "فرزند از کار افتاده است؟", "kind": "bool", "default": "optional"},
     {"key": "child.student_cert_expiry", "label": "تاریخ اعتبار گواهی اشتغال به تحصیل", "kind": "date", "default": "required", "future": True},
+    # پسر و دختر: فیلدهای هم‌نام و هم‌ترتیب (فقط پیش‌فرض اجباری/اختیاری/مخفی متفاوت است)
     {"key": "son.is_student", "label": "پسر در حال تحصیل است؟", "kind": "bool", "default": "required"},
     {"key": "son.education_level", "label": "مقطع تحصیلی پسر", "kind": "text", "default": "optional"},
     {"key": "son.school_name", "label": "نام مدرسه / دانشگاه پسر", "kind": "text", "default": "optional"},
     {"key": "son.is_employed", "label": "پسر شاغل است؟", "kind": "bool", "default": "optional"},
-    {"key": "daughter.is_married", "label": "دختر ازدواج کرده است؟", "kind": "bool", "default": "required"},
-    {"key": "daughter.marriage_date", "label": "تاریخ ازدواج دختر", "kind": "date", "default": "optional"},
-    {"key": "daughter.is_employed", "label": "دختر شاغل است؟", "kind": "bool", "default": "required"},
+    {"key": "son.is_married", "label": "پسر ازدواج کرده است؟", "kind": "bool", "default": "hidden"},
+    {"key": "son.marriage_date", "label": "تاریخ ازدواج پسر", "kind": "date", "default": "hidden"},
     {"key": "daughter.is_student", "label": "دختر در حال تحصیل است؟", "kind": "bool", "default": "required"},
     {"key": "daughter.education_level", "label": "مقطع تحصیلی دختر", "kind": "text", "default": "optional"},
     {"key": "daughter.school_name", "label": "نام مدرسه / دانشگاه دختر", "kind": "text", "default": "optional"},
+    {"key": "daughter.is_employed", "label": "دختر شاغل است؟", "kind": "bool", "default": "required"},
+    {"key": "daughter.is_married", "label": "دختر ازدواج کرده است؟", "kind": "bool", "default": "required"},
+    {"key": "daughter.marriage_date", "label": "تاریخ ازدواج دختر", "kind": "date", "default": "optional"},
 ]  # fmt: skip
 FIELD_KEYS = {f["key"] for f in FIELD_DEFS}
 _FIELD_KIND = {f["key"]: f["kind"] for f in FIELD_DEFS}
@@ -98,6 +101,22 @@ DEFAULT_NOTES = [
     "در صورت هر تغییر (ازدواج، تولد فرزند، طلاق، پایان تحصیل، ازدواج یا اشتغال فرزند) فرم را به‌روز کنید.",
 ]
 
+# تنظیمات شمول هر فرزند (برای پسر و دختر یکسان):
+#   study_age: از این سن وضعیت تحصیل و گواهی اشتغال به تحصیل پرسیده می‌شود
+#   require_study: از study_age به بعد فقط در صورت تحصیل مشمول است
+#   require_valid_student_certificate: برای شمول فرزند محصل، گواهی معتبر (منقضی‌نشده) لازم است
+#   max_age: سقف سن مطلق (حتی در صورت تحصیل)؛ خالی = بدون سقف
+#   extend_if_disabled: فرزند از کار افتاده بدون شرط سن و تحصیل مشمول است
+#   stop_on_marriage / stop_on_employment: با ازدواج / اشتغال از شمول خارج می‌شود
+CHILD_RULE_KEYS = ("study_age", "require_study", "require_valid_student_certificate", "max_age",
+                   "extend_if_disabled", "stop_on_marriage", "stop_on_employment")  # fmt: skip
+CHILD_RULE_DEFAULTS = {
+    "son": {"study_age": 18, "require_study": True, "require_valid_student_certificate": True, "max_age": None,
+            "extend_if_disabled": True, "stop_on_marriage": False, "stop_on_employment": False},
+    "daughter": {"study_age": 18, "require_study": False, "require_valid_student_certificate": True, "max_age": None,
+                 "extend_if_disabled": True, "stop_on_marriage": True, "stop_on_employment": True},
+}  # fmt: skip
+
 DEFAULT_RULES: dict = {
     "marriage": {
         "enabled": True,
@@ -114,18 +133,8 @@ DEFAULT_RULES: dict = {
         "include_adopted": True,
         "include_step": False,
         "require_custody_after_divorce": True,
-        "son_max_age": 18,
-        "son_extend_if_student": True,
-        "son_student_max_age": None,
-        "son_require_valid_student_certificate": True,
-        "son_extend_if_disabled": True,
-        "daughter_stop_on_marriage": True,
-        "daughter_stop_on_employment": True,
-        "daughter_max_age": None,
-        "daughter_extend_if_disabled": True,
-        "daughter_study_age": 18,  # از این سن وضعیت تحصیل و گواهی تحصیل دختر پرسیده می‌شود
-        "daughter_require_study": False,  # دختر بالای آن سن فقط اگر در حال تحصیل باشد مشمول است
-        "daughter_require_valid_student_certificate": True,
+        # پسر و دختر: تنظیمات هم‌نام (پیشوند son_ / daughter_)؛ فقط مقدار پیش‌فرض متفاوت است
+        **{f"{g}_{k}": v for g, dflt in CHILD_RULE_DEFAULTS.items() for k, v in dflt.items()},
     },
 }
 
@@ -292,18 +301,7 @@ def sanitize_settings(value) -> dict:
             "include_adopted": _b(c_in, cd, "include_adopted"),
             "include_step": _b(c_in, cd, "include_step"),
             "require_custody_after_divorce": _b(c_in, cd, "require_custody_after_divorce"),
-            "son_max_age": _n(c_in, cd, "son_max_age", 1, 99) or cd["son_max_age"],
-            "son_extend_if_student": _b(c_in, cd, "son_extend_if_student"),
-            "son_student_max_age": _n(c_in, cd, "son_student_max_age", 1, 99),
-            "son_require_valid_student_certificate": _b(c_in, cd, "son_require_valid_student_certificate"),
-            "son_extend_if_disabled": _b(c_in, cd, "son_extend_if_disabled"),
-            "daughter_stop_on_marriage": _b(c_in, cd, "daughter_stop_on_marriage"),
-            "daughter_stop_on_employment": _b(c_in, cd, "daughter_stop_on_employment"),
-            "daughter_max_age": _n(c_in, cd, "daughter_max_age", 1, 99),
-            "daughter_extend_if_disabled": _b(c_in, cd, "daughter_extend_if_disabled"),
-            "daughter_study_age": _n(c_in, cd, "daughter_study_age", 1, 99) or cd["daughter_study_age"],
-            "daughter_require_study": _b(c_in, cd, "daughter_require_study"),
-            "daughter_require_valid_student_certificate": _b(c_in, cd, "daughter_require_valid_student_certificate"),
+            **_child_gender_rules(_legacy_son_rules(c_in), cd, _b, _n),
         },
     }
     a_in = src.get("alerts") if isinstance(src.get("alerts"), dict) else {}
@@ -315,6 +313,35 @@ def sanitize_settings(value) -> dict:
         if "doc_expiry_warning_days" in a_in
         else DEFAULT_ALERTS["doc_expiry_warning_days"],
     }
+    return out
+
+
+def _legacy_son_rules(c_in: dict) -> dict:
+    """
+    تبدیل تنظیمات پسر نسخه‌ی قبل (son_max_age = سن شروع شرط تحصیل، son_extend_if_student،
+    son_student_max_age) به ساختار مشترک پسر/دختر؛ تنظیمات جدید بدون تغییر برمی‌گردند.
+    """
+    if "son_extend_if_student" not in c_in or "son_study_age" in c_in:
+        return c_in
+    out = {k: v for k, v in c_in.items() if k not in ("son_max_age", "son_extend_if_student", "son_student_max_age")}
+    out["son_study_age"] = c_in.get("son_max_age")
+    if c_in.get("son_extend_if_student") is False:
+        # قبلاً پسر بالای سن سقف در هر حال غیرمشمول بود: همان سن، سقف مطلق می‌شود
+        out["son_require_study"] = False
+        out["son_max_age"] = c_in.get("son_max_age")
+    else:
+        out["son_require_study"] = True
+        out["son_max_age"] = c_in.get("son_student_max_age")
+    return out
+
+
+def _child_gender_rules(c_in: dict, cd: dict, _b, _n) -> dict:
+    out = {}
+    for g in CHILD_TYPES:
+        out[f"{g}_study_age"] = _n(c_in, cd, f"{g}_study_age", 1, 99) or cd[f"{g}_study_age"]
+        out[f"{g}_max_age"] = _n(c_in, cd, f"{g}_max_age", 1, 99)
+        for k in ("require_study", "require_valid_student_certificate", "extend_if_disabled", "stop_on_marriage", "stop_on_employment"):
+            out[f"{g}_{k}"] = _b(c_in, cd, f"{g}_{k}")
     return out
 
 
@@ -380,9 +407,10 @@ def _member_field_key(member_type: str, column: str) -> str | None:
 
 
 def study_age(member_type: str, settings: dict) -> int | None:
-    """سنی که از آن به بعد وضعیت تحصیل و گواهی تحصیل فرزند پرسیده می‌شود (پسر: سن سقف، دختر: سن تحصیل)."""
-    cr = settings["rules"]["child"]
-    return {"son": cr["son_max_age"], "daughter": cr["daughter_study_age"]}.get(member_type)
+    """سنی که از آن به بعد وضعیت تحصیل و گواهی تحصیل فرزند پرسیده می‌شود (تنظیم «سن شروع شرط تحصیل» پسر/دختر)."""
+    if member_type not in CHILD_TYPES:
+        return None
+    return settings["rules"]["child"][f"{member_type}_study_age"]
 
 
 def child_reached_study_age(member: dict, settings: dict, today: tuple[int, int, int]) -> bool:
@@ -408,7 +436,7 @@ def _member_field_applies(member_type: str, column: str, member: dict, settings:
             and child_reached_study_age(member, settings, today)
             and settings["documents"]["student_certificate"]["mode"] != "hidden"
         )
-    if column == "marriage_date" and member_type == "daughter":
+    if column == "marriage_date" and member_type in CHILD_TYPES:
         return member.get("is_married") is True
     return True
 
@@ -778,36 +806,24 @@ def _child_eligible(kid: dict, data: dict, settings: dict, as_of, age: int | Non
         and kid.get("custody") not in ("employee", "joint")
     ):
         return False, "حضانت با کارمند نیست"
-    disabled = kid.get("is_disabled") is True
-    if kid.get("member_type") == "son":
-        if age < cr["son_max_age"]:
-            return True, "مشمول"
-        if cr["son_extend_if_disabled"] and disabled:
-            return True, "مشمول (از کار افتاده)"
-        if cr["son_extend_if_student"] and kid.get("is_student") is True:
-            if cr["son_student_max_age"] and age >= cr["son_student_max_age"]:
-                return False, f"بیش از {cr['son_student_max_age']} سال (سقف سن تحصیل)"
-            if cr["son_require_valid_student_certificate"] and not _has_valid_doc(kid, "student_certificate", settings, as_of):
-                return False, "گواهی تحصیل معتبر ندارد"
-            return True, "مشمول (در حال تحصیل)"
-        return False, f"پسر {cr['son_max_age']} سال یا بیشتر"
-    # دختر
-    if cr["daughter_stop_on_marriage"] and kid.get("is_married") is True:
+    # پسر و دختر با یک منطق و تنظیمات هم‌نام (پیشوند son_ / daughter_)
+    g = kid.get("member_type")
+    rule = {k: cr[f"{g}_{k}"] for k in CHILD_RULE_KEYS}
+    who = MEMBER_TYPES[g]
+    if rule["stop_on_marriage"] and kid.get("is_married") is True:
         married_since = parse_jalali(kid.get("marriage_date"))
         if married_since is None or married_since <= as_of:
             return False, "ازدواج کرده"
-    if cr["daughter_stop_on_employment"] and kid.get("is_employed") is True:
+    if rule["stop_on_employment"] and kid.get("is_employed") is True:
         return False, "شاغل است"
-    if cr["daughter_max_age"] and age >= cr["daughter_max_age"]:
-        if cr["daughter_extend_if_disabled"] and disabled:
-            return True, "مشمول (از کار افتاده)"
-        return False, f"دختر {cr['daughter_max_age']} سال یا بیشتر"
-    if cr["daughter_require_study"] and age >= cr["daughter_study_age"]:
-        if cr["daughter_extend_if_disabled"] and disabled:
-            return True, "مشمول (از کار افتاده)"
+    if rule["extend_if_disabled"] and kid.get("is_disabled") is True:
+        return True, "مشمول (از کار افتاده)"
+    if rule["max_age"] and age >= rule["max_age"]:
+        return False, f"{who} {rule['max_age']} سال یا بیشتر (سقف سن)"
+    if rule["require_study"] and age >= rule["study_age"]:
         if kid.get("is_student") is not True:
-            return False, f"دختر {cr['daughter_study_age']} سال یا بیشتر و در حال تحصیل نیست"
-        if cr["daughter_require_valid_student_certificate"] and not _has_valid_doc(kid, "student_certificate", settings, as_of):
+            return False, f"{who} {rule['study_age']} سال یا بیشتر و در حال تحصیل نیست"
+        if rule["require_valid_student_certificate"] and not _has_valid_doc(kid, "student_certificate", settings, as_of):
             return False, "گواهی تحصیل معتبر ندارد"
         return True, "مشمول (در حال تحصیل)"
     return True, "مشمول"
@@ -829,20 +845,23 @@ def _has_valid_doc(member: dict, doc_type: str, settings: dict, as_of) -> bool:
 def warnings(data: dict, settings: dict, today: tuple[int, int, int]) -> list[str]:
     """
     هشدارهای یک پرونده در تاریخ today:
-    - پسری که در بازه‌ی تنظیم‌شده به سن سقف می‌رسد
+    - پسر/دختری که در بازه‌ی تنظیم‌شده به سن شروع شرط تحصیل می‌رسد
     - مدرکی که منقضی شده یا در بازه‌ی تنظیم‌شده منقضی می‌شود
     """
     out: list[str] = []
     alerts = settings["alerts"]
-    son_max = settings["rules"]["child"]["son_max_age"]
+    cr = settings["rules"]["child"]
     warn_months = alerts.get("son_age_warning_months") or 0
     for m in data.get("members") or []:
-        if m.get("member_type") == "son" and warn_months:
+        g = m.get("member_type")
+        # هشدار فقط وقتی رسیدن به سن شروع شرط تحصیل روی شمول اثر دارد
+        if g in CHILD_TYPES and warn_months and cr[f"{g}_require_study"]:
+            limit = cr[f"{g}_study_age"]
             birth = parse_jalali(m.get("birth_date"))
             if birth:
-                reach = (birth[0] + son_max, birth[1], 29 if birth[1] == 12 and birth[2] == 30 else birth[2])
+                reach = (birth[0] + limit, birth[1], 29 if birth[1] == 12 and birth[2] == 30 else birth[2])
                 if today <= reach <= add_months(today, warn_months):
-                    out.append(f"{_member_name(m)} در {format_jalali(reach)} به {son_max} سالگی می‌رسد")
+                    out.append(f"{_member_name(m)} در {format_jalali(reach)} به {limit} سالگی می‌رسد")
     for m in data.get("members") or []:
         if child_reached_study_age(m, settings, today) and m.get("is_student") is None and m.get("is_disabled") is not True:
             limit = study_age(m.get("member_type"), settings)

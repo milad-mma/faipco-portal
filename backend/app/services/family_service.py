@@ -113,7 +113,7 @@ class FamilyService:
             "documents": {k: {"mode": v["mode"]} for k, v in settings["documents"].items()},
             "notes": settings["notes"],
             # سؤال‌های تحصیل و گواهی تحصیل پسر/دختر از این سن به بعد پرسیده می‌شوند
-            "son_max_age": settings["rules"]["child"]["son_max_age"],
+            "son_study_age": settings["rules"]["child"]["son_study_age"],
             "daughter_study_age": settings["rules"]["child"]["daughter_study_age"],
             **self.settings_meta(),
         }

@@ -51,15 +51,15 @@ def test_parse_and_age():
 
 
 def test_sanitize_defaults_and_merge():
-    s = r.sanitize_settings({"fields": {"spouse.national_id": "hidden", "bad.key": "required"}, "rules": {"child": {"son_max_age": "۲۰", "max_children": ""}}})
+    s = r.sanitize_settings({"fields": {"spouse.national_id": "hidden", "bad.key": "required"}, "rules": {"child": {"son_study_age": "۲۰", "max_children": ""}}})
     assert s["fields"]["spouse.national_id"] == "hidden"
     assert "bad.key" not in s["fields"]
-    assert s["rules"]["child"]["son_max_age"] == 20
+    assert s["rules"]["child"]["son_study_age"] == 20
     assert s["rules"]["child"]["max_children"] is None
     assert s["documents"]["student_certificate"]["renewal_months"] == 12
     m = r.merge_settings(s, {"rules": {"marriage": {"female_mode": "married"}}, "documents": {"custody_ruling": {"mode": "required"}}})
     assert m["rules"]["marriage"]["female_mode"] == "married"
-    assert m["rules"]["child"]["son_max_age"] == 20  # بقیه دست‌نخورده
+    assert m["rules"]["child"]["son_study_age"] == 20  # بقیه دست‌نخورده
     assert m["documents"]["custody_ruling"]["mode"] == "required"
 
 
@@ -168,7 +168,7 @@ def test_son_age_and_student_extension():
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is False
     # HR سقف سن پسر را ۲۵ می‌کند
-    s2 = settings(son_max_age=25)
+    s2 = settings(son_study_age=25)
     son = next(c for c in r.evaluate(data, r.GENDER_MALE, 1000, s2, TODAY)["child"]["children"] if c["member_type"] == "son")
     assert son["eligible"] is True
 
@@ -258,7 +258,7 @@ def test_son_study_only_after_max_age():
     assert data["members"][1]["is_student"] is True
     assert any("گواهی اشتغال به تحصیل" in x for x in r.missing_documents(s, data, TODAY))
     # HR سن سقف را ۲۰ کند → برای همین پسر دیگر لازم نیست
-    s2 = settings(son_max_age=20)
+    s2 = settings(son_study_age=20)
     data = r.validate_payload(p, s2, TODAY)
     assert data["members"][1]["is_student"] is None
     assert not any("تحصیل" in x for x in r.missing_documents(s2, data, TODAY))
@@ -319,3 +319,21 @@ def test_student_certificate_expiry_date():
     assert son((1406, 7, 1))["eligible"] is False
     w = r.warnings(data, s, (1406, 6, 15))
     assert any("1406/06/31 منقضی می‌شود" in x for x in w)
+
+
+def test_legacy_son_settings_are_converted():
+    old = {"rules": {"child": {"son_max_age": 20, "son_extend_if_student": True, "son_student_max_age": 25}}}
+    c = r.sanitize_settings(old)["rules"]["child"]
+    assert (c["son_study_age"], c["son_require_study"], c["son_max_age"]) == (20, True, 25)
+    old = {"rules": {"child": {"son_max_age": 18, "son_extend_if_student": False}}}
+    c = r.sanitize_settings(old)["rules"]["child"]
+    assert (c["son_study_age"], c["son_require_study"], c["son_max_age"]) == (18, False, 18)
+
+
+def test_son_and_daughter_rules_are_symmetric():
+    c = r.sanitize_settings(None)["rules"]["child"]
+    for k in r.CHILD_RULE_KEYS:
+        assert f"son_{k}" in c and f"daughter_{k}" in c
+    son_fields = [f["key"].split(".", 1)[1] for f in r.FIELD_DEFS if f["key"].startswith("son.")]
+    daughter_fields = [f["key"].split(".", 1)[1] for f in r.FIELD_DEFS if f["key"].startswith("daughter.")]
+    assert son_fields == daughter_fields

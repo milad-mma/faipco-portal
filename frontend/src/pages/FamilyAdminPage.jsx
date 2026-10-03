@@ -664,6 +664,55 @@ function SwitchRow({ label, checked, onChange, disabled }) {
   return <FormControlLabel control={<Switch checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />} label={label} />;
 }
 
+// تنظیمات شمول حق اولاد یک جنسیت (پسر یا دختر) — برای هر دو با همان ترتیب و همان متن‌ها
+function ChildGenderRules({ gender, cr, setRule, disabled }) {
+  const who = gender === "son" ? "پسر" : "دختر";
+  const k = (name) => `${gender}_${name}`;
+  const set = (name) => (v) => setRule("child", k(name), v);
+  return (
+    <>
+      <Grid item xs={12}>
+        <Divider textAlign="right">
+          <Typography variant="body2" fontWeight={700}>
+            {who}
+          </Typography>
+        </Divider>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <NumberField
+          label={`سن شروع شرط تحصیل ${who} (سال)`}
+          value={cr[k("study_age")]}
+          onChange={(v) => setRule("child", k("study_age"), v ?? 18)}
+          disabled={disabled}
+          allowEmpty={false}
+          helperText={`از این سن به بعد وضعیت تحصیل، تاریخ اعتبار و گواهی اشتغال به تحصیل ${who} از پرسنل خواسته می‌شود`}
+        />
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <NumberField
+          label={`سقف سن ${who} (حتی در صورت تحصیل) — خالی = بدون سقف`}
+          value={cr[k("max_age")]}
+          onChange={set("max_age")}
+          disabled={disabled}
+          helperText={`${who} از این سن به بعد در هیچ حالتی مشمول نیست (مگر از کار افتاده)`}
+        />
+      </Grid>
+      <Grid item xs={12}>
+        <SwitchRow label={`${who} بالای سن شروع شرط تحصیل، فقط اگر در حال تحصیل باشد مشمول است`} checked={cr[k("require_study")]} onChange={set("require_study")} disabled={disabled} />
+        <SwitchRow
+          label={`برای شمول ${who} محصل، گواهی تحصیل معتبر (منقضی‌نشده) لازم است`}
+          checked={cr[k("require_valid_student_certificate")]}
+          onChange={set("require_valid_student_certificate")}
+          disabled={disabled || !cr[k("require_study")]}
+        />
+        <SwitchRow label={`${who} از کار افتاده بدون شرط سن و تحصیل مشمول است`} checked={cr[k("extend_if_disabled")]} onChange={set("extend_if_disabled")} disabled={disabled} />
+        <SwitchRow label={`${who} با ازدواج از شمول خارج می‌شود`} checked={cr[k("stop_on_marriage")]} onChange={set("stop_on_marriage")} disabled={disabled} />
+        <SwitchRow label={`${who} با اشتغال از شمول خارج می‌شود`} checked={cr[k("stop_on_employment")]} onChange={set("stop_on_employment")} disabled={disabled} />
+      </Grid>
+    </>
+  );
+}
+
 function SettingsTab({ canManage, initial, meta, onSaved }) {
   const [s, setS] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -689,7 +738,24 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
     }
   }
 
-  const sections = ["profile", "spouse", "child", "son", "daughter"];
+  const sections = ["profile", "spouse", "child"];
+  const fieldModeSelect = (f) => (
+    <TextField
+      select
+      fullWidth
+      size="small"
+      label={f.label}
+      value={s.fields[f.key]}
+      disabled={ro}
+      onChange={(e) => setS({ ...s, fields: { ...s.fields, [f.key]: e.target.value } })}
+    >
+      {Object.entries(MODE_LABELS).map(([k, v]) => (
+        <MenuItem key={k} value={k}>
+          {v}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
   return (
     <Stack spacing={2}>
       {ro && <Alert severity="info">فقط دارنده‌ی مجوز «مدیریت مشخصات خانوادگی» می‌تواند تنظیمات را تغییر دهد.</Alert>}
@@ -774,56 +840,10 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
             <SwitchRow label="فرزند همسر مشمول است" checked={cr.include_step} onChange={(v) => setRule("child", "include_step", v)} disabled={ro} />
             <SwitchRow label="پس از طلاق فقط فرزندی که حضانتش با کارمند (یا مشترک) است مشمول باشد" checked={cr.require_custody_after_divorce} onChange={(v) => setRule("child", "require_custody_after_divorce", v)} disabled={ro} />
           </Grid>
-          <Grid item xs={12}>
-            <Divider textAlign="right">
-              <Typography variant="body2" fontWeight={700}>
-                پسر
-              </Typography>
-            </Divider>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <NumberField label="سن سقف پسر (سال)" value={cr.son_max_age} onChange={(v) => setRule("child", "son_max_age", v ?? 18)} disabled={ro} allowEmpty={false} helperText="مشمول تا قبل از این سن؛ از این سن به بعد وضعیت تحصیل و گواهی اشتغال به تحصیل از پرسنل خواسته می‌شود" />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <NumberField label="سقف سن پسر در حال تحصیل — خالی = بدون سقف" value={cr.son_student_max_age} onChange={(v) => setRule("child", "son_student_max_age", v)} disabled={ro} />
-          </Grid>
-          <Grid item xs={12}>
-            <SwitchRow label="پسر بالای سن سقف، اگر در حال تحصیل باشد مشمول است" checked={cr.son_extend_if_student} onChange={(v) => setRule("child", "son_extend_if_student", v)} disabled={ro} />
-            <SwitchRow label="برای ادامه‌ی شمول پسر دانشجو/دانش‌آموز، گواهی تحصیل معتبر (منقضی‌نشده) لازم است" checked={cr.son_require_valid_student_certificate} onChange={(v) => setRule("child", "son_require_valid_student_certificate", v)} disabled={ro} />
-            <SwitchRow label="پسر بالای سن سقف، اگر از کار افتاده باشد مشمول است" checked={cr.son_extend_if_disabled} onChange={(v) => setRule("child", "son_extend_if_disabled", v)} disabled={ro} />
-          </Grid>
-          <Grid item xs={12}>
-            <Divider textAlign="right">
-              <Typography variant="body2" fontWeight={700}>
-                دختر
-              </Typography>
-            </Divider>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <NumberField label="سن سقف دختر — خالی = بدون سقف" value={cr.daughter_max_age} onChange={(v) => setRule("child", "daughter_max_age", v)} disabled={ro} />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <NumberField
-              label="سن پرسیدن وضعیت تحصیل دختر (سال)"
-              value={cr.daughter_study_age}
-              onChange={(v) => setRule("child", "daughter_study_age", v ?? 18)}
-              disabled={ro}
-              allowEmpty={false}
-              helperText="از این سن به بعد وضعیت تحصیل و گواهی اشتغال به تحصیل از پرسنل خواسته می‌شود"
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <SwitchRow label="دختر با ازدواج از شمول خارج می‌شود" checked={cr.daughter_stop_on_marriage} onChange={(v) => setRule("child", "daughter_stop_on_marriage", v)} disabled={ro} />
-            <SwitchRow label="دختر با اشتغال از شمول خارج می‌شود" checked={cr.daughter_stop_on_employment} onChange={(v) => setRule("child", "daughter_stop_on_employment", v)} disabled={ro} />
-            <SwitchRow label="دختر بالای سن سقف، اگر از کار افتاده باشد مشمول است" checked={cr.daughter_extend_if_disabled} onChange={(v) => setRule("child", "daughter_extend_if_disabled", v)} disabled={ro} />
-            <SwitchRow label="دختر بالای سن تحصیل، فقط اگر در حال تحصیل باشد مشمول است" checked={cr.daughter_require_study} onChange={(v) => setRule("child", "daughter_require_study", v)} disabled={ro} />
-            <SwitchRow
-              label="برای شمول دختر محصل، گواهی تحصیل معتبر (منقضی‌نشده) لازم است"
-              checked={cr.daughter_require_valid_student_certificate}
-              onChange={(v) => setRule("child", "daughter_require_valid_student_certificate", v)}
-              disabled={ro || !cr.daughter_require_study}
-            />
-          </Grid>
+          {/* پسر و دختر: تنظیمات، ترتیب و متن‌های یکسان */}
+          {["son", "daughter"].map((g) => (
+            <ChildGenderRules key={g} gender={g} cr={cr} setRule={setRule} disabled={ro} />
+          ))}
         </Grid>
       </Card>
 
@@ -832,7 +852,7 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
           مدارک
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً گواهی تحصیل فقط برای پسری که در حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است.
+          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً گواهی تحصیل فقط برای پسر یا دختری که به سن شروع شرط تحصیل رسیده و در حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است.
         </Typography>
         <Stack spacing={1.25}>
           {Object.entries(meta.doc_types).map(([key, spec]) => (
@@ -891,26 +911,29 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
                 .filter((f) => f.key.startsWith(`${section}.`))
                 .map((f) => (
                   <Grid item xs={12} sm={6} md={4} key={f.key}>
-                    <TextField
-                      select
-                      fullWidth
-                      size="small"
-                      label={f.label}
-                      value={s.fields[f.key]}
-                      disabled={ro}
-                      onChange={(e) => setS({ ...s, fields: { ...s.fields, [f.key]: e.target.value } })}
-                    >
-                      {Object.entries(MODE_LABELS).map(([k, v]) => (
-                        <MenuItem key={k} value={k}>
-                          {v}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                    {fieldModeSelect(f)}
                   </Grid>
                 ))}
             </Grid>
           </Box>
         ))}
+        {/* پسر و دختر کنار هم و ردیف‌به‌ردیف هم‌تراز (فیلدها هم‌نام و هم‌ترتیب‌اند) */}
+        <Grid container spacing={2}>
+          {["son", "daughter"].map((section) => (
+            <Grid item xs={12} md={6} key={section}>
+              <Typography variant="body2" fontWeight={800} color="primary" sx={{ mb: 0.75 }}>
+                {SECTION_TITLES[section]}
+              </Typography>
+              <Stack spacing={1}>
+                {meta.field_defs
+                  .filter((f) => f.key.startsWith(`${section}.`))
+                  .map((f) => (
+                    <Box key={f.key}>{fieldModeSelect(f)}</Box>
+                  ))}
+              </Stack>
+            </Grid>
+          ))}
+        </Grid>
       </Card>
 
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
@@ -920,7 +943,7 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
         <Grid container spacing={1.5}>
           <Grid item xs={12} md={6}>
             <NumberField
-              label="هشدار رسیدن پسر به سن سقف، چند ماه قبل (۰ = خاموش)"
+              label="هشدار رسیدن پسر/دختر به سن شروع شرط تحصیل، چند ماه قبل (۰ = خاموش)"
               value={s.alerts.son_age_warning_months}
               onChange={(v) => setS({ ...s, alerts: { ...s.alerts, son_age_warning_months: v ?? 0 } })}
               disabled={ro}
