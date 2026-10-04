@@ -1,5 +1,5 @@
 {
-  "count": 332,
+  "count": 334,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -87,6 +87,7 @@
     "GET /api/v1/insurance/registrations",
     "GET /api/v1/insurance/registrations/{registration_id}",
     "GET /api/v1/insurance/settings",
+    "GET /api/v1/insurance/sites",
     "GET /api/v1/leave-requests/decided-by-me",
     "GET /api/v1/leave-requests/kara-schema-defaults",
     "GET /api/v1/leave-requests/my-requests",
@@ -296,6 +297,7 @@
     "PUT /api/v1/hr/birthday-send-time",
     "PUT /api/v1/insurance/me",
     "PUT /api/v1/insurance/settings",
+    "PUT /api/v1/insurance/sites/{site_id}",
     "PUT /api/v1/leave-requests/departments/{department_id}/approver",
     "PUT /api/v1/leave-requests/sites/{site_id}/hr-officer",
     "PUT /api/v1/leave-requests/sites/{site_id}/mapping",

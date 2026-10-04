@@ -367,6 +367,19 @@ async def _get_view_access(db: AsyncSession, user: User, site_id: int) -> list |
     )
 
 
+async def _has_global_leave_access(db: AsyncSession, user: User) -> bool:
+    """
+    مجوز سراسری (همه‌ی سایت‌ها) برای مشاهده/مدیریت درخواست‌ها؟ فقط چنین کاربری درخواست‌های کد پرسنلی‌ای را که در
+    هیچ سایت پرتال نیست (مثلاً Sync نشده) می‌بیند؛ مسئول یک سایت فقط پرسنل همان سایت را.
+    """
+    if user.is_superuser:
+        return True
+    return (
+        await get_sites_with_permission(db, user, "leave_requests.manage") is None
+        or await get_sites_with_permission(db, user, "leave_requests.view") is None
+    )
+
+
 @router.get("/sites/{site_id}/all", response_model=list[LeaveRequestOut])
 async def list_all_for_site(
     site_id: int,
@@ -391,7 +404,8 @@ async def list_all_for_site(
         date_to = None
     try:
         items = await LeaveRequestService(db).list_all_for_site(
-            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
+            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department,
+            include_unknown=await _has_global_leave_access(db, current_user),
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -437,7 +451,8 @@ async def export_leave_requests(
         )
     try:
         items = await LeaveRequestService(db).list_all_for_site(
-            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department
+            site_id, allowed_type_ids, date_from, date_to, status_filter, type_id, department,
+            include_unknown=await _has_global_leave_access(db, current_user),
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -466,7 +481,9 @@ async def admin_delete_request(
     """
     await require_site_permission(db, current_user, site_id, "leave_requests.manage")
     try:
-        await LeaveRequestService(db).admin_delete_request(site_id, request_id)
+        await LeaveRequestService(db).admin_delete_request(
+            site_id, request_id, include_unknown=await _has_global_leave_access(db, current_user)
+        )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -488,7 +505,8 @@ async def admin_update_request(
     # (is_final_approved=None یعنی برگرداندن به «در حال بررسی») و نباید فیلتر شود
     try:
         await LeaveRequestService(db).admin_update_request(
-            site_id, request_id, payload.model_dump(exclude_unset=True)
+            site_id, request_id, payload.model_dump(exclude_unset=True),
+            include_unknown=await _has_global_leave_access(db, current_user),
         )
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -1217,9 +1217,10 @@ class LeaveRequestService:
         await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
-    async def admin_delete_request(self, site_id: int, request_id: int) -> None:
+    async def admin_delete_request(self, site_id: int, request_id: int, include_unknown: bool = False) -> None:
         """
-        ورودی: شناسه سایت و شناسه درخواست. حذف مدیریتی (مجوز leave_requests.manage):
+        ورودی: شناسه سایت، شناسه درخواست و include_unknown (مجوز سراسری: درخواست کد ناشناخته هم مجاز).
+        حذف مدیریتی (مجوز leave_requests.manage):
         هر درخواستی در هر مرحله‌ای (در بررسی، تأییدشده، ردشده) حذف می‌شود.
         اگر تأییدشده بود، اثرش در کارکرد کاراوب هم برداشته می‌شود؛ سپس ردیف‌های
         جدول‌های وابسته و در پایان خودِ درخواست حذف می‌شوند.
@@ -1236,6 +1237,7 @@ class LeaveRequestService:
         )
         if not rows:
             raise LeaveRequestError("درخواست موردنظر یافت نشد")
+        await self._ensure_request_in_site(site_id, rows[0], include_unknown)
 
         # برداشتن اثر تأیید در کارکرد کاراوب (تردد علامت‌خورده یا ردیف Mor_Mam)
         # و پاک کردن WF_RequestState (که کلید خارجی ندارد و باید دستی حذف شود)
@@ -1450,6 +1452,34 @@ class LeaveRequestService:
         await self._annotate_stage_by_requester_site(items, approver_employee.site_id)
         return {"items": items, "total": total}
 
+    async def _site_emp_scope(self, site_id: int) -> tuple[set[int], set[int]]:
+        """
+        کدهای پرسنلی (Emp_No عددی) پرسنل این سایت در پرتال (فعال و غیرفعال، تا سوابق ترک‌کارها بماند) و
+        کدهای پرسنلی که در سایت‌های دیگر پرتال ثبت‌اند. وقتی چند سایت یک دیتابیس کاراوب مشترک دارند، WF_Requests
+        درخواست‌های همه را دارد؛ گزارش/ویرایش/حذف مدیریتی هر سایت فقط باید به پرسنل خودش برسد.
+        """
+        result = await self.db.execute(select(Employee.site_id, Employee.personnel_code))
+        own: set[int] = set()
+        others: set[int] = set()
+        for emp_site_id, code in result.all():
+            if not code or not str(code).isdigit():
+                continue
+            (own if emp_site_id == site_id else others).add(int(code))
+        return own, others - own
+
+    @staticmethod
+    def _request_in_site_scope(emp_no, own: set[int], others: set[int], include_unknown: bool) -> bool:
+        """درخواست مال این سایت است (پرسنل همین سایت)، یا کدش در هیچ سایت پرتال نیست و بیننده مجوز سراسری دارد."""
+        if emp_no in own:
+            return True
+        return include_unknown and emp_no not in others
+
+    async def _ensure_request_in_site(self, site_id: int, request_row: dict, include_unknown: bool) -> None:
+        """برای ویرایش/حذف مدیریتی: اگر درخواست متعلق به پرسنل سایت دیگری باشد LeaveRequestError می‌دهد."""
+        own, others = await self._site_emp_scope(site_id)
+        if not self._request_in_site_scope(request_row.get("EmpNo"), own, others, include_unknown):
+            raise LeaveRequestError("این درخواست متعلق به پرسنل سایت دیگری است و از این سایت قابل تغییر نیست")
+
     async def list_all_for_site(
         self,
         site_id: int,
@@ -1459,18 +1489,22 @@ class LeaveRequestService:
         status_filter: str | None = None,
         type_id_filter: int | None = None,
         department_filter: str | None = None,
+        include_unknown: bool = False,
     ) -> list[dict]:
         """
         ورودی: شناسه سایت، لیست نوع‌های مجاز (None = همه) و فیلترهای گزارشی
-        (بازه تاریخی، وضعیت، نوع، نام واحد).
-        همه درخواست‌های سایت را می‌خواند، در حافظه فیلتر می‌کند و نرمال‌شده با
+        (بازه تاریخی، وضعیت، نوع، نام واحد). include_unknown: درخواست‌های کد پرسنلی‌ای که در هیچ سایت پرتال
+        نیست هم بیاید (فقط برای مجوز سراسری/superuser).
+        درخواست‌های سایت (= پرسنل همین سایت در پرتال) را می‌خواند، در حافظه فیلتر می‌کند و نرمال‌شده با
         نام/واحد درخواست‌دهنده برمی‌گرداند. برای مجوز leave_requests.view/manage
         یا مجوز محدود به نوع (LeaveRequestTypeViewer، از طریق allowed_type_ids).
         بازه تاریخی بر اساس تاریخ خودِ مرخصی/ماموریت است، نه تاریخ ثبت.
         """
-        # همه درخواست‌های سایت (فیلترها در پایتون اعمال می‌شوند)
+        # همه درخواست‌های دیتابیس منبع (فیلترها در پایتون اعمال می‌شوند)
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
         rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
+        own_emp_nos, other_emp_nos = await self._site_emp_scope(site_id)
+        rows = [row for row in rows if self._request_in_site_scope(row.get("EmpNo"), own_emp_nos, other_emp_nos, include_unknown)]
         type_lookup = await self._get_type_lookup(site_id)
         requester_info = await self._get_requester_info(site_id, [row.get("EmpNo") for row in rows])
         normalized = []
@@ -1712,7 +1746,9 @@ class LeaveRequestService:
 
     # ---------- ویرایش مدیریتی (فقط leave_requests.manage) ----------
 
-    async def admin_update_request(self, site_id: int, request_id: int, updates: dict) -> None:
+    async def admin_update_request(
+        self, site_id: int, request_id: int, updates: dict, include_unknown: bool = False
+    ) -> None:
         """
         ورودی: سایت، شناسه درخواست و دیکشنری updates با کلیدهای مجاز: is_final_approved،
         start_date، end_date، start_hour، end_hour، leave_type_id، manager_idea، description.
@@ -1738,6 +1774,7 @@ class LeaveRequestService:
         )
         if not current_rows:
             raise LeaveRequestError("درخواست موردنظر یافت نشد")
+        await self._ensure_request_in_site(site_id, current_rows[0], include_unknown)
         forgotten_cards, _ = await self._get_forgotten_context(site_id)
         updates = dict(updates)  # کپی، چون پایین تغییر می‌کند
         # Card_No نهایی درخواست (اگر نوع عوض می‌شود، Card_No نوع جدید) برای تشخیص تردد فراموش‌شده

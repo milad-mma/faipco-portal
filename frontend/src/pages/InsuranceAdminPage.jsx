@@ -43,7 +43,9 @@ import {
   fetchInsuranceRegistration,
   fetchInsuranceRegistrations,
   fetchInsuranceSettings,
+  fetchInsuranceSiteStatuses,
   rejectInsuranceDocument,
+  setInsuranceSiteEnabled,
   updateInsuranceSettings,
 } from "../api/insurance";
 
@@ -514,12 +516,13 @@ function RegistrationsTab({ canManage }) {
 }
 
 /**
- * تب «تنظیمات»: کلید فعال/غیرفعال (ذخیره‌ی فوری)، ویرایشگر جدول نرخ
+ * تب «تنظیمات»: کلید فعال/غیرفعال به‌ازای هر سایت (ذخیره‌ی فوری؛ فقط سایت‌های با insurance.manage)، ویرایشگر جدول نرخ
  * (عناوین ستون‌ها و سطرها با جابه‌جایی/حذف/افزودن)، ویرایشگر نکات و پیش‌نمایش
  * زنده؛ جدول و نکات با دکمه‌ی ذخیره ارسال می‌شوند.
  */
 function SettingsTab() {
   const [settings, setSettings] = useState(null);
+  const [siteStatuses, setSiteStatuses] = useState(null); // [{ site_id, site_name, enabled }]
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -527,7 +530,24 @@ function SettingsTab() {
     fetchInsuranceSettings()
       .then(setSettings)
       .catch(() => setMessage({ severity: "error", text: "دریافت تنظیمات با خطا مواجه شد." }));
+    fetchInsuranceSiteStatuses()
+      .then(setSiteStatuses)
+      .catch(() => setSiteStatuses([]));
   }, []);
+
+  // فعال/غیرفعال کردن ثبت‌نام یک سایت؛ فهرست با پاسخ سرور جایگزین می‌شود
+  async function toggleSite(siteId, enabled) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      setSiteStatuses(await setInsuranceSiteEnabled(siteId, enabled));
+      setMessage({ severity: "success", text: enabled ? "ثبت‌نام این سایت فعال شد." : "ثبت‌نام این سایت غیرفعال شد." });
+    } catch (e) {
+      setMessage({ severity: "error", text: e.response?.data?.detail || "ذخیره با خطا مواجه شد." });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // بخشی از تنظیمات را به سرور می‌فرستد و state را با پاسخ کامل سرور جایگزین می‌کند
   async function save(patch, successText) {
@@ -570,16 +590,39 @@ function SettingsTab() {
     <Stack spacing={3}>
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
 
-      {/* کلید فعال/غیرفعال ماژول؛ هر تغییر بلافاصله ذخیره می‌شود */}
+      {/* کلید فعال/غیرفعال به‌ازای هر سایت؛ هر تغییر بلافاصله ذخیره می‌شود */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <FormControlLabel
-          control={<Switch checked={settings.enabled} disabled={saving} onChange={(e) => save({ enabled: e.target.checked }, e.target.checked ? "ماژول فعال شد." : "ماژول غیرفعال شد.")} />}
-          label={<Typography fontWeight={700}>ثبت‌نام بیمه تکمیلی {settings.enabled ? "فعال است" : "غیرفعال است"}</Typography>}
-        />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          با غیرفعال‌کردن، کاشی «بیمه تکمیلی» در داشبورد پرسنل برچسب «غیرفعال» می‌گیرد و صفحه ثبت‌نام بسته می‌شود؛ ثبت‌نام‌های
-          موجود و این فهرست دست‌نخورده می‌مانند.
+        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+          فعال بودن ثبت‌نام در هر سایت
         </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          با غیرفعال‌کردن یک سایت، کاشی «بیمه تکمیلی» در داشبورد پرسنل آن سایت برچسب «غیرفعال» می‌گیرد و صفحه ثبت‌نام
+          بسته می‌شود؛ ثبت‌نام‌های موجود و این فهرست دست‌نخورده می‌مانند. سایت‌های دیگر مستقل‌اند.
+        </Typography>
+        {siteStatuses === null ? (
+          <CircularProgress size={20} />
+        ) : siteStatuses.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            سایتی برای مدیریت در دسترس شما نیست.
+          </Typography>
+        ) : (
+          <Stack spacing={0.5}>
+            {siteStatuses.map((s) => (
+              <FormControlLabel
+                key={s.site_id}
+                control={<Switch checked={s.enabled} disabled={saving} onChange={(e) => toggleSite(s.site_id, e.target.checked)} />}
+                label={
+                  <Typography>
+                    {s.site_name}{" "}
+                    <Typography component="span" variant="caption" color={s.enabled ? "success.main" : "text.secondary"}>
+                      ({s.enabled ? "فعال" : "غیرفعال"})
+                    </Typography>
+                  </Typography>
+                }
+              />
+            ))}
+          </Stack>
+        )}
       </Card>
 
       {/* ویرایشگر جدول نرخ: عناوین ستون‌ها + یک ردیف ورودی به ازای هر بازه‌ی سنی */}

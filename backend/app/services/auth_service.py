@@ -314,11 +314,15 @@ class AuthService:
             base.family_disabled = False
         base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
         base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
-        # ماژول بیمه تکمیلی سراسری است (نه به‌ازای سایت)؛ خواندن سبک از تنظیمات
+        # ماژول بیمه تکمیلی به‌ازای سایتِ پرسنل فعال/غیرفعال است (Migration 100)؛ کاربر بدون پرسنل → غیرفعال
         try:
             from app.services.insurance_service import InsuranceService
 
-            base.insurance_disabled = not (await InsuranceService(self.db).get_settings())["enabled"]
+            employee_site_id = None
+            if user.employee_id is not None:
+                emp = await self.db.get(Employee, user.employee_id)
+                employee_site_id = emp.site_id if emp else None
+            base.insurance_disabled = not await InsuranceService(self.db).is_site_enabled(employee_site_id)
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.insurance_disabled = False
         base.can_view_sync = user.is_superuser or "sync.view" in permission_codes

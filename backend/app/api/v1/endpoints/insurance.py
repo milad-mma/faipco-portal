@@ -26,8 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
 from app.core.site_access import get_sites_with_permission
+from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
 from app.models.employee import Employee
+from app.models.site import Site
 from app.models.user import User
 from app.schemas.insurance import (
     InsuranceDocumentOut,
@@ -39,6 +41,8 @@ from app.schemas.insurance import (
     InsuranceRejectDocumentOut,
     InsuranceSettingsIn,
     InsuranceSettingsOut,
+    InsuranceSiteStatusIn,
+    InsuranceSiteStatusOut,
 )
 from app.services.insurance_service import InsuranceDisabledError, InsuranceError, InsuranceService
 from app.services.notice_service import send_publish_notifications
@@ -175,6 +179,31 @@ async def update_settings(
         return await InsuranceService(db).update_settings(payload.model_dump(exclude_unset=True))
     except InsuranceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/sites", response_model=list[InsuranceSiteStatusOut])
+async def list_site_statuses(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(require_permission("insurance.manage"))
+):
+    """وضعیت فعال/غیرفعال ثبت‌نام در سایت‌هایی که کاربر برایشان insurance.manage دارد (سراسری → همه)."""
+    sites = await get_sites_with_permission(db, current_user, "insurance.manage")
+    return await InsuranceService(db).list_site_statuses(sites)
+
+
+@router.put("/sites/{site_id}", response_model=list[InsuranceSiteStatusOut])
+async def set_site_status(
+    site_id: int,
+    payload: InsuranceSiteStatusIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("insurance.manage")),
+):
+    """فعال/غیرفعال کردن ثبت‌نام برای یک سایت؛ فقط با insurance.manage برای همان سایت (یا سراسری). خروجی فهرست به‌روز."""
+    await require_site_permission(db, current_user, site_id, "insurance.manage")
+    if await db.get(Site, site_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت یافت نشد")
+    service = InsuranceService(db)
+    await service.set_site_enabled(site_id, payload.enabled)
+    return await service.list_site_statuses(await get_sites_with_permission(db, current_user, "insurance.manage"))
 
 
 async def _accessible_sites(db: AsyncSession, user: User) -> set[int] | None:

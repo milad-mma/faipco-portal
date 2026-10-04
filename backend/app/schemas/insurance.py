@@ -131,9 +131,8 @@ class InsuranceMyStatusOut(BaseModel):
 
 
 class InsuranceSettingsOut(BaseModel):
-    """تنظیمات ماژول: فعال بودن، جدول نرخ، توضیحات."""
+    """تنظیمات سراسری ماژول: جدول نرخ، توضیحات، متن اطلاعیه‌ی رد (فعال/غیرفعال بودن سایتی است: /insurance/sites)."""
 
-    enabled: bool
     rate_table: dict
     notes: list[str]
     reject_notice_title: str = ""  # عنوان اطلاعیه‌ی رد مدرک؛ «{نام عضو}» جایگزین می‌شود
@@ -143,7 +142,6 @@ class InsuranceSettingsOut(BaseModel):
 class InsuranceSettingsIn(BaseModel):
     """به‌روزرسانی جزئی تنظیمات؛ فقط فیلدهای ارسالی تغییر می‌کنند."""
 
-    enabled: bool | None = None
     rate_table: dict | None = None
     notes: list[str] | None = None
     reject_notice_title: str | None = Field(default=None, max_length=255)
@@ -192,3 +190,17 @@ class InsuranceListOut(BaseModel):
     total: int
     registered: int
     eligible: int
+
+
+class InsuranceSiteStatusOut(BaseModel):
+    """وضعیت فعال/غیرفعال ثبت‌نام بیمه تکمیلی در یک سایت (GET /insurance/sites)."""
+
+    site_id: int
+    site_name: str
+    enabled: bool
+
+
+class InsuranceSiteStatusIn(BaseModel):
+    """بدنه‌ی PUT /insurance/sites/{site_id}."""
+
+    enabled: bool

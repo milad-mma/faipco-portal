@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, SmallInteger, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, SmallInteger, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -97,3 +97,15 @@ class InsuranceDocument(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     member: Mapped[InsuranceMember] = relationship(back_populates="document")
+
+
+class InsuranceSiteSetting(Base, TimestampMixin):
+    """
+    فعال/غیرفعال بودن ثبت‌نام بیمه تکمیلی برای یک سایت (Migration 100). نبودِ ردیف = فعال.
+    فقط ثبت/ویرایش پرسنل همان سایت را می‌بندد؛ پنل مدیریت و پرونده‌های موجود دست نمی‌خورند.
+    """
+
+    __tablename__ = "insurance_site_settings"
+
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), primary_key=True)
+    is_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

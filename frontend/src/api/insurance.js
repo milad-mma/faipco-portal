@@ -48,7 +48,19 @@ export async function downloadInsuranceDocument(id) {
 // تنظیمات ماژول برای صفحه‌ی مدیریت
 export async function fetchInsuranceSettings() {
   const { data } = await apiClient.get("/insurance/settings");
-  return data; // { enabled, rate_table, notes }
+  return data; // { rate_table, notes, reject_notice_title, reject_notice_body }
+}
+
+// وضعیت فعال/غیرفعال ثبت‌نام در سایت‌هایی که کاربر insurance.manage دارد: [{ site_id, site_name, enabled }]
+export async function fetchInsuranceSiteStatuses() {
+  const { data } = await apiClient.get("/insurance/sites");
+  return data;
+}
+
+// فعال/غیرفعال کردن ثبت‌نام یک سایت؛ خروجی فهرست به‌روز
+export async function setInsuranceSiteEnabled(siteId, enabled) {
+  const { data } = await apiClient.put(`/insurance/sites/${siteId}`, { enabled });
+  return data;
 }
 
 // تغییر بخشی از تنظیمات؛ فقط کلیدهای موجود در payload اعمال می‌شوند

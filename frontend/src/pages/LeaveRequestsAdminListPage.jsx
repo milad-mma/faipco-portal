@@ -28,7 +28,7 @@ import BackLink from "../components/BackLink";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import { useAuth } from "../context/AuthContext";
-import { fetchSites } from "../api/sites";
+import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
 import {
   adminDeleteLeaveRequest,
   adminUpdateLeaveRequest,
@@ -309,6 +309,7 @@ const STATUS_OPTIONS = [
 export default function LeaveRequestsAdminListPage() {
   const { user } = useAuth();
   const [sites, setSites] = useState([]);
+  const [manageSiteIds, setManageSiteIds] = useState(null); // سایت‌های با مجوز مدیریت؛ null = نامحدود (یا هنوز نامعلوم)
   const [siteId, setSiteId] = useState(""); // سایت انتخابی
   const [requests, setRequests] = useState(null); // درخواست‌های سایت با فیلترهای سرور؛ null = هنوز بارگذاری نشده
   const [todaySourceRequests, setTodaySourceRequests] = useState(null); // داده‌ی بدون فیلتر برای کارت «امروز»، جدا از requests
@@ -345,6 +346,13 @@ export default function LeaveRequestsAdminListPage() {
       setSites(data);
       if (data.length > 0) setSiteId(data[0].id);
     });
+    // سایت‌هایی که کاربر برایشان leave_requests.manage دارد (برای نمایش دکمه‌های ویرایش/حذف فقط در همان سایت‌ها)
+    if (user?.can_manage_leave_requests) {
+      fetchMyAccessibleSites("leave_requests.manage")
+        .then((d) => setManageSiteIds(d.unrestricted ? null : new Set((d.sites || []).map((s) => s.id))))
+        .catch(() => setManageSiteIds(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // بارگذاری درخواست‌های سایت: دو درخواست هم‌زمان، یکی بدون فیلتر برای کارت «امروز» و یکی با فیلترهای سرور برای جدول.
@@ -418,7 +426,8 @@ export default function LeaveRequestsAdminListPage() {
     }
   }
 
-  const canEdit = Boolean(user?.can_manage_leave_requests); // مجوز ویرایش/حذف درجا
+  // مجوز ویرایش/حذف درجا فقط برای سایت‌هایی که کاربر در آن‌ها leave_requests.manage دارد (null = همه)
+  const canEdit = Boolean(user?.can_manage_leave_requests) && (manageSiteIds === null || manageSiteIds.has(siteId));
   // نقش محدود به نوع (مثل حراست): فقط مجوز به‌تفکیک نوع دارد؛ بدون خروجی Excel و بدون فیلتر بازه‌ی تاریخ (سرور هم اعمال می‌کند)
   const isTypeRestricted = Boolean(user?.leave_requests_type_restricted);
 

@@ -26,7 +26,7 @@ from app.core import insurance_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name
 from app.core.document_sanitizer import sniff_content_type as _sniff_content_type
 from app.models.employee import Department, Employee
-from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration
+from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration, InsuranceSiteSetting
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.site import Site
 from app.models.system_setting import SystemSetting
@@ -81,8 +81,8 @@ class InsuranceService:
     async def get_settings(self) -> dict:
         """
         تنظیمات ماژول را از system_settings می‌خواند.
-        خروجی همیشه سه کلید enabled / rate_table / notes دارد؛ اگر رکوردی نباشد
-        یا JSON آن خراب/ناقص باشد، مقدارهای پیش‌فرض insurance_rules برمی‌گردد.
+        خروجی: rate_table / notes / متن‌های اطلاعیه‌ی رد (سراسری)؛ اگر رکوردی نباشد یا JSON آن خراب/ناقص باشد،
+        مقدارهای پیش‌فرض insurance_rules برمی‌گردد. فعال/غیرفعال بودن سایتی است (insurance_site_settings).
         """
         row = await self.db.get(SystemSetting, SETTINGS_KEY)
         stored: dict = {}
@@ -92,7 +92,6 @@ class InsuranceService:
             except (ValueError, TypeError):
                 stored = {}  # مقدار خراب در دیتابیس → مثل نبودن رکورد رفتار می‌شود
         return {
-            "enabled": bool(stored.get("enabled", True)),
             "rate_table": self._sanitize_rate_table(stored.get("rate_table")) or rules.DEFAULT_RATE_TABLE,
             "notes": self._sanitize_notes(stored.get("notes")) or list(rules.DEFAULT_NOTES),
             "reject_notice_title": (str(stored.get("reject_notice_title") or "").strip() or DEFAULT_REJECT_NOTICE_TITLE)[:REJECT_TITLE_MAX],
@@ -106,8 +105,6 @@ class InsuranceService:
         نامعتبر باعث خطای InsuranceError می‌شود.
         """
         current = await self.get_settings()
-        if "enabled" in patch and patch["enabled"] is not None:
-            current["enabled"] = bool(patch["enabled"])
         if patch.get("rate_table") is not None:
             table = self._sanitize_rate_table(patch["rate_table"])
             if table is None:
@@ -228,7 +225,7 @@ class InsuranceService:
         settings = await self.get_settings()
         registration = await self.get_registration(employee.id) if employee else None
         return {
-            "enabled": settings["enabled"],
+            "enabled": await self.is_site_enabled(employee.site_id) if employee else False,
             "employee": self.employee_view(employee) if employee else None,
             "registration": registration,
             "rate_table": settings["rate_table"],
@@ -250,8 +247,8 @@ class InsuranceService:
         فایل به یک عضو موقت (pending) در ثبت‌نام همین پرسنل وصل می‌شود تا هنگام
         ثبت نهایی فرم به عضو واقعی منتقل شود.
         """
-        if not await self._is_enabled():
-            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است.")
+        if not await self.is_site_enabled(employee.site_id):
+            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی برای سایت شما در حال حاضر غیرفعال است.")
         if len(content) > rules.DOCUMENT_MAX_BYTES:
             raise InsuranceError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد.")
         # نوع فایل از امضای بایت‌های ابتدایی تشخیص داده می‌شود، نه از پسوند یا Content-Type
@@ -357,8 +354,8 @@ class InsuranceService:
         قبلی با اعضای فرم جدید جایگزین می‌شوند. مدارکی که در فرم جدید ارجاع
         داده شده‌اند به عضو جدید منتقل می‌شوند؛ بقیه همراه عضو قبلی حذف می‌شوند.
         """
-        if not await self._is_enabled():
-            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است.")
+        if not await self.is_site_enabled(employee.site_id):
+            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی برای سایت شما در حال حاضر غیرفعال است.")
         view = self.employee_view(employee)
         if view.missing:
             raise InsuranceError(
@@ -726,9 +723,34 @@ class InsuranceService:
 
     # ---------- کمکی ----------
 
-    async def _is_enabled(self) -> bool:
-        """True اگر ماژول در تنظیمات فعال باشد."""
-        return (await self.get_settings())["enabled"]
+    async def is_site_enabled(self, site_id: int | None) -> bool:
+        """True اگر ثبت‌نام برای این سایت غیرفعال نشده باشد (نبودِ ردیف = فعال)؛ بدون سایت → False."""
+        if site_id is None:
+            return False
+        row = await self.db.get(InsuranceSiteSetting, site_id)
+        return row is None or not row.is_disabled
+
+    async def list_site_statuses(self, site_ids: set[int] | None) -> list[dict]:
+        """
+        وضعیت فعال/غیرفعال سایت‌ها برای صفحه‌ی مدیریت. site_ids=None → همه‌ی سایت‌های فعال؛
+        وگرنه فقط همان سایت‌ها (سایت‌هایی که کاربر برایشان insurance.manage دارد).
+        """
+        query = select(Site.id, Site.name, InsuranceSiteSetting.is_disabled).outerjoin(
+            InsuranceSiteSetting, InsuranceSiteSetting.site_id == Site.id
+        ).where(Site.is_active.is_(True)).order_by(Site.name)
+        if site_ids is not None:
+            query = query.where(Site.id.in_(site_ids))
+        result = await self.db.execute(query)
+        return [{"site_id": sid, "site_name": name, "enabled": not bool(dis)} for sid, name, dis in result.all()]
+
+    async def set_site_enabled(self, site_id: int, enabled: bool) -> None:
+        """فعال/غیرفعال کردن ثبت‌نام برای یک سایت (ردیف ساخته یا به‌روز می‌شود)."""
+        row = await self.db.get(InsuranceSiteSetting, site_id)
+        if row is None:
+            self.db.add(InsuranceSiteSetting(site_id=site_id, is_disabled=not enabled))
+        else:
+            row.is_disabled = not enabled
+        await self.db.commit()
 
     async def _get_or_create_shell(self, employee: Employee) -> InsuranceRegistration:
         """
