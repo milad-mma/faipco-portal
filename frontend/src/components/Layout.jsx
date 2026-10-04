@@ -14,7 +14,6 @@ import {
   Box,
   CircularProgress,
   Collapse,
-  Divider,
   Drawer,
   IconButton,
   List,
@@ -28,7 +27,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -156,6 +155,22 @@ export default function Layout() {
 
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
 
+  // پالت منوی کناری: پنل سرمه‌ای تیره در هر دو تم (بدون خط جداکننده؛ کنتراست خودش از محتوا جدا می‌کند)
+  const theme = useTheme();
+  const SB = useMemo(
+    () => ({
+      bg: theme.palette.mode === "dark" ? "#0B141F" : "#0E2A47",
+      headerBg: theme.palette.mode === "dark" ? "#0B141F" : "#0C2440",
+      text: "rgba(255,255,255,0.88)",
+      muted: "rgba(255,255,255,0.56)",
+      hover: "rgba(255,255,255,0.06)",
+      active: "rgba(255,255,255,0.13)",
+      line: "rgba(255,255,255,0.14)",
+      accent: theme.palette.secondary.light,
+    }),
+    [theme]
+  );
+
   // فعال‌سازی اعلان Push از منوی پروفایل: درخواست اجازه، ثبت اشتراک و نمایش نتیجه در Snackbar
   async function handleEnableNotifications() {
     setMenuAnchor(null);
@@ -174,13 +189,27 @@ export default function Layout() {
   const drawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {/* سربرگ منو: لوگو و عنوان سایدبار */}
-      <Toolbar sx={{ gap: 1.5, px: 2.5, minHeight: 64, background: sidebarCfg.background || undefined }}>
-        <BrandLogo surface="sidebar" alt={sidebarTitle} />
+      <Toolbar sx={{ gap: 1.5, px: 2, minHeight: 72, background: sidebarCfg.background || SB.headerBg }}>
+        {/* لوگو روی یک کارت روشن کوچک تا روی پس‌زمینه‌ی تیره خوانا بماند (مگر برندینگ پس‌زمینه‌ی خودش را داده باشد) */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            p: 0.75,
+            borderRadius: 2,
+            bgcolor: sidebarCfg.background ? "transparent" : "#FFFFFF",
+            "&:empty": { display: "none" },
+          }}
+        >
+          <BrandLogo surface="sidebar" alt={sidebarTitle} />
+        </Box>
         {sidebarCfg.show_title && (
-          <Typography sx={{ color: "primary.main", ...surfaceTitleSx(sidebarCfg, "title") }}>{sidebarTitle}</Typography>
+          <Typography noWrap sx={{ color: SB.text, ...surfaceTitleSx(sidebarCfg, "title") }}>
+            {sidebarTitle}
+          </Typography>
         )}
       </Toolbar>
-      <Divider />
       {/* فهرست آیتم‌های منو */}
       <List sx={{ px: 1.25, py: 1.5, flexGrow: 1, overflowY: "auto" }}>
         {visibleNavItems.map((item) => {
@@ -189,26 +218,25 @@ export default function Layout() {
           const isActive = !hasChildren && location.pathname === item.path;
           const isOpen = hasChildren && (openMenus[item.menuKey] ?? false);
 
-          const rowSx = (theme) => ({
+          const rowSx = {
             borderRadius: 2,
             mb: 0.25,
             minHeight: 44,
             px: 1.5,
-            color: isActive || groupActive ? "primary.main" : "text.primary",
+            color: isActive || groupActive ? "#FFFFFF" : SB.text,
+            "&:hover": { backgroundColor: SB.hover },
             "&.Mui-selected": {
-              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-              "&:hover": { backgroundColor: alpha(theme.palette.primary.main, 0.14) },
+              backgroundColor: SB.active,
+              "&:hover": { backgroundColor: SB.active },
             },
-          });
+          };
 
           return (
             <Box key={item.menuKey}>
               {hasChildren ? (
                 // سرگروه: فقط باز/بسته می‌کند (بدون ناوبری)
                 <ListItemButton onClick={() => toggleMenu(item.menuKey)} sx={rowSx} aria-expanded={isOpen}>
-                  <ListItemIcon sx={{ color: groupActive ? "primary.main" : "text.secondary", minWidth: 36 }}>
-                    {item.icon}
-                  </ListItemIcon>
+                  <ListItemIcon sx={{ color: groupActive ? SB.accent : SB.muted, minWidth: 36 }}>{item.icon}</ListItemIcon>
                   <ListItemText
                     primary={item.label}
                     primaryTypographyProps={{ fontWeight: groupActive ? 700 : 600, fontSize: 14.5 }}
@@ -216,7 +244,7 @@ export default function Layout() {
                   <ExpandMoreIcon
                     fontSize="small"
                     sx={{
-                      color: "text.secondary",
+                      color: SB.muted,
                       transition: "transform .2s",
                       transform: isOpen ? "rotate(180deg)" : "none",
                     }}
@@ -230,9 +258,7 @@ export default function Layout() {
                   selected={isActive}
                   sx={rowSx}
                 >
-                  <ListItemIcon sx={{ color: isActive ? "primary.main" : "text.secondary", minWidth: 36 }}>
-                    {item.icon}
-                  </ListItemIcon>
+                  <ListItemIcon sx={{ color: isActive ? SB.accent : SB.muted, minWidth: 36 }}>{item.icon}</ListItemIcon>
                   <ListItemText primary={item.label} primaryTypographyProps={{ fontWeight: isActive ? 700 : 600, fontSize: 14.5 }} />
                 </ListItemButton>
               )}
@@ -243,12 +269,12 @@ export default function Layout() {
                   <List
                     component="div"
                     disablePadding
-                    sx={(theme) => ({
+                    sx={{
                       mb: 0.75,
                       marginInlineStart: theme.spacing(3.25),
                       paddingInlineStart: theme.spacing(1),
-                      borderInlineStart: `2px solid ${alpha(theme.palette.primary.main, 0.18)}`,
-                    })}
+                      borderInlineStart: `1px solid ${SB.line}`,
+                    }}
                   >
                     {item.children.map((child) => {
                       const isChildActive = location.pathname === child.path;
@@ -259,18 +285,19 @@ export default function Layout() {
                           to={child.path}
                           onClick={() => setMobileOpen(false)}
                           selected={isChildActive}
-                          sx={(theme) => ({
+                          sx={{
                             borderRadius: 1.5,
                             minHeight: 38,
                             my: 0.25,
                             px: 1.25,
-                            color: isChildActive ? "primary.main" : "text.secondary",
-                            "&:hover": { color: "text.primary" },
+                            color: isChildActive ? "#FFFFFF" : SB.muted,
+                            "&:hover": { color: SB.text, backgroundColor: SB.hover },
                             "&.Mui-selected": {
-                              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                              "&:hover": { backgroundColor: alpha(theme.palette.primary.main, 0.14) },
+                              backgroundColor: SB.active,
+                              color: "#FFFFFF",
+                              "&:hover": { backgroundColor: SB.active },
                             },
-                          })}
+                          }}
                         >
                           <ListItemIcon sx={{ color: "inherit", minWidth: 30, "& svg": { fontSize: 18 } }}>{child.icon}</ListItemIcon>
                           <ListItemText
@@ -324,10 +351,8 @@ export default function Layout() {
           // پرسنل نوار بالا را نمی‌بینند؛ «پنل کاربری» یک تب در نوار پایین است
           display: isPersonnelNav ? "none" : "flex",
           width: hasSingleNavItem ? "100%" : { md: `calc(100% - ${DRAWER_WIDTH}px)` },
-          borderBottom: "1px solid",
-          borderColor: "divider",
-          bgcolor: "background.paper",
-          zIndex: (theme) => theme.zIndex.drawer + 1,
+          bgcolor: "background.default",
+          zIndex: (t) => t.zIndex.drawer + 1,
           // AppBar ثابت بالای صفحه است؛ فاصله‌ی ناحیه‌ی امن بالا (ناچ / Dynamic Island) در حالت
           // viewport-fit=cover اعمال می‌شود تا دکمه‌ها قابل لمس بمانند.
           pt: "env(safe-area-inset-top, 0px)",
@@ -427,20 +452,18 @@ export default function Layout() {
         <Drawer
           variant="permanent"
           anchor="left"
-          sx={(theme) => ({
+          sx={{
             display: { xs: "none", md: "block" },
             width: DRAWER_WIDTH,
             flexShrink: 0,
             "& .MuiDrawer-paper": {
               width: DRAWER_WIDTH,
               boxSizing: "border-box",
-              borderInlineEnd: "1px solid",
-              borderInlineEndColor: "divider",
-              borderInlineStart: "none",
-              backgroundColor:
-                theme.palette.mode === "dark" ? theme.palette.background.paper : alpha(theme.palette.primary.main, 0.025),
+              border: "none",
+              backgroundColor: SB.bg,
+              color: SB.text,
             },
-          })}
+          }}
           open
         >
           {drawerContent}
@@ -457,7 +480,7 @@ export default function Layout() {
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: "block", md: "none" },
-            "& .MuiDrawer-paper": { width: DRAWER_WIDTH },
+            "& .MuiDrawer-paper": { width: DRAWER_WIDTH, backgroundColor: SB.bg, color: SB.text, border: "none" },
           }}
         >
           {drawerContent}
