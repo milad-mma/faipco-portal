@@ -360,8 +360,10 @@ export default function LeaveRequestsAdminListPage() {
   function load() {
     if (!siteId) return;
     setError("");
+    // کارت «امروز» فقط درخواست‌هایی را لازم دارد که با امروز هم‌پوشانی دارند؛ به‌جای کل سابقه، همان روز از سرور خواسته می‌شود
+    const todayOnly = toDateOnly(new Date());
     Promise.all([
-      fetchAllLeaveRequestsForSite(siteId),
+      fetchAllLeaveRequestsForSite(siteId, { date_from: todayOnly, date_to: todayOnly }),
       fetchAllLeaveRequestsForSite(siteId, serverFilters),
     ])
       .then(([todayData, filteredData]) => {

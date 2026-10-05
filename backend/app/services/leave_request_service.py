@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pymssql
 import pymysql
@@ -1486,6 +1486,79 @@ class LeaveRequestService:
         if not self._request_in_site_scope(request_row.get("EmpNo"), own, others, include_unknown):
             raise LeaveRequestError("این درخواست متعلق به پرسنل سایت دیگری است و از این سایت قابل تغییر نیست")
 
+    @staticmethod
+    def _build_report_where(
+        conn: SiteConnection,
+        mapping: LeaveRequestMapping,
+        own_emp_nos: set[int],
+        other_emp_nos: set[int],
+        include_unknown: bool,
+        date_from: date | None,
+        date_to: date | None,
+        status_filter: str | None,
+        type_id_filter: int | None,
+        type_lookup: dict,
+    ) -> tuple[str, dict]:
+        """
+        شرط WHERE گزارش مدیریتی را می‌سازد (بدون فیلتر شعبه که _select_requests_sync خودش اضافه می‌کند).
+        - محدوده‌ی سایت: EmpNo IN (پرسنل این سایت)؛ با مجوز سراسری: EmpNo NOT IN (پرسنل سایت‌های دیگر) تا کدهای ناشناخته هم بیایند.
+          کدها عدد صحیح‌اند و مستقیم در SQL نوشته می‌شوند (محدودیت ۲۱۰۰ پارامتر SQL Server).
+        - بازه‌ی تاریخ: هم‌پوشانی [StartDate, COALESCE(EndDate, StartDate)] با بازه‌ی فیلتر (تاریخ تا = پایان روز).
+        - وضعیت: pending/approved/rejected/cancelled از IsFinalApproved و AcceptCode (ابطال فقط اگر ستون نگاشت شده باشد).
+        - نوع: سه‌تایی (OperationsID, ActionId, Card_No) نوع انتخاب‌شده؛ نوع ناشناخته → شرط همیشه نادرست.
+        """
+        q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+        names = KaraNames(mapping)
+        conditions: list[str] = []
+        params: dict = {}
+
+        emp_col = q(mapping.emp_no_column)
+        if include_unknown:
+            if other_emp_nos:
+                conditions.append(f"{emp_col} NOT IN ({', '.join(str(int(e)) for e in sorted(other_emp_nos))})")
+        else:
+            if not own_emp_nos:
+                return "1 = 0", {}
+            conditions.append(f"{emp_col} IN ({', '.join(str(int(e)) for e in sorted(own_emp_nos))})")
+
+        start_col = q(mapping.start_date_column)
+        end_col = f"COALESCE({q(mapping.end_date_column)}, {start_col})"
+        if date_from is not None:
+            conditions.append(f"{end_col} >= %(rpt_from)s")
+            params["rpt_from"] = datetime.combine(date_from, datetime.min.time())
+        if date_to is not None:
+            conditions.append(f"{start_col} < %(rpt_to)s")
+            params["rpt_to"] = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+
+        approved_col = q(mapping.is_final_approved_column)
+        accept_col = q(names.raw("wf_requests", "accept_code")) if names.has("wf_requests", "accept_code") else None
+        not_cancelled = f"({accept_col} IS NULL OR {accept_col} <> {int(kara_wb.ACCEPT_CANCELLED)})" if accept_col else "1 = 1"
+        if status_filter == "pending":
+            conditions.append(f"{approved_col} IS NULL AND {not_cancelled}")
+        elif status_filter == "approved":
+            conditions.append(f"{approved_col} = 1 AND {not_cancelled}")
+        elif status_filter == "rejected":
+            conditions.append(f"{approved_col} = 0 AND {not_cancelled}")
+        elif status_filter == "cancelled":
+            conditions.append(f"{accept_col} = {int(kara_wb.ACCEPT_CANCELLED)}" if accept_col else "1 = 0")
+
+        if type_id_filter is not None:
+            match = next((key for key, val in type_lookup.items() if val[0] == type_id_filter), None)
+            if match is None:
+                return "1 = 0", {}
+            operation_id, action_id, card_no = match
+            parts = [f"{q(mapping.operations_id_column)} = %(rpt_op)s", f"{q(mapping.card_no_column)} = %(rpt_card)s"]
+            params.update({"rpt_op": operation_id, "rpt_card": card_no})
+            if mapping.action_id_column:
+                if action_id is None:
+                    parts.append(f"{q(mapping.action_id_column)} IS NULL")
+                else:
+                    parts.append(f"{q(mapping.action_id_column)} = %(rpt_action)s")
+                    params["rpt_action"] = action_id
+            conditions.append(" AND ".join(parts))
+
+        return (" AND ".join(f"({c})" for c in conditions) if conditions else "1 = 1"), params
+
     async def list_all_for_site(
         self,
         site_id: int,
@@ -1506,12 +1579,19 @@ class LeaveRequestService:
         یا مجوز محدود به نوع (LeaveRequestTypeViewer، از طریق allowed_type_ids).
         بازه تاریخی بر اساس تاریخ خودِ مرخصی/ماموریت است، نه تاریخ ثبت.
         """
-        # همه درخواست‌های دیتابیس منبع (فیلترها در پایتون اعمال می‌شوند)
+        # فیلترها تا جای ممکن در SQL اعمال می‌شوند (قبلاً کل WF_Requests خوانده و در پایتون فیلتر می‌شد):
+        # محدوده‌ی پرسنل سایت، بازه‌ی تاریخ، وضعیت و نوع؛ فیلتر واحد (نام واحد پرتال) همچنان در پایتون است.
         mapping, site_connection = await self._get_mapping_and_connection(site_id)
-        rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, "1 = 1", {})
         own_emp_nos, other_emp_nos = await self._site_emp_scope(site_id)
-        rows = [row for row in rows if self._request_in_site_scope(row.get("EmpNo"), own_emp_nos, other_emp_nos, include_unknown)]
         type_lookup = await self._get_type_lookup(site_id)
+        where_sql, params = self._build_report_where(
+            site_connection, mapping, own_emp_nos, other_emp_nos, include_unknown,
+            date_from, date_to, status_filter, type_id_filter, type_lookup,
+        )
+        rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, where_sql, params)
+        # ایمنی: همان قاعده‌ی محدوده‌ی سایت در پایتون هم اعمال می‌شود (اگر کد پرسنلی غیرعددی یا SQL ناقص بود)
+        rows = [row for row in rows if self._request_in_site_scope(row.get("EmpNo"), own_emp_nos, other_emp_nos, include_unknown)]
+
         requester_info = await self._get_requester_info(site_id, [row.get("EmpNo") for row in rows])
         normalized = []
         # نرمال‌سازی و اعمال فیلترها روی هر ردیف
