@@ -8,6 +8,7 @@ Endpoint های مدیریتی «درخواست مرخصی/ماموریت» (پ�
     - ویرایش/حذف مدیریتی یک درخواست: فقط leave_requests.manage
 خطاهای منطقی سرویس‌ها به 400 و نبود مجوز به 403 تبدیل می‌شوند.
 """
+import asyncio
 import logging
 from datetime import date
 
@@ -459,7 +460,7 @@ async def export_leave_requests(
 
     # ساخت فایل و برگرداندن به‌صورت دانلود
     site = await db.get(Site, site_id)
-    content = build_leave_requests_xlsx(items, site.name if site else "")
+    content = await asyncio.to_thread(build_leave_requests_xlsx, items, site.name if site else "")  # ساخت Excel حلقه‌ی async را معطل نکند
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

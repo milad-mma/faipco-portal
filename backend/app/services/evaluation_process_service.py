@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -36,12 +37,35 @@ from app.models.evaluation_process import (
     EvaluationStatus,
 )
 from app.models.site import Site
+from app.services.push_background import schedule_push
 from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
 
 # انواع سوالی که پاسخشان انتخاب گزینه است و امتیاز از گزینه‌ها محاسبه می‌شود
 _OPTION_BASED_TYPES = {"single_choice", "multiple_choice", "rating", "yes_no"}
+
+# Task های پس‌زمینه‌ی هم‌گام‌سازی وضعیت دوره‌ها (نگه‌داشتن مرجع تا GC آن‌ها را وسط کار جمع نکند)
+_background_sync_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_period_status_sync() -> None:
+    """هم‌گام‌سازی خودکار وضعیت دوره‌ها را به‌صورت Task پس‌زمینه با Session جدا زمان‌بندی می‌کند و فوراً برمی‌گردد."""
+    task = asyncio.create_task(_run_period_status_sync())
+    _background_sync_tasks.add(task)
+    task.add_done_callback(_background_sync_tasks.discard)
+
+
+async def _run_period_status_sync() -> None:
+    """اجرای واقعی sync_automatic_statuses با Session جدا؛ هرگز استثنا پرتاب نمی‌کند."""
+    from app.db.session import AsyncSessionLocal  # import محلی برای جلوگیری از import حلقه‌ای
+    from app.services.evaluation_period_service import EvaluationPeriodService
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await asyncio.wait_for(EvaluationPeriodService(db).sync_automatic_statuses(), timeout=120)
+    except Exception:  # noqa: BLE001 - خطای این مرحله هرگز نباید خطای کاربر شود
+        logger.exception("هم‌گام‌سازی خودکار وضعیت دوره پس از ثبت ارزیابی با خطا مواجه شد")
 
 
 class EvaluationProcessError(Exception):
@@ -188,9 +212,27 @@ class EvaluationProcessService:
         if evaluation.status != EvaluationStatus.draft:
             raise EvaluationProcessError("این ارزیابی قبلاً ثبت نهایی شده و دیگر قابل‌ویرایش نیست")
 
+        # سوالات ارجاع‌شده و پاسخ‌های قبلی این ارزیابی یک‌جا (دو کوئری IN) خوانده می‌شوند
+        # تا در حلقه برای هر پاسخ کوئری جداگانه زده نشود
+        question_ids = {answer_data["question_id"] for answer_data in answers}
+        questions_by_id: dict[int, EvaluationQuestion] = {}
+        existing_by_question_id: dict[int, EvaluationAnswer] = {}
+        if question_ids:
+            questions_result = await self.db.execute(
+                select(EvaluationQuestion).where(EvaluationQuestion.id.in_(question_ids))
+            )
+            questions_by_id = {q.id: q for q in questions_result.scalars().all()}
+            existing_result = await self.db.execute(
+                select(EvaluationAnswer).where(
+                    EvaluationAnswer.evaluation_id == evaluation_id,
+                    EvaluationAnswer.question_id.in_(question_ids),
+                )
+            )
+            existing_by_question_id = {a.question_id: a for a in existing_result.scalars().all()}
+
         # درج/به‌روزرسانی پاسخ هر سوال
         for answer_data in answers:
-            question = await self.db.get(EvaluationQuestion, answer_data["question_id"])
+            question = questions_by_id.get(answer_data["question_id"])
             if question is None:
                 continue  # سوال حذف شده - نادیده گرفته می‌شود
 
@@ -205,13 +247,7 @@ class EvaluationProcessService:
                     )
 
             # پاسخ قبلی همین سوال (در صورت وجود) به‌روز می‌شود
-            existing_result = await self.db.execute(
-                select(EvaluationAnswer).where(
-                    EvaluationAnswer.evaluation_id == evaluation_id,
-                    EvaluationAnswer.question_id == answer_data["question_id"],
-                )
-            )
-            existing_answer = existing_result.scalar_one_or_none()
+            existing_answer = existing_by_question_id.get(question.id)
 
             fields = {
                 "question_text_snapshot": question.text,
@@ -226,9 +262,14 @@ class EvaluationProcessService:
                 for key, value in fields.items():
                     setattr(existing_answer, key, value)
             else:
-                self.db.add(EvaluationAnswer(evaluation_id=evaluation_id, question_id=question.id, **fields))
+                new_answer = EvaluationAnswer(evaluation_id=evaluation_id, question_id=question.id, **fields)
+                self.db.add(new_answer)
+                # اگر همان سوال در ورودی تکرار شده باشد، تکرار بعدی همین ردیف را به‌روز می‌کند (نه درج دوباره)
+                existing_by_question_id[question.id] = new_answer
 
         await self.db.commit()
+        # مجموعه‌ی answers از قبل روی همین نمونه بارگذاری شده بود؛ منقضی می‌شود تا پاسخ‌های تازه‌درج‌شده هم در خروجی بیایند
+        self.db.expire(evaluation, ["answers"])
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
 
     async def submit_evaluation(self, evaluation_id: int, evaluator_employee_id: int) -> Evaluation:
@@ -303,16 +344,12 @@ class EvaluationProcessService:
 
         await self.db.commit()
 
-        # اگر این آخرین ارزیابی باقی‌مانده دوره بود، دوره همین‌جا خودکار بسته می‌شود؛ اجبار
-        # «تکمیل ارزیابی‌ها» به وضعیت دوره وابسته است. خطای این مرحله فقط لاگ می‌شود.
-        try:
-            from app.services.evaluation_period_service import EvaluationPeriodService
+        # اگر این آخرین ارزیابی باقی‌مانده دوره بود، دوره خودکار بسته می‌شود؛ اجبار «تکمیل ارزیابی‌ها»
+        # به وضعیت دوره وابسته است. نتیجه‌ی آن در پاسخ این درخواست لازم نیست، پس در پس‌زمینه با Session
+        # جدا اجرا می‌شود تا پاسخ HTTP منتظر پیمایش همه‌ی دوره‌ها نماند. خطای آن فقط لاگ می‌شود.
+        _schedule_period_status_sync()
 
-            await EvaluationPeriodService(self.db).sync_automatic_statuses()
-        except Exception:
-            logger.exception("هم‌گام‌سازی خودکار وضعیت دوره پس از ثبت ارزیابی با خطا مواجه شد")
-
-        # اطلاع‌رسانی Push به پرسنل ارزیابی‌شده؛ خطای Push ثبت ارزیابی را متوقف نمی‌کند
+        # اطلاع‌رسانی Push به پرسنل ارزیابی‌شده (در پس‌زمینه)؛ خطای Push ثبت ارزیابی را متوقف نمی‌کند
         await self._notify_target_of_submitted_evaluation(evaluation.assignment.target_employee_id)
 
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
@@ -375,7 +412,8 @@ class EvaluationProcessService:
             target_user = result.scalar_one_or_none()
             if target_user is None:
                 return
-            await PushService(self.db).notify_users(
+            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
+            schedule_push(
                 {target_user.id},
                 url="/my-performance",
                 priority="normal",

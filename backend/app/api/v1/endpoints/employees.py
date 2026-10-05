@@ -15,7 +15,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, undefer
 
 from app.core.deps import get_current_user, require_permission
 from app.core.text_normalize import normalize_search_text
@@ -328,8 +328,10 @@ async def list_birthdays_today(
     today_year, today_month, today_day = get_current_jalali_date()
 
     # پرسنل فعالی که روز و ماه تولدشان با امروز (شمسی) یکی است
+    # photo_thumbnail ستون deferred است؛ فقط «وجود عکس» به‌صورت عبارت SQL خوانده می‌شود
+    # (نه بایت‌های حجیم) تا لیست سبک بماند و lazy-load در async پیش نیاید
     stmt = (
-        select(Employee, Site.name, Department.name)
+        select(Employee, Site.name, Department.name, Employee.photo_thumbnail.isnot(None))
         .join(Site, Site.id == Employee.site_id)
         .outerjoin(Department, Department.id == Employee.department_id)
         .where(
@@ -347,7 +349,7 @@ async def list_birthdays_today(
 
     # ری‌اکشن‌های تبریک تولد با دو Query برای همه متولدین خوانده می‌شوند (نه یک Query به‌ازای هر نفر)؛
     # فهرست تبریک‌گویندگان برای همه قابل‌مشاهده است
-    employee_ids = [e.id for e, _, _ in rows]
+    employee_ids = [e.id for e, _, _, _ in rows]
     reaction_service = BirthdayReactionService(db)
     reactions = await reaction_service.get_reactions_for_employees(employee_ids)
     my_reactions = await reaction_service.get_my_reactions(current_user, employee_ids)
@@ -363,9 +365,9 @@ async def list_birthdays_today(
             reactors=reactions.get(e.id, {}).get("reactors", []),
             my_reaction=my_reactions.get(e.id),
             is_self=current_user.employee_id == e.id,
-            has_photo=e.photo_thumbnail is not None,
+            has_photo=bool(has_photo),
         )
-        for e, site_name, department_name in rows
+        for e, site_name, department_name, has_photo in rows
     ]
 
 
@@ -439,7 +441,8 @@ async def get_birthday_related_photo_thumbnail(
     """
     jalali_year, month, day = get_current_jalali_date()
 
-    employee = await db.get(Employee, employee_id)
+    # photo_thumbnail ستون deferred است؛ اینجا خودِ بایت‌ها لازم‌اند، پس صریحاً undefer می‌شود
+    employee = await db.get(Employee, employee_id, options=[undefer(Employee.photo_thumbnail)])
     if employee is None or not employee.photo_thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
     accessible_site_ids = await get_accessible_site_ids(db, current_user)  # None = همه‌ی سایت‌ها
@@ -507,7 +510,8 @@ async def get_employee_photo_thumbnail(
     if current_user.employee_id != employee_id and not current_user.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه دسترسی به این عکس را ندارید")
 
-    employee = await db.get(Employee, employee_id)
+    # photo_thumbnail ستون deferred است؛ اینجا خودِ بایت‌ها لازم‌اند، پس صریحاً undefer می‌شود
+    employee = await db.get(Employee, employee_id, options=[undefer(Employee.photo_thumbnail)])
     if employee is None or not employee.photo_thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
 

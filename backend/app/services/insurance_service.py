@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
 from app.core.text_normalize import normalize_search_text
 from app.core import insurance_rules as rules
@@ -304,17 +304,24 @@ class InsuranceService:
         return doc
 
     async def get_document_for_download(
-        self, document_id: int, employee_id: int | None, allowed_site_ids: set[int] | None = frozenset()
+        self,
+        document_id: int,
+        employee_id: int | None,
+        allowed_site_ids: set[int] | None = frozenset(),
+        with_data: bool = True,
     ):
         """
         مدرک را برای دانلود برمی‌گرداند اگر درخواست‌کننده مجاز باشد.
         مجاز = صاحب مدرک (employee_id همان پرسنل ثبت‌نام)، یا مدیری که برای سایتِ پرسنل صاحب مدرک
         مجوز دارد (allowed_site_ids؛ None = همه‌ی سایت‌ها، مجموعه‌ی خالی = فقط مدارک خودش).
         در غیر این صورت یا اگر مدرک نباشد None (مثل «پیدا نشد» تا وجود مدرک هم لو نرود).
+        with_data=True (پیش‌فرض): ستون deferred «data» هم بارگذاری می‌شود؛ برای حذف/فراداده False بدهید.
         """
+        stmt = select(InsuranceDocument, InsuranceRegistration.employee_id, Employee.site_id)
+        if with_data:
+            stmt = stmt.options(undefer(InsuranceDocument.data))
         result = await self.db.execute(
-            select(InsuranceDocument, InsuranceRegistration.employee_id, Employee.site_id)
-            .join(InsuranceMember, InsuranceMember.id == InsuranceDocument.member_id)
+            stmt.join(InsuranceMember, InsuranceMember.id == InsuranceDocument.member_id)
             .join(InsuranceRegistration, InsuranceRegistration.id == InsuranceMember.registration_id)
             .join(Employee, Employee.id == InsuranceRegistration.employee_id)
             .where(InsuranceDocument.id == document_id)
@@ -335,7 +342,7 @@ class InsuranceService:
         هم پاک می‌شود. خروجی True یعنی حذف شد، False یعنی مدرک پیدا نشد یا مال
         این پرسنل نبود.
         """
-        doc = await self.get_document_for_download(document_id, employee_id)
+        doc = await self.get_document_for_download(document_id, employee_id, with_data=False)
         if doc is None:
             return False
         member = await self.db.get(InsuranceMember, doc.member_id)
@@ -661,20 +668,6 @@ class InsuranceService:
             q = q.where(Employee.site_id.in_(site_ids))
         registrations = (await self.db.execute(q)).scalars().all()
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Insurance"
-        ws.sheet_view.rightToLeft = True
-        headers = [
-            "کد گروه", "شماره بیمه پایه", "کد درخواست", "نوع استخدام", "کد بیمه قبلی",
-            "ماه‌های پوشش", "کد سازمان", "کد پرسنلی", "نام", "نام خانوادگی", "نام پدر",
-            "تاریخ تولد", "جنسیت", "وضعیت تاهل", "کد ملی", "شماره شناسنامه", "شماره تماس",
-            "کد نسبت", "کد تکفل", "تاریخ استخدام", "شماره بیمه", "کد بانک", "شماره حساب",
-            "شماره شبا", "نوع حساب", "نام صاحب حساب", "کد ملی صاحب حساب",
-            "کد پرسنلی اصلی", "کد ملی اصلی",
-        ]  # fmt: skip
-        ws.append(headers)
-
         def shared(reg: InsuranceRegistration) -> list[str]:
             """۷ ستون اول: کدهای ثابت بیمه‌گر که برای همه یکسان است."""
             return [
@@ -691,35 +684,54 @@ class InsuranceService:
                 reg.personnel_code, reg.national_id,
             ]  # fmt: skip
 
-        for reg in registrations:
-            # فهرست اشخاص هر ثبت‌نام: اول شخص اصلی، سپس اعضای واقعی (عضو موقت حذف می‌شود)
-            people = [
-                (reg.personnel_code, reg.first_name, reg.last_name, reg.father_name, reg.birth_date, reg.gender,
-                 reg.marital_status, reg.national_id, reg.birth_certificate_no, reg.mobile_number,
-                 rules.RELATION_SELF, rules.DEPENDENCY_SELF)
+        def _build() -> bytes:
+            """ساخت Workbook — کاملاً همگام (openpyxl)؛ داده‌ها قبلاً با await واکشی شده‌اند (members با selectinload)."""
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Insurance"
+            ws.sheet_view.rightToLeft = True
+            headers = [
+                "کد گروه", "شماره بیمه پایه", "کد درخواست", "نوع استخدام", "کد بیمه قبلی",
+                "ماه‌های پوشش", "کد سازمان", "کد پرسنلی", "نام", "نام خانوادگی", "نام پدر",
+                "تاریخ تولد", "جنسیت", "وضعیت تاهل", "کد ملی", "شماره شناسنامه", "شماره تماس",
+                "کد نسبت", "کد تکفل", "تاریخ استخدام", "شماره بیمه", "کد بانک", "شماره حساب",
+                "شماره شبا", "نوع حساب", "نام صاحب حساب", "کد ملی صاحب حساب",
+                "کد پرسنلی اصلی", "کد ملی اصلی",
             ]  # fmt: skip
-            for m in reg.members:
-                if m.member_type == "pending":
-                    continue
-                people.append(
-                    (reg.personnel_code, m.first_name, m.last_name, m.father_name, m.birth_date, m.gender,
-                     m.marital_status, m.national_id, m.birth_certificate_no, m.mobile_number,
-                     m.relation_code, m.dependency_code)
-                )  # fmt: skip
-            for p in people:
-                (code, fn, ln, father, bdate, gender, marital, nid, cert, mobile, rel, dep) = p
-                row = shared(reg) + [
-                    code, fn, ln, father, bdate,
-                    "مرد" if gender == rules.GENDER_MALE else "زن",
-                    "مجرد" if marital == rules.MARITAL_SINGLE else "متاهل",
-                    nid, cert, mobile, str(rel), str(dep),
-                ] + tail(reg)  # fmt: skip
-                ws.append([str(v) for v in row])  # همه‌ی مقادیر رشته تا صفر ابتدایی کدها حفظ شود
-        for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = 16
-        out = io.BytesIO()
-        wb.save(out)
-        return out.getvalue()
+            ws.append(headers)
+
+            for reg in registrations:
+                # فهرست اشخاص هر ثبت‌نام: اول شخص اصلی، سپس اعضای واقعی (عضو موقت حذف می‌شود)
+                people = [
+                    (reg.personnel_code, reg.first_name, reg.last_name, reg.father_name, reg.birth_date, reg.gender,
+                     reg.marital_status, reg.national_id, reg.birth_certificate_no, reg.mobile_number,
+                     rules.RELATION_SELF, rules.DEPENDENCY_SELF)
+                ]  # fmt: skip
+                for m in reg.members:
+                    if m.member_type == "pending":
+                        continue
+                    people.append(
+                        (reg.personnel_code, m.first_name, m.last_name, m.father_name, m.birth_date, m.gender,
+                         m.marital_status, m.national_id, m.birth_certificate_no, m.mobile_number,
+                         m.relation_code, m.dependency_code)
+                    )  # fmt: skip
+                for p in people:
+                    (code, fn, ln, father, bdate, gender, marital, nid, cert, mobile, rel, dep) = p
+                    row = shared(reg) + [
+                        code, fn, ln, father, bdate,
+                        "مرد" if gender == rules.GENDER_MALE else "زن",
+                        "مجرد" if marital == rules.MARITAL_SINGLE else "متاهل",
+                        nid, cert, mobile, str(rel), str(dep),
+                    ] + tail(reg)  # fmt: skip
+                    ws.append([str(v) for v in row])  # همه‌ی مقادیر رشته تا صفر ابتدایی کدها حفظ شود
+            for col in ws.columns:
+                ws.column_dimensions[col[0].column_letter].width = 16
+            out = io.BytesIO()
+            wb.save(out)
+            return out.getvalue()
+
+        # ساخت Excel در Thread جدا تا حلقه‌ی async معطل نشود
+        return await asyncio.to_thread(_build)
 
     # ---------- کمکی ----------
 

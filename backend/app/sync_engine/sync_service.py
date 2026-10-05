@@ -32,6 +32,7 @@ import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.core.org_tree import OrgTreeError, assign_units_to_sites, build_parent_map, normalize_code
 from app.core.security import decrypt_secret, normalize_login_credential
@@ -1041,10 +1042,12 @@ class SyncService:
             return
 
         # اعمال تصویر روی پرسنل همین سایت که در منبع عکس دارند
+        # photo_thumbnail ستون deferred است؛ undefer می‌شود تا SQLAlchemy مقدار قبلی را داشته باشد و
+        # برای عکس‌های بدون تغییر UPDATE بی‌مورد صادر نکند
         result = await self.db.execute(
-            select(Employee).where(
-                Employee.site_id == site_id, Employee.personnel_code.in_(photo_by_code.keys())
-            )
+            select(Employee)
+            .options(undefer(Employee.photo_thumbnail))
+            .where(Employee.site_id == site_id, Employee.personnel_code.in_(photo_by_code.keys()))
         )
         for employee in result.scalars().all():
             photo = photo_by_code.get(employee.personnel_code)

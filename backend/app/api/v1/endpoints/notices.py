@@ -29,6 +29,7 @@ from app.core.rate_limit import MESSAGE_RATE_LIMIT_SECONDS, check_message_rate_l
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
 import json
 
 from app.core.deps import get_current_user, require_permission
@@ -491,7 +492,9 @@ async def download_my_payroll_receipt(
 
     # فیلدهای فیش به‌صورت JSON ذخیره شده‌اند؛ PDF در لحظه ساخته می‌شود
     fields = json.loads(receipt.fields_json)
-    pdf_bytes = render_payroll_receipt_pdf(
+    # رندر reportlab همگام و CPU-bound است؛ در Thread جدا تا حلقه‌ی async معطل نشود
+    pdf_bytes = await asyncio.to_thread(
+        render_payroll_receipt_pdf,
         notice_title=notice.title,
         employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
         personnel_code=receipt.source_personnel_code,
@@ -589,7 +592,9 @@ async def download_my_attendance_card(
 
     employee = await db.get(Employee, current_user.employee_id)
     fields = json.loads(receipt.fields_json)
-    pdf_bytes = render_attendance_card_pdf(
+    # رندر reportlab همگام و CPU-bound است؛ در Thread جدا تا حلقه‌ی async معطل نشود
+    pdf_bytes = await asyncio.to_thread(
+        render_attendance_card_pdf,
         employee_name=f"{employee.first_name} {employee.last_name}" if employee else "",
         month_year=notice.card_subtitle or notice.title,  # در نبود زیرعنوان، عنوان اطلاعیه
         fields=fields,

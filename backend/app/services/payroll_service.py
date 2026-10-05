@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -84,9 +85,9 @@ class PayrollNoticeService:
         site_ids: سایت‌هایی که فرستنده مجوز ارسال فیش برایشان دارد (None = همه)؛ پرسنل بقیه‌ی سایت‌ها فیش نمی‌گیرند.
         خروجی: PayrollNoticeResult.
         """
-        # پارس فایل ورودی
+        # پارس فایل ورودی (openpyxl/XML همگام است؛ در Thread جدا تا حلقه‌ی async معطل نشود)
         try:
-            items = parse_payroll_file(filename, file_bytes)
+            items = await asyncio.to_thread(parse_payroll_file, filename, file_bytes)
         except PayrollParseError:
             raise  # پیام قابل‌نمایش همان است — Endpoint مستقیماً 400 برمی‌گرداند
 

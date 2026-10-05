@@ -36,6 +36,7 @@ import re
 import jdatetime
 import pymssql
 
+from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
 from app.models.site import SiteConnection
 from app.services.kara_schema import KaraNames
@@ -49,7 +50,7 @@ KIND_OTHER = "other"
 DAILY_WORK_CARDS = 24
 
 
-def _connect(conn: SiteConnection):
+def _open_raw_connection(conn: SiteConnection):
     """اتصال pymssql به SQL Server سایت با رمز رمزگشایی‌شده و timeout ده ثانیه."""
     return pymssql.connect(
         server=conn.host,
@@ -60,6 +61,11 @@ def _connect(conn: SiteConnection):
         timeout=10,
         login_timeout=10,
     )
+
+
+def _connect(conn: SiteConnection):
+    """اتصال به دیتابیس منبع از استخر (app/core/kara_pool)؛ close() اتصال را به استخر برمی‌گرداند، نه اینکه ببندد."""
+    return pooled_connect(connection_key(conn), lambda: _open_raw_connection(conn))
 
 
 def _clean_title(title: str | None) -> str:

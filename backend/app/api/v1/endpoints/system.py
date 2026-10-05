@@ -19,6 +19,7 @@ Endpoint های تنظیمات و ابزارهای سیستمی (پنل Admin �
 /system/manifest.json, /index.html نسخه‌های پویای Manifest و index.html با برندینگ فعلی
 /system/smtp-settings, /sms-settings  تنظیمات و تست ایمیل و پیامک
 """
+import asyncio
 import ipaddress
 import hashlib
 import json
@@ -222,7 +223,7 @@ async def check_status(
     _user=Depends(require_permission("system.backup")),
 ):
     """وضعیت زنده آخرین اجرای بررسی‌ها (log، is_running، is_passed، is_failed). مجوز system.backup."""
-    return get_check_status()
+    return await asyncio.to_thread(get_check_status)  # subprocess.run همگام؛ حلقه‌ی async معطل نشود
 
 
 @router.get("/update-status")
@@ -230,7 +231,7 @@ async def update_status(
     _user=Depends(require_permission("system.backup")),
 ):
     """وضعیت زنده آخرین آپدیت (log، is_running، is_finished، is_failed). مجوز system.backup."""
-    return get_update_status()
+    return await asyncio.to_thread(get_update_status)  # subprocess.run همگام؛ حلقه‌ی async معطل نشود
 
 
 @router.post("/cache-bust")
@@ -494,7 +495,9 @@ async def get_pwa_icon_variant(variant: str, db: AsyncSession = Depends(get_db))
     raw, content_type = result
     # تولید نسخه درخواستی با تنظیمات فعلی آیکون PWA
     settings = branding_surfaces.merged_pwa_icon(await service._get_raw(PWA_ICON_SETTINGS_KEY))
-    content, media_type = pwa_icon_service.render_icon(raw, content_type, variant, settings)
+    # رندر Pillow همگام و CPU-bound است؛ در Thread جدا (خودِ سرویس نتیجه را با lru_cache
+    # بر اساس هش لوگو + نسخه + تنظیمات کش می‌کند، پس فقط اولین درخواست هر ترکیب رندر واقعی دارد)
+    content, media_type = await asyncio.to_thread(pwa_icon_service.render_icon, raw, content_type, variant, settings)
     return Response(content=content, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})  # کش ۵ دقیقه‌ای مرورگر
 
 

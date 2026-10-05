@@ -34,6 +34,7 @@ import psycopg2
 import psycopg2.extras
 
 from app.core.persian_date import jalali_weekday_name, jalali_year_month_to_yyyymmdd_range
+from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
 from app.models.site import AttendanceMapping, AttendanceMappingMode, DbType, SiteConnection
 from app.services import kara_attendance_overlay
@@ -102,7 +103,7 @@ def _quote(db_type: DbType, name: str) -> str:
     return f"[{name}]"  # mssql
 
 
-def _connect(conn: SiteConnection):
+def _open_raw_connection(conn: SiteConnection):
     """اتصال خام به دیتابیس سایت بر اساس نوع آن (mssql/mysql/postgresql) با timeout ده ثانیه می‌سازد."""
     password = decrypt_secret(conn.password_encrypted)
     # درایور مناسب هر نوع دیتابیس
@@ -136,6 +137,11 @@ def _connect(conn: SiteConnection):
             connect_timeout=10,
         )
     raise MonthlyAttendanceError(f"نوع اتصال «{conn.db_type.value}» برای گزارش تردد ماهانه پشتیبانی نمی‌شود")
+
+
+def _connect(conn: SiteConnection):
+    """اتصال به دیتابیس منبع از استخر (app/core/kara_pool)؛ close() اتصال را به استخر برمی‌گرداند، نه اینکه ببندد."""
+    return pooled_connect(connection_key(conn), lambda: _open_raw_connection(conn))
 
 
 def _dict_cursor(connection, db_type: DbType):

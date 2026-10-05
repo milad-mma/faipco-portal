@@ -121,7 +121,8 @@ class FamilyDocument(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # deferred: محتوای فایل با select(FamilyDocument) بارگذاری نمی‌شود؛ برای خواندن باید undefer(FamilyDocument.data) شود
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     uploaded_jalali: Mapped[str | None] = mapped_column(String(10), nullable=True)  # مبنای محاسبه‌ی انقضا
 

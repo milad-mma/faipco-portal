@@ -17,6 +17,7 @@ Connection Pool زنده‌ی سرویس روی همان جدول‌هایی ک�
 کاملاً مستقل واگذار می‌شود؛ این Endpoint فقط اعتبارسنجی می‌کند و آن
 اسکریپت را راه می‌اندازد، بدون این‌که منتظر اتمامش بماند.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -131,7 +132,7 @@ async def restore_status(
     Endpoint هم برای چند ثانیه (دقیقاً همان لحظه‌ای که سرویس Stop/Start
     می‌شود) در دسترس نباشد — فرانت‌اند باید آن گپ را با Retry پر کند.
     """
-    return get_restore_status()
+    return await asyncio.to_thread(get_restore_status)  # subprocess.run همگام؛ حلقه‌ی async معطل نشود
 
 
 def _to_settings_out(settings) -> BackupSettingsOut:
@@ -218,7 +219,9 @@ async def test_smb(
         password = decrypt_secret(settings.smb_password_encrypted)
 
     try:
-        test_smb_connection(
+        # اتصال شبکه‌ای همگام (smbclient) در Thread جدا تا حلقه‌ی async معطل نشود
+        await asyncio.to_thread(
+            test_smb_connection,
             host=payload.host,
             share=payload.share,
             path=payload.path,
@@ -253,7 +256,9 @@ async def test_ftp(
         password = decrypt_secret(settings.ftp_password_encrypted)
 
     try:
-        test_ftp_connection(
+        # اتصال شبکه‌ای همگام (ftplib) در Thread جدا تا حلقه‌ی async معطل نشود
+        await asyncio.to_thread(
+            test_ftp_connection,
             host=payload.host,
             port=payload.port,
             username=payload.username,

@@ -15,7 +15,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -29,7 +28,7 @@ from app.models.feedback import FeedbackCategory, FeedbackMessage, FeedbackReply
 from app.models.system_setting import SystemSetting
 from app.models.site import Site
 from app.models.user import Permission, Role, RolePermission, User, UserRole
-from app.services.push_service import PushService
+from app.services.push_background import schedule_push
 from app.schemas.feedback import FeedbackMessageOut, FeedbackReplyOut, FeedbackThreadOut, MyFeedbackItemOut
 
 FEEDBACK_RATE_LIMIT_SECONDS = 60  # حداقل فاصله بین دو پیام از یک فرستنده (ثانیه)
@@ -40,32 +39,6 @@ logger = logging.getLogger(__name__)
 
 
 PROFANITY_REVEAL_KEY = "feedback_profanity_reveal_enabled"  # system_settings؛ نبودِ ردیف = روشن
-
-# Task های پس‌زمینه‌ی ارسال Push (نگه‌داشتن مرجع تا GC آن‌ها را وسط کار جمع نکند)
-_background_push_tasks: set[asyncio.Task] = set()
-
-
-def _schedule_push(user_ids: set[int], url: str, body: str) -> None:
-    """
-    ارسال Push را به‌صورت Task پس‌زمینه با Session جدا زمان‌بندی می‌کند و فوراً برمی‌گردد.
-    ارسال Web Push (webpush به FCM/سرویس مرورگر) ممکن است چند ثانیه طول بکشد یا Timeout بخورد؛
-    درخواست ثبت پیام/پاسخ نباید منتظر آن بماند.
-    """
-    if not user_ids:
-        return
-    task = asyncio.create_task(_send_push_background(set(user_ids), url, body))
-    _background_push_tasks.add(task)
-    task.add_done_callback(_background_push_tasks.discard)
-
-
-async def _send_push_background(user_ids: set[int], url: str, body: str) -> None:
-    from app.db.session import AsyncSessionLocal  # import محلی برای جلوگیری از import حلقه‌ای
-
-    try:
-        async with AsyncSessionLocal() as db:
-            await asyncio.wait_for(PushService(db).notify_users(user_ids, url=url, priority="normal", body=body), timeout=120)
-    except Exception:  # noqa: BLE001 - Push هرگز نباید خطای کاربر شود
-        logger.exception("ارسال Push پس‌زمینه‌ی انتقادات و پیشنهادات با خطا مواجه شد")
 
 class FeedbackAccessDenied(Exception):
     """کاربر مجوز مشاهده انتقادات و پیشنهادات را ندارد."""
@@ -197,7 +170,7 @@ class FeedbackService:
                 else "پیام جدیدی در انتقادات و پیشنهادات ثبت شده است."
             )
             # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            _schedule_push(
+            schedule_push(
                 user_ids,
                 "/feedback-report",
                 f"{first_line}\nجهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
@@ -217,7 +190,7 @@ class FeedbackService:
         اعلان Push به فرستنده‌ی پیام وقتی بازبین پاسخ می‌دهد. متن عمومی است (بدون عنوان/متن) تا روی صفحه‌ی قفل
         چیزی از محتوا دیده نشود؛ لینک به تب «پیام‌های من». خطاها فقط لاگ می‌شوند.
         """
-        _schedule_push(
+        schedule_push(
             {feedback.sender_id},
             "/feedback?tab=mine",
             "پاسخی به پیام شما در انتقادات و پیشنهادات ثبت شد.\nبرای مشاهده روی این پیام بزنید.",
@@ -568,7 +541,30 @@ class FeedbackService:
 
     async def my_unread_count(self, current_user: User) -> int:
         """تعداد پیام‌های کاربر که پاسخ بازبینِ دیده‌نشده دارند (برای نشانگر داشبورد)."""
-        return sum(1 for item in await self.list_my_feedback(current_user) if item.has_new_reply)
+        # یک COUNT با زیرکوئری EXISTS: پیام‌های (حذف‌نشده‌ی) خودِ کاربر که حداقل یک پاسخ بازبین
+        # (is_from_sender=False) جدیدتر از sender_seen_at دارند (sender_seen_at خالی = هر پاسخی جدید است)
+        unseen_reviewer_reply = (
+            select(FeedbackReply.id)
+            .where(
+                FeedbackReply.feedback_id == FeedbackMessage.id,
+                FeedbackReply.is_from_sender.is_(False),
+                or_(
+                    FeedbackMessage.sender_seen_at.is_(None),
+                    FeedbackReply.created_at > FeedbackMessage.sender_seen_at,
+                ),
+            )
+            .exists()
+        )
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(FeedbackMessage)
+            .where(
+                FeedbackMessage.sender_id == current_user.id,
+                FeedbackMessage.is_deleted.is_(False),
+                unseen_reviewer_reply,
+            )
+        )
+        return int(result.scalar_one() or 0)
 
     async def _load_mine(self, current_user: User, feedback_id: int) -> FeedbackMessage:
         feedback = await self.db.get(FeedbackMessage, feedback_id)

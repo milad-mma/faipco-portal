@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -240,9 +241,10 @@ async def maybe_send_alert(db: AsyncSession, cfg: LoginSecuritySettings) -> None
     await _set_raw(db, LAST_ALERT_KEY, now.isoformat())
     logger.warning("هشدار امنیت ورود: %s تلاش ناموفق در %s دقیقه‌ی اخیر", count, cfg.alert_window_minutes)
     try:
-        from app.services.push_service import PushService
+        from app.services.push_background import schedule_push
 
-        await PushService(db).notify_users(
+        # گیرندگان با Session درخواست حساب می‌شوند؛ ارسال در پس‌زمینه تا پاسخ ورود منتظر Push نماند
+        schedule_push(
             await alert_recipient_ids(db),
             url="/login-security",
             priority="high",
@@ -275,7 +277,7 @@ async def create_captcha(db: AsyncSession) -> dict:
         )
     )
     await db.commit()
-    png = render_captcha_png(answer)
+    png = await asyncio.to_thread(render_captcha_png, answer)  # رندر Pillow همگام؛ حلقه‌ی async معطل نشود
     return {
         "captcha_id": challenge_id,
         "image": "data:image/png;base64," + base64.b64encode(png).decode(),

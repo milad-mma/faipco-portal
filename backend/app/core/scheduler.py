@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.backup_schedule_logic import is_backup_due
 from app.core.config import get_settings
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, engine
 from app.models.server_stat import ServerStat
 from app.models.site import Site, SiteConnection
 from app.services.backup_settings_service import BackupSettingsService, run_scheduled_backup
@@ -63,6 +63,10 @@ _PRESENCE_CLEANUP_LOCK_KEY = 875312007
 PRESENCE_CLEANUP_JOB_ID = "close_stale_presence_sessions"
 _LOGIN_SECURITY_CLEANUP_LOCK_KEY = 875312008
 LOGIN_SECURITY_CLEANUP_JOB_ID = "login_security_cleanup"
+# flush شمارنده‌ی در حافظه‌ی «میزان استفاده» هر Worker به دیتابیس؛ بدون Advisory Lock،
+# چون هر Worker فقط شمارش خودش را می‌نویسد و UPSERT تجمعی است.
+USAGE_FLUSH_JOB_ID = "flush_usage_stats"
+USAGE_FLUSH_INTERVAL_SECONDS = 60
 # آمار مصرف سرور هر ۱۰ دقیقه نمونه‌برداری می‌شود؛ Job هر ۲ دقیقه بر اساس آخرین
 # نمونه ثبت‌شده در دیتابیس بررسی می‌کند که وقتش رسیده یا نه.
 SERVER_STATS_CHECK_INTERVAL_MINUTES = 2  # فاصله تیک بررسی
@@ -72,15 +76,44 @@ SERVER_STATS_SAMPLE_INTERVAL_MINUTES = 10  # فاصله واقعی بین دو �
 BACKUP_CHECK_INTERVAL_MINUTES = 5
 
 
+# اتصال اختصاصیِ هر قفل: Advisory Lock در PostgreSQL به «اتصال» تعلق دارد، ولی AsyncSession بعد از هر commit
+# اتصالش را به Pool برمی‌گرداند و برای دستور بعدی ممکن است اتصال دیگری بگیرد. اگر قفل روی Session گرفته می‌شد،
+# بدنه‌ی Job که commit می‌کند قفل را روی یک اتصال رهاشده در Pool جا می‌گذاشت و unlock روی اتصال دیگری بی‌اثر بود؛
+# نتیجه: قفل تا پایان عمر آن اتصال باقی می‌ماند و تیک‌های بعدی (در هر دو Worker) رد می‌شدند.
+# این‌جا قفل روی یک اتصال جدا از Engine گرفته و تا unlock همان اتصال نگه داشته می‌شود.
+_lock_connections: dict[int, object] = {}
+
+
 async def _try_advisory_lock(db: AsyncSession, lock_key: int) -> bool:
-    """ورودی: session و کلید قفل. بدون انتظار تلاش می‌کند Advisory Lock را بگیرد؛ خروجی: True اگر گرفته شد."""
-    result = await db.execute(select(func.pg_try_advisory_lock(lock_key)))
-    return bool(result.scalar_one())
+    """
+    ورودی: session (برای سازگاری امضا؛ استفاده نمی‌شود) و کلید قفل. بدون انتظار تلاش می‌کند Advisory Lock را
+    روی یک اتصال اختصاصی بگیرد؛ خروجی: True اگر گرفته شد. اتصال تا _advisory_unlock باز می‌ماند.
+    """
+    conn = await engine.connect()
+    try:
+        result = await conn.execute(select(func.pg_try_advisory_lock(lock_key)))
+        acquired = bool(result.scalar_one())
+    except Exception:
+        await conn.close()
+        raise
+    if not acquired:
+        await conn.close()
+        return False
+    _lock_connections[lock_key] = conn
+    return True
 
 
 async def _advisory_unlock(db: AsyncSession, lock_key: int) -> None:
-    """ورودی: session و کلید قفل. Advisory Lock گرفته‌شده را آزاد می‌کند."""
-    await db.execute(select(func.pg_advisory_unlock(lock_key)))
+    """ورودی: session (استفاده نمی‌شود) و کلید قفل. قفل را روی همان اتصالی که گرفته شده آزاد و اتصال را می‌بندد."""
+    conn = _lock_connections.pop(lock_key, None)
+    if conn is None:
+        return
+    try:
+        await conn.execute(select(func.pg_advisory_unlock(lock_key)))
+    except Exception:  # noqa: BLE001 - بستن اتصال خودش قفل Session-level را آزاد می‌کند
+        logger.warning("آزاد کردن Advisory Lock %s با خطا مواجه شد؛ اتصال بسته می‌شود", lock_key)
+    finally:
+        await conn.close()
 
 
 async def _run_sync_for_all_active_sites() -> None:
@@ -207,6 +240,13 @@ async def _login_security_cleanup_job() -> None:
             logger.exception("پاک‌سازی امنیت ورود ناموفق بود")
         finally:
             await _advisory_unlock(db, _LOGIN_SECURITY_CLEANUP_LOCK_KEY)
+
+
+async def _flush_usage_stats_job() -> None:
+    """Job هر ۶۰ ثانیه: شمارنده‌های در حافظه‌ی استفاده از پرتال (این Worker) را به دیتابیس UPSERT می‌کند."""
+    from app.services.usage_stats_service import flush_usage
+
+    await flush_usage()  # خطاها داخل خودِ تابع لاگ می‌شوند و شمارش‌ها نگه داشته می‌شوند
 
 
 async def _record_server_stats_job() -> None:
@@ -416,6 +456,15 @@ async def start_scheduler() -> None:
         misfire_grace_time=3 * 60 * 60,
     )
     logger.info("Scheduler خلاصه تبریک تولد هر روز ساعت ۲۰:۰۰ ارسال می‌شود")
+
+    # Job flush شمارنده‌ی استفاده از پرتال، هر ۶۰ ثانیه (در هر Worker جداگانه)
+    scheduler.add_job(
+        _flush_usage_stats_job,
+        trigger="interval",
+        seconds=USAGE_FLUSH_INTERVAL_SECONDS,
+        id=USAGE_FLUSH_JOB_ID,
+        replace_existing=True,
+    )
 
     # پاک‌سازی روزانه‌ی گزارش امنیت ورود و کپچاهای منقضی (ساعت ۳:۱۰ بامداد)
     scheduler.add_job(

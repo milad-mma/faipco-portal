@@ -23,6 +23,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.core.deps import get_current_user, require_permission
 from app.core.ip_allowlist import get_client_ip
@@ -150,8 +151,14 @@ async def app_latest(db: AsyncSession = Depends(get_db)):
 @router.get("/app/download")
 async def app_download(db: AsyncSession = Depends(get_db)):
     """دانلود آخرین APK."""
+    # data ستون deferred است؛ برای دانلود باید صریحاً undefer شود
     release = (
-        await db.execute(select(MobileAppRelease).order_by(MobileAppRelease.version_code.desc()).limit(1))
+        await db.execute(
+            select(MobileAppRelease)
+            .options(undefer(MobileAppRelease.data))
+            .order_by(MobileAppRelease.version_code.desc())
+            .limit(1)
+        )
     ).scalar_one_or_none()
     if release is None:
         raise HTTPException(status_code=404, detail="هنوز نسخه‌ای از اپ بارگذاری نشده است.")

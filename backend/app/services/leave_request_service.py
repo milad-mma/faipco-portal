@@ -41,6 +41,7 @@ from app.core.leave_request_rules import (
     compute_hourly_duration,
     jalali_date_to_compact,
 )
+from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
 from app.models.employee import Employee
 from app.models.leave_request import (
@@ -80,7 +81,7 @@ def _quote(db_type: DbType, name: str) -> str:
     return f"[{name}]"  # mssql
 
 
-def _connect(conn: SiteConnection):
+def _open_raw_connection(conn: SiteConnection):
     """
     ورودی: رکورد اتصال سایت. یک اتصال همگام به دیتابیس منبع (SQL Server /
     MySQL / PostgreSQL) با Timeout ده ثانیه باز می‌کند و شیء اتصال درایور را برمی‌گرداند.
@@ -117,6 +118,11 @@ def _connect(conn: SiteConnection):
             connect_timeout=10,
         )
     raise LeaveRequestError(f"نوع اتصال «{conn.db_type.value}» برای درخواست مرخصی/ماموریت پشتیبانی نمی‌شود")
+
+
+def _connect(conn: SiteConnection):
+    """اتصال به دیتابیس منبع از استخر (app/core/kara_pool)؛ close() اتصال را به استخر برمی‌گرداند، نه اینکه ببندد."""
+    return pooled_connect(connection_key(conn), lambda: _open_raw_connection(conn))
 
 
 def _dict_cursor(connection, db_type: DbType):

@@ -3,6 +3,8 @@ Endpoint های «گزارش‌های مدیریتی ارزیابی عملکرد
 مقایسه دو دوره، روند فردی و جزئیات سوال‌به‌سوال یک ارزیابی؛ با خروجی Excel و ارسال آن به ایمیل.
 همه endpointها نیازمند مجوز سایتیِ performance.reports.view هستند.
 """
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +93,7 @@ async def export_site_period_report(
         answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_site_period_report_xlsx(report, answers)
+    content = await asyncio.to_thread(build_site_period_report_xlsx, report, answers)  # ساخت Excel حلقه‌ی async را معطل نکند
     filename = f"performance-report-{site_id}-{period_id}.xlsx"
     return Response(
         content=content,
@@ -120,7 +122,7 @@ async def email_site_period_report(
         answers = await service.get_period_answers(site_id, period_id)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_site_period_report_xlsx(report, answers)
+    content = await asyncio.to_thread(build_site_period_report_xlsx, report, answers)  # ساخت Excel حلقه‌ی async را معطل نکند
     filename = f"performance-report-{site_id}-{period_id}.xlsx"
     # ارسال ایمیل با فایل Excel پیوست
     try:
@@ -166,7 +168,7 @@ async def export_period_comparison(
         comparison = await EvaluationReportsService(db).get_period_comparison(site_id, period_id_a, period_id_b)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_period_comparison_xlsx(comparison)
+    content = await asyncio.to_thread(build_period_comparison_xlsx, comparison)  # ساخت Excel حلقه‌ی async را معطل نکند
     filename = f"performance-comparison-{site_id}-{period_id_a}-{period_id_b}.xlsx"
     return Response(
         content=content,
@@ -193,7 +195,7 @@ async def email_period_comparison(
         comparison = await EvaluationReportsService(db).get_period_comparison(site_id, period_id_a, period_id_b)
     except EvaluationReportError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    content = build_period_comparison_xlsx(comparison)
+    content = await asyncio.to_thread(build_period_comparison_xlsx, comparison)  # ساخت Excel حلقه‌ی async را معطل نکند
     filename = f"performance-comparison-{site_id}-{period_id_a}-{period_id_b}.xlsx"
     # ارسال ایمیل با فایل Excel پیوست
     try:

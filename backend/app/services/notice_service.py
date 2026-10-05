@@ -35,6 +35,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.site_access import get_sites_with_permission
 from app.db.session import AsyncSessionLocal
 from app.models.employee import Department, Employee
 from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
@@ -51,6 +52,7 @@ from app.schemas.notice import (
     NoticeTargetDescription,
     NoticeTargetOut,
 )
+from app.services.push_background import schedule_push
 from app.services.push_service import PushService
 
 logger = logging.getLogger("faipco.notices")
@@ -225,47 +227,58 @@ class NoticeService:
         """برای هر Target اطلاعیه، شناسه کاربرانی که باید Push دریافت کنند را برمی‌گرداند."""
         user_ids: set[int] = set()
 
-        # برای هر نوع Target، کاربران مربوط جمع می‌شوند (اجتماع مجموعه‌ها)
+        # Target ها بر اساس نوع گروه‌بندی می‌شوند تا برای هر نوع فقط یک کوئری IN (...) اجرا شود
+        ids_by_type: dict[NoticeTargetType, set[int]] = {}
+        has_all = False
         for target in notice.targets:
-            # همه کاربران فعال
             if target.target_type == NoticeTargetType.all:
-                result = await self.db.execute(select(User.id).where(User.is_active.is_(True)))
-                user_ids.update(row[0] for row in result.all())
+                has_all = True
+            else:
+                ids_by_type.setdefault(target.target_type, set()).add(target.target_id)
 
-            # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن سایت
-            elif target.target_type == NoticeTargetType.site:
-                result = await self.db.execute(
-                    select(User.id)
-                    .join(Employee, Employee.id == User.employee_id)
-                    .where(
-                        Employee.site_id == target.target_id,
-                        Employee.is_active.is_(True),
-                        Employee.is_enabled.is_(True),
-                    )
+        # همه کاربران فعال
+        if has_all:
+            result = await self.db.execute(select(User.id).where(User.is_active.is_(True)))
+            user_ids.update(row[0] for row in result.all())
+
+        # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن سایت‌ها
+        site_ids = ids_by_type.get(NoticeTargetType.site)
+        if site_ids:
+            result = await self.db.execute(
+                select(User.id)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(
+                    Employee.site_id.in_(site_ids),
+                    Employee.is_active.is_(True),
+                    Employee.is_enabled.is_(True),
                 )
-                user_ids.update(row[0] for row in result.all())
+            )
+            user_ids.update(row[0] for row in result.all())
 
-            # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن واحد
-            elif target.target_type == NoticeTargetType.department:
-                result = await self.db.execute(
-                    select(User.id)
-                    .join(Employee, Employee.id == User.employee_id)
-                    .where(
-                        Employee.department_id == target.target_id,
-                        Employee.is_active.is_(True),
-                        Employee.is_enabled.is_(True),
-                    )
+        # کاربرانِ پرسنل فعال و فعال‌شده‌ی آن واحدها
+        department_ids = ids_by_type.get(NoticeTargetType.department)
+        if department_ids:
+            result = await self.db.execute(
+                select(User.id)
+                .join(Employee, Employee.id == User.employee_id)
+                .where(
+                    Employee.department_id.in_(department_ids),
+                    Employee.is_active.is_(True),
+                    Employee.is_enabled.is_(True),
                 )
-                user_ids.update(row[0] for row in result.all())
+            )
+            user_ids.update(row[0] for row in result.all())
 
-            elif target.target_type == NoticeTargetType.employee:
-                result = await self.db.execute(select(User.id).where(User.employee_id == target.target_id))
-                user_ids.update(row[0] for row in result.all())
+        employee_ids = ids_by_type.get(NoticeTargetType.employee)
+        if employee_ids:
+            result = await self.db.execute(select(User.id).where(User.employee_id.in_(employee_ids)))
+            user_ids.update(row[0] for row in result.all())
 
-            # Target های تاریخی نوع role: دارندگان آن نقش
-            elif target.target_type == NoticeTargetType.role:
-                result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == target.target_id))
-                user_ids.update(row[0] for row in result.all())
+        # Target های تاریخی نوع role: دارندگان آن نقش‌ها
+        role_ids = ids_by_type.get(NoticeTargetType.role)
+        if role_ids:
+            result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id.in_(role_ids)))
+            user_ids.update(row[0] for row in result.all())
 
         return user_ids
 
@@ -522,22 +535,28 @@ class NoticeService:
         sites_result = await self.db.execute(select(Site).where(Site.is_active.is_(True)))
         all_sites = list(sites_result.scalars().all())
 
+        # به‌جای یک کوئری مجوز برای هر سایت/واحد، مجموعه‌ی سایت‌های مجاز هر Permission
+        # یک‌بار گرفته می‌شود (None = همه‌ی سایت‌ها) و بقیه با عضویت در مجموعه تعیین می‌شود
+        site_perm_sites = await get_sites_with_permission(self.db, user, "notices.target.site")
+        dept_perm_sites = await get_sites_with_permission(self.db, user, "notices.target.department")
+        employee_perm_sites = await get_sites_with_permission(self.db, user, "notices.target.employee")
+
         # سایت‌های فعالی که کاربر مجوز notices.target.site برایشان دارد
-        allowed_site_ids = set()
-        for site in all_sites:
-            if await self._has_permission(user, "notices.target.site", site_id=site.id):
-                allowed_site_ids.add(site.id)
+        allowed_site_ids = {
+            site.id for site in all_sites if site_perm_sites is None or site.id in site_perm_sites
+        }
 
         dept_result = await self.db.execute(select(Department))
         all_departments = list(dept_result.scalars().all())
 
         # واحدهایی که کاربر سرپرستشان است یا برای سایتشان مجوز notices.target.department دارد
-        allowed_department_ids = set()
-        for dept in all_departments:
-            if dept.supervisor_user_id == user.id or await self._has_permission(
-                user, "notices.target.department", site_id=dept.site_id
-            ):
-                allowed_department_ids.add(dept.id)
+        allowed_department_ids = {
+            dept.id
+            for dept in all_departments
+            if dept.supervisor_user_id == user.id
+            or dept_perm_sites is None
+            or dept.site_id in dept_perm_sites
+        }
 
         # ---------- دامنه هدف‌گیری «پرسنل خاص» ----------
         # اگر کاربر مجوز سراسری/Site-scoped notices.target.employee داشته باشد،
@@ -550,10 +569,9 @@ class NoticeService:
         )
         # اگر مجوز کلی نبود، بررسی مجوز سایت‌محور برای هرکدام از سایت‌ها
         if not has_broad_employee_permission:
-            for site in all_sites:
-                if await self._has_permission(user, "notices.target.employee", site_id=site.id):
-                    has_broad_employee_permission = True
-                    break
+            has_broad_employee_permission = employee_perm_sites is None or any(
+                site.id in employee_perm_sites for site in all_sites
+            )
 
         supervised_department_ids = sorted(
             {dept.id for dept in all_departments if dept.supervisor_user_id == user.id}
@@ -1017,19 +1035,29 @@ class NoticeService:
         targets = targets_result.all()
 
         # کافی است یکی از Target ها به یکی از سایت‌ها برسد
+        department_ids: set[int] = set()
+        employee_ids: set[int] = set()
         for target_type, target_id in targets:
             if target_type == NoticeTargetType.all:
                 return True
             if target_type == NoticeTargetType.site and target_id in site_ids:
                 return True
             if target_type == NoticeTargetType.department:
-                dept = await self.db.get(Department, target_id)
-                if dept is not None and dept.site_id in site_ids:
-                    return True
-            if target_type == NoticeTargetType.employee:
-                employee = await self.db.get(Employee, target_id)
-                if employee is not None and employee.site_id in site_ids:
-                    return True
+                department_ids.add(target_id)
+            elif target_type == NoticeTargetType.employee:
+                employee_ids.add(target_id)
+
+        # واحدها/پرسنل هدف با یک کوئری IN برای هر نوع (به‌جای db.get برای هر Target)
+        if department_ids:
+            dept_result = await self.db.execute(
+                select(Department.site_id).where(Department.id.in_(department_ids))
+            )
+            if any(row[0] in site_ids for row in dept_result.all()):
+                return True
+        if employee_ids:
+            employee_result = await self.db.execute(select(Employee.site_id).where(Employee.id.in_(employee_ids)))
+            if any(row[0] in site_ids for row in employee_result.all()):
+                return True
         return False
 
     async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
@@ -1097,7 +1125,8 @@ class NoticeService:
         if not unread_user_ids:
             return 0
 
-        await PushService(self.db).notify_users(
+        # ارسال در پس‌زمینه با Session جدا؛ پاسخ HTTP منتظر Push نمی‌ماند و تعداد گیرندگان فوراً برمی‌گردد
+        schedule_push(
             unread_user_ids,
             url="/notices",
             priority=notice.priority.value,

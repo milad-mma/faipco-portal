@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -63,9 +64,9 @@ class AttendanceCardNoticeService:
         site_ids: سایت‌هایی که فرستنده مجوز ارسال فیش کارکرد برایشان دارد (None = همه).
         برای هر کد پرسنلی منطبق، NoticeTarget و AttendanceCardReceipt ثبت و commit می‌شود.
         """
-        # Parse فایل؛ خطای Parse به لایه‌ی API منتقل می‌شود
+        # Parse فایل (openpyxl همگام است؛ در Thread جدا)؛ خطای Parse به لایه‌ی API منتقل می‌شود
         try:
-            items = parse_attendance_cards_xlsx(file_bytes)
+            items = await asyncio.to_thread(parse_attendance_cards_xlsx, file_bytes)
         except PayrollParseError:
             raise
 

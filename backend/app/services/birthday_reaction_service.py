@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.persian_date import get_current_jalali_date
@@ -20,6 +20,7 @@ from app.core.site_access import get_accessible_site_ids
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
 from app.models.employee import Department, Employee
 from app.models.user import User
+from app.services.push_background import schedule_push
 from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,8 @@ class BirthdayReactionService:
             target_user = result.scalar_one_or_none()
             if target_user is None:
                 return  # پرسنل حساب کاربری ندارد
-            await PushService(self.db).notify_users(
+            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
+            schedule_push(
                 {target_user.id},
                 url="/my-dashboard",
                 priority="normal",

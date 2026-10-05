@@ -125,6 +125,7 @@ class MobileAppRelease(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # deferred: فایل APK با select(MobileAppRelease) بارگذاری نمی‌شود؛ برای دانلود باید undefer(MobileAppRelease.data) شود
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

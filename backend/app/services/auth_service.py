@@ -282,7 +282,17 @@ class AuthService:
         base.can_manage_roles = user.is_superuser or "roles.manage" in permission_codes
         base.can_manage_ip_allowlist = user.is_superuser or "system.ip_allowlist" in permission_codes
         base.can_manage_login_security = user.is_superuser or "system.login_security" in permission_codes
-        from app.services.mobile_app_service import is_feature_enabled
+        from app.services.mobile_app_service import FEATURE_KEY as MOBILE_FEATURE_KEY, is_feature_enabled
+        from app.services.family_service import SETTINGS_KEY as FAMILY_SETTINGS_KEY
+
+        # دو ردیف SystemSetting (کلید قابلیت اپ اندروید + تنظیمات مشخصات خانوادگی) با یک کوئری IN
+        # در Identity Map بارگذاری می‌شوند تا db.get های بعدی (داخل is_feature_enabled و
+        # FamilyService.get_settings) بدون کوئری جداگانه پاسخ بگیرند؛ خودِ منطق تفسیر همان‌جا می‌ماند
+        from app.models.system_setting import SystemSetting
+
+        await self.db.execute(
+            select(SystemSetting).where(SystemSetting.key.in_([MOBILE_FEATURE_KEY, FAMILY_SETTINGS_KEY]))
+        )
 
         base.mobile_app_enabled = await is_feature_enabled(self.db)
         base.can_manage_mobile_devices = base.mobile_app_enabled and (
@@ -314,14 +324,34 @@ class AuthService:
             base.family_disabled = False
         base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
         base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
+
+        # کوئری: پرسنل متصل همراه با نام سایت، نام واحد، نگاشت تردد و وضعیت ماژول مرخصی سایت
+        # photo_thumbnail ستون deferred است؛ فقط «وجود عکس» به‌صورت عبارت SQL خوانده می‌شود، نه بایت‌ها
+        # (همین‌جا اجرا می‌شود تا site_id پرسنل برای وضعیت ماژول بیمه هم از همین ردیف خوانده شود، بدون db.get جدا)
+        row = None
+        if user.employee_id is not None:
+            result = await self.db.execute(
+                select(
+                    Employee,
+                    Site.name,
+                    Department.name,
+                    AttendanceMapping.id,
+                    LeaveRequestMapping.is_disabled,
+                    Employee.photo_thumbnail.isnot(None),
+                )
+                .join(Site, Site.id == Employee.site_id)
+                .outerjoin(Department, Department.id == Employee.department_id)
+                .outerjoin(AttendanceMapping, AttendanceMapping.site_id == Site.id)
+                .outerjoin(LeaveRequestMapping, LeaveRequestMapping.site_id == Site.id)
+                .where(Employee.id == user.employee_id)
+            )
+            row = result.first()
+
         # ماژول بیمه تکمیلی به‌ازای سایتِ پرسنل فعال/غیرفعال است (Migration 100)؛ کاربر بدون پرسنل → غیرفعال
         try:
             from app.services.insurance_service import InsuranceService
 
-            employee_site_id = None
-            if user.employee_id is not None:
-                emp = await self.db.get(Employee, user.employee_id)
-                employee_site_id = emp.site_id if emp else None
+            employee_site_id = row[0].site_id if row is not None else None
             base.insurance_disabled = not await InsuranceService(self.db).is_site_enabled(employee_site_id)
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.insurance_disabled = False
@@ -340,23 +370,10 @@ class AuthService:
         # (حساب پرسنل تا اولین ورود ساخته نمی‌شود، پس با migration قابل تنظیم نیست)
         if user.employee_id is not None and not user.has_custom_password:
             base.must_change_password = True
-        if user.employee_id is None:
-            return base
-
-        # کوئری: پرسنل متصل همراه با نام سایت، نام واحد، نگاشت تردد و وضعیت ماژول مرخصی سایت
-        result = await self.db.execute(
-            select(Employee, Site.name, Department.name, AttendanceMapping.id, LeaveRequestMapping.is_disabled)
-            .join(Site, Site.id == Employee.site_id)
-            .outerjoin(Department, Department.id == Employee.department_id)
-            .outerjoin(AttendanceMapping, AttendanceMapping.site_id == Site.id)
-            .outerjoin(LeaveRequestMapping, LeaveRequestMapping.site_id == Site.id)
-            .where(Employee.id == user.employee_id)
-        )
-        row = result.first()
         if row is None:
-            return base
+            return base  # کاربر بدون پرسنل (یا پرسنل پیدا نشد): فقط فیلدهای پایه و فلگ‌ها
 
-        employee, site_name, department_name, attendance_mapping_id, leave_module_disabled = row
+        employee, site_name, department_name, attendance_mapping_id, leave_module_disabled, has_photo = row
         base.employee_id = employee.id
         base.first_name = employee.first_name
         base.last_name = employee.last_name
@@ -377,7 +394,7 @@ class AuthService:
         # برای کاربران بدون Employee مقدار دارد
         base.email = employee.email or user.email
         base.mobile = employee.mobile
-        base.has_photo = bool(employee.photo_thumbnail)
+        base.has_photo = bool(has_photo)
         base.hide_birthday_in_dashboard = employee.hide_birthday_in_dashboard
         # قابلیت سطح سایت (نه Permission؛ برای همه‌ی پرسنل): فقط اگر سایت پرسنل AttendanceMapping
         # (نگاشت جدول/ستون تردد دستگاهی) داشته باشد True است؛ وگرنه کارت‌های داشبورد «به‌زودی» نشان می‌دهند

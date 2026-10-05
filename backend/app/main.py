@@ -4,19 +4,19 @@
 شمارش استفاده و endpoint سلامت.
 اجرا: uvicorn app.main:app --reload
 """
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core import kara_pool
 from app.core.request_context import current_client_app, current_user_agent
 
 from app.core.config import get_settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.router import api_router
-from app.services.usage_stats_service import record_usage
+from app.services.usage_stats_service import flush_usage, record_usage
 
 settings = get_settings()
 
@@ -44,11 +44,16 @@ async def sync_index_html_branding() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """چرخه عمر برنامه: در شروع برندینگ را همگام و Scheduler را استارت می‌کند، در پایان Scheduler را متوقف می‌کند."""
+    """
+    چرخه عمر برنامه: در شروع برندینگ را همگام و Scheduler را استارت می‌کند؛ در پایان Scheduler را
+    متوقف و شمارنده‌ی در حافظه‌ی «میزان استفاده» را (تا شمارش دقیقه‌ی آخر گم نشود) به دیتابیس می‌نویسد.
+    """
     await sync_index_html_branding()
     await start_scheduler()
     yield
     stop_scheduler()
+    await flush_usage()
+    kara_pool.close_all()  # اتصال‌های بی‌کار کاراوب
 
 
 # شیء اصلی برنامه FastAPI
@@ -76,14 +81,23 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)  # همه endpointهای v1 زیر /api/v1
 
-# نگه‌داشتن ارجاع تسک‌های پس‌زمینه تا قبل از اتمام Garbage Collect نشوند
-# (تسک در پایان کار با done_callback از Set حذف می‌شود).
-_background_tasks: set[asyncio.Task] = set()
-
-
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
-    """User-Agent و هدر X-Client-App درخواست را برای لایه‌ی سرویس (ContextVar) در دسترس می‌گذارد."""
+    """
+    یک Middleware برای هر دو کار سبکِ هر درخواست:
+
+    - User-Agent و هدر X-Client-App درخواست را برای لایه‌ی سرویس (ContextVar) در دسترس می‌گذارد.
+    - برای نمودار «میزان استفاده از پرتال» در پنل Admin — یک شمارنده ساعتی (نه لاگ
+      تک‌تک درخواست‌ها). فقط درخواست‌های واقعاً احرازهویت‌شده (هدر Authorization دارند)
+      به مسیرهای API شمارش می‌شوند؛ نه health-check خودِ Nginx/Monitoring، نه فایل‌های
+      استاتیک. شمارش فقط یک افزایش در حافظه‌ی Worker است (بدون Session/کوئری) و با Job
+      دوره‌ای Scheduler و در shutdown به دیتابیس flush می‌شود، پس هیچ تأخیری به پاسخ
+      کاربر اضافه نمی‌کند.
+    """
+    # فقط درخواست‌های API دارای هدر Authorization شمارش می‌شوند
+    if request.url.path.startswith(settings.API_V1_PREFIX) and "authorization" in request.headers:
+        record_usage()
+
     ua_token = current_user_agent.set(request.headers.get("user-agent", ""))
     app_token = current_client_app.set(request.headers.get("x-client-app", ""))
     try:
@@ -91,28 +105,6 @@ async def request_context_middleware(request: Request, call_next):
     finally:
         current_user_agent.reset(ua_token)
         current_client_app.reset(app_token)
-
-
-@app.middleware("http")
-async def track_usage_middleware(request: Request, call_next):
-    """
-    برای نمودار «میزان استفاده از پرتال» در پنل Admin — یک شمارنده ساعتی
-    (نه لاگ تک‌تک درخواست‌ها). فقط برای درخواست‌های واقعاً احرازهویت‌شده
-    (هدر Authorization دارند) به مسیرهای API شمارش می‌شود؛ نه health-check
-    خودِ Nginx/Monitoring، نه فایل‌های استاتیک.
-
-    با asyncio.create_task (نه await مستقیم) اجرا می‌شود — یعنی ثبت این آمار
-    هیچ تأخیری به پاسخ واقعی کاربر اضافه نمی‌کند؛ حتی اگر خودِ ثبت کند یا
-    شکست بخورد (که در خودِ record_usage با try/except پوشانده شده)، تأثیری
-    روی درخواست اصلی ندارد.
-    """
-    # فقط درخواست‌های API دارای هدر Authorization شمارش می‌شوند
-    if request.url.path.startswith(settings.API_V1_PREFIX) and "authorization" in request.headers:
-        task = asyncio.create_task(record_usage())
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
-
-    return await call_next(request)
 
 
 @app.get("/api/health", tags=["health"])

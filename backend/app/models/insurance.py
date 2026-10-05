@@ -93,7 +93,8 @@ class InsuranceDocument(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # deferred: محتوای فایل با select/selectinload بارگذاری نمی‌شود؛ برای خواندن باید undefer(InsuranceDocument.data) شود
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     member: Mapped[InsuranceMember] = relationship(back_populates="document")

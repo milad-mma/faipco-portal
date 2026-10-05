@@ -89,12 +89,15 @@ class GpsAttendanceService:
         longitude: float,
         accuracy_meters: float | None,
         site_id: int | None,
+        geofence: GeofenceCheckResult | None = None,
     ) -> GpsActivityLog:
         """
-        یک لاگ GPS با نتیجه‌ی بررسی محدوده ذخیره و commit می‌کند و رکورد تازه‌شده را برمی‌گرداند.
-        محدوده فقط ثبت می‌شود و جلوی ذخیره را نمی‌گیرد.
+        یک لاگ GPS با نتیجه‌ی بررسی محدوده ذخیره و commit می‌کند و رکورد ذخیره‌شده را برمی‌گرداند.
+        محدوده فقط ثبت می‌شود و جلوی ذخیره را نمی‌گیرد. اگر geofence از قبل محاسبه شده باشد
+        (مثل clock_in_out) همان استفاده می‌شود تا کوئری سایت‌ها دوباره اجرا نشود.
         """
-        geofence = await check_geofence(self.db, site_id, latitude, longitude)
+        if geofence is None:
+            geofence = await check_geofence(self.db, site_id, latitude, longitude)
         log = GpsActivityLog(
             employee_id=employee_id,
             log_type=log_type,
@@ -108,8 +111,8 @@ class GpsAttendanceService:
             created_at=datetime.now(timezone.utc),
         )
         self.db.add(log)
+        # expire_on_commit=False است و همه‌ی ستون‌ها (id از RETURNING در flush) سمت Python پر می‌شوند؛ refresh لازم نیست
         await self.db.commit()
-        await self.db.refresh(log)
         return log
 
     async def clock_in_out(
@@ -162,6 +165,7 @@ class GpsAttendanceService:
             longitude=longitude,
             accuracy_meters=accuracy_meters,
             site_id=site_id,
+            geofence=geofence,  # نتیجه‌ی بررسی بالا دوباره محاسبه نمی‌شود
         )
 
     async def create_manual_log(
@@ -190,8 +194,7 @@ class GpsAttendanceService:
             created_at=created_at,
         )
         self.db.add(log)
-        await self.db.commit()
-        await self.db.refresh(log)
+        await self.db.commit()  # expire_on_commit=False؛ مقدار ستون‌ها بدون refresh در دسترس است
         return log
 
     async def update_log(
@@ -217,8 +220,7 @@ class GpsAttendanceService:
         if site_id is not None:
             log.matched_site_id = site_id
         log.is_manual = True
-        await self.db.commit()
-        await self.db.refresh(log)
+        await self.db.commit()  # expire_on_commit=False؛ ستون server-side تغییرپذیری وجود ندارد، refresh لازم نیست
         return log
 
     async def delete_log(self, log_id: int) -> bool:

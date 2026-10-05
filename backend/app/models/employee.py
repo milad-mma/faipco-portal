@@ -71,7 +71,9 @@ class Employee(Base, TimestampMixin):
 
     # تصویر بندانگشتی پرسنل (از جدول EmployeeExtendedInfo، ستون ThumbnailImg، معمولاً GIF)
     # برای نمایش آواتار کوچک؛ تصویر اصلی با کیفیت بالا همگام‌سازی نمی‌شود.
-    photo_thumbnail: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # deferred: با select(Employee) بارگذاری نمی‌شود؛ هر جا خوانده می‌شود باید صریحاً
+    # undefer(Employee.photo_thumbnail) یا select(Employee.photo_thumbnail) شود (در async، lazy-load خطا می‌دهد).
+    photo_thumbnail: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
     department_id: Mapped[int | None] = mapped_column(

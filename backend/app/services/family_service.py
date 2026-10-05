@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
 from app.core import family_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name, sniff_content_type
@@ -367,11 +367,21 @@ class FamilyService:
         return self._doc_out(doc, settings, today_jalali())
 
     async def get_document_for_download(
-        self, document_id: int, employee_id: int | None, allowed_site_ids: set[int] | None = frozenset()
+        self,
+        document_id: int,
+        employee_id: int | None,
+        allowed_site_ids: set[int] | None = frozenset(),
+        with_data: bool = True,
     ) -> FamilyDocument | None:
+        """
+        with_data=True (پیش‌فرض): ستون deferred «data» هم بارگذاری می‌شود (برای دانلود). برای کارهایی که
+        فقط فراداده لازم دارند (مثل حذف) False بدهید تا فایل حجیم بی‌دلیل خوانده نشود.
+        """
+        stmt = select(FamilyDocument, FamilyProfile.employee_id, Employee.site_id)
+        if with_data:
+            stmt = stmt.options(undefer(FamilyDocument.data))
         result = await self.db.execute(
-            select(FamilyDocument, FamilyProfile.employee_id, Employee.site_id)
-            .join(FamilyProfile, FamilyProfile.id == FamilyDocument.profile_id)
+            stmt.join(FamilyProfile, FamilyProfile.id == FamilyDocument.profile_id)
             .join(Employee, Employee.id == FamilyProfile.employee_id)
             .where(FamilyDocument.id == document_id)
         )
@@ -391,7 +401,7 @@ class FamilyService:
         ok, reason = self.can_edit(profile, settings)
         if not ok:
             raise FamilyForbiddenError(reason)
-        doc = await self.get_document_for_download(document_id, employee.id)
+        doc = await self.get_document_for_download(document_id, employee.id, with_data=False)
         if doc is None:
             return False
         if doc.linked:
@@ -810,11 +820,15 @@ class FamilyService:
 
         if mode not in ("prior", "total"):
             raise FamilyError("نوع ورود نامعتبر است.")
-        try:
+        def _read_rows() -> list:
+            """خواندن همگام Excel با openpyxl (در Thread جدا تا حلقه‌ی async معطل نشود)."""
             wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            return list(wb.active.iter_rows(values_only=True))
+
+        try:
+            rows = await asyncio.to_thread(_read_rows)
         except Exception as e:  # noqa: BLE001
             raise FamilyError("فایل Excel قابل خواندن نیست (فقط xlsx).") from e
-        rows = list(wb.active.iter_rows(values_only=True))
         if not rows:
             raise FamilyError("فایل خالی است.")
         header = [normalize_search_text(str(c or "")) for c in rows[0]]
@@ -881,68 +895,74 @@ class FamilyService:
             genders = dict(gres.all())
 
         yes_no = {True: "بله", False: "خیر", None: "—"}
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "خلاصه"
-        ws.sheet_view.rightToLeft = True
-        ws.append([f"تاریخ مبنا: {rules.format_jalali(as_of)} — شمول بر اساس آخرین نسخه‌ی تأییدشده و تنظیمات فعلی"])
-        ws.append([
-            "کد پرسنلی", "نام", "نام خانوادگی", "سایت", "واحد", "وضعیت پرونده", "وضعیت تاهل", "سرپرست خانوار",
-            "تعداد پسر", "تعداد دختر", "سابقه بیمه (روز)", "منبع سابقه بیمه", "مشمول حق تاهل", "علت", "فرزندان واجد شرایط حق اولاد",
-            "تاریخ اثر", "تغییرات تأییدنشده", "هشدارها",
-        ])  # fmt: skip
-        members_rows = []
-        for item in data["items"]:
-            p = profiles.get(item["employee_id"])
-            approved = p.approved_data if p else None
-            # همان سابقه‌ی بیمه‌ی فهرست (خودکار از تاریخ استخدام + سابقه‌ی قبلی، یا اصلاح منابع انسانی)
-            ev = (
-                rules.evaluate(approved, genders.get(item["employee_id"]), item["insurance_days"], settings, as_of)
-                if approved
-                else None
-            )
-            src = approved or {}
+
+        def _build() -> bytes:
+            """ساخت Workbook — کاملاً همگام (openpyxl + rules.evaluate)؛ همه‌ی داده‌ها قبلاً با await واکشی شده‌اند."""
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "خلاصه"
+            ws.sheet_view.rightToLeft = True
+            ws.append([f"تاریخ مبنا: {rules.format_jalali(as_of)} — شمول بر اساس آخرین نسخه‌ی تأییدشده و تنظیمات فعلی"])
             ws.append([
-                item["personnel_code"], item["first_name"], item["last_name"], item["site_name"] or "",
-                item["department_name"] or "", rules.PROFILE_STATUSES.get(item["status"], "ثبت نشده"),
-                rules.MARITAL_STATUSES.get(src.get("marital_status"), "—"), yes_no[src.get("is_head_of_household")],
-                sum(1 for m in src.get("members", []) if m["member_type"] == "son"),
-                sum(1 for m in src.get("members", []) if m["member_type"] == "daughter"),
-                item["insurance_days"] if item["insurance_days"] is not None else "", item["insurance_source"] or "",
-                yes_no[ev["marriage"]["eligible"]] if ev else "—", ev["marriage"]["reason"] if ev else "",
-                ev["child"]["eligible_count"] if ev else "", item["effective_date"] or "",
-                "بله" if item["has_pending_changes"] else "", "؛ ".join(item["warnings"]),
+                "کد پرسنلی", "نام", "نام خانوادگی", "سایت", "واحد", "وضعیت پرونده", "وضعیت تاهل", "سرپرست خانوار",
+                "تعداد پسر", "تعداد دختر", "سابقه بیمه (روز)", "منبع سابقه بیمه", "مشمول حق تاهل", "علت", "فرزندان واجد شرایط حق اولاد",
+                "تاریخ اثر", "تغییرات تأییدنشده", "هشدارها",
             ])  # fmt: skip
-            if approved:
-                kid_by_index = {k["member_index"]: k for k in ev["child"]["children"]} if ev else {}
-                for idx, m in enumerate(approved.get("members", [])):
-                    k = kid_by_index.get(idx)
-                    members_rows.append([
-                        item["personnel_code"], f"{item['first_name']} {item['last_name']}",
-                        rules.MEMBER_TYPES.get(m["member_type"], m["member_type"]), m["first_name"], m["last_name"],
-                        m.get("national_id") or "", m.get("birth_date") or "", k["age"] if k and k["age"] is not None else "",
-                        rules.RELATIONS.get(m.get("relation"), ""), yes_no[m.get("is_disabled")],
-                        yes_no[m.get("is_student")] if m["member_type"] != "spouse" else "",
-                        m.get("student_cert_expiry") or "",
-                        yes_no[m.get("is_married")] if m["member_type"] == "daughter" else "",
-                        yes_no[m.get("is_employed")],
-                        (yes_no[k["eligible"]] if k else "") if m["member_type"] != "spouse" else "",
-                        (k["reason"] if k else "") if m["member_type"] != "spouse" else "",
-                    ])  # fmt: skip
-        ws2 = wb.create_sheet("اعضا")
-        ws2.sheet_view.rightToLeft = True
-        ws2.append([
-            "کد پرسنلی", "پرسنل", "نسبت", "نام", "نام خانوادگی", "کد ملی", "تاریخ تولد", "سن", "نوع فرزند",
-            "از کار افتاده", "در حال تحصیل", "اعتبار گواهی تحصیل", "ازدواج کرده", "شاغل", "واجد شرایط حق اولاد", "علت",
-        ])  # fmt: skip
-        for r in members_rows:
-            ws2.append(r)
-        for sheet in (ws, ws2):
-            for col in sheet.columns:
-                sheet.column_dimensions[col[0].column_letter].width = 16
-        out = io.BytesIO()
-        wb.save(out)
-        return out.getvalue()
+            members_rows = []
+            for item in data["items"]:
+                p = profiles.get(item["employee_id"])
+                approved = p.approved_data if p else None
+                # همان سابقه‌ی بیمه‌ی فهرست (خودکار از تاریخ استخدام + سابقه‌ی قبلی، یا اصلاح منابع انسانی)
+                ev = (
+                    rules.evaluate(approved, genders.get(item["employee_id"]), item["insurance_days"], settings, as_of)
+                    if approved
+                    else None
+                )
+                src = approved or {}
+                ws.append([
+                    item["personnel_code"], item["first_name"], item["last_name"], item["site_name"] or "",
+                    item["department_name"] or "", rules.PROFILE_STATUSES.get(item["status"], "ثبت نشده"),
+                    rules.MARITAL_STATUSES.get(src.get("marital_status"), "—"), yes_no[src.get("is_head_of_household")],
+                    sum(1 for m in src.get("members", []) if m["member_type"] == "son"),
+                    sum(1 for m in src.get("members", []) if m["member_type"] == "daughter"),
+                    item["insurance_days"] if item["insurance_days"] is not None else "", item["insurance_source"] or "",
+                    yes_no[ev["marriage"]["eligible"]] if ev else "—", ev["marriage"]["reason"] if ev else "",
+                    ev["child"]["eligible_count"] if ev else "", item["effective_date"] or "",
+                    "بله" if item["has_pending_changes"] else "", "؛ ".join(item["warnings"]),
+                ])  # fmt: skip
+                if approved:
+                    kid_by_index = {k["member_index"]: k for k in ev["child"]["children"]} if ev else {}
+                    for idx, m in enumerate(approved.get("members", [])):
+                        k = kid_by_index.get(idx)
+                        members_rows.append([
+                            item["personnel_code"], f"{item['first_name']} {item['last_name']}",
+                            rules.MEMBER_TYPES.get(m["member_type"], m["member_type"]), m["first_name"], m["last_name"],
+                            m.get("national_id") or "", m.get("birth_date") or "", k["age"] if k and k["age"] is not None else "",
+                            rules.RELATIONS.get(m.get("relation"), ""), yes_no[m.get("is_disabled")],
+                            yes_no[m.get("is_student")] if m["member_type"] != "spouse" else "",
+                            m.get("student_cert_expiry") or "",
+                            yes_no[m.get("is_married")] if m["member_type"] == "daughter" else "",
+                            yes_no[m.get("is_employed")],
+                            (yes_no[k["eligible"]] if k else "") if m["member_type"] != "spouse" else "",
+                            (k["reason"] if k else "") if m["member_type"] != "spouse" else "",
+                        ])  # fmt: skip
+            ws2 = wb.create_sheet("اعضا")
+            ws2.sheet_view.rightToLeft = True
+            ws2.append([
+                "کد پرسنلی", "پرسنل", "نسبت", "نام", "نام خانوادگی", "کد ملی", "تاریخ تولد", "سن", "نوع فرزند",
+                "از کار افتاده", "در حال تحصیل", "اعتبار گواهی تحصیل", "ازدواج کرده", "شاغل", "واجد شرایط حق اولاد", "علت",
+            ])  # fmt: skip
+            for r in members_rows:
+                ws2.append(r)
+            for sheet in (ws, ws2):
+                for col in sheet.columns:
+                    sheet.column_dimensions[col[0].column_letter].width = 16
+            out = io.BytesIO()
+            wb.save(out)
+            return out.getvalue()
+
+        # ساخت Excel در Thread جدا تا حلقه‌ی async معطل نشود
+        return await asyncio.to_thread(_build)
 
     async def cleanup_unlinked_documents(self) -> int:
         """مدارکی که بیش از ۷۲ ساعت پیش آپلود شده و هرگز در فرم ثبت نشده‌اند پاک می‌شوند."""

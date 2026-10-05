@@ -1,16 +1,21 @@
 """
 ثبت شمارنده استفاده از پرتال — برای نمودار «میزان استفاده» در پنل Admin.
 
-عمداً یک Session کاملاً جدا از Session اصلی درخواست استفاده می‌کند (نه
-همان db که به Endpoint تزریق شده) — تا هیچ ارتباطی با Commit/Rollback
-تراکنش اصلیِ خودِ درخواست نداشته باشد؛ و در try/except کامل پیچیده شده تا
-اگر همین ثبت به هر دلیلی (مثلاً یک لحظه فشار روی دیتابیس) شکست بخورد،
-هرگز خودِ درخواست واقعی کاربر را خراب نکند.
+شمارش در حافظه‌ی هر Worker انجام می‌شود (record_usage فقط یک dict را زیاد
+می‌کند، بدون هیچ Session یا کوئری در مسیر درخواست) و به‌صورت دوره‌ای
+(Job هر ۶۰ ثانیه در Scheduler و یک‌بار در shutdown) با flush_usage به دیتابیس
+UPSERT می‌شود. معنای داده‌ی ذخیره‌شده همان قبلی است: یک ردیف (date, hour)
+به وقت تهران با مجموع تعداد درخواست‌های احرازهویت‌شده‌ی آن ساعت؛ چون
+UPSERT تجمعی است (request_count + n)، شمارش چند Worker با هم جمع می‌شود.
+
+flush با Session کاملاً جدا اجرا می‌شود و در try/except کامل پیچیده شده تا
+اگر به هر دلیلی (مثلاً یک لحظه فشار روی دیتابیس) شکست بخورد، شمارش
+برنگشته دوباره به حافظه برگردد و در تیک بعدی تلاش شود.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -24,28 +29,52 @@ logger = logging.getLogger("faipco.usage")
 
 _TEHRAN_TZ = ZoneInfo("Asia/Tehran")  # تاریخ و ساعت شمارنده‌ها به وقت ایران است
 
+# شمارنده‌ی در حافظه‌ی این Worker: {(تاریخ، ساعت): تعداد درخواست‌های هنوز flush نشده}
+_pending_counts: dict[tuple[date, int], int] = {}
 
-async def record_usage() -> None:
+
+def record_usage() -> None:
     """
-    شمارنده درخواست‌های ساعت جاری (به وقت تهران) را یکی زیاد می‌کند.
-    با Session جدا اجرا می‌شود و هر خطا فقط لاگ می‌شود.
+    شمارنده‌ی در حافظه‌ی درخواست‌های ساعت جاری (به وقت تهران) را یکی زیاد می‌کند.
+    همزمان (sync) و بدون دسترسی به دیتابیس — روی مسیر درخواست هیچ تأخیری ندارد؛
+    مقدار با flush_usage دوره‌ای به دیتابیس می‌رسد.
     """
+    now = datetime.now(_TEHRAN_TZ)
+    key = (now.date(), now.hour)
+    _pending_counts[key] = _pending_counts.get(key, 0) + 1
+
+
+async def flush_usage() -> None:
+    """
+    شمارنده‌های جمع‌شده در حافظه را با UPSERT تجمعی به دیتابیس می‌نویسد
+    (ساخت ردیف (date, hour) با مقدار n یا افزودن n به ردیف موجود) و حافظه را خالی می‌کند.
+    در صورت خطا، شمارش‌ها به حافظه برمی‌گردند تا در تیک بعدی دوباره تلاش شود؛ خطا فقط لاگ می‌شود.
+    """
+    global _pending_counts
+    if not _pending_counts:
+        return
+    # dict فعلی برداشته و یک dict تازه جایش گذاشته می‌شود تا درخواست‌های حین flush گم نشوند
+    counts, _pending_counts = _pending_counts, {}
     try:
-        now = datetime.now(_TEHRAN_TZ)
         async with AsyncSessionLocal() as db:
-            # UPSERT: ساخت ردیف (date, hour) با مقدار ۱ یا افزایش شمارنده ردیف موجود
-            stmt = (
-                pg_insert(UsageStat)
-                .values(date=now.date(), hour=now.hour, request_count=1)
-                .on_conflict_do_update(
-                    index_elements=["date", "hour"],
-                    set_={"request_count": UsageStat.request_count + 1},
+            for (bucket_date, bucket_hour), count in counts.items():
+                stmt = (
+                    pg_insert(UsageStat)
+                    .values(date=bucket_date, hour=bucket_hour, request_count=count)
+                    .on_conflict_do_update(
+                        index_elements=["date", "hour"],
+                        set_={"request_count": UsageStat.request_count + count},
+                    )
                 )
-            )
-            await db.execute(stmt)
+                await db.execute(stmt)
             await db.commit()
-    except Exception:  # noqa: BLE001 - هرگز نباید درخواست واقعی کاربر را خراب کند
-        logger.exception("ثبت آمار استفاده ناموفق بود (بی‌اثر روی خودِ درخواست)")
+    except BaseException as e:  # noqa: BLE001 - CancelledError (لغو Job هنگام خاموش شدن) هم نباید شمارش را گم کند
+        # برگرداندن شمارش‌های نوشته‌نشده به حافظه (جمع با آنچه در این فاصله اضافه شده)
+        for key, count in counts.items():
+            _pending_counts[key] = _pending_counts.get(key, 0) + count
+        if not isinstance(e, Exception):
+            raise  # لغو/خروج باید ادامه پیدا کند؛ flush پایانی lifespan شمارش‌ها را می‌نویسد
+        logger.exception("ثبت آمار استفاده ناموفق بود — شمارش‌ها برای تلاش بعدی در حافظه نگه داشته شد")
 
 
 async def get_usage_stats(db: AsyncSession, days: int = 90) -> list[UsageStat]:
