@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
+import os
 import shutil
 import subprocess
 import sys
@@ -28,8 +28,64 @@ import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from app.core.config import get_settings
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def _split_db_url(libpq_url: str) -> tuple[str, str, str]:
+    """
+    ورودی: URL دیتابیس به فرمت libpq. خروجی: (URL بدون رمز، نام کاربر، رمز).
+    رمز از URL جدا می‌شود تا در اسکریپت/لاگ/فهرست فرآیندها (ps) دیده نشود و از راه PGPASSFILE داده شود.
+    """
+    parts = urlsplit(libpq_url)
+    user = unquote(parts.username or "")
+    password = unquote(parts.password or "")
+    netloc = ""
+    if user:
+        netloc += user + "@"
+    if parts.hostname:
+        netloc += parts.hostname
+    if parts.port:
+        netloc += f":{parts.port}"
+    safe_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    return safe_url, user, password
+
+
+def _private_dir() -> Path:
+    """
+    پوشه‌ی خصوصی (0700) برای فایل‌های بازیابی: اسکریپت لاگ، پوشه‌ی استخراج بکاپ و فایل رمز.
+    اول کنار خود برنامه (backend/.restore — متعلق به کاربر سرویس)، و اگر آنجا قابل‌نوشتن نبود،
+    یک پوشه‌ی مخصوص همین کاربر در پوشه‌ی موقت سیستم (نه مستقیماً در /tmp عمومی).
+    """
+    candidates = [_BACKEND_DIR / ".restore", Path(tempfile.gettempdir()) / f"faipco-restore-{os.getuid()}"]
+    for path in candidates:
+        try:
+            path.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(path, 0o700)
+            if os.access(path, os.W_OK):
+                return path
+        except OSError:
+            continue
+    raise BackupError("هیچ پوشه‌ی قابل‌نوشتنی برای فایل‌های بازیابی پیدا نشد.")
+
+
+def _write_private_file(path: Path, content: str, mode: int) -> None:
+    """
+    فایل را با مجوز داده‌شده می‌نویسد؛ فایل/لینک قبلی حذف می‌شود و با O_EXCL|O_NOFOLLOW ساخته می‌شود
+    تا اگر کاربر دیگری در پوشه‌ی مشترک (مثل /tmp) لینک یا فایلی با همین نام گذاشته باشد، دنبال نشود.
+    """
+    try:
+        if path.is_symlink() or path.exists():
+            path.unlink()
+    except OSError as e:
+        raise BackupError(f"حذف فایل قبلی «{path}» ممکن نیست: {e}") from e
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:  # fdopen مالکیت fd را می‌گیرد و می‌بندد
+        f.write(content)
+    os.chmod(path, mode)  # umask روی mode اثر نگذارد
 
 
 class BackupError(Exception):
@@ -83,8 +139,10 @@ async def create_backup_archive() -> bytes:
     خروجی: بایت‌های فایل ZIP شامل database.dump و manifest.json. خطا: BackupError.
     """
     settings = get_settings()
-    libpq_url = _to_libpq_url(settings.DATABASE_URL)
+    # رمز از URL جدا می‌شود و با متغیر محیطی PGPASSWORD داده می‌شود تا در فهرست فرآیندها (ps) دیده نشود
+    libpq_url, _db_user, db_password = _split_db_url(_to_libpq_url(settings.DATABASE_URL))
     pg_dump_path = _find_pg_binary("pg_dump")
+    env = {**os.environ, "PGPASSWORD": db_password} if db_password else None
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         dump_path = Path(tmp_dir) / "database.dump"
@@ -100,6 +158,7 @@ async def create_backup_archive() -> bytes:
                 libpq_url,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
             _, stderr = await proc.communicate()
             if proc.returncode != 0:
@@ -132,8 +191,40 @@ async def create_backup_archive() -> bytes:
 # مقداری که کاربر باید عیناً تایپ کند تا Restore واقعاً اجرا شود — یک لایه
 # محافظتی اضافه، مستقل از تأیید سمت فرانت‌اند (چون فرانت‌اند قابل‌دورزدن است).
 RESTORE_CONFIRMATION_PHRASE = "RESTORE"
-_RESTORE_STAGING_DIR = Path("/tmp/faipco-restore-staging")  # محل استخراج فایل بکاپ قبل از بازیابی
-_RESTORE_LOG_PATH = Path("/tmp/faipco-restore.log")  # خروجی اسکریپت بازیابی
+# مسیر اسکریپت بازیابی: ثابت است چون دقیقاً همین مسیر در قانون sudoers (install.sh) مجاز شده
+_RESTORE_SCRIPT_PATH = Path("/tmp/faipco-restore-run.sh")
+# سقف حجم فایل‌های استخراج‌شده از Zip بکاپ (۱۰ گیگابایت) — جلوگیری از Zip-bomb و پرشدن دیسک
+_MAX_RESTORE_EXTRACT_BYTES = 10 * 1024 ** 3
+
+
+def _check_zip_members(zf: zipfile.ZipFile) -> None:
+    """
+    اعضای Zip بکاپ را قبل از استخراج بررسی می‌کند: مجموع حجم اعلام‌شده (file_size) زیر سقف باشد و
+    هیچ عضوی مسیر مطلق یا «..» نداشته باشد (مسیر غیرعادی = فایل دست‌کاری‌شده). خطا: BackupError.
+    """
+    total = 0
+    for info in zf.infolist():
+        name = info.filename.replace("\\", "/")
+        if name.startswith("/") or ".." in name.split("/"):
+            raise BackupError(f"فایل بکاپ نامعتبر است (مسیر غیرمجاز «{info.filename}» داخل Zip).")
+        total += info.file_size
+        if total > _MAX_RESTORE_EXTRACT_BYTES:
+            raise BackupError("فایل بکاپ بیش‌ازحد بزرگ است (حجم استخراج‌شده بیشتر از ۱۰ گیگابایت).")
+
+
+def _restore_staging_dir() -> Path:
+    """محل استخراج فایل بکاپ قبل از بازیابی (داخل پوشه‌ی خصوصی 0700)."""
+    return _private_dir() / "staging"
+
+
+def _restore_log_path() -> Path:
+    """خروجی اسکریپت بازیابی (داخل پوشه‌ی خصوصی 0700، فایل 0600)."""
+    return _private_dir() / "restore.log"
+
+
+def _restore_pgpass_path() -> Path:
+    """فایل رمز دیتابیس برای ابزارهای psql/pg_restore (PGPASSFILE، 0600) — بعد از بازیابی توسط اسکریپت حذف می‌شود."""
+    return _private_dir() / "pgpass"
 
 
 def get_restore_status() -> dict:
@@ -146,8 +237,12 @@ def get_restore_status() -> dict:
     خروجی: dict با کلیدهای log، is_running، is_finished، is_failed.
     """
     log_content = ""
-    if _RESTORE_LOG_PATH.exists():
-        log_content = _RESTORE_LOG_PATH.read_text(encoding="utf-8", errors="ignore")
+    try:
+        log_path = _restore_log_path()
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8", errors="ignore")
+    except (BackupError, OSError):
+        pass
 
     # پرسیدن از systemd درباره فعال بودن Unit موقت faipco-restore
     is_unit_active = False
@@ -182,18 +277,25 @@ def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Pat
     if confirm_phrase != RESTORE_CONFIRMATION_PHRASE:
         raise BackupError(f'برای تأیید، باید دقیقاً عبارت «{RESTORE_CONFIRMATION_PHRASE}» ارسال شود.')
 
-    # پوشه موقت از نو ساخته می‌شود تا فایل‌های تلاش قبلی باقی نمانند
-    if _RESTORE_STAGING_DIR.exists():
-        shutil.rmtree(_RESTORE_STAGING_DIR)
-    _RESTORE_STAGING_DIR.mkdir(parents=True)
+    # پوشه موقت (داخل پوشه‌ی خصوصی 0700) از نو ساخته می‌شود تا فایل‌های تلاش قبلی باقی نمانند
+    staging_dir = _restore_staging_dir()
+    if staging_dir.is_symlink():
+        staging_dir.unlink()
+    elif staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, mode=0o700)
 
     try:
         with zipfile.ZipFile(BytesIO(archive_bytes)) as zf:
-            zf.extractall(_RESTORE_STAGING_DIR)
+            _check_zip_members(zf)  # سقف حجم و مسیرهای غیرمجاز، قبل از هر استخراج
+            # فقط دو فایل شناخته‌شده استخراج می‌شوند (نه مسیرهای دلخواه داخل Zip)
+            for member in ("database.dump", "manifest.json"):
+                if member in zf.namelist():
+                    zf.extract(member, staging_dir)
     except zipfile.BadZipFile as e:
         raise BackupError("فایل بکاپ معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
 
-    dump_path = _RESTORE_STAGING_DIR / "database.dump"
+    dump_path = staging_dir / "database.dump"
     if not dump_path.exists():
         raise BackupError(
             "فایل بکاپ نامعتبر است — database.dump داخلش نیست "
@@ -225,26 +327,35 @@ def schedule_restore(dump_path: Path) -> None:
     خطا: BackupError اگر راه‌اندازی systemd-run ناموفق باشد (دیتابیس دست‌نخورده می‌ماند).
     """
     settings = get_settings()
-    libpq_url = _to_libpq_url(settings.DATABASE_URL)
+    # رمز از URL جدا می‌شود: در اسکریپت و لاگ و فهرست فرآیندها (ps) دیده نمی‌شود و از راه PGPASSFILE (0600) داده می‌شود.
+    # نام کاربر دیتابیس برای مالک‌کردن دوباره Schema public بعد از بازسازی کاملش لازم است (پایین‌تر).
+    libpq_url, db_user, db_password = _split_db_url(_to_libpq_url(settings.DATABASE_URL))
     pg_restore_path = _find_pg_binary("pg_restore")
     psql_path = _find_pg_binary("psql")
     alembic_path = _find_alembic_binary()
-    backend_dir = Path(__file__).resolve().parent.parent.parent
+    backend_dir = _BACKEND_DIR
 
-    # نام کاربر دیتابیس را از همان DATABASE_URL استخراج می‌کنیم — برای
-    # مالک‌کردن دوباره Schema public بعد از بازسازی کاملش (پایین‌تر توضیح داده شده)
-    db_user_match = re.search(r"://([^:]+):", libpq_url)
-    db_user = db_user_match.group(1) if db_user_match else ""
+    staging_dir = _restore_staging_dir()
+    log_path = _restore_log_path()
+    pgpass_path = _restore_pgpass_path()
 
-    # فایل لاگ این‌جا پاک نمی‌شود: این تابع با www-data اجرا می‌شود و لاگ قبلی
-    # مالک root دارد (در /tmp با Sticky Bit قابل حذف نیست). خودِ اسکریپت که با
-    # root اجرا می‌شود لاگ را با ">" از نو می‌سازد.
+    # فایل رمز به فرمت pgpass (hostname:port:database:username:password؛ «\» و «:» با «\» escape می‌شوند)
+    def _pgpass_escape(value: str) -> str:
+        return value.replace("\\", "\\\\").replace(":", "\\:")
+
+    _write_private_file(pgpass_path, f"*:*:*:{_pgpass_escape(db_user)}:{_pgpass_escape(db_password)}\n", 0o600)
+
+    # لاگ از قبل با 0600 و مالکیت کاربر سرویس ساخته می‌شود؛ اسکریپت (root) با ">" آن را truncate می‌کند
+    # و مالکیت/مجوز حفظ می‌شود، پس get_restore_status (کاربر سرویس) می‌تواند آن را بخواند.
+    _write_private_file(log_path, "", 0o600)
 
     # این اسکریپت از داخل systemd-run --collect به‌عنوان root اجرا می‌شود
     # (نگاه کنید پایین‌تر) — پس دیگر نیازی به sudo داخل خودِ اسکریپت نیست.
     script = f"""
 set +e
-exec > {_RESTORE_LOG_PATH} 2>&1
+umask 077
+exec > {log_path} 2>&1
+export PGPASSFILE={pgpass_path}
 echo "=== Restore started: $(date -Iseconds) ==="
 
 echo "Stopping faipco-backend..."
@@ -260,7 +371,7 @@ reset_exit=$?
 if [ "$reset_exit" -eq 0 ]; then
   echo "Running pg_restore..."
   {pg_restore_path} --single-transaction --no-owner --no-privileges \
-    --dbname={libpq_url} {dump_path}
+    --dbname="{libpq_url}" {dump_path}
   restore_exit=$?
 else
   echo "Schema reset failed with exit code $reset_exit — aborting before touching pg_restore."
@@ -292,7 +403,8 @@ fi
 echo "Starting faipco-backend..."
 systemctl start faipco-backend
 
-rm -rf {_RESTORE_STAGING_DIR}
+rm -rf {staging_dir}
+rm -f {pgpass_path}
 
 if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
   echo "=== Restore finished successfully: $(date -Iseconds) ==="
@@ -304,10 +416,13 @@ else
   echo "=== Restore FAILED and ROLLBACK FAILED: $(date -Iseconds) — the previous data is kept in schema {_PRERESTORE_SCHEMA}. Do not run another restore; ask for manual recovery. ==="
 fi
 """
-    # ذخیره اسکریپت روی دیسک با دسترسی فقط برای مالک
-    script_path = Path("/tmp/faipco-restore-run.sh")
-    script_path.write_text(script, encoding="utf-8")
-    script_path.chmod(0o700)
+    # ذخیره اسکریپت روی دیسک با دسترسی فقط برای مالک. مسیر در /tmp ثابت است (قانون sudoers)، پس
+    # فایل/لینک قبلی حذف و با O_EXCL|O_NOFOLLOW ساخته می‌شود تا لینک جعلی کاربر دیگری دنبال نشود.
+    script_path = _RESTORE_SCRIPT_PATH
+    try:
+        _write_private_file(script_path, script, 0o700)
+    except OSError as e:
+        raise BackupError(f"نوشتن اسکریپت بازیابی در «{script_path}» ممکن نیست: {e}") from e
 
     # اجرا در یک Scope کاملاً مستقل از systemd، به‌عنوان root — نه زیرمجموعه
     # Cgroup سرویس فعلی. sudo -n دقیقاً همان دستور ثابتی است که در sudoers

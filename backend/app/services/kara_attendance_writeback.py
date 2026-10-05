@@ -46,7 +46,7 @@ from zoneinfo import ZoneInfo
 
 import jdatetime
 
-from app.services.kara_schema import KaraNames
+from app.services.kara_schema import KaraNames, quote_mssql
 
 _KARA_TZ = ZoneInfo("Asia/Tehran")  # کاراوب همه‌ی تاریخ/ساعت‌ها را به وقت ایران می‌نویسد
 
@@ -215,7 +215,7 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
         # شیفت گروهی کاراوب: گروه فرد در آن تاریخ -> شیفت آن روز گروه (ستون روز ماه)
         if n.has("grp_shift") and n.has("emp_grps"):
             j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
-            day_col = f"[{n.raw('grp_shift', 'day_prefix')}{j_day}]"
+            day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
             G = lambda role: n.c("grp_shift", role)  # noqa: E731
             E = lambda role: n.c("emp_grps", role)  # noqa: E731
             cur.execute(
@@ -721,7 +721,7 @@ def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: in
     if not cur_col:
         raise RuntimeError("ستون تأییدکننده فعلی در نگاشت درخواست تنظیم نشده است")
     # به‌روزرسانی تأییدکننده‌ی فعلی و (در صورت نگاشت) واحد جاری
-    sets, params = [f"[{cur_col}] = %(to)s"], {"to": to_emp_no, "r": request["RequestId"]}
+    sets, params = [f"{quote_mssql(cur_col)} = %(to)s"], {"to": to_emp_no, "r": request["RequestId"]}
     from_sec = get_sec_no(cur, n, from_emp_no)
     to_sec = get_sec_no(cur, n, to_emp_no)
     if n.has("wf_requests", "cur_section") and to_sec is not None:
@@ -743,7 +743,7 @@ def move_up_to(cur, n: KaraNames, request: dict, from_emp_no: int, to_emp_no: in
     }
     columns = [(n.c("wf_moveup", role), value) for role, value in values.items() if n.has("wf_moveup", role)]
     cur.execute(
-        f"INSERT INTO [{n.leave.wf_moveup_table_name}] ({', '.join(c for c, _ in columns)}) "
+        f"INSERT INTO {quote_mssql(n.leave.wf_moveup_table_name)} ({', '.join(c for c, _ in columns)}) "
         f"VALUES ({', '.join(f'%(v{i})s' for i in range(len(columns)))})",
         {f"v{i}": value for i, (_, value) in enumerate(columns)},
     )
@@ -754,7 +754,7 @@ def request_ids_moved_by(cur, n: KaraNames, from_emp_no: int) -> list[int]:
     if not n.can_write_moveup:
         return []
     cur.execute(
-        f"SELECT DISTINCT {n.c('wf_moveup', 'request_id')} AS RequestId FROM [{n.leave.wf_moveup_table_name}] "
+        f"SELECT DISTINCT {n.c('wf_moveup', 'request_id')} AS RequestId FROM {quote_mssql(n.leave.wf_moveup_table_name)} "
         f"WHERE {n.c('wf_moveup', 'from_manager')} = %(e)s",
         {"e": from_emp_no},
     )

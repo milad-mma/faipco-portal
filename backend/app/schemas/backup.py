@@ -9,9 +9,34 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.backup_settings import BackupRetentionMode, BackupScheduleType
+
+# کاراکترهایی که در نام سرور/Share/مسیر SMB مجاز نیستند — این مقادیر در فرمان smbclient (-c "cd ...; put ...")
+# قرار می‌گیرند و با این کاراکترها می‌شد از گیومه خارج شد یا فرمان دیگری تزریق کرد
+_SMB_FORBIDDEN_CHARS = ('"', ";", "\n", "\r", "`", "$(")
+_SMB_FIELD_TITLES = {
+    "smb_host": "نام سرور SMB",
+    "smb_share": "نام Share",
+    "smb_path": "مسیر SMB",
+    "host": "نام سرور SMB",
+    "share": "نام Share",
+    "path": "مسیر SMB",
+}
+
+
+def _clean_smb_field(value, field_name: str):
+    """مقدار SMB را trim می‌کند و اگر شامل کاراکتر ممنوع باشد ValueError با نام فارسی فیلد می‌دهد؛ خالی → None."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if any(ch in text for ch in _SMB_FORBIDDEN_CHARS):
+        title = _SMB_FIELD_TITLES.get(field_name, field_name)
+        raise ValueError(f"«{title}» نمی‌تواند شامل گیومه («\"»)، نقطه‌ویرگول، بک‌تیک، «$(» یا خط جدید باشد")
+    return text
 
 
 class BackupSettingsIn(BaseModel):
@@ -46,6 +71,12 @@ class BackupSettingsIn(BaseModel):
 
     email_enabled: bool = False
     email_recipients: str | None = Field(default=None, description="هر آدرس ایمیل در یک خط")
+
+    @field_validator("smb_host", "smb_share", "smb_path", mode="before")
+    @classmethod
+    def _validate_smb_fields(cls, value, info):
+        """نام سرور/Share/مسیر SMB را از کاراکترهای ممنوع (گیومه، ;، بک‌تیک، خط جدید) پاک نگه می‌دارد."""
+        return _clean_smb_field(value, info.field_name)
 
     @model_validator(mode="after")
     def _validate_schedule_fields(self) -> "BackupSettingsIn":

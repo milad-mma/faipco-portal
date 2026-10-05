@@ -647,15 +647,57 @@ class NoticeService:
 
     # ---------- ثبت مشاهده ----------
 
-    async def mark_as_read(self, notice_id: int, user_id: int) -> None:
-        """اولین بار که کاربر یک اطلاعیه را باز می‌کند، ثبت می‌شود (اجرای دوباره بی‌اثر است)."""
+    async def _reaches_user(self, notice_id: int, user: User) -> bool:
+        """
+        آیا این اطلاعیه (منتشرشده، حذف‌نشده، در بازه‌ی اعتبار) به این کاربر می‌رسد؟ — همان قواعد مخاطب list_for_user
+        (همه / سایت / واحد / خودِ پرسنل / نقش + «بعد از پیوستن پرسنل»)، ولی در یک کوئری با Subquery به‌جای خواندن
+        جداگانه‌ی Employee و نقش‌ها. اطلاعیه‌ی ناموجود هم False.
+        """
+        now = datetime.now(timezone.utc)
+        role_ids = select(UserRole.role_id).where(UserRole.user_id == user.id)
+        target_conditions = [
+            NoticeTarget.target_type == NoticeTargetType.all,
+            and_(NoticeTarget.target_type == NoticeTargetType.role, NoticeTarget.target_id.in_(role_ids)),
+        ]
+        filters = [
+            Notice.id == notice_id,
+            Notice.status == NoticeStatus.published,
+            Notice.is_deleted.is_(False),
+            or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
+            or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
+        ]
+        if user.employee_id is not None:
+            employee_rows = select(Employee).where(Employee.id == user.employee_id)
+            site_id = employee_rows.with_only_columns(Employee.site_id).scalar_subquery()
+            department_id = employee_rows.with_only_columns(Employee.department_id).scalar_subquery()
+            joined_at = employee_rows.with_only_columns(Employee.created_at).scalar_subquery()
+            target_conditions += [
+                and_(NoticeTarget.target_type == NoticeTargetType.site, NoticeTarget.target_id == site_id),
+                and_(NoticeTarget.target_type == NoticeTargetType.department, NoticeTarget.target_id == department_id),
+                and_(NoticeTarget.target_type == NoticeTargetType.employee, NoticeTarget.target_id == user.employee_id),
+            ]
+            # پرسنل اطلاعیه‌های پیش از ورودش را نمی‌بیند (بدون رکورد Employee: بدون این محدودیت، مثل list_for_user)
+            filters.append(or_(joined_at.is_(None), func.coalesce(Notice.publish_at, Notice.created_at) >= joined_at))
+        filters.append(Notice.id.in_(select(NoticeTarget.notice_id).where(or_(*target_conditions))))
+        result = await self.db.execute(select(Notice.id).where(*filters).limit(1))
+        return result.scalar_one_or_none() is not None
+
+    async def mark_as_read(self, notice_id: int, user: User) -> bool:
+        """
+        اولین بار که کاربر یک اطلاعیه را باز می‌کند، ثبت می‌شود (اجرای دوباره بی‌اثر است).
+        فقط برای اطلاعیه‌ای که واقعاً به این کاربر می‌رسد؛ خروجی False = اطلاعیه ناموجود یا خارج از مخاطبان او
+        (Endpoint آن را 404 می‌کند تا وجود اطلاعیه‌های دیگران هم لو نرود).
+        """
+        if not await self._reaches_user(notice_id, user):
+            return False
         result = await self.db.execute(
-            select(NoticeRead).where(NoticeRead.notice_id == notice_id, NoticeRead.user_id == user_id)
+            select(NoticeRead).where(NoticeRead.notice_id == notice_id, NoticeRead.user_id == user.id)
         )
         if result.scalar_one_or_none() is not None:
-            return  # از قبل ثبت شده — زمان اولین مشاهده حفظ می‌شود
-        self.db.add(NoticeRead(notice_id=notice_id, user_id=user_id))
+            return True  # از قبل ثبت شده — زمان اولین مشاهده حفظ می‌شود
+        self.db.add(NoticeRead(notice_id=notice_id, user_id=user.id))
         await self.db.commit()
+        return True
 
     async def archive_notice(self, notice_id: int, user_id: int) -> None:
         """آرشیو کردن یک اطلاعیه توسط همین کاربر (اجرای دوباره بی‌اثر است) — کاملاً

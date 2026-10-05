@@ -28,9 +28,21 @@ from app.schemas.user_management import (
     SiteTransferOut,
     UserRoleOut,
 )
-from app.services.user_management_service import UserManagementService
+from app.services.user_management_service import RolePrivilegeError, UserManagementService
 
 router = APIRouter()
+
+
+def _forbid_self_assignment(current_user: User, target_user_id: int | None) -> None:
+    """
+    غیر-superuser نمی‌تواند به حساب خودش نقش بدهد (ارتقای سطح دسترسی خود) → 403.
+    target_user_id = None یعنی کاربر هدف هنوز حساب ندارد، پس قطعاً خودِ فراخوان نیست.
+    """
+    if target_user_id is not None and target_user_id == current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="نمی‌توانید به حساب خودتان نقش اختصاص دهید",
+        )
 
 
 def _role_to_detail_out(role: Role) -> RoleDetailOut:
@@ -144,10 +156,17 @@ async def assign_role(
     """
     یک نقش (در صورت نیاز برای چند سایت) به کاربر اختصاص می‌دهد و انتصاب‌های فعلی او را برمی‌گرداند.
     دسترسی: users.manage؛ غیر superuser فقط برای کاربران و سایت‌های تحت اختیار خود.
-    خطاها: 404 (کاربر یافت نشد)، 403 (خارج از سایت‌های مجاز)، 400 (داده‌ی نامعتبر).
+    خطاها: 404 (کاربر یافت نشد)، 403 (خارج از سایت‌های مجاز، انتصاب به خود، یا نقشی با مجوز فراتر از فراخوان)، 400 (داده‌ی نامعتبر).
     """
+    service = UserManagementService(db)
     # محدودیت چندسایتی (مشابه /employees/{id}/roles): کاربر هدف و سایت‌های درخواستی باید در اختیار فراخواننده باشند
     if not current_user.is_superuser:
+        _forbid_self_assignment(current_user, user_id)
+        # نقشی که مجوزی فراتر از مجوزهای خودِ فراخوان (برای همان سایت‌های انتصاب) دارد قابل اعطا نیست
+        try:
+            await service.assert_can_grant_role(current_user, payload.role_id, payload.site_ids)
+        except RolePrivilegeError as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         target_user = await UserRepository(db).get_by_id(user_id)
         if target_user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کاربر یافت نشد")
@@ -171,7 +190,7 @@ async def assign_role(
                 )
 
     try:
-        return await UserManagementService(db).assign_role(user_id, payload)
+        return await service.assign_role(user_id, payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -185,10 +204,33 @@ async def bulk_assign_role(
     """
     یک نقش را یک‌جا به فهرستی از پرسنل (employee_ids) یا همه‌ی پرسنل یک سایت/واحد اختصاص می‌دهد و آمار نتیجه را برمی‌گرداند.
     دسترسی: users.manage؛ غیر superuser فقط برای سایت/واحد/پرسنل تحت اختیار خود.
-    خطاها: 403 (خارج از سایت‌های مجاز)، 400 (داده‌ی نامعتبر).
+    خطاها: 403 (خارج از سایت‌های مجاز، انتصاب به خود، یا نقشی با مجوز فراتر از فراخوان)، 400 (داده‌ی نامعتبر).
     """
+    service = UserManagementService(db)
     # محدودیت چندسایتی: سایت، واحد و تک‌تک پرسنل هدف باید در سایت‌های تحت اختیار باشند
     if not current_user.is_superuser:
+        # سایت‌هایی که انتصاب روی آن‌ها ذخیره می‌شود (مثل bulk_assign_role سرویس): site_id فیلتر، وگرنه سایت
+        # واحد یا سایت خودِ هر پرسنل فهرست — فراخوان باید مجوزهای نقش را برای همه‌ی این سایت‌ها داشته باشد
+        if payload.site_id is not None:
+            target_site_ids: set[int] = {payload.site_id}
+        elif payload.department_id is not None:
+            department = await db.get(Department, payload.department_id)
+            target_site_ids = {department.site_id} if department is not None else set()
+        else:
+            result = await db.execute(
+                select(Employee.site_id).where(Employee.id.in_(payload.employee_ids or [])).distinct()
+            )
+            target_site_ids = {row[0] for row in result.all()}
+        # نقشی که مجوزی فراتر از مجوزهای خودِ فراخوان (برای همان سایت‌ها) دارد قابل اعطا نیست
+        try:
+            await service.assert_can_grant_role(current_user, payload.role_id, target_site_ids)
+        except RolePrivilegeError as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        # فراخوان نمی‌تواند خودش را در فهرست انتصاب گروهی بگذارد (فیلتر سایت/واحد: در سرویس کنار گذاشته می‌شود)
+        if payload.employee_ids and current_user.employee_id in payload.employee_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="نمی‌توانید به حساب خودتان نقش اختصاص دهید"
+            )
         accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
         if accessible_site_ids is not None:
             if payload.site_id is not None and payload.site_id not in accessible_site_ids:
@@ -215,11 +257,12 @@ async def bulk_assign_role(
                     )
 
     try:
-        result = await UserManagementService(db).bulk_assign_role(
+        result = await service.bulk_assign_role(
             role_id=payload.role_id,
             employee_ids=payload.employee_ids,
             site_id=payload.site_id,
             department_id=payload.department_id,
+            skip_employee_id=None if current_user.is_superuser else current_user.employee_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -286,11 +329,14 @@ async def create_role(
 ):
     """
     نقش جدید با مجوزهای داده‌شده می‌سازد و جزئیات آن را برمی‌گرداند (201).
-    دسترسی: مجوز users.manage سراسری (در غیر این صورت 403). خطا: 400 (نام رزرو superadmin یا نام تکراری).
+    دسترسی: مجوز users.manage سراسری (در غیر این صورت 403). غیر-superuser نمی‌تواند مجوز system.* یا مجوزی که
+    خودش ندارد را در نقش بگذارد (403). خطا: 400 (نام رزرو superadmin یا نام تکراری).
     """
     await _require_org_wide_users_manage(db, current_user)
     try:
-        role = await UserManagementService(db).create_role(payload)
+        role = await UserManagementService(db).create_role(payload, caller=current_user)
+    except RolePrivilegeError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return _role_to_detail_out(role)
@@ -305,11 +351,14 @@ async def update_role(
 ):
     """
     نام، توضیح و مجوزهای یک نقش را ویرایش می‌کند و جزئیات جدید را برمی‌گرداند.
-    دسترسی: مجوز users.manage سراسری (در غیر این صورت 403). خطاها: 400 (superadmin یا نام تکراری)، 404 (نقش یافت نشد).
+    دسترسی: مجوز users.manage سراسری (در غیر این صورت 403). غیر-superuser نمی‌تواند نقش سیستمی را تغییر دهد یا مجوز
+    system.* / مجوزی که خودش ندارد را در نقش بگذارد (403). خطاها: 400 (superadmin یا نام تکراری)، 404 (نقش یافت نشد).
     """
     await _require_org_wide_users_manage(db, current_user)
     try:
-        role = await UserManagementService(db).update_role(role_id, payload)
+        role = await UserManagementService(db).update_role(role_id, payload, caller=current_user)
+    except RolePrivilegeError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if role is None:

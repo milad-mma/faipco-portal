@@ -5,7 +5,9 @@
 - ساخت پاسخ /auth/me شامل اطلاعات پرسنلی و فلگ‌های مجوز منوها.
 """
 from datetime import datetime, timezone
+import hmac
 import logging
+import secrets
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    is_token_revoked_by_password_change,
     normalize_login_credential,
     validate_password_strength,
     verify_password,
@@ -34,6 +37,10 @@ from app.services.system_settings_service import SystemSettingsService
 from app.schemas.user import UserOut
 
 logger = logging.getLogger("faipco.auth")
+
+# هش bcrypt ساختگی (از یک رمز تصادفی در زمان بارگذاری ماژول) برای یکسان‌کردن زمان پاسخ: وقتی نام کاربری
+# وجود ندارد هم یک verify_password انجام می‌شود تا از تفاوت زمانی نتوان وجود حساب را تشخیص داد (M4).
+_DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
 
 
 class AuthError(Exception):
@@ -92,17 +99,24 @@ class AuthService:
         """
         ورود با یوزرنیم/رمز (کاربر مدیریتی یا پرسنل دارای رمز اختصاصی) را امتحان می‌کند.
         خروجی: User در صورت تطبیق (و ثبت last_login_at)، وگرنه None تا login() روش کد پرسنلی/کد ملی را امتحان کند.
-        خطا: AuthError اگر رمز درست ولی حساب غیرفعال باشد.
+        خطا: AuthError اگر رمز درست ولی حساب (یا پرسنل متصل به آن) غیرفعال باشد.
         """
         # نام کاربری با ارقام فارسی/عربی هم پیدا شود (کد پرسنلی با کیبورد فارسی)؛ رمز عبور دست نمی‌خورد
         normalized = normalize_search_text(username)
         user = await self.repo.get_by_username(normalized)
         if user is None and normalized != username:
             user = await self.repo.get_by_username(username)
-        if user is None or not verify_password(password, user.password_hash):
+        if user is None:
+            # نام کاربری ناموجود: bcrypt ساختگی تا زمان پاسخ با حالت «نام موجود/رمز اشتباه» یکسان باشد
+            verify_password(password, _DUMMY_HASH)
+            return None
+        if not verify_password(password, user.password_hash):
             return None
         if not user.is_active:
             raise AuthError("حساب کاربری غیرفعال است")
+        # پرسنل با رمز اختصاصی که در منبع (is_active) یا دستی (is_enabled) غیرفعال شده نباید وارد شود
+        # (مسیر کد پرسنلی + کد ملی همین فیلتر را در find_employee_for_login دارد)
+        await self._ensure_employee_active(user)
 
         user.last_login_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -190,13 +204,43 @@ class AuthService:
             raise AuthError("رفرش توکن نامعتبر یا منقضی‌شده است")
 
         user_id = payload.get("sub")
-        user = await self.repo.get_by_id(int(user_id)) if user_id else None
+        user, employee_active = (
+            await self.repo.get_by_id_with_employee_status(int(user_id)) if user_id else (None, None)
+        )
         if user is None or not user.is_active:
             raise AuthError("کاربر یافت نشد یا غیرفعال است")
+        # پرسنل غیرفعال‌شده (منبع یا Admin) نمی‌تواند نشستش را تمدید کند
+        if employee_active is False:
+            raise AuthError("حساب غیرفعال است")
+        # رفرش‌توکن صادرشده پیش از آخرین تغییر رمز/خروج باطل است
+        if is_token_revoked_by_password_change(payload, user.password_changed_at):
+            raise AuthError("نشست منقضی شده؛ دوباره وارد شوید")
 
         access_token = create_access_token(subject=str(user.id))
         new_refresh_token = create_refresh_token(subject=str(user.id))
         return access_token, new_refresh_token
+
+    async def _ensure_employee_active(self, user: User) -> None:
+        """
+        اگر کاربر به پرسنلی وصل است که is_active (منبع) یا is_enabled (Admin) آن False است، AuthError می‌دهد.
+        کاربر بدون پرسنل (مدیریتی) بررسی نمی‌شود.
+        """
+        if user.employee_id is None:
+            return
+        result = await self.db.execute(
+            select(Employee.is_active, Employee.is_enabled).where(Employee.id == user.employee_id)
+        )
+        row = result.first()
+        if row is not None and not (row[0] and row[1]):
+            raise AuthError("حساب غیرفعال است")
+
+    async def logout(self, user: User) -> None:
+        """
+        خروج کاربر: زمان ابطال نشست‌ها (password_changed_at) را «اکنون» می‌کند تا همه‌ی توکن‌های صادرشده‌ی
+        قبلی (در همه‌ی دستگاه‌ها) رد شوند. فرانت پس از آن توکن‌های محلی را پاک می‌کند.
+        """
+        self.repo.mark_password_changed(user)
+        await self.db.commit()
 
     async def verify_current_credential(self, user: User, current_password: str) -> None:
         """
@@ -213,15 +257,21 @@ class AuthService:
             if (
                 employee is None
                 or not employee.national_code
-                or normalize_login_credential(current_password) != normalize_login_credential(employee.national_code)
+                # مقایسه‌ی constant-time تا از زمان پاسخ نتوان ارقام کد ملی را حدس زد
+                or not hmac.compare_digest(
+                    normalize_login_credential(current_password).encode(),
+                    normalize_login_credential(employee.national_code).encode(),
+                )
             ):
                 raise AuthError("رمز عبور فعلی وارد شده اشتباه است")
 
-    async def change_password(self, user: User, current_password: str, new_password: str) -> None:
+    async def change_password(self, user: User, current_password: str, new_password: str) -> tuple[str, str]:
         """
         تغییر رمز توسط خودِ کاربر؛ ورودی: کاربر، رمز فعلی (برای پرسنل بدون رمز اختصاصی = کد ملی) و رمز جدید.
         رمز جدید باید قانون قدرت رمز را رعایت کند (وگرنه AuthError). پس از تغییر has_custom_password=True
         و must_change_password=False می‌شود و ورود با کد ملی دیگر ممکن نیست.
+        password_changed_at هم «اکنون» می‌شود، پس همه‌ی توکن‌های قبلی (این دستگاه و بقیه) باطل می‌شوند؛
+        خروجی: جفت توکن تازه (access, refresh) تا Endpoint بتواند آن را به کلاینت بدهد و نشست جاری قطع نشود.
         """
         await self.verify_current_credential(user, current_password)
         try:
@@ -232,7 +282,10 @@ class AuthService:
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True
         user.must_change_password = False
+        self.repo.mark_password_changed(user)
         await self.db.commit()
+        # توکن‌های تازه پس از commit صادر می‌شوند (iat >= password_changed_at)
+        return create_access_token(subject=str(user.id)), create_refresh_token(subject=str(user.id))
 
     async def get_me(self, user: User) -> UserOut:
         """

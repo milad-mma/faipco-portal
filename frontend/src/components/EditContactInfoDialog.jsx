@@ -35,20 +35,31 @@ const READONLY_FIELDS = [
  * ورودی: open و onClose. خروجی: Dialog با دو فیلد (موبایل اجباری) و پیام نتیجه.
  * اگر در نگاشت ستون‌های سایت کاربر، ستون ایمیل/موبایل مشخص شده باشد، Backend مقدار جدید را
  * در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌کند (Write-back)، نه فقط در دیتابیس پرتال.
+ * امنیت: ایمیل/موبایل مقصد بازیابی رمز است؛ وقتی کاربر یکی از آن‌ها را واقعاً تغییر می‌دهد، فیلد
+ * «رمز عبور فعلی» ظاهر می‌شود و سرور بدون آن تغییر را نمی‌پذیرد (400) (نشست دزدیده‌شده به‌تنهایی کافی نباشد).
+ * بدون تغییر، رمز خواسته نمی‌شود.
  */
 export default function EditContactInfoDialog({ open, onClose }) {
   const { user, refetchUser } = useAuth();
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const usesNationalCode = user && !user.has_custom_password; // بدون رمز اختصاصی: «رمز فعلی» همان کد ملی است
+  // مقایسه با مقدار ذخیره‌شده (موبایل فقط ارقام، ایمیل بدون حساسیت به حروف بزرگ/کوچک)
+  const mobileChanged = mobile.replace(/\D/g, "") !== (user?.mobile || "").replace(/\D/g, "");
+  const emailChanged = email.trim().toLowerCase() !== (user?.email || "").trim().toLowerCase();
+  const needsPassword = mobileChanged || emailChanged;
 
   // با باز شدن دیالوگ، فیلدها از اطلاعات فعلی کاربر پر و پیام‌ها پاک می‌شوند
   useEffect(() => {
     if (open) {
       setEmail(user?.email || "");
       setMobile(user?.mobile || "");
+      setCurrentPassword("");
       setError("");
       setSuccessMessage("");
     }
@@ -70,7 +81,12 @@ export default function EditContactInfoDialog({ open, onClose }) {
     setSuccessMessage("");
     setIsSubmitting(true);
     try {
-      await updateMyContactInfo({ email: email.trim(), mobile: mobile.trim() });
+      await updateMyContactInfo({
+        email: email.trim(),
+        mobile: mobile.trim(),
+        currentPassword: needsPassword ? currentPassword : undefined,
+      });
+      setCurrentPassword("");
       setSuccessMessage("اطلاعات با موفقیت ذخیره شد.");
       await refetchUser();
     } catch (err) {
@@ -103,6 +119,20 @@ export default function EditContactInfoDialog({ open, onClose }) {
             fullWidth
             disabled={isSubmitting}
           />
+          {needsPassword && (
+            // فقط وقتی موبایل/ایمیل واقعاً تغییر کرده نشان داده می‌شود؛ سرور بدون آن 400 می‌دهد
+            <TextField
+              label={usesNationalCode ? "کد ملی (برای تأیید تغییر)" : "رمز عبور فعلی (برای تأیید تغییر)"}
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              helperText="چون موبایل/ایمیل مقصد بازیابی رمز است، برای تغییر آن تأیید هویت لازم است."
+              required
+              fullWidth
+              disabled={isSubmitting}
+            />
+          )}
           {error && <Alert severity="error">{error}</Alert>}
           {successMessage && <Alert severity="success">{successMessage}</Alert>}
 
@@ -143,7 +173,11 @@ export default function EditContactInfoDialog({ open, onClose }) {
         <Button onClick={handleClose} disabled={isSubmitting}>
           بستن
         </Button>
-        <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting || !mobile.trim()}>
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={isSubmitting || !mobile.trim() || (needsPassword && !currentPassword)}
+        >
           {isSubmitting ? "در حال ذخیره..." : "ذخیره"}
         </Button>
       </DialogActions>

@@ -68,3 +68,38 @@ def test_android_user_agent():
     assert not is_android_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)")
     assert not is_android_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120")
     assert not is_android_user_agent(None)
+
+
+def _ev(**kw):
+    from datetime import datetime, timezone
+
+    base = dict(
+        id="e1", transition="enter", site_id=1, latitude=35.0, longitude=51.0, accuracy=20.0, is_mock=False,
+        occurred_at=int(datetime.now(timezone.utc).timestamp() * 1000),
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_geofence_event_rejection_rules():
+    svc = _svc()
+    from datetime import datetime, timedelta, timezone
+
+    site = SimpleNamespace(gps_radius_meters=200)
+    now = datetime.now(timezone.utc)
+    assert svc._event_rejection(_ev(), site, 150.0, now) is None
+    assert svc._event_rejection(_ev(), site, 219.0, now) is None  # شعاع ۲۰۰ + دقت ۲۰
+    assert svc._event_rejection(_ev(), site, 221.0, now) == "out_of_range"
+    assert svc._event_rejection(_ev(latitude=None), site, None, now) == "no_location"
+    assert svc._event_rejection(_ev(is_mock=True), site, 10.0, now) == "mock"
+    # خروج: بیرون حصار و حتی بدون مختصات پذیرفته می‌شود؛ از عمق داخل حصار رد می‌شود
+    assert svc._event_rejection(_ev(transition="exit"), site, 900.0, now) is None
+    assert svc._event_rejection(_ev(transition="exit", latitude=None), site, None, now) is None
+    assert svc._event_rejection(_ev(transition="exit"), site, 10.0, now) == "out_of_range"
+    # زمان: رویداد صف‌شده‌ی ۱۰ ساعته پذیرفته، ۳ روزه یا آینده رد
+    old = int((now - timedelta(hours=10)).timestamp() * 1000)
+    assert svc._event_rejection(_ev(occurred_at=old), site, 10.0, now) is None
+    too_old = int((now - timedelta(days=3)).timestamp() * 1000)
+    assert svc._event_rejection(_ev(occurred_at=too_old), site, 10.0, now) == "bad_time"
+    future = int((now + timedelta(minutes=10)).timestamp() * 1000)
+    assert svc._event_rejection(_ev(occurred_at=future), site, 10.0, now) == "bad_time"

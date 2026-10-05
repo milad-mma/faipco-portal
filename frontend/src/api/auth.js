@@ -31,23 +31,33 @@ export async function forgotPasswordRequest(identifier, channel = "sms", captcha
   return data;
 }
 
-// POST /auth/verify-reset-code؛ اعتبارسنجی کد/توکن بازیابی؛ خروجی: نتیجه‌ی بررسی
-export async function verifyResetCodeRequest(token) {
-  const { data } = await apiClient.post("/auth/verify-reset-code", { token });
+// POST /auth/verify-reset-code؛ اعتبارسنجی کد/توکن بازیابی. identifier (شناسه‌ی مرحله‌ی اول) برای کد
+// ۶ رقمی پیامکی الزامی است و کد به همان حساب مقید می‌شود؛ خروجی: نتیجه‌ی بررسی
+export async function verifyResetCodeRequest(token, identifier = null) {
+  const { data } = await apiClient.post("/auth/verify-reset-code", {
+    token,
+    ...(identifier ? { identifier } : {}),
+  });
   return data;
 }
 
-// POST /auth/reset-password؛ تنظیم رمز جدید با توکن بازیابی؛ خروجی: پاسخ سرور
-export async function resetPasswordRequest(token, newPassword) {
-  const { data } = await apiClient.post("/auth/reset-password", { token, new_password: newPassword });
+// POST /auth/reset-password؛ تنظیم رمز جدید با توکن بازیابی (identifier برای کد پیامکی الزامی)؛ خروجی: پاسخ سرور
+export async function resetPasswordRequest(token, newPassword, identifier = null) {
+  const { data } = await apiClient.post("/auth/reset-password", {
+    token,
+    new_password: newPassword,
+    ...(identifier ? { identifier } : {}),
+  });
   return data;
 }
 
-// PUT /auth/me/contact-info؛ فقط فیلدهای ارسال‌شده (ایمیل/موبایل) را به‌روز می‌کند؛ خروجی: اطلاعات به‌روزشده
-export async function updateMyContactInfo({ email, mobile }) {
+// PUT /auth/me/contact-info؛ فقط فیلدهای ارسال‌شده (ایمیل/موبایل) را به‌روز می‌کند؛ خروجی: اطلاعات به‌روزشده.
+// currentPassword فقط وقتی لازم است که موبایل یا ایمیل نسبت به مقدار ذخیره‌شده تغییر کند (سرور بدون آن 400 می‌دهد).
+export async function updateMyContactInfo({ email, mobile, currentPassword }) {
   const payload = {};
   if (email !== undefined) payload.email = email;
   if (mobile !== undefined) payload.mobile = mobile;
+  if (currentPassword) payload.current_password = currentPassword;
   const { data } = await apiClient.put("/auth/me/contact-info", payload);
   return data;
 }

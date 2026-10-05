@@ -73,12 +73,17 @@ _PUNCH_LABELS = {"in": "ورود", "out": "خروج"}  # برچسب فارسی �
 
 
 def _quote(db_type: DbType, name: str) -> str:
-    """نام جدول/ستون را با علامت Quote مخصوص همان نوع دیتابیس احاطه می‌کند (` برای MySQL، " برای PostgreSQL، [] برای SQL Server)."""
+    """
+    نام جدول/ستون را با علامت Quote مخصوص همان نوع دیتابیس احاطه می‌کند (` برای MySQL، " برای PostgreSQL، [] برای SQL Server).
+    علامت پایانی داخل نام دوبرابر می‌شود (] → ]]، ` → ``، " → "") تا نام نتواند از Quote خارج شود، و
+    «schema.table» (مثل dbo.Sections) به‌صورت جداگانه برای هر بخش Quote می‌شود ([dbo].[Sections]).
+    """
+    parts = name.split(".", 1) if "." in name else [name]
     if db_type == DbType.mysql:
-        return f"`{name}`"
+        return ".".join("`" + p.replace("`", "``") + "`" for p in parts)
     if db_type == DbType.postgresql:
-        return f'"{name}"'
-    return f"[{name}]"  # mssql
+        return ".".join('"' + p.replace('"', '""') + '"' for p in parts)
+    return ".".join("[" + p.replace("]", "]]") + "]" for p in parts)  # mssql
 
 
 def _open_raw_connection(conn: SiteConnection):

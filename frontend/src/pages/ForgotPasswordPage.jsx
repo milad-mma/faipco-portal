@@ -99,13 +99,14 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  // مرحله پیامک: کد تأیید را بررسی می‌کند و در صورت صحت به فرم رمز جدید می‌رود
+  // مرحله پیامک: کد تأیید را (همراه شناسه‌ی مرحله اول، چون کد به حساب مقید است) بررسی می‌کند
+  // و در صورت صحت به فرم رمز جدید می‌رود
   async function handleVerifyCodeSubmit(e) {
     e.preventDefault();
     setError("");
     setIsSubmitting(true);
     try {
-      await verifyResetCodeRequest(smsCode.trim());
+      await verifyResetCodeRequest(smsCode.trim(), identifier.trim());
       setStep("sms-new-password");
     } catch (err) {
       setError(err.response?.data?.detail || "بررسی کد تأیید با خطا مواجه شد.");
@@ -124,7 +125,7 @@ export default function ForgotPasswordPage() {
     }
     setIsSubmitting(true);
     try {
-      await resetPasswordRequest(smsCode.trim(), newPassword);
+      await resetPasswordRequest(smsCode.trim(), newPassword, identifier.trim());
       setStep("done");
       setRemainingSeconds(null);
     } catch (err) {

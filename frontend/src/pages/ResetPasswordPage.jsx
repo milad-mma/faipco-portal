@@ -19,6 +19,9 @@ export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get("token") || "";  // توکن بازنشانی از ?token=...
+  // شناسه‌ی ورود (اختیاری): توکن لینک ایمیل طولانی و حدس‌ناپذیر است و به‌تنهایی کافی است؛
+  // اگر در لینک باشد (?identifier=...)، سرور توکن را به همان حساب هم مقید می‌کند
+  const identifier = searchParams.get("identifier") || "";
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,7 +43,7 @@ export default function ResetPasswordPage() {
 
     setIsSubmitting(true);
     try {
-      await resetPasswordRequest(token, newPassword);
+      await resetPasswordRequest(token, newPassword, identifier || null);
       setSuccess(true);
     } catch (err) {
       setError(err.response?.data?.detail || "بازنشانی رمز عبور با خطا مواجه شد.");

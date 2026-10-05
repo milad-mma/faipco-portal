@@ -50,7 +50,15 @@ function resolvePendingQueue(error, token) {
 
 // --- در صورت دریافت 401، یک‌بار تلاش برای Refresh و تکرار درخواست ---
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // تغییر رمز همه‌ی توکن‌های قبلی کاربر را باطل می‌کند و سرور جفت توکن تازه برمی‌گرداند؛
+    // همین‌جا ذخیره می‌شود تا نشست جاری بدون ورود مجدد ادامه یابد
+    if (response.config?.url?.includes("/auth/me/password") && response.data?.access_token) {
+      localStorage.setItem("access_token", response.data.access_token);
+      if (response.data.refresh_token) localStorage.setItem("refresh_token", response.data.refresh_token);
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 

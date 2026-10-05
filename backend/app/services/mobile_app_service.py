@@ -65,7 +65,16 @@ STATUS_LABELS = {
     "disabled": "ثبت خودکار خاموش است",
     "unknown_site": "سایت نامعتبر",
     "no_employee": "بدون پرسنل",
+    "no_location": "بدون مختصات",
+    "out_of_range": "خارج از محدوده‌ی سایت",
+    "bad_time": "زمان رویداد نامعتبر",
 }
+# اعتبارسنجی رویداد Geofencing: دقت GPS بیش از این مقدار در محاسبه‌ی فاصله حساب نمی‌شود، رویداد قدیمی‌تر از
+# EVENT_MAX_AGE یا جلوتر از EVENT_MAX_FUTURE (ساعت گوشی) پذیرفته نمی‌شود — مانع جعل ورود/خروج با رویداد ساختگی
+EVENT_ACCURACY_CAP_METERS = 100.0
+# رویدادها در گوشی صف می‌شوند و با WorkManager (قطع شبکه، Doze) ممکن است ساعت‌ها بعد برسند؛ سقف ۴۸ ساعت
+EVENT_MAX_AGE = timedelta(hours=48)
+EVENT_MAX_FUTURE = timedelta(minutes=2)
 
 
 def _hash(value: str) -> str:
@@ -196,7 +205,9 @@ def _link_hash(link: str) -> str:
 async def claim_device_link(db: AsyncSession, user: User, link: str) -> bool:
     """
     اتصال خودکار: کد ساخته‌شده توسط اپ را به کاربر واردشده وصل می‌کند (بدون هیچ اقدام کاربر).
-    کد قبلاً مصرف‌شده دوباره وصل نمی‌شود (False). کد وصل‌شده ولی هنوز مصرف‌نشده به کاربر فعلی منتقل می‌شود.
+    کد قبلاً مصرف‌شده دوباره وصل نمی‌شود (False). کدی که قبلاً به حساب دیگری وصل شده هم هرگز به کاربر فعلی
+    منتقل نمی‌شود (False + لاگ) — وگرنه هرکس کد اتصال را می‌دانست می‌توانست گوشیِ دیگری را به حساب خودش بچسباند.
+    ارسال دوباره‌ی همان کاربر (مثلاً رفرش صفحه) فقط مهلت را تازه می‌کند (True).
     """
     now = _now()
     await db.execute(delete(DevicePairingCode).where(DevicePairingCode.expires_at < now - timedelta(days=1)))
@@ -210,8 +221,12 @@ async def claim_device_link(db: AsyncSession, user: User, link: str) -> bool:
         db.add(
             DevicePairingCode(code_hash=_link_hash(link), user_id=user.id, expires_at=now + timedelta(minutes=LINK_TTL_MINUTES))
         )
+    elif row.user_id != user.id:
+        # اولین ادعا برنده است؛ کد وصل‌شده به حساب دیگر دست‌نخورده می‌ماند
+        logger.warning("تلاش برای انتقال کد اتصال اپ از کاربر %s به کاربر %s رد شد", row.user_id, user.id)
+        await db.commit()
+        return False
     else:
-        row.user_id = user.id
         row.expires_at = now + timedelta(minutes=LINK_TTL_MINUTES)
     await db.commit()
     return True
@@ -402,6 +417,42 @@ def _event_time(ms: int, received: datetime) -> datetime:
     return at
 
 
+def _event_time_valid(ms: int, received: datetime) -> bool:
+    """
+    آیا زمان خام رویداد (ساعت گوشی) در بازه‌ی پذیرفتنی است؟ قدیمی‌تر از EVENT_MAX_AGE یا جلوتر از EVENT_MAX_FUTURE
+    (یا غیرقابل تبدیل) = نامعتبر؛ رویداد ساختگی با زمان دلخواه نباید به ورود/خروج تبدیل شود.
+    """
+    try:
+        at = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return False
+    return received - EVENT_MAX_AGE <= at <= received + EVENT_MAX_FUTURE
+
+
+def _event_rejection(ev: GeofenceEventIn, site: Site, distance: float | None, received: datetime) -> str | None:
+    """
+    اعتبارسنجی رویداد نسبت به سایت: کد وضعیت رد (mock / no_location / bad_time / out_of_range) یا None اگر معتبر.
+    - ورود/حضور (enter/dwell): مختصات لازم است و فاصله باید ≤ شعاع سایت + دقت GPS (حداکثر EVENT_ACCURACY_CAP_METERS).
+    - خروج (exit): طبق تعریف بیرون از حصار رخ می‌دهد و موتور سیستمی اندروید ممکن است مختصات نداشته باشد؛
+      فقط زمان بررسی می‌شود (و اگر مختصات دارد، نباید به‌وضوح داخل حصار باشد).
+    """
+    if ev.is_mock:
+        return "mock"
+    if not _event_time_valid(ev.occurred_at, received):
+        return "bad_time"
+    tolerance = min(ev.accuracy or 0.0, EVENT_ACCURACY_CAP_METERS)
+    radius = float(site.gps_radius_meters)
+    if (ev.transition or "").lower() == "exit":
+        if distance is not None and distance < max(radius - tolerance, 0.0) * 0.5:
+            return "out_of_range"  # «خروج» از عمق داخل حصار معنا ندارد
+        return None
+    if ev.latitude is None or ev.longitude is None or distance is None:
+        return "no_location"
+    if distance > radius + tolerance:
+        return "out_of_range"
+    return None
+
+
 async def process_geofence_events(db: AsyncSession, device: MobileDevice, events: list[GeofenceEventIn]) -> list[dict]:
     """رویدادها را به ترتیب زمان پردازش می‌کند؛ خروجی برای هر رویداد: id، status، پیام کوتاه برای اعلان اپ."""
     received = _now()
@@ -427,12 +478,23 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
             distance = haversine_distance_meters(ev.latitude, ev.longitude, site.gps_latitude, site.gps_longitude)
 
         status = "logged"
+        rejection = _event_rejection(ev, site, distance, received) if site is not None else None
         if device.employee_id is None:
             status = "no_employee"
         elif site is None:
             status = "unknown_site"
-        elif ev.is_mock:
-            status = "mock"
+        elif rejection is not None:
+            # رویداد نامعتبر (GPS جعلی، بدون مختصات، زمان نامعتبر، خارج از محدوده): ثبت نمی‌شود ولی برای ردیابی لاگ می‌ماند
+            status = rejection
+            logger.info(
+                "رویداد Geofencing دستگاه %s (پرسنل %s) رد شد: %s — سایت %s، فاصله %s متر، دقت %s متر",
+                device.id,
+                device.employee_id,
+                status,
+                site.id,
+                None if distance is None else round(distance),
+                ev.accuracy,
+            )
         elif not cfg.auto_clock_enabled:
             status = "disabled"
         else:

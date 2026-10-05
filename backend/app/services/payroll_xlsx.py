@@ -31,11 +31,30 @@ Section ها (اگر Section ناشناخته‌ای هم باشد، به هما
 from __future__ import annotations
 
 import io
-import re
+import zipfile
 
 import openpyxl
 
 from app.services.payroll_common import FOOTER_LABEL_COLUMN, ParsedReceiptItem, PayrollParseError, ReceiptSection
+
+# سقف مجموع حجم فایل‌های داخل Zip اکسل (۲۰۰ مگابایت) — جلوگیری از Zip-bomb هنگام load_workbook
+MAX_XLSX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+
+
+def check_xlsx_size(file_bytes: bytes, max_bytes: int = MAX_XLSX_UNCOMPRESSED_BYTES) -> None:
+    """
+    قبل از load_workbook، حجم اعلام‌شده‌ی اعضای Zip فایل XLSX را جمع می‌زند و اگر از سقف بیشتر بود
+    PayrollParseError می‌دهد (فایل Zip نامعتبر هم همین خطا را می‌دهد). خروجی: None در حالت مجاز.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            total = 0
+            for info in zf.infolist():
+                total += info.file_size
+                if total > max_bytes:
+                    raise PayrollParseError("فایل اکسل بیش‌ازحد بزرگ است (حجم واقعی بیشتر از ۲۰۰ مگابایت).")
+    except zipfile.BadZipFile as e:
+        raise PayrollParseError("فایل XLSX معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
 
 _INFO_LABEL_CODE = "کد پرسنلی:"  # سلولی که سطر مشخصات هر بلوک پرسنل را مشخص می‌کند
 _PERIOD_LABEL = "فیش حقوق ماه"  # همیشه چند سطر قبل از «کد پرسنلی:» همان بلوک می‌آید — برای تشخیص دقیق مرز واقعی بلوک
@@ -178,6 +197,7 @@ def parse_salary_receipt_items_xlsx(file_bytes: bytes) -> list[ParsedReceiptItem
     ورودی: بایت‌های فایل XLSX. اولین شیت را بلوک‌به‌بلوک (یک بلوک به‌ازای هر پرسنل) پارس می‌کند.
     خروجی: لیست ParsedReceiptItem؛ برای فایل نامعتبر یا بدون «کد پرسنلی:» PayrollParseError.
     """
+    check_xlsx_size(file_bytes)  # سقف حجم واقعی قبل از بارگذاری (ضد Zip-bomb)
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)  # data_only: مقدار محاسبه‌شده به‌جای فرمول
     except Exception as e:  # noqa: BLE001 - فایل خراب/فرمت نامعتبر

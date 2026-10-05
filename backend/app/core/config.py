@@ -6,6 +6,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # مسیر backend/.env به‌صورت مطلق محاسبه می‌شود تا مستقل از پوشه اجرای برنامه باشد
@@ -43,6 +44,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # عمر Access Token به دقیقه
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # عمر Refresh Token به روز
 
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _validate_secret_key(cls, value: str) -> str:
+        """
+        SECRET_KEY نباید مقدار نمونه‌ی .env.example (CHANGE_ME...) یا کوتاه‌تر از ۳۲ کاراکتر باشد؛
+        در غیر این صورت Startup با پیام واضح متوقف می‌شود (توکن JWT با کلید ضعیف قابل جعل است).
+        """
+        key = (value or "").strip()
+        if key.upper().startswith("CHANGE_ME") or len(key) < 32:
+            raise ValueError(
+                "SECRET_KEY در backend/.env تنظیم نشده یا خیلی کوتاه است — "
+                "یک مقدار تصادفی حداقل ۳۲ کاراکتری بگذارید (مثلاً خروجی: openssl rand -hex 32)"
+            )
+        return value
+
     # --- رمزنگاری Credential های دیتابیس سایت‌ها ---
     # کلید مجزا از SECRET_KEY تا در صورت لو رفتن یکی، دیگری امن بماند
     DB_CREDENTIALS_ENCRYPTION_KEY: str  # با: Fernet.generate_key() تولید شود
@@ -53,6 +69,9 @@ class Settings(BaseSettings):
     # --- آدرس Frontend (برای ساخت لینک‌های ایمیل، مثل بازنشانی رمز عبور) ---
     # لینک‌ها همیشه از همین مقدار سمت سرور ساخته می‌شوند، نه از URL ارسالی کلاینت (جلوگیری از فیشینگ)
     FRONTEND_URL: str = "http://localhost:3000"
+    # IP پراکسی خارجی (مثلاً SSL Terminator) جلوی Nginx؛ با --reverse-proxy-ip در install.sh نوشته می‌شود (چندتایی با کاما).
+    # برای تشخیص IP واقعی کاربر (core/ip_allowlist.get_client_ip) معتبر شمرده می‌شود.
+    REVERSE_PROXY_IP: str = ""
 
     # --- Sync Engine ---
     SYNC_ENABLED: bool = True  # روشن/خاموش بودن همگام‌سازی دوره‌ای با دیتابیس سایت‌ها

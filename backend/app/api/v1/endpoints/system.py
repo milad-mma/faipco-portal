@@ -398,6 +398,20 @@ async def delete_login_background(
 ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml"}
 MAX_LOGO_SIZE = 4 * 1024 * 1024  # ۴ مگابایت — لوگو معمولاً خیلی کوچک‌تر از یک عکس پس‌زمینه است
 
+# هدرهای امنیتی پاسخ لوگو: SVG بدون اسکریپت/منبع خارجی و در Sandbox اجرا می‌شود؛ مرورگر نوع فایل را حدس نمی‌زند
+_LOGO_RESPONSE_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+    "X-Content-Type-Options": "nosniff",
+}
+# الگوهای ناامن در SVG آپلودی: تگ script، آدرس javascript:، صفت‌های رویداد (onload=, onclick=, ...)
+# و foreignObject (که اجازه‌ی جاسازی HTML دلخواه داخل SVG را می‌دهد)
+_SVG_UNSAFE_RE = re.compile(rb"<\s*script|javascript\s*:|\bon[a-z]+\s*=|<\s*foreignObject", re.IGNORECASE)
+
+
+def _svg_is_unsafe(content: bytes) -> bool:
+    """بررسی می‌کند که محتوای SVG آپلودشده شامل اسکریپت، آدرس javascript:، صفت رویداد یا foreignObject باشد (True = رد شود)."""
+    return _SVG_UNSAFE_RE.search(content) is not None
+
 # لوگوهای مستقل — هرکدام برای یک مصرف متفاوت با سایز توصیه‌شده خودش
 # (به‌علاوه لوگوی اختصاصی هر جای نمایش با slug به شکل surface-<name>):
 #   app_logo        → درون‌برنامه‌ای، اندازه‌های بزرگ (اسپلش، پنل کاربری) — هر اندازه‌ای
@@ -513,7 +527,7 @@ async def get_logo(slug: str, db: AsyncSession = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این لوگو هنوز تنظیم نشده")
     content, content_type = result
-    return Response(content=content, media_type=content_type)
+    return Response(content=content, media_type=content_type, headers=_LOGO_RESPONSE_HEADERS)
 
 
 @router.post("/logo/{slug}")
@@ -536,6 +550,12 @@ async def upload_logo(
     content = await file.read()
     if len(content) > MAX_LOGO_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حجم فایل نباید بیشتر از ۴ مگابایت باشد")
+    # SVG می‌تواند اسکریپت اجرا کند؛ فایل‌های دارای script/javascript:/صفت رویداد پذیرفته نمی‌شوند
+    if file.content_type == "image/svg+xml" and _svg_is_unsafe(content):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="فایل SVG نباید شامل اسکریپت، آدرس javascript:، صفت رویداد (مثل onload) یا foreignObject باشد",
+        )
     await SystemSettingsService(db).set_logo(key, content, file.content_type)
     return {"success": True}
 

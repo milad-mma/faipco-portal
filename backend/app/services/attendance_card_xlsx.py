@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 import openpyxl
 
 from app.services.payroll_common import PayrollParseError
+from app.services.payroll_xlsx import check_xlsx_size
 
 # نگاشت نام فیلد -> شماره ستون در اکسل (۰-پایه)
 _COLUMNS: dict[str, int] = {
@@ -164,6 +165,7 @@ def parse_attendance_cards_xlsx(file_bytes: bytes) -> list[AttendanceCardItem]:
     فقط شیت اول خوانده می‌شود؛ ردیف‌های کاملاً خالی (بدون کد و نام) نادیده گرفته می‌شوند.
     خطای خواندن فایل به PayrollParseError با پیام فارسی تبدیل می‌شود.
     """
+    check_xlsx_size(file_bytes)  # سقف حجم واقعی قبل از بارگذاری (ضد Zip-bomb)
     # data_only=True: به‌جای فرمول، مقدار محاسبه‌شده‌ی سلول خوانده می‌شود
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)

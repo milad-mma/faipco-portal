@@ -12,6 +12,13 @@ import pymysql.cursors
 from app.sync_engine.adapters.base import BaseSiteAdapter, build_schema_dict
 
 
+def _q(name: str) -> str:
+    """نام جدول/ستون را در بک‌تیک محصور می‌کند؛ بک‌تیک داخل نام دوبرابر می‌شود و «schema.table» برای هر بخش جداگانه کوته می‌شود."""
+    parts = name.split(".", 1) if "." in name else [name]
+    return ".".join("`" + p.replace("`", "``") + "`" for p in parts)
+
+
+
 class MySQLAdapter(BaseSiteAdapter):
     """پیاده‌سازی BaseSiteAdapter برای MySQL؛ نام جدول/ستون‌ها با backtick محصور می‌شوند."""
 
@@ -48,8 +55,8 @@ class MySQLAdapter(BaseSiteAdapter):
         """SELECT روی ستون‌های داده‌شده (نام‌ها با backtick محصور می‌شوند) و برگرداندن ردیف‌ها به‌صورت dict."""
         conn = self._connect()
         try:
-            cols_sql = ", ".join(f"`{c}`" for c in columns)
-            query = f"SELECT {cols_sql} FROM `{table_name}`"  # noqa: S608
+            cols_sql = ", ".join(_q(c) for c in columns)
+            query = f"SELECT {cols_sql} FROM {_q(table_name)}"  # noqa: S608
             with conn.cursor() as cur:
                 cur.execute(query)
                 return list(cur.fetchall())
@@ -68,7 +75,7 @@ class MySQLAdapter(BaseSiteAdapter):
         """UPDATE پارامتری یک ستون برای ردیف مشخص و commit آن."""
         conn = self._connect()
         try:
-            query = f"UPDATE `{table_name}` SET `{field_column}` = %s WHERE `{id_column}` = %s"  # noqa: S608
+            query = f"UPDATE {_q(table_name)} SET {_q(field_column)} = %s WHERE {_q(id_column)} = %s"  # noqa: S608
             with conn.cursor() as cur:
                 cur.execute(query, (field_value, id_value))
             conn.commit()
@@ -120,7 +127,7 @@ class MySQLAdapter(BaseSiteAdapter):
         """خواندن چند مقدار اول یک ستون، بدون خواندن کل جدول."""
         conn = self._connect()
         try:
-            query = f"SELECT `{column_name}` FROM `{table_name}` LIMIT {int(limit)}"  # noqa: S608
+            query = f"SELECT {_q(column_name)} FROM {_q(table_name)} LIMIT {int(limit)}"  # noqa: S608
             with conn.cursor() as cur:
                 cur.execute(query)
                 return [row[column_name] for row in cur.fetchall()]  # DictCursor: دسترسی با نام ستون

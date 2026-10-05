@@ -12,6 +12,13 @@ import psycopg2.extras
 from app.sync_engine.adapters.base import BaseSiteAdapter, build_schema_dict
 
 
+def _q(name: str) -> str:
+    """نام جدول/ستون را در گیومه‌ی دوتایی محصور می‌کند؛ گیومه داخل نام دوبرابر می‌شود و «schema.table» برای هر بخش جداگانه کوته می‌شود."""
+    parts = name.split(".", 1) if "." in name else [name]
+    return ".".join('"' + p.replace('"', '""') + '"' for p in parts)
+
+
+
 class PostgreSQLAdapter(BaseSiteAdapter):
     """پیاده‌سازی BaseSiteAdapter برای PostgreSQL؛ نام جدول/ستون‌ها با کوتیشن دوتایی محصور می‌شوند."""
 
@@ -47,8 +54,8 @@ class PostgreSQLAdapter(BaseSiteAdapter):
         """SELECT روی ستون‌های داده‌شده (نام‌ها با کوتیشن دوتایی محصور می‌شوند) و برگرداندن ردیف‌ها به‌صورت dict."""
         conn = self._connect()
         try:
-            cols_sql = ", ".join(f'"{c}"' for c in columns)
-            query = f'SELECT {cols_sql} FROM "{table_name}"'  # noqa: S608 - نام جدول/ستون از Mapping مدیریتی می‌آید نه ورودی کاربر نهایی
+            cols_sql = ", ".join(_q(c) for c in columns)
+            query = f'SELECT {cols_sql} FROM {_q(table_name)}'  # noqa: S608 - نام جدول/ستون از Mapping مدیریتی می‌آید نه ورودی کاربر نهایی
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(query)
                 return [dict(row) for row in cur.fetchall()]
@@ -67,7 +74,7 @@ class PostgreSQLAdapter(BaseSiteAdapter):
         """UPDATE پارامتری یک ستون برای ردیف مشخص و commit آن."""
         conn = self._connect()
         try:
-            query = f'UPDATE "{table_name}" SET "{field_column}" = %s WHERE "{id_column}" = %s'  # noqa: S608
+            query = f'UPDATE {_q(table_name)} SET {_q(field_column)} = %s WHERE {_q(id_column)} = %s'  # noqa: S608
             with conn.cursor() as cur:
                 cur.execute(query, (field_value, id_value))
             conn.commit()
@@ -124,7 +131,7 @@ class PostgreSQLAdapter(BaseSiteAdapter):
         """خواندن چند مقدار اول یک ستون، بدون خواندن کل جدول."""
         conn = self._connect()
         try:
-            query = f'SELECT "{column_name}" FROM "{table_name}" LIMIT %s'  # noqa: S608
+            query = f'SELECT {_q(column_name)} FROM {_q(table_name)} LIMIT %s'  # noqa: S608
             with conn.cursor() as cur:
                 cur.execute(query, (int(limit),))
                 return [row[0] for row in cur.fetchall()]

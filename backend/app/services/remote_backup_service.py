@@ -17,9 +17,11 @@ Retention: به‌جای تکیه به تاریخ فایل که سرورهای S
 from __future__ import annotations
 
 import ftplib
+import os
 import re
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,29 +75,46 @@ def _find_smbclient_binary() -> str:
 
 
 def _smb_auth_string(username: str, password: str, domain: str | None) -> str:
-    """رشته احراز هویت smbclient را از نام کاربری، رمز و دامنه اختیاری می‌سازد."""
-    auth = f"{username}%{password}"  # قالب -U در smbclient: user%pass یا DOMAIN\user%pass
-    return f"{domain}\\{auth}" if domain else auth
+    """
+    محتوای فایل احراز هویت smbclient (--authentication-file) را از نام کاربری، رمز و دامنه اختیاری می‌سازد.
+    رمز دیگر در آرگومان خط فرمان (-U user%pass) قرار نمی‌گیرد تا در فهرست فرآیندها (ps) دیده نشود.
+    """
+    lines = [f"username = {username}", f"password = {password}"]
+    if domain:
+        lines.append(f"domain = {domain}")
+    return "\n".join(lines) + "\n"
 
 
 def _run_smbclient(target: str, auth: str, command: str, *, timeout: int = 60) -> str:
     """
     یک فرمان smbclient روی target اجرا می‌کند و stdout+stderr را برمی‌گرداند.
+    auth محتوای فایل احراز هویت است (خروجی _smb_auth_string) که در یک فایل موقت 0600 نوشته و بعد از اجرا حذف می‌شود.
     خطا: RemoteBackupError اگر ابزار نصب نباشد یا Timeout شود.
     """
     smbclient = _find_smbclient_binary()
+    # فایل موقت فقط برای مالک خوانا (mkstemp با 0600 می‌سازد)؛ در پایان حتماً حذف می‌شود
+    fd, auth_path = tempfile.mkstemp(prefix="faipco-smb-auth-", suffix=".conf")
     try:
-        result = subprocess.run(
-            [smbclient, target, "-U", auth, "-c", command],
-            capture_output=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError as e:
-        raise RemoteBackupError(
-            "ابزار smbclient روی این سرور پیدا نشد — بسته samba-client باید نصب باشد."
-        ) from e
-    except subprocess.TimeoutExpired as e:
-        raise RemoteBackupError("اتصال به سرور SMB بیش‌ازحد طول کشید (Timeout).") from e
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(auth)
+        os.chmod(auth_path, 0o600)
+        try:
+            result = subprocess.run(
+                [smbclient, target, "--authentication-file", auth_path, "-c", command],
+                capture_output=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError as e:
+            raise RemoteBackupError(
+                "ابزار smbclient روی این سرور پیدا نشد — بسته samba-client باید نصب باشد."
+            ) from e
+        except subprocess.TimeoutExpired as e:
+            raise RemoteBackupError("اتصال به سرور SMB بیش‌ازحد طول کشید (Timeout).") from e
+    finally:
+        try:
+            os.unlink(auth_path)
+        except OSError:
+            pass
     return result.stdout.decode(errors="ignore") + result.stderr.decode(errors="ignore")
 
 

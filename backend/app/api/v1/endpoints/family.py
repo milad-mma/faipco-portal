@@ -178,8 +178,14 @@ async def get_settings(db: AsyncSession = Depends(get_db), current_user: User = 
 async def update_settings(
     payload: FamilySettingsIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("family.manage")),
+    current_user: User = Depends(require_permission("family.manage")),
 ):
+    """تنظیمات ماژول بین همه‌ی سایت‌ها مشترک است؛ تغییر آن فقط با family.manage سراسری (یا superuser)، وگرنه 403."""
+    if await get_sites_with_permission(db, current_user, "family.manage") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="تنظیمات مشخصات خانوادگی بین همه‌ی سایت‌ها مشترک است و فقط با مجوز family.manage برای همه‌ی سایت‌ها قابل تغییر است",
+        )
     service = FamilyService(db)
     return {"settings": await service.update_settings(payload.model_dump(exclude_unset=True)), "meta": service.settings_meta()}
 

@@ -98,7 +98,7 @@ PostgreSQL Advisory Lock محافظت می‌شوند تا بین Worker ها ف
 | Backend | Python + FastAPI (Async) + SQLAlchemy 2 (Async، asyncpg) + Alembic |
 | دیتابیس اصلی Portal | PostgreSQL |
 | اتصال به دیتابیس سایت‌ها | pymssql (SQL Server/کاراوب)، PyMySQL، asyncpg/psycopg2 |
-| Auth | JWT (python-jose) + bcrypt (passlib) |
+| Auth | JWT (PyJWT) + bcrypt (passlib) |
 | Scheduler | APScheduler |
 | Realtime | WebSocket (`/api/v1/attendance/presence-ws`) برای حضور آنلاین |
 | Frontend | React 18 + React Router 6 + MUI 6 (RTL کامل با `stylis-plugin-rtl`) + Vite 5 + Axios |

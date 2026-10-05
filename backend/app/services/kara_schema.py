@@ -211,6 +211,32 @@ def _group(key: str) -> str:
     return key.split(".", 1)[0]
 
 
+def validate_sql_identifier(value, *, allow_schema: bool = False):
+    """
+    نام جدول/ستون را با الگوی _SAFE_NAME اعتبارسنجی می‌کند (جلوگیری از تزریق SQL در نام‌هایی که
+    Parameterized نمی‌شوند). ورودی: مقدار خام؛ None/خالی → None. با allow_schema شکل «schema.table»
+    (هر بخش جداگانه معتبر) هم مجاز است. خروجی: رشته‌ی trim‌شده؛ خطا: ValueError با پیام فارسی.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    parts = text.split(".") if allow_schema else [text]
+    if len(parts) > 2 or not all(_SAFE_NAME.match(p) for p in parts):
+        raise ValueError("نام جدول/ستون فقط می‌تواند حرف، عدد، زیرخط و فاصله باشد")
+    return text
+
+
+def quote_mssql(name: str) -> str:
+    """
+    نام جدول/ستون SQL Server را در [ ] محصور می‌کند؛ «]» داخل نام دوبرابر می‌شود (] → ]]) تا نام نتواند از
+    کوته خارج شود و «schema.table» (مثل dbo.Employee) برای هر بخش جداگانه کوته می‌شود ([dbo].[Employee]).
+    """
+    parts = name.split(".", 1) if "." in name else [name]
+    return ".".join("[" + p.replace("]", "]]") + "]" for p in parts)
+
+
 def validate_schema(values: dict | None, defaults: dict[str, str]) -> dict[str, str]:
     """
     فقط کلیدهای شناخته‌شده و نام‌های امن (برای جلوگیری از تزریق در نام
@@ -273,8 +299,8 @@ class KaraNames:
         return name
 
     def c(self, group: str, role: str) -> str:
-        """نام ستون محصور در [ ] برای استفاده در SQL."""
-        return f"[{self.raw(group, role)}]"
+        """نام ستون محصور در [ ] برای استفاده در SQL («]» داخل نام escape می‌شود)."""
+        return quote_mssql(self.raw(group, role))
 
     def t(self, group: str) -> str:
         """نام جدول گروه، محصور در [ ]."""
@@ -282,10 +308,10 @@ class KaraNames:
 
     @staticmethod
     def _q(name: str | None, what: str) -> str:
-        """نام را در [ ] محصور می‌کند؛ اگر خالی باشد RuntimeError با عنوان فارسی what."""
+        """نام را در [ ] محصور می‌کند («]» escape می‌شود)؛ اگر خالی باشد RuntimeError با عنوان فارسی what."""
         if not name:
             raise RuntimeError(f"«{what}» در تنظیمات سایت نگاشت نشده است")
-        return f"[{name}]"
+        return quote_mssql(name)
 
     # ---------- نام‌هایی که از قبل در نگاشت‌های اصلی هستند ----------
 

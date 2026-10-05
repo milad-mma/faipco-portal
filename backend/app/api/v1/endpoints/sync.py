@@ -4,14 +4,19 @@ Endpoint های بخش «Sync Management» در پنل Admin.
 شامل: خواندن/تغییر فاصله اجرای خودکار Sync، خلاصه وضعیت امروز،
 تست اتصال به دیتابیس منبع یک سایت، اجرای دستی Sync و تاریخچه اجراها.
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_permission
 from app.core.scheduler import reschedule_sync_interval
+from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
-from app.models.sync_log import SyncLog
+from app.models.site import Site
+from app.models.sync_log import SyncLog, SyncRunStatus
+from app.models.user import User
 from app.schemas.sync import SyncLogOut, SyncSettingsOut, SyncSettingsUpdate, SyncStatusSummaryOut, TestConnectionResult
 from app.services.system_settings_service import SystemSettingsService
 from app.sync_engine.sync_service import SyncError, SyncService
@@ -57,11 +62,45 @@ async def update_sync_settings(
 @router.get("/status-summary", response_model=SyncStatusSummaryOut)
 async def get_sync_status_summary(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("sync.view")),
+    current_user: User = Depends(require_permission("sync.view")),
 ):
-    """خلاصه وضعیت Sync امروز همه سایت‌ها را برای کارت آمار داشبورد Admin برمی‌گرداند. مجوز: sync.view."""
-    summary = await SyncService(db).get_status_summary()
+    """
+    خلاصه وضعیت Sync امروز را برای کارت آمار داشبورد Admin برمی‌گرداند. مجوز: sync.view.
+    ایزوله‌سازی چندسایتی: دارنده‌ی sync.view سایتی فقط آمار سایت‌های خودش را می‌بیند (سراسری/superuser: همه).
+    """
+    allowed_sites = await get_sites_with_permission(db, current_user, "sync.view")  # None = همه‌ی سایت‌ها
+    if allowed_sites is None:
+        summary = await SyncService(db).get_status_summary()
+    else:
+        summary = await _status_summary_for_sites(db, allowed_sites)
     return SyncStatusSummaryOut(**summary)
+
+
+async def _status_summary_for_sites(db: AsyncSession, site_ids: set[int]) -> dict:
+    """
+    همان محاسبه‌ی SyncService.get_status_summary (آخرین اجرای امروزِ هر سایت فعال؛ «امروز» از نیمه‌شب UTC)،
+    محدود به سایت‌های داده‌شده — برای دارنده‌ی مجوز سایتی. خروجی: همان کلیدهای SyncStatusSummaryOut.
+    """
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    sites_result = await db.execute(select(Site.id).where(Site.is_active.is_(True), Site.id.in_(site_ids)))
+    active_site_ids = [row[0] for row in sites_result.all()]
+
+    logs_result = await db.execute(
+        select(SyncLog.site_id, SyncLog.status)
+        .where(SyncLog.site_id.in_(active_site_ids), SyncLog.started_at >= today_start)
+        .order_by(SyncLog.site_id, SyncLog.started_at.desc())
+    )
+    # اولین ردیف هر سایت (مرتب‌شده نزولی) = آخرین اجرای امروز همان سایت
+    latest_status_by_site: dict[int, SyncRunStatus] = {}
+    for site_id, run_status in logs_result.all():
+        latest_status_by_site.setdefault(site_id, run_status)
+
+    return {
+        "total_sites": len(active_site_ids),
+        "success_today": sum(1 for s in latest_status_by_site.values() if s == SyncRunStatus.success),
+        "failed_today": sum(1 for s in latest_status_by_site.values() if s == SyncRunStatus.failed),
+        "not_run_today": len(active_site_ids) - len(latest_status_by_site),
+    }
 
 
 @router.post("/{site_id}/test-connection", response_model=TestConnectionResult)

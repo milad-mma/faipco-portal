@@ -5,6 +5,7 @@
  */
 import { createContext, useContext, useEffect, useState } from "react";
 import { fetchCurrentUser, loginRequest } from "../api/auth";
+import { apiClient } from "../api/client";
 import { useOnlineStatus } from "./OnlineStatusContext";
 import { setCacheOwner } from "../api/swrCache";
 
@@ -79,11 +80,22 @@ export function AuthProvider({ children }) {
     return currentUser;
   }
 
-  // خروج: حذف توکن‌ها از localStorage و خالی کردن کاربر جاری
+  // خروج: اول توکن‌ها از localStorage پاک و کاربر جاری خالی می‌شود (خروج فوری)، بعد با همان توکن
+  // ابطال سمت سرور انجام می‌شود (همه‌ی دستگاه‌های کاربر؛ خطا یا آفلاین بودن نادیده گرفته می‌شود)
   function logout() {
+    const token = localStorage.getItem("access_token");
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
+    if (token) {
+      // چون رفرش‌توکن محلی پاک شده، interceptor در پاسخ 401 رفرش/تلاش مجدد نمی‌کند؛ نتیجه اهمیتی ندارد
+      apiClient
+        .post("/auth/logout", null, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 5_000,
+        })
+        .catch(() => {});
+    }
   }
 
   return (

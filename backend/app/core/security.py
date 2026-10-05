@@ -11,8 +11,8 @@
 import re
 from datetime import datetime, timedelta, timezone
 
+import jwt  # PyJWT (جایگزین python-jose؛ CVE-2024-33663/33664)
 from cryptography.fernet import Fernet
-from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -88,27 +88,54 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # ---------- JWT ----------
 
+def _issued_at() -> int:
+    """زمان صدور توکن (claim iat) به ثانیه‌ی یونیکس؛ برای مقایسه با User.password_changed_at."""
+    return int(datetime.now(timezone.utc).timestamp())
+
+
 def create_access_token(subject: str, extra_claims: dict | None = None) -> str:
-    """ورودی: شناسه کاربر (sub) و claimهای اضافی. خروجی: Access Token امضاشده با نوع "access" و انقضای کوتاه."""
+    """ورودی: شناسه کاربر (sub) و claimهای اضافی. خروجی: Access Token امضاشده با نوع "access"، iat و انقضای کوتاه."""
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": subject, "exp": expire, "type": "access"}
+    payload = {"sub": subject, "exp": expire, "iat": _issued_at(), "type": "access"}
     if extra_claims:
         payload.update(extra_claims)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(subject: str) -> str:
-    """ورودی: شناسه کاربر (sub). خروجی: Refresh Token امضاشده با نوع "refresh" و انقضای چندروزه."""
+    """ورودی: شناسه کاربر (sub). خروجی: Refresh Token امضاشده با نوع "refresh"، iat و انقضای چندروزه."""
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": subject, "exp": expire, "type": "refresh"}
+    payload = {"sub": subject, "exp": expire, "iat": _issued_at(), "type": "refresh"}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def is_token_revoked_by_password_change(payload: dict, password_changed_at: datetime | None) -> bool:
+    """
+    ورودی: payload توکن و User.password_changed_at. خروجی: True اگر توکن پیش از آخرین تغییر رمز/خروج
+    صادر شده باشد (iat < password_changed_at) و باید رد شود.
+    توکن‌های بدون iat (صادرشده قبل از این نسخه) تا انقضای طبیعی پذیرفته می‌شوند تا کسی مجبور به ورود مجدد نشود.
+    """
+    if password_changed_at is None:
+        return False
+    issued_at = payload.get("iat")
+    if issued_at is None:
+        return False
+    try:
+        issued_at = int(issued_at)
+    except (TypeError, ValueError):
+        return True  # iat خراب = توکن غیرقابل‌اعتماد
+    # ستون timezone-aware است؛ در صورت بازگشت مقدار naive از دیتابیس، UTC فرض می‌شود
+    if password_changed_at.tzinfo is None:
+        password_changed_at = password_changed_at.replace(tzinfo=timezone.utc)
+    return issued_at < int(password_changed_at.timestamp())
 
 
 def decode_token(token: str) -> dict | None:
     """ورودی: توکن JWT. خروجی: payload در صورت معتبر بودن امضا و انقضا؛ وگرنه None."""
     try:
+        # PyJWT: exp به‌طور پیش‌فرض بررسی می‌شود؛ ExpiredSignatureError زیرکلاس InvalidTokenError است
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    except JWTError:
+    except jwt.InvalidTokenError:
         return None
 
 

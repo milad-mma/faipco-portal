@@ -14,6 +14,7 @@ from app.core.ip_allowlist import get_client_ip
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.services import login_security_service as login_security
 from app.db.session import get_db
+from app.models.employee import Employee
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -27,15 +28,14 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
-from app.services.email_service import EmailError, EmailNotConfiguredError
-from app.services.employee_contact_service import ContactInfoUpdateError, update_my_contact_info
+from app.services.employee_contact_service import ContactInfoUpdateError, normalize_mobile, update_my_contact_info
 from app.services.password_reset_service import (
     PasswordResetError,
+    is_short_code,
     request_reset,
     reset_password,
     verify_reset_token,
 )
-from app.services.sms_service import SmsError, SmsNotConfiguredError
 
 router = APIRouter()
 
@@ -127,21 +127,37 @@ async def read_current_user(
     return await AuthService(db).get_me(current_user)
 
 
-@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+@router.put("/me/password", response_model=TokenResponse)
 async def change_password(
     payload: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    رمز عبور کاربر جاری را پس از بررسی رمز فعلی تغییر می‌دهد (پاسخ 204).
+    رمز عبور کاربر جاری را پس از بررسی رمز فعلی تغییر می‌دهد. چون تغییر رمز همه‌ی توکن‌های قبلی را باطل
+    می‌کند، جفت توکن تازه برمی‌گرداند تا نشست جاری بدون ورود مجدد ادامه یابد (کلاینت در client.js ذخیره می‌کند).
     دسترسی: هر کاربر واردشده. خطا: 400 اگر رمز فعلی نادرست یا رمز جدید نامعتبر باشد.
     """
     service = AuthService(db)
     try:
-        await service.change_password(current_user, payload.current_password, payload.new_password)
+        access_token, refresh_token = await service.change_password(
+            current_user, payload.current_password, payload.new_password
+        )
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    خروج: همه‌ی توکن‌های صادرشده‌ی کاربر (در همه‌ی دستگاه‌ها) را با به‌روزکردن password_changed_at باطل می‌کند.
+    دسترسی: هر کاربر واردشده (پاسخ 204). کلاینت پس از آن توکن‌های محلی را پاک می‌کند.
+    """
+    await AuthService(db).logout(current_user)
 
 
 @router.put("/me/contact-info")
@@ -153,8 +169,39 @@ async def update_my_contact_info_endpoint(
     """
     ایمیل/موبایل کاربر جاری را به‌روزرسانی می‌کند؛ اگر ستون متناظر در نگاشت ستون‌های سایت پرسنل
     تنظیم شده باشد، در دیتابیس اصلی سایت هم نوشته می‌شود (write-back)، وگرنه فقط در دیتابیس پرتال.
-    دسترسی: هر کاربر واردشده. خطا: 400 برای مقدار نامعتبر یا خطای ذخیره.
+    دسترسی: هر کاربر واردشده. اگر موبایل یا ایمیل نسبت به مقدار ذخیره‌شده واقعاً تغییر کند، رمز فعلی
+    (برای پرسنل بدون رمز اختصاصی: کد ملی) هم لازم است — ایمیل/موبایل مقصد بازیابی رمز است و نشست دزدیده‌شده
+    نباید بتواند آن را به‌تنهایی عوض کند. بدون تغییر، رمز لازم نیست.
+    خطا: 400 برای مقدار نامعتبر، خطای ذخیره یا رمز فعلی نادرست/وارد‌نشده.
     """
+    # مقدار فعلی ذخیره‌شده (همان منبع /auth/me: اولویت با Employee)
+    stored_email = current_user.email
+    stored_mobile = None
+    if current_user.employee_id is not None:
+        employee = await db.get(Employee, current_user.employee_id)
+        if employee is not None:
+            stored_email = employee.email or current_user.email
+            stored_mobile = employee.mobile
+
+    try:
+        new_mobile = normalize_mobile(payload.mobile)
+    except ContactInfoUpdateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    email_changed = (payload.email or "").strip().lower() != (stored_email or "").strip().lower()
+    mobile_changed = new_mobile != (stored_mobile or "")
+
+    if email_changed or mobile_changed:
+        # 400 (نه 401) تا interceptor فرانت آن را «توکن منقضی» تلقی و رفرش/خروج نکند
+        if not payload.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="برای تغییر موبایل یا ایمیل، رمز عبور فعلی خود را وارد کنید.",
+            )
+        try:
+            await AuthService(db).verify_current_credential(current_user, payload.current_password)
+        except AuthError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     try:
         result = await update_my_contact_info(db, current_user, email=payload.email, mobile=payload.mobile)
     except ContactInfoUpdateError as e:
@@ -168,8 +215,9 @@ async def forgot_password(
 ):
     """
     درخواست بازنشانی رمز: لینک (ایمیل) یا کد ۶ رقمی (پیامک) می‌فرستد. دسترسی: عمومی.
-    همیشه masked_contact و expires_in_seconds برمی‌گرداند، حتی برای شناسه‌ی نامعتبر (ماسک ساختگی)،
-    تا وجود حساب قابل تشخیص نباشد. خطا: 503 فقط اگر سرویس ایمیل/پیامک تنظیم‌نشده یا قطع باشد.
+    همیشه masked_contact و expires_in_seconds (عمر کامل کانال) برمی‌گرداند، حتی برای شناسه‌ی نامعتبر
+    (ماسک ساختگی)، تا وجود حساب قابل تشخیص نباشد. ارسال واقعی در پس‌زمینه است؛ خطای درگاه فقط لاگ می‌شود.
+    خطا: 429 اگر IP مسدود باشد یا سقف درخواست‌های فراموشی رمز از این IP در بازه پر شده باشد.
     """
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
@@ -180,6 +228,12 @@ async def forgot_password(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"به‌خاطر تلاش‌های ناموفق زیاد از این شبکه، درخواست موقتاً مسدود شده — {int(ip_remaining) // 60 + 1} دقیقه دیگر امتحان کنید.",
+        )
+    # سقف جدای درخواست‌های فراموشی رمز از یک IP (ضد بررسی انبوه شناسه‌ها و پیامک انبوه)
+    if await login_security.forgot_password_ip_exceeded(db, cfg, client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"تعداد درخواست‌های بازیابی رمز از این شبکه زیاد است — {cfg.ip_window_minutes} دقیقه دیگر امتحان کنید.",
         )
     if cfg.captcha_enabled and cfg.captcha_on_forgot_password:
         if not payload.captcha_id or not payload.captcha_answer:
@@ -194,10 +248,8 @@ async def forgot_password(
 
     settings = get_settings()
     reset_link_base = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"  # آدرس صفحه‌ی بازنشانی در فرانت‌اند
-    try:
-        result = await request_reset(db, payload.identifier, payload.channel, reset_link_base)
-    except (EmailNotConfiguredError, EmailError, SmsNotConfiguredError, SmsError) as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    # ارسال در پس‌زمینه انجام می‌شود؛ خطای درگاه پیامک/ایمیل به کاربر برنمی‌گردد (نشت وجود حساب و زمان پاسخ)
+    result = await request_reset(db, payload.identifier, payload.channel, reset_link_base)
 
     # masked_contact جدا از متن پیام برگردانده می‌شود تا فرانت‌اند آن را با جهت LTR نمایش دهد
     # (درج اعداد/ایمیل لاتین وسط جمله‌ی فارسی RTL باعث به‌هم‌ریختگی نمایش دوجهته می‌شود)
@@ -213,12 +265,23 @@ async def forgot_password(
     }
 
 
+def _require_identifier_for_short_code(token: str, identifier: str | None) -> None:
+    """کد ۶ رقمی پیامکی بدون شناسه‌ی حساب پذیرفته نمی‌شود (400)؛ توکن طولانی لینک ایمیل به شناسه نیاز ندارد."""
+    if is_short_code(token) and not (identifier or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="برای تأیید کد پیامکی، شناسه‌ی ورود (کد پرسنلی/نام کاربری) هم لازم است؛ درخواست را از ابتدا تکرار کنید.",
+        )
+
+
 @router.post("/verify-reset-code")
 async def verify_reset_code_endpoint(
     payload: VerifyResetCodeRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """
     اعتبار کد/توکن بازنشانی را بدون مصرف آن بررسی می‌کند (در جریان پیامکی، پیش از نمایش فرم رمز جدید).
+    برای کد ۶ رقمی پیامکی، identifier (همان شناسه‌ی مرحله‌ی اول) الزامی است و کد به حساب او مقید می‌شود؛
+    هر کد اشتباه شمارنده‌ی آن توکن را بالا می‌برد و بعد از چند تلاش توکن باطل می‌شود.
     دسترسی: عمومی، با قفل موقت بر اساس IP در برابر Brute-force.
     خطاها: 429 (قفل موقت)، 400 (کد نامعتبر یا منقضی).
     """
@@ -231,15 +294,16 @@ async def verify_reset_code_endpoint(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
         )
+    _require_identifier_for_short_code(payload.token, payload.identifier)
 
     # بررسی کد؛ در صورت شکست، یک تلاش ناموفق برای این IP ثبت می‌شود
     try:
-        await verify_reset_token(db, payload.token)
+        await verify_reset_token(db, payload.token, payload.identifier)
     except PasswordResetError as e:
         cfg = await login_security.get_login_security_settings(db)
         await record_failed_login(db, lockout_key, cfg.attempts_per_tier, login_security.lock_seconds(cfg))
         await login_security.record_other_failure(
-            db, cfg, "reset_code_failed", client_ip, None, request.headers.get("user-agent")
+            db, cfg, "reset_code_failed", client_ip, payload.identifier, request.headers.get("user-agent")
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -266,14 +330,16 @@ async def reset_password_endpoint(
             detail=f"تعداد تلاش‌های ناموفق زیاد بوده است. لطفاً {int(locked_remaining) + 1} ثانیه دیگر تلاش کنید.",
         )
 
+    _require_identifier_for_short_code(payload.token, payload.identifier)
+
     # تغییر رمز؛ در صورت شکست، یک تلاش ناموفق برای این IP ثبت می‌شود
     try:
-        await reset_password(db, payload.token, payload.new_password)
+        await reset_password(db, payload.token, payload.new_password, payload.identifier)
     except PasswordResetError as e:
         cfg = await login_security.get_login_security_settings(db)
         await record_failed_login(db, lockout_key, cfg.attempts_per_tier, login_security.lock_seconds(cfg))
         await login_security.record_other_failure(
-            db, cfg, "reset_code_failed", client_ip, None, request.headers.get("user-agent")
+            db, cfg, "reset_code_failed", client_ip, payload.identifier, request.headers.get("user-agent")
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

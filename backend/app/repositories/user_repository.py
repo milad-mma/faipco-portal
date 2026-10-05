@@ -5,6 +5,7 @@
 - پیدا کردن پرسنل برای ورود با کد پرسنلی + کد ملی و ساخت خودکار حساب کاربری متصل به پرسنل.
 - فعال/غیرفعال‌سازی دستی پرسنل و تعیین/بازنشانی رمز عبور پرسنل توسط Admin.
 """
+from datetime import datetime, timezone
 import secrets
 
 from sqlalchemy import select, or_
@@ -31,6 +32,34 @@ class UserRepository:
         """کاربر با id داده‌شده را برمی‌گرداند؛ اگر نبود None."""
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
+
+    async def get_by_id_with_employee_status(self, user_id: int) -> tuple[User | None, bool | None]:
+        """
+        کاربر با id داده‌شده همراه با وضعیت فعال بودن پرسنل متصل، در یک کوئری (برای get_current_user).
+        خروجی: (User یا None, employee_active) که employee_active برای کاربر بدون پرسنل None است و
+        برای پرسنل True فقط اگر هم Employee.is_active (منبع) و هم Employee.is_enabled (Admin) درست باشند.
+        """
+        # کوئری: کاربر + دو فلگ پرسنل با outer join (کاربر مدیریتی employee_id ندارد)
+        result = await self.db.execute(
+            select(User, Employee.is_active, Employee.is_enabled)
+            .outerjoin(Employee, Employee.id == User.employee_id)
+            .where(User.id == user_id)
+        )
+        row = result.first()
+        if row is None:
+            return None, None
+        user, emp_is_active, emp_is_enabled = row
+        if user.employee_id is None or emp_is_active is None:
+            return user, None  # بدون پرسنل (یا پرسنل حذف‌شده با ondelete=SET NULL)
+        return user, bool(emp_is_active and emp_is_enabled)
+
+    def mark_password_changed(self, user: User) -> None:
+        """
+        زمان ابطال نشست‌های کاربر را «اکنون» می‌کند؛ توکن‌های صادرشده پیش از این لحظه (claim iat) رد می‌شوند.
+        در هر مسیری که رمز تعیین/بازنشانی می‌شود، حساب غیرفعال می‌شود یا کاربر خروج می‌زند فراخوانی شود.
+        commit نمی‌کند — فراخواننده commit می‌کند.
+        """
+        user.password_changed_at = datetime.now(timezone.utc)
 
     async def get_permission_codes(self, user_id: int, site_id: int | None = None) -> set[str]:
         """
@@ -158,6 +187,8 @@ class UserRepository:
         user = result.scalar_one_or_none()
         if user is not None:
             user.is_active = enabled
+            if not enabled:
+                self.mark_password_changed(user)  # نشست‌های باز پرسنل غیرفعال‌شده هم باطل می‌شوند
         await self.db.commit()
         await self.db.refresh(employee)
         return employee
@@ -175,6 +206,7 @@ class UserRepository:
         user.password_hash = hash_password(new_password)
         user.has_custom_password = True
         user.must_change_password = True
+        self.mark_password_changed(user)  # نشست‌های قبلی پرسنل باطل می‌شوند
         await self.db.commit()
         return user
 
@@ -186,5 +218,6 @@ class UserRepository:
         user = await self.get_or_create_employee_user(employee)
         user.password_hash = hash_password(secrets.token_urlsafe(32))
         user.has_custom_password = False
+        self.mark_password_changed(user)  # نشست‌های قبلی پرسنل باطل می‌شوند
         await self.db.commit()
         return user

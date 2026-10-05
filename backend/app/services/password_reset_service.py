@@ -1,13 +1,24 @@
 """
 سرویس فراموشی رمز عبور: تولید، اعتبارسنجی و مصرف توکن یک‌بارمصرف و ارسال آن با ایمیل (لینک) یا پیامک (کد ۶ رقمی).
 - request_reset: ساخت و ارسال توکن؛ verify_reset_token: بررسی بدون مصرف؛ reset_password: ثبت رمز جدید و مصرف توکن.
-همیشه یک مخاطب ماسک‌شده (masked_contact) و زمان انقضا برگردانده می‌شود، چه شناسه معتبر باشد چه نه؛
+همیشه یک مخاطب ماسک‌شده (masked_contact) و زمان انقضای کامل کانال برگردانده می‌شود، چه شناسه معتبر باشد چه نه؛
 برای شناسه‌ی نامعتبر یا بدون ایمیل/موبایل، ماسک ساختگی قطعی (وابسته به identifier، یکسان در درخواست‌های تکراری)
 ساخته می‌شود تا از ساختار پاسخ نتوان معتبر بودن شناسه را تشخیص داد.
+
+نکات امنیتی:
+- ارسال واقعی پیامک/ایمیل در Task پس‌زمینه (Session جدا) انجام می‌شود تا زمان پاسخ برای شناسه‌ی معتبر و نامعتبر
+  یکسان باشد و خطای درگاه پیامک به کاربر (و مهاجم) نشت نکند؛ خطا فقط لاگ می‌شود و توکن حذف می‌شود تا کاربر بتواند
+  دوباره درخواست بدهد.
+- در دیتابیس فقط هش SHA-256 کد/توکن ذخیره می‌شود.
+- کد ۶ رقمی پیامکی فقط همراه شناسه‌ی حساب (identifier) پذیرفته و با (user_id, hash) جست‌وجو می‌شود؛ هر کد اشتباه
+  شمارنده‌ی attempts همان توکن را بالا می‌برد و پس از MAX_TOKEN_ATTEMPTS توکن باطل می‌شود (حدس ۱۰^۶ حالت غیرممکن).
+- توکن طولانی لینک ایمیل (۲۵۶ بیت تصادفی) بدون شناسه هم پذیرفته می‌شود (حدس‌ناپذیر است).
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,11 +31,34 @@ from app.models.employee import Employee
 from app.models.password_reset_token import PasswordResetChannel, PasswordResetToken
 from app.core.text_normalize import normalize_search_text
 from app.models.user import User
-from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
-from app.services.sms_service import SmsError, SmsNotConfiguredError, send_sms_code
+from app.services.email_service import get_smtp_settings, send_email
+from app.services.sms_service import send_sms_code
+
+logger = logging.getLogger(__name__)
 
 EMAIL_TOKEN_TTL_MINUTES = 10  # عمر لینک ایمیل (دقیقه)
 SMS_TOKEN_TTL_MINUTES = 5  # عمر کد پیامکی (دقیقه)
+MAX_TOKEN_ATTEMPTS = 5  # حداکثر کد اشتباه برای یک توکن؛ بعد از آن توکن باطل می‌شود
+SMS_CODE_LENGTH = 6
+
+# Taskهای پس‌زمینه‌ی ارسال (نگه‌داشتن مرجع تا GC آن‌ها را وسط کار جمع نکند)
+_background_send_tasks: set[asyncio.Task] = set()
+
+
+def _hash_token(raw: str) -> str:
+    """هش SHA-256 (hex) کد/توکن؛ همین مقدار در ستون token ذخیره و مقایسه می‌شود."""
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _normalize_code(raw: str) -> str:
+    """ارقام فارسی/عربی کد را به لاتین تبدیل و فاصله‌ها را حذف می‌کند (برای توکن طولانی فقط strip)."""
+    return "".join(ch for ch in normalize_search_text(raw) if not ch.isspace())
+
+
+def is_short_code(token: str) -> bool:
+    """True اگر token یک کد ۶ رقمی پیامکی باشد (نه توکن طولانی لینک ایمیل)."""
+    code = _normalize_code(token)
+    return len(code) == SMS_CODE_LENGTH and code.isdigit()
 
 
 class PasswordResetError(Exception):
@@ -133,92 +167,48 @@ async def _get_pending_token(db: AsyncSession, user_id: int, now: datetime) -> P
             PasswordResetToken.used_at.is_(None),
             PasswordResetToken.expires_at > now,
         )
+        .order_by(PasswordResetToken.id.desc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
-async def request_reset(db: AsyncSession, identifier: str, channel: str, reset_link_base: str) -> RequestResetResult:
+def _schedule_send(token_id: int, channel: str, destination: str, secret: str, reset_link_base: str) -> None:
+    """ارسال پیامک/ایمیل را به‌صورت Task پس‌زمینه زمان‌بندی می‌کند و فوراً برمی‌گردد (الگوی push_background)."""
+    task = asyncio.create_task(_send_in_background(token_id, channel, destination, secret, reset_link_base))
+    _background_send_tasks.add(task)
+    task.add_done_callback(_background_send_tasks.discard)
+
+
+async def _send_in_background(token_id: int, channel: str, destination: str, secret: str, reset_link_base: str) -> None:
     """
-    ورودی: شناسه، channel ("email" یا "sms") و reset_link_base (فقط برای ایمیل). توکن می‌سازد و ارسال می‌کند؛ اگر توکن معتبری
-    از قبل باشد، توکن جدید ساخته نمی‌شود. خروجی: RequestResetResult (برای شناسه‌ی نامعتبر، ماسک ساختگی و انقضای واقعی کانال).
-    خطا فقط وقتی سرویس ایمیل/پیامک تنظیم‌نشده یا قطع باشد (توکن ساخته‌شده حذف می‌شود).
+    ارسال واقعی با Session جدا؛ هرگز استثنا پرتاب نمی‌کند. در صورت خطای درگاه (تنظیم‌نشده/قطع)، خطا لاگ و
+    توکن ساخته‌شده حذف می‌شود تا کاربر بتواند بلافاصله دوباره درخواست بدهد (وگرنه تا انقضا «در انتظار» می‌ماند).
     """
-    user = await _find_user_by_identifier(db, identifier)
-    if user is None:
-        # شناسه‌ی ناموجود: ماسک ساختگی و انقضای واقعی کانال، تا پاسخ با حالت واقعی یکسان باشد
-        if channel == "sms":
-            return RequestResetResult(
-                masked_contact=_fake_masked_mobile(identifier), expires_in_seconds=SMS_TOKEN_TTL_MINUTES * 60
-            )
-        return RequestResetResult(
-            masked_contact=_fake_masked_email(identifier), expires_in_seconds=EMAIL_TOKEN_TTL_MINUTES * 60
-        )
+    from app.db.session import AsyncSessionLocal  # import محلی برای جلوگیری از import حلقه‌ای
 
-    now = datetime.now(timezone.utc)
+    try:
+        async with AsyncSessionLocal() as db:
+            try:
+                if channel == "sms":
+                    await asyncio.wait_for(send_sms_code(db, to_mobile=destination, code=secret), timeout=60)
+                else:
+                    subject, body = await _build_email(db, reset_link_base, secret)
+                    await asyncio.wait_for(
+                        send_email(db, to_address=destination, subject=subject, body_text=body), timeout=60
+                    )
+            except Exception:  # noqa: BLE001 - خطای درگاه نباید به کاربر برگردد (نشت وجود حساب)
+                logger.exception("ارسال %s بازنشانی رمز ناموفق بود؛ توکن %s حذف می‌شود", channel, token_id)
+                reset_token = await db.get(PasswordResetToken, token_id)
+                if reset_token is not None:
+                    await db.delete(reset_token)
+                    await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("خطای پیش‌بینی‌نشده در Task پس‌زمینه‌ی بازنشانی رمز (توکن %s)", token_id)
 
-    # ---------- کانال پیامک ----------
-    if channel == "sms":
-        mobile = await _get_user_mobile(db, user)
-        if not mobile:
-            return RequestResetResult(
-                masked_contact=_fake_masked_mobile(identifier), expires_in_seconds=SMS_TOKEN_TTL_MINUTES * 60
-            )
 
-        # اگر کد معتبری از قبل ارسال شده، کد جدید فرستاده نمی‌شود و زمان باقی‌مانده‌ی همان برگردانده می‌شود
-        pending = await _get_pending_token(db, user.id, now)
-        if pending is not None:
-            remaining = max(0, int((pending.expires_at - now).total_seconds()))
-            return RequestResetResult(masked_contact=_mask_mobile(mobile), expires_in_seconds=remaining)
-
-        # کد ۶ رقمی در بازه‌ی ۱۰۰۰۰۰ تا ۹۹۹۹۹۹ (بدون صفر ابتدایی)، چون پارامتر کد در Pattern پیامک
-        # معمولاً عددی است و صفرهای ابتدایی حذف می‌شوند
-        code = str(secrets.randbelow(900_000) + 100_000)
-        reset_token = PasswordResetToken(
-            user_id=user.id,
-            token=code,
-            channel=PasswordResetChannel.sms,
-            created_at=now,
-            expires_at=now + timedelta(minutes=SMS_TOKEN_TTL_MINUTES),
-        )
-        db.add(reset_token)
-        await db.commit()
-
-        # ارسال پیامک؛ در صورت خطا، توکن ساخته‌شده حذف و خطا دوباره پرتاب می‌شود
-        try:
-            await send_sms_code(db, to_mobile=mobile, code=code)
-        except (SmsNotConfiguredError, SmsError):
-            await db.delete(reset_token)
-            await db.commit()
-            raise
-        return RequestResetResult(masked_contact=_mask_mobile(mobile), expires_in_seconds=SMS_TOKEN_TTL_MINUTES * 60)
-
-    # ---------- کانال ایمیل (channel == "email") ----------
-    email = await _get_user_email(db, user)
-    if not email:
-        return RequestResetResult(
-            masked_contact=_fake_masked_email(identifier), expires_in_seconds=EMAIL_TOKEN_TTL_MINUTES * 60
-        )
-
-    # اگر لینک معتبری از قبل ارسال شده، لینک جدید فرستاده نمی‌شود
-    pending = await _get_pending_token(db, user.id, now)
-    if pending is not None:
-        remaining = max(0, int((pending.expires_at - now).total_seconds()))
-        return RequestResetResult(masked_contact=_mask_email(email), expires_in_seconds=remaining)
-
-    token = secrets.token_urlsafe(32)
-    reset_token = PasswordResetToken(
-        user_id=user.id,
-        token=token,
-        channel=PasswordResetChannel.email,
-        created_at=now,
-        expires_at=now + timedelta(minutes=EMAIL_TOKEN_TTL_MINUTES),
-    )
-    db.add(reset_token)
-    await db.commit()
-
+async def _build_email(db: AsyncSession, reset_link_base: str, token: str) -> tuple[str, str]:
+    """موضوع و متن ایمیل بازنشانی را از تنظیمات SMTP پنل (یا متن پیش‌فرض) می‌سازد."""
     reset_link = f"{reset_link_base}?token={token}"
-
-    # موضوع و متن ایمیل از تنظیمات SMTP پنل، یا متن پیش‌فرض
     smtp_settings = await get_smtp_settings(db)
     subject = smtp_settings.password_reset_email_subject or "بازنشانی رمز عبور - پرتال سازمانی"
     body_template = smtp_settings.password_reset_email_body or (
@@ -233,47 +223,128 @@ async def request_reset(db: AsyncSession, identifier: str, channel: str, reset_l
         body = body_template.replace("{reset_link}", reset_link)
     else:
         body = f"{body_template}\n\n{reset_link}"
-
-    # ارسال ایمیل؛ در صورت خطا، توکن ساخته‌شده حذف و خطا دوباره پرتاب می‌شود
-    try:
-        await send_email(db, to_address=email, subject=subject, body_text=body)
-    except (EmailNotConfiguredError, EmailError):
-        await db.delete(reset_token)
-        await db.commit()
-        raise
-
-    return RequestResetResult(masked_contact=_mask_email(email), expires_in_seconds=EMAIL_TOKEN_TTL_MINUTES * 60)
+    return subject, body
 
 
-async def verify_reset_token(db: AsyncSession, token: str) -> None:
+async def request_reset(db: AsyncSession, identifier: str, channel: str, reset_link_base: str) -> RequestResetResult:
+    """
+    ورودی: شناسه، channel ("email" یا "sms") و reset_link_base (فقط برای ایمیل). توکن می‌سازد (هش آن را ذخیره می‌کند)
+    و ارسال را به پس‌زمینه می‌سپارد؛ اگر توکن معتبری از قبل باشد، توکن جدید ساخته نمی‌شود.
+    خروجی: RequestResetResult؛ همیشه با عمر کامل کانال (نه زمان باقی‌مانده) تا از پاسخ نتوان وجود حساب یا
+    درخواست قبلی را تشخیص داد. هیچ خطایی برای مشکل درگاه پیامک/ایمیل پرتاب نمی‌شود (فقط لاگ).
+    """
+    ttl_minutes = SMS_TOKEN_TTL_MINUTES if channel == "sms" else EMAIL_TOKEN_TTL_MINUTES
+    expires_in = ttl_minutes * 60
+    fake = _fake_masked_mobile(identifier) if channel == "sms" else _fake_masked_email(identifier)
+
+    user = await _find_user_by_identifier(db, identifier)
+    if user is None:
+        # شناسه‌ی ناموجود: ماسک ساختگی و انقضای کامل کانال، تا پاسخ با حالت واقعی یکسان باشد
+        return RequestResetResult(masked_contact=fake, expires_in_seconds=expires_in)
+
+    if channel == "sms":
+        destination = await _get_user_mobile(db, user)
+        masked = _mask_mobile(destination) if destination else None
+    else:
+        destination = await _get_user_email(db, user)
+        masked = _mask_email(destination) if destination else None
+    if not destination:
+        return RequestResetResult(masked_contact=fake, expires_in_seconds=expires_in)
+
+    now = datetime.now(timezone.utc)
+    # اگر کد/لینک معتبری از قبل ارسال شده، دوباره فرستاده نمی‌شود (ضد اسپم پیامک)؛ پاسخ همان شکل عادی است
+    pending = await _get_pending_token(db, user.id, now)
+    if pending is not None:
+        return RequestResetResult(masked_contact=masked, expires_in_seconds=expires_in)
+
+    if channel == "sms":
+        # کد ۶ رقمی در بازه‌ی ۱۰۰۰۰۰ تا ۹۹۹۹۹۹ (بدون صفر ابتدایی)، چون پارامتر کد در Pattern پیامک
+        # معمولاً عددی است و صفرهای ابتدایی حذف می‌شوند
+        secret = str(secrets.randbelow(900_000) + 100_000)
+        token_channel = PasswordResetChannel.sms
+    else:
+        secret = secrets.token_urlsafe(32)
+        token_channel = PasswordResetChannel.email
+
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token=_hash_token(secret),
+        channel=token_channel,
+        created_at=now,
+        expires_at=now + timedelta(minutes=ttl_minutes),
+        attempts=0,
+    )
+    db.add(reset_token)
+    await db.commit()
+
+    # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر درگاه نمی‌ماند
+    _schedule_send(reset_token.id, channel, destination, secret, reset_link_base)
+    return RequestResetResult(masked_contact=masked, expires_in_seconds=expires_in)
+
+
+async def _lookup_token(db: AsyncSession, token: str, identifier: str | None) -> PasswordResetToken:
+    """
+    توکن معتبر را پیدا می‌کند یا PasswordResetError می‌دهد. منطق:
+    - کد ۶ رقمی پیامکی فقط با identifier پذیرفته می‌شود و با (user_id, hash) جست‌وجو می‌شود؛
+    - توکن طولانی لینک ایمیل بدون identifier هم با hash تنها پیدا می‌شود (اگر identifier بود، به حساب هم مقید می‌شود).
+    کد اشتباه برای حسابی که توکن در انتظار دارد، attempts آن توکن را بالا می‌برد و پس از MAX_TOKEN_ATTEMPTS
+    توکن باطل (used_at) می‌شود؛ پیام خطا در همه‌ی حالت‌های «نامعتبر» یکسان است تا چیزی نشت نکند.
+    """
+    invalid = PasswordResetError("کد/لینک بازنشانی نامعتبر است")
+    code = _normalize_code(token)
+    if not code:
+        raise invalid
+    token_hash = _hash_token(code)
+    now = datetime.now(timezone.utc)
+
+    user: User | None = None
+    if identifier:
+        user = await _find_user_by_identifier(db, identifier)
+        if user is None:
+            raise invalid
+    elif is_short_code(code):
+        # کد کوتاه بدون شناسه‌ی حساب: جست‌وجوی سراسری اجازه‌ی حدس روی همه‌ی حساب‌ها را می‌داد
+        raise invalid
+
+    conds = [PasswordResetToken.token == token_hash]
+    if user is not None:
+        conds.append(PasswordResetToken.user_id == user.id)
+    result = await db.execute(select(PasswordResetToken).where(*conds).order_by(PasswordResetToken.id.desc()))
+    reset_token = result.scalars().first()
+
+    if reset_token is None:
+        if user is not None:
+            pending = await _get_pending_token(db, user.id, now)
+            if pending is not None:
+                pending.attempts = (pending.attempts or 0) + 1
+                if pending.attempts >= MAX_TOKEN_ATTEMPTS:
+                    pending.used_at = now  # باطل‌کردن: کاربر باید کد جدید بگیرد
+                    logger.warning("توکن بازنشانی کاربر %s پس از %s کد اشتباه باطل شد", user.id, pending.attempts)
+                await db.commit()
+        raise invalid
+    if reset_token.used_at is not None:
+        raise PasswordResetError("این کد/لینک قبلاً استفاده شده است")
+    if reset_token.expires_at < now:
+        raise PasswordResetError("این کد/لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
+    return reset_token
+
+
+async def verify_reset_token(db: AsyncSession, token: str, identifier: str | None = None) -> None:
     """
     اعتبار توکن/کد را بدون مصرف آن (بدون تغییر used_at) بررسی می‌کند؛ در جریان پیامکی پیش از نمایش فرم رمز جدید.
-    خطا: PasswordResetError اگر توکن ناموجود، مصرف‌شده یا منقضی باشد.
+    identifier (نام‌کاربری/کد پرسنلی) برای کد ۶ رقمی الزامی است. خطا: PasswordResetError اگر توکن ناموجود،
+    مصرف‌شده یا منقضی باشد (کد اشتباه شمارنده‌ی تلاش توکن را بالا می‌برد).
     """
-    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == token))
-    reset_token = result.scalar_one_or_none()
-    if reset_token is None:
-        raise PasswordResetError("کد/لینک بازنشانی نامعتبر است")
-    if reset_token.used_at is not None:
-        raise PasswordResetError("این کد/لینک قبلاً استفاده شده است")
-    if reset_token.expires_at < datetime.now(timezone.utc):
-        raise PasswordResetError("این کد/لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
+    await _lookup_token(db, token, identifier)
 
 
-async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+async def reset_password(db: AsyncSession, token: str, new_password: str, identifier: str | None = None) -> None:
     """
     با توکن معتبر، رمز جدید را (پس از بررسی قدرت رمز) ثبت و توکن را مصرف می‌کند؛ has_custom_password=True می‌شود.
-    خطا: PasswordResetError برای توکن ناموجود/مصرف‌شده/منقضی، رمز ضعیف یا کاربر ناموجود.
+    identifier برای کد ۶ رقمی الزامی است. خطا: PasswordResetError برای توکن ناموجود/مصرف‌شده/منقضی،
+    رمز ضعیف یا کاربر ناموجود.
     """
-    # اعتبارسنجی توکن (همان بررسی‌های verify_reset_token)
-    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == token))
-    reset_token = result.scalar_one_or_none()
-    if reset_token is None:
-        raise PasswordResetError("کد/لینک بازنشانی نامعتبر است")
-    if reset_token.used_at is not None:
-        raise PasswordResetError("این کد/لینک قبلاً استفاده شده است")
-    if reset_token.expires_at < datetime.now(timezone.utc):
-        raise PasswordResetError("این کد/لینک منقضی شده است — دوباره درخواست بازنشانی بدهید")
+    reset_token = await _lookup_token(db, token, identifier)
 
     try:
         validate_password_strength(new_password)
@@ -285,8 +356,10 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
         raise PasswordResetError("کاربر یافت نشد")
 
     # ثبت رمز جدید و علامت‌گذاری توکن به‌عنوان مصرف‌شده
+    now = datetime.now(timezone.utc)
     user.password_hash = hash_password(new_password)
     user.has_custom_password = True
     user.must_change_password = False
-    reset_token.used_at = datetime.now(timezone.utc)
+    user.password_changed_at = now  # ابطال همه‌ی توکن‌های قبلی (مثلاً نشست مهاجمی که رمز قبلی را داشت)
+    reset_token.used_at = now
     await db.commit()

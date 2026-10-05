@@ -162,9 +162,24 @@ def _url_quote(value: str) -> str:
 # ---------- مدیریت ----------
 
 
+async def _require_org_wide_insurance_manage(db: AsyncSession, user: User) -> None:
+    """
+    تنظیمات ماژول (نرخ‌ها، نکات، فعال بودن کلی) بین همه‌ی سایت‌ها مشترک است؛ خواندن/تغییر آن فقط با
+    insurance.manage سراسری (یا superuser). مدیر یک سایت فقط /insurance/sites خودش را کنترل می‌کند. وگرنه 403.
+    """
+    if await get_sites_with_permission(db, user, "insurance.manage") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="تنظیمات بیمه تکمیلی بین همه‌ی سایت‌ها مشترک است و فقط با مجوز insurance.manage برای همه‌ی سایت‌ها در دسترس است",
+        )
+
+
 @router.get("/settings", response_model=InsuranceSettingsOut)
-async def get_settings(db: AsyncSession = Depends(get_db), _user=Depends(require_permission("insurance.manage"))):
-    """تنظیمات ماژول (فعال بودن، جدول نرخ، نکات) برای صفحه‌ی مدیریت."""
+async def get_settings(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(require_permission("insurance.manage"))
+):
+    """تنظیمات ماژول (فعال بودن، جدول نرخ، نکات) برای صفحه‌ی مدیریت. فقط insurance.manage سراسری (وگرنه 403)."""
+    await _require_org_wide_insurance_manage(db, current_user)
     return await InsuranceService(db).get_settings()
 
 
@@ -172,9 +187,10 @@ async def get_settings(db: AsyncSession = Depends(get_db), _user=Depends(require
 async def update_settings(
     payload: InsuranceSettingsIn,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("insurance.manage")),
+    current_user: User = Depends(require_permission("insurance.manage")),
 ):
-    """فقط فیلدهای ارسال‌شده در بدنه را تغییر می‌دهد و تنظیمات کامل جدید را برمی‌گرداند."""
+    """فقط فیلدهای ارسال‌شده در بدنه را تغییر می‌دهد و تنظیمات کامل جدید را برمی‌گرداند. فقط insurance.manage سراسری (وگرنه 403)."""
+    await _require_org_wide_insurance_manage(db, current_user)
     try:
         return await InsuranceService(db).update_settings(payload.model_dump(exclude_unset=True))
     except InsuranceError as e:

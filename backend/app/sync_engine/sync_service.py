@@ -30,7 +30,7 @@
 from datetime import datetime, timezone
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -796,6 +796,8 @@ class SyncService:
         skipped_inactive = 0
         transferred = 0
         seen_codes: set[str] = set()
+        deactivated_employee_ids: list[int] = []  # پرسنلی که در این اجرا از فعال به غیرفعال رفتند
+        reactivated_employee_ids: list[int] = []  # پرسنلی که در این اجرا از غیرفعال به فعال برگشتند
         now = datetime.now(timezone.utc)
         has_department_mapping = "department_raw" in columns
         department_cache: dict[str, int] = {}
@@ -976,6 +978,10 @@ class SyncService:
                     existing.address = address
                 if has_department_mapping:
                     existing.department_id = department_id
+                if existing.is_active and not is_active:
+                    deactivated_employee_ids.append(existing.id)
+                elif not existing.is_active and is_active:
+                    reactivated_employee_ids.append(existing.id)
                 existing.is_active = is_active
                 # is_enabled عمداً اینجا دست‌کاری نمی‌شود. آن یک
                 # تصمیم دستی Admin است (از پنل «پرسنل») و باید مستقل از نتیجه
@@ -984,7 +990,40 @@ class SyncService:
                 updated += 1
 
         await self.db.flush()
+        await self._deactivate_linked_users(deactivated_employee_ids, now)
+        await self._reactivate_linked_users(reactivated_employee_ids)
         return inserted, updated, skipped_inactive, seen_codes, transferred
+
+    async def _reactivate_linked_users(self, employee_ids: list[int]) -> None:
+        """
+        پرسنلی که در این اجرا دوباره فعال شدند (بازگشت به کار، یا رفع یک خطای موقت Sync): حساب User متصلشان دوباره فعال
+        می‌شود — فقط اگر Admin آن پرسنل را دستی غیرفعال نکرده باشد (Employee.is_enabled). بدون این، کاربرِ با رمز شخصی
+        برای همیشه پشت «حساب کاربری غیرفعال است» می‌ماند (مسیر ورود با کد ملی حساب را فعال می‌کند، ولی مسیر رمز نه).
+        """
+        if not employee_ids:
+            return
+        enabled_ids = select(Employee.id).where(Employee.id.in_(employee_ids), Employee.is_enabled.is_(True))
+        await self.db.execute(
+            update(User)
+            .where(User.employee_id.in_(enabled_ids), User.is_active.is_(False))
+            .values(is_active=True)
+            .execution_options(synchronize_session=False)
+        )
+
+    async def _deactivate_linked_users(self, employee_ids: list[int], now: datetime) -> None:
+        """
+        حساب‌های User متصل به پرسنلی که در این اجرا غیرفعال شدند را با یک UPDATE غیرفعال می‌کند و
+        password_changed_at را «اکنون» می‌گذارد تا نشست‌های باز آن‌ها هم باطل شوند.
+        فعال‌سازی دوباره‌ی خودکار انجام نمی‌شود (در اولین ورود موفق، get_or_create_employee_user حساب را فعال می‌کند).
+        """
+        if not employee_ids:
+            return
+        await self.db.execute(
+            update(User)
+            .where(User.employee_id.in_(employee_ids), User.is_active.is_(True))
+            .values(is_active=False, password_changed_at=now)
+            .execution_options(synchronize_session=False)
+        )
 
     async def _record_transfer(self, employee: Employee, to_site_id: int, now: datetime) -> None:
         """
@@ -1070,9 +1109,13 @@ class SyncService:
             )
         )
         count = 0
+        deactivated_employee_ids: list[int] = []
         for emp in result.scalars().all():
             if emp.personnel_code not in seen_codes:
                 emp.is_active = False
+                deactivated_employee_ids.append(emp.id)
                 count += 1
         await self.db.flush()
+        # حساب کاربری پرسنل حذف‌شده از منبع هم غیرفعال می‌شود (نشست‌های باز باطل)
+        await self._deactivate_linked_users(deactivated_employee_ids, datetime.now(timezone.utc))
         return count

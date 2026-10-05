@@ -10,16 +10,18 @@ class EmployeeOut(BaseModel):
 
     id: int
     personnel_code: str
-    national_code: str | None
+    # کد ملی، موبایل و وضعیت رمز، داده‌ی حساس‌اند (کد ملی رمز پیش‌فرض ورود است): فقط برای فراخوانی که
+    # employees.view یا users.manage برای سایت همان پرسنل دارد (یا superuser) پر می‌شوند؛ برای بقیه None.
+    national_code: str | None = None
     first_name: str
     last_name: str
-    mobile: str | None
+    mobile: str | None = None
     site_id: int
     department_id: int | None
     position_title: str | None = None
     is_active: bool  # وضعیت در منبع (فقط توسط Sync Engine تعیین می‌شود؛ غیرقابل‌ویرایش دستی)
     is_enabled: bool  # تصمیم دستی Admin — کاملاً مستقل از Sync، با آن بازنویسی نمی‌شود
-    has_custom_password: bool = False  # آیا رمز عبور اختصاصی دارد (یعنی دیگر با کد ملی وارد نمی‌شود)
+    has_custom_password: bool | None = False  # آیا رمز عبور اختصاصی دارد (یعنی دیگر با کد ملی وارد نمی‌شود)
     # این دو فیلد را فقط GET /employees (با Join روی Site/Department) پر می‌کند؛ Endpoint های دیگر
     # (مثل PATCH) خالی می‌گذارند و فرانت‌اند نام سایت/واحد را از فهرست محلی خودش پیدا می‌کند.
     site_name: str | None = None

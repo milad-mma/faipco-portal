@@ -11,7 +11,65 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.schemas.site import identifier_validator, passthrough_validator
 from app.services.kara_schema import LEAVE_SCHEMA_DEFAULTS, validate_schema
+
+# فیلدهای نام جدول (schema.table مجاز) و نام ستون در نگاشت مرخصی/ماموریت
+_LEAVE_TABLE_FIELDS = (
+    "table_name",
+    "action_lookup_table_name",
+    "operation_lookup_table_name",
+    "card_lookup_table_name",
+    "employee_table_name",
+    "section_table_name",
+    "wf_reviews_table_name",
+    "wf_attachment_table_name",
+    "wf_moveup_table_name",
+    "wf_parallel_approval_table_name",
+)
+_LEAVE_COLUMN_FIELDS = (
+    "request_id_column",
+    "emp_no_column",
+    "submitting_date_column",
+    "card_no_column",
+    "start_date_column",
+    "end_date_column",
+    "start_hour_column",
+    "end_hour_column",
+    "duration_column",
+    "is_final_approved_column",
+    "approval_by_manager_column",
+    "approval_date_column",
+    "operations_id_column",
+    "description_column",
+    "cur_emp_no_column",
+    "manager_idea_column",
+    "is_first_time_shift_column",
+    "persian_start_date_column",
+    "application_id_column",
+    "source_column",
+    "destination_column",
+    "action_id_column",
+    "action_lookup_id_column",
+    "action_lookup_desc_column",
+    "operation_lookup_id_column",
+    "operation_lookup_desc_column",
+    "card_lookup_id_column",
+    "card_lookup_desc_column",
+    "card_lookup_action_id_column",
+    "employee_emp_no_column",
+    "employee_sec_no_column",
+    "section_sec_no_column",
+    "section_manager_emp_no_column",
+    "section_parent_column",
+    "wf_reviews_request_id_column",
+    "wf_reviews_reviewed_emp_no_column",
+    "wf_reviews_description_column",
+    "wf_reviews_type_column",
+    "wf_reviews_date_column",
+    "wf_reviews_show_to_personal_column",
+    "branch_code_column",
+)
 
 
 class EmployeeBrief(BaseModel):
@@ -89,6 +147,10 @@ class LeaveRequestMappingIn(BaseModel):
     # نام جدول/ستون‌های کاراوب (کلید «گروه.نقش») - هر بخش فقط اگر نگاشت شده باشد فعال است
     kara_schema: dict[str, str] = {}
 
+    # اعتبارسنجی نام جدول‌ها (با اجازه‌ی schema.table) و ستون‌ها در برابر الگوی امن (جلوگیری از تزریق SQL)
+    _validate_tables = identifier_validator(*_LEAVE_TABLE_FIELDS, allow_schema=True)
+    _validate_columns = identifier_validator(*_LEAVE_COLUMN_FIELDS)
+
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
@@ -101,6 +163,10 @@ class LeaveRequestMappingOut(LeaveRequestMappingIn):
 
     id: int
     site_id: int
+
+    # خروجی: رکورد ذخیره‌شده بدون اعتبارسنجی مجدد نام‌ها برگردانده می‌شود
+    _validate_tables = passthrough_validator(*_LEAVE_TABLE_FIELDS)
+    _validate_columns = passthrough_validator(*_LEAVE_COLUMN_FIELDS)
 
     @field_validator("kara_schema", mode="before")
     @classmethod

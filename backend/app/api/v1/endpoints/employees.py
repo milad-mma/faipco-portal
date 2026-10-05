@@ -10,16 +10,19 @@ Endpoint های پرسنل (/employees): لیست/جستجوی صفحه‌بند
 می‌شود — دقیقاً با همان منطقی که هنگام ورود پرسنل (employee-login) استفاده می‌شود.
 """
 import asyncio
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, undefer
 
 from app.core.deps import get_current_user, require_permission
 from app.core.text_normalize import normalize_search_text
-from app.core.site_access import get_accessible_site_ids, get_sites_with_permission
+from app.core.site_access import (
+    get_accessible_site_ids,
+    get_sites_with_permission,
+    get_sites_with_permission_prefix,
+)
 from app.services.employee_cleanup_service import (
     delete_orphaned_inactive_employees,
     find_orphaned_inactive_employees,
@@ -46,7 +49,7 @@ from app.schemas.employee import (
     EmployeePasswordSet,
 )
 from app.schemas.user_management import AssignRoleIn, UserRoleOut
-from app.services.user_management_service import UserManagementService
+from app.services.user_management_service import RolePrivilegeError, UserManagementService
 
 router = APIRouter()
 
@@ -63,6 +66,40 @@ _SORT_COLUMNS: dict[str, list] = {
     "is_enabled": [Employee.is_enabled],
     "is_active": [Employee.is_active],
 }
+
+# مجوزهایی که دیدن داده‌ی حساس پرسنل (کد ملی، موبایل، وضعیت رمز) را برای یک سایت می‌دهند
+_SENSITIVE_FIELD_PERMISSIONS = ("employees.view", "users.manage")
+
+
+async def _sensitive_field_site_ids(db: AsyncSession, user: User) -> set[int] | None:
+    """
+    سایت‌هایی که فراخوان مجاز است کد ملی/موبایل/وضعیت رمز پرسنل آن‌ها را ببیند.
+    None = همه‌ی سایت‌ها (superuser یا مجوز سراسری)؛ Set (حتی خالی) = فقط همان سایت‌ها.
+    کد ملی رمز پیش‌فرض ورود پرسنل است، پس هر کاربر لاگین‌شده‌ای نباید آن را ببیند.
+    """
+    if user.is_superuser:
+        return None
+    allowed: set[int] = set()
+    for code in _SENSITIVE_FIELD_PERMISSIONS:
+        sites = await get_sites_with_permission(db, user, code)
+        if sites is None:
+            return None
+        allowed |= sites
+    return allowed
+
+
+def _can_see_sensitive(site_id: int, privileged_site_ids: set[int] | None) -> bool:
+    """آیا فراخوان برای پرسنلِ این سایت مجاز به دیدن فیلدهای حساس است؟"""
+    return privileged_site_ids is None or site_id in privileged_site_ids
+
+
+def _mask_sensitive_fields(out: EmployeeOut, privileged_site_ids: set[int] | None) -> EmployeeOut:
+    """فیلدهای حساس را برای فراخوانِ بدون مجوز روی سایت آن پرسنل None می‌کند (Schema اختیاری است؛ UI نمی‌شکند)."""
+    if not _can_see_sensitive(out.site_id, privileged_site_ids):
+        out.national_code = None
+        out.mobile = None
+        out.has_custom_password = None
+    return out
 
 
 @router.get("", response_model=EmployeePageOut)
@@ -104,11 +141,15 @@ async def list_employees(
     """
     فهرست صفحه‌بندی‌شده پرسنل با فیلتر (سایت، واحد، جستجو، نقش، وضعیت) و مرتب‌سازی.
     دسترسی: هر کاربر لاگین‌شده، ولی نتایج به سایت‌های در دسترس کاربر محدود می‌شود.
+    کد ملی، موبایل و has_custom_password فقط برای پرسنل سایت‌هایی برگردانده می‌شوند که فراخوان
+    employees.view یا users.manage دارد (یا superuser)؛ برای بقیه None‌اند و جستجو با کد ملی هم شامل آن‌ها نمی‌شود.
     خروجی: EmployeePageOut (آیتم‌های همین صفحه + تعداد کل).
     """
     # ایزوله‌سازی چندسایتی: کاربر فقط پرسنل سایت‌هایی را می‌بیند که در آن‌ها نقش دارد،
     # حتی اگر site_id دیگری در URL بفرستد. None یعنی بدون محدودیت (Admin یا نقش سراسری).
     accessible_site_ids = await get_accessible_site_ids(db, _current_user)
+    # سایت‌هایی که فراخوان مجاز است کد ملی/موبایل/وضعیت رمز پرسنلشان را ببیند (None = همه)
+    privileged_site_ids = await _sensitive_field_site_ids(db, _current_user)
 
     def apply_filters(stmt):
         """همه فیلترهای درخواست را روی یک select اعمال می‌کند (مشترک بین کوئری شمارش و کوئری داده)."""
@@ -125,14 +166,20 @@ async def list_employees(
         search_text = normalize_search_text(search)  # ارقام فارسی/عربی و ي/ك ← لاتین/فارسی
         if search_text:
             pattern = f"%{search_text}%"
-            stmt = stmt.where(
-                or_(
-                    Employee.first_name.ilike(pattern),
-                    Employee.last_name.ilike(pattern),
-                    Employee.personnel_code.ilike(pattern),
-                    Employee.national_code.ilike(pattern),
+            search_clauses = [
+                Employee.first_name.ilike(pattern),
+                Employee.last_name.ilike(pattern),
+                Employee.personnel_code.ilike(pattern),
+            ]
+            # جستجو با کد ملی فقط روی پرسنل سایت‌هایی که فراخوان مجاز به دیدن کد ملی‌شان است؛
+            # وگرنه می‌شد با جستجوی تدریجی کد ملی (رمز پیش‌فرض ورود) پرسنل دیگر را حدس زد
+            if privileged_site_ids is None:
+                search_clauses.append(Employee.national_code.ilike(pattern))
+            elif privileged_site_ids:
+                search_clauses.append(
+                    and_(Employee.national_code.ilike(pattern), Employee.site_id.in_(privileged_site_ids))
                 )
-            )
+            stmt = stmt.where(or_(*search_clauses))
         # فقط پرسنلی که User متصلشان نقش has_role را دارد
         if has_role:
             role_exists = (
@@ -163,9 +210,10 @@ async def list_employees(
     result = await db.execute(data_stmt)
     rows = result.all()
 
-    # has_custom_password روی User است نه Employee؛ با یک کوئری جدا فقط برای پرسنل همین صفحه خوانده می‌شود
+    # has_custom_password روی User است نه Employee؛ با یک کوئری جدا فقط برای پرسنلِ همین صفحه که فراخوان
+    # مجاز به دیدن داده‌ی حساسشان است خوانده می‌شود
     custom_password_by_employee: dict[int, bool] = {}
-    employee_ids = [row[0].id for row in rows]
+    employee_ids = [row[0].id for row in rows if _can_see_sensitive(row[0].site_id, privileged_site_ids)]
     if employee_ids:
         user_result = await db.execute(
             select(User.employee_id, User.has_custom_password).where(User.employee_id.in_(employee_ids))
@@ -173,22 +221,25 @@ async def list_employees(
         custom_password_by_employee = dict(user_result.all())
 
     items = [
-        EmployeeOut(
-            id=e.id,
-            personnel_code=e.personnel_code,
-            national_code=e.national_code,
-            first_name=e.first_name,
-            last_name=e.last_name,
-            mobile=e.mobile,
-            site_id=e.site_id,
-            department_id=e.department_id,
-            position_title=e.position_title,
-            is_active=e.is_active,
-            is_enabled=e.is_enabled,
-            has_custom_password=custom_password_by_employee.get(e.id, False),
-            site_name=site_name,
-            department_name=department_name,
-            is_manually_created=e.is_manually_created,
+        _mask_sensitive_fields(
+            EmployeeOut(
+                id=e.id,
+                personnel_code=e.personnel_code,
+                national_code=e.national_code,
+                first_name=e.first_name,
+                last_name=e.last_name,
+                mobile=e.mobile,
+                site_id=e.site_id,
+                department_id=e.department_id,
+                position_title=e.position_title,
+                is_active=e.is_active,
+                is_enabled=e.is_enabled,
+                has_custom_password=custom_password_by_employee.get(e.id, False),
+                site_name=site_name,
+                department_name=department_name,
+                is_manually_created=e.is_manually_created,
+            ),
+            privileged_site_ids,
         )
         for e, site_name, department_name in rows
     ]
@@ -661,16 +712,24 @@ async def assign_role_to_employee(
 ):
     """
     یک نقش (با محدوده سایت‌های اختیاری) را مستقیماً به پرسنل می‌دهد؛ در صورت نیاز حساب کاربری‌اش را می‌سازد.
-    مجوز: users.manage برای سایت آن پرسنل و همه سایت‌های نقش. خطاها: 404 پرسنل، 403 خارج از محدوده، 400 نقش نامعتبر.
-    خروجی: فهرست نقش‌های کاربر پس از انتصاب.
+    مجوز: users.manage برای سایت آن پرسنل و همه سایت‌های نقش. خطاها: 404 پرسنل، 403 خارج از محدوده / انتصاب به خود /
+    نقشی با مجوز فراتر از فراخوان، 400 نقش نامعتبر. خروجی: فهرست نقش‌های کاربر پس از انتصاب.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
 
+    service = UserManagementService(db)
     # ایزوله‌سازی چندسایتی: require_permission فقط بررسی می‌کند کاربر «جایی» این مجوز را دارد؛
     # اینجا بررسی می‌شود که سایت همین پرسنل هم جزو سایت‌های تحت مجوز users.manage کاربر باشد.
     if not current_user.is_superuser:
+        # جلوگیری از ارتقای سطح دسترسی: نه به خودِ فراخوان، نه نقشی با مجوزی که فراخوان خودش ندارد
+        if employee.id == current_user.employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="نمی‌توانید به حساب خودتان نقش اختصاص دهید")
+        try:
+            await service.assert_can_grant_role(current_user, payload.role_id, payload.site_ids)
+        except RolePrivilegeError as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
         if accessible_site_ids is not None:
             if employee.site_id not in accessible_site_ids:
@@ -688,8 +747,10 @@ async def assign_role_to_employee(
     # اگر این پرسنل هنوز حساب کاربری نداشته باشد، همین‌جا ساخته می‌شود
     # (دقیقاً همان User که بعداً با ورود کد پرسنلی/کد ملی خودش هم استفاده خواهد شد)
     user = await UserRepository(db).get_or_create_employee_user(employee)
+    if user.id == current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="نمی‌توانید به حساب خودتان نقش اختصاص دهید")
     try:
-        return await UserManagementService(db).assign_role(user.id, payload)
+        return await service.assign_role(user.id, payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -720,6 +781,36 @@ async def list_supervised_departments(
 
 # ---------- فعال/غیرفعال‌کردن دستی + تعیین رمز عبور (پنل Admin) ----------
 
+
+async def _require_password_authority(db: AsyncSession, current_user: User, employee: Employee) -> None:
+    """
+    تعیین/بازنشانی رمز یک پرسنل یعنی توانایی ورود به‌جای او؛ پس غیر-superuser نمی‌تواند رمز کسی را عوض کند که
+    (الف) superuser است یا (ب) مجوزی دارد که خودِ فراخوان (سراسری یا برای سایت همان پرسنل) ندارد — وگرنه با ورود
+    به‌جای او دسترسی بیشتری می‌گرفت.
+    بدون حساب کاربری (هنوز وارد نشده) هیچ دسترسی‌ای ندارد و بررسی لازم نیست. خطا: 403.
+    """
+    if current_user.is_superuser:
+        return
+    target = (await db.execute(select(User).where(User.employee_id == employee.id))).scalar_one_or_none()
+    if target is None:
+        return
+    if target.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="رمز عبور مدیر ارشد (superuser) را نمی‌توانید تغییر دهید")
+    # هر مجوز هدف (از هر انتصاب) باید نزد فراخوان یا سراسری باشد یا دست‌کم برای سایت همین پرسنل
+    target_codes = await UserRepository(db).get_all_permission_codes(target.id)
+    actor_sites_by_code = await get_sites_with_permission_prefix(db, current_user, "")  # {کد: سایت‌ها | None=سراسری}
+    missing = [
+        code
+        for code in target_codes
+        if (held := actor_sites_by_code.get(code, set())) is not None and employee.site_id not in held
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="این پرسنل مجوزهایی دارد که شما ندارید؛ تغییر رمز عبور او مجاز نیست",
+        )
+
+
 @router.patch("/{employee_id}", response_model=EmployeeOut)
 async def update_employee_enabled_state(
     employee_id: int,
@@ -741,18 +832,22 @@ async def update_employee_enabled_state(
 
     result = await db.execute(select(User.has_custom_password).where(User.employee_id == employee.id))
     has_custom_password = result.scalar_one_or_none() or False  # بدون حساب کاربری → False
-    return EmployeeOut(
-        id=employee.id,
-        personnel_code=employee.personnel_code,
-        national_code=employee.national_code,
-        first_name=employee.first_name,
-        last_name=employee.last_name,
-        mobile=employee.mobile,
-        site_id=employee.site_id,
-        department_id=employee.department_id,
-        is_active=employee.is_active,
-        is_enabled=employee.is_enabled,
-        has_custom_password=has_custom_password,
+    # employees.update به‌تنهایی مجوز دیدن کد ملی/موبایل نیست؛ همان قاعده‌ی GET /employees اعمال می‌شود
+    return _mask_sensitive_fields(
+        EmployeeOut(
+            id=employee.id,
+            personnel_code=employee.personnel_code,
+            national_code=employee.national_code,
+            first_name=employee.first_name,
+            last_name=employee.last_name,
+            mobile=employee.mobile,
+            site_id=employee.site_id,
+            department_id=employee.department_id,
+            is_active=employee.is_active,
+            is_enabled=employee.is_enabled,
+            has_custom_password=has_custom_password,
+        ),
+        await _sensitive_field_site_ids(db, current_user),
     )
 
 
@@ -766,12 +861,14 @@ async def set_employee_password(
     """
     تعیین دستی رمز عبور ورود یک پرسنل توسط Admin. بعد از این، ورود با کد ملی
     برای این پرسنل دیگر کار نمی‌کند — فقط با «کد پرسنلی + این رمز جدید».
-    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز، 400 رمز ضعیف.
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز یا پرسنلِ superuser /
+    با مجوز فراتر از فراخوان، 400 رمز ضعیف.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
     await _require_employee_site_permission(db, current_user, employee, "users.manage")
+    await _require_password_authority(db, current_user, employee)
     try:
         await UserRepository(db).set_employee_password(employee, payload.new_password)
     except WeakPasswordError as e:
@@ -805,10 +902,12 @@ async def reset_employee_password(
 ):
     """
     بازگرداندن پرسنل به روش ورود پیش‌فرض (کد پرسنلی + کد ملی) — رمز عبور اختصاصی قبلی از کار می‌افتد.
-    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز.
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز یا پرسنلِ superuser /
+    با مجوز فراتر از فراخوان.
     """
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
     await _require_employee_site_permission(db, current_user, employee, "users.manage")
+    await _require_password_authority(db, current_user, employee)
     await UserRepository(db).reset_employee_to_default_login(employee)

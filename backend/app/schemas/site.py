@@ -4,9 +4,100 @@ Schema های Pydantic برای مدیریت Site: ایجاد/نمایش سای�
 """
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
-from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, validate_schema
+from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, validate_schema, validate_sql_identifier
 
 from app.models.site import AttendanceMappingMode, DbType, SyncStatus
+
+
+def clean_identifier(value, field_name: str, *, allow_schema: bool = False):
+    """
+    نام جدول/ستون/پیشوند نگاشت را پاک‌سازی و اعتبارسنجی می‌کند (جلوگیری از تزریق SQL در نام‌هایی
+    که قابل Parameterized شدن نیستند) — همان الگوی _SAFE_NAME در kara_schema (validate_sql_identifier).
+    ورودی: مقدار خام، نام فیلد (برای پیام خطا) و اینکه آیا «schema.table» مجاز است.
+    خروجی: رشته‌ی trim‌شده؛ None/خالی → None (برای فیلدهای اختیاری).
+    """
+    try:
+        return validate_sql_identifier(value, allow_schema=allow_schema)
+    except ValueError as e:
+        raise ValueError(f"فیلد «{field_name}»: {e}") from e
+
+
+def identifier_validator(*fields: str, allow_schema: bool = False):
+    """
+    یک field_validator (mode=before) برای فهرست فیلدهای داده‌شده می‌سازد که clean_identifier را
+    روی هرکدام اجرا می‌کند. در کلاس‌های خروجی (Out) با یک validator بی‌اثر override می‌شود تا
+    رکوردهای ذخیره‌شده‌ی قدیمی بدون اعتبارسنجی مجدد برگردند.
+    """
+
+    def _validate(cls, value, info):
+        return clean_identifier(value, info.field_name, allow_schema=allow_schema)
+
+    return field_validator(*fields, mode="before")(classmethod(_validate))
+
+
+def passthrough_validator(*fields: str):
+    """validator بی‌اثر برای کلاس‌های خروجی: مقدار ذخیره‌شده را بدون تغییر برمی‌گرداند."""
+
+    def _passthrough(cls, value, info):
+        return value
+
+    return field_validator(*fields, mode="before")(classmethod(_passthrough))
+
+
+# فیلدهای نام جدول و نام ستون/پیشوند در نگاشت پرسنل
+_EMPLOYEE_TABLE_FIELDS = (
+    "table_name",
+    "department_lookup_table",
+    "position_lookup_table",
+    "photo_table",
+    "education_lookup_table",
+    "history_table",
+)
+_EMPLOYEE_COLUMN_FIELDS = (
+    "personnel_code_column",
+    "national_code_column",
+    "first_name_column",
+    "last_name_column",
+    "mobile_column",
+    "email_column",
+    "address_column",
+    "birth_date_column",
+    "hire_date_column",
+    "gender_column",
+    "is_active_column",
+    "branch_code_column",
+    "department_column",
+    "department_lookup_id_column",
+    "department_lookup_name_column",
+    "department_lookup_parent_column",
+    "position_column",
+    "position_lookup_id_column",
+    "position_lookup_name_column",
+    "photo_emp_no_column",
+    "photo_thumbnail_column",
+    "termination_date_column",
+    "termination_reason_column",
+    "education_column",
+    "education_lookup_id_column",
+    "education_lookup_name_column",
+    "history_order_column",
+)
+
+# فیلدهای نام جدول و نام ستون/پیشوند در نگاشت تردد
+_ATTENDANCE_TABLE_FIELDS = ("table_name", "calendar_table_name")
+_ATTENDANCE_COLUMN_FIELDS = (
+    "personnel_code_column",
+    "date_column",
+    "time_column",
+    "enter_date_column",
+    "enter_time_column",
+    "exit_date_column",
+    "exit_time_column",
+    "calendar_year_column",
+    "calendar_month_column",
+    "calendar_day_column_prefix",
+    "calendar_branch_column",
+)
 
 
 class SiteCreate(BaseModel):
@@ -135,6 +226,10 @@ class EmployeeMappingIn(BaseModel):
     history_table: str | None = None
     history_order_column: str | None = None
 
+    # اعتبارسنجی نام جدول‌ها (با اجازه‌ی schema.table) و ستون‌ها در برابر الگوی امن
+    _validate_tables = identifier_validator(*_EMPLOYEE_TABLE_FIELDS, allow_schema=True)
+    _validate_columns = identifier_validator(*_EMPLOYEE_COLUMN_FIELDS)
+
     @field_validator("turnover_start_month", mode="before")
     @classmethod
     def _clean_start_month(cls, value):
@@ -208,6 +303,10 @@ class EmployeeMappingOut(EmployeeMappingIn):
     id: int
     site_id: int
 
+    # خروجی: رکورد ذخیره‌شده بدون اعتبارسنجی مجدد نام‌ها برگردانده می‌شود
+    _validate_tables = passthrough_validator(*_EMPLOYEE_TABLE_FIELDS)
+    _validate_columns = passthrough_validator(*_EMPLOYEE_COLUMN_FIELDS)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -250,6 +349,10 @@ class AttendanceMappingIn(BaseModel):
     # - هر بخش فقط اگر نگاشت شده باشد فعال است
     kara_schema: dict[str, str] = {}
 
+    # اعتبارسنجی نام جدول‌ها (با اجازه‌ی schema.table) و ستون‌ها/پیشوند در برابر الگوی امن
+    _validate_tables = identifier_validator(*_ATTENDANCE_TABLE_FIELDS, allow_schema=True)
+    _validate_columns = identifier_validator(*_ATTENDANCE_COLUMN_FIELDS)
+
     @field_validator("kara_schema", mode="before")
     @classmethod
     def _kara_schema(cls, value):
@@ -275,6 +378,10 @@ class AttendanceMappingOut(AttendanceMappingIn):
 
     id: int
     site_id: int
+
+    # خروجی: رکورد ذخیره‌شده بدون اعتبارسنجی مجدد نام‌ها برگردانده می‌شود
+    _validate_tables = passthrough_validator(*_ATTENDANCE_TABLE_FIELDS)
+    _validate_columns = passthrough_validator(*_ATTENDANCE_COLUMN_FIELDS)
 
     @field_validator("kara_schema", mode="before")
     @classmethod

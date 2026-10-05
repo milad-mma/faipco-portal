@@ -95,12 +95,15 @@ def _quote(db_type: DbType, name: str) -> str:
     نام جدول/ستون را با علامت کوته‌ی مخصوص نوع دیتابیس احاطه می‌کند:
     SQL Server [براکت]، MySQL بک‌تیک، PostgreSQL گیومه‌ی دوتایی.
     نام‌ها فقط از AttendanceMapping تنظیم‌شده توسط Admin می‌آیند، چون در هیچ درایوری قابل Parameterized شدن نیستند.
+    علامت پایانی داخل نام دوبرابر می‌شود (] → ]]، ` → ``، " → "") تا نام نتواند از کوته خارج شود، و
+    «schema.table» (مثل dbo.DataFile) برای هر بخش جداگانه کوته می‌شود ([dbo].[DataFile]).
     """
+    parts = name.split(".", 1) if "." in name else [name]
     if db_type == DbType.mysql:
-        return f"`{name}`"
+        return ".".join("`" + p.replace("`", "``") + "`" for p in parts)
     if db_type == DbType.postgresql:
-        return f'"{name}"'
-    return f"[{name}]"  # mssql
+        return ".".join('"' + p.replace('"', '""') + '"' for p in parts)
+    return ".".join("[" + p.replace("]", "]]") + "]" for p in parts)  # mssql
 
 
 def _open_raw_connection(conn: SiteConnection):

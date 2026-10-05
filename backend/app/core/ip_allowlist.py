@@ -2,16 +2,23 @@
 منطق «محدودکردن ورود به رنج‌های IP مجاز» که در auth_service.py استفاده می‌شود:
 تشخیص IP واقعی کاربر، نرمال‌سازی IP، بررسی فعال بودن محدودیت و تطبیق IP با رنج‌های CIDR.
 
-نکته درباره تشخیص IP واقعی کاربر: این سرور پشت Nginx است (که خودش هم
-ممکن است پشت یک Reverse Proxy خارجی برای SSL باشد — یعنی دو لایه Proxy).
-چون uvicorn با فلگ --proxy-headers اجرا نمی‌شود، Request.client.host همیشه
-127.0.0.1 (اتصال محلی از Nginx) خواهد بود، نه IP واقعی کاربر. Nginx با
-`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` این هدر را
-به هر Proxy جدید در زنجیره اضافه (نه جایگزین) می‌کند — پس با فرض این‌که
-Reverse Proxy خارجی هم همین رفتار استاندارد را دارد، **اولین مقدار** در
-X-Forwarded-For همیشه IP اصلی کاربر است، صرف‌نظر از تعداد Proxy های بین راه.
-اگر این هدر اصلاً نبود (مثلاً تست مستقیم به بک‌اند)، از Request.client.host
-استفاده می‌شود.
+نکته درباره تشخیص IP واقعی کاربر: این سرور پشت Nginx است و چون uvicorn با فلگ
+--proxy-headers اجرا نمی‌شود، Request.client.host همیشه 127.0.0.1 (اتصال محلی از
+Nginx) خواهد بود، نه IP واقعی کاربر. Nginx نصب‌شده با install.sh دو هدر می‌فرستد:
+- `proxy_set_header X-Real-IP $remote_addr;` → IP طرفِ اتصالِ TCP به Nginx. چون
+  proxy_set_header مقدار ارسالی کلاینت را **جایگزین** می‌کند (نه الحاق)، این هدر
+  هیچ‌وقت قابل جعل از سمت کاربر نیست و منبع اصلی تشخیص IP است.
+- `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` → مقدار قبلی
+  هدر + IP اتصال. یعنی اگر مهاجم خودش هدر X-Forwarded-For جعلی بفرستد، مقدار
+  جعلی در **ابتدای** لیست می‌ماند و IP واقعی به **انتهای** آن اضافه می‌شود.
+  پس «اولین مقدار» (رفتار قبلی) کاملاً قابل جعل بود و همین اجازه‌ی دورزدن
+  «رنج‌های IP مجاز» و محدودیت‌های IP را می‌داد؛ فقط **آخرین مقدار** (آن‌چه
+  نزدیک‌ترین Proxy خودش اضافه کرده) قابل اعتماد است.
+ترتیب: X-Real-IP، سپس آخرین مقدار X-Forwarded-For، سپس Request.client.host
+(مثلاً تست مستقیم به بک‌اند بدون Nginx).
+
+پراکسی خارجی (مثلاً SSL جلوی Nginx): IP آن با REVERSE_PROXY_IP در .env (گزینه‌ی --reverse-proxy-ip در install.sh)
+«معتبر» اعلام می‌شود و get_client_ip از آن عبور می‌کند تا به IP واقعی کاربر در X-Forwarded-For برسد.
 """
 from __future__ import annotations
 
@@ -24,13 +31,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ip_allowlist_entry import IpAllowlistEntry
 
 
+def _trusted_proxies() -> set[str]:
+    """IPهای پراکسی‌های معتبر: پراکسی خارجی تنظیم‌شده (REVERSE_PROXY_IP در .env؛ با کاما چندتایی) + loopback."""
+    from app.core.config import get_settings  # import محلی: این ماژول در زمان import تنظیمات را لازم ندارد
+
+    trusted = {"127.0.0.1", "::1"}
+    raw = getattr(get_settings(), "REVERSE_PROXY_IP", "") or ""
+    for part in str(raw).replace(";", ",").split(","):
+        part = part.strip()
+        if part:
+            trusted.add(_normalize_ip(part))
+    return trusted
+
+
 def get_client_ip(request: Request) -> str:
-    """ورودی: Request. خروجی: IP واقعی کاربر (اولین مقدار X-Forwarded-For یا client.host، در غیر این صورت "unknown")."""
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        first_ip = forwarded_for.split(",")[0].strip()
-        if first_ip:
-            return first_ip
+    """
+    ورودی: Request. خروجی: IP کاربر نهایی از دید نزدیک‌ترین Proxy معتبر، در غیر این صورت "unknown".
+    قاعده: زنجیره‌ی X-Forwarded-For از راست به چپ پیمایش می‌شود و اولین IPای که «پراکسی معتبر» نیست کلاینت است.
+    - X-Real-IP را Nginx محلی با IP اتصال ($remote_addr) جایگزین می‌کند؛ اگر این IP پراکسی معتبر نباشد، همان کلاینت است.
+    - اگر X-Real-IP خودِ پراکسی خارجی باشد (SSL جلوی Nginx، گزینه‌ی --reverse-proxy-ip)، مقدار قبل از آن در
+      X-Forwarded-For (که آن پراکسی افزوده) کلاینت است. مقادیر جلوتر را کلاینت می‌تواند جعل کند و نادیده می‌مانند.
+    """
+    trusted = _trusted_proxies()
+    chain = [p.strip() for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        # X-Real-IP اتصال واقعی به Nginx است؛ به انتهای زنجیره اضافه می‌شود (معادل $proxy_add_x_forwarded_for)
+        if not chain or _normalize_ip(chain[-1]) != _normalize_ip(real_ip):
+            chain.append(real_ip)
+    elif not chain and request.client:
+        return request.client.host
+    for hop in reversed(chain):
+        if _normalize_ip(hop) not in trusted:
+            return hop
+    # همه‌ی زنجیره پراکسی معتبر بود (مثلاً فقط loopback): نزدیک‌ترین اتصال
+    if chain:
+        return chain[-1]
     return request.client.host if request.client else "unknown"
 
 

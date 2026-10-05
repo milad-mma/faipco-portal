@@ -52,6 +52,9 @@ RESET_KEY_PREFIX = "reset-password:"
 
 # رویدادهایی که «تلاش ناموفق» حساب می‌شوند (محدودیت IP، کپچای IP و هشدار)
 FAILURE_KINDS = ("login_failed", "captcha_failed", "reset_code_failed")
+# سقف درخواست‌های «فراموشی رمز» از یک IP در بازه‌ی ip_window_minutes (جدا از تلاش‌های ناموفق؛
+# درخواست موفق هم شمرده می‌شود تا نتوان با شناسه‌های متفاوت، وجود حساب‌ها را انبوه بررسی یا پیامک انبوه فرستاد)
+FORGOT_PASSWORD_IP_MAX = 10
 EVENT_LABELS = {
     "login_failed": "ورود ناموفق",
     "login_locked": "تلاش روی شناسه‌ی قفل",
@@ -153,6 +156,25 @@ async def ip_failure_count(db: AsyncSession, ip: str, window_minutes: int) -> in
         )
     )
     return int(result.scalar_one() or 0)
+
+
+async def forgot_password_ip_exceeded(db: AsyncSession, cfg: LoginSecuritySettings, ip: str) -> bool:
+    """
+    True اگر این IP (غیرمعاف، با محدودیت IP روشن) در بازه‌ی ip_window_minutes به سقف FORGOT_PASSWORD_IP_MAX
+    درخواست «فراموشی رمز» رسیده باشد؛ رویدادهای forgot_password که قبلاً از پنل آزاد شده‌اند (counted=False) شمرده نمی‌شوند.
+    """
+    if not ip_limit_applies(cfg, ip):
+        return False
+    since = datetime.now(timezone.utc) - timedelta(minutes=cfg.ip_window_minutes)
+    result = await db.execute(
+        select(func.count(LoginSecurityEvent.id)).where(
+            LoginSecurityEvent.ip == ip,
+            LoginSecurityEvent.created_at >= since,
+            LoginSecurityEvent.counted.is_(True),
+            LoginSecurityEvent.kind == "forgot_password",
+        )
+    )
+    return int(result.scalar_one() or 0) >= FORGOT_PASSWORD_IP_MAX
 
 
 async def ip_block_remaining(db: AsyncSession, cfg: LoginSecuritySettings, ip: str) -> float | None:

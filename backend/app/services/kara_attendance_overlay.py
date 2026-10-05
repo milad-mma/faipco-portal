@@ -50,6 +50,11 @@ KIND_OTHER = "other"
 DAILY_WORK_CARDS = 24
 
 
+def _quote(name: str) -> str:
+    """نام ستون SQL Server را در [ ] محصور می‌کند و «]» داخل نام را دوبرابر می‌کند تا نام نتواند از کوته خارج شود."""
+    return "[" + name.replace("]", "]]") + "]"
+
+
 def _open_raw_connection(conn: SiteConnection):
     """اتصال pymssql به SQL Server سایت با رمز رمزگشایی‌شده و timeout ده ثانیه."""
     return pymssql.connect(
@@ -184,7 +189,7 @@ def fetch_overlay_sync(
                     )
                 if with_cards:
                     prefix = n.raw("daily_work", "card_prefix")
-                    extra_sql += "".join(f", w.[{prefix}{i}] AS C{i}" for i in range(1, DAILY_WORK_CARDS + 1))
+                    extra_sql += "".join(f", w.{_quote(f'{prefix}{i}')} AS C{i}" for i in range(1, DAILY_WORK_CARDS + 1))
                 cur.execute(
                     f"SELECT w.{W('date')} AS DateInt, CASE WHEN s.{sh_no} IS NULL THEN 1 ELSE 0 END AS IsOff{extra_sql} "
                     f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "

@@ -38,7 +38,9 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # فقط برای نوع Element/ParseError؛ پارس با defusedxml انجام می‌شود
+
+from defusedxml import ElementTree as SafeET  # پارسر امن: DTD، Entity و XXE را رد می‌کند
 
 from app.services.payroll_common import (
     FOOTER_LABEL_COLUMN,
@@ -329,8 +331,9 @@ def parse_salary_receipt_items(xml_bytes: bytes) -> list[ParsedReceiptItem]:
             )
 
     try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as e:
+        # defusedxml: لایه‌ی دوم در برابر DTD/Entity (خطاهای آن از ValueError مشتق‌اند)
+        root = SafeET.fromstring(xml_bytes)
+    except (ET.ParseError, ValueError) as e:
         raise PayrollXmlError(f"فایل XML معتبر نیست: {e}") from e
 
     # پارس هر SalaryReceiptItem در هر عمقی از درخت

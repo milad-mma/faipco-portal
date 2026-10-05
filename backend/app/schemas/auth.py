@@ -33,24 +33,28 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class VerifyResetCodeRequest(BaseModel):
-    """بدنه‌ی POST /auth/verify-reset-code."""
-    token: str = Field(min_length=1)
+    """بدنه‌ی POST /auth/verify-reset-code. identifier (شناسه‌ی ورود) برای کد ۶ رقمی پیامکی الزامی است."""
+    token: str = Field(min_length=1, max_length=128)
+    identifier: str | None = Field(default=None, max_length=255)  # نام‌کاربری یا کد پرسنلی که در مرحله‌ی قبل وارد شده
 
 
 class ResetPasswordRequest(BaseModel):
-    """بدنه‌ی POST /auth/reset-password."""
-    token: str
+    """بدنه‌ی POST /auth/reset-password. identifier برای کد ۶ رقمی پیامکی الزامی است (لینک ایمیل: اختیاری)."""
+    token: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=6)
+    identifier: str | None = Field(default=None, max_length=255)
 
 
 class ContactInfoUpdateRequest(BaseModel):
     """
     بدنه‌ی PUT /auth/me/contact-info؛ موبایل اجباری است (منبع اصلی اطلاع‌رسانی/بازیابی حساب)
-    و ایمیل اختیاری.
+    و ایمیل اختیاری. current_password فقط وقتی لازم است که موبایل یا ایمیل واقعاً تغییر کند
+    (برای پرسنل بدون رمز اختصاصی = کد ملی).
     """
 
     email: EmailStr | None = None
     mobile: str = Field(min_length=1)
+    current_password: str | None = Field(default=None, max_length=256)
 
 
 class TokenResponse(BaseModel):

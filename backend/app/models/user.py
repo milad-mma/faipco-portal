@@ -47,6 +47,11 @@ class User(Base, TimestampMixin):
     # یا وقتی Admin برای پرسنل رمز تعیین می‌کند، True می‌شود.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # زمان آخرین تغییر رمز/ابطال نشست‌ها (Migration 101). توکن‌هایی که claim iat آن‌ها قبل از این زمان
+    # باشد رد می‌شوند؛ پس تغییر رمز، بازنشانی توسط Admin، غیرفعال‌سازی و «خروج» همه‌ی نشست‌های باز
+    # کاربر را باطل می‌کند. NULL = هیچ ابطالی ثبت نشده (همه‌ی توکن‌های معتبر پذیرفته می‌شوند).
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 

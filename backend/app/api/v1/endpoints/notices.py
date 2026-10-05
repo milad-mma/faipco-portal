@@ -157,8 +157,12 @@ async def mark_notice_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """مشاهده اطلاعیه توسط کاربر جاری را ثبت می‌کند؛ هنگام باز کردن اطلاعیه از فرانت‌اند صدا زده می‌شود. خروجی: 204."""
-    await NoticeService(db).mark_as_read(notice_id, current_user.id)
+    """
+    مشاهده اطلاعیه توسط کاربر جاری را ثبت می‌کند؛ هنگام باز کردن اطلاعیه از فرانت‌اند صدا زده می‌شود. خروجی: 204.
+    خطا: 404 اگر اطلاعیه وجود نداشته باشد یا به این کاربر نرسد (همان قواعد مخاطبِ فهرست اطلاعیه‌ها).
+    """
+    if not await NoticeService(db).mark_as_read(notice_id, current_user):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
 
 
 @router.post("/{notice_id}/archive", status_code=status.HTTP_204_NO_CONTENT)

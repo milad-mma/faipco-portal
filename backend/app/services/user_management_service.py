@@ -5,12 +5,14 @@
 - ساخت/ویرایش/حذف تعریف نقش‌ها و فهرست مجوزها. انتصاب نقش پایه‌ی سلسله‌مراتب ارسال اطلاعیه است.
 نقش «superadmin» هیچ‌گاه از این سرویس قابل انتصاب، ویرایش یا حذف نیست.
 """
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.site_access import get_sites_with_permission_prefix
 from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.site_transfer import SiteTransfer
@@ -18,12 +20,87 @@ from app.models.user import Permission, Role, RolePermission, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.user_management import AssignRoleIn, RoleUpsertIn
 
+# مجوزهایی با این پیشوند (تنظیمات سیستم، پشتیبان، IP allowlist...) فقط توسط superuser به نقش‌ها داده می‌شوند
+SYSTEM_PERMISSION_PREFIX = "system."
+
+
+class RolePrivilegeError(Exception):
+    """
+    فراخوان می‌خواهد دسترسی‌ای فراتر از دسترسی خودش بدهد (ارتقای سطح دسترسی) — در Endpoint به 403 تبدیل می‌شود.
+    پیام فارسی برای نمایش به کاربر.
+    """
+
 
 class UserManagementService:
     """عملیات مدیریت نقش، مجوز و انتصاب؛ ورودی سازنده: نشست دیتابیس."""
     def __init__(self, db: AsyncSession):
         """نشست async دیتابیس را نگه می‌دارد."""
         self.db = db
+
+    # ---------- جلوگیری از ارتقای سطح دسترسی (users.manage نباید بتواند بیشتر از خودش بدهد) ----------
+
+    async def caller_permission_sites(self, caller: User) -> dict[str, set[int] | None]:
+        """
+        همه‌ی مجوزهای فراخوان با محدوده‌شان: {کد مجوز: مجموعه‌ی site_id یا None = سراسری}.
+        سراسری یعنی انتصاب بدون سایت یا برای همه‌ی سایت‌های موجود. برای superuser معنا ندارد (نامحدود).
+        """
+        return await get_sites_with_permission_prefix(self.db, caller, "")
+
+    async def role_permission_codes(self, role_id: int) -> set[str]:
+        """کدهای مجوز یک نقش."""
+        result = await self.db.execute(
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role_id)
+        )
+        return {row[0] for row in result.all()}
+
+    async def _check_grantable_codes(
+        self, caller: User, codes: set[str], site_ids: Iterable[int] | None = None
+    ) -> None:
+        """
+        غیر-superuser نمی‌تواند مجوز system.* یا مجوزی که خودش ندارد را به کسی بدهد (نه در تعریف نقش، نه در انتصاب).
+        site_ids=None: مجوز باید سراسری در اختیار فراخوان باشد (تعریف نقش بین همه‌ی سایت‌ها مشترک است).
+        site_ids داده‌شده (انتصاب سایت‌محور): فراخوان باید هر مجوز را برای همه‌ی همان سایت‌ها داشته باشد.
+        خطا: RolePrivilegeError.
+        """
+        if caller.is_superuser:
+            return
+        system_codes = sorted(c for c in codes if c.startswith(SYSTEM_PERMISSION_PREFIX))
+        if system_codes:
+            raise RolePrivilegeError(
+                "مجوزهای سیستمی (" + "، ".join(system_codes) + ") فقط توسط مدیر ارشد (superuser) قابل اعطا هستند"
+            )
+        held = await self.caller_permission_sites(caller)
+        wanted = None if site_ids is None else set(site_ids)
+        missing: list[str] = []
+        for code in sorted(codes):
+            held_sites = held.get(code, set())  # نداشتن مجوز = مجموعه‌ی خالی
+            if held_sites is None:
+                continue  # سراسری → برای هر محدوده‌ای کافی است
+            if wanted is None or not wanted <= held_sites:
+                missing.append(code)
+        if missing:
+            scope = "برای همه‌ی سایت‌ها" if wanted is None else "برای این سایت(ها)"
+            raise RolePrivilegeError(
+                f"نمی‌توانید مجوزی را اعطا کنید که خودتان {scope} ندارید: " + "، ".join(missing)
+            )
+
+    async def assert_can_grant_role(self, caller: User, role_id: int, site_ids: Iterable[int] | None = None) -> None:
+        """
+        پیش از انتصاب نقش: نقش نباید مجوزی فراتر از مجوزهای فراخوان داشته باشد (برای site_ids انتصاب،
+        یا سراسری اگر site_ids=None). خطا: RolePrivilegeError.
+        """
+        if caller.is_superuser:
+            return
+        await self._check_grantable_codes(caller, await self.role_permission_codes(role_id), site_ids)
+
+    async def _check_payload_permissions(self, caller: User | None, permission_ids: list[int] | None) -> None:
+        """مجوزهای درخواستی برای ساخت/ویرایش نقش را با قاعده‌ی _check_grantable_codes می‌سنجد."""
+        if caller is None or caller.is_superuser or not permission_ids:
+            return
+        result = await self.db.execute(select(Permission.code).where(Permission.id.in_(permission_ids)))
+        await self._check_grantable_codes(caller, {row[0] for row in result.all()})
 
     async def list_roles(self, exclude_superadmin: bool = True) -> list[Role]:
         """فهرست نقش‌ها را برمی‌گرداند؛ به‌طور پیش‌فرض superadmin حذف می‌شود."""
@@ -91,10 +168,13 @@ class UserManagementService:
         employee_ids: list[int] | None = None,
         site_id: int | None = None,
         department_id: int | None = None,
+        skip_employee_id: int | None = None,
     ) -> dict:
         """
         نقش را به فهرست employee_ids یا همه‌ی پرسنل فعال یک سایت/واحد اختصاص می‌دهد؛ حساب User پرسنل در صورت نبود ساخته می‌شود.
         انتصاب هرگز سراسری نیست: site_id فیلتر (در صورت وجود) یا سایت خودِ هر پرسنل روی انتصاب ذخیره می‌شود.
+        skip_employee_id: پرسنلِ خودِ فراخوان (غیر-superuser) که در فیلتر سایت/واحد می‌افتد، بی‌صدا کنار گذاشته می‌شود
+        تا کسی نتواند با انتصاب گروهی به خودش نقش بدهد.
         خروجی: dict شامل assigned_count، already_had_count، not_found_count و total_matched. خطا: ValueError.
         """
         role = await self.db.get(Role, role_id)
@@ -117,6 +197,8 @@ class UserManagementService:
 
         result = await self.db.execute(stmt)
         employees = list(result.scalars().all())
+        if skip_employee_id is not None:
+            employees = [e for e in employees if e.id != skip_employee_id]
 
         not_found_count = len(employee_ids) - len(employees) if employee_ids else 0  # idهایی که پرسنلی برایشان پیدا نشد
 
@@ -414,13 +496,15 @@ class UserManagementService:
         )
         return result.scalar_one_or_none()
 
-    async def create_role(self, payload: RoleUpsertIn) -> Role:
+    async def create_role(self, payload: RoleUpsertIn, caller: User | None = None) -> Role:
         """
         نقش غیرسیستمی جدید با مجوزهای معتبر از payload.permission_ids می‌سازد (idهای نامعتبر نادیده گرفته می‌شوند).
-        خروجی: جزئیات نقش. خطا: ValueError برای نام رزرو «superadmin» یا نام تکراری.
+        caller (غیر-superuser): نمی‌تواند مجوز system.* یا مجوزی که خودش ندارد را در نقش بگذارد.
+        خروجی: جزئیات نقش. خطا: ValueError برای نام رزرو «superadmin» یا نام تکراری؛ RolePrivilegeError برای ارتقای دسترسی.
         """
         if payload.name == "superadmin":
             raise ValueError("این نام رزرو شده است")
+        await self._check_payload_permissions(caller, payload.permission_ids)
         existing = await self.db.execute(select(Role).where(Role.name == payload.name))
         if existing.scalar_one_or_none() is not None:
             raise ValueError("نقشی با همین نام از قبل وجود دارد")
@@ -439,10 +523,11 @@ class UserManagementService:
         await self.db.commit()
         return await self.get_role_detail(role.id)
 
-    async def update_role(self, role_id: int, payload: RoleUpsertIn) -> Role | None:
+    async def update_role(self, role_id: int, payload: RoleUpsertIn, caller: User | None = None) -> Role | None:
         """
-        نام، توضیح و مجوزهای نقش را به‌روزرسانی می‌کند (نقش‌های is_system هم قابل ویرایش‌اند).
-        خروجی: جزئیات نقش، یا None اگر نقش نبود. خطا: ValueError برای superadmin یا نام تکراری.
+        نام، توضیح و مجوزهای نقش را به‌روزرسانی می‌کند (نقش‌های is_system فقط توسط superuser).
+        caller (غیر-superuser): نمی‌تواند مجوز system.* یا مجوزی که خودش ندارد را در نقش بگذارد.
+        خروجی: جزئیات نقش، یا None اگر نقش نبود. خطا: ValueError برای superadmin یا نام تکراری؛ RolePrivilegeError.
         """
         role = await self.db.get(Role, role_id)
         if role is None:
@@ -450,6 +535,10 @@ class UserManagementService:
         # superadmin قابل ویرایش نیست، چون منطق منع انتصاب نقش همین نام را چک می‌کند
         if role.name == "superadmin":
             raise ValueError("نقش superadmin قابل ویرایش نیست")
+        # نقش‌های سیستمی (ساخته‌شده هنگام نصب) فقط توسط superuser تغییر می‌کنند
+        if role.is_system and caller is not None and not caller.is_superuser:
+            raise RolePrivilegeError("نقش‌های سیستمی فقط توسط مدیر ارشد (superuser) قابل ویرایش هستند")
+        await self._check_payload_permissions(caller, payload.permission_ids)
         if payload.name != role.name:
             existing = await self.db.execute(select(Role).where(Role.name == payload.name, Role.id != role_id))
             if existing.scalar_one_or_none() is not None:
