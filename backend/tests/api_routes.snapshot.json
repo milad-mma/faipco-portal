@@ -1,5 +1,5 @@
 {
-  "count": 335,
+  "count": 338,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -17,6 +17,7 @@
     "DELETE /api/v1/leave-requests/{request_id}",
     "DELETE /api/v1/mobile/app/releases/{release_id}",
     "DELETE /api/v1/mobile/exemptions/{exemption_id}",
+    "DELETE /api/v1/notices/attachments/{attachment_id}",
     "DELETE /api/v1/notices/{notice_id}",
     "DELETE /api/v1/performance/departments/{department_id}/supervisor",
     "DELETE /api/v1/performance/forms/categories/{category_id}",
@@ -122,6 +123,7 @@
     "GET /api/v1/monthly-attendance/report",
     "GET /api/v1/notices",
     "GET /api/v1/notices/admin-report",
+    "GET /api/v1/notices/attachments/{attachment_id}",
     "GET /api/v1/notices/available-targets",
     "GET /api/v1/notices/me",
     "GET /api/v1/notices/sent-by-me",
@@ -243,6 +245,7 @@
     "POST /api/v1/notices/attendance-card",
     "POST /api/v1/notices/payroll",
     "POST /api/v1/notices/{notice_id}/archive",
+    "POST /api/v1/notices/{notice_id}/attachments",
     "POST /api/v1/notices/{notice_id}/publish",
     "POST /api/v1/notices/{notice_id}/read",
     "POST /api/v1/notices/{notice_id}/resend-push",

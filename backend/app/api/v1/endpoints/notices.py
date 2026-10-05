@@ -21,6 +21,9 @@ Endpoint های سیستم اطلاعیه سازمانی.
 /notices/{id}/payroll/mine     (GET)   دانلود PDF فیش حقوقی خودِ کاربر جاری برای این اطلاعیه (و فقط خودش)
 /notices/attendance-card               (POST)  آپلود اکسل فیش کارکرد و ارسال خودکار — فقط notices.attendance_card
 /notices/{id}/attendance-card/mine     (GET)   دانلود PDF فیش کارکرد خودِ کاربر جاری برای این اطلاعیه (و فقط خودش)
+/notices/{id}/attachments              (POST)  افزودن تصویر/PDF به پیش‌نویس اطلاعیه — فرستنده + notices.attachments
+/notices/attachments/{attachment_id}   (GET)   نمایش/دانلود پیوست — مخاطب، فرستنده یا دارنده‌ی گزارش اطلاعیه
+/notices/attachments/{attachment_id}   (DELETE) حذف پیوست از پیش‌نویس — فرستنده
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -40,6 +43,7 @@ from app.core.site_access import get_sites_with_permission
 from app.models.user import User
 from app.schemas.notice import (
     AttendanceCardResultOut,
+    NoticeAttachmentOut,
     NoticeCreate,
     NoticeDetailPageOut,
     NoticeOut,
@@ -47,7 +51,13 @@ from app.schemas.notice import (
     NoticeReaderOut,
     PayrollNoticeResultOut,
 )
-from app.services.notice_service import NoticePermissionError, NoticeService, send_publish_notifications
+from app.services.notice_service import (
+    ATTACHMENT_MAX_BYTES,
+    NoticeAttachmentError,
+    NoticePermissionError,
+    NoticeService,
+    send_publish_notifications,
+)
 from app.services.payroll_pdf import render_payroll_receipt_pdf
 from app.services.payroll_service import PayrollNoticeService
 from app.services.payroll_common import PayrollParseError
@@ -149,6 +159,76 @@ async def my_notices(
         current_user, page=page, page_size=page_size, notice_type=notice_type, archived=archived
     )
     return NoticePageOut(items=items, total=total, unread_total=unread_total)
+
+
+# ---------- پیوست تصویر/PDF اطلاعیه‌ی متنی ----------
+
+
+@router.post("/{notice_id}/attachments", response_model=NoticeAttachmentOut)
+async def upload_notice_attachment(
+    notice_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    یک تصویر یا PDF به پیش‌نویس اطلاعیه اضافه می‌کند (حداکثر ۵ فایل، هر کدام ۱۰ مگابایت).
+    دسترسی: فرستنده‌ی اطلاعیه با مجوز notices.attachments برای همه‌ی سایت‌های مخاطب. خطا: 404 / 403 / 400.
+    """
+    content = await file.read(ATTACHMENT_MAX_BYTES + 1)
+    try:
+        return await NoticeService(db).add_attachment(notice_id, current_user, file.filename, content)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except NoticePermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except NoticeAttachmentError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/attachments/{attachment_id}")
+async def download_notice_attachment(
+    attachment_id: int,
+    download: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    محتوای پیوست (پیش‌فرض inline برای نمایش؛ download=true برای ذخیره). فقط برای کسی که اطلاعیه را می‌بیند؛
+    در غیر این صورت 404 (تا وجود پیوست اطلاعیه‌های دیگران لو نرود).
+    """
+    attachment = await NoticeService(db).get_attachment_for_download(attachment_id, current_user)
+    if attachment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فایل یافت نشد")
+    from urllib.parse import quote
+
+    disposition = "attachment" if download else "inline"
+    safe_name = attachment.file_name.encode("ascii", "ignore").decode().replace('"', "") or f"attachment-{attachment.id}"
+    return Response(
+        content=attachment.data,
+        media_type=attachment.content_type,
+        headers={
+            "Content-Disposition": f"{disposition}; filename=\"{safe_name}\"; filename*=UTF-8''{quote(attachment.file_name)}",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.delete("/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notice_attachment(
+    attachment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """حذف پیوست از پیش‌نویس اطلاعیه. دسترسی: فرستنده یا superuser. خطا: 404 / 403."""
+    try:
+        deleted = await NoticeService(db).delete_attachment(attachment_id, current_user)
+    except NoticePermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فایل یافت نشد")
 
 
 @router.post("/{notice_id}/read", status_code=status.HTTP_204_NO_CONTENT)

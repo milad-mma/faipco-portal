@@ -62,6 +62,14 @@ class NoticeCreate(BaseModel):
         return self
 
 
+class NoticeAttachmentOut(BaseModel):
+    """فراداده‌ی یک پیوست اطلاعیه (بدون بایت‌ها)؛ دانلود: GET /notices/attachments/{id}."""
+    id: int
+    file_name: str
+    content_type: str
+    size_bytes: int
+
+
 class NoticeOut(BaseModel):
     """خروجی اطلاعیه در POST /notices، GET /notices و GET /notices/me (با وضعیت شخصی کاربر)."""
     id: int
@@ -81,6 +89,9 @@ class NoticeOut(BaseModel):
     is_archived: bool = False  # همین‌طور فقط در /notices/me — آیا خودِ همین کاربر آرشیوش کرده
     has_my_payroll_receipt: bool = False  # فقط در /notices/me: آیا فیش حقوقی خودِ من برای این اطلاعیه موجود است
     has_my_attendance_card: bool = False  # همین‌طور فقط در /notices/me: آیا فیش کارکرد خودِ من موجود است
+    # پیوست‌ها (فقط در /notices/me پر می‌شود). نام فیلد عمداً با رابطه‌ی Notice.attachments یکی نیست تا
+    # from_attributes آن را lazy-load نکند (در async خطای MissingGreenlet می‌دهد).
+    attachment_items: list[NoticeAttachmentOut] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,6 +120,7 @@ class NoticeDetailOut(BaseModel):
     read_count: int  # تعداد مخاطبانی که اطلاعیه را دیده‌اند
     is_deleted: bool = False
     deleted_at: datetime | None = None
+    attachment_items: list[NoticeAttachmentOut] = []  # پیوست‌ها (فراداده)
 
 
 class NoticeDetailPageOut(BaseModel):

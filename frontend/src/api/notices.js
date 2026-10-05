@@ -138,3 +138,25 @@ export async function fetchMyAttendanceCardBlob(noticeId) {
   });
   return data; // Blob از نوع application/pdf — فقط کارت خودِ کاربر جاری
 }
+
+// ---------- پیوست تصویر/PDF اطلاعیه‌ی متنی ----------
+
+// POST /notices/{id}/attachments؛ افزودن یک فایل به پیش‌نویس (فرستنده با مجوز notices.attachments)
+export async function uploadNoticeAttachment(noticeId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post(`/notices/${noticeId}/attachments`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 3 * 60 * 1000,
+  });
+  return data; // { id, file_name, content_type, size_bytes }
+}
+
+// GET /notices/attachments/{id}؛ محتوای پیوست به‌صورت Blob (برای نمایش تصویر یا باز کردن PDF)
+export async function fetchNoticeAttachmentBlob(attachmentId) {
+  const { data } = await apiClient.get(`/notices/attachments/${attachmentId}`, {
+    responseType: "blob",
+    timeout: 3 * 60 * 1000, // PDF تا ۱۰ مگابایت روی اتصال کند
+  });
+  return data;
+}

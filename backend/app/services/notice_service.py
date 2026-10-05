@@ -29,22 +29,25 @@
 superuser همیشه به همه چیز دسترسی دارد.
 """
 from datetime import datetime, timezone
+import asyncio
 import logging
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
+from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name, sniff_content_type
 from app.core.site_access import get_sites_with_permission
 from app.db.session import AsyncSessionLocal
 from app.models.employee import Department, Employee
-from app.models.notice import Notice, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
+from app.models.notice import Notice, NoticeAttachment, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.notice_read import NoticeRead
 from app.models.notice_archive import NoticeArchive
 from app.models.payroll_receipt import PayrollReceipt
 from app.models.user import Role, User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.notice import (
+    NoticeAttachmentOut,
     NoticeCreate,
     NoticeDetailOut,
     NoticeOut,
@@ -56,6 +59,16 @@ from app.services.push_background import schedule_push
 from app.services.push_service import PushService
 
 logger = logging.getLogger("faipco.notices")
+
+# پیوست اطلاعیه
+ATTACHMENT_PERMISSION = "notices.attachments"
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+ATTACHMENT_MAX_COUNT = 5
+ATTACHMENT_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+
+
+class NoticeAttachmentError(ValueError):
+    """فایل پیوست پذیرفته نشد؛ متن خطا پیام فارسی برای کاربر است."""
 
 
 class NoticePermissionError(Exception):
@@ -488,6 +501,7 @@ class NoticeService:
 
         # نام و واحد فرستنده‌ها با یک Query
         sender_details = await self._resolve_sender_details({n.sender_id for n in notices})
+        attachments_by_notice = await self.attachments_meta(notice_ids)
 
         # ساخت خروجی به همراه وضعیت‌های شخصی کاربر
         items = [
@@ -511,6 +525,7 @@ class NoticeService:
                 is_archived=n.id in archived_ids,
                 has_my_payroll_receipt=n.id in payroll_receipt_notice_ids,
                 has_my_attendance_card=n.id in attendance_card_notice_ids,
+                attachment_items=attachments_by_notice.get(n.id, []),
             )
             for n in notices
         ]
@@ -642,6 +657,9 @@ class NoticeService:
             return notice  # از قبل حذف شده — اجرای دوباره بی‌اثر است
         notice.is_deleted = True
         notice.deleted_at = datetime.now(timezone.utc)
+        # پیش‌نویسی که هرگز منتشر نشده (مثلاً آپلود پیوست ناموفق بود) گیرنده‌ای ندارد؛ بایت‌های پیوستش نگه داشته نمی‌شود
+        if notice.status == NoticeStatus.draft:
+            await self.db.execute(delete(NoticeAttachment).where(NoticeAttachment.notice_id == notice_id))
         await self.db.commit()
         return notice
 
@@ -681,6 +699,174 @@ class NoticeService:
         filters.append(Notice.id.in_(select(NoticeTarget.notice_id).where(or_(*target_conditions))))
         result = await self.db.execute(select(Notice.id).where(*filters).limit(1))
         return result.scalar_one_or_none() is not None
+
+    # ---------- پیوست تصویر/PDF اطلاعیه‌ی متنی (Migration 103) ----------
+
+    async def attachments_meta(self, notice_ids: list[int]) -> dict[int, list[NoticeAttachmentOut]]:
+        """فراداده‌ی پیوست‌های چند اطلاعیه با یک کوئری (بدون بایت‌ها): {notice_id: [پیوست‌ها به ترتیب آپلود]}."""
+        if not notice_ids:
+            return {}
+        result = await self.db.execute(
+            select(
+                NoticeAttachment.id,
+                NoticeAttachment.notice_id,
+                NoticeAttachment.file_name,
+                NoticeAttachment.content_type,
+                NoticeAttachment.size_bytes,
+            )
+            .where(NoticeAttachment.notice_id.in_(notice_ids))
+            .order_by(NoticeAttachment.id)
+        )
+        out: dict[int, list[NoticeAttachmentOut]] = {}
+        for att_id, notice_id, name, ctype, size in result.all():
+            out.setdefault(notice_id, []).append(
+                NoticeAttachmentOut(id=att_id, file_name=name, content_type=ctype, size_bytes=size)
+            )
+        return out
+
+    async def _notice_target_site_ids(self, notice_id: int) -> tuple[set[int], bool]:
+        """
+        سایت‌هایی که اطلاعیه به آن‌ها می‌رسد و اینکه آیا مقصد «سراسری» دارد (همه / نقش — که به سایت خاصی محدود نیست).
+        سایت ← خودش، واحد ← سایت واحد، پرسنل ← سایت پرسنل.
+        """
+        rows = (
+            await self.db.execute(
+                select(NoticeTarget.target_type, NoticeTarget.target_id).where(NoticeTarget.notice_id == notice_id)
+            )
+        ).all()
+        site_ids: set[int] = set()
+        dept_ids: set[int] = set()
+        emp_ids: set[int] = set()
+        org_wide = False
+        for ttype, tid in rows:
+            if ttype in (NoticeTargetType.all, NoticeTargetType.role) or tid is None:
+                org_wide = True
+            elif ttype == NoticeTargetType.site:
+                site_ids.add(tid)
+            elif ttype == NoticeTargetType.department:
+                dept_ids.add(tid)
+            elif ttype == NoticeTargetType.employee:
+                emp_ids.add(tid)
+        if dept_ids:
+            site_ids |= {
+                sid for (sid,) in (await self.db.execute(select(Department.site_id).where(Department.id.in_(dept_ids)))).all()
+            }
+        if emp_ids:
+            site_ids |= {
+                sid for (sid,) in (await self.db.execute(select(Employee.site_id).where(Employee.id.in_(emp_ids)))).all()
+            }
+        return site_ids, org_wide
+
+    async def _ensure_can_attach(self, notice: Notice, user: User) -> None:
+        """
+        افزودن/حذف پیوست: فقط فرستنده (یا superuser)، فقط روی پیش‌نویسِ حذف‌نشده‌ی متنی، و فقط با مجوز
+        notices.attachments برای همه‌ی سایت‌های مخاطب (مقصد «همه» یا «نقش» → مجوز برای همه‌ی سایت‌ها).
+        """
+        if notice.sender_id != user.id and not user.is_superuser:
+            raise NoticePermissionError("فقط فرستنده‌ی اطلاعیه می‌تواند پیوست آن را تغییر دهد")
+        if notice.is_deleted or notice.status != NoticeStatus.draft or notice.notice_type != NoticeType.normal:
+            raise NoticePermissionError("پیوست فقط پیش از انتشار اطلاعیه‌ی متنی قابل تغییر است")
+        if user.is_superuser:
+            return
+        allowed = await get_sites_with_permission(self.db, user, ATTACHMENT_PERMISSION)
+        if allowed is None:
+            return
+        site_ids, org_wide = await self._notice_target_site_ids(notice.id)
+        if org_wide or not site_ids or not site_ids <= allowed:
+            raise NoticePermissionError("اجازه‌ی افزودن پیوست به اطلاعیه برای همه‌ی مخاطبان این اطلاعیه را ندارید")
+
+    async def add_attachment(self, notice_id: int, user: User, file_name: str | None, content: bytes) -> NoticeAttachmentOut:
+        """
+        یک تصویر/PDF به پیش‌نویس اطلاعیه اضافه می‌کند. نوع از بایت‌ها تشخیص داده می‌شود، تصویر دوباره ذخیره (متادیتا و
+        محتوای جاسازی‌شده حذف، GIF/WEBP → JPEG/PNG) و PDF دارای اسکریپت/فایل جاسازی‌شده/رمز رد می‌شود.
+        خطا: NoticePermissionError (403)، NoticeAttachmentError (400)، None اگر اطلاعیه نباشد → LookupError.
+        """
+        notice = await self.db.get(Notice, notice_id)
+        if notice is None:
+            raise LookupError("اطلاعیه یافت نشد")
+        await self._ensure_can_attach(notice, user)
+        if len(content) > ATTACHMENT_MAX_BYTES:
+            raise NoticeAttachmentError("حجم هر فایل نباید بیشتر از ۱۰ مگابایت باشد.")
+        count = await self.db.scalar(select(func.count(NoticeAttachment.id)).where(NoticeAttachment.notice_id == notice_id))
+        if (count or 0) >= ATTACHMENT_MAX_COUNT:
+            raise NoticeAttachmentError(f"حداکثر {ATTACHMENT_MAX_COUNT} فایل برای هر اطلاعیه مجاز است.")
+        detected = sniff_content_type(content)
+        if detected not in ATTACHMENT_ALLOWED_TYPES:
+            raise NoticeAttachmentError("فقط تصویر (JPG، PNG، WEBP، GIF) یا فایل PDF پذیرفته می‌شود.")
+        try:
+            content, detected = await asyncio.to_thread(sanitize_document, content, detected)
+        except DocumentRejected as e:
+            raise NoticeAttachmentError(str(e)) from e
+        if len(content) > ATTACHMENT_MAX_BYTES:
+            raise NoticeAttachmentError("حجم هر فایل نباید بیشتر از ۱۰ مگابایت باشد.")
+        attachment = NoticeAttachment(
+            notice_id=notice_id,
+            file_name=sanitize_file_name(file_name, detected)[:160],
+            content_type=detected,
+            size_bytes=len(content),
+            data=content,
+            uploaded_by_user_id=user.id,
+        )
+        self.db.add(attachment)
+        await self.db.commit()
+        return NoticeAttachmentOut(
+            id=attachment.id, file_name=attachment.file_name, content_type=detected, size_bytes=attachment.size_bytes
+        )
+
+    async def delete_attachment(self, attachment_id: int, user: User) -> bool:
+        """حذف پیوست از پیش‌نویس (فرستنده/superuser). خروجی False اگر پیوست نباشد."""
+        row = (
+            await self.db.execute(
+                select(NoticeAttachment.id, NoticeAttachment.notice_id).where(NoticeAttachment.id == attachment_id)
+            )
+        ).first()
+        if row is None:
+            return False
+        notice = await self.db.get(Notice, row.notice_id)
+        if notice is None:
+            return False
+        if notice.sender_id != user.id and not user.is_superuser:
+            raise NoticePermissionError("فقط فرستنده‌ی اطلاعیه می‌تواند پیوست آن را تغییر دهد")
+        if notice.is_deleted or notice.status != NoticeStatus.draft:
+            raise NoticePermissionError("پیوست فقط پیش از انتشار اطلاعیه قابل تغییر است")
+        await self.db.execute(delete(NoticeAttachment).where(NoticeAttachment.id == attachment_id))
+        await self.db.commit()
+        return True
+
+    async def can_view_notice_content(self, notice: Notice, user: User) -> bool:
+        """
+        چه کسی محتوای اطلاعیه (و پیوست‌هایش) را می‌بیند: فرستنده، superuser، مخاطب (اطلاعیه‌ی منتشرشده و حذف‌نشده
+        که به او می‌رسد)، یا دارنده‌ی notices.view / notices.site_report سراسری یا برای یکی از سایت‌های مخاطب.
+        """
+        if notice.sender_id == user.id or user.is_superuser:
+            return True
+        if await self._reaches_user(notice.id, user):
+            return True
+        for code in ("notices.view", "notices.site_report"):
+            sites = await get_sites_with_permission(self.db, user, code)
+            if sites is None:
+                return True
+            if sites and await self.notice_reaches_any_site(notice.id, sites):
+                return True
+        return False
+
+    async def get_attachment_for_download(self, attachment_id: int, user: User) -> NoticeAttachment | None:
+        """پیوست با بایت‌ها، فقط اگر کاربر اجازه‌ی دیدن اطلاعیه‌اش را دارد؛ وگرنه None (Endpoint → 404 تا وجودش لو نرود)."""
+        attachment = (
+            await self.db.execute(
+                select(NoticeAttachment).options(undefer(NoticeAttachment.data)).where(NoticeAttachment.id == attachment_id)
+            )
+        ).scalar_one_or_none()
+        if attachment is None:
+            return None
+        notice = await self.db.get(Notice, attachment.notice_id)
+        if notice is None:
+            return None
+        if notice.is_deleted and notice.sender_id != user.id and not user.is_superuser:
+            return None
+        if not await self.can_view_notice_content(notice, user):
+            return None
+        return attachment
 
     async def mark_as_read(self, notice_id: int, user: User) -> bool:
         """
@@ -1036,6 +1222,7 @@ class NoticeService:
         all_targets = [t for n in notices for t in n.targets]
         target_descriptions_by_key = await self._describe_targets_batch(all_targets)
         audience_counts = await self._resolve_audience_counts_batch(notices)
+        attachments_by_notice = await self.attachments_meta(notice_ids)
 
         # ساخت خروجی نهایی هر اطلاعیه
         detailed: list[NoticeDetailOut] = []
@@ -1060,6 +1247,8 @@ class NoticeService:
                     read_count=read_counts.get(notice.id, 0),
                     is_deleted=notice.is_deleted,
                     deleted_at=notice.deleted_at,
+                    # پیوست اطلاعیه‌ی حذف‌شده برای گزارش‌گیرنده قابل دانلود نیست؛ در گزارش هم نمایش داده نمی‌شود
+                    attachment_items=[] if notice.is_deleted else attachments_by_notice.get(notice.id, []),
                 )
             )
         return detailed, total

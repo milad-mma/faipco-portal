@@ -52,6 +52,7 @@ DEFAULT_PERMISSIONS = [
     ("notices.target.employee", "ارسال اطلاعیه به یک یا چند پرسنل خاص"),
     ("notices.payroll", "آپلود و ارسال اطلاعیه فیش حقوقی (Payroll Notice)"),
     ("notices.attendance_card", "آپلود و ارسال اطلاعیه فیش کارکرد (Attendance Card Notice)"),
+    ("notices.attachments", "افزودن تصویر و فایل PDF به اطلاعیه‌ی متنی (برای همه‌ی سایت‌های مخاطب)"),
     ("roles.manage", "مدیریت نقش‌ها و مجوزها"),
     ("users.manage", "مدیریت کاربران Portal و انتصاب نقش"),
     ("system.backup", "دانلود بکاپ کامل سیستم — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),

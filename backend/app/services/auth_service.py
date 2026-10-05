@@ -358,6 +358,7 @@ class AuthService:
             {"feedback.view", "feedback.view_all", "feedback.reply"} & set(permission_codes)
         )
         base.can_reply_feedback = user.is_superuser or "feedback.reply" in permission_codes
+        base.can_attach_notice_files = user.is_superuser or "notices.attachments" in permission_codes
         base.can_manage_backup = user.is_superuser or "system.backup" in permission_codes
         base.can_view_employees = user.is_superuser or "employees.view" in permission_codes
         base.can_update_employees = user.is_superuser or "employees.update" in permission_codes

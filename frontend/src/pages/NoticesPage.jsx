@@ -25,6 +25,8 @@ import AccessGateDialog from "../components/AccessGateDialog";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
+import NoticeAttachments from "../components/NoticeAttachments";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
@@ -268,6 +270,9 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               sx={{ height: 18, fontSize: 10 }}
             />
           )}
+          {notice.attachment_items?.length > 0 && (
+            <AttachFileOutlinedIcon fontSize="small" sx={{ color: "text.secondary" }} titleAccess="دارای پیوست" />
+          )}
           <PriorityBadge priority={notice.priority} />
         </Stack>
       </Box>
@@ -287,6 +292,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               {notice.body}
             </Typography>
           )}
+          {/* پیوست‌های تصویر/PDF؛ فقط وقتی باز است بارگذاری می‌شوند */}
+          {expanded && <NoticeAttachments items={notice.attachment_items} />}
           {/* دانلود فیش حقوقی (اگر برای این کاربر فیشی در اطلاعیه وجود دارد) */}
           {isPayroll && (
             <>

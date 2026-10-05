@@ -554,7 +554,7 @@ EOF
   # default-src/script-src) تا مطمئن باشیم ثبت Service Worker و بارگذاری
   # manifest.json (هر دو حیاتی برای نصب PWA روی اندروید) هرگز به‌خاطر یک
   # رفتار غیرمنتظره Fallback در نسخه‌های قدیمی‌تر مرورگر بلاک نشوند.
-  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+  csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
 
   # Permissions-Policy: این پروژه فقط از Geolocation استفاده می‌کند (حضور
   # GPS) — همه قابلیت‌های دیگر (دوربین، میکروفون، USB، پرداخت و...) که

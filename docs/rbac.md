@@ -165,6 +165,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `notices.target.site` / `.department` / `.employee` | Seed | — | هدف‌گیری سایت/واحد/پرسنل — سایت‌محور |
 | `notices.payroll` | Seed | — | `POST /notices/payroll` (فیش حقوقی) |
 | `notices.attendance_card` | Seed | — | `POST /notices/attendance-card` (فیش کارکرد) |
+| `notices.attachments` | 103 | `can_attach_notice_files` | پیوست تصویر/PDF به اطلاعیه‌ی متنی — برای همه‌ی سایت‌های مخاطب (مقصد «همه»/نقش → مجوز همه‌ی سایت‌ها) |
 | `notices.site_report` | 035 | `can_view_site_notice_report` | «گزارش اطلاعیه‌ها» (`/notices/site-report`) — سایت‌محور |
 | `roles.manage` | Seed | `can_manage_roles` | منوی «مدیریت نقش/مجوز» + `GET /users/roles` |
 | `users.manage` | Seed | `can_manage_users` | «مدیریت دسترسی»، انتصاب تکی/دسته‌جمعی نقش، `/users/permissions` و CRUD `/users/role-catalog`، سرپرست واحد، تعیین/حذف رمز پرسنل، پاک‌سازی پرسنل غیرفعالِ بی‌سابقه — سایت‌محور |

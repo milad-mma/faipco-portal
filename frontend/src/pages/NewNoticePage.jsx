@@ -33,9 +33,13 @@ import {
   createAttendanceCardNotice,
   createNotice,
   createPayrollNotice,
+  deleteNotice,
   fetchAvailableTargets,
   publishNotice,
+  uploadNoticeAttachment,
 } from "../api/notices";
+import { useAuth } from "../context/AuthContext";
+import NoticeAttachmentPicker from "../components/NoticeAttachmentPicker";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import { fetchEmployees } from "../api/employees";
@@ -82,6 +86,9 @@ const EMPTY_ATTENDANCE_CARD_FORM = {
 // کامپوننت صفحه؛ مجوزهای ارسال را بارگذاری و فرم متناسب با حالت انتخاب‌شده را رندر می‌کند
 export default function NewNoticePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canAttach = Boolean(user?.can_attach_notice_files); // مجوز notices.attachments (سرور برای همه‌ی سایت‌های مخاطب هم چک می‌کند)
+  const [attachments, setAttachments] = useState([]); // فایل‌های انتخاب‌شده برای اطلاعیه‌ی متنی (File[])
 
   const [createMode, setCreateMode] = useState("normal"); // "normal" | "payroll" | "attendance_card"
   const [form, setForm] = useState(EMPTY_FORM);
@@ -266,6 +273,8 @@ export default function NewNoticePage() {
     }
 
     setIsSubmitting(true);
+    let createdId = null;
+    let publishing = false; // خطای حین انتشار بدون پاسخ سرور (قطع شبکه) ممکن است یعنی منتشر شده؛ آن‌وقت حذف نمی‌شود
     try {
       const created = await createNotice({
         title: form.title,
@@ -273,12 +282,22 @@ export default function NewNoticePage() {
         priority: form.priority,
         targets,
       });
+      createdId = created.id;
+      // پیوست‌ها بین ساخت پیش‌نویس و انتشار آپلود می‌شوند؛ تا انتشار هیچ گیرنده‌ای اطلاعیه را نمی‌بیند
+      for (const file of canAttach ? attachments : []) {
+        await uploadNoticeAttachment(created.id, file);
+      }
+      publishing = true;
       await publishNotice(created.id);
+      createdId = null;
       setResult({ success: true, message: "اطلاعیه با موفقیت ثبت و منتشر شد." });
       setForm(EMPTY_FORM);
+      setAttachments([]);
     } catch (err) {
       const message =
         err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه با خطا مواجه شد.";
+      // اگر پیش‌نویس ساخته شد ولی آپلود/انتشار نشد، پیش‌نویس ناقص حذف می‌شود تا با تلاش دوباره تکراری نشود
+      if (createdId && (!publishing || err.response)) deleteNotice(createdId).catch(() => {});
       setResult({ success: false, message });
     } finally {
       setIsSubmitting(false);
@@ -369,6 +388,7 @@ export default function NewNoticePage() {
     setResult(null);
     setError("");
     setForm(EMPTY_FORM);
+    setAttachments([]);
     setPayrollForm(EMPTY_PAYROLL_FORM);
     setPayrollResult(null);
     setAttendanceCardForm(EMPTY_ATTENDANCE_CARD_FORM);
@@ -492,6 +512,9 @@ export default function NewNoticePage() {
                   fullWidth
                   disabled={isSubmitting}
                 />
+                {canAttach && (
+                  <NoticeAttachmentPicker files={attachments} onChange={setAttachments} disabled={isSubmitting} />
+                )}
                 <TextField
                   select
                   label="اولویت"

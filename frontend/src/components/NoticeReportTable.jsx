@@ -35,6 +35,8 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { monoFontSx } from "../theme";
 import { deleteNotice } from "../api/notices";
 import NoticeReadersDialog from "./NoticeReadersDialog";
+import NoticeAttachments from "./NoticeAttachments";
+import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
 
 // برچسب فارسی سطوح اولویت اطلاعیه
 const PRIORITY_LABELS = {
@@ -108,6 +110,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
             >
               {n.body}
             </Typography>
+            {expanded && <NoticeAttachments items={n.attachment_items} />}
 
             {renderTargets(n)}
 
@@ -338,7 +341,16 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                   {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
                 </TableCell>
                 {showSender && <TableCell>{n.sender_name}</TableCell>}
-                <TableCell>{n.title}</TableCell>
+                <TableCell>
+                  {n.title}
+                  {n.attachment_items?.length > 0 && (
+                    <AttachFileOutlinedIcon
+                      fontSize="inherit"
+                      sx={{ color: "text.secondary", verticalAlign: "middle", mr: 0.5 }}
+                      titleAccess={`${n.attachment_items.length.toLocaleString("fa-IR")} پیوست`}
+                    />
+                  )}
+                </TableCell>
                 <TableCell align="center">
                   <Tooltip title="مشاهده متن کامل">
                     <IconButton size="small" onClick={() => setBodyNotice(n)}>
@@ -419,6 +431,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
             {bodyNotice?.body}
           </Typography>
+          {bodyNotice && <NoticeAttachments items={bodyNotice.attachment_items} />}
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setBodyNotice(null)}>بستن</Button>

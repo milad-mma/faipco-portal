@@ -16,6 +16,7 @@ from app.models.employee import Department, Employee, EmployeeMapping  # noqa: F
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji  # noqa: F401
 from app.models.notice import (  # noqa: F401
     Notice,
+    NoticeAttachment,
     NoticeTarget,
     NoticePriority,
     NoticeStatus,

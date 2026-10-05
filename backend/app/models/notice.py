@@ -12,7 +12,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -96,6 +96,9 @@ class Notice(Base, TimestampMixin):
     targets: Mapped[list["NoticeTarget"]] = relationship(
         back_populates="notice", cascade="all, delete-orphan"
     )
+    attachments: Mapped[list["NoticeAttachment"]] = relationship(
+        back_populates="notice", cascade="all, delete-orphan", order_by="NoticeAttachment.id", passive_deletes=True
+    )
 
 
 class NoticeTarget(Base):
@@ -114,3 +117,22 @@ class NoticeTarget(Base):
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     notice: Mapped["Notice"] = relationship(back_populates="targets")
+
+
+class NoticeAttachment(Base):
+    """
+    پیوست تصویر/PDF اطلاعیه‌ی متنی (Migration 103؛ فقط با مجوز notices.attachments).
+    فقط تا پیش از انتشار اضافه/حذف می‌شود. بایت‌ها deferred اند تا فهرست‌ها سبک بمانند (فقط endpoint دانلود می‌خواند).
+    """
+    __tablename__ = "notice_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    notice_id: Mapped[int] = mapped_column(ForeignKey("notices.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    notice: Mapped["Notice"] = relationship(back_populates="attachments")
