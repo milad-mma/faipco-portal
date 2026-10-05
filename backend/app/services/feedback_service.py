@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -39,6 +40,32 @@ logger = logging.getLogger(__name__)
 
 
 PROFANITY_REVEAL_KEY = "feedback_profanity_reveal_enabled"  # system_settings؛ نبودِ ردیف = روشن
+
+# Task های پس‌زمینه‌ی ارسال Push (نگه‌داشتن مرجع تا GC آن‌ها را وسط کار جمع نکند)
+_background_push_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_push(user_ids: set[int], url: str, body: str) -> None:
+    """
+    ارسال Push را به‌صورت Task پس‌زمینه با Session جدا زمان‌بندی می‌کند و فوراً برمی‌گردد.
+    ارسال Web Push (webpush به FCM/سرویس مرورگر) ممکن است چند ثانیه طول بکشد یا Timeout بخورد؛
+    درخواست ثبت پیام/پاسخ نباید منتظر آن بماند.
+    """
+    if not user_ids:
+        return
+    task = asyncio.create_task(_send_push_background(set(user_ids), url, body))
+    _background_push_tasks.add(task)
+    task.add_done_callback(_background_push_tasks.discard)
+
+
+async def _send_push_background(user_ids: set[int], url: str, body: str) -> None:
+    from app.db.session import AsyncSessionLocal  # import محلی برای جلوگیری از import حلقه‌ای
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await asyncio.wait_for(PushService(db).notify_users(user_ids, url=url, priority="normal", body=body), timeout=120)
+    except Exception:  # noqa: BLE001 - Push هرگز نباید خطای کاربر شود
+        logger.exception("ارسال Push پس‌زمینه‌ی انتقادات و پیشنهادات با خطا مواجه شد")
 
 class FeedbackAccessDenied(Exception):
     """کاربر مجوز مشاهده انتقادات و پیشنهادات را ندارد."""
@@ -169,11 +196,11 @@ class FeedbackService:
                 if follow_up
                 else "پیام جدیدی در انتقادات و پیشنهادات ثبت شده است."
             )
-            await PushService(self.db).notify_users(
+            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
+            _schedule_push(
                 user_ids,
-                url="/feedback-report",
-                priority="normal",
-                body=f"{first_line}\nجهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+                "/feedback-report",
+                f"{first_line}\nجهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
             )
         except Exception:
             logger.exception("ارسال Push برای پیام جدید انتقادات و پیشنهادات با خطا مواجه شد")
@@ -190,15 +217,11 @@ class FeedbackService:
         اعلان Push به فرستنده‌ی پیام وقتی بازبین پاسخ می‌دهد. متن عمومی است (بدون عنوان/متن) تا روی صفحه‌ی قفل
         چیزی از محتوا دیده نشود؛ لینک به تب «پیام‌های من». خطاها فقط لاگ می‌شوند.
         """
-        try:
-            await PushService(self.db).notify_users(
-                {feedback.sender_id},
-                url="/feedback?tab=mine",
-                priority="normal",
-                body="پاسخی به پیام شما در انتقادات و پیشنهادات ثبت شد.\nبرای مشاهده روی این پیام بزنید.",
-            )
-        except Exception:
-            logger.exception("ارسال Push پاسخ انتقادات و پیشنهادات به فرستنده با خطا مواجه شد")
+        _schedule_push(
+            {feedback.sender_id},
+            "/feedback?tab=mine",
+            "پاسخی به پیام شما در انتقادات و پیشنهادات ثبت شد.\nبرای مشاهده روی این پیام بزنید.",
+        )
 
     async def _get_accessible_scope(self, current_user: User) -> tuple[set[int] | None, bool]:
         """
