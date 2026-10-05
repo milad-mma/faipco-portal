@@ -80,3 +80,27 @@ def test_sanitize_file_name():
     assert sanitize_file_name("شناسنامه‌پدر.PNG", "image/png") == "شناسنامه‌پدر.png"
     assert sanitize_file_name("", "image/jpeg") == "document.jpg"
     assert sanitize_file_name("a\r\nb.pdf", "application/pdf") == "ab.pdf"
+
+
+def test_pdf_random_streams_not_rejected():
+    """بدنه‌ی stream (تصویر اسکن فشرده) نباید به‌خاطر برخورد تصادفی «/JS» و مانند آن رد شود."""
+    import os
+    import zlib
+
+    from app.core.document_sanitizer import DocumentRejected, check_pdf
+
+    def build(extra=b""):
+        stream = zlib.compress(os.urandom(400_000))
+        return (
+            b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog " + extra + b">>\nendobj\n2 0 obj\n<< /Length %d >>\nstream\n" % len(stream)
+            + stream + b"\nendstream\nendobj\ntrailer\n<<>>\n%%EOF\n"
+        )
+
+    for _ in range(15):
+        check_pdf(build())
+    for bad in (b"/OpenAction << /S /JavaScript /JS (x) >>", b"/Encrypt 3 0 R", b"/J#61vaScript"):
+        try:
+            check_pdf(build(bad))
+        except DocumentRejected:
+            continue
+        raise AssertionError(bad)

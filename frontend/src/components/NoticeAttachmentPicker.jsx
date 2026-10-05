@@ -12,8 +12,13 @@ import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 
 export const NOTICE_ATTACHMENT_MAX_COUNT = 5;
 export const NOTICE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
-const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf";
-const ALLOWED = new Set(ACCEPT.split(","));
+const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.gif";
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
+const ALLOWED_EXT = /\.(pdf|jpe?g|png|webp|gif)$/i;
+
+// بعضی مرورگرها/سیستم‌عامل‌ها برای PDF نوع خالی یا application/x-pdf می‌دهند؛ پسوند هم پذیرفته می‌شود (بررسی اصلی در سرور)
+const isAllowedFile = (file) => ALLOWED_TYPES.has(file.type) || ALLOWED_EXT.test(file.name || "");
+const isPdfFile = (file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
 
 export function formatFileSize(bytes) {
   if (!bytes && bytes !== 0) return "";
@@ -35,7 +40,7 @@ export default function NoticeAttachmentPicker({ files, onChange, disabled }) {
         setError(`حداکثر ${NOTICE_ATTACHMENT_MAX_COUNT.toLocaleString("fa-IR")} فایل مجاز است.`);
         break;
       }
-      if (!ALLOWED.has(file.type)) {
+      if (!isAllowedFile(file)) {
         setError(`«${file.name}» پذیرفته نیست؛ فقط تصویر (JPG، PNG، WEBP، GIF) یا PDF.`);
         continue;
       }
@@ -70,7 +75,7 @@ export default function NoticeAttachmentPicker({ files, onChange, disabled }) {
           {files.map((file, i) => (
             <Chip
               key={`${file.name}-${i}`}
-              icon={file.type === "application/pdf" ? <PictureAsPdfOutlinedIcon /> : <ImageOutlinedIcon />}
+              icon={isPdfFile(file) ? <PictureAsPdfOutlinedIcon /> : <ImageOutlinedIcon />}
               label={`${file.name} — ${formatFileSize(file.size)}`}
               onDelete={disabled ? undefined : () => onChange(files.filter((_, j) => j !== i))}
               variant="outlined"

@@ -38,13 +38,24 @@ def _decode_pdf_name(raw: bytes) -> bytes:
     return re.sub(rb"#([0-9A-Fa-f]{2})", lambda m: bytes([int(m.group(1), 16)]), raw)
 
 
+_PDF_STREAM_RE = re.compile(rb"stream\r?\n.*?endstream", re.S)
+
+
+def _strip_pdf_streams(content: bytes) -> bytes:
+    """بدنه‌ی همه‌ی stream های PDF را حذف می‌کند تا فقط ساختار (دیکشنری‌ها و اشیا) باقی بماند."""
+    return _PDF_STREAM_RE.sub(b"stream endstream", content)
+
+
 def check_pdf(content: bytes) -> bytes:
     """PDF را بررسی می‌کند و همان بایت‌ها را برمی‌گرداند؛ PDF ناقص، رمزدار یا دارای محتوای فعال → DocumentRejected."""
     if not content.startswith(b"%PDF-"):
         raise DocumentRejected("فایل PDF معتبر نیست.")
-    if b"%%EOF" not in content[-4096:]:
+    if b"%%EOF" not in content[-65536:]:
         raise DocumentRejected("فایل PDF ناقص یا خراب است.")
-    for match in _PDF_NAME_RE.finditer(content):
+    # نام‌ها فقط در ساختار PDF (بیرون از بدنه‌ی stream ها) جست‌وجو می‌شوند. بدنه‌ی stream (تصویر اسکن، فونت، محتوای
+    # فشرده) داده‌ی باینری است و الگوهایی مثل «/JS» به‌طور تصادفی در آن پیدا می‌شوند — قبلاً حدود ۱۵٪ PDF های اسکن‌شده‌ی
+    # چندمگابایتی به اشتباه رد می‌شدند. نام‌های داخل stream فشرده از قبل هم دیده نمی‌شدند، پس تشخیص واقعی کم نمی‌شود.
+    for match in _PDF_NAME_RE.finditer(_strip_pdf_streams(content)):
         name = _decode_pdf_name(match.group(1))
         if name == b"Encrypt":
             raise DocumentRejected("فایل PDF رمزدار پذیرفته نمی‌شود.")

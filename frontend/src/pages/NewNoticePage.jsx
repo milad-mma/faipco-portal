@@ -298,7 +298,8 @@ export default function NewNoticePage() {
         err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه با خطا مواجه شد.";
       // اگر پیش‌نویس ساخته شد ولی آپلود/انتشار نشد، پیش‌نویس ناقص حذف می‌شود تا با تلاش دوباره تکراری نشود
       if (createdId && (!publishing || err.response)) deleteNotice(createdId).catch(() => {});
-      setResult({ success: false, message });
+      // خطا کنار دکمه‌ی ارسال نمایش داده می‌شود و فرم (متن، مخاطبان، پیوست‌ها) دست‌نخورده می‌ماند تا با اصلاح دوباره بفرستد
+      setError(typeof message === "string" ? message : "ثبت اطلاعیه با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
@@ -332,10 +333,8 @@ export default function NewNoticePage() {
       const message = `اطلاعیه فیش حقوقی ارسال شد. تعداد پرسنل منطبق (دریافت‌کننده): ${uploadResult.matched_employee_count}`;
       setResult({ success: true, message });
     } catch (err) {
-      setResult({
-        success: false,
-        message: err.response?.data?.detail || "آپلود فیش حقوقی با خطا مواجه شد.",
-      });
+      // فرم و فایل انتخاب‌شده می‌مانند؛ فقط پیام خطا نمایش داده می‌شود
+      setError(err.response?.data?.detail || "آپلود فیش حقوقی با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
@@ -374,10 +373,8 @@ export default function NewNoticePage() {
       const message = `اطلاعیه فیش کارکرد ارسال شد. تعداد پرسنل منطبق (دریافت‌کننده): ${uploadResult.matched_employee_count}`;
       setResult({ success: true, message });
     } catch (err) {
-      setResult({
-        success: false,
-        message: err.response?.data?.detail || "آپلود فیش کارکرد با خطا مواجه شد.",
-      });
+      // فرم و فایل انتخاب‌شده می‌مانند؛ فقط پیام خطا نمایش داده می‌شود
+      setError(err.response?.data?.detail || "آپلود فیش کارکرد با خطا مواجه شد.");
     } finally {
       setIsSubmitting(false);
     }
