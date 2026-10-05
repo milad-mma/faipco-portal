@@ -285,7 +285,17 @@ export default function NewNoticePage() {
       createdId = created.id;
       // پیوست‌ها بین ساخت پیش‌نویس و انتشار آپلود می‌شوند؛ تا انتشار هیچ گیرنده‌ای اطلاعیه را نمی‌بیند
       for (const file of canAttach ? attachments : []) {
-        await uploadNoticeAttachment(created.id, file);
+        try {
+          await uploadNoticeAttachment(created.id, file);
+        } catch (uploadErr) {
+          // نام فایل مشکل‌دار به پیام اضافه می‌شود تا معلوم باشد کدام را باید عوض کرد
+          const detail = uploadErr.response?.data?.detail;
+          uploadErr.response = uploadErr.response && {
+            ...uploadErr.response,
+            data: { detail: `«${file.name}»: ${typeof detail === "string" ? detail : "آپلود ناموفق بود."}` },
+          };
+          throw uploadErr;
+        }
       }
       publishing = true;
       await publishNotice(created.id);

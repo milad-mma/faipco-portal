@@ -64,7 +64,8 @@ logger = logging.getLogger("faipco.notices")
 ATTACHMENT_PERMISSION = "notices.attachments"
 ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 ATTACHMENT_MAX_COUNT = 5
-ATTACHMENT_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+# BMP/TIFF (خروجی اسکنر) هم پذیرفته و هنگام پاک‌سازی به JPEG/PNG تبدیل می‌شوند
+ATTACHMENT_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "image/tiff", "application/pdf"}
 
 
 class NoticeAttachmentError(ValueError):
@@ -791,8 +792,14 @@ class NoticeService:
         if (count or 0) >= ATTACHMENT_MAX_COUNT:
             raise NoticeAttachmentError(f"حداکثر {ATTACHMENT_MAX_COUNT} فایل برای هر اطلاعیه مجاز است.")
         detected = sniff_content_type(content)
+        if detected == "image/heic":
+            raise NoticeAttachmentError(
+                "عکس با فرمت HEIC (پیش‌فرض دوربین آیفون) پشتیبانی نمی‌شود؛ آن را به JPG تبدیل کنید یا از گوشی با فرمت JPG بفرستید."
+            )
         if detected not in ATTACHMENT_ALLOWED_TYPES:
-            raise NoticeAttachmentError("فقط تصویر (JPG، PNG، WEBP، GIF) یا فایل PDF پذیرفته می‌شود.")
+            raise NoticeAttachmentError(
+                "محتوای این فایل تصویر یا PDF نیست (ممکن است فقط پسوندش تغییر کرده باشد)؛ فقط JPG، PNG، WEBP، GIF، BMP، TIFF یا PDF پذیرفته می‌شود."
+            )
         try:
             content, detected = await asyncio.to_thread(sanitize_document, content, detected)
         except DocumentRejected as e:

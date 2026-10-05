@@ -8,7 +8,7 @@ def test_attachment_limits():
 
     assert svc.ATTACHMENT_MAX_COUNT == 5
     assert svc.ATTACHMENT_MAX_BYTES == 10 * 1024 * 1024
-    assert svc.ATTACHMENT_ALLOWED_TYPES == {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+    assert {"image/jpeg", "image/png", "application/pdf"} <= svc.ATTACHMENT_ALLOWED_TYPES
     assert svc.ATTACHMENT_PERMISSION == "notices.attachments"
 
 

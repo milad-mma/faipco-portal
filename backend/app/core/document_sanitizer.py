@@ -48,8 +48,10 @@ def _strip_pdf_streams(content: bytes) -> bytes:
 
 def check_pdf(content: bytes) -> bytes:
     """PDF را بررسی می‌کند و همان بایت‌ها را برمی‌گرداند؛ PDF ناقص، رمزدار یا دارای محتوای فعال → DocumentRejected."""
-    if not content.startswith(b"%PDF-"):
+    start = content[:1024].find(b"%PDF-")
+    if start == -1:
         raise DocumentRejected("فایل PDF معتبر نیست.")
+    content = content[start:]  # بایت‌های اضافه‌ی پیش از سربرگ حذف می‌شوند
     if b"%%EOF" not in content[-65536:]:
         raise DocumentRejected("فایل PDF ناقص یا خراب است.")
     # نام‌ها فقط در ساختار PDF (بیرون از بدنه‌ی stream ها) جست‌وجو می‌شوند. بدنه‌ی stream (تصویر اسکن، فونت، محتوای
@@ -138,8 +140,12 @@ def sniff_content_type(content: bytes) -> str:
     که در فهرست مجاز نیست و آپلود را رد می‌کند.
     """
     head = content[:16]
-    if head.startswith(b"%PDF"):
+    # استاندارد PDF اجازه می‌دهد «%PDF-» تا ۱۰۲۴ بایت اول بیاید (بعضی اسکنرها/نرم‌افزارها بایت اضافه یا BOM می‌گذارند)
+    if content[:1024].find(b"%PDF-") != -1:
         return "application/pdf"
+    # عکس‌های HEIC/HEIF/AVIF (پیش‌فرض دوربین آیفون و بعضی اندرویدها) — جدا تشخیص داده می‌شوند تا پیام روشن بدهیم
+    if content[4:8] == b"ftyp" and content[8:12] in (b"heic", b"heix", b"hevc", b"heim", b"heis", b"mif1", b"msf1", b"avif"):
+        return "image/heic"
     if head.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
