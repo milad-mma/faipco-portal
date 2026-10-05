@@ -2,9 +2,10 @@
  * باکس «پیوست‌ها» در اطلاعیه: هر فایل یک لینک (نام + حجم) است و چیزی از قبل بارگذاری نمی‌شود.
  * با کلیک، فایل با توکن کاربر گرفته می‌شود و در لایت‌باکس نمایش داده می‌شود: تصویر بزرگ، PDF داخل نمایشگر مرورگر
  * (روی گوشی که نمایشگر داخلی PDF ندارد، فقط دکمه‌ی دانلود). در هر دو حالت دکمه‌ی «دانلود» هست.
+ * نام اصلی فایل‌ها نمایش داده نمی‌شود: «پیوست ۱» تا «پیوست ۵» به ترتیب آپلود (فایل دانلودی هم «پیوست-۱.pdf» و مانند آن).
  * ورودی: items ([{ id, file_name, content_type, size_bytes }]).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -37,15 +38,27 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** لایت‌باکس یک پیوست؛ item=null یعنی بسته. */
-function AttachmentLightbox({ item, onClose }) {
+// برچسب نمایشی و نام فایل دانلودی هر پیوست بر اساس ترتیبش
+const EXT_BY_TYPE = { "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png" };
+export const attachmentLabel = (index) => `پیوست ${(index + 1).toLocaleString("fa-IR")}`;
+const attachmentFileName = (index, contentType) => `پیوست-${index + 1}${EXT_BY_TYPE[contentType] || ""}`;
+
+/**
+ * لایت‌باکس یک پیوست؛ item=null یعنی بسته. هنگام بسته شدن، Dialog چند صد میلی‌ثانیه انیمیشن خروج دارد و در این
+ * فاصله هنوز رندر می‌شود؛ آخرین پیوست نگه داشته می‌شود تا محتوا با item=null خطا ندهد (علت صفحه‌ی سفید هنگام بستن).
+ */
+function AttachmentLightbox({ item: openItem, onClose }) {
+  const lastItemRef = useRef(null);
+  if (openItem) lastItemRef.current = openItem;
+  const item = openItem || lastItemRef.current;
   const [state, setState] = useState({ url: null, blob: null, error: "" });
   // نمایشگر داخلی PDF روی مرورگرهای گوشی (به‌خصوص اندروید) وجود ندارد
   const isSmallScreen = useMediaQuery("(max-width:900px)");
   const isPdf = item?.content_type === "application/pdf";
 
   useEffect(() => {
-    if (!item) return undefined;
+    if (!openItem) return undefined;
+    const item = openItem;
     let objectUrl = null;
     let cancelled = false;
     setState({ url: null, blob: null, error: "" });
@@ -59,13 +72,18 @@ function AttachmentLightbox({ item, onClose }) {
       .catch(() => !cancelled && setState({ url: null, blob: null, error: "دریافت فایل ممکن نشد." }));
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // آزادسازی بعد از پایان انیمیشن بسته شدن، تا تصویر در حال محو شدن خراب نشود
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     };
-  }, [item]);
+  }, [openItem]);
+
+  if (!item) return null;
+  const downloadName = attachmentFileName(item.index, item.content_type);
 
   return (
     <Dialog
-      open={Boolean(item)}
+      open={Boolean(openItem)}
+      TransitionProps={{ onExited: () => setState({ url: null, blob: null, error: "" }) }}
       onClose={onClose}
       maxWidth={isPdf ? "lg" : "md"}
       fullWidth={isPdf}
@@ -79,7 +97,7 @@ function AttachmentLightbox({ item, onClose }) {
         sx={{ px: 1.5, py: 1, bgcolor: "rgba(0,0,0,0.75)", color: "white" }}
       >
         <Typography variant="body2" fontWeight={700} noWrap sx={{ flexGrow: 1, minWidth: 0 }}>
-          {item?.file_name}
+          {attachmentLabel(item.index)}
         </Typography>
         <Button
           size="small"
@@ -87,7 +105,7 @@ function AttachmentLightbox({ item, onClose }) {
           color="inherit"
           startIcon={<FileDownloadOutlinedIcon />}
           disabled={!state.blob}
-          onClick={() => state.blob && downloadBlob(state.blob, item.file_name)}
+          onClick={() => state.blob && downloadBlob(state.blob, downloadName)}
           sx={{ color: "black", bgcolor: "white", "&:hover": { bgcolor: "#e0e0e0" } }}
         >
           دانلود
@@ -122,19 +140,24 @@ function AttachmentLightbox({ item, onClose }) {
               <Button
                 variant="contained"
                 startIcon={<FileDownloadOutlinedIcon />}
-                onClick={() => downloadBlob(state.blob, item.file_name)}
+                onClick={() => downloadBlob(state.blob, downloadName)}
               >
                 دانلود {formatFileSize(item.size_bytes)}
               </Button>
             </Stack>
           ) : (
-            <Box component="iframe" src={state.url} title={item.file_name} sx={{ width: "100%", height: "100%", border: 0 }} />
+            <Box
+              component="iframe"
+              src={state.url}
+              title={attachmentLabel(item.index)}
+              sx={{ width: "100%", height: "100%", border: 0 }}
+            />
           )
         ) : (
           <Box
             component="img"
             src={state.url}
-            alt={item.file_name}
+            alt={attachmentLabel(item.index)}
             sx={{ display: "block", maxWidth: "90vw", maxHeight: "80vh" }}
           />
         )}
@@ -156,7 +179,7 @@ export default function NoticeAttachments({ items }) {
         </Typography>
       </Stack>
       <Stack spacing={0.5}>
-        {items.map((item) => (
+        {items.map((item, index) => (
           <Stack key={item.id} direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
             {item.content_type === "application/pdf" ? (
               <PictureAsPdfOutlinedIcon fontSize="small" color="error" />
@@ -170,11 +193,11 @@ export default function NoticeAttachments({ items }) {
               underline="hover"
               onClick={(e) => {
                 e.stopPropagation();
-                setOpen(item);
+                setOpen({ ...item, index });
               }}
               sx={{ textAlign: "start", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
             >
-              {item.file_name}
+              {attachmentLabel(index)}
             </Link>
             <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
               ({formatFileSize(item.size_bytes)})
