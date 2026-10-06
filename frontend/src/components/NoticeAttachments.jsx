@@ -53,7 +53,7 @@ function AttachmentLightbox({ item: openItem, onClose }) {
   const item = openItem || lastItemRef.current;
   const [state, setState] = useState({ url: null, blob: null, error: "" });
   // نمایشگر داخلی PDF روی مرورگرهای گوشی (به‌خصوص اندروید) وجود ندارد
-  const isSmallScreen = useMediaQuery("(max-width:900px)");
+  const isSmallScreen = useMediaQuery("(max-width:900px)", { noSsr: true });
   const isPdf = item?.content_type === "application/pdf";
 
   useEffect(() => {
@@ -168,6 +168,8 @@ function AttachmentLightbox({ item: openItem, onClose }) {
 
 export default function NoticeAttachments({ items }) {
   const [open, setOpen] = useState(null); // پیوستی که لایت‌باکسش باز است
+  // لایت‌باکس تا اولین کلیک ساخته نمی‌شود (باز شدن کارت اطلاعیه سبک بماند)؛ بعد از آن می‌ماند تا انیمیشن بستن کامل شود
+  const [lightboxUsed, setLightboxUsed] = useState(false);
   if (!items?.length) return null;
 
   return (
@@ -193,6 +195,7 @@ export default function NoticeAttachments({ items }) {
               underline="hover"
               onClick={(e) => {
                 e.stopPropagation();
+                setLightboxUsed(true);
                 setOpen({ ...item, index });
               }}
               sx={{ textAlign: "start", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
@@ -205,7 +208,7 @@ export default function NoticeAttachments({ items }) {
           </Stack>
         ))}
       </Stack>
-      <AttachmentLightbox item={open} onClose={() => setOpen(null)} />
+      {lightboxUsed && <AttachmentLightbox item={open} onClose={() => setOpen(null)} />}
     </Box>
   );
 }

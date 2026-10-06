@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 
@@ -30,7 +31,13 @@ function isAllowed(url) {
 }
 
 export default function LinkifiedText({ text, onInternalClick }) {
-  if (!text) return null;
+  // تجزیه‌ی متن فقط وقتی متن عوض شود دوباره انجام می‌شود، نه در هر رندر کارت
+  const parts = useMemo(() => (text ? buildParts(text, onInternalClick) : null), [text, onInternalClick]);
+  return parts ? <>{parts}</> : null;
+}
+
+// متن را به تکه‌های متن عادی و المان‌های Link تبدیل می‌کند
+function buildParts(text, onInternalClick) {
   const parts = [];
   let last = 0;
   let key = 0;
@@ -70,5 +77,5 @@ export default function LinkifiedText({ text, onInternalClick }) {
     last = match.index + whole.length;
   }
   if (last < text.length) parts.push(text.slice(last));  // باقی‌مانده‌ی متن بعد از آخرین لینک
-  return <>{parts}</>;
+  return parts;
 }

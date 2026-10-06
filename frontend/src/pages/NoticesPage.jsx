@@ -4,7 +4,7 @@
  * با ?type=payroll یا ?type=attendance_card نمای اختصاصی «فقط فیش‌های من» بدون تب نمایش داده می‌شود.
  * با رسیدن Push جدید از Service Worker، فهرست بدون Reload صفحه تازه می‌شود.
  */
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import BackLink from "../components/BackLink";
@@ -159,7 +159,7 @@ function PriorityBadge({ priority }) {
  * ورودی: notice، onOpened (پس از اولین باز شدنِ اطلاعیه خوانده‌نشده)، onArchiveChange (پس از آرشیو/بازگردانی)
  * و isArchiveView. شامل متن، دکمه دانلود فیش، اطلاعات فرستنده و دکمه آرشیو است.
  */
-function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }) {
+const ReceivedNoticeCard = memo(function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }) {
   const [expanded, setExpanded] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [archiveBusy, setArchiveBusy] = useState(false);  // درخواست آرشیو/بازگردانی در جریان است
@@ -179,13 +179,19 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
   const isAttendanceCard = notice.notice_type === "attendance_card";
   const typeMeta = NOTICE_TYPE_META[notice.notice_type];  // برای اطلاعیه‌های عادی undefined است
 
-  // باز/بسته کردن کارت؛ اولین باز شدن اطلاعیه خوانده‌نشده آن را در سرور «خوانده‌شده» ثبت می‌کند
+  // باز/بسته کردن کارت؛ اولین باز شدن اطلاعیه خوانده‌نشده آن را در سرور «خوانده‌شده» ثبت می‌کند.
+  // اول خود کارت باز می‌شود؛ ثبت «خوانده‌شده» در سرور و به‌روزرسانی فهرست والد بعد از انیمیشن باز شدن
+  // انجام می‌شود تا رندر دوباره‌ی فهرست، انیمیشن را کند نکند (علت کندی باز شدن اطلاعیه‌های خوانده‌نشده).
   function handleToggle() {
-    if (!expanded && isUnread) {
-      markNoticeRead(notice.id).catch(() => {});
-      onOpened?.(notice.id);
+    const opening = !expanded;
+    setExpanded(opening);
+    if (opening && isUnread) {
+      const noticeId = notice.id;
+      setTimeout(() => {
+        markNoticeRead(noticeId).catch(() => {});
+        onOpened?.(noticeId);
+      }, 350);
     }
-    setExpanded((v) => !v);
   }
 
   // آرشیو یا بازگردانی اطلاعیه (بسته به وضعیت فعلی) و اطلاع به والد برای تازه کردن فهرست‌ها
@@ -278,7 +284,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
         </Stack>
       </Box>
       {/* بخش بازشونده: متن، دکمه دانلود فیش، فرستنده و دکمه آرشیو */}
-      <Collapse in={expanded}>
+      {/* unmountOnExit: متن (با لینک‌ها) و پیوست‌ها فقط وقتی کارت باز است رندر می‌شوند، نه برای همه‌ی کارت‌های بسته */}
+      <Collapse in={expanded} unmountOnExit>
         <Box sx={{ px: 2, pb: 2 }}>
           {notice.body && (
             <Typography
@@ -293,8 +300,8 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
               <LinkifiedText text={notice.body} />
             </Typography>
           )}
-          {/* پیوست‌های تصویر/PDF؛ فقط وقتی باز است بارگذاری می‌شوند */}
-          {expanded && <NoticeAttachments items={notice.attachment_items} />}
+          {/* پیوست‌های تصویر/PDF؛ فقط لینک، فایل با کلیک گرفته می‌شود */}
+          <NoticeAttachments items={notice.attachment_items} />
           {/* دانلود فیش حقوقی (اگر برای این کاربر فیشی در اطلاعیه وجود دارد) */}
           {isPayroll && (
             <>
@@ -391,7 +398,10 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
       />
     </Card>
   );
-}
+});
+
+// برای نمای آرشیو که «خوانده‌شده» ثبت نمی‌کند (تابع ثابت تا memo کارت بی‌اثر نشود)
+function noop() {}
 
 // کامپوننت اصلی صفحه؛ تب فعال، فهرست‌های دریافتی/آرشیو و صفحه‌بندی آن‌ها را مدیریت می‌کند
 export default function NoticesPage() {
@@ -483,10 +493,10 @@ export default function NoticesPage() {
     }
   }, [tab, availableTargets, canCreateAnything]);
 
-  // اطلاعیه را در فهرست محلی «خوانده‌شده» علامت می‌زند
-  function handleMarkedRead(noticeId) {
-    setNotices((prev) => prev.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)));
-  }
+  // اطلاعیه را در فهرست محلی «خوانده‌شده» علامت می‌زند (تابع ثابت، تا memo کارت‌های دیگر رندر دوباره نشوند)
+  const handleMarkedRead = useCallback((noticeId) => {
+    setNotices((prev) => prev?.map((n) => (n.id === noticeId ? { ...n, is_read: true } : n)) ?? prev);
+  }, []);
 
   // بعد از آرشیو/بازگرداندن یک اطلاعیه، آن اطلاعیه از یک فهرست به فهرست دیگر منتقل می‌شود؛
   // به‌جای تغییر محلی state، هر دو فهرست «دریافتی» و «آرشیو» از سرور دوباره خوانده می‌شوند
@@ -500,6 +510,11 @@ export default function NoticesPage() {
       loadArchived(archivedPage);
     }
   }
+
+  // نسخه‌ی ثابت handleArchiveChange برای کارت‌ها (همیشه آخرین نسخه را با صفحه‌ی فعلی صدا می‌زند)
+  const archiveChangeRef = useRef(handleArchiveChange);
+  archiveChangeRef.current = handleArchiveChange;
+  const stableArchiveChange = useCallback((id) => archiveChangeRef.current(id), []);
 
   const pageTitle = isFilteredView ? NOTICE_TYPE_META[typeFilter].label : "اطلاعیه‌ها";  // در نمای اختصاصی، عنوان نوع فیش
 
@@ -588,7 +603,7 @@ export default function NoticesPage() {
                   key={notice.id}
                   notice={notice}
                   onOpened={handleMarkedRead}
-                  onArchiveChange={handleArchiveChange}
+                  onArchiveChange={stableArchiveChange}
                 />
               ))}
             </>
@@ -642,8 +657,8 @@ export default function NoticesPage() {
                 <ReceivedNoticeCard
                   key={notice.id}
                   notice={notice}
-                  onOpened={() => {}}
-                  onArchiveChange={handleArchiveChange}
+                  onOpened={noop}
+                  onArchiveChange={stableArchiveChange}
                   isArchiveView
                 />
               ))}

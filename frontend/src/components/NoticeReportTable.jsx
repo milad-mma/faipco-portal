@@ -95,7 +95,8 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
       </Box>
 
       {/* بدنه‌ی بازشونده: فرستنده، متن، مقصدها، آمار و دکمه‌ها */}
-      <Collapse in={expanded}>
+      {/* unmountOnExit: بدنه (متن لینک‌دار، پیوست‌ها) فقط برای کارت باز رندر می‌شود */}
+      <Collapse in={expanded} unmountOnExit>
         <Box sx={{ px: 2, pb: 2 }}>
           <Stack spacing={1}>
             {showSender && (
@@ -111,7 +112,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
             >
               <LinkifiedText text={n.body} />
             </Typography>
-            {expanded && <NoticeAttachments items={n.attachment_items} />}
+            <NoticeAttachments items={n.attachment_items} />
 
             {renderTargets(n)}
 
