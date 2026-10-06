@@ -5,6 +5,7 @@ import { Link as RouterLink } from "react-router-dom";
  * نمایش متن ساده با لینک‌های قابل کلیک، بدون رندر HTML (لینک‌ها به‌صورت المان React ساخته می‌شوند،
  * پس امکان تزریق اسکریپت وجود ندارد).
  *
+ * استفاده: اعلان تغییرات پرتال و متن همه‌ی اطلاعیه‌ها (صندوق اطلاعیه‌ها و گزارش‌ها).
  * ورودی: text (متن خام) و onInternalClick (اختیاری؛ هنگام کلیک روی لینک داخلی، مثلاً برای بستن دیالوگ).
  * خروجی: Fragment شامل تکه‌های متن و المان‌های Link؛ اگر text خالی باشد null.
  *
@@ -42,11 +43,26 @@ export default function LinkifiedText({ text, onInternalClick }) {
     const content = label || url;
     parts.push(
       isInternal(url) ? (
-        <Link key={key++} component={RouterLink} to={url} onClick={onInternalClick}>
+        <Link
+          key={key++}
+          component={RouterLink}
+          to={url}
+          onClick={(e) => {
+            e.stopPropagation(); // کلیک روی لینک داخل کارت بازشونده، کارت را جمع/باز نکند
+            onInternalClick?.(e);
+          }}
+        >
           {content}
         </Link>
       ) : (
-        <Link key={key++} href={url} target="_blank" rel="noopener noreferrer" sx={{ wordBreak: "break-all" }}>
+        <Link
+          key={key++}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          sx={{ wordBreak: "break-all" }}
+        >
           {content}
         </Link>
       )

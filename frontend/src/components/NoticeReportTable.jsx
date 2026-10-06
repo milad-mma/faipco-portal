@@ -36,6 +36,7 @@ import { monoFontSx } from "../theme";
 import { deleteNotice } from "../api/notices";
 import NoticeReadersDialog from "./NoticeReadersDialog";
 import NoticeAttachments from "./NoticeAttachments";
+import LinkifiedText from "./LinkifiedText";
 import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
 
 // برچسب فارسی سطوح اولویت اطلاعیه
@@ -108,7 +109,7 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
               color="text.secondary"
               sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
             >
-              {n.body}
+              <LinkifiedText text={n.body} />
             </Typography>
             {expanded && <NoticeAttachments items={n.attachment_items} />}
 
@@ -429,7 +430,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         <DialogTitle>{bodyNotice?.title}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-            {bodyNotice?.body}
+            <LinkifiedText text={bodyNotice?.body} onInternalClick={() => setBodyNotice(null)} />
           </Typography>
           {bodyNotice && <NoticeAttachments items={bodyNotice.attachment_items} />}
         </DialogContent>

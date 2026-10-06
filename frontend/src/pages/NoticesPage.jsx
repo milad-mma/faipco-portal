@@ -27,6 +27,7 @@ import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
 import NoticeAttachments from "../components/NoticeAttachments";
+import LinkifiedText from "../components/LinkifiedText";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
@@ -289,7 +290,7 @@ function ReceivedNoticeCard({ notice, onOpened, onArchiveChange, isArchiveView }
                 wordBreak: "break-word",
               }}
             >
-              {notice.body}
+              <LinkifiedText text={notice.body} />
             </Typography>
           )}
           {/* پیوست‌های تصویر/PDF؛ فقط وقتی باز است بارگذاری می‌شوند */}
