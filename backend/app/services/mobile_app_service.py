@@ -82,10 +82,13 @@ STATUS_LABELS = {
     "no_location": "بدون مختصات",
     "out_of_range": "خارج از محدوده‌ی سایت",
     "bad_time": "زمان رویداد نامعتبر",
+    "flap": "خروج کوتاه (لغو شد)",
 }
 # «آنلاین در محیط کار» با اپ بسته: نرسیدن گزارش «هنوز آنلاین» بیش از این = نشست قبلی تمام شده و آنلاین شدن بعدی
 # نشست تازه است (همان BACKGROUND_STALE_SECONDS سرویس حضور)
 ONLINE_SESSION_GAP = timedelta(minutes=25)
+# خروجی که در این فاصله با ورود دوباره به همان سایت دنبال شود، خروج واقعی حساب نمی‌شود و لغو می‌شود
+FLAP_WINDOW = timedelta(minutes=15)
 NETWORK_LABELS = {"wifi": "وای‌فای", "cellular": "اینترنت همراه", "other": "شبکه"}
 # رویداد خروجی که واقعاً خروج است (نه جعلی/خارج از بازه‌ی زمان/از عمق محدوده)
 EXIT_OK_STATUSES = ("logged", "already_out", "duplicate", "disabled")
@@ -597,6 +600,18 @@ async def process_geofence_events(
                     status = "duplicate"
                 elif gap < timedelta(hours=cfg.repeat_guard_hours):
                     status = "already_in" if log_type == GpsLogType.check_in else "already_out"
+            elif (
+                last is not None
+                and log_type == GpsLogType.check_in
+                and last.log_type == GpsLogType.check_out
+                and last.source == "geofence"
+                and last.matched_site_id == site.id
+                and occurred - last.created_at < FLAP_WINDOW
+            ):
+                # خروج و ورود دوباره‌ی کوتاه (خاموش/روشن کردن GPS، لبه‌ی محدوده، پرش موقعیت داخل سالن): خروج قبلی لغو
+                # می‌شود و پرسنل همچنان «داخل» است — نه یک خروج و یک ورود اضافه
+                await _cancel_flap_exit(db, last)
+                status = "already_in"
 
         gps_log = None
         if status == "logged":
@@ -657,6 +672,19 @@ async def process_geofence_events(
 
 
 # ---------------------------------------------------------------- «آنلاین در محیط کار» (اپ بسته)
+
+
+async def _cancel_flap_exit(db: AsyncSession, exit_log: GpsActivityLog) -> None:
+    """لاگ خروج کوتاه حذف و رویداد Geofencing آن «flap» علامت می‌خورد (در فهرست رویدادها برای ردیابی می‌ماند)."""
+    events = (
+        await db.execute(select(GeofenceEvent).where(GeofenceEvent.gps_log_id == exit_log.id))
+    ).scalars().all()
+    for event in events:
+        event.status = "flap"
+        event.gps_log_id = None
+    await db.flush()
+    await db.delete(exit_log)
+    await db.flush()
 
 
 async def _close_background_sessions(
