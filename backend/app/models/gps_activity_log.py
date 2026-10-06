@@ -59,3 +59,5 @@ class GpsActivityLog(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    # ثبت خودکار اپ: زمان با «کرنومتر» گوشی قابل محاسبه نبود (خاموش/روشن شدن گوشی) و ساعت گوشی استفاده شد (Migration 104)
+    time_uncertain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

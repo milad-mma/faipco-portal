@@ -26,6 +26,7 @@ import {
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -48,7 +49,6 @@ import { searchFilterOptions } from "../utils/searchText";
 import PhoneAndroidOutlinedIcon from "@mui/icons-material/PhoneAndroidOutlined";
 
 const PAGE_SIZE = 50; // تعداد ردیف (روز-پرسنل) در هر صفحه
-const ATTENDANCE_PILOT_ROLE = "attendance-pilot"; // نقش پرسنلی که مجاز به ثبت ورود/خروج GPS هستند
 
 // تاریخ/ساعت پیش‌فرض برای ثبت رکورد در یک اسلات خالی: اگر روز، امروز باشد «همین لحظه»، وگرنه ساعت ۰۸:۰۰ همان روز
 function buildPresetDate(dayDate) {
@@ -97,10 +97,10 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
     }
   }, [open, mode, initialLog, preset, siteOptions]);
 
-  // جستجوی پرسنل برای حالت create؛ فقط پرسنلی که نقش attendance-pilot دارند (تنها همان‌ها مجاز به این قابلیت‌اند)
+  // جستجوی پرسنل برای حالت create (همه‌ی پرسنل؛ ثبت خودکار با اپ اندروید برای همه است)
   useEffect(() => {
     if (mode !== "create") return;
-    fetchEmployees({ search: employeeSearch, pageSize: 20, hasRole: ATTENDANCE_PILOT_ROLE }).then((data) =>
+    fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) =>
       setEmployeeOptions(data.items || [])
     );
   }, [mode, employeeSearch]);
@@ -248,6 +248,11 @@ function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
             {log.source === "geofence" && !log.is_manual && (
               <Tooltip title="ثبت خودکار با اپ اندروید (Geofencing)">
                 <PhoneAndroidOutlinedIcon sx={{ fontSize: 14 }} />
+              </Tooltip>
+            )}
+            {log.time_uncertain && !log.is_manual && (
+              <Tooltip title="زمان نامطمئن: گوشی بین ورود/خروج و ارسال آن خاموش و روشن شده؛ ساعت گوشی ثبت شده که ممکن است دستکاری شده باشد">
+                <HelpOutlineIcon sx={{ fontSize: 14, color: "warning.main" }} />
               </Tooltip>
             )}
           </Stack>
@@ -427,14 +432,15 @@ export default function ClockInOutReportPage() {
       {/* هشدار آزمایشی بودن سیستم GPS */}
       <Alert severity="warning" icon={<ScienceOutlinedIcon />} sx={{ mb: 3, mt: 1 }}>
         این قابلیت آزمایشی است. ثبت ورود/خروج رسمی همچنان باید از طریق دستگاه‌های تعبیه‌شده در
-        کارخانه انجام شود.{canManage && " رکوردهایی که دستی ثبت/ویرایش شده‌اند با یک ⭐ کنار ساعت مشخص می‌شوند."}
+        کارخانه انجام شود.{canManage && " رکوردهایی که دستی ثبت/ویرایش شده‌اند با یک ⭐ کنار ساعت مشخص می‌شوند."} رکوردی
+        که علامت ؟ دارد «زمان نامطمئن» است (گوشی بین ثبت و ارسال خاموش و روشن شده است).
       </Alert>
 
       {/* فیلترها: سایت، پرسنل و ماه/سال؛ هر تغییر صفحه را به ۱ برمی‌گرداند */}
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
-          permission="attendance.view_clock_records"
+          permission="attendance.manage_clock_records"
           onChange={(value) => {
             setSelectedSiteId(value);
             setPage(1);

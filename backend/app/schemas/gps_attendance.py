@@ -12,14 +12,6 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class GpsPositionIn(BaseModel):
-    """ورودی ثبت ورود/خروج با GPS: مختصات فعلی دستگاه پرسنل و سایت اختیاری."""
-    latitude: float
-    longitude: float
-    accuracy_meters: float | None = None
-    site_id: int | None = None  # اگر مشخص نشود، نزدیک‌ترین سایت دارای موقعیت GPS در نظر گرفته می‌شود
-
-
 class GpsActivityLogOut(BaseModel):
     """یک رکورد لاگ ورود/خروج آن‌طور که به خودِ پرسنل نمایش داده می‌شود (بدون هویت پرسنل)."""
     id: int
@@ -31,7 +23,9 @@ class GpsActivityLogOut(BaseModel):
     distance_meters: float | None
     is_within_geofence: bool  # آیا داخل شعاع مجاز سایت بوده
     is_manual: bool  # ثبت دستی توسط Admin (بدون مختصات واقعی)
-    source: str = "web"  # web | manual | geofence (ثبت خودکار اپ اندروید)
+    source: str = "web"  # web (ثبت دستی قدیمی پرسنل) | geofence (ثبت خودکار اپ اندروید)
+    # ثبت خودکار: زمان با کرنومتر گوشی قابل محاسبه نبود (گوشی بین رویداد و ارسال خاموش/روشن شده)
+    time_uncertain: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}  # ساخت مستقیم از شیء ORM
@@ -50,13 +44,6 @@ class GpsActivityLogPageOut(BaseModel):
     """یک صفحه از لاگ‌های GPS برای گزارش Admin به‌همراه تعداد کل و ماه گزارش."""
     items: list[GpsActivityLogAdminOut]
     total: int
-    year: int
-    month: int
-
-
-class MyClockLogsOut(BaseModel):
-    """لاگ‌های ورود/خروج خودِ پرسنل در یک ماه شمسی."""
-    items: list[GpsActivityLogOut]
     year: int
     month: int
 
@@ -90,12 +77,15 @@ class PresenceSessionAdminOut(BaseModel):
     disconnected_at: datetime | None
     duration_seconds: int | None  # None یعنی نشست هنوز باز است
     is_online_now: bool
-    kind: str = "gps"  # app = باز بودن اپ، gps = حضور در محدوده
+    kind: str = "gps"  # app = باز بودن پرتال، gps = «آنلاین در محیط کار» (داخل محدوده‌ی سایت)
     last_seen_at: datetime | None = None
     client: str | None = None
     matched_site_name: str | None
     last_distance_meters: float | None
     is_within_geofence: bool | None
+    # portal = پرتال باز (زمان‌ها دقیق)؛ background = اپ اندروید بسته (پایان تقریبی، حداکثر ~۱۵ دقیقه خطا)
+    source: str = "portal"
+    time_uncertain: bool = False
 
 
 class PresenceSessionPageOut(BaseModel):

@@ -105,7 +105,7 @@ export default function BulkRoleAssignmentPage() {
         انتصاب دسته‌جمعی نقش
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        یک نقش (مثلاً «attendance-pilot») را هم‌زمان به همه پرسنل یک سایت یا یک واحد سازمانی خاص
+        یک نقش (مثلاً «hr-manager») را هم‌زمان به همه پرسنل یک سایت یا یک واحد سازمانی خاص
         اختصاص می‌دهد — بدون نیاز به انتخاب یکی‌یکی. پرسنلی که هنوز هیچ‌وقت وارد پرتال نشده هم
         مشکلی ندارد؛ حساب کاربری‌شان همین‌جا خودکار ساخته می‌شود.
       </Typography>

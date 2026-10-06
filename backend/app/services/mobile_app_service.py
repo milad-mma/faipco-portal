@@ -24,6 +24,7 @@ from app.core.geo import haversine_distance_meters
 from app.core.request_context import current_user_agent, is_android_user_agent
 from app.models.employee import Employee
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
+from app.models.presence_session import PresenceSession
 from app.models.mobile_device import (
     DevicePairingCode,
     GeofenceEvent,
@@ -34,7 +35,14 @@ from app.models.mobile_device import (
 from app.models.site import Site
 from app.models.system_setting import SystemSetting
 from app.models.user import User
-from app.schemas.mobile import DeviceRegisterIn, DeviceStatusIn, GeofenceEventIn, MobileAppSettings
+from app.schemas.mobile import (
+    ConnectivityEventsIn,
+    DeviceRegisterIn,
+    DeviceStatusIn,
+    GeofenceEventIn,
+    GeofenceEventsIn,
+    MobileAppSettings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +63,13 @@ ISSUE_LABELS = {
     "no_notifications": "اجازه‌ی اعلان داده نشده است",
     "battery_restricted": "محدودیت باتری برای اپ برداشته نشده است",
 }
-BLOCKING_ISSUES = {"revoked", "no_fine_location", "no_background_location", "location_off", "no_geofences", "stale", "outdated"}
+# اعلان هم الزامی است (اپ بدون آن باز نمی‌شود)؛ «محدودیت باتری» فقط هشدار
+BLOCKING_ISSUES = {
+    "revoked", "no_fine_location", "no_background_location", "location_off", "no_geofences", "stale", "outdated",
+    "no_notifications",
+}
+# مشکلاتی که داخل خود اپ هم پرتال را قفل می‌کنند (کاربر وسط کار دسترسی را گرفته یا GPS را خاموش کرده)
+PERMISSION_ISSUES = ("no_fine_location", "no_background_location", "location_off", "no_notifications")
 STATUS_LABELS = {
     "logged": "ثبت شد",
     "duplicate": "تکراری",
@@ -69,6 +83,12 @@ STATUS_LABELS = {
     "out_of_range": "خارج از محدوده‌ی سایت",
     "bad_time": "زمان رویداد نامعتبر",
 }
+# «آنلاین در محیط کار» با اپ بسته: نرسیدن گزارش «هنوز آنلاین» بیش از این = نشست قبلی تمام شده و آنلاین شدن بعدی
+# نشست تازه است (همان BACKGROUND_STALE_SECONDS سرویس حضور)
+ONLINE_SESSION_GAP = timedelta(minutes=25)
+NETWORK_LABELS = {"wifi": "وای‌فای", "cellular": "اینترنت همراه", "other": "شبکه"}
+# رویداد خروجی که واقعاً خروج است (نه جعلی/خارج از بازه‌ی زمان/از عمق محدوده)
+EXIT_OK_STATUSES = ("logged", "already_out", "duplicate", "disabled")
 # اعتبارسنجی رویداد Geofencing: دقت GPS بیش از این مقدار در محاسبه‌ی فاصله حساب نمی‌شود، رویداد قدیمی‌تر از
 # EVENT_MAX_AGE یا جلوتر از EVENT_MAX_FUTURE (ساعت گوشی) پذیرفته نمی‌شود — مانع جعل ورود/خروج با رویداد ساختگی
 EVENT_ACCURACY_CAP_METERS = 100.0
@@ -395,6 +415,8 @@ async def geofence_config(db: AsyncSession) -> dict:
     ][:100]
     body = {
         "enabled": cfg.auto_clock_enabled,
+        # اپ فقط وقتی داخل محدوده است آنلاین شدن گوشی را گزارش می‌دهد (اپ قدیمی این کلید را نادیده می‌گیرد)
+        "online_tracking": cfg.online_tracking_enabled,
         "loitering_ms": cfg.loitering_seconds * 1000,
         "responsiveness_ms": cfg.responsiveness_seconds * 1000,
         "sites": sites,
@@ -429,7 +451,48 @@ def _event_time_valid(ms: int, received: datetime) -> bool:
     return received - EVENT_MAX_AGE <= at <= received + EVENT_MAX_FUTURE
 
 
-def _event_rejection(ev: GeofenceEventIn, site: Site, distance: float | None, received: datetime) -> str | None:
+def resolve_event_time(
+    occurred_ms: int,
+    elapsed_ms: int | None,
+    boot_count: int | None,
+    now_elapsed_ms: int | None,
+    now_boot_count: int | None,
+    received: datetime,
+    now_wall_ms: int | None = None,
+) -> tuple[datetime, bool, bool]:
+    """
+    زمان واقعی رویداد، بدون اعتماد به ساعت گوشی. خروجی: (زمان، زمان نامطمئن است؟، معتبر است؟)
+
+    «کرنومتر» گوشی (elapsedRealtime) از لحظه‌ی روشن شدن گوشی می‌شمارد و کاربر نمی‌تواند تغییرش دهد. اپ کرنومتر لحظه‌ی
+    رویداد و لحظه‌ی ارسال را می‌فرستد؛ زمان رویداد = زمان رسیدن به سرور منهای فاصله‌ی این دو. تغییر ساعت، تاریخ یا
+    منطقه‌ی زمانی گوشی اثری ندارد.
+    - همان روشن شدن گوشی (boot_count برابر) ← زمان دقیق. قدیمی‌تر از EVENT_MAX_AGE ← نامعتبر.
+      اندروید ۶ شماره‌ی روشن شدن ندارد: «همان روشن شدن» یعنی فاصله‌ی کرنومتر با فاصله‌ی ساعت گوشی (now_wall_ms −
+      occurred_ms) حداکثر ۵ دقیقه فرق کند؛ وگرنه (خاموش/روشن یا دستکاری ساعت در این فاصله) نامطمئن.
+    - گوشی بین رویداد و ارسال خاموش/روشن شده ← کرنومتر قابل استفاده نیست: ساعت گوشی (با همان بازه‌ی مجاز قبلی) و
+      «زمان نامطمئن» (در گزارش با برچسب نمایش داده می‌شود).
+    - نسخه‌ی قدیمی اپ بدون کرنومتر ← رفتار قبلی (ساعت گوشی).
+    """
+    if elapsed_ms is not None and now_elapsed_ms is not None:
+        age_ms = now_elapsed_ms - elapsed_ms
+        if boot_count is not None and now_boot_count is not None:
+            same_boot = boot_count == now_boot_count
+        elif now_wall_ms is not None:
+            same_boot = abs((now_wall_ms - occurred_ms) - age_ms) <= 5 * 60 * 1000
+        else:
+            same_boot = False
+        if same_boot and age_ms >= 0:
+            # مقایسه پیش از ساختن timedelta: عدد خیلی بزرگ (درخواست دستکاری‌شده) OverflowError نمی‌دهد
+            if age_ms > EVENT_MAX_AGE.total_seconds() * 1000:
+                return received, False, False
+            return received - timedelta(milliseconds=age_ms), False, True
+        return _event_time(occurred_ms, received), True, _event_time_valid(occurred_ms, received)
+    return _event_time(occurred_ms, received), False, _event_time_valid(occurred_ms, received)
+
+
+def _event_rejection(
+    ev: GeofenceEventIn, site: Site, distance: float | None, received: datetime, time_valid: bool | None = None
+) -> str | None:
     """
     اعتبارسنجی رویداد نسبت به سایت: کد وضعیت رد (mock / no_location / bad_time / out_of_range) یا None اگر معتبر.
     - ورود/حضور (enter/dwell): مختصات لازم است و فاصله باید ≤ شعاع سایت + دقت GPS (حداکثر EVENT_ACCURACY_CAP_METERS).
@@ -438,7 +501,9 @@ def _event_rejection(ev: GeofenceEventIn, site: Site, distance: float | None, re
     """
     if ev.is_mock:
         return "mock"
-    if not _event_time_valid(ev.occurred_at, received):
+    if time_valid is None:
+        time_valid = _event_time_valid(ev.occurred_at, received)
+    if not time_valid:
         return "bad_time"
     tolerance = min(ev.accuracy or 0.0, EVENT_ACCURACY_CAP_METERS)
     radius = float(site.gps_radius_meters)
@@ -453,14 +518,30 @@ def _event_rejection(ev: GeofenceEventIn, site: Site, distance: float | None, re
     return None
 
 
-async def process_geofence_events(db: AsyncSession, device: MobileDevice, events: list[GeofenceEventIn]) -> list[dict]:
-    """رویدادها را به ترتیب زمان پردازش می‌کند؛ خروجی برای هر رویداد: id، status، پیام کوتاه برای اعلان اپ."""
+async def process_geofence_events(
+    db: AsyncSession, device: MobileDevice, events: list[GeofenceEventIn] | GeofenceEventsIn
+) -> list[dict]:
+    """
+    رویدادها را به ترتیب زمان پردازش می‌کند؛ خروجی برای هر رویداد: id، status، پیام کوتاه برای اعلان اپ.
+    زمان هر رویداد با resolve_event_time (کرنومتر گوشی + ساعت سرور) حساب می‌شود.
+    """
     received = _now()
+    if isinstance(events, GeofenceEventsIn):
+        now_elapsed, now_boot, now_wall = events.now_elapsed_ms, events.boot_count, events.now_wall_ms
+        events = events.events
+    else:
+        now_elapsed = now_boot = now_wall = None
     cfg = await get_mobile_settings(db)
     sites = {s.id: s for s in await configured_sites(db)}
     out: list[dict] = []
+    times = {
+        id(ev): resolve_event_time(
+            ev.occurred_at, ev.elapsed_ms, ev.boot_count, now_elapsed, now_boot, received, now_wall
+        )
+        for ev in events
+    }
 
-    for ev in sorted(events, key=lambda e: e.occurred_at):
+    for ev in sorted(events, key=lambda e: times[id(e)][0]):
         existing = (
             await db.execute(
                 select(GeofenceEvent).where(GeofenceEvent.device_id == device.id, GeofenceEvent.client_event_id == ev.id)
@@ -470,7 +551,7 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
             out.append({"id": ev.id, "status": existing.status, "message": None})
             continue
 
-        occurred = _event_time(ev.occurred_at, received)
+        occurred, time_uncertain, time_valid = times[id(ev)]
         site = sites.get(ev.site_id)
         log_type = GpsLogType.check_out if ev.transition == "exit" else GpsLogType.check_in
         distance = None
@@ -478,7 +559,7 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
             distance = haversine_distance_meters(ev.latitude, ev.longitude, site.gps_latitude, site.gps_longitude)
 
         status = "logged"
-        rejection = _event_rejection(ev, site, distance, received) if site is not None else None
+        rejection = _event_rejection(ev, site, distance, received, time_valid) if site is not None else None
         if device.employee_id is None:
             status = "no_employee"
         elif site is None:
@@ -532,6 +613,7 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
                 source="geofence",
                 device_id=device.id,
                 created_at=occurred,
+                time_uncertain=time_uncertain,
             )
             db.add(gps_log)
             await db.flush()
@@ -551,10 +633,14 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
                 accuracy_meters=ev.accuracy,
                 distance_meters=distance,
                 is_mock=ev.is_mock,
+                time_uncertain=time_uncertain,
                 status=status,
                 gps_log_id=gps_log.id if gps_log else None,
             )
         )
+        # خروج از محدوده: نشست «آنلاین در محیط کار» (اپ بسته) این سایت که پیش از خروج شروع شده همان‌جا تمام می‌شود
+        if ev.transition == "exit" and site is not None and device.employee_id is not None and status in EXIT_OK_STATUSES:
+            await _close_background_sessions(db, device.employee_id, site.id, before=occurred)
         message = None
         if status == "logged":
             from app.core.persian_date import to_tehran_time_str
@@ -568,6 +654,189 @@ async def process_geofence_events(db: AsyncSession, device: MobileDevice, events
     device.last_event_at = received
     await db.commit()
     return out
+
+
+# ---------------------------------------------------------------- «آنلاین در محیط کار» (اپ بسته)
+
+
+async def _close_background_sessions(
+    db: AsyncSession, employee_id: int, site_id: int, before: datetime | None = None
+) -> None:
+    """
+    نشست‌های پس‌زمینه‌ی باز این پرسنل در این سایت را با آخرین زمان دیده‌شده می‌بندد.
+    before (زمان خروج): فقط نشست‌هایی که پیش از آن شروع شده‌اند، و پایان حداکثر همان زمان (خروج دیررسیده نشست تازه‌تر را
+    نمی‌بندد).
+    """
+    conds = [
+        PresenceSession.employee_id == employee_id,
+        PresenceSession.matched_site_id == site_id,
+        PresenceSession.source == "background",
+        PresenceSession.disconnected_at.is_(None),
+    ]
+    if before is not None:
+        conds.append(PresenceSession.connected_at <= before)
+    rows = (await db.execute(select(PresenceSession).where(*conds))).scalars().all()
+    for row in rows:
+        end = row.last_seen_at or row.connected_at
+        if before is not None:
+            end = max(min(end, before), row.connected_at)
+        row.disconnected_at = end
+        row.duration_seconds = max(int((end - row.connected_at).total_seconds()), 0)
+
+
+async def _exited_between(db: AsyncSession, employee_id: int, site_id: int, start: datetime, end: datetime) -> bool:
+    """آیا بین start و end یک خروج واقعی از این سایت ثبت شده است؟"""
+    row = await db.execute(
+        select(GeofenceEvent.id)
+        .where(
+            GeofenceEvent.employee_id == employee_id,
+            GeofenceEvent.site_id == site_id,
+            GeofenceEvent.transition == "exit",
+            GeofenceEvent.status.in_(EXIT_OK_STATUSES),
+            GeofenceEvent.occurred_at > start,
+            GeofenceEvent.occurred_at <= end,
+        )
+        .limit(1)
+    )
+    return row.first() is not None
+
+
+async def _portal_gps_live(db: AsyncSession, employee_id: int, site_id: int) -> bool:
+    """نشست «آنلاین در محیط کار» با منبع پرتال (پرتال باز داخل اپ) برای این سایت همین الان زنده است؟"""
+    from app.services.gps_attendance_service import presence_alive_since
+
+    row = await db.execute(
+        select(PresenceSession.id)
+        .where(
+            PresenceSession.employee_id == employee_id,
+            PresenceSession.matched_site_id == site_id,
+            PresenceSession.kind == "gps",
+            PresenceSession.source == "portal",
+            PresenceSession.disconnected_at.is_(None),
+            func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at) >= presence_alive_since("portal"),
+        )
+        .limit(1)
+    )
+    return row.first() is not None
+
+
+def _network_label(network: str | None) -> str:
+    return "اپ (پس‌زمینه) · " + NETWORK_LABELS.get(network or "other", "شبکه")
+
+
+async def process_connectivity_events(db: AsyncSession, device: MobileDevice, payload: ConnectivityEventsIn) -> int:
+    """
+    گزارش‌های «گوشی داخل محدوده آنلاین است» (اپ بسته) → نشست «آنلاین در محیط کار» با source=background.
+    online = لحظه‌ی وصل شدن (دقیق)، alive = هنوز وصل است (حدود هر ۱۵ دقیقه). گزارش در فاصله‌ی ONLINE_SESSION_GAP از
+    نشست موجود همان نشست را ادامه می‌دهد؛ وگرنه نشست قبلی (با آخرین زمان دیده‌شده) بسته و نشست تازه باز می‌شود.
+    پایان واقعی آنلاین بودن را اندروید بدون باز بودن اپ خبر نمی‌دهد ← پایان نشست = آخرین گزارش (حداکثر ~۱۵ دقیقه خطا).
+    خروجی: تعداد گزارش‌های اعمال‌شده. ارسال دوباره‌ی همان گزارش اثری ندارد (زمانش داخل نشست موجود است).
+    """
+    cfg = await get_mobile_settings(db)
+    if not cfg.online_tracking_enabled or device.employee_id is None or not payload.events:
+        return 0
+    received = _now()
+    sites = {s.id: s for s in await configured_sites(db)}
+    resolved = []
+    for ev in payload.events:
+        at, uncertain, valid = resolve_event_time(
+            ev.occurred_at, ev.elapsed_ms, ev.boot_count, payload.now_elapsed_ms, payload.boot_count, received,
+            payload.now_wall_ms,
+        )
+        if valid and ev.site_id in sites:
+            resolved.append((min(at, received), uncertain, ev))
+    resolved.sort(key=lambda item: item[0])
+
+    applied = 0
+    for at, uncertain, ev in resolved:
+        site = sites[ev.site_id]
+        # پرتال همین الان داخل اپ باز است و نشست «پرتال باز» همین سایت زنده است: دوباره شمرده نمی‌شود
+        if await _portal_gps_live(db, device.employee_id, site.id):
+            continue
+        session = (
+            await db.execute(
+                select(PresenceSession)
+                .where(
+                    PresenceSession.employee_id == device.employee_id,
+                    PresenceSession.matched_site_id == site.id,
+                    PresenceSession.source == "background",
+                    PresenceSession.connected_at <= at + ONLINE_SESSION_GAP,
+                )
+                .order_by(PresenceSession.connected_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if session is not None:
+            last = session.last_seen_at or session.connected_at
+            end = session.disconnected_at or last
+            if session.connected_at - ONLINE_SESSION_GAP <= at <= end + ONLINE_SESSION_GAP:
+                if session.disconnected_at is None:
+                    # ادامه‌ی همان نشست (گزارش دیررسیده‌ی قبل از شروع هم شروع را عقب می‌برد)
+                    session.connected_at = min(session.connected_at, at)
+                    session.last_seen_at = max(last, at)
+                    session.time_uncertain = session.time_uncertain or uncertain
+                    applied += 1
+                elif at <= end:
+                    pass  # داخل نشست بسته‌شده‌ی قبلی (ارسال دوباره)
+                elif not await _exited_between(db, device.employee_id, site.id, end, at):
+                    # گزارش دیررسیده (Doze) بعد از اینکه Job نشست را بسته بود: همان نشست ادامه پیدا می‌کند
+                    from app.services.gps_attendance_service import presence_alive_since
+
+                    session.last_seen_at = at
+                    session.time_uncertain = session.time_uncertain or uncertain
+                    if at >= presence_alive_since("background"):
+                        session.disconnected_at = None
+                        session.duration_seconds = None
+                    else:
+                        session.disconnected_at = at
+                        session.duration_seconds = max(int((at - session.connected_at).total_seconds()), 0)
+                    applied += 1
+                else:
+                    session = None
+                if session is not None:
+                    continue
+        newer_open = (
+            await db.execute(
+                select(PresenceSession.id).where(
+                    PresenceSession.employee_id == device.employee_id,
+                    PresenceSession.matched_site_id == site.id,
+                    PresenceSession.source == "background",
+                    PresenceSession.disconnected_at.is_(None),
+                    PresenceSession.connected_at > at,
+                )
+            )
+        ).first()
+        if newer_open is not None:
+            # گزارش خیلی دیررسیده از قبل از نشست فعلی: نشست کوتاه جدا و بسته، بدون دست زدن به نشست فعلی
+            db.add(
+                PresenceSession(
+                    employee_id=device.employee_id, kind="gps", source="background", connected_at=at,
+                    last_seen_at=at, disconnected_at=at, duration_seconds=0, client=_network_label(ev.network),
+                    matched_site_id=site.id, is_within_geofence=True, time_uncertain=uncertain,
+                )
+            )
+            await db.flush()
+            applied += 1
+            continue
+        await _close_background_sessions(db, device.employee_id, site.id)
+        db.add(
+            PresenceSession(
+                employee_id=device.employee_id,
+                kind="gps",
+                source="background",
+                connected_at=at,
+                last_seen_at=at,
+                client=_network_label(ev.network),
+                matched_site_id=site.id,
+                is_within_geofence=True,
+                time_uncertain=uncertain,
+            )
+        )
+        await db.flush()
+        applied += 1
+    device.last_event_at = received
+    await db.commit()
+    return applied
 
 
 # ---------------------------------------------------------------- کاربر جاری (پرتال) و پیش‌نیاز دسترسی
@@ -634,12 +903,22 @@ async def my_status(db: AsyncSession, user: User) -> dict:
     required = await location_app_required(db, user)
     healthy, devices = await user_devices_health(db, user)
     latest = await latest_release_info(db)
+    # قفل داخل اپ: آخرین گوشی متصل کاربر گزارش داده که دسترسی موقعیت/اعلان گرفته شده یا GPS خاموش است
+    # (بدون گوشی متصل ← قفلی نیست؛ اپ تازه‌نصب هنوز در حال اتصال است و خودش هنگام ورود دسترسی‌ها را چک کرده)
+    # گوشی تازه‌متصلی که هنوز اولین گزارش وضعیتش نرسیده (همه‌ی دسترسی‌ها پیش‌فرض false است) یا گزارش‌هایش قطع شده
+    # (stale) قفل نمی‌شود؛ خود اپ هنگام ورود دسترسی‌ها را چک کرده است
+    permission_issues = []
+    if required and devices and devices[0]["status_reported_at"] is not None:
+        latest_issues = devices[0]["issues"]
+        if not any(i["code"] == "stale" for i in latest_issues):
+            permission_issues = [i for i in latest_issues if i["code"] in PERMISSION_ISSUES]
     return {
         "required": required,
         "exempt": user.employee_id is not None and await is_exempt(db, user.employee_id),
         "healthy": healthy,
         "devices": devices,
         "latest_release": latest,
+        "permission_issues": permission_issues,
     }
 
 

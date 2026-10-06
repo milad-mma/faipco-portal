@@ -28,8 +28,13 @@ class PresenceSession(Base):
     )
 
     # نوع نشست (Migration 091): "app" = اپ پرتال باز است (همه‌ی پرسنل، بدون GPS)؛
-    # "gps" = اپ باز و موقعیت داخل محدوده‌ی سایت (فقط دارندگان attendance.clock_in_out)
+    # "gps" = «آنلاین در محیط کار»: گوشی داخل محدوده‌ی سایت و آنلاین
     kind: Mapped[str] = mapped_column(String(10), nullable=False, default="gps", server_default="gps")
+    # منبع (Migration 104): "portal" = پرتال باز (WebSocket)، "background" = اپ اندروید بسته؛ بخش بومی اپ آنلاین شدن
+    # گوشی داخل محدوده را گزارش می‌دهد (پایان نشست تقریبی است، حداکثر به اندازه‌ی فاصله‌ی گزارش‌های «هنوز آنلاین»)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="portal", server_default="portal")
+    # زمان نشست پس‌زمینه با «کرنومتر» گوشی قابل محاسبه نبود (گوشی بین رویداد و ارسال خاموش/روشن شده)
+    time_uncertain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # زمان آخرین Heartbeat؛ نشستی که مدتی Heartbeat نگرفته (ری‌استارت سرور، قطع ناگهانی) با همین زمان بسته می‌شود
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

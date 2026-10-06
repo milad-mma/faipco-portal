@@ -1,18 +1,17 @@
 """
-Endpoint های «حضور مبتنی بر موقعیت مکانی» (GPS) و ثبت ورود/خروج با موبایل.
+Endpoint های «حضور مبتنی بر موقعیت مکانی» (GPS).
 
-/attendance/clock-in     (POST)  ثبت ورود با مختصات فعلی — مجوز attendance.clock_in_out
-/attendance/clock-out    (POST)  ثبت خروج با مختصات فعلی — مجوز attendance.clock_in_out
-/attendance/my-logs      (GET)   تاریخچه‌ی ورود/خروج خودِ کاربر جاری در یک ماه شمسی
-/attendance/logs         (GET)   گزارش کامل Admin/hr-manager — همه‌ی لاگ‌ها برای همه‌ی
-                                  پرسنل، صفحه‌بندی‌شده — مجوز attendance.view_clock_records
-/attendance/logs         (POST)  افزودن دستی یک رکورد ورود/خروج — مجوز attendance.manage_clock_records
+ثبت دستی ورود/خروج توسط خود پرسنل (clock-in / clock-out / my-logs) در Migration 104 حذف شد؛ ورود/خروج فقط
+خودکار با اپ اندروید (Geofencing) ثبت می‌شود. همه‌ی گزارش‌ها با یک مجوز: attendance.manage_clock_records (سایت‌محور).
+
+/attendance/logs         (GET)   گزارش کامل ورود/خروج همه‌ی پرسنل، صفحه‌بندی‌شده
+/attendance/logs         (POST)  افزودن دستی یک رکورد ورود/خروج (مدیر)
 /attendance/logs/{id}    (PUT)   ویرایش دستی یک رکورد — همان مجوز
 /attendance/logs/{id}    (DELETE) حذف یک رکورد — همان مجوز
 /attendance/presence-ws  (WS)    نشانگر زنده‌ی «آنلاین/آفلاین»: با Heartbeat های داخل
                                   محدوده یک PresenceSession باز می‌شود و با خروج از
                                   محدوده/قطع اتصال/سکوت با duration دقیق بسته می‌شود
-/attendance/presence-sessions (GET) گزارش Admin از همان Session ها — مجوز attendance.view_logs
+/attendance/presence-sessions (GET) گزارش «پرسنل آنلاین» و «آنلاین در محیط کار» (پرتال باز + اپ در پس‌زمینه)
 
 ثبت ورود/خروج رسمی از طریق دستگاه‌های حضور و غیاب کارخانه انجام می‌شود؛
 این لاگ یک منبع مکمل دیجیتال است.
@@ -25,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user
 from app.core.site_access import get_sites_with_permission
 from app.core.persian_date import get_current_jalali_year_month
 from app.core.security import decode_token
@@ -42,13 +41,10 @@ from app.schemas.gps_attendance import (
     GpsActivityLogPageOut,
     GpsLogUpdateIn,
     GpsManualLogIn,
-    GpsPositionIn,
-    MyClockLogsOut,
     PresenceSessionAdminOut,
     PresenceSessionPageOut,
 )
 from app.services.gps_attendance_service import (
-    GpsAttendanceError,
     GpsAttendanceService,
     check_geofence,
     is_presence_alive,
@@ -56,6 +52,9 @@ from app.services.gps_attendance_service import (
 
 logger = logging.getLogger("faipco.attendance")
 router = APIRouter()
+
+# همه‌ی گزارش‌ها و ویرایش دستی رکوردها (Migration 104: view_logs و view_clock_records در این ادغام شدند)
+CLOCK_PERMISSION = "attendance.manage_clock_records"
 
 # اگر بیش از این مدت هیچ Heartbeat از کلاینت نرسد، Session «قطع‌شده» در نظر گرفته می‌شود
 # حتی اگر اتصال TCP هنوز باز باشد (مثلاً قطعی بی‌صدای شبکه). کلاینت هر ۳۰-۶۰ ثانیه Heartbeat می‌فرستد.
@@ -65,80 +64,6 @@ _HEARTBEAT_TIMEOUT_SECONDS = 90
 # قابل‌اعتماد نیست و برای تصمیم محدوده استفاده نمی‌شود. ۵۰۰ متر به‌اندازه‌ی کافی بزرگ‌تر از شعاع
 # معمول محدوده (۱۰۰-۳۰۰ متر) است تا GPS متوسط داخل ساختمان رد نشود ولی داده‌ی خراب گرفته شود.
 _MAX_TRUSTED_ACCURACY_METERS = 500
-
-
-def _require_employee(current_user: User) -> int:
-    """employee_id کاربر جاری را برمی‌گرداند؛ اگر به پرسنلی متصل نباشد 400 می‌دهد."""
-    if current_user.employee_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="این قابلیت فقط برای کاربرانی است که به یک رکورد پرسنلی متصل‌اند.",
-        )
-    return current_user.employee_id
-
-
-async def _clock(
-    payload: GpsPositionIn,
-    log_type: GpsLogType,
-    db: AsyncSession,
-    current_user: User,
-) -> GpsActivityLogOut:
-    """
-    منطق مشترک ثبت ورود/خروج: لاگ را از طریق سرویس ثبت می‌کند و خروجی API را برمی‌گرداند.
-    خطای منطقی سرویس (خارج از محدوده، ثبت تکراری) به 403 با همان پیام تبدیل می‌شود.
-    """
-    employee_id = _require_employee(current_user)
-    try:
-        log = await GpsAttendanceService(db).clock_in_out(
-            employee_id=employee_id,
-            log_type=log_type,
-            latitude=payload.latitude,
-            longitude=payload.longitude,
-            accuracy_meters=payload.accuracy_meters,
-            site_id=payload.site_id,
-        )
-    except GpsAttendanceError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-    return GpsActivityLogOut.model_validate(log)
-
-
-@router.post("/clock-in", response_model=GpsActivityLogOut)
-async def clock_in(
-    payload: GpsPositionIn,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("attendance.clock_in_out")),
-):
-    """ثبت ورود با مختصات فعلی (مجوز attendance.clock_in_out). 400 بدون پرسنل، 403 خارج از محدوده یا تکراری."""
-    return await _clock(payload, GpsLogType.check_in, db, current_user)
-
-
-@router.post("/clock-out", response_model=GpsActivityLogOut)
-async def clock_out(
-    payload: GpsPositionIn,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("attendance.clock_in_out")),
-):
-    """ثبت خروج با مختصات فعلی (مجوز attendance.clock_in_out). 400 بدون پرسنل، 403 خارج از محدوده یا تکراری."""
-    return await _clock(payload, GpsLogType.check_out, db, current_user)
-
-
-@router.get("/my-logs", response_model=MyClockLogsOut)
-async def my_logs(
-    year: int | None = None,
-    month: int | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("attendance.clock_in_out")),
-):
-    """
-    لاگ‌های ورود/خروج خودِ کاربر جاری در یک ماه شمسی (مجوز attendance.clock_in_out).
-    بدون year/month، ماه جاری برگردانده می‌شود. 400 اگر کاربر به پرسنلی متصل نباشد.
-    """
-    employee_id = _require_employee(current_user)
-    # پیش‌فرض: ماه شمسی جاری
-    if year is None or month is None:
-        year, month = get_current_jalali_year_month()
-    logs = await GpsAttendanceService(db).get_my_logs(employee_id, year=year, month=month)
-    return MyClockLogsOut(items=[GpsActivityLogOut.model_validate(log) for log in logs], year=year, month=month)
 
 
 @router.get("/logs", response_model=GpsActivityLogPageOut)
@@ -156,7 +81,7 @@ async def list_all_logs(
     """
     گزارش صفحه‌بندی‌شده‌ی همه‌ی لاگ‌های GPS (حضور دوره‌ای + ورود/خروج) برای Admin/hr-manager.
     همیشه به یک ماه شمسی محدود است (پیش‌فرض: ماه جاری)؛ فیلتر اختیاری روی پرسنل، نوع لاگ و سایت.
-    مجوز attendance.view_clock_records به‌صورت سایت‌محور بررسی می‌شود؛ 403 اگر برای هیچ سایتی نداشته باشد.
+    مجوز attendance.manage_clock_records به‌صورت سایت‌محور بررسی می‌شود؛ 403 اگر برای هیچ سایتی نداشته باشد.
 
     ایزوله‌سازی چندسایتی: چون این Endpoint site_id ثابتی در Path ندارد که require_permission
     بتواند از آن بخواند، get_sites_with_permission دقیقاً سایت‌هایی را برمی‌گرداند که کاربر این
@@ -164,7 +89,7 @@ async def list_all_logs(
     تا hr-manager سایت‌محور نتواند با تغییر آن به سایت دیگری برسد.
     """
     # سایت‌های مجاز کاربر برای این مجوز (None یعنی بدون محدودیت)
-    access_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_clock_records")
+    access_site_ids = await get_sites_with_permission(db, current_user, CLOCK_PERMISSION)
     if access_site_ids is not None and not access_site_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
 
@@ -216,6 +141,7 @@ async def list_all_logs(
                 is_within_geofence=log.is_within_geofence,
                 is_manual=log.is_manual,
                 source=log.source or "web",
+                time_uncertain=bool(log.time_uncertain),
                 created_at=log.created_at,
                 employee_id=log.employee_id,
                 employee_name=employee_name,
@@ -235,7 +161,7 @@ async def _check_clock_manage_access(db: AsyncSession, current_user: User, site_
     if current_user.is_superuser:  # superuser همیشه مجاز است
         return
     codes = await UserRepository(db).get_permission_codes(current_user.id, site_id=site_id)
-    if "attendance.manage_clock_records" not in codes:
+    if CLOCK_PERMISSION not in codes:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="دسترسی لازم برای این عملیات را ندارید (این پرسنل خارج از محدوده سایت شماست)",
@@ -329,9 +255,9 @@ async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tupl
     """
     احراز هویت WebSocket از روی access token در Query Param (?token=...)، چون مرورگر اجازه‌ی
     هدر Authorization روی WebSocket را نمی‌دهد.
-    خروجی: (کاربر، آیا پایش GPS برایش فعال است) اگر توکن معتبر و کاربر به پرسنل متصل باشد؛ وگرنه None.
-    «آنلاین بودن در اپ» برای همه‌ی پرسنل ثبت می‌شود؛ پایش محدوده‌ی GPS برای دارندگان attendance.clock_in_out و
-    برای همه‌ی پرسنلی که از داخل اپ اندروید وصل شده‌اند (in_app؛ پرتال در اپ ?app=android می‌فرستد).
+    خروجی: (کاربر، آیا پایش GPS برایش فعال است، داخل اپ) اگر توکن معتبر و کاربر به پرسنل متصل باشد؛ وگرنه None.
+    «آنلاین بودن در اپ» برای همه‌ی پرسنل ثبت می‌شود؛ پایش محدوده‌ی GPS («آنلاین در محیط کار») فقط برای پرتالِ
+    داخل اپ اندروید (in_app؛ پرتال در اپ ?app=android می‌فرستد) و وقتی قابلیت اپ روشن است.
     """
     # توکن باید از نوع access و دارای شناسه‌ی کاربر باشد
     payload = decode_token(token)
@@ -350,11 +276,7 @@ async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tupl
             from app.services.mobile_app_service import is_feature_enabled
 
             in_app = await is_feature_enabled(db)
-        # همه‌ی انتصاب‌های نقش (سراسری + سایت‌محور) دیده می‌شوند
-        gps_enabled = in_app or user.is_superuser or "attendance.clock_in_out" in (
-            await UserRepository(db).get_all_permission_codes(user.id)
-        )
-        return user, gps_enabled, in_app
+        return user, in_app, in_app
 
 
 def _client_label(user_agent: str | None) -> str | None:
@@ -393,7 +315,8 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...), app:
     WebSocket نشانگر زنده‌ی «آنلاین/آفلاین» پرسنل (توکن در ?token=). دو نوع نشست ثبت می‌شود:
 
     - «اپ» (kind=app): برای هر پرسنلی که پرتال را باز کرده، از لحظه‌ی اتصال تا قطع؛ بدون نیاز به GPS.
-    - «GPS» (kind=gps): فقط برای دارندگان attendance.clock_in_out، بازه‌هایی که موقعیت داخل محدوده‌ی سایت است:
+    - «GPS» (kind=gps، «آنلاین در محیط کار» با منبع portal): فقط پرتالِ داخل اپ اندروید، بازه‌هایی که موقعیت داخل
+      محدوده‌ی سایت است:
       اولین Heartbeat داخل محدوده نشست را باز می‌کند؛ Heartbeat خارج از محدوده، قطع یا سکوت آن را می‌بندد.
 
     ورودی: Heartbeat های JSON هر ۴۵ ثانیه (با latitude/longitude/accuracy_meters برای پایش GPS، یا خالی).
@@ -547,12 +470,13 @@ async def list_presence_sessions(
 ):
     """
     گزارش صفحه‌بندی‌شده‌ی Session های آنلاین/آفلاین با مدت دقیق هرکدام، برای Admin/hr-manager.
-    kind: "app" = باز بودن اپ (همه‌ی پرسنل، بدون GPS)، "gps" = حضور در محدوده‌ی سایت با GPS.
-    فیلتر اختیاری روی پرسنل، فقط آنلاین‌ها و سایت. مجوز attendance.view_logs سایت‌محور بررسی می‌شود؛
+    kind: "app" = باز بودن پرتال (همه‌ی پرسنل، بدون GPS)، "gps" = «آنلاین در محیط کار»: پرتال باز داخل محدوده
+    (source=portal) یا آنلاین شدن گوشی داخل محدوده با اپ بسته (source=background).
+    فیلتر اختیاری روی پرسنل، فقط آنلاین‌ها و سایت. مجوز attendance.manage_clock_records سایت‌محور بررسی می‌شود؛
     403 اگر برای هیچ سایتی نداشته باشد. ایزوله‌سازی چندسایتی همان الگوی list_all_logs است.
     """
     # سایت‌های مجاز کاربر برای این مجوز (None یعنی بدون محدودیت)
-    access_site_ids = await get_sites_with_permission(db, current_user, "attendance.view_logs")
+    access_site_ids = await get_sites_with_permission(db, current_user, CLOCK_PERMISSION)
     if access_site_ids is not None and not access_site_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی لازم را ندارید")
 
@@ -602,6 +526,8 @@ async def list_presence_sessions(
                 matched_site_name=matched_site.name if matched_site else None,
                 last_distance_meters=s.last_distance_meters,
                 is_within_geofence=s.is_within_geofence,
+                source=s.source or "portal",
+                time_uncertain=bool(s.time_uncertain),
             )
         )
 

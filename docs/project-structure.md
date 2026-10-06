@@ -81,7 +81,7 @@ faipco-portal/
 | گروه | صفحات در `src/pages/` |
 |---|---|
 | ورود | `LoginPage`، `ForgotPasswordPage`، `ResetPasswordPage` |
-| پرسنل (همه کاربران) | `PersonalDashboardPage` (`/my-dashboard`)، `ProfilePage`، `NoticesPage`، `NewNoticePage`، `FeedbackSubmitPage`، `MyVehiclesPage`، `LeaveRequestPage` (درخواست‌های من + کارتابل)، `MyPerformancePage`، `EvaluationFillPage`، `AttendanceClockPage`، `MonthlyAttendanceReportPage` |
+| پرسنل (همه کاربران) | `PersonalDashboardPage` (`/my-dashboard`)، `ProfilePage`، `NoticesPage`، `NewNoticePage`، `FeedbackSubmitPage`، `MyVehiclesPage`، `LeaveRequestPage` (درخواست‌های من + کارتابل)، `MyPerformancePage`، `EvaluationFillPage`، `MonthlyAttendanceReportPage` |
 | مدیریت سازمان | `DashboardPage`، `EmployeesPage`، `DepartmentsPage`، `SitesPage`، `SiteSettingsPage`، `SyncPage` |
 | گزارش‌ها | `NoticeReportsPage`، `FeedbackReportPage`، `VehiclesReportPage`، `PresenceReportPage`، `ClockInOutReportPage`، `LeaveRequestsAdminListPage` |
 | تنظیمات ماژول‌ها | `LeaveRequestStructurePage`، `BirthdayMessagesPage`، `EvaluationStructurePage`، `EvaluationPeriodsPage`، `EvaluationFormsPage`، `EvaluationFormBuilderPage`، `EvaluationReportsPage` |

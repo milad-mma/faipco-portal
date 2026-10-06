@@ -47,6 +47,8 @@ import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { desktopPanelBackground, surfaceTitleSx } from "../components/BrandLogo";
 import CaptchaField from "../components/CaptchaField";
 import { fetchCaptchaStatus } from "../api/auth";
+import { fetchLatestRelease } from "../api/mobile";
+import { isAndroidBrowser } from "../utils/androidApp";
 
 // فهرست خدمات نمایش‌داده‌شده در پنل معرفی دسکتاپ
 const PROMO_FEATURES = [
@@ -93,6 +95,15 @@ export default function LoginPage() {
   }, [username, captchaVisible]);
   const [canInstall, setCanInstall] = useState(getIsInstallable());  // مرورگر امکان نصب PWA را اعلام کرده است
   const [appVersion, setAppVersion] = useState("");
+  // مرورگر گوشی اندروید و اپ اندروید منتشر شده: به‌جای «نصب اپلیکیشن» (PWA)، دانلود اپ اندروید (پرتال روی
+  // گوشی اندروید فقط داخل اپ باز می‌شود). قابلیت اپ خاموش باشد ← 404 ← همان دکمه‌ی PWA
+  const [androidRelease, setAndroidRelease] = useState(null);
+  useEffect(() => {
+    if (!isAndroidBrowser()) return;
+    fetchLatestRelease()
+      .then((release) => setAndroidRelease(release || null))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     // اگر Session کاربر در پس‌زمینه معتبر تشخیص داده شود (مثلاً بعد از قطعی موقت اینترنت
@@ -185,7 +196,12 @@ export default function LoginPage() {
   // دکمه نصب PWA (در صورت امکان) و راهنمای نصب در iOS
   const installPrompt = (
     <>
-      {canInstall && (
+      {androidRelease && (
+        <Button fullWidth variant="outlined" startIcon={<GetAppOutlinedIcon />} href="/app" sx={{ mb: 2 }}>
+          دانلود اپ اندروید FAIPCO
+        </Button>
+      )}
+      {canInstall && !androidRelease && (
         <Button
           fullWidth
           variant="outlined"

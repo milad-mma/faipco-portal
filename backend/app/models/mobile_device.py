@@ -95,6 +95,7 @@ class GeofenceEvent(Base):
     accuracy_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
     distance_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    time_uncertain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # logged | duplicate | already_in | already_out | mock | disabled | unknown_site | no_employee
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     gps_log_id: Mapped[int | None] = mapped_column(

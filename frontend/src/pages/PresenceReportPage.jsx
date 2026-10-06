@@ -16,6 +16,7 @@ import {
   Pagination,
   Stack,
   Switch,
+  Tooltip,
   Table,
   TableBody,
   TableCell,
@@ -53,7 +54,7 @@ export default function PresenceReportPage() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [onlyOnline, setOnlyOnline] = useState(false);
-  const [kind, setKind] = useState("app"); // "app" = آنلاین در اپ، "gps" = حضور در محدوده
+  const [kind, setKind] = useState("app"); // "app" = آنلاین در پرتال، "gps" = آنلاین در محیط کار
 
   const [employeeOptions, setEmployeeOptions] = useState([]);  // گزینه‌های Autocomplete پرسنل
   const [employeeSearch, setEmployeeSearch] = useState("");  // متن تایپ‌شده در Autocomplete برای جست‌وجوی پرسنل
@@ -100,8 +101,8 @@ export default function PresenceReportPage() {
       </Alert>
       <PillTabs
         tabs={[
-          { key: "app", label: "آنلاین در اپ (همه‌ی پرسنل)" },
-          { key: "gps", label: "حضور در محدوده (GPS)" },
+          { key: "app", label: "آنلاین در پرتال (همه‌ی پرسنل)" },
+          { key: "gps", label: "آنلاین در محیط کار" },
         ]}
         value={kind}
         onChange={(k) => {
@@ -113,14 +114,14 @@ export default function PresenceReportPage() {
       <Alert severity="info" sx={{ mb: 3 }}>
         {kind === "app"
           ? "هر ردیف یک بازه‌ی واقعی است که پرسنل پرتال را باز داشته — بدون توجه به موقعیت GPS. هر دستگاه یا تب باز یک ردیف جداست."
-          : "هر ردیف یک بازه‌ی واقعی است که پرسنل هم اپ را باز داشته، هم داخل محدوده‌ی مجاز سایت بوده — فقط برای پرسنلی که مجوز ثبت تردد GPS دارند. اگر خارج از محدوده باشد، ردیفی ثبت نمی‌شود."}
+          : "هر ردیف یک بازه است که گوشی پرسنل داخل محدوده‌ی سایت به اینترنت وصل بوده (هر نوع اینترنتی، حتی وای‌فای شرکت). «پرتال باز»: پرتال داخل اپ باز بوده و زمان‌ها دقیق‌اند. «پس‌زمینه»: اپ بسته بوده؛ شروع دقیق است ولی پایان تقریبی است (حداکثر حدود ۱۵ دقیقه خطا)."}
       </Alert>
 
       {/* نوار فیلترها؛ تغییر هر فیلتر صفحه را به ۱ برمی‌گرداند */}
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
         <SiteFilterSelect
           value={selectedSiteId}
-          permission="attendance.view_logs"
+          permission="attendance.manage_clock_records"
           onChange={(value) => {
             setSelectedSiteId(value);
             setPage(1);
@@ -170,6 +171,7 @@ export default function PresenceReportPage() {
                   <TableCell>پرسنل</TableCell>
                   <TableCell>وضعیت</TableCell>
                   <TableCell>{kind === "app" ? "دستگاه" : "سایت"}</TableCell>
+                  {kind === "gps" && <TableCell>منبع</TableCell>}
                   <TableCell>شروع</TableCell>
                   <TableCell>پایان</TableCell>
                   <TableCell>مدت‌زمان</TableCell>
@@ -192,13 +194,36 @@ export default function PresenceReportPage() {
                       )}
                     </TableCell>
                     <TableCell>{(kind === "app" ? s.client : s.matched_site_name) || "—"}</TableCell>
+                    {kind === "gps" && (
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                          {s.source === "background" ? (
+                            <Chip size="small" variant="outlined" color="warning" label="پس‌زمینه" />
+                          ) : (
+                            <Chip size="small" variant="outlined" color="info" label="پرتال باز" />
+                          )}
+                          {s.source === "background" && s.client && (
+                            <Typography variant="caption" color="text.secondary">
+                              {s.client.replace(/^اپ \(پس‌زمینه\) · /, "")}
+                            </Typography>
+                          )}
+                          {s.time_uncertain && (
+                            <Tooltip title="زمان نامطمئن: گوشی بین آنلاین شدن و ارسال گزارش خاموش و روشن شده است">
+                              <Chip size="small" color="warning" label="زمان نامطمئن" />
+                            </Tooltip>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    )}
                     <TableCell sx={monoFontSx}>{new Date(s.connected_at).toLocaleString("fa-IR")}</TableCell>
                     <TableCell sx={monoFontSx}>
-                      {s.disconnected_at ? new Date(s.disconnected_at).toLocaleString("fa-IR") : "—"}
+                      {s.disconnected_at
+                        ? `${s.source === "background" ? "حدود " : ""}${new Date(s.disconnected_at).toLocaleString("fa-IR")}`
+                        : "—"}
                     </TableCell>
                     <TableCell sx={monoFontSx}>
                       {s.disconnected_at
-                        ? formatDuration(s.duration_seconds)
+                        ? `${s.source === "background" ? "حداقل " : ""}${formatDuration(s.duration_seconds)}`
                         : `${formatDuration(Math.max(0, Math.round((Date.now() - new Date(s.connected_at).getTime()) / 1000)))} تا الان`}
                     </TableCell>
                   </TableRow>
@@ -227,13 +252,15 @@ export default function PresenceReportPage() {
         </Typography>
         <Typography variant="body2" color="text.secondary" component="div">
           <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-            <li>وقتی هر پرسنلی پرتال را باز می‌کند، یک اتصال زنده (WebSocket) به سرور برقرار می‌شود — دقیقاً مثل نشانگر آنلاین یک سیستم چت — و یک ردیف «آنلاین در اپ» باز می‌شود؛ این نوع به GPS نیازی ندارد</li>
-            <li>هر ۴۵ ثانیه یک پیام «هنوز باز است» فرستاده می‌شود؛ برای پرسنلی که مجوز ثبت تردد GPS دارند، همراه موقعیت GPS</li>
+            <li>وقتی هر پرسنلی پرتال را باز می‌کند، یک اتصال زنده (WebSocket) به سرور برقرار می‌شود — دقیقاً مثل نشانگر آنلاین یک سیستم چت — و یک ردیف «آنلاین در پرتال» باز می‌شود؛ این نوع به GPS نیازی ندارد</li>
+            <li>هر ۴۵ ثانیه یک پیام «هنوز باز است» فرستاده می‌شود؛ اگر پرتال داخل اپ اندروید باز باشد، همراه موقعیت GPS</li>
             <li>سرور فاصله را تا نزدیک‌ترین کارخانه (طبق تنظیمات GPS همان سایت) حساب می‌کند</li>
             <li><strong>فقط اگر داخل محدوده مجاز باشد</strong>، یک ردیف «آنلاین» ثبت/ادامه داده می‌شود؛ به‌محض خروج از محدوده، همان ردیف با زمان دقیق بسته می‌شود — هیچ لاگی برای زمان بیرون از محدوده ثبت نمی‌شود</li>
             <li>لحظه‌ای که اپ بسته شود، اینترنت قطع شود، یا شبکه بی‌صدا از کار بیفتد، سرور خودش این را تشخیص می‌دهد و همان لحظه را «پایان» ثبت می‌کند</li>
             <li>اگر سرور ری‌استارت شود، ردیف‌های باز با زمان آخرین پیام دریافتی بسته می‌شوند (حداکثر چند دقیقه بعد) و دیگر به‌اشتباه «الان آنلاین» نمی‌مانند</li>
-            <li>روی گوشی، مرورگر وقتی اپ به پس‌زمینه برود یا صفحه خاموش شود معمولاً اتصال را قطع می‌کند؛ پس این گزارش «باز بودن اپ» را نشان می‌دهد، نه حضور واقعی سر کار</li>
+            <li>روی گوشی، مرورگر وقتی اپ به پس‌زمینه برود یا صفحه خاموش شود معمولاً اتصال را قطع می‌کند؛ پس «آنلاین در پرتال» باز بودن پرتال را نشان می‌دهد، نه حضور واقعی سر کار</li>
+            <li><strong>آنلاین در محیط کار، با اپ بسته (پس‌زمینه):</strong> اپ اندروید هر وقت گوشی داخل محدوده‌ی سایت باشد، لحظه‌ی وصل شدن گوشی به اینترنت را ثبت می‌کند و تا وقتی وصل است حدود هر ۱۵ دقیقه «هنوز آنلاین» می‌فرستد. اندروید قطع شدن را بدون باز بودن اپ خبر نمی‌دهد، پس پایان این ردیف‌ها آخرین گزارش رسیده است (حداکثر حدود ۱۵ دقیقه خطا). با خروج از محدوده، ردیف بسته می‌شود</li>
+            <li>زمان‌ها با «کرنومتر» گوشی و ساعت سرور حساب می‌شوند، پس تغییر ساعت گوشی اثری ندارد. اگر گوشی بین آنلاین شدن و ارسال گزارش خاموش و روشن شود، ردیف «زمان نامطمئن» دارد</li>
           </ul>
         </Typography>
       </Box>

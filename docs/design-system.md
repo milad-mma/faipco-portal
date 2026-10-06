@@ -100,8 +100,8 @@ stylis-plugin-rtl).
 - **پیام موفقیت**: `Snackbar` پایین-وسط با `autoHideDuration={4000}` — یا
   `message` ساده (`SitesPage`، `DepartmentsPage`، `ProfilePage`، `Layout`) یا
   `Alert severity="success" variant="filled"` داخلش (`LeaveRequestPage`،
-  `LeaveRequestsAdminListPage`). صفحات قدیمی‌تر (مثل `BackupPage`،
-  `AttendanceClockPage`) هنوز نتیجه را با `Alert` درون کارت نشان می‌دهند.
+  `LeaveRequestsAdminListPage`). صفحات قدیمی‌تر (مثل `BackupPage`)
+  هنوز نتیجه را با `Alert` درون کارت نشان می‌دهند.
 - **جدول فشرده موبایل**: `Table size="small"` با `px/py` و `fontSize`
   واکنش‌گرا (`xs: 0.7rem`) و `whiteSpace: nowrap` روی سلول‌ها، داخل
   `TableContainer component={Paper} variant="outlined"` با اسکرول افقی —

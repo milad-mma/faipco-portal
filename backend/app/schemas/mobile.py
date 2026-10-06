@@ -17,6 +17,8 @@ class MobileAppSettings(BaseModel):
     repeat_guard_hours: int = Field(default=12, ge=1, le=24)  # ورود پشت ورود (یا خروج پشت خروج) در این بازه ثبت نمی‌شود
     status_stale_days: int = Field(default=3, ge=1, le=30)  # گوشی بی‌خبر بیش از این = «سالم» حساب نمی‌شود
     min_version_code: int = Field(default=0, ge=0)  # نسخه‌های قدیمی‌تر = «نیاز به به‌روزرسانی»
+    # «آنلاین در محیط کار»: هر وقت گوشی داخل محدوده‌ی سایت است، آنلاین شدنش (حتی با اپ بسته) ثبت می‌شود
+    online_tracking_enabled: bool = True
     # اثر انگشت SHA-256 کلید امضای APK (از خروجی GitHub Actions)؛ در /.well-known/assetlinks.json نوشته می‌شود
     # تا اپ تمام‌صفحه (بدون نوار آدرس) باز شود
     signing_sha256: str = Field(default="", max_length=200)
@@ -78,7 +80,11 @@ class GeofenceEventIn(BaseModel):
     id: str = Field(min_length=8, max_length=64)  # شناسه‌ی یکتای سمت اپ (برای جلوگیری از ثبت دوباره در ارسال مجدد)
     transition: str = Field(pattern="^(enter|dwell|exit)$")
     site_id: int
-    occurred_at: int  # میلی‌ثانیه از epoch (زمان گوشی)
+    occurred_at: int  # میلی‌ثانیه از epoch (زمان گوشی؛ فقط پشتیبان وقتی کرنومتر قابل استفاده نیست)
+    # «کرنومتر» گوشی (SystemClock.elapsedRealtime: میلی‌ثانیه از روشن شدن، غیرقابل تغییر توسط کاربر) لحظه‌ی رویداد
+    # و شماره‌ی روشن شدن گوشی (Settings.Global.BOOT_COUNT)؛ با now_elapsed_ms ارسال، زمان واقعی با ساعت سرور حساب می‌شود
+    elapsed_ms: int | None = Field(default=None, ge=0, le=10**13)
+    boot_count: int | None = Field(default=None, ge=0, le=10**9)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     accuracy: float | None = Field(default=None, ge=0)
@@ -88,6 +94,31 @@ class GeofenceEventIn(BaseModel):
 
 class GeofenceEventsIn(BaseModel):
     events: list[GeofenceEventIn] = Field(max_length=100)
+    # کرنومتر و شماره‌ی روشن شدن گوشی لحظه‌ی ارسال (نسخه‌های قدیمی اپ ندارند ← زمان گوشی، مثل قبل)
+    now_elapsed_ms: int | None = Field(default=None, ge=0, le=10**13)
+    boot_count: int | None = Field(default=None, ge=0, le=10**9)
+    # ساعت گوشی لحظه‌ی ارسال؛ فقط برای تشخیص خاموش/روشن شدن در اندروید ۶ (بدون BOOT_COUNT)
+    now_wall_ms: int | None = Field(default=None, ge=0, le=10**14)
+
+
+class ConnectivityEventIn(BaseModel):
+    """«آنلاین در محیط کار»: گوشی داخل محدوده‌ی یک سایت آنلاین است (online = تازه وصل شد، alive = هنوز وصل است)."""
+
+    id: str = Field(min_length=8, max_length=64)
+    kind: str = Field(pattern="^(online|alive)$")
+    site_id: int
+    network: str | None = Field(default=None, pattern="^(wifi|cellular|other)$")
+    occurred_at: int
+    elapsed_ms: int | None = Field(default=None, ge=0, le=10**13)
+    boot_count: int | None = Field(default=None, ge=0, le=10**9)
+
+
+class ConnectivityEventsIn(BaseModel):
+    events: list[ConnectivityEventIn] = Field(max_length=200)
+    now_elapsed_ms: int | None = Field(default=None, ge=0, le=10**13)
+    boot_count: int | None = Field(default=None, ge=0, le=10**9)
+    # ساعت گوشی لحظه‌ی ارسال؛ فقط برای تشخیص خاموش/روشن شدن در اندروید ۶ (بدون BOOT_COUNT)
+    now_wall_ms: int | None = Field(default=None, ge=0, le=10**14)
 
 
 class ExemptionIn(BaseModel):

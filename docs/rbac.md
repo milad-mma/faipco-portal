@@ -91,14 +91,12 @@ Admin واقعی (`is_superuser`) در همه این ابزارها بدون ه�
   می‌کند آپلود XML فیش حقوقی است و مخاطبان کاملاً خودکار از روی همان فایل
   تعیین می‌شوند.
 - **hr-manager** («مدیر منابع انسانی»): اطلاعیه فیش کارکرد (با آپلود اکسل،
-  دقیقاً هم‌ساختار acc_manager) می‌سازد، گزارش ورود/خروج آزمایشی GPS
+  دقیقاً هم‌ساختار acc_manager) می‌سازد، گزارش ورود/خروج و «پرسنل آنلاین / آنلاین در محیط کار»
   پرسنل سایت(های) انتصاب را می‌بیند و می‌تواند رکورد ورود/خروج را دستی اضافه/ویرایش/حذف
   کند (`attendance.manage_clock_records`)، و پیام‌های تبریک تولد (متن‌ها +
   ساعت ارسال) را مدیریت می‌کند.
-- **attendance-pilot**: پرسنل مجاز به استفاده از «ثبت ورود/خروج آزمایشی»
-  مبتنی بر GPS — یک قابلیت آزمایشی؛ ثبت ورود/خروج رسمی همچنان از طریق
-  دستگاه‌های تعبیه‌شده در کارخانه انجام می‌شود. معمولاً با
-  [انتصاب دسته‌جمعی](#انتصاب-دسته‌جمعی-نقش) به همه پرسنل یک سایت داده می‌شود.
+- ~~attendance-pilot~~: در Migration 104 حذف شد (ثبت دستی ورود/خروج حذف شد؛ ثبت خودکار با اپ اندروید برای همه‌ی پرسنل
+  است). اگر به این نقش مجوز دیگری داده بودید، نقش با همان مجوزها می‌ماند.
 - **حراست** (Migration `032`، `is_system=False`): به‌طور پیش‌فرض فقط
   `vehicles.view_all`. در عمل معمولاً مجوزهای به‌تفکیک نوع مرخصی
   (`leave_requests.view.type.*`) هم به آن داده می‌شود.
@@ -134,7 +132,7 @@ Admin واقعی (`is_superuser`) در همه این ابزارها بدون ه�
 دو منبع دارند:
 
 - **`scripts/seed_permissions.py`** (Idempotent): مجوزهای پایه + نقش‌های
-  superadmin/site_manager/middle_manager/acc_manager/hr-manager/attendance-pilot.
+  superadmin/site_manager/middle_manager/acc_manager/hr-manager.
 - **Migration ها** (`database/migrations/versions`): هر مجوزی که بعداً
   اضافه شده (ستون «منبع» پایین).
 
@@ -173,10 +171,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `system.cache_bust` | Seed | `can_bust_cache` | `POST /system/cache-bust` |
 | `system.ip_allowlist` | Seed | `can_manage_ip_allowlist` | «رنج‌های IP مجاز» + متن پیام مسدودی |
 | `system.settings` | 034 | `can_manage_system_settings` | «تنظیمات سامانه»: پس‌زمینه ورود، برندینگ/لوگو، SMTP، پیامک |
-| `attendance.clock_in_out` | Seed | `can_clock_in_out` | ثبت ورود/خروج آزمایشی GPS + WebSocket حضور |
-| `attendance.view_logs` | Seed | `can_view_attendance_logs` | «پرسنل آنلاین» — سایت‌محور |
-| `attendance.view_clock_records` | Seed | `can_view_clock_records` | «گزارش ورود و خروج» — سایت‌محور |
-| `attendance.manage_clock_records` | Seed | `can_manage_clock_records` | افزودن/ویرایش/حذف دستی رکورد ورود/خروج |
+| `attendance.manage_clock_records` | Seed | `can_manage_clock_records` | «گزارش ورود و خروج»، «پرسنل آنلاین / آنلاین در محیط کار» و افزودن/ویرایش/حذف دستی رکورد — سایت‌محور. Migration 104: `attendance.view_logs` و `attendance.view_clock_records` در این ادغام و `attendance.clock_in_out` حذف شد |
 | `hr.birthday_messages` | Seed | `can_manage_birthday_messages` | «پیام‌های تبریک تولد» (`/hr/birthday-*`) |
 | `vehicles.view_all` | 032 | `can_view_vehicles_report` | «خودروهای پرسنل» — سایت‌محور |
 | `vehicles.manage` | 032 | `can_manage_vehicles` | ویرایش/حذف خودروی هر پرسنل |

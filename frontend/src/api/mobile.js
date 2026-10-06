@@ -3,7 +3,7 @@
  */
 import { apiClient } from "./client";
 
-// GET /mobile/me؛ خروجی: { required, exempt, healthy, devices, latest_release }
+// GET /mobile/me؛ خروجی: { required, exempt, healthy, devices, latest_release, permission_issues }
 export async function fetchMyMobileStatus() {
   const { data } = await apiClient.get("/mobile/me");
   return data;

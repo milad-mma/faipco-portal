@@ -115,7 +115,7 @@ async def list_employees(
     ),
     has_role: str | None = Query(
         default=None,
-        description="فقط پرسنلی که این نقش (مثلاً attendance-pilot) را دارند — برای محدودکردن "
+        description="فقط پرسنلی که این نقش (مثلاً hr-manager) را دارند — برای محدودکردن "
         "جست‌وجوهایی که فقط باید بین پرسنل واجدشرایط یک قابلیت خاص باشند",
     ),
     include_inactive: bool = Query(

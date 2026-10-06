@@ -619,6 +619,15 @@ function SettingsTab() {
               control={<Switch checked={Boolean(form.auto_clock_enabled)} onChange={(e) => setForm((f) => ({ ...f, auto_clock_enabled: e.target.checked }))} />}
               label="ثبت خودکار ورود و خروج با Geofencing"
             />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.online_tracking_enabled !== false}
+                  onChange={(e) => setForm((f) => ({ ...f, online_tracking_enabled: e.target.checked }))}
+                />
+              }
+              label="آنلاین در محیط کار: ثبت وصل بودن گوشی به اینترنت داخل محدوده‌ی سایت (حتی با اپ بسته)"
+            />
             <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
               {NUM_FIELDS.map(([key, label, help]) => (
                 <Grid item xs={12} sm={6} key={key}>

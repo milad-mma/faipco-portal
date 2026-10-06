@@ -42,9 +42,10 @@ def test_blocking_and_warning_issues():
     )
     assert issues == ["no_background_location", "stale", "outdated", "no_notifications"]
     assert not svc.is_healthy(issues)
-    # فقط هشدار (اعلان/باتری) → هنوز سالم
-    warn = svc.device_issues(_device(perm_notifications=False, battery_unrestricted=False), MobileAppSettings(), True)
+    # فقط هشدار (باتری) → هنوز سالم؛ اعلان الزامی است (Migration 104)
+    warn = svc.device_issues(_device(battery_unrestricted=False), MobileAppSettings(), True)
     assert svc.is_healthy(warn)
+    assert not svc.is_healthy(svc.device_issues(_device(perm_notifications=False), MobileAppSettings(), True))
     # بدون سایت دارای GPS، ثبت نشدن محدوده مشکل نیست
     assert "no_geofences" not in svc.device_issues(_device(geofences_registered=False), MobileAppSettings(), False)
     assert svc.device_issues(_device(revoked_at=datetime.now(timezone.utc)), MobileAppSettings(), True) == ["revoked"]
@@ -103,3 +104,35 @@ def test_geofence_event_rejection_rules():
     assert svc._event_rejection(_ev(occurred_at=too_old), site, 10.0, now) == "bad_time"
     future = int((now + timedelta(minutes=10)).timestamp() * 1000)
     assert svc._event_rejection(_ev(occurred_at=future), site, 10.0, now) == "bad_time"
+
+
+def test_resolve_event_time_uses_device_stopwatch_not_clock():
+    """زمان رویداد = زمان رسیدن به سرور منهای فاصله‌ی کرنومتر؛ ساعت دستکاری‌شده‌ی گوشی اثری ندارد."""
+    svc = _svc()
+    received = datetime(2026, 10, 6, 6, 0, tzinfo=timezone.utc)
+    fake_clock = int((received - timedelta(hours=3)).timestamp() * 1000)  # ساعت گوشی ۳ ساعت عقب کشیده شده
+    at, uncertain, valid = svc.resolve_event_time(fake_clock, 1_000_000, 7, 1_000_000 + 30 * 60_000, 7, received)
+    assert at == received - timedelta(minutes=30) and not uncertain and valid
+    # گوشی بین رویداد و ارسال خاموش/روشن شده ← ساعت گوشی، «نامطمئن»
+    real = int((received - timedelta(minutes=10)).timestamp() * 1000)
+    at, uncertain, valid = svc.resolve_event_time(real, 5_000_000, 7, 60_000, 8, received)
+    assert at == received - timedelta(minutes=10) and uncertain and valid
+    # اندروید ۶ (بدون شماره‌ی روشن شدن): کرنومتر عقب رفته ← نامطمئن
+    _, uncertain, _ = svc.resolve_event_time(real, 5_000_000, None, 60_000, None, received)
+    assert uncertain
+    # اندروید ۶: فاصله‌ی ساعت گوشی با فاصله‌ی کرنومتر جور است ← همان روشن شدن، زمان دقیق
+    now_wall = real + 10 * 60_000
+    at, uncertain, _ = svc.resolve_event_time(real, 1_000_000, None, 1_000_000 + 10 * 60_000, None, received, now_wall)
+    assert at == received - timedelta(minutes=10) and not uncertain
+    # اندروید ۶ و گوشی خاموش/روشن شده (کرنومتر کمتر از فاصله‌ی واقعی) ← نامطمئن
+    _, uncertain, _ = svc.resolve_event_time(real, 1_000_000, None, 1_000_000 + 60_000, None, received, now_wall)
+    assert uncertain
+    # عدد خیلی بزرگ (درخواست دستکاری‌شده) خطا نمی‌دهد، فقط نامعتبر است
+    _, _, valid = svc.resolve_event_time(real, 0, 7, 10**13, 7, received)
+    assert not valid
+    # قدیمی‌تر از ۴۸ ساعت ← نامعتبر
+    _, _, valid = svc.resolve_event_time(real, 0, 7, 49 * 3600_000, 7, received)
+    assert not valid
+    # نسخه‌ی قدیمی اپ (بدون کرنومتر) ← رفتار قبلی
+    at, uncertain, valid = svc.resolve_event_time(real, None, None, None, None, received)
+    assert at == received - timedelta(minutes=10) and not uncertain and valid

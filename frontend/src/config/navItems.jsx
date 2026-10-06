@@ -107,7 +107,7 @@ export const NAV_ITEMS = [
       },
     ],
   },
-  // گروه حضور و غیاب: گزارش تردد، پرسنل آنلاین، ثبت ورود/خروج و مرخصی/ماموریت
+  // گروه حضور و غیاب: گزارش تردد، پرسنل آنلاین، اپ اندروید و مرخصی/ماموریت
   {
     label: "حضور و غیاب",
     path: "/clock-in-out-report",
@@ -118,13 +118,13 @@ export const NAV_ITEMS = [
         label: "گزارش ورود و خروج",
         path: "/clock-in-out-report",
         icon: <FingerprintOutlinedIcon />,
-        check: (u) => u?.can_view_clock_records,
+        check: (u) => u?.can_manage_clock_records,
       },
       {
         label: "پرسنل آنلاین",
         path: "/presence-report",
         icon: <WifiTetheringOutlinedIcon />,
-        check: (u) => u?.can_view_attendance_logs,
+        check: (u) => u?.can_manage_clock_records,
       },
       {
         label: "گوشی‌ها و اپ اندروید",
@@ -137,13 +137,6 @@ export const NAV_ITEMS = [
         path: "/mobile-app",
         icon: <PhoneAndroidOutlinedIcon />,
         check: (u) => Boolean(u?.employee_id) && Boolean(u?.mobile_app_enabled),
-        hiddenForAdmin: true,
-      },
-      {
-        label: "ثبت ورود و خروج",
-        path: "/attendance-clock",
-        icon: <FingerprintOutlinedIcon />,
-        check: (u) => u?.can_clock_in_out, // فقط کاربران دارای مجوز ثبت تردد؛ برای ادمین اصلی مخفی است
         hiddenForAdmin: true,
       },
       {

@@ -6,6 +6,7 @@ Endpointهای اپ اندروید (docs/android-app.md).
 - POST /device/status           گزارش وضعیت دسترسی‌ها و Geofenceها
 - GET  /device/geofences        محدوده‌ها و پارامترهای Geofencing
 - POST /device/events           رویدادهای ورود/خروج (ثبت خودکار در گزارش پرتال)
+- POST /device/connectivity     «آنلاین در محیط کار»: گوشی داخل محدوده آنلاین است (اپ بسته)
 
 پرتال (کاربر واردشده):
 - POST /pairing-code            کد یک‌بارمصرف اتصال گوشی
@@ -39,6 +40,7 @@ from app.schemas.mobile import (
     DeviceOut,
     DeviceRegisterIn,
     DeviceStatusIn,
+    ConnectivityEventsIn,
     ExemptionIn,
     GeofenceEventsIn,
     MobileAppSettings,
@@ -105,8 +107,22 @@ async def device_geofences(device: MobileDevice = Depends(current_device), db: A
 async def device_events(
     payload: GeofenceEventsIn, device: MobileDevice = Depends(current_device), db: AsyncSession = Depends(get_db)
 ):
-    """رویدادهای ورود/خروج؛ خروجی: {results: [{id, status, message}]} — اپ پیام را به‌صورت اعلان نشان می‌دهد."""
-    return {"results": await svc.process_geofence_events(db, device, payload.events)}
+    """
+    رویدادهای ورود/خروج؛ خروجی: {results: [{id, status, message}]} — اپ پیام را به‌صورت اعلان نشان می‌دهد.
+    زمان هر رویداد از «کرنومتر» گوشی (elapsed_ms / now_elapsed_ms) و ساعت سرور حساب می‌شود، نه ساعت گوشی.
+    """
+    return {"results": await svc.process_geofence_events(db, device, payload)}
+
+
+@router.post("/device/connectivity")
+async def device_connectivity(
+    payload: ConnectivityEventsIn, device: MobileDevice = Depends(current_device), db: AsyncSession = Depends(get_db)
+):
+    """
+    «آنلاین در محیط کار» با اپ بسته: گوشی داخل محدوده‌ی سایت آنلاین شد (online) یا هنوز آنلاین است (alive).
+    خروجی: {applied}. همه‌ی گزارش‌ها از صف اپ پاک می‌شوند (ارسال دوباره بی‌اثر است).
+    """
+    return {"applied": await svc.process_connectivity_events(db, device, payload)}
 
 
 # ---------------------------------------------------------------- پرتال: کاربر جاری
@@ -135,7 +151,11 @@ async def link_device(
 
 @router.get("/me")
 async def my_mobile_status(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """وضعیت اپ برای کاربر جاری: {required, exempt, healthy, devices, latest_release}."""
+    """
+    وضعیت اپ برای کاربر جاری: {required, exempt, healthy, devices, latest_release, permission_issues}.
+    required: پرسنل غیرمعاف روی گوشی اندروید ← پرتال در مرورگر قفل است و فقط از اپ باز می‌شود (فرانت).
+    permission_issues: مشکلات دسترسی آخرین گوشی متصل ← پرتالِ داخل اپ قفل می‌شود تا کاربر دسترسی‌ها را کامل کند.
+    """
     return await svc.my_status(db, current_user)
 
 
@@ -427,6 +447,7 @@ async def list_geofence_events(
                 "accuracy_meters": ev.accuracy_meters,
                 "distance_meters": ev.distance_meters,
                 "is_mock": ev.is_mock,
+                "time_uncertain": ev.time_uncertain,
                 "status": ev.status,
             }
             for ev, emp, site_name in rows

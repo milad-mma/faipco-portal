@@ -1,9 +1,9 @@
 """
-سرویس «حضور مبتنی بر موقعیت مکانی» (GPS) و ثبت ورود/خروج با موبایل.
+سرویس «حضور مبتنی بر موقعیت مکانی» (GPS).
 
-شامل بررسی محدوده‌ی جغرافیایی (geofence) سایت‌ها، ثبت ورود/خروج پرسنل با
-جلوگیری از رکورد تکراری، افزودن/ویرایش/حذف دستی لاگ توسط Admin و
-گزارش‌های صفحه‌بندی‌شده‌ی لاگ‌ها و نشست‌های حضور آنلاین.
+شامل بررسی محدوده‌ی جغرافیایی (geofence) سایت‌ها، افزودن/ویرایش/حذف دستی لاگ توسط مدیر و
+گزارش‌های صفحه‌بندی‌شده‌ی لاگ‌ها و نشست‌های «پرسنل آنلاین / آنلاین در محیط کار».
+ثبت ورود/خروج خودکار با اپ اندروید است (mobile_app_service)؛ ثبت دستی توسط خود پرسنل در Migration 104 حذف شد.
 
 ثبت ورود/خروج رسمی از طریق دستگاه‌های حضور و غیاب کارخانه انجام می‌شود؛
 این لاگ یک منبع مکمل دیجیتال است، نه جایگزین سامانه‌ی رسمی.
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Integer, func, select, update
+from sqlalchemy import Integer, and_, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geo import haversine_distance_meters
@@ -21,13 +21,6 @@ from app.models.employee import Employee
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
 from app.models.site import Site
-
-DUPLICATE_WINDOW_MINUTES = 2  # فاصله‌ی حداقلی بین دو ثبت هم‌نوع یک پرسنل
-
-
-class GpsAttendanceError(Exception):
-    """خطای منطقی ثبت GPS با پیام فارسی قابل‌نمایش به کاربر (خارج از محدوده، ثبت تکراری)."""
-    pass
 
 
 class GeofenceCheckResult:
@@ -79,94 +72,6 @@ class GpsAttendanceService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-
-    async def _record(
-        self,
-        *,
-        employee_id: int,
-        log_type: GpsLogType,
-        latitude: float,
-        longitude: float,
-        accuracy_meters: float | None,
-        site_id: int | None,
-        geofence: GeofenceCheckResult | None = None,
-    ) -> GpsActivityLog:
-        """
-        یک لاگ GPS با نتیجه‌ی بررسی محدوده ذخیره و commit می‌کند و رکورد ذخیره‌شده را برمی‌گرداند.
-        محدوده فقط ثبت می‌شود و جلوی ذخیره را نمی‌گیرد. اگر geofence از قبل محاسبه شده باشد
-        (مثل clock_in_out) همان استفاده می‌شود تا کوئری سایت‌ها دوباره اجرا نشود.
-        """
-        if geofence is None:
-            geofence = await check_geofence(self.db, site_id, latitude, longitude)
-        log = GpsActivityLog(
-            employee_id=employee_id,
-            log_type=log_type,
-            latitude=latitude,
-            longitude=longitude,
-            accuracy_meters=accuracy_meters,
-            matched_site_id=geofence.matched_site.id if geofence.matched_site else None,
-            distance_meters=geofence.distance_meters,
-            is_within_geofence=geofence.is_within,
-            source="web",
-            created_at=datetime.now(timezone.utc),
-        )
-        self.db.add(log)
-        # expire_on_commit=False است و همه‌ی ستون‌ها (id از RETURNING در flush) سمت Python پر می‌شوند؛ refresh لازم نیست
-        await self.db.commit()
-        return log
-
-    async def clock_in_out(
-        self,
-        *,
-        employee_id: int,
-        log_type: GpsLogType,
-        latitude: float,
-        longitude: float,
-        accuracy_meters: float | None,
-        site_id: int | None,
-    ) -> GpsActivityLog:
-        """
-        ورود یا خروج یک پرسنل را با مختصات فعلی ثبت می‌کند و لاگ ذخیره‌شده را برمی‌گرداند.
-        اگر خارج از محدوده‌ی مجاز سایت باشد یا همین پرسنل کمتر از DUPLICATE_WINDOW_MINUTES دقیقه پیش
-        ثبتی از همین نوع (ورود با ورود، خروج با خروج) داشته باشد، GpsAttendanceError می‌دهد.
-        """
-        # جلوگیری از ثبت تکراری با کلیک‌های پیاپی: آخرین ثبت هم‌نوع در پنجره‌ی زمانی
-        recent_duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
-        result = await self.db.execute(
-            select(GpsActivityLog.id)
-            .where(
-                GpsActivityLog.employee_id == employee_id,
-                GpsActivityLog.log_type == log_type,
-                GpsActivityLog.created_at >= recent_duplicate_cutoff,
-            )
-            .limit(1)
-        )
-        if result.scalar_one_or_none() is not None:
-            action_fa = "ورود" if log_type == GpsLogType.check_in else "خروج"
-            raise GpsAttendanceError(
-                f"شما همین چند لحظه پیش یک ثبت {action_fa} انجام داده‌اید — برای جلوگیری از ثبت "
-                f"تکراری، هر {DUPLICATE_WINDOW_MINUTES} دقیقه فقط یک بار امکان ثبت {action_fa} وجود دارد."
-            )
-
-        # ورود/خروج باید از داخل محدوده‌ی سایت باشد
-        geofence = await check_geofence(self.db, site_id, latitude, longitude)
-        if not geofence.is_within and geofence.matched_site is not None:
-            distance_text = f"{int(geofence.distance_meters)} متر" if geofence.distance_meters else "نامشخص"
-            raise GpsAttendanceError(
-                f"موقعیت فعلی شما خارج از محدوده مجاز «{geofence.matched_site.name}» است "
-                f"(فاصله: {distance_text}، محدوده مجاز: {geofence.matched_site.gps_radius_meters} متر). "
-                "این ثبت انجام نشد."
-            )
-
-        return await self._record(
-            employee_id=employee_id,
-            log_type=log_type,
-            latitude=latitude,
-            longitude=longitude,
-            accuracy_meters=accuracy_meters,
-            site_id=site_id,
-            geofence=geofence,  # نتیجه‌ی بررسی بالا دوباره محاسبه نمی‌شود
-        )
 
     async def create_manual_log(
         self,
@@ -231,27 +136,6 @@ class GpsAttendanceService:
         await self.db.delete(log)
         await self.db.commit()
         return True
-
-    async def get_my_logs(
-        self, employee_id: int, *, year: int, month: int, limit: int = 200
-    ) -> list[GpsActivityLog]:
-        """
-        لاگ‌های ورود/خروج خودِ پرسنل در یک ماه شمسی را (جدیدترین اول، حداکثر limit) برمی‌گرداند.
-        لاگ‌های «حضور دوره‌ای» (presence) شامل نمی‌شوند.
-        """
-        start, end = jalali_month_range_utc(year, month)  # بازه‌ی ماه شمسی به UTC
-        result = await self.db.execute(
-            select(GpsActivityLog)
-            .where(
-                GpsActivityLog.employee_id == employee_id,
-                GpsActivityLog.log_type != GpsLogType.presence,
-                GpsActivityLog.created_at >= start,
-                GpsActivityLog.created_at < end,
-            )
-            .order_by(GpsActivityLog.created_at.desc())
-            .limit(limit)
-        )
-        return list(result.scalars().all())
 
     async def get_all_logs_page(
         self,
@@ -320,9 +204,7 @@ class GpsAttendanceService:
         if only_online:
             # نشست باز و زنده: بدون زمان قطع و با Heartbeat اخیر (نشست رهاشده‌ای که هنوز Job نبسته، آنلاین نیست)
             filters.append(PresenceSession.disconnected_at.is_(None))
-            filters.append(
-                func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at) >= presence_alive_since()
-            )
+            filters.append(_alive_condition())
         if site_ids is not None:
             filters.append(
                 PresenceSession.employee_id.in_(select(Employee.id).where(Employee.site_id.in_(site_ids)))
@@ -348,11 +230,24 @@ class GpsAttendanceService:
 
 # نشستی که این مدت Heartbeat نگرفته، زنده نیست (Heartbeat هر ۴۵ ثانیه، Timeout سرور ۹۰ ثانیه)
 PRESENCE_STALE_SECONDS = 180
+# نشست پس‌زمینه‌ی اپ اندروید («آنلاین در محیط کار» با اپ بسته): اپ تا وقتی گوشی آنلاین و داخل محدوده است حدود هر
+# ۱۵ دقیقه «هنوز آنلاین» می‌فرستد (WorkManager؛ کمترین فاصله‌ی مجاز اندروید). نرسیدن گزارش در این مدت = قطع شده
+BACKGROUND_STALE_SECONDS = 25 * 60
 
 
-def presence_alive_since() -> datetime:
+def presence_alive_since(source: str = "portal") -> datetime:
     """مرز زمانی «زنده»: نشستی که آخرین Heartbeat آن قبل از این لحظه است، رهاشده حساب می‌شود."""
-    return datetime.now(timezone.utc) - timedelta(seconds=PRESENCE_STALE_SECONDS)
+    seconds = BACKGROUND_STALE_SECONDS if source == "background" else PRESENCE_STALE_SECONDS
+    return datetime.now(timezone.utc) - timedelta(seconds=seconds)
+
+
+def _alive_condition():
+    """شرط SQL «آخرین Heartbeat اخیر است» با مرز جدا برای نشست‌های پرتال و پس‌زمینه."""
+    last_seen = func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at)
+    return or_(
+        and_(PresenceSession.source == "background", last_seen >= presence_alive_since("background")),
+        and_(PresenceSession.source != "background", last_seen >= presence_alive_since("portal")),
+    )
 
 
 def is_presence_alive(session: PresenceSession) -> bool:
@@ -360,18 +255,18 @@ def is_presence_alive(session: PresenceSession) -> bool:
     if session.disconnected_at is not None:
         return False
     last = session.last_seen_at or session.connected_at
-    return last is not None and last >= presence_alive_since()
+    return last is not None and last >= presence_alive_since(session.source or "portal")
 
 
 async def close_stale_presence_sessions(db: AsyncSession) -> int:
     """
-    نشست‌های بازی را که Heartbeat اخیر ندارند (ری‌استارت سرور، قطع ناگهانی Worker، ...) با زمان آخرین
-    Heartbeat می‌بندد؛ مدت هم تا همان لحظه حساب می‌شود. خروجی: تعداد نشست‌های بسته‌شده.
+    نشست‌های بازی را که Heartbeat اخیر ندارند (ری‌استارت سرور، قطع ناگهانی Worker، گزارش‌های اپ قطع شده، ...)
+    با زمان آخرین Heartbeat می‌بندد؛ مدت هم تا همان لحظه حساب می‌شود. خروجی: تعداد نشست‌های بسته‌شده.
     """
     last_seen = func.coalesce(PresenceSession.last_seen_at, PresenceSession.connected_at)
     result = await db.execute(
         update(PresenceSession)
-        .where(PresenceSession.disconnected_at.is_(None), last_seen < presence_alive_since())
+        .where(PresenceSession.disconnected_at.is_(None), not_(_alive_condition()))
         .values(
             disconnected_at=last_seen,
             duration_seconds=func.cast(

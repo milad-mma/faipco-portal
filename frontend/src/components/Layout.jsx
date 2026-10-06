@@ -45,6 +45,7 @@ import { usePresenceMonitor } from "../utils/presenceSocket";
 import { isAndroidApp } from "../utils/androidApp";
 import AnnouncementDialog from "./AnnouncementDialog";
 import MobileAppPrompt from "./MobileAppPrompt";
+import MobileAppGate from "./MobileAppGate";
 import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
@@ -97,9 +98,8 @@ export default function Layout() {
 
   // نشانگر زنده‌ی آنلاین/آفلاین با WebSocket: تا وقتی این کامپوننت mount است یک Session باز می‌ماند
   // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند.
-  // آنلاین بودن در اپ برای همه‌ی پرسنل؛ پایش GPS فقط برای دارندگان مجوز ثبت تردد
-  // داخل اپ اندروید پایش GPS برای همه‌ی پرسنل فعال است
-  usePresenceMonitor(Boolean(user?.employee_id), Boolean(user?.can_clock_in_out) || (isAndroidApp() && Boolean(user?.mobile_app_enabled)));
+  // «آنلاین در پرتال» برای همه‌ی پرسنل؛ پایش GPS («آنلاین در محیط کار») فقط داخل اپ اندروید
+  usePresenceMonitor(Boolean(user?.employee_id), isAndroidApp() && Boolean(user?.mobile_app_enabled));
 
   // وضعیت باز/بسته‌ی زیرمنوها (کلید: مسیر والد)؛ گروهی که خودش یا یکی از فرزندانش فعال است، پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {
@@ -518,6 +518,8 @@ export default function Layout() {
         <Box sx={{ mx: { xs: -2, md: -4 }, mt: { xs: -2, md: -4 }, mb: 2, "&:empty": { display: "none" } }}>
           <MobileAppPrompt user={user} />
         </Box>
+        {/* قفل مرورگر اندروید (فقط از اپ) و قفل دسترسی‌های اپ؛ تمام‌صفحه روی همه‌چیز */}
+        <MobileAppGate user={user} />
         {/* صفحه‌ها تنبل بارگذاری می‌شوند؛ تا آماده شدن chunk صفحه، منو و نوار بالا سر جایشان می‌مانند */}
         <Suspense
           fallback={

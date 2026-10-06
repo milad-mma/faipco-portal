@@ -1,39 +1,9 @@
 /**
  * توابع فراخوانی API حضور و غیاب.
- * شامل ثبت ورود/خروج با موقعیت مکانی، گرفتن لاگ‌های خود کاربر،
- * لاگ‌ها و جلسات حضور همه‌ی پرسنل (مدیر) و ثبت/ویرایش/حذف دستی لاگ.
+ * لاگ‌های ورود/خروج و نشست‌های «پرسنل آنلاین / آنلاین در محیط کار» همه‌ی پرسنل (مدیر) و ثبت/ویرایش/حذف دستی لاگ.
+ * (ثبت دستی ورود/خروج توسط خود پرسنل حذف شد؛ ورود/خروج خودکار با اپ اندروید است.)
  */
 import { apiClient } from "./client";
-
-// ثبت ورود کاربر جاری با موقعیت جغرافیایی و سایت انتخابی؛ خروجی: لاگ ثبت‌شده
-export async function clockIn({ latitude, longitude, accuracyMeters, siteId }) {
-  const { data } = await apiClient.post("/attendance/clock-in", {
-    latitude,
-    longitude,
-    accuracy_meters: accuracyMeters,
-    site_id: siteId || null,
-  });
-  return data;
-}
-
-// ثبت خروج کاربر جاری با موقعیت جغرافیایی و سایت انتخابی؛ خروجی: لاگ ثبت‌شده
-export async function clockOut({ latitude, longitude, accuracyMeters, siteId }) {
-  const { data } = await apiClient.post("/attendance/clock-out", {
-    latitude,
-    longitude,
-    accuracy_meters: accuracyMeters,
-    site_id: siteId || null,
-  });
-  return data;
-}
-
-// لاگ‌های ورود/خروج خودِ کاربر را برای یک ماه شمسی برمی‌گرداند (بدون سال/ماه: ماه جاری)
-export async function fetchMyAttendanceLogs({ year, month } = {}) {
-  const { data } = await apiClient.get("/attendance/my-logs", {
-    params: { year: year || undefined, month: month || undefined },
-  });
-  return data; // { items, year, month }
-}
 
 // لاگ‌های همه‌ی پرسنل را با فیلتر پرسنل/نوع/ماه/سایت و صفحه‌بندی برمی‌گرداند (ویژه‌ی مدیر)
 export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employeeId, logType, year, month, siteId } = {}) {
@@ -52,7 +22,7 @@ export async function fetchAllAttendanceLogs({ page = 1, pageSize = 50, employee
 }
 
 // جلسات حضور (جفت ورود-خروج) را با فیلتر پرسنل/فقط حاضرین/سایت و صفحه‌بندی برمی‌گرداند
-// kind: "app" = باز بودن اپ (همه‌ی پرسنل)، "gps" = حضور در محدوده‌ی سایت با GPS
+// kind: "app" = باز بودن پرتال (همه‌ی پرسنل)، "gps" = «آنلاین در محیط کار» (پرتال باز یا اپ در پس‌زمینه)
 export async function fetchPresenceSessions({ page = 1, pageSize = 50, employeeId, onlyOnline, siteId, kind = "app" } = {}) {
   const { data } = await apiClient.get("/attendance/presence-sessions", {
     params: {

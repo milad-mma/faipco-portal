@@ -1,8 +1,11 @@
 /**
  * تشخیص اجرای پرتال داخل اپ اندروید FAIPCO (TWA) و ارتباط با بخش بومی اپ (docs/android-app.md).
  *
- * - اپ پرتال را با آدرس /?source=android-app باز می‌کند؛ این نشانه در localStorage می‌ماند (در TWA حافظه‌ی
- *   مرورگر مخصوص همین سایت است). document.referrer هم در اولین باز شدن android-app://ir.faipco.portal است.
+ * - اپ پرتال را با آدرس /?source=android-app باز می‌کند و document.referrer در اولین باز شدن
+ *   android-app://ir.faipco.portal است. این نشانه در sessionStorage همان تب نگه داشته می‌شود، نه localStorage:
+ *   TWA حافظه‌ی سایت را با Chrome معمولی گوشی مشترک دارد و با localStorage، Chrome هم بعد از یک‌بار باز کردن اپ
+ *   «داخل اپ» حساب می‌شد (قفل مرورگر دور زده می‌شد). sessionStorage مخصوص همان پنجره است و با reload می‌ماند.
+ *   localStorage فقط «این گوشی اپ را دارد» را نگه می‌دارد (برای راهنماها، نه تشخیص داخل اپ).
  * - اتصال خودکار: اپ یک کد تصادفی در آدرس (#link=...) می‌فرستد؛ پرتال بعد از ورود کاربر آن را به حساب او وصل
  *   می‌کند (MobileAppPrompt) و بخش بومی اپ خودش توکن دستگاه را می‌گیرد. کد فقط وقتی پذیرفته می‌شود که صفحه واقعاً
  *   از اپ باز شده باشد (document.referrer = android-app://ir.faipco.portal)، تا لینکِ فرستاده‌شده توسط دیگری
@@ -10,7 +13,8 @@
  * - پرتال با آدرس intent:// بخش بومی اپ را باز می‌کند (اتصال دستی با کد یک‌بارمصرف، یا بررسی دسترسی‌ها).
  */
 export const ANDROID_PACKAGE = "ir.faipco.portal";
-const APP_FLAG_KEY = "faipco_android_app";
+const APP_FLAG_KEY = "faipco_android_app"; // localStorage: این گوشی حداقل یک‌بار پرتال را از اپ باز کرده
+const APP_SESSION_KEY = "faipco_android_app_session"; // sessionStorage: همین پنجره داخل اپ است
 const LINK_KEY = "faipco_device_link"; // sessionStorage: کد اتصال خودکار تا بعد از ورود کاربر
 
 function safeGet(key) {
@@ -36,6 +40,16 @@ export function detectAndroidApp() {
     const fromApp =
       params.get("source") === "android-app" || String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`);
     if (fromApp) safeSet(APP_FLAG_KEY, "1");
+    // «داخل اپ» فقط با referrer اپ (Chrome آن را هنگام باز کردن TWA می‌گذارد)؛ پارامتر source را هر کسی می‌تواند در
+    // نوار آدرس Chrome بنویسد و با آن قفل مرورگر را دور بزند
+    if (String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`)) {
+      try {
+        sessionStorage.setItem(APP_SESSION_KEY, "1");
+      } catch {
+        /* بدون حافظه: فقط همین بارگذاری (پایین) */
+      }
+      inAppThisLoad = true;
+    }
     // کد اتصال خودکار در بخش # آدرس (به سرور فرستاده و در لاگ ثبت نمی‌شود)
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const link = hash.get("link");
@@ -63,10 +77,33 @@ export function detectAndroidApp() {
 }
 
 const isAndroidUa = () => /android/i.test(navigator.userAgent || "");
+let inAppThisLoad = false; // پشتیبان وقتی sessionStorage در دسترس نیست
+
+function sessionInApp() {
+  try {
+    return sessionStorage.getItem(APP_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 // داخل اپ اندروید اجرا می‌شود؟ (فقط روی گوشی اندروید معتبر است)
 export function isAndroidApp() {
-  return isAndroidUa() && safeGet(APP_FLAG_KEY) === "1";
+  return isAndroidUa() && (inAppThisLoad || sessionInApp());
+}
+
+// این گوشی قبلاً اپ را باز کرده (احتمالاً نصب است)؛ فقط برای متن راهنما
+export function hasOpenedAndroidApp() {
+  return safeGet(APP_FLAG_KEY) === "1";
+}
+
+// همین صفحه را داخل اپ باز می‌کند (EntryActivity لینک‌های https پرتال را می‌گیرد و دسترسی‌ها را چک می‌کند)؛
+// اپ نصب نباشد ← صفحه‌ی عمومی دانلود. باید در پاسخ به لمس کاربر صدا زده شود (Chrome بدون لمس اپ را باز نمی‌کند).
+export function openPortalInApp(path = window.location.pathname + window.location.search) {
+  const fallback = encodeURIComponent(`${window.location.origin}/app`);
+  window.location.href =
+    `intent://${window.location.host}${path}#Intent;scheme=https;package=${ANDROID_PACKAGE};` +
+    `S.browser_fallback_url=${fallback};end`;
 }
 
 // مرورگر گوشی اندروید، بیرون از اپ

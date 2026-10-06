@@ -4,7 +4,7 @@
  * مسیرهای داخلی داخل Layout و پشت ProtectedRoute (نیازمند ورود) قرار دارند.
  */
 import { Suspense, useEffect, useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
 import SiteNoticeReportRoute from "./components/SiteNoticeReportRoute";
@@ -57,7 +57,6 @@ const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
 const LoginSecurityPage = lazyPage(() => import("./pages/LoginSecurityPage"));
 const MobileDevicesPage = lazyPage(() => import("./pages/MobileDevicesPage"));
 const MobileAppPage = lazyPage(() => import("./pages/MobileAppPage"));
-const AttendanceClockPage = lazyPage(() => import("./pages/AttendanceClockPage"));
 const MonthlyAttendanceReportPage = lazyPage(() => import("./pages/MonthlyAttendanceReportPage"));
 const PresenceReportPage = lazyPage(() => import("./pages/PresenceReportPage"));
 const ClockInOutReportPage = lazyPage(() => import("./pages/ClockInOutReportPage"));
@@ -115,7 +114,7 @@ export default function App() {
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
           <Route
             path="/presence-report"
-            element={<PermissionRoute check={(u) => u?.can_view_attendance_logs}><PresenceReportPage /></PermissionRoute>}
+            element={<PermissionRoute check={(u) => u?.can_manage_clock_records}><PresenceReportPage /></PermissionRoute>}
           />
 
           {/* فهرست پرسنل: برای هر کاربری که مجوز مشاهده، ویرایش یا ایجاد پرسنل دارد */}
@@ -240,7 +239,7 @@ export default function App() {
           <Route
             path="/clock-in-out-report"
             element={
-              <PermissionRoute check={(u) => u?.can_view_clock_records}>
+              <PermissionRoute check={(u) => u?.can_manage_clock_records}>
                 <ClockInOutReportPage />
               </PermissionRoute>
             }
@@ -316,14 +315,8 @@ export default function App() {
               </PermissionRoute>
             }
           />
-          <Route
-            path="/attendance-clock"
-            element={
-              <PermissionRoute check={(u) => u?.can_clock_in_out && !u?.is_superuser}>
-                <AttendanceClockPage />
-              </PermissionRoute>
-            }
-          />
+          {/* ثبت دستی ورود/خروج حذف شد (Migration 104)؛ لینک‌های قدیمی به داشبورد شخصی */}
+          <Route path="/attendance-clock" element={<Navigate to="/my-dashboard" replace />} />
           <Route
             path="/monthly-attendance"
             element={

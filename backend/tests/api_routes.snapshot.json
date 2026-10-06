@@ -1,5 +1,5 @@
 {
-  "count": 338,
+  "count": 336,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -47,7 +47,6 @@
     "GET /api/v1/announcement/current",
     "GET /api/v1/announcement/settings",
     "GET /api/v1/attendance/logs",
-    "GET /api/v1/attendance/my-logs",
     "GET /api/v1/attendance/presence-sessions",
     "GET /api/v1/auth/captcha",
     "GET /api/v1/auth/captcha-status",
@@ -196,8 +195,6 @@
     "PATCH /api/v1/users/role-catalog/{role_id}",
     "PATCH /api/v1/vehicles/{vehicle_id}",
     "POST /api/v1/announcement/dismiss",
-    "POST /api/v1/attendance/clock-in",
-    "POST /api/v1/attendance/clock-out",
     "POST /api/v1/attendance/logs",
     "POST /api/v1/auth/forgot-password",
     "POST /api/v1/auth/login",
@@ -234,6 +231,7 @@
     "POST /api/v1/login-security/unlock",
     "POST /api/v1/mapping-suggestions",
     "POST /api/v1/mobile/app/releases",
+    "POST /api/v1/mobile/device/connectivity",
     "POST /api/v1/mobile/device/events",
     "POST /api/v1/mobile/device/status",
     "POST /api/v1/mobile/devices/register",

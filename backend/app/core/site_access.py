@@ -21,8 +21,9 @@ from app.models.site import Site
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
 # مجوزهایی که فقط به کار خودِ شخص مربوط‌اند و دسترسی به داده‌ی دیگران نمی‌دهند؛
-# نقشی که فقط این‌ها را دارد (مثل attendance-pilot) در تعیین سایت‌های قابل‌مشاهده حساب نمی‌شود.
-SELF_ONLY_PERMISSIONS = frozenset({"attendance.clock_in_out"})
+# نقشی که فقط این‌ها را دارد در تعیین سایت‌های قابل‌مشاهده حساب نمی‌شود. فعلاً خالی است
+# (attendance.clock_in_out در Migration 104 حذف شد)؛ سازوکار برای مجوزهای شخصی آینده نگه داشته شده است.
+SELF_ONLY_PERMISSIONS: frozenset[str] = frozenset()
 
 
 async def all_site_ids(db: AsyncSession) -> set[int]:
@@ -41,11 +42,10 @@ def covers_all_sites(site_ids: set[int], every_site: set[int]) -> bool:
 
 def _data_role_ids():
     """زیرکوئری شناسه‌ی نقش‌هایی که حداقل یک مجوز غیر از SELF_ONLY_PERMISSIONS دارند."""
-    return (
-        select(RolePermission.role_id)
-        .join(Permission, Permission.id == RolePermission.permission_id)
-        .where(Permission.code.not_in(SELF_ONLY_PERMISSIONS))
-    )
+    stmt = select(RolePermission.role_id).join(Permission, Permission.id == RolePermission.permission_id)
+    if SELF_ONLY_PERMISSIONS:
+        stmt = stmt.where(Permission.code.not_in(SELF_ONLY_PERMISSIONS))
+    return stmt
 
 
 async def get_accessible_site_ids(db: AsyncSession, user: User) -> set[int] | None:
@@ -123,7 +123,7 @@ async def get_sites_with_permission(db: AsyncSession, user: User, permission_cod
     مثل get_accessible_site_ids، ولی دقیق‌تر — فقط سایت‌هایی که کاربر
     مشخصاً همین یک Permission Code را برایشان دارد (نه هر نوع نقشی).
     برای Endpoint هایی که یک Permission مشخص و منفرد دارند (مثل
-    attendance.view_clock_records) و باید نتیجه را به همان سایت‌ها محدود
+    attendance.manage_clock_records) و باید نتیجه را به همان سایت‌ها محدود
     کنند، نه فقط تصمیم دودویی «اجازه دارد یا نه» بگیرند.
 
     خروجی None یعنی «بدون محدودیت» (Admin واقعی، یا این Permission را سراسری

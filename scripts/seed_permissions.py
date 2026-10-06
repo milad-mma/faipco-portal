@@ -59,20 +59,9 @@ DEFAULT_PERMISSIONS = [
     ("system.cache_bust", "پاک‌کردن کش اپ برای همه کاربران — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
     ("system.ip_allowlist", "مدیریت رنج‌های IP مجاز برای ورود — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)"),
     (
-        "attendance.clock_in_out",
-        "ثبت ورود/خروج آزمایشی مبتنی بر GPS — قابلیت آزمایشی، جایگزین دستگاه‌های حضور و غیاب کارخانه نیست",
-    ),
-    (
-        "attendance.view_logs",
-        "مشاهده گزارش «پرسنل آنلاین» (Session های زنده GPS) همه پرسنل — فقط superadmin (به هیچ نقش دیگری داده نمی‌شود)",
-    ),
-    (
-        "attendance.view_clock_records",
-        "مشاهده گزارش ورود/خروج آزمایشی GPS همه پرسنل — به superadmin و نقش hr-manager داده می‌شود",
-    ),
-    (
         "attendance.manage_clock_records",
-        "افزودن/ویرایش/حذف دستی رکورد ورود/خروج آزمایشی GPS پرسنل — به superadmin و نقش hr-manager داده می‌شود",
+        "گزارش ورود/خروج و «آنلاین در محیط کار» پرسنل، و افزودن/ویرایش/حذف دستی رکورد ورود/خروج — "
+        "به superadmin و نقش hr-manager داده می‌شود (سایت‌محور)",
     ),
     (
         "hr.birthday_messages",
@@ -112,25 +101,13 @@ ADDITIONAL_ROLES = {
         "description": (
             "مدیر منابع انسانی — اطلاعیه فیش کارکرد (Attendance Card) با آپلود اکسل می‌سازد "
             "(مخاطبان به‌صورت خودکار از روی کدهای موجود در همان اکسل تعیین می‌شوند)، "
-            "و گزارش کامل ورود/خروج آزمایشی GPS همه پرسنل را می‌بیند."
+            "و گزارش ورود/خروج و «آنلاین در محیط کار» پرسنل را می‌بیند و اصلاح می‌کند."
         ),
         "permissions": [
             "notices.attendance_card",
             "notices.view",  # برای دیدن گزارش «ارسالی من»
-            "attendance.view_clock_records",  # گزارش ورود/خروج آزمایشی GPS همه پرسنل
-            "attendance.manage_clock_records",  # افزودن/ویرایش/حذف دستی رکورد ورود/خروج
+            "attendance.manage_clock_records",  # گزارش ورود/خروج، آنلاین در محیط کار و ویرایش دستی رکوردها
             "hr.birthday_messages",  # مدیریت پیام‌های تبریک تولد
-        ],
-    },
-    "attendance-pilot": {
-        "description": (
-            "پرسنل مجاز به استفاده از «ثبت ورود/خروج آزمایشی» مبتنی بر GPS — قابلیتی آزمایشی؛ "
-            "ثبت ورود/خروج رسمی همچنان باید از طریق دستگاه‌های تعبیه‌شده در کارخانه انجام شود. "
-            "این نقش را فقط به پرسنلی که می‌خواهید در آزمایش این قابلیت شرکت کنند اختصاص دهید "
-            "(از همان صفحه «مدیریت دسترسی»، دقیقاً مثل هر نقش دیگر)."
-        ),
-        "permissions": [
-            "attendance.clock_in_out",
         ],
     },
 }
@@ -190,6 +167,7 @@ async def seed() -> None:
                     db.add(RolePermission(role_id=role.id, permission_id=perm.id))
 
         # 4. حذف نقش‌های قدیمی که دیگر استفاده نمی‌شوند (ceo / hr_manager)، اگر از قبل ساخته شده بودند
+        # (attendance-pilot را Migration 104 فقط اگر بی‌مجوز مانده باشد حذف می‌کند)
         for old_role_name in ("ceo", "hr_manager"):
             result = await db.execute(select(Role).where(Role.name == old_role_name))
             old_role = result.scalar_one_or_none()
