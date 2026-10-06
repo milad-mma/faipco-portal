@@ -39,6 +39,13 @@ function buildPresenceWsUrl(token) {
  * دسترسی مکان خواسته نمی‌شود و Heartbeat بدون موقعیت فرستاده می‌شود). خروجی ندارد.
  * همه‌ی مراحل (اتصال، Heartbeat، پاسخ سرور، قطعی) با پیشوند "[Presence]" در Console لاگ می‌شوند.
  */
+// زمان آخرین موقعیتی که مرورگر با موفقیت گرفت (ms)؛ موقعیت گرفتن موفق یعنی موقعیت‌یاب گوشی روشن است
+// (قفل دسترسی‌های اپ با آن گزارش کهنه‌ی «GPS خاموش» را نادیده می‌گیرد؛ MobileAppGate)
+let lastFixAt = 0;
+export function lastGpsFixAt() {
+  return lastFixAt;
+}
+
 export function usePresenceMonitor(enabled, gpsEnabled = false) {
   const socketRef = useRef(null); // اتصال WebSocket فعلی
   const heartbeatIntervalRef = useRef(null); // شناسه‌ی setInterval ارسال Heartbeat
@@ -78,6 +85,7 @@ export function usePresenceMonitor(enabled, gpsEnabled = false) {
       // و موقعیت‌یابی بر پایه‌ی IP/شبکه خطای بسیار بزرگ‌تری دارد
       getCurrentPosition({ enableHighAccuracy: true, timeout: 20000 })
         .then((position) => {
+          lastFixAt = Date.now();
           console.info(
             `${LOG_PREFIX} موقعیت گرفته شد:`,
             position.latitude,

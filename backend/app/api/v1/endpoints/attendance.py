@@ -44,6 +44,7 @@ from app.schemas.gps_attendance import (
     PresenceSessionAdminOut,
     PresenceSessionPageOut,
 )
+from app.services.mobile_app_service import native_inside_site
 from app.services.gps_attendance_service import (
     GpsAttendanceService,
     check_geofence,
@@ -345,6 +346,8 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...), app:
         db.add(app_session)
         await db.commit()
         session: PresenceSession | None = None  # نشست GPS باز فعلی (None = خارج از محدوده یا هنوز تأیید نشده)
+        native_site_id: int | None = None  # سایتی که بخش بومی اپ آخرین بار ورود به آن را گزارش داده (پشتیبان GPS مرورگر)
+        native_checked_at: datetime | None = None
 
         async def close_session(target: PresenceSession | None) -> None:
             """نشست را با زمان قطع و مدت دقیق می‌بندد (اگر باز باشد)."""
@@ -383,15 +386,38 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...), app:
 
                 latitude = data.get("latitude")
                 longitude = data.get("longitude")
-                if latitude is None or longitude is None:
+                accuracy_meters = data.get("accuracy_meters")
+                no_fix = latitude is None or longitude is None
+                low_accuracy = (
+                    not no_fix and accuracy_meters is not None and accuracy_meters > _MAX_TRUSTED_ACCURACY_METERS
+                )
+                if no_fix or low_accuracy:
+                    # مرورگر داخل سالن کارخانه معمولاً موقعیت ندارد یا دقتش کیلومتری است. پشتیبان: بخش بومی اپ (Geofencing
+                    # سیستم‌عامل، دقیق‌تر و بی‌نیاز از باز بودن صفحه) آخرین بار ورود به محدوده‌ی کدام سایت را گزارش داده؟
+                    now_check = datetime.now(timezone.utc)
+                    if native_checked_at is None or (now_check - native_checked_at).total_seconds() >= 60:
+                        native_site_id = await native_inside_site(db, user.employee_id)
+                        native_checked_at = now_check
+                    if native_site_id is not None:
+                        if session is None or session.matched_site_id != native_site_id:
+                            await close_gps_session()
+                            session = PresenceSession(
+                                employee_id=user.employee_id, kind="gps", connected_at=seen, last_seen_at=seen,
+                                client=app_session.client, matched_site_id=native_site_id, is_within_geofence=True,
+                            )
+                            db.add(session)
+                        await db.commit()
+                        await websocket.send_json({"status": "logged", "source": "native_geofence"})
+                        continue
+
+                if no_fix:
                     # بدون موقعیت نمی‌شود محدوده را تأیید کرد؛ یک پاسخ تشخیصی برمی‌گردد تا مشکل
                     # (مثلاً رد دسترسی GPS در مرورگر) قابل‌تشخیص باشد. نشست «اپ» همچنان ادامه دارد.
                     await db.commit()
                     await websocket.send_json({"status": "no_position", "message": "موقعیتی در این Heartbeat ارسال نشده بود."})
                     continue
 
-                accuracy_meters = data.get("accuracy_meters")
-                if accuracy_meters is not None and accuracy_meters > _MAX_TRUSTED_ACCURACY_METERS:
+                if low_accuracy:
                     # موقعیت با خطای زیاد قابل‌اعتماد نیست: نشست GPS نه بسته می‌شود و نه چیزی با این داده ثبت می‌شود
                     await db.commit()
                     await websocket.send_json(

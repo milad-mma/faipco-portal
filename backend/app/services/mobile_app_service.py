@@ -720,6 +720,34 @@ async def _portal_gps_live(db: AsyncSession, employee_id: int, site_id: int) -> 
     return row.first() is not None
 
 
+# رویداد ورود/خروجی که نشان می‌دهد پرسنل واقعاً آن‌جا بوده (نه جعلی یا خارج از بازه)
+PRESENCE_OK_STATUSES = ("logged", "already_in", "already_out", "duplicate", "disabled")
+NATIVE_INSIDE_MAX_AGE = timedelta(hours=16)
+
+
+async def native_inside_site(db: AsyncSession, employee_id: int) -> int | None:
+    """
+    سایتی که بخش بومی اپ (Geofencing) این پرسنل را الان داخلش می‌داند: آخرین رویداد معتبرش ورود/حضور (نه خروج) و
+    کمتر از NATIVE_INSIDE_MAX_AGE پیش است. پشتیبان «آنلاین در محیط کار» برای پرتالِ داخل اپ وقتی مرورگر داخل سالن
+    موقعیت ندارد.
+    """
+    row = (
+        await db.execute(
+            select(GeofenceEvent.site_id, GeofenceEvent.transition, GeofenceEvent.occurred_at)
+            .where(
+                GeofenceEvent.employee_id == employee_id,
+                GeofenceEvent.status.in_(PRESENCE_OK_STATUSES),
+                GeofenceEvent.site_id.is_not(None),
+            )
+            .order_by(GeofenceEvent.occurred_at.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None or row.transition == "exit" or row.occurred_at < _now() - NATIVE_INSIDE_MAX_AGE:
+        return None
+    return row.site_id
+
+
 def _network_label(network: str | None) -> str:
     return "اپ (پس‌زمینه) · " + NETWORK_LABELS.get(network or "other", "شبکه")
 

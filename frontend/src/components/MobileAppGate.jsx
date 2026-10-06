@@ -7,8 +7,9 @@
  *
  * ۲. قفل دسترسی‌ها داخل اپ: بخش بومی اپ هنگام ورود دسترسی‌ها را چک می‌کند؛ اگر کاربر وسط کار دسترسی موقعیت/اعلان را
  *    بگیرد یا GPS را خاموش کند، همان لحظه‌ی برگشت به اپ (visibilitychange) این بررسی‌ها انجام می‌شود:
- *    - GPS: (فقط اگر اجازه‌ی موقعیت سایت در Chrome داده شده) موقعیت گرفتن دو بار پشت سر هم «در دسترس نیست» (خطای ۲)
- *      بدهد ← GPS خاموش. روی بعضی گوشی‌ها Chrome برای GPS خاموش خطای دیگری می‌دهد؛ آن وقت گزارش اپ (سرور) قفل می‌کند.
+ *    - GPS: فقط از گزارش اپ (پایین). خطای موقعیت گرفتن در مرورگر قابل‌اعتماد نیست: داخل سالن کارخانه با GPS روشن
+ *      «در دسترس نیست» می‌دهد و با GPS خاموش «اجازه رد شد». برعکس، موقعیت گرفتن موفق در ۳ دقیقه‌ی اخیر (presenceSocket)
+ *      یعنی GPS روشن است و گزارش کهنه‌ی «GPS خاموش» قفل نمی‌کند.
  *    - اعلان: Notification.permission = denied (TWA اجازه‌ی اعلان را از اپ می‌گیرد).
  *    - سرور: permission_issues آخرین گزارش اپ (اپ هر ۱۵ دقیقه و با هر تغییر گزارش می‌دهد) — پشتیبان، چون همه‌ی
  *      گوشی‌ها تغییر دسترسی را همان لحظه به Chrome نمی‌دهند.
@@ -24,46 +25,9 @@ import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import { fetchMyMobileStatus, APK_DOWNLOAD_PATH } from "../api/mobile";
 import { useAuth } from "../context/AuthContext";
 import { isAndroidApp, isAndroidBrowser, openNativeSetup, openPortalInApp } from "../utils/androidApp";
+import { lastGpsFixAt } from "../utils/presenceSocket";
 
 const RECHECK_LOCKED_MS = 15_000;
-
-// یک‌بار موقعیت؛ خروجی: "ok" | "unavailable" (GPS خاموش) | "other" (رد اجازه‌ی سایت، timeout، بدون API)
-// سقف ۱۲ ثانیه: timeout خود مرورگر تا جواب پنجره‌ی اجازه شروع نمی‌شود و بدون این سقف بررسی برای همیشه منتظر می‌ماند
-function probeLocation() {
-  return new Promise((resolve) => {
-    if (!("geolocation" in navigator)) return resolve("other");
-    const guard = setTimeout(() => resolve("other"), 12_000);
-    navigator.geolocation.getCurrentPosition(
-      () => {
-        clearTimeout(guard);
-        resolve("ok");
-      },
-      (err) => {
-        clearTimeout(guard);
-        resolve(err?.code === 2 ? "unavailable" : "other");
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 0 },
-    );
-  });
-}
-
-// اجازه‌ی موقعیت سایت در Chrome از قبل داده شده؟ (فقط آن وقت موقعیت گرفته می‌شود تا پنجره‌ی اجازه تکرار نشود)
-async function locationPermissionGranted() {
-  try {
-    const state = await navigator.permissions?.query({ name: "geolocation" });
-    return state?.state === "granted";
-  } catch {
-    return false;
-  }
-}
-
-// GPS خاموش فقط وقتی دو بار پشت سر هم «در دسترس نیست» باشد (یک خطای گذرا داخل ساختمان قفل نکند)
-async function gpsLooksOff() {
-  if (!(await locationPermissionGranted())) return false;
-  if ((await probeLocation()) !== "unavailable") return false;
-  await new Promise((r) => setTimeout(r, 1500));
-  return (await probeLocation()) === "unavailable";
-}
 
 function notificationsDenied() {
   try {
@@ -106,7 +70,7 @@ export default function MobileAppGate({ user }) {
   const active = featureOn && isEmployee && (inApp || inAndroidBrowser);
 
   const [status, setStatus] = useState(null);
-  const [localIssues, setLocalIssues] = useState([]); // بررسی‌های همین لحظه در خود صفحه (GPS، اعلان)
+  const [localIssues, setLocalIssues] = useState([]); // بررسی همین لحظه در خود صفحه (اعلان)
   const [checking, setChecking] = useState(false);
   const checkingRef = useRef(false);
 
@@ -119,7 +83,6 @@ export default function MobileAppGate({ user }) {
       const issues = [];
       if (inApp) {
         if (notificationsDenied()) issues.push("اجازه‌ی اعلان به اپ داده نشده است");
-        if (await gpsLooksOff()) issues.push("موقعیت‌یاب (GPS) گوشی خاموش است");
       }
       const s = await statusPromise;
       if (s) setStatus(s);
@@ -138,7 +101,15 @@ export default function MobileAppGate({ user }) {
   }, [check]);
 
   const required = Boolean(status?.required) && !status?.exempt;
-  const serverIssues = inApp && required ? (status?.permission_issues || []).map((i) => i.label) : [];
+  // «GPS خاموش» گزارش اپ ممکن است کهنه باشد (اپ وضعیت را حداکثر هر ۱۵ دقیقه می‌فرستد)؛ اگر مرورگر در ۳ دقیقه‌ی اخیر
+  // موقعیت گرفته، موقعیت‌یاب روشن است و این مورد نادیده گرفته می‌شود
+  const gpsSeenRecently = Date.now() - lastGpsFixAt() < 3 * 60_000;
+  const serverIssues =
+    inApp && required
+      ? (status?.permission_issues || [])
+          .filter((i) => !(i.code === "location_off" && gpsSeenRecently))
+          .map((i) => i.label)
+      : [];
   const appIssues = required || !status ? [...new Set([...localIssues, ...serverIssues])] : [];
   // معاف/غیرلازم بودن را فقط سرور می‌داند؛ تا جواب سرور نرسیده، بررسی‌های محلی هم قفل نمی‌کنند
   const appLocked = inApp && Boolean(status) && required && appIssues.length > 0;
@@ -197,7 +168,8 @@ export default function MobileAppGate({ user }) {
           ))}
         </Box>
         <Typography variant="body2" color="text.secondary">
-          برای استفاده از پرتال، دسترسی موقعیت (همیشه مجاز) و اعلان را به اپ بدهید و GPS گوشی را روشن کنید.
+          برای استفاده از پرتال، دسترسی موقعیت (همیشه مجاز) و اعلان را به اپ بدهید و GPS گوشی را روشن کنید. اگر انجام
+          داده‌اید، «تکمیل دسترسی‌ها» را بزنید تا اپ وضعیت را دوباره بررسی کند.
         </Typography>
         <Button fullWidth size="large" variant="contained" onClick={openNativeSetup}>
           تکمیل دسترسی‌ها
