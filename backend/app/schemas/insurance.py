@@ -137,6 +137,9 @@ class InsuranceSettingsOut(BaseModel):
     notes: list[str]
     reject_notice_title: str = ""  # عنوان اطلاعیه‌ی رد مدرک؛ «{نام عضو}» جایگزین می‌شود
     reject_notice_body: str = ""  # متن اطلاعیه‌ی رد مدرک
+    # کاربر می‌تواند این تنظیمات مشترک را تغییر دهد؟ (فقط insurance.manage برای همه‌ی سایت‌ها؛ مدیر یک سایت فقط
+    # می‌بیند و کلید فعال/غیرفعال سایت خودش را دارد)
+    editable: bool = True
 
 
 class InsuranceSettingsIn(BaseModel):

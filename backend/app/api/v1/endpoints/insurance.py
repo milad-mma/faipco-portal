@@ -178,9 +178,13 @@ async def _require_org_wide_insurance_manage(db: AsyncSession, user: User) -> No
 async def get_settings(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(require_permission("insurance.manage"))
 ):
-    """تنظیمات ماژول (فعال بودن، جدول نرخ، نکات) برای صفحه‌ی مدیریت. فقط insurance.manage سراسری (وگرنه 403)."""
-    await _require_org_wide_insurance_manage(db, current_user)
-    return await InsuranceService(db).get_settings()
+    """
+    تنظیمات مشترک ماژول (جدول نرخ، نکات، متن اطلاعیه‌ی رد) برای صفحه‌ی مدیریت. هر دارنده‌ی insurance.manage می‌بیند
+    (مدیر یک سایت هم، تا صفحه‌ی تنظیمات و کلید سایت خودش باز شود)؛ editable فقط برای insurance.manage همه‌ی سایت‌ها.
+    """
+    settings = await InsuranceService(db).get_settings()
+    settings["editable"] = await get_sites_with_permission(db, current_user, "insurance.manage") is None
+    return settings
 
 
 @router.put("/settings", response_model=InsuranceSettingsOut)

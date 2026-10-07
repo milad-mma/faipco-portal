@@ -563,7 +563,9 @@ function SettingsTab() {
     }
   }
 
-  if (!settings) return <CircularProgress size={24} />;
+  if (!settings) return message ? <Alert severity={message.severity}>{message.text}</Alert> : <CircularProgress size={24} />;
+  // مدیر یک یا چند سایت (نه همه): تنظیمات مشترک فقط خواندنی؛ فقط کلید فعال/غیرفعال سایت‌های خودش
+  const readOnly = settings.editable === false;
   // توابع کمکی ویرایش جدول نرخ و نکات در state محلی (بدون ارسال به سرور)
   const table = settings.rate_table;
   const setTable = (next) => setSettings({ ...settings, rate_table: next });
@@ -625,6 +627,21 @@ function SettingsTab() {
         )}
       </Card>
 
+      {readOnly ? (
+        <>
+          <Alert severity="info">
+            جدول نرخ، توضیحات و متن اطلاعیه‌ی رد بین همه‌ی سایت‌ها مشترک است و فقط کسی که مجوز «تنظیمات بیمه تکمیلی» را
+            برای همه‌ی سایت‌ها دارد می‌تواند آن‌ها را تغییر دهد. شما فعال/غیرفعال بودن ثبت‌نام سایت‌های خودتان را تنظیم می‌کنید.
+          </Alert>
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }}>
+              جدول نرخ و توضیحات (همان‌طور که پرسنل می‌بینند)
+            </Typography>
+            <InsuranceRateInfo rateTable={table} notes={notes} />
+          </Card>
+        </>
+      ) : (
+        <>
       {/* ویرایشگر جدول نرخ: عناوین ستون‌ها + یک ردیف ورودی به ازای هر بازه‌ی سنی */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
         <Typography fontWeight={700} sx={{ mb: 0.5 }}>
@@ -755,6 +772,8 @@ function SettingsTab() {
           ذخیره متن اطلاعیه
         </Button>
       </Card>
+        </>
+      )}
     </Stack>
   );
 }
