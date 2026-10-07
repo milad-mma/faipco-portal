@@ -12,11 +12,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.site_access import get_sites_with_permission_prefix
+from app.core.site_access import all_site_ids, covers_all_sites, get_sites_with_permission_prefix
 from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.site_transfer import SiteTransfer
-from app.models.user import Permission, Role, RolePermission, User, UserRole
+from app.models.user import Permission, Role, RolePermission, User, UserPermission, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.user_management import AssignRoleIn, RoleUpsertIn
 
@@ -101,6 +101,115 @@ class UserManagementService:
             return
         result = await self.db.execute(select(Permission.code).where(Permission.id.in_(permission_ids)))
         await self._check_grantable_codes(caller, {row[0] for row in result.all()})
+
+    # ---------- مجوزهای مستقیم کاربر (Migration 106) ----------
+
+    async def list_direct_permissions(self, user_id: int) -> list[dict]:
+        """مجوزهای مستقیم کاربر، برای هر مجوز یک ردیف با فهرست سایت‌ها (None = همه‌ی سایت‌ها)."""
+        result = await self.db.execute(
+            select(UserPermission.permission_id, UserPermission.site_id, Permission.code, Permission.description)
+            .join(Permission, Permission.id == UserPermission.permission_id)
+            .where(UserPermission.user_id == user_id)
+            .order_by(Permission.code)
+        )
+        grouped: dict[int, dict] = {}
+        for permission_id, site_id, code, description in result.all():
+            item = grouped.setdefault(
+                permission_id, {"permission_id": permission_id, "code": code, "description": description, "site_ids": []}
+            )
+            if site_id is None:
+                item["site_ids"] = None  # ردیف سراسری بر ردیف‌های سایتی غلبه می‌کند
+            elif item["site_ids"] is not None:
+                item["site_ids"].append(site_id)
+        return list(grouped.values())
+
+    async def list_inherited_permissions(self, user_id: int) -> list[dict]:
+        """مجوزهایی که از نقش‌های کاربر می‌رسند (کد، نام نقش، سایت نقش) — برای نمایش کنار مجوزهای مستقیم."""
+        result = await self.db.execute(
+            select(Permission.code, Role.name, UserRole.site_id)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
+            .order_by(Permission.code, Role.name)
+        )
+        return [{"code": code, "role_name": role_name, "site_id": site_id} for code, role_name, site_id in result.all()]
+
+    async def replace_direct_permissions(
+        self, user_id: int, grants: list, granted_by: User, allowed_site_ids: set[int] | None
+    ) -> list[dict]:
+        """
+        مجموعه‌ی مجوزهای مستقیم کاربر را با grants جایگزین می‌کند (هر مورد: permission_id و site_ids یا None = همه).
+        - غیر-superuser: هر مجوز **تازه** باید برای همان محدوده در اختیار خودش باشد (_check_grantable_codes)؛ مجوز
+          «همه‌ی سایت‌ها» فقط اگر فراخوان آن را سراسری دارد. allowed_site_ids (سایت‌های users.manage فراخوان؛ None =
+          همه): ردیف‌های خارج از اختیار فراخوان (سایت دیگر یا سراسری) اگر از قبل وجود دارند دست‌نخورده می‌مانند — چه
+          در درخواست تکرار شوند چه نه — و نمی‌شود ردیف تازه‌ای برایشان ساخت. ردیف موجودی که فراخوان خودش آن مجوز را
+          ندارد هم بررسی نمی‌شود (فقط ردیف‌های تازه).
+        خطاها: ValueError (مجوز/سایت نامعتبر)، RolePrivilegeError (فراتر از مجوز فراخوان).
+        """
+        permission_ids = {g.permission_id for g in grants}
+        codes_by_id: dict[int, str] = {}
+        if permission_ids:
+            result = await self.db.execute(
+                select(Permission.id, Permission.code).where(Permission.id.in_(permission_ids))
+            )
+            codes_by_id = dict(result.all())
+            unknown = permission_ids - set(codes_by_id)
+            if unknown:
+                raise ValueError("مجوز نامعتبر: " + "، ".join(str(i) for i in sorted(unknown)))
+        every_site = await all_site_ids(self.db)
+        # ردیف‌های فعلی (ممکن است چند ردیف با یک کلید باشد: NULL در Unique Constraint پستگرس یکتا نیست)
+        result = await self.db.execute(select(UserPermission).where(UserPermission.user_id == user_id))
+        existing: dict[tuple[int, int | None], list[UserPermission]] = {}
+        for row in result.scalars().all():
+            existing.setdefault((row.permission_id, row.site_id), []).append(row)
+
+        def in_scope(site_id: int | None) -> bool:
+            return allowed_site_ids is None or (site_id is not None and site_id in allowed_site_ids)
+
+        wanted: set[tuple[int, int | None]] = set()
+        for g in grants:
+            if g.site_ids is None:
+                site_ids: set[int | None] = {None}
+            else:
+                bad = set(g.site_ids) - every_site
+                if bad:
+                    raise ValueError("سایت نامعتبر: " + "، ".join(str(i) for i in sorted(bad)))
+                # انتخاب همه‌ی سایت‌های موجود = «همه‌ی سایت‌ها» (یک ردیف سراسری؛ سایت‌های آینده را هم می‌گیرد)
+                site_ids = {None} if covers_all_sites(set(g.site_ids), every_site) else set(g.site_ids)
+            for s in site_ids:
+                key = (g.permission_id, s)
+                if key in existing and not in_scope(s):
+                    continue  # ردیف خارج از اختیار که از قبل بود (مثلاً سراسری از superuser): دست‌نخورده
+                if not in_scope(s):
+                    raise RolePrivilegeError("اجازه اعطای مجوز برای این سایت(ها) را ندارید")
+                wanted.add(key)
+        new_keys = wanted - set(existing)
+        # جلوگیری از ارتقای سطح دسترسی: هر مجوز تازه برای محدوده‌اش باید در اختیار فراخوان باشد
+        if not granted_by.is_superuser and new_keys:
+            global_codes = {codes_by_id[pid] for pid, s in new_keys if s is None}
+            if global_codes:
+                await self._check_grantable_codes(granted_by, global_codes, None)
+            by_site: dict[int, set[str]] = {}
+            for pid, s in new_keys:
+                if s is not None:
+                    by_site.setdefault(s, set()).add(codes_by_id[pid])
+            for site_id, codes in by_site.items():
+                await self._check_grantable_codes(granted_by, codes, [site_id])
+
+        for key, rows in existing.items():
+            if key in wanted:
+                for extra in rows[1:]:
+                    await self.db.delete(extra)  # ردیف تکراری (دو درخواست هم‌زمان قدیمی)
+            elif in_scope(key[1]):
+                for row in rows:
+                    await self.db.delete(row)
+        for key in new_keys:
+            self.db.add(
+                UserPermission(user_id=user_id, permission_id=key[0], site_id=key[1], granted_by_user_id=granted_by.id)
+            )
+        await self.db.commit()
+        return await self.list_direct_permissions(user_id)
 
     async def list_roles(self, exclude_superadmin: bool = True) -> list[Role]:
         """فهرست نقش‌ها را برمی‌گرداند؛ به‌طور پیش‌فرض superadmin حذف می‌شود."""
@@ -260,7 +369,18 @@ class UserManagementService:
         for dept_id, dept_name, dept_site_id, supervisor_id in result.all():
             depts_by_user.setdefault(supervisor_id, []).append((dept_id, dept_name, dept_site_id))
 
-        relevant_user_ids = set(roles_by_user) | set(depts_by_user)  # کاربرانی که حداقل یک نقش یا سرپرستی دارند
+        # ۱.۵ مجوزهای مستقیم (Migration 106)
+        result = await self.db.execute(
+            select(UserPermission.user_id, UserPermission.site_id, Permission.code, Permission.description)
+            .join(Permission, Permission.id == UserPermission.permission_id)
+            .order_by(Permission.code)
+        )
+        direct_by_user: dict[int, list[tuple[int | None, str, str | None]]] = {}
+        for user_id, site_id, code, description in result.all():
+            direct_by_user.setdefault(user_id, []).append((site_id, code, description))
+
+        # کاربرانی که حداقل یک نقش، مجوز مستقیم یا سرپرستی دارند
+        relevant_user_ids = set(roles_by_user) | set(depts_by_user) | set(direct_by_user)
         if not relevant_user_ids:
             return []
 
@@ -285,6 +405,8 @@ class UserManagementService:
             site_ids_needed.update(sid for sid, _ in pairs if sid is not None)
         for pairs in depts_by_user.values():
             site_ids_needed.update(sid for _, _, sid in pairs)
+        for triples in direct_by_user.values():
+            site_ids_needed.update(sid for sid, _, _ in triples if sid is not None)
 
         site_name_by_id: dict[int, str] = {}
         if site_ids_needed:
@@ -307,6 +429,11 @@ class UserManagementService:
                 for did, dname, dsid in depts_by_user.get(user_id, [])
                 if accessible_site_ids is None or dsid in accessible_site_ids
             ]
+            direct_entries = [
+                {"code": code, "description": description, "site_name": site_name_by_id.get(sid) if sid else None}
+                for sid, code, description in direct_by_user.get(user_id, [])
+                if accessible_site_ids is None or sid is None or sid in accessible_site_ids
+            ]
             overview.append(
                 {
                     "employee_id": employee_id,
@@ -315,6 +442,7 @@ class UserManagementService:
                     "personnel_code": personnel_code,
                     "site_name": site_name_by_id.get(emp_site_id, "—") if emp_site_id else "—",
                     "roles": role_entries,
+                    "direct_permissions": direct_entries,
                     "supervised_departments": dept_entries,
                 }
             )

@@ -1,5 +1,5 @@
 {
-  "count": 346,
+  "count": 348,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -61,6 +61,7 @@
     "GET /api/v1/employees/cleanup-orphaned-inactive/preview",
     "GET /api/v1/employees/count",
     "GET /api/v1/employees/portal-disabled-count",
+    "GET /api/v1/employees/{employee_id}/permissions",
     "GET /api/v1/employees/{employee_id}/photo-thumbnail",
     "GET /api/v1/employees/{employee_id}/roles",
     "GET /api/v1/employees/{employee_id}/supervised-departments",
@@ -299,6 +300,7 @@
     "PUT /api/v1/backup/settings",
     "PUT /api/v1/departments/{department_id}/supervisor",
     "PUT /api/v1/employees/{employee_id}/password",
+    "PUT /api/v1/employees/{employee_id}/permissions",
     "PUT /api/v1/error-logs/settings",
     "PUT /api/v1/family/employees/{employee_id}/hr-fields",
     "PUT /api/v1/family/me",

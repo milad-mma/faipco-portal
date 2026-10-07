@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, normalize_login_credential, validate_password_strength
 from app.core.site_access import all_site_ids, covers_all_sites
+from app.core.permission_grants import grants_subquery
 from app.models.employee import Employee
-from app.models.user import Permission, Role, RolePermission, User, UserRole
+from app.models.user import User
 
 
 class UserRepository:
@@ -68,22 +69,17 @@ class UserRepository:
         همه‌ی سایت‌های موجود دارد. برای پرسش «آیا کاربر اصلاً این قابلیت را دارد؟» (مثل فلگ‌های منوی get_me)
         از get_all_permission_codes استفاده کنید.
         """
-        # کوئری: کدهای مجوز از مسیر UserRole -> Role -> RolePermission -> Permission
-        stmt = (
-            select(Permission.code)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(Role, Role.id == RolePermission.role_id)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == user_id)
-        )
-        # فیلتر سایت: نقش‌های سراسری + (در صورت وجود) نقش‌های همان سایت
+        # کوئری: همه‌ی اعطاها (از نقش‌ها و مجوزهای مستقیم؛ core/permission_grants.py)
+        g = grants_subquery()
+        stmt = select(g.c.code).where(g.c.user_id == user_id)
+        # فیلتر سایت: اعطاهای سراسری + (در صورت وجود) اعطاهای همان سایت
         if site_id is not None:
-            stmt = stmt.where(or_(UserRole.site_id.is_(None), UserRole.site_id == site_id))
+            stmt = stmt.where(or_(g.c.site_id.is_(None), g.c.site_id == site_id))
             result = await self.db.execute(stmt)
             return {row[0] for row in result.all()}
 
         # بدون site_id: سراسری‌ها + مجوزهایی که برای تک‌تک سایت‌های موجود داده شده‌اند
-        result = await self.db.execute(stmt.add_columns(UserRole.site_id))
+        result = await self.db.execute(stmt.add_columns(g.c.site_id))
         codes: set[str] = set()
         sites_by_code: dict[str, set[int]] = {}
         for code, role_site_id in result.all():
@@ -102,15 +98,9 @@ class UserRepository:
         فقط برای تصمیم‌های «آیا این قابلیت برای کاربر فعال است» (مثل فلگ‌های منوی get_me)؛
         برای محدود کردن داده به سایت‌ها از get_sites_with_permission استفاده شود.
         """
-        # کوئری: کدهای مجوز از همه‌ی نقش‌های کاربر
-        stmt = (
-            select(Permission.code)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(Role, Role.id == RolePermission.role_id)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == user_id)
-        )
-        result = await self.db.execute(stmt)
+        # کوئری: کدهای مجوز از همه‌ی نقش‌ها و مجوزهای مستقیم کاربر
+        g = grants_subquery()
+        result = await self.db.execute(select(g.c.code).where(g.c.user_id == user_id).distinct())
         return {row[0] for row in result.all()}
 
     # ---------- ورود پرسنل (کد پرسنلی + کد ملی) ----------

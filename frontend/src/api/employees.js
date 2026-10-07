@@ -153,3 +153,15 @@ export async function unlockEmployeeLogin(employeeId) {
   const { data } = await apiClient.post(`/employees/${employeeId}/unlock-login`);
   return data;
 }
+
+// GET /employees/{id}/permissions؛ خروجی: {direct: [{permission_id, code, description, site_ids|null}], inherited: [{code, role_name, site_id}]}
+export async function fetchEmployeePermissions(employeeId) {
+  const { data } = await apiClient.get(`/employees/${employeeId}/permissions`);
+  return data;
+}
+
+// PUT /employees/{id}/permissions؛ جایگزینی کامل مجوزهای مستقیم: grants = [{permission_id, site_ids|null (= همه)}]
+export async function replaceEmployeePermissions(employeeId, grants) {
+  const { data } = await apiClient.put(`/employees/${employeeId}/permissions`, { grants });
+  return data;
+}

@@ -27,7 +27,8 @@ from app.models.employee import Employee
 from app.models.feedback import FeedbackCategory, FeedbackMessage, FeedbackReply, FeedbackStatus, ProhibitedPhrase
 from app.models.system_setting import SystemSetting
 from app.models.site import Site
-from app.models.user import Permission, Role, RolePermission, User, UserRole
+from app.core.permission_grants import grants_subquery
+from app.models.user import User
 from app.services.push_background import schedule_push
 from app.schemas.feedback import FeedbackMessageOut, FeedbackReplyOut, FeedbackThreadOut, MyFeedbackItemOut
 
@@ -144,21 +145,19 @@ class FeedbackService:
         خطاها فقط لاگ می‌شوند.
         """
         try:
-            # کاربرانی که از طریق یکی از نقش‌هایشان مجوز مشاهده/پاسخ بازخورد دارند
+            # کاربرانی که (از نقش یا مجوز مستقیم) مجوز مشاهده/پاسخ بازخورد دارند
+            g = grants_subquery()
             stmt = (
                 select(User.id)
-                .join(UserRole, UserRole.user_id == User.id)
-                .join(Role, Role.id == UserRole.role_id)
-                .join(RolePermission, RolePermission.role_id == Role.id)
-                .join(Permission, Permission.id == RolePermission.permission_id)
-                .where(Permission.code.in_(["feedback.view", "feedback.view_all", "feedback.reply"]))
+                .join(g, g.c.user_id == User.id)
+                .where(g.c.code.in_(["feedback.view", "feedback.view_all", "feedback.reply"]))
                 .distinct()
             )
             # سایت فرستنده: بازبین‌های سایتیِ سایت‌های دیگر اعلان نمی‌گیرند
             sender_site_id = await self._sender_site_id(sender)
-            site_condition = UserRole.site_id.is_(None) | (Permission.code == "feedback.view_all")
+            site_condition = g.c.site_id.is_(None) | (g.c.code == "feedback.view_all")
             if sender_site_id is not None:
-                site_condition = site_condition | (UserRole.site_id == sender_site_id)
+                site_condition = site_condition | (g.c.site_id == sender_site_id)
             stmt = stmt.where(site_condition)
             result = await self.db.execute(stmt)
             user_ids = {row[0] for row in result.all()} - {sender.id}  # حذف خودِ فرستنده

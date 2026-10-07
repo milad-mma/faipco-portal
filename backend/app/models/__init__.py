@@ -3,7 +3,7 @@
 1. Alembic برای autogenerate migrations آن‌ها را در metadata ببیند
 2. رفرنس‌های رشته‌ای بین مدل‌ها (مثل Mapped["Site"]) در زمان اجرا درست resolve شوند
 """
-from app.models.user import User, Role, Permission, RolePermission, UserRole  # noqa: F401
+from app.models.user import User, Role, Permission, RolePermission, UserRole, UserPermission  # noqa: F401
 from app.models.site import (  # noqa: F401
     AttendanceMapping,
     AttendanceMappingMode,

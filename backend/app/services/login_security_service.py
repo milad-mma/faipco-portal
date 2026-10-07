@@ -38,7 +38,8 @@ from app.core.text_normalize import normalize_search_text
 from app.models.login_security import CaptchaChallenge, LoginSecurityEvent
 from app.models.rate_limit import LoginAttempt
 from app.models.system_setting import SystemSetting
-from app.models.user import Permission, RolePermission, User, UserRole
+from app.core.permission_grants import grants_subquery
+from app.models.user import User
 from app.schemas.login_security import LoginSecuritySettings
 
 logger = logging.getLogger(__name__)
@@ -228,12 +229,11 @@ async def captcha_required_for_login(db: AsyncSession, cfg: LoginSecuritySetting
 
 async def alert_recipient_ids(db: AsyncSession) -> set[int]:
     """superuserها و دارندگان system.login_security (فعال)."""
+    g = grants_subquery()  # نقش‌ها و مجوزهای مستقیم
     result = await db.execute(
         select(User.id)
-        .outerjoin(UserRole, UserRole.user_id == User.id)
-        .outerjoin(RolePermission, RolePermission.role_id == UserRole.role_id)
-        .outerjoin(Permission, Permission.id == RolePermission.permission_id)
-        .where(User.is_active.is_(True), or_(User.is_superuser.is_(True), Permission.code == PERMISSION_CODE))
+        .outerjoin(g, g.c.user_id == User.id)
+        .where(User.is_active.is_(True), or_(User.is_superuser.is_(True), g.c.code == PERMISSION_CODE))
         .distinct()
     )
     return {row[0] for row in result.all()}

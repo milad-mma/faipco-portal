@@ -48,7 +48,7 @@ from app.schemas.employee import (
     EmployeePageOut,
     EmployeePasswordSet,
 )
-from app.schemas.user_management import AssignRoleIn, UserRoleOut
+from app.schemas.user_management import AssignRoleIn, DirectPermissionsIn, EmployeePermissionsOut, UserRoleOut
 from app.services.user_management_service import RolePrivilegeError, UserManagementService
 
 router = APIRouter()
@@ -753,6 +753,69 @@ async def assign_role_to_employee(
         return await service.assign_role(user.id, payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/{employee_id}/permissions", response_model=EmployeePermissionsOut)
+async def list_employee_permissions(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("users.manage")),
+):
+    """
+    مجوزهای مستقیم پرسنل (Migration 106) و مجوزهایی که از نقش‌هایش می‌رسند (برای نمایش «از نقش ...»).
+    مجوز: users.manage برای سایت آن پرسنل. خطاها: 404 پرسنل، 403 خارج از سایت‌های مجاز.
+    """
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await _require_employee_site_permission(db, current_user, employee, "users.manage", allow_pending_transfer=True)
+
+    allowed = None if current_user.is_superuser else await get_sites_with_permission(db, current_user, "users.manage")
+    user = (await db.execute(select(User).where(User.employee_id == employee_id))).scalar_one_or_none()
+    if user is None:
+        return {"direct": [], "inherited": [], "allowed_site_ids": allowed}
+    service = UserManagementService(db)
+    return {
+        "direct": await service.list_direct_permissions(user.id),
+        "inherited": await service.list_inherited_permissions(user.id),
+        "allowed_site_ids": allowed,
+    }
+
+
+@router.put("/{employee_id}/permissions", response_model=EmployeePermissionsOut)
+async def replace_employee_permissions(
+    employee_id: int,
+    payload: DirectPermissionsIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("users.manage")),
+):
+    """
+    مجموعه‌ی مجوزهای مستقیم پرسنل را جایگزین می‌کند (هر مورد: مجوز + سایت‌ها یا «همه»)؛ حساب کاربری در صورت نبود
+    ساخته می‌شود. مجوز: users.manage برای سایت پرسنل و سایت‌های هر مجوز. خطاها: 404 پرسنل، 403 خارج از محدوده /
+    اعطا به خود / مجوزی فراتر از مجوز فراخوان، 400 مجوز یا سایت نامعتبر.
+    """
+    employee = await db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    accessible_site_ids = None
+    if not current_user.is_superuser:
+        if employee.id == current_user.employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="نمی‌توانید به حساب خودتان مجوز اختصاص دهید")
+        # مثل GET: مدیر سایت قبلیِ پرسنلِ تازه‌منتقل‌شده هم می‌تواند ردیف‌های سایت خودش را بردارد
+        await _require_employee_site_permission(db, current_user, employee, "users.manage", allow_pending_transfer=True)
+        accessible_site_ids = await get_sites_with_permission(db, current_user, "users.manage")
+
+    user = await UserRepository(db).get_or_create_employee_user(employee)
+    if user.id == current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="نمی‌توانید به حساب خودتان مجوز اختصاص دهید")
+    service = UserManagementService(db)
+    try:
+        direct = await service.replace_direct_permissions(user.id, payload.grants, current_user, accessible_site_ids)
+    except RolePrivilegeError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"direct": direct, "inherited": await service.list_inherited_permissions(user.id), "allowed_site_ids": accessible_site_ids}
 
 
 @router.get("/{employee_id}/supervised-departments", response_model=list[int])

@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employee import Department, Employee
 from app.models.site import Site
-from app.models.user import Permission, Role, RolePermission, User, UserRole
+from app.core.permission_grants import grants_subquery
+from app.models.user import User
 
 # مجوزهایی که فقط به کار خودِ شخص مربوط‌اند و دسترسی به داده‌ی دیگران نمی‌دهند؛
 # نقشی که فقط این‌ها را دارد در تعیین سایت‌های قابل‌مشاهده حساب نمی‌شود. فعلاً خالی است
@@ -40,11 +41,12 @@ def covers_all_sites(site_ids: set[int], every_site: set[int]) -> bool:
     return bool(every_site) and every_site <= site_ids
 
 
-def _data_role_ids():
-    """زیرکوئری شناسه‌ی نقش‌هایی که حداقل یک مجوز غیر از SELF_ONLY_PERMISSIONS دارند."""
-    stmt = select(RolePermission.role_id).join(Permission, Permission.id == RolePermission.permission_id)
+def _data_grants(user_id: int):
+    """کوئری (site_id) همه‌ی اعطاهای «داده‌ای» کاربر (نقش یا مجوز مستقیم؛ به‌جز SELF_ONLY_PERMISSIONS)."""
+    g = grants_subquery()
+    stmt = select(g.c.site_id).where(g.c.user_id == user_id)
     if SELF_ONLY_PERMISSIONS:
-        stmt = stmt.where(Permission.code.not_in(SELF_ONLY_PERMISSIONS))
+        stmt = stmt.where(g.c.code.not_in(SELF_ONLY_PERMISSIONS))
     return stmt
 
 
@@ -62,11 +64,11 @@ async def get_accessible_site_ids(db: AsyncSession, user: User) -> set[int] | No
 
     منطق:
     1. Admin واقعی → None (نامحدود).
-    2. حداقل یک نقش سراسری (UserRole.site_id IS NULL) دارد → None — چون
+    2. حداقل یک نقش یا مجوز مستقیم سراسری (site_id IS NULL) دارد → None — چون
        نقش‌های سراسری (middle_manager، acc_manager، hr-manager وقتی
        سراسری انتصاب شده) ذاتاً برای کار بین‌سایتی طراحی شده‌اند.
-    3. وگرنه: اتحاد (Union) سایت‌هایی که یا (الف) یک نقش Site-scoped برایشان
-       دارد، یا (ب) سرپرست حداقل یک واحد در آن سایت است.
+    3. وگرنه: اتحاد (Union) سایت‌هایی که یا (الف) یک نقش یا مجوز مستقیم Site-scoped
+       برایشان دارد، یا (ب) سرپرست حداقل یک واحد در آن سایت است.
     4. اگر هیچ‌کدام از بالا صدق نکند (پرسنل عادی بدون هیچ نقشی) → فقط سایت
        خودش (از روی Employee.site_id، اگر حساب کاربری‌اش به یک پرسنل وصل
        باشد).
@@ -74,30 +76,12 @@ async def get_accessible_site_ids(db: AsyncSession, user: User) -> set[int] | No
     if user.is_superuser:
         return None
 
-    # آیا حداقل یک نقش سراسری (site_id خالی) با مجوز داده دارد؟
-    org_wide_result = await db.execute(
-        select(UserRole.id)
-        .where(
-            UserRole.user_id == user.id,
-            UserRole.site_id.is_(None),
-            UserRole.role_id.in_(_data_role_ids()),
-        )
-        .limit(1)
-    )
-    if org_wide_result.scalar_one_or_none() is not None:
+    # اعطاهای داده‌ای کاربر (نقش یا مجوز مستقیم): سراسری (site_id خالی) ← نامحدود؛ وگرنه اتحاد سایت‌ها
+    grant_sites = [row[0] for row in (await db.execute(_data_grants(user.id))).all()]
+    if any(sid is None for sid in grant_sites):
         return None
 
-    site_ids: set[int] = set()
-
-    # سایت‌های نقش‌های Site-scoped
-    scoped_result = await db.execute(
-        select(UserRole.site_id).where(
-            UserRole.user_id == user.id,
-            UserRole.site_id.is_not(None),
-            UserRole.role_id.in_(_data_role_ids()),
-        )
-    )
-    site_ids.update(row[0] for row in scoped_result.all())
+    site_ids: set[int] = {sid for sid in grant_sites if sid is not None}
 
     # سایت‌های واحدهایی که کاربر سرپرستشان است
     supervised_result = await db.execute(
@@ -133,14 +117,9 @@ async def get_sites_with_permission(db: AsyncSession, user: User, permission_cod
     if user.is_superuser:
         return None
 
-    # site_id همه انتصاب‌های نقشی که این Permission را دارند (None = انتصاب سراسری)
-    stmt = (
-        select(UserRole.site_id)
-        .join(Role, Role.id == UserRole.role_id)
-        .join(RolePermission, RolePermission.role_id == Role.id)
-        .join(Permission, Permission.id == RolePermission.permission_id)
-        .where(UserRole.user_id == user.id, Permission.code == permission_code)
-    )
+    # site_id همه‌ی اعطاهای این Permission (نقش یا مستقیم؛ None = سراسری)
+    g = grants_subquery()
+    stmt = select(g.c.site_id).where(g.c.user_id == user.id, g.c.code == permission_code)
     result = await db.execute(stmt)
     site_ids_raw = [row[0] for row in result.all()]
 
@@ -169,14 +148,9 @@ async def get_sites_with_permission_prefix(db: AsyncSession, user: User, code_pr
     if user.is_superuser:
         return {}
 
-    # همه جفت‌های (کد Permission، site_id) کاربر برای کدهای با این پیشوند
-    stmt = (
-        select(Permission.code, UserRole.site_id)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(Role, Role.id == RolePermission.role_id)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(UserRole.user_id == user.id, Permission.code.like(f"{code_prefix}%"))
-    )
+    # همه جفت‌های (کد Permission، site_id) کاربر برای کدهای با این پیشوند (نقش یا مجوز مستقیم)
+    g = grants_subquery()
+    stmt = select(g.c.code, g.c.site_id).where(g.c.user_id == user.id, g.c.code.like(f"{code_prefix}%"))
     result = await db.execute(stmt)
 
     # تجمیع: انتصاب سراسری (None) بر مجموعه سایت‌ها غلبه می‌کند

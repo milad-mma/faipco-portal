@@ -10,13 +10,13 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
-  TextField,
   Typography,
 } from "@mui/material";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import { changePasswordRequest } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
+import PasswordField from "./PasswordField";
 
 const MIN_LENGTH = 10; // حداقل طول رمز عبور جدید
 
@@ -42,6 +42,7 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNew, setShowNew] = useState(false); // نمایش رمز جدید و تکرارش با یک دکمه
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -126,24 +127,25 @@ export default function ChangePasswordDialog({ open, onClose, mandatory = false 
                 که برای ورود استفاده می‌کنید را وارد کنید.
               </Alert>
             )}
-            <TextField
+            <PasswordField
               label="رمز عبور فعلی"
-              type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               fullWidth
               autoFocus
             />
-            <TextField
+            <PasswordField
               label="رمز عبور جدید"
-              type="password"
+              show={showNew}
+              onToggle={() => setShowNew((v) => !v)}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               fullWidth
             />
-            <TextField
+            <PasswordField
               label="تکرار رمز عبور جدید"
-              type="password"
+              show={showNew}
+              hideToggle
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               fullWidth

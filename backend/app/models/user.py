@@ -5,6 +5,8 @@
 - Permission: مجوز اتمی (مثلاً "employees.view").
 - UserRole: انتساب نقش به کاربر، با site_id اختیاری برای محدود کردن نقش به یک سایت (site_id خالی = نقش سراسری).
 - RolePermission: مجوزهای هر نقش.
+- UserPermission (Migration 106): مجوز مستقیم به یک کاربر، بدون نقش، با site_id اختیاری (خالی = همه‌ی سایت‌ها).
+  فقط «اضافه» می‌کند؛ منع وجود ندارد. در همه‌ی بررسی‌های مجوز کنار نقش‌ها حساب می‌شود (core/permission_grants.py).
 """
 from __future__ import annotations
 
@@ -114,3 +116,20 @@ class UserRole(Base):
 
     user: Mapped["User"] = relationship(back_populates="roles")
     role: Mapped["Role"] = relationship()
+
+
+class UserPermission(Base, TimestampMixin):
+    """
+    مجوز مستقیم کاربر (جدول user_permissions؛ Migration 106) — استثنای خارج از نقش‌ها.
+    site_id خالی = برای همه‌ی سایت‌ها. برای یک مجوز می‌تواند چند ردیف (چند سایت) وجود داشته باشد.
+    """
+    __tablename__ = "user_permissions"
+    __table_args__ = (UniqueConstraint("user_id", "permission_id", "site_id", name="uq_user_permission_site"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    permission_id: Mapped[int] = mapped_column(ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True)
+    granted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    permission: Mapped["Permission"] = relationship()

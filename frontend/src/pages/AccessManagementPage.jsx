@@ -20,6 +20,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
@@ -180,13 +181,14 @@ export default function AccessManagementPage() {
                 <TableCell>نام و نام خانوادگی</TableCell>
                 <TableCell>سایت</TableCell>
                 <TableCell>نقش‌ها</TableCell>
+                <TableCell>مجوزهای مستقیم</TableCell>
                 <TableCell>سرپرست کدام واحدها</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {overview === null ? (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
                       <CircularProgress size={24} />
                     </Box>
@@ -196,9 +198,9 @@ export default function AccessManagementPage() {
                 <>
                   {overview.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5}>
+                      <TableCell colSpan={6}>
                         <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
-                          هنوز هیچ‌کس نقش سازمانی یا سرپرستی واحدی ندارد.
+                          هنوز هیچ‌کس نقش سازمانی، مجوز مستقیم یا سرپرستی واحدی ندارد.
                         </Typography>
                       </TableCell>
                     </TableRow>
@@ -233,6 +235,26 @@ export default function AccessManagementPage() {
                     </Stack>
                   </TableCell>
                   <TableCell>
+                    {/* مجوزهای خارج از نقش (استثناها) — چیپ متمایز تا گم نشوند */}
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      {(entry.direct_permissions || []).length === 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                      {(entry.direct_permissions || []).map((p, i) => (
+                        <Tooltip key={i} title={p.description || ""} arrow>
+                          <Chip
+                            size="small"
+                            color="secondary"
+                            variant="outlined"
+                            label={p.code + (p.site_name ? ` — ${p.site_name}` : " (همه‌ی سایت‌ها)")}
+                          />
+                        </Tooltip>
+                      ))}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
                     <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                       {entry.supervised_departments.length === 0 && (
                         <Typography variant="caption" color="text.secondary">
@@ -257,6 +279,7 @@ export default function AccessManagementPage() {
       <AssignAccessDialog
         employee={accessEmployee}
         sites={mySiteIds === null || mySiteIds === undefined ? sites : sites.filter((s) => mySiteIds.includes(s.id))}
+        allSites={sites}
         onClose={closeAccessDialog}
       />
     </Box>

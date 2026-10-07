@@ -90,15 +90,59 @@ class AccessOverviewDepartment(BaseModel):
     site_name: str
 
 
+class AccessOverviewDirectPermission(BaseModel):
+    """یک مجوز مستقیم در ردیف AccessOverviewEntry (Migration 106)."""
+    code: str
+    description: str | None
+    site_name: str | None  # None یعنی همه‌ی سایت‌ها
+
+
 class AccessOverviewEntry(BaseModel):
-    """یک ردیف از پاسخ GET /users/access-overview: پرسنل با نقش‌ها و واحدهای تحت سرپرستی‌اش."""
+    """یک ردیف از پاسخ GET /users/access-overview: پرسنل با نقش‌ها، مجوزهای مستقیم و واحدهای تحت سرپرستی‌اش."""
     employee_id: int
     first_name: str
     last_name: str
     personnel_code: str
     site_name: str
     roles: list[AccessOverviewRole]
+    direct_permissions: list[AccessOverviewDirectPermission] = []
     supervised_departments: list[AccessOverviewDepartment]
+
+
+# ---------- مجوزهای مستقیم کاربر (Migration 106) ----------
+
+
+class DirectPermissionGrantIn(BaseModel):
+    """یک مجوز مستقیم در بدنه‌ی PUT /employees/{id}/permissions: site_ids=None یعنی همه‌ی سایت‌ها."""
+    permission_id: int
+    site_ids: list[int] | None = None
+
+
+class DirectPermissionsIn(BaseModel):
+    """بدنه‌ی PUT /employees/{id}/permissions: مجموعه‌ی کامل مجوزهای مستقیم (جایگزین مجموعه‌ی قبلی)."""
+    grants: list[DirectPermissionGrantIn] = Field(default_factory=list, max_length=500)
+
+
+class DirectPermissionOut(BaseModel):
+    """یک مجوز مستقیم فعلی: برای هر مجوز، سایت‌ها (None = همه)."""
+    permission_id: int
+    code: str
+    description: str | None
+    site_ids: list[int] | None
+
+
+class InheritedPermissionOut(BaseModel):
+    """مجوزی که از نقش می‌رسد (فقط نمایش؛ از همین صفحه قابل برداشتن نیست)."""
+    code: str
+    role_name: str
+    site_id: int | None  # None یعنی نقش سراسری
+
+
+class EmployeePermissionsOut(BaseModel):
+    """پاسخ GET/PUT /employees/{id}/permissions. allowed_site_ids: سایت‌های users.manage فراخوان (None = نامحدود)."""
+    direct: list[DirectPermissionOut]
+    inherited: list[InheritedPermissionOut]
+    allowed_site_ids: list[int] | None = None
 
 
 class SiteTransferRole(BaseModel):

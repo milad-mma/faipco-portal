@@ -10,6 +10,7 @@ import { Alert, Box, Button, Link, TextField, ToggleButton, ToggleButtonGroup, T
 import { forgotPasswordRequest, resetPasswordRequest, verifyResetCodeRequest } from "../api/auth";
 import AuthPageShell from "../components/AuthPageShell";
 import CaptchaField from "../components/CaptchaField";
+import PasswordField from "../components/PasswordField";
 
 // ثانیه باقی‌مانده را می‌گیرد و رشته «MM:SS» برای شمارش معکوس برمی‌گرداند
 function formatCountdown(totalSeconds) {
@@ -61,6 +62,7 @@ export default function ForgotPasswordPage() {
   const [smsCode, setSmsCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // نمایش رمز (مثل صفحه‌ی ورود)؛ برای هر دو فیلد
 
   // شمارش معکوس: وقتی remainingSeconds مقدار گرفت، هر ثانیه یکی کم می‌کند تا به صفر برسد؛
   // وابستگی فقط «null بودن یا نبودن» است تا تایمر با هر تیک از نو ساخته نشود
@@ -261,9 +263,10 @@ export default function ForgotPasswordPage() {
           <Typography variant="body2" color="text.secondary">
             کد تأیید با موفقیت پذیرفته شد. رمز عبور جدید خود را وارد نمایید.
           </Typography>
-          <TextField
+          <PasswordField
             label="رمز عبور جدید"
-            type="password"
+            show={showPassword}
+            onToggle={() => setShowPassword((v) => !v)}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -271,9 +274,10 @@ export default function ForgotPasswordPage() {
             fullWidth
             inputProps={{ minLength: 6 }}
           />
-          <TextField
+          <PasswordField
             label="تکرار رمز عبور جدید"
-            type="password"
+            show={showPassword}
+            hideToggle
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required

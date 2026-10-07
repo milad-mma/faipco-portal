@@ -127,6 +127,27 @@ Admin واقعی (`is_superuser`) در همه این ابزارها بدون ه�
 - غیر-Admin فقط برای سایت/واحد/پرسنلِ داخل سایت‌های `users.manage` خودش.
 - پاسخ: `assigned_count`، `already_had_count`، `not_found_count`، `total_matched`.
 
+## مجوز مستقیم کاربر (Migration 106)
+
+کنار نقش‌ها، می‌توان به یک نفر مجوزهای جداگانه داد — برای **استثناها**، نه به‌جای نقش (ردیابی و حسابرسی با نقش
+ساده‌تر است). فقط «اضافه» می‌کند؛ «منع» وجود ندارد.
+
+- **جدول `user_permissions`:** کاربر، مجوز، `site_id` (خالی = همه‌ی سایت‌ها، شامل سایت‌های آینده؛ هر سایت یک ردیف)،
+  `granted_by_user_id`. انتخاب همه‌ی سایت‌های موجود به یک ردیف سراسری تبدیل می‌شود.
+- **منبع واحد بررسی مجوز:** `core/permission_grants.py` — `grants_subquery()` اتحاد (user_id, code, site_id) از دو
+  مسیر نقش و مستقیم. `require_permission`، `get_sites_with_permission[_prefix]`، `get_accessible_site_ids`،
+  فلگ‌های منوی `get_me`، گیرندگان اعلان بازخورد و هشدار ورود همه از همین استفاده می‌کنند. **هر بررسی مجوز تازه باید از
+  همین زیرکوئری بگذرد، نه join مستقیم به `user_roles`.**
+- **UI:** «مدیریت دسترسی» ← دیالوگ دسترسی پرسنل ← تب «مجوزهای مستقیم» (`DirectPermissionsTab`): همان درخت
+  مجوزهای صفحه‌ی نقش‌ها، تیک هر مجوز + چیپ سایت (پیش‌فرض «همه‌ی سایت‌ها»؛ چندانتخابی)، تیک گروه با سایت انتخابی گروه،
+  مجوزهای ارث‌رسیده از نقش خاکستری با برچسب «از نقش …» (قابل برداشتن از این‌جا نیستند)، فیلتر «فقط مستقیم‌ها» و
+  جست‌وجو. ذخیره یک‌جا. جدول «نمای کلی دسترسی‌ها» ستون «مجوزهای مستقیم» دارد.
+- **API:** `GET/PUT /employees/{id}/permissions` (مجوز `users.manage` برای سایت پرسنل). PUT مجموعه‌ی کامل را
+  جایگزین می‌کند: `{"grants": [{"permission_id": 5, "site_ids": null}, {"permission_id": 7, "site_ids": [2]}]}`.
+- **ضد ارتقای سطح دسترسی (مثل نقش‌ها):** غیر-superuser نمی‌تواند به خودش بدهد، مجوز `system.*` بدهد، مجوزی که خودش
+  برای همان محدوده ندارد بدهد، یا برای سایت خارج از `users.manage` خودش؛ ردیف‌های سایت‌های خارج از اختیارش
+  دست‌نخورده می‌مانند.
+
 ## فهرست کامل Permission ها
 
 دو منبع دارند:
@@ -166,7 +187,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `notices.attachments` | 103 | `can_attach_notice_files` | پیوست تصویر/PDF به اطلاعیه‌ی متنی — برای همه‌ی سایت‌های مخاطب (مقصد «همه»/نقش → مجوز همه‌ی سایت‌ها) |
 | `notices.site_report` | 035 | `can_view_site_notice_report` | «گزارش اطلاعیه‌ها» (`/notices/site-report`) — سایت‌محور |
 | `roles.manage` | Seed | `can_manage_roles` | منوی «مدیریت نقش/مجوز» + `GET /users/roles` |
-| `users.manage` | Seed | `can_manage_users` | «مدیریت دسترسی»، انتصاب تکی/دسته‌جمعی نقش، `/users/permissions` و CRUD `/users/role-catalog`، سرپرست واحد، تعیین/حذف رمز پرسنل، پاک‌سازی پرسنل غیرفعالِ بی‌سابقه — سایت‌محور |
+| `users.manage` | Seed | `can_manage_users` | «مدیریت دسترسی»، انتصاب تکی/دسته‌جمعی نقش، مجوزهای مستقیم (`/employees/{id}/permissions`)، `/users/permissions` و CRUD `/users/role-catalog`، سرپرست واحد، تعیین/حذف رمز پرسنل، پاک‌سازی پرسنل غیرفعالِ بی‌سابقه — سایت‌محور |
 | `system.backup` | Seed | `can_manage_backup` | پشتیبان‌گیری/بازیابی، آمار مصرف/سرور، `check-update`/`apply-update`/`update-status` |
 | `system.cache_bust` | Seed | `can_bust_cache` | `POST /system/cache-bust` |
 | `system.ip_allowlist` | Seed | `can_manage_ip_allowlist` | «رنج‌های IP مجاز» + متن پیام مسدودی |

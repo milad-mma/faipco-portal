@@ -12,6 +12,8 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -20,17 +22,18 @@ import { assignRoleToEmployee, fetchEmployeeRoles, fetchSupervisedDepartments } 
 import { fetchRoles, removeRoleAssignment } from "../api/users";
 import { assignDepartmentSupervisor, fetchDepartments } from "../api/departments";
 import { roleDisplayName } from "../utils/roleLabels";
+import DirectPermissionsTab from "./DirectPermissionsTab";
 
 /**
  * دیالوگ مدیریت دسترسی یک پرسنل: نقش‌های سازمانی (به تفکیک سایت) و سرپرستی واحدها.
  * ورودی: employee (پرسنل انتخاب‌شده؛ null = دیالوگ بسته)، sites (فهرست سایت‌ها) و onClose.
- * خروجی: Dialog شامل فهرست نقش‌های فعلی با امکان حذف، فرم اختصاص نقش جدید برای یک یا چند سایت،
- * و فهرست چک‌باکس واحدهای سازمانی برای تعیین سرپرستی.
+ * خروجی: Dialog با دو تب: «نقش‌ها و سرپرستی» (فهرست نقش‌های فعلی با امکان حذف، فرم اختصاص نقش جدید برای یک یا
+ * چند سایت، چک‌باکس واحدهای سازمانی برای سرپرستی) و «مجوزهای مستقیم» (DirectPermissionsTab؛ Migration 106).
  */
 // مقدار ویژه‌ی گزینه‌ی «همه‌ی سایت‌ها» در انتخاب چندگانه (شناسه‌ی سایت‌ها عددی‌اند و تداخلی ندارد)
 const ALL_SITES = "__all__";
 
-export default function AssignAccessDialog({ employee, sites, onClose }) {
+export default function AssignAccessDialog({ employee, sites, allSites, onClose }) {
   const [roles, setRoles] = useState([]); // همه‌ی نقش‌های تعریف‌شده
   const [employeeRoles, setEmployeeRoles] = useState([]); // انتصاب‌های نقش این پرسنل (هر ردیف: role_id + site_id)
   const [allDepartments, setAllDepartments] = useState([]);
@@ -41,12 +44,14 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [tab, setTab] = useState(0); // 0 = نقش‌ها و سرپرستی، 1 = مجوزهای مستقیم
 
   // با تغییر پرسنل، پیام‌ها پاک و نقش‌ها، انتصاب‌ها، واحدها و سرپرستی‌ها از سرور بارگذاری می‌شوند
   useEffect(() => {
     if (!employee) return;
     setError("");
     setSuccess("");
+    setTab(0);
     fetchRoles().then(setRoles);
     fetchEmployeeRoles(employee.id).then(setEmployeeRoles);
     fetchDepartments().then(setAllDepartments);
@@ -101,7 +106,7 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
   }
 
   return (
-    <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="sm">
       {/* عنوان: نام، کد پرسنلی و سایت پرسنل */}
       <DialogTitle>
         دسترسی — {employee.first_name} {employee.last_name}
@@ -109,7 +114,16 @@ export default function AssignAccessDialog({ employee, sites, onClose }) {
           کد پرسنلی: {employee.personnel_code} · سایت: {siteLabel(employee.site_id)}
         </Typography>
       </DialogTitle>
-      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth" sx={{ px: 2, borderBottom: 1, borderColor: "divider" }}>
+        <Tab label="نقش‌ها و سرپرستی" />
+        <Tab label="مجوزهای مستقیم" />
+      </Tabs>
+      {tab === 1 && (
+        <DialogContent sx={{ pt: 2 }}>
+          <DirectPermissionsTab employee={employee} sites={sites} allSites={allSites || sites} />
+        </DialogContent>
+      )}
+      <DialogContent sx={{ display: tab === 0 ? "flex" : "none", flexDirection: "column", gap: 2, pt: 1 }}>
         {/* نقش‌های سازمانی فعلی؛ انتصاب بدون site_id به‌صورت «سراسری — قدیمی» نمایش داده می‌شود */}
         <Stack spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>

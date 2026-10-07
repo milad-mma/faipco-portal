@@ -4,11 +4,10 @@
  */
 import { useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
-import { Alert, Box, Button, IconButton, InputAdornment, Link, TextField, Typography } from "@mui/material";
-import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
-import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import { Alert, Box, Button, Link, Typography } from "@mui/material";
 import { resetPasswordRequest } from "../api/auth";
 import AuthPageShell from "../components/AuthPageShell";
+import PasswordField from "../components/PasswordField";
 
 /**
  * بازنشانی رمز عبور از طریق لینک ایمیل - توکن از querystring خوانده
@@ -73,38 +72,21 @@ export default function ResetPasswordPage() {
         </Box>
       ) : (
         <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <TextField
+          <PasswordField
             label="رمز عبور جدید"
-            type={showPassword ? "text" : "password"}
+            show={showPassword}
+            onToggle={() => setShowPassword((v) => !v)}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
             autoFocus
             fullWidth
             inputProps={{ minLength: 6 }}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    size="small"
-                    edge="end"
-                    onClick={() => setShowPassword((v) => !v)}
-                    aria-label="نمایش رمز عبور"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? (
-                      <VisibilityOffOutlinedIcon fontSize="small" />
-                    ) : (
-                      <VisibilityOutlinedIcon fontSize="small" />
-                    )}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
           />
-          <TextField
+          <PasswordField
             label="تکرار رمز عبور جدید"
-            type={showPassword ? "text" : "password"}
+            show={showPassword}
+            hideToggle
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
