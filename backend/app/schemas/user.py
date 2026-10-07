@@ -41,6 +41,7 @@ class UserOut(BaseModel):
     has_monthly_attendance: bool = False  # آیا سایت خودِ این پرسنل نگاشت تردد دستگاهی تنظیم‌شده دارد
     # گزارش ورود/خروج، «پرسنل آنلاین / آنلاین در محیط کار» و افزودن/ویرایش/حذف دستی رکورد (attendance.manage_clock_records)
     can_manage_clock_records: bool = False
+    can_view_error_logs: bool = False  # system.logs — «گزارش خطاها»
     can_view_site_notice_report: bool = False  # آیا site_manager سایتی است (برای «گزارش اطلاعیه‌های سایت من»)
     can_view_vehicles_report: bool = False  # آیا Admin یا نقش «حراست» است (برای «گزارش خودروهای پرسنل»)
     # فلگ‌های منوهای مدیریتی: اگر کاربر (Admin یا هر نقشی) مجوز متناظر را داشته باشد، منوی مربوط نمایش داده می‌شود

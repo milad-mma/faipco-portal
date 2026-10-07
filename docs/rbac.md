@@ -170,6 +170,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `system.backup` | Seed | `can_manage_backup` | پشتیبان‌گیری/بازیابی، آمار مصرف/سرور، `check-update`/`apply-update`/`update-status` |
 | `system.cache_bust` | Seed | `can_bust_cache` | `POST /system/cache-bust` |
 | `system.ip_allowlist` | Seed | `can_manage_ip_allowlist` | «رنج‌های IP مجاز» + متن پیام مسدودی |
+| `system.logs` | 105 | `can_view_error_logs` | «گزارش خطاها»: دیدن، حل‌شده کردن، تنظیم هشدار ایمیلی — [`error-logs.md`](error-logs.md) |
 | `system.settings` | 034 | `can_manage_system_settings` | «تنظیمات سامانه»: پس‌زمینه ورود، برندینگ/لوگو، SMTP، پیامک |
 | `attendance.manage_clock_records` | Seed | `can_manage_clock_records` | «گزارش ورود و خروج»، «پرسنل آنلاین / آنلاین در محیط کار» و افزودن/ویرایش/حذف دستی رکورد — سایت‌محور. Migration 104: `attendance.view_logs` و `attendance.view_clock_records` در این ادغام و `attendance.clock_in_out` حذف شد |
 | `hr.birthday_messages` | Seed | `can_manage_birthday_messages` | «پیام‌های تبریک تولد» (`/hr/birthday-*`) |

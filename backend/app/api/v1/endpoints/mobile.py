@@ -40,6 +40,7 @@ from app.schemas.mobile import (
     DeviceOut,
     DeviceRegisterIn,
     DeviceStatusIn,
+    AppErrorsIn,
     ConnectivityEventsIn,
     ExemptionIn,
     GeofenceEventsIn,
@@ -112,6 +113,28 @@ async def device_events(
     زمان هر رویداد از «کرنومتر» گوشی (elapsed_ms / now_elapsed_ms) و ساعت سرور حساب می‌شود، نه ساعت گوشی.
     """
     return {"results": await svc.process_geofence_events(db, device, payload)}
+
+
+@router.post("/device/errors")
+async def device_errors(
+    payload: AppErrorsIn,
+    request: Request,
+    device: MobileDevice = Depends(current_device),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    خطاهای بخش بومی اپ (کرش، خطای ثبت محدوده‌ها، کارهای پس‌زمینه) برای «گزارش خطاها». مثل بقیه‌ی این روتر فقط وقتی
+    قابلیت اپ اندروید روشن است (وگرنه 404 و اپ چیزی نمی‌فرستد). خروجی: {received}.
+    """
+    from app.services import error_log_service
+
+    user = await db.get(User, device.user_id)
+    user_ref = (user.id, user.username) if user else None
+    label = " ".join(x for x in (device.manufacturer, device.model) if x) or f"گوشی {device.id}"
+    ip = get_client_ip(request)
+    for err in payload.errors:
+        error_log_service.record_android_error(err.model_dump(), user_ref, label, ip)
+    return {"received": len(payload.errors)}
 
 
 @router.post("/device/connectivity")

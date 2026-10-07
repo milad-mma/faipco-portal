@@ -26,9 +26,13 @@ import MandatoryPasswordChangeGuard from "./components/MandatoryPasswordChangeGu
 import OfflineBanner from "./components/OfflineBanner";
 import App from "./App";
 import { detectAndroidApp } from "./utils/androidApp";
+import { installGlobalErrorReporting } from "./utils/errorReporter";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 
 // اجرای داخل اپ اندروید (TWA) قبل از هر درخواست تشخیص داده می‌شود
 detectAndroidApp();
+// خطاهای JavaScript مرورگر به «گزارش خطاها» فرستاده می‌شوند
+installGlobalErrorReporting();
 
 registerServiceWorker(); // ثبت Service Worker برای Precache و Push
 
@@ -41,7 +45,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <BrandingProvider>
             <BrowserRouter>
               <AuthProvider>
-                <App />
+                <AppErrorBoundary>
+                  <App />
+                </AppErrorBoundary>
                 {/* اعلان نسخه‌ی جدید، الزام تغییر رمز و بنر آفلاین در سطح ریشه (نه داخل Layout) تا در صفحه‌ی ورود هم دیده شوند */}
                 <UpdatePrompt />
                 <MandatoryPasswordChangeGuard />

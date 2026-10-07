@@ -86,7 +86,12 @@ async def upsert_mapping(
 ):
     """ساخت یا به‌روزرسانی نگاشت کاراوب سایت (اولین ساخت، نوع‌های پیش‌فرض را هم می‌سازد). مجوز: sites.manage."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
-    return await LeaveRequestStructureService(db).upsert_mapping(site_id, payload.model_dump())
+    # نگاشت موجود: فقط فیلدهای ارسال‌شده تغییر می‌کنند (فیلدی که در فرم نیست به پیش‌فرض برنمی‌گردد؛ مثلاً جدول کارت‌ها
+    # که پیش‌فرض اسکیما «Cards» است و نام واقعی آن در کاراوب WF_Cards). نگاشت تازه: همه‌ی فیلدها با پیش‌فرض‌ها
+    service = LeaveRequestStructureService(db)
+    existing = await service.get_mapping(site_id)
+    data = payload.model_dump(exclude_unset=True) if existing is not None else payload.model_dump()
+    return await service.upsert_mapping(site_id, data)
 
 
 @router.delete("/sites/{site_id}/mapping", status_code=status.HTTP_204_NO_CONTENT)

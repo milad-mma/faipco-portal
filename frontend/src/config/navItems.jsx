@@ -28,6 +28,7 @@ import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
 import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
 import DnsOutlinedIcon from "@mui/icons-material/DnsOutlined";
+import BugReportOutlinedIcon from "@mui/icons-material/BugReportOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 
@@ -238,7 +239,7 @@ export const NAV_ITEMS = [
       { label: "امنیت ورود", path: "/login-security", icon: <GppMaybeOutlinedIcon />, check: (u) => u?.can_manage_login_security },
     ],
   },
-  // گروه سامانه: سایت‌ها، همگام‌سازی، تنظیمات، پشتیبان‌گیری و به‌روزرسانی
+  // گروه سامانه: سایت‌ها، همگام‌سازی، تنظیمات، پشتیبان‌گیری، گزارش خطاها و به‌روزرسانی
   {
     label: "سامانه",
     path: "/sites",
@@ -264,6 +265,7 @@ export const NAV_ITEMS = [
         icon: <CloudDownloadOutlinedIcon />,
         check: (u) => u?.can_manage_backup || u?.can_bust_cache,
       },
+      { label: "گزارش خطاها", path: "/error-logs", icon: <BugReportOutlinedIcon />, check: (u) => u?.can_view_error_logs },
       { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
     ],
   },

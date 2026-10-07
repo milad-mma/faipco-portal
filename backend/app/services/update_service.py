@@ -242,13 +242,15 @@ def get_update_status() -> dict:
 
     # آیا Unit موقت faipco-update هنوز در حال اجراست
     is_unit_active = False
+    unit_state = ""  # خالی = وضعیت معلوم نشد
     try:
         result = subprocess.run(
             ["systemctl", "is-active", "faipco-update"],
             capture_output=True,
             timeout=5,
         )
-        is_unit_active = result.stdout.decode().strip() == "active"
+        unit_state = result.stdout.decode().strip()
+        is_unit_active = unit_state in ("active", "activating", "reloading")
     except Exception:
         pass
 
@@ -256,9 +258,17 @@ def get_update_status() -> dict:
     is_finished = "updated successfully" in log_content or "installed successfully" in log_content
     is_failed = "Install failed at line" in log_content
 
+    # فرآیند آپدیت تمام شده (Unit دیگر فعال نیست) ولی پیام نهایی در لاگ نیست: install.sh قدیمی که خروجی‌اش از tee
+    # می‌گذشت و systemd با پایان اسکریپت tee را پیش از نوشتن آخرین خطوط می‌بست. پاسخ دادن همین سرویس یعنی بالا آمده؛
+    # نتیجه «نامشخص» گزارش می‌شود تا پنل بی‌پایان روی «در حال آپدیت» نماند
+    is_unknown = (
+        bool(log_content) and not is_finished and not is_failed and unit_state in ("inactive", "failed", "unknown")
+    )
+
     return {
         "log": log_content,
-        "is_running": is_unit_active or (bool(log_content) and not is_finished and not is_failed),
+        "is_running": is_unit_active or (bool(log_content) and not is_finished and not is_failed and not is_unknown),
         "is_finished": is_finished,
         "is_failed": is_failed,
+        "is_unknown": is_unknown,
     }

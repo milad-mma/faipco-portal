@@ -7,6 +7,7 @@ main.py این روتر را زیر API_V1_PREFIX سوار می‌کند.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    error_logs,
     access_gate,
     announcement,
     attendance,
@@ -77,3 +78,4 @@ api_router.include_router(leave_requests_admin.router, prefix="/leave-requests",
 # دروازه دسترسی (IP/سایت) و اعلان عمومی
 api_router.include_router(access_gate.router, prefix="/access-gate", tags=["access-gate"])
 api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])
+api_router.include_router(error_logs.router, prefix="/error-logs", tags=["error-logs"])

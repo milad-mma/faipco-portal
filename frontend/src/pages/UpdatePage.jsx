@@ -75,6 +75,16 @@ export default function UpdatePage() {
         setIsUpdating(false);
         return;
       }
+      if (status.is_unknown) {
+        // فرآیند تمام شده و سرویس جواب می‌دهد، ولی پیام نهایی در لاگ ثبت نشده (نسخه‌ی قدیمی install.sh)
+        setUpdateResult({
+          success: true,
+          message: "فرآیند آپدیت تمام شد و سرویس بالا است، ولی پیام نهایی در لاگ ثبت نشد. صفحه بازخوانی می‌شود؛ نسخه را بررسی کنید.",
+        });
+        setIsUpdating(false);
+        setTimeout(() => window.location.reload(), 4000);
+        return;
+      }
       setTimeout(() => pollUpdateStatus(attemptsLeft - 1), POLL_INTERVAL_MS);
     } catch {
       // در زمان Stop/Start سرویس، درخواست موقتاً پاسخ نمی‌گیرد؛ بدون نمایش خطا دوباره تلاش می‌شود

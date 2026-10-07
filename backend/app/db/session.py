@@ -19,6 +19,8 @@ engine = create_async_engine(
     pool_pre_ping=True,  # از قطع شدن Connection بی‌صدا جلوگیری می‌کند
     pool_size=10,  # تعداد Connectionهای ثابت Pool
     max_overflow=20,  # حداکثر Connection اضافه در بار زیاد
+    # مقادیر پارامترهای کوئری در متن خطاها چاپ نمی‌شوند (رمز هش‌شده، توکن، کد ملی در «گزارش خطاها» و journalctl نیایند)
+    hide_parameters=not settings.DEBUG,
 )
 
 # کارخانه ساخت Session؛ در Endpointها (از طریق get_db) و Jobهای Scheduler استفاده می‌شود

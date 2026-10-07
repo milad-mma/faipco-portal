@@ -106,6 +106,10 @@ on_error() {
   local line_no=$1
   err "Install failed at line ${line_no} (exit code: ${exit_code})."
   err "For full details: cat ${LOG_FILE}"
+  # مستقیم در لاگ (نه از طریق tee): وقتی از پنل (systemd-run) اجرا می‌شود، با تمام شدن اسکریپت systemd فرآیند tee را
+  # هم می‌بندد و ممکن است آخرین خطوط هرگز در لاگ نوشته نشوند؛ پنل با همین پیام شکست را تشخیص می‌دهد
+  printf '\n[FAIPCO-RESULT] Install failed at line %s (exit code: %s).\n' "$line_no" "$exit_code" >> "$LOG_FILE" 2>/dev/null || true
+  sleep 1
   exit "$exit_code"
 }
 trap 'on_error $LINENO' ERR
@@ -536,6 +540,12 @@ map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
 }
+
+# لاگ دسترسی با «مدت پاسخ» (rt= ثانیه؛ urt= سهم بک‌اند) و کد پیگیری (rid=) — برای پیدا کردن درخواست‌های کند:
+#   sudo grep -E 'rt=([3-9]|[1-9][0-9])\.' /var/log/nginx/access.log
+log_format faipco_timed '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent '
+                        '"$http_referer" "$http_user_agent" rid=$upstream_http_x_request_id '
+                        'urt=$upstream_response_time rt=$request_time';
 EOF
 
   # این دو رشته را یک‌بار این‌جا تعریف می‌کنیم و پایین‌تر (هم سطح server هم
@@ -555,6 +565,9 @@ EOF
   # manifest.json (هر دو حیاتی برای نصب PWA روی اندروید) هرگز به‌خاطر یک
   # رفتار غیرمنتظره Fallback در نسخه‌های قدیمی‌تر مرورگر بلاک نشوند.
   csp_header="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+  # Service Worker آیکون اعلان را به‌صورت data: می‌دهد (تا بدون شبکه هم لوگو، نه زنگوله‌ی پیش‌فرض، نمایش داده شود)؛
+  # CSP خودِ sw.js باید data: را برای تصویر مجاز کند. فقط روی همین فایل (صفحه‌ها بدون تغییر).
+  sw_csp_header="$(printf '%s' "$csp_header" | sed "s/img-src 'self' blob:;/img-src 'self' blob: data:;/")"
 
   # Permissions-Policy: این پروژه فقط از Geolocation استفاده می‌کند (حضور
   # GPS) — همه قابلیت‌های دیگر (دوربین، میکروفون، USB، پرداخت و...) که
@@ -570,6 +583,9 @@ server {
     # نسخه دقیق Nginx را توی هدر Server مخفی می‌کند — کمک کوچکی به Attacker
     # که نداند دقیقاً کدام نسخه/آسیب‌پذیری‌های شناخته‌شده را امتحان کند.
     server_tokens off;
+
+    # لاگ دسترسی با مدت پاسخ هر درخواست (قالب faipco_timed در conf.d/faipco-websocket-map.conf)
+    access_log /var/log/nginx/access.log faipco_timed;
 
     # هدرهای امنیتی پایه — برای همه پاسخ‌ها (چه فایل‌های فرانت‌اند، چه API).
     # Strict-Transport-Security این‌جا (روی HTTP ساده) اثری روی همین لایه
@@ -628,7 +644,7 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "${csp_header}" always;
+        add_header Content-Security-Policy "${sw_csp_header}" always;
         add_header Permissions-Policy "${permissions_policy_header}" always;
         try_files \$uri =404;
     }
@@ -755,6 +771,19 @@ configure_firewall() {
     log "Restricting ports 80/443 to only the reverse proxy IP (${REVERSE_PROXY_IP})..."
     ufw allow from "$REVERSE_PROXY_IP" to any port 80 >/dev/null 2>&1 || true
     ufw allow from "$REVERSE_PROXY_IP" to any port 443 >/dev/null 2>&1 || true
+    # قانون‌های «باز برای همه» (از اجراهای قبلی بدون این گزینه) قانون‌های محدود بالا را بی‌اثر می‌کنند؛ برداشته می‌شوند
+    ufw delete allow 'Nginx Full' >/dev/null 2>&1 || true
+    ufw delete allow 'Nginx HTTP' >/dev/null 2>&1 || true
+    ufw delete allow 'Nginx HTTPS' >/dev/null 2>&1 || true
+    ufw delete allow 80 >/dev/null 2>&1 || true
+    ufw delete allow 443 >/dev/null 2>&1 || true
+    ufw delete allow 80/tcp >/dev/null 2>&1 || true
+    ufw delete allow 443/tcp >/dev/null 2>&1 || true
+  elif ufw status 2>/dev/null | grep -Eq '^(80|443)(/tcp)?[[:space:]]+ALLOW[[:space:]]+[0-9]'; then
+    # پورت‌ها قبلاً (دستی یا با اجرای قدیمی) فقط به یک IP محدود شده‌اند: دوباره برای همه باز نمی‌شوند
+    warn "Ports 80/443 are already restricted to specific IPs in UFW — leaving them as they are."
+    warn "Save the reverse proxy IP once so the backend trusts its X-Forwarded-For (real client IPs) and"
+    warn "future updates keep this rule:  sudo bash install.sh --reverse-proxy-ip <its-IP>"
   else
     warn "No --reverse-proxy-ip given — ports 80/443 remain open to the whole internet."
     warn "If you have an external SSL reverse proxy in front of this server, re-run with:"
@@ -850,6 +879,14 @@ main() {
   configure_firewall
 
   print_summary
+  # پیام نهایی مستقیم در لاگ (نه از طریق tee) تا پنل آپدیت حتماً پایان موفق را ببیند؛ و یک ثانیه فرصت به tee برای نوشتن
+  # بقیه‌ی خروجی، پیش از اینکه systemd با پایان اسکریپت آن را ببندد (علت گیر کردن پنل روی «در حال آپدیت»)
+  if [[ "$IS_UPDATE" == "true" ]]; then
+    printf '\n[FAIPCO-RESULT] FAIPCO Portal updated successfully\n' >> "$LOG_FILE" 2>/dev/null || true
+  else
+    printf '\n[FAIPCO-RESULT] FAIPCO Portal installed successfully\n' >> "$LOG_FILE" 2>/dev/null || true
+  fi
+  sleep 1
 }
 
 main "$@"

@@ -47,9 +47,17 @@ export default function SitesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deactivateDialogSite, setDeactivateDialogSite] = useState(null);  // سایتی که دیالوگ تأیید غیرفعال‌سازی‌اش باز است
 
-  // فهرست سایت‌ها را از سرور می‌گیرد
-  function loadSites() {
-    fetchSites().then(setSites);
+  const [loadError, setLoadError] = useState(false);  // دریافت فهرست ناموفق بود (به‌جای چرخیدن بی‌پایان)
+
+  // فهرست سایت‌ها را از سرور می‌گیرد؛ خطا یک‌بار خودکار و بعد با دکمه‌ی «تلاش دوباره»
+  function loadSites(retry = true) {
+    setLoadError(false);
+    fetchSites()
+      .then(setSites)
+      .catch(() => {
+        if (retry) setTimeout(() => loadSites(false), 2000);
+        else setLoadError(true);
+      });
   }
 
   // بارگذاری اولیه‌ی سایت‌ها
@@ -151,8 +159,17 @@ export default function SitesPage() {
       <Grid container spacing={2.5}>
         {sites === null ? (
           <Grid item xs={12}>
-            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-              <CircularProgress />
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, py: 6 }}>
+              {loadError ? (
+                <>
+                  <Alert severity="error">دریافت فهرست سایت‌ها با خطا مواجه شد.</Alert>
+                  <Button variant="outlined" onClick={() => loadSites()}>
+                    تلاش دوباره
+                  </Button>
+                </>
+              ) : (
+                <CircularProgress />
+              )}
             </Box>
           </Grid>
         ) : (

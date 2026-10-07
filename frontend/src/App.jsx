@@ -53,6 +53,7 @@ const SystemSettingsPage = lazyPage(() => import("./pages/SystemSettingsPage"));
 const BulkRoleAssignmentPage = lazyPage(() => import("./pages/BulkRoleAssignmentPage"));
 const BackupPage = lazyPage(() => import("./pages/BackupPage"));
 const UpdatePage = lazyPage(() => import("./pages/UpdatePage"));
+const ErrorLogsPage = lazyPage(() => import("./pages/ErrorLogsPage"));
 const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
 const LoginSecurityPage = lazyPage(() => import("./pages/LoginSecurityPage"));
 const MobileDevicesPage = lazyPage(() => import("./pages/MobileDevicesPage"));
@@ -112,6 +113,10 @@ export default function App() {
           {/* داشبورد مدیریتی و به‌روزرسانی فقط برای Admin؛ گزارش حضور برای دارندگان مجوز لاگ تردد */}
           <Route path="/" element={<AdminRoute><DashboardPage /></AdminRoute>} />
           <Route path="/update" element={<AdminRoute><UpdatePage /></AdminRoute>} />
+          <Route
+            path="/error-logs"
+            element={<PermissionRoute check={(u) => u?.can_view_error_logs}><ErrorLogsPage /></PermissionRoute>}
+          />
           <Route
             path="/presence-report"
             element={<PermissionRoute check={(u) => u?.can_manage_clock_records}><PresenceReportPage /></PermissionRoute>}

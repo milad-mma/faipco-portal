@@ -297,6 +297,7 @@ class AuthService:
         # کدام منو دیده شود، نه محدودسازی داده به یک سایت
         permission_codes = await self.repo.get_all_permission_codes(user.id)
         # گزارش ورود/خروج، «پرسنل آنلاین / آنلاین در محیط کار» و ویرایش دستی، همه با یک مجوز (Migration 104)
+        base.can_view_error_logs = user.is_superuser or "system.logs" in permission_codes
         base.can_manage_clock_records = user.is_superuser or "attendance.manage_clock_records" in permission_codes
         base.can_manage_birthday_messages = user.is_superuser or "hr.birthday_messages" in permission_codes
         base.can_manage_performance_structure = (

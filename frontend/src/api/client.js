@@ -6,6 +6,7 @@
 import axios from "axios";
 import { normalizeSearchText } from "../utils/searchText";
 import { isAndroidApp } from "../utils/androidApp";
+import { reportClientError } from "../utils/errorReporter";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
 
@@ -61,6 +62,23 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+
+    // درخواستی که اصلاً جواب نگرفت (قطع ارتباط، Timeout) — نه خطای HTTP — در «گزارش خطاها» ثبت می‌شود تا کندی/قطعی
+    // بین مرورگر و سرور دیده شود. وقتی خود مرورگر آفلاین است گزارش نمی‌شود (آن مشکل اینترنت کاربر است).
+    // درخواستی که با رفتن از صفحه / رفرش / رفتن اپ به پس‌زمینه قطع شد هم خطا نیست.
+    if (
+      !error.response &&
+      error.code !== "ERR_CANCELED" &&
+      error.message !== "Request aborted" &&
+      navigator.onLine !== false &&
+      document.visibilityState !== "hidden"
+    ) {
+      reportClientError({
+        type: "network",
+        message: `${error.code || "NETWORK"}: ${error.message}`,
+        api: `${(originalRequest?.method || "get").toUpperCase()} ${originalRequest?.url || ""}`,
+      });
+    }
 
     if (error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(error);

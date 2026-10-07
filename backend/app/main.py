@@ -5,13 +5,26 @@
 اجرا: uvicorn app.main:app --reload
 """
 import logging
+import secrets
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core import kara_pool
-from app.core.request_context import current_client_app, current_user_agent
+from app.core.ip_allowlist import get_client_ip
+from app.core.request_context import (
+    current_client_app,
+    current_client_ip,
+    current_request_id,
+    current_request_label,
+    current_user_agent,
+)
+from app.services import error_log_service
 
 from app.core.config import get_settings
 from app.core.scheduler import start_scheduler, stop_scheduler
@@ -19,6 +32,9 @@ from app.api.v1.router import api_router
 from app.services.usage_stats_service import flush_usage, record_usage
 
 settings = get_settings()
+
+# گزارش خطاها: هر logger.error/exception در هر جای برنامه در دیتابیس هم ثبت می‌شود (docs/error-logs.md)
+error_log_service.install_logging()
 
 
 async def sync_index_html_branding() -> None:
@@ -48,10 +64,12 @@ async def lifespan(app: FastAPI):
     چرخه عمر برنامه: در شروع برندینگ را همگام و Scheduler را استارت می‌کند؛ در پایان Scheduler را
     متوقف و شمارنده‌ی در حافظه‌ی «میزان استفاده» را (تا شمارش دقیقه‌ی آخر گم نشود) به دیتابیس می‌نویسد.
     """
+    error_log_service.start()
     await sync_index_html_branding()
     await start_scheduler()
     yield
     stop_scheduler()
+    await error_log_service.stop()
     await flush_usage()
     kara_pool.close_all()  # اتصال‌های بی‌کار کاراوب
 
@@ -100,11 +118,60 @@ async def request_context_middleware(request: Request, call_next):
 
     ua_token = current_user_agent.set(request.headers.get("user-agent", ""))
     app_token = current_client_app.set(request.headers.get("x-client-app", ""))
+    # گزارش خطاها: کد پیگیری کوتاه برای هر درخواست (در هدر X-Request-ID و در پیام خطاهای ۵xx)
+    request_id = secrets.token_hex(3).upper()
+    path = request.url.path
+    rid_token = current_request_id.set(request_id)
+    label_token = current_request_label.set(f"{request.method} {path}")
+    ip = get_client_ip(request)
+    ip_token = current_client_ip.set(ip)
+    started = time.perf_counter()
+    status_code = 500
     try:
-        return await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:  # noqa: BLE001 - خطای پیش‌بینی‌نشده‌ی Endpoint: ثبت با جزئیات کامل و پیام قابل‌پیگیری
+            logging.getLogger("faipco.http").exception("خطای پیش‌بینی‌نشده در %s %s", request.method, path)
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": f"خطای داخلی سرور رخ داد. کد پیگیری: {request_id}"},
+            )
+        status_code = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
     finally:
+        elapsed = time.perf_counter() - started
+        if (
+            elapsed >= error_log_service.SLOW_REQUEST_SECONDS
+            and path.startswith(settings.API_V1_PREFIX)
+            and not any(part in path for part in _SLOW_EXEMPT)
+        ):
+            route = getattr(request.scope.get("route"), "path", None) or path
+            error_log_service.record_slow_request(
+                request.method, route, path, elapsed, status_code, request_id,
+                getattr(request.state, "user_ref", None), ip,
+            )
         current_user_agent.reset(ua_token)
         current_client_app.reset(app_token)
+        current_request_id.reset(rid_token)
+        current_request_label.reset(label_token)
+        current_client_ip.reset(ip_token)
+
+
+# درخواست‌هایی که ذاتاً طولانی‌اند و «درخواست کند» حساب نمی‌شوند (بکاپ، بازیابی، آپدیت، فایل‌های حجیم)
+_SLOW_EXEMPT = ("/backup", "/restore", "/apply-update", "/check-update", "/app/releases", "/download")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_with_tracking_code(request: Request, exc: StarletteHTTPException):
+    """خطاهای ۵xx (مثلاً «اتصال به کاراوب ناموفق بود») کد پیگیری درخواست را هم در پیام دارند."""
+    if exc.status_code >= 500 and isinstance(exc.detail, str):
+        request_id = current_request_id.get()
+        if request_id and request_id not in exc.detail:
+            exc = StarletteHTTPException(
+                status_code=exc.status_code, detail=f"{exc.detail} (کد پیگیری: {request_id})", headers=exc.headers
+            )
+    return await http_exception_handler(request, exc)
 
 
 @app.get("/api/health", tags=["health"])

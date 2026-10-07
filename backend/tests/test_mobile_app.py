@@ -75,7 +75,7 @@ def _ev(**kw):
     from datetime import datetime, timezone
 
     base = dict(
-        id="e1", transition="enter", site_id=1, latitude=35.0, longitude=51.0, accuracy=20.0, is_mock=False,
+        id="e1", transition="enter", site_id=1, latitude=35.0, longitude=51.0, accuracy=20.0, is_mock=False, engine="gms",
         occurred_at=int(datetime.now(timezone.utc).timestamp() * 1000),
     )
     base.update(kw)
@@ -89,14 +89,18 @@ def test_geofence_event_rejection_rules():
     site = SimpleNamespace(gps_radius_meters=200)
     now = datetime.now(timezone.utc)
     assert svc._event_rejection(_ev(), site, 150.0, now) is None
-    assert svc._event_rejection(_ev(), site, 219.0, now) is None  # شعاع ۲۰۰ + دقت ۲۰
-    assert svc._event_rejection(_ev(), site, 221.0, now) == "out_of_range"
-    assert svc._event_rejection(_ev(latitude=None), site, None, now) == "no_location"
+    assert svc._event_rejection(_ev(), site, 519.0, now) is None  # شعاع ۲۰۰ + دقت ۲۰ + حاشیه ۳۰۰
+    assert svc._event_rejection(_ev(), site, 521.0, now) == "out_of_range"
+    # بدون مختصات یا با دقت کم (گوشی بدون اینترنت/داخل سالن): تصمیم سیستم‌عامل پذیرفته می‌شود
+    assert svc._event_rejection(_ev(latitude=None), site, None, now) is None
+    assert svc._event_rejection(_ev(accuracy=900.0), site, 5000.0, now) is None
     assert svc._event_rejection(_ev(is_mock=True), site, 10.0, now) == "mock"
-    # خروج: بیرون حصار و حتی بدون مختصات پذیرفته می‌شود؛ از عمق داخل حصار رد می‌شود
+    # خروج: بیرون حصار و بدون مختصات پذیرفته؛ با موقعیت دقیق از عمق داخل حصار رد
     assert svc._event_rejection(_ev(transition="exit"), site, 900.0, now) is None
     assert svc._event_rejection(_ev(transition="exit", latitude=None), site, None, now) is None
-    assert svc._event_rejection(_ev(transition="exit"), site, 10.0, now) == "out_of_range"
+    assert svc._event_rejection(_ev(transition="exit", engine="gms"), site, 10.0, now) == "out_of_range"
+    # موتور داخلی اندروید «آخرین موقعیت» را می‌فرستد که می‌تواند کهنه و داخل محدوده باشد ← رد نمی‌شود
+    assert svc._event_rejection(_ev(transition="exit", engine="platform"), site, 10.0, now) is None
     # زمان: رویداد صف‌شده‌ی ۱۰ ساعته پذیرفته، ۳ روزه یا آینده رد
     old = int((now - timedelta(hours=10)).timestamp() * 1000)
     assert svc._event_rejection(_ev(occurred_at=old), site, 10.0, now) is None

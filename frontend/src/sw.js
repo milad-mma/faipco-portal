@@ -26,8 +26,47 @@ registerRoute(({ url }) => url.pathname.startsWith("/api/"), new NetworkOnly());
 const navigationHandler = createHandlerBoundToURL("/index.html");
 registerRoute(new NavigationRoute(navigationHandler));
 
+// آیکون‌های اعلان: Chrome تصویر icon/badge را هنگام نمایش اعلان از شبکه می‌گیرد؛ اگر گوشی در آن لحظه در خواب
+// (Doze) باشد یا اینترنتش ضعیف، گرفتن تصویر شکست می‌خورد و Chrome زنگوله‌ی پیش‌فرض خودش را نشان می‌دهد («گاهی با
+// لوگو، گاهی زنگوله»). برای همین هر دو تصویر در Cache نگه داشته و به‌صورت data: URL به اعلان داده می‌شوند.
+const NOTIFICATION_ICON_CACHE = "faipco-notification-icons-v1";
+const NOTIFICATION_ICON = "/icons/icon-192.png";
+const NOTIFICATION_BADGE = "/icons/badge-96.png";
+
+async function cacheNotificationIcons() {
+  try {
+    const cache = await caches.open(NOTIFICATION_ICON_CACHE);
+    await cache.addAll([NOTIFICATION_ICON, NOTIFICATION_BADGE]);
+  } catch {
+    // بدون اینترنت هنگام نصب: در اولین Push دوباره تلاش می‌شود
+  }
+}
+
+// تصویر را از Cache (یا در نبودش از شبکه و ذخیره در Cache) به data: URL تبدیل می‌کند؛ شکست ← همان آدرس معمولی
+async function notificationImage(path) {
+  try {
+    const cache = await caches.open(NOTIFICATION_ICON_CACHE);
+    let response = await cache.match(path);
+    if (!response) {
+      response = await fetch(path);
+      if (response.ok) await cache.put(path, response.clone());
+    }
+    const type = response?.headers.get("content-type") || "";
+    // نبود فایل آیکون ← index.html با کد 200 (fallback صفحه‌ها)؛ نباید به‌جای تصویر استفاده شود
+    if (!response || !response.ok || !type.startsWith("image/")) return path;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:${type};base64,${btoa(binary)}`;
+  } catch {
+    return path;
+  }
+}
+
 // رویداد نصب نسخه‌ی جدید Service Worker
-self.addEventListener("install", () => {
+self.addEventListener("install", (event) => {
+  // آیکون‌های اعلان همین حالا در Cache گذاشته می‌شوند (نصب منتظر آن نمی‌ماند اگر شبکه نباشد)
+  event.waitUntil(cacheNotificationIcons());
   // skipWaiting خودکار صدا زده نمی‌شود: نسخه‌ی جدید در حالت waiting می‌ماند تا کاربر با دکمه‌ی «بارگذاری»
   // تأیید کند، تا Reload ناخواسته وسط پر کردن یک فرم (مثل نوشتن اطلاعیه) رخ ندهد
 });
@@ -61,13 +100,17 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
+      const [icon, badge] = await Promise.all([
+        notificationImage(NOTIFICATION_ICON),
+        notificationImage(NOTIFICATION_BADGE),
+      ]);
       await self.registration.showNotification(payload.title, {
         body: payload.body,
         // icon: تصویر رنگی بزرگ لوگو — داخل بدنه اعلان (وقتی باز می‌شود) دیده می‌شود
-        icon: "/icons/icon-192.png",
+        icon,
         // badge: نسخه‌ی تک‌رنگ (سفید روی شفاف) لوگو برای نوار وضعیت اندروید؛
         // اندروید badge را همیشه تک‌رنگ (Silhouette) رندر می‌کند و آیکون رنگی به لکه‌ای نامفهوم تبدیل می‌شود
-        badge: "/icons/badge-96.png",
+        badge,
         dir: "rtl", // جهت متن اعلان راست‌به‌چپ
         lang: "fa", // زبان متن اعلان
         data: { url: payload.url || "/notices" }, // مسیر مقصد برای استفاده در رویداد notificationclick

@@ -81,8 +81,9 @@ class SiteService:
             mapping = AttendanceMapping(site_id=site_id, **payload.model_dump())
             self.db.add(mapping)
         else:
-            # همه فیلدهای نگاشت موجود با مقادیر جدید جایگزین می‌شوند
-            for field, value in payload.model_dump().items():
+            # فقط فیلدهایی که واقعاً ارسال شده‌اند: فرمی (یا نسخه‌ی قدیمی فرانت در کش مرورگر) که فیلدی را ندارد،
+            # آن فیلد را به مقدار پیش‌فرض برنمی‌گرداند (همان مشکل گم شدن ریشه‌ی سایت در نگاشت پرسنل)
+            for field, value in payload.model_dump(exclude_unset=True).items():
                 setattr(mapping, field, value)
 
         await self.db.commit()

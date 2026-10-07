@@ -113,6 +113,22 @@ class ConnectivityEventIn(BaseModel):
     boot_count: int | None = Field(default=None, ge=0, le=10**9)
 
 
+class AppErrorIn(BaseModel):
+    """یک خطای بخش بومی اپ (برای «گزارش خطاها»)."""
+
+    id: str = Field(min_length=8, max_length=64)
+    where: str = Field(max_length=120)  # کجای اپ (GeofenceReceiver، SyncWorker، crash، ...)
+    message: str = Field(max_length=2000)
+    stack: str | None = Field(default=None, max_length=12000)
+    app_version: str | None = Field(default=None, max_length=40)
+    sdk: int | None = None
+    occurred_at: int | None = None  # ساعت گوشی (فقط برای نمایش)
+
+
+class AppErrorsIn(BaseModel):
+    errors: list[AppErrorIn] = Field(max_length=50)
+
+
 class ConnectivityEventsIn(BaseModel):
     events: list[ConnectivityEventIn] = Field(max_length=200)
     now_elapsed_ms: int | None = Field(default=None, ge=0, le=10**13)

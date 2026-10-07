@@ -242,6 +242,19 @@ async def _login_security_cleanup_job() -> None:
             await _advisory_unlock(db, _LOGIN_SECURITY_CLEANUP_LOCK_KEY)
 
 
+async def _error_logs_cleanup_job() -> None:
+    """حذف گزارش خطاهای قدیمی‌تر از ۳۰ روز (روزانه)."""
+    from app.services.error_log_service import purge_old
+
+    async with AsyncSessionLocal() as db:
+        try:
+            removed = await purge_old(db)
+            if removed:
+                logger.info("پاک‌سازی گزارش خطاها: %s گروه قدیمی حذف شد", removed)
+        except Exception:  # noqa: BLE001
+            logger.exception("پاک‌سازی گزارش خطاها ناموفق بود")
+
+
 async def _flush_usage_stats_job() -> None:
     """Job هر ۶۰ ثانیه: شمارنده‌های در حافظه‌ی استفاده از پرتال (این Worker) را به دیتابیس UPSERT می‌کند."""
     from app.services.usage_stats_service import flush_usage
@@ -473,6 +486,17 @@ async def start_scheduler() -> None:
         hour=3,
         minute=10,
         id=LOGIN_SECURITY_CLEANUP_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=12 * 60 * 60,
+    )
+
+    # پاک‌سازی روزانه‌ی گزارش خطاها (۳۰ روز؛ ساعت ۳:۲۰ بامداد). DELETE تکراری در دو Worker بی‌ضرر است
+    scheduler.add_job(
+        _error_logs_cleanup_job,
+        trigger="cron",
+        hour=3,
+        minute=20,
+        id="error_logs_cleanup",
         replace_existing=True,
         misfire_grace_time=12 * 60 * 60,
     )

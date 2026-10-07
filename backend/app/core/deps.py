@@ -15,6 +15,7 @@ Dependency های مرکزی FastAPI:
 در عوض، وقتی site_scoped=True باشد، مقدار site_id مستقیماً از خودِ Request
 (اول از Path Params، بعد از Query Params) خوانده می‌شود.
 """
+from app.core.request_context import current_user_ref
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,6 +102,10 @@ async def get_current_user(
             },
         )
 
+    # برای گزارش خطاها: کاربر این درخواست (هم برای خطاهای داخل Endpoint، هم برای Middleware درخواست‌های کند)
+    user_ref = (user.id, user.username)
+    current_user_ref.set(user_ref)
+    request.state.user_ref = user_ref
     return user
 
 

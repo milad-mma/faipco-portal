@@ -92,9 +92,11 @@ FLAP_WINDOW = timedelta(minutes=15)
 NETWORK_LABELS = {"wifi": "وای‌فای", "cellular": "اینترنت همراه", "other": "شبکه"}
 # رویداد خروجی که واقعاً خروج است (نه جعلی/خارج از بازه‌ی زمان/از عمق محدوده)
 EXIT_OK_STATUSES = ("logged", "already_out", "duplicate", "disabled")
-# اعتبارسنجی رویداد Geofencing: دقت GPS بیش از این مقدار در محاسبه‌ی فاصله حساب نمی‌شود، رویداد قدیمی‌تر از
-# EVENT_MAX_AGE یا جلوتر از EVENT_MAX_FUTURE (ساعت گوشی) پذیرفته نمی‌شود — مانع جعل ورود/خروج با رویداد ساختگی
-EVENT_ACCURACY_CAP_METERS = 100.0
+# اعتبارسنجی رویداد Geofencing (_event_rejection): فقط موقعیتی با دقت بهتر از EVENT_TRUST_ACCURACY_METERS برای رد رویداد
+# استفاده می‌شود، با حاشیه‌ی اطمینان فاصله (خطای GPS داخل سالن)؛ رویداد قدیمی‌تر از EVENT_MAX_AGE یا جلوتر از
+# EVENT_MAX_FUTURE پذیرفته نمی‌شود
+EVENT_TRUST_ACCURACY_METERS = 150.0
+EVENT_DISTANCE_MARGIN_METERS = 300.0
 # رویدادها در گوشی صف می‌شوند و با WorkManager (قطع شبکه، Doze) ممکن است ساعت‌ها بعد برسند؛ سقف ۴۸ ساعت
 EVENT_MAX_AGE = timedelta(hours=48)
 EVENT_MAX_FUTURE = timedelta(minutes=2)
@@ -497,10 +499,15 @@ def _event_rejection(
     ev: GeofenceEventIn, site: Site, distance: float | None, received: datetime, time_valid: bool | None = None
 ) -> str | None:
     """
-    اعتبارسنجی رویداد نسبت به سایت: کد وضعیت رد (mock / no_location / bad_time / out_of_range) یا None اگر معتبر.
-    - ورود/حضور (enter/dwell): مختصات لازم است و فاصله باید ≤ شعاع سایت + دقت GPS (حداکثر EVENT_ACCURACY_CAP_METERS).
-    - خروج (exit): طبق تعریف بیرون از حصار رخ می‌دهد و موتور سیستمی اندروید ممکن است مختصات نداشته باشد؛
-      فقط زمان بررسی می‌شود (و اگر مختصات دارد، نباید به‌وضوح داخل حصار باشد).
+    اعتبارسنجی رویداد: کد وضعیت رد (mock / bad_time / out_of_range) یا None اگر معتبر.
+
+    تصمیم «ورود/خروج» را خودِ سیستم‌عامل گوشی گرفته است (Geofencing). مختصات همراه رویداد فقط یک بررسی کمکی است و
+    روی گوشی بدون اینترنت یا داخل سالن اغلب کهنه یا کم‌دقت است (موتور داخلی اندروید حتی «آخرین موقعیت شناخته‌شده» را
+    می‌فرستد، نه موقعیت لحظه‌ی خروج). قبلاً همین مختصات کهنه رویدادهای درست را رد می‌کرد (no_location / out_of_range)؛
+    حالا فقط وقتی رد می‌شود که موقعیت دقیق (± EVENT_TRUST_ACCURACY_METERS) آشکارا خلاف رویداد را بگوید:
+    - ورود/حضور: با موقعیت دقیق، بیش از شعاع + دقت + EVENT_DISTANCE_MARGIN_METERS دورتر از سایت ← رد. بدون مختصات یا
+      با دقت کم ← پذیرفته.
+    - خروج: با موقعیت دقیق موتور گوگل، در نیمه‌ی داخلی محدوده ← رد. موتور داخلی اندروید (آخرین موقعیت) بررسی نمی‌شود.
     """
     if ev.is_mock:
         return "mock"
@@ -508,15 +515,16 @@ def _event_rejection(
         time_valid = _event_time_valid(ev.occurred_at, received)
     if not time_valid:
         return "bad_time"
-    tolerance = min(ev.accuracy or 0.0, EVENT_ACCURACY_CAP_METERS)
+    if distance is None or ev.accuracy is None or ev.accuracy > EVENT_TRUST_ACCURACY_METERS:
+        return None  # موقعیت نداریم یا قابل‌اعتماد نیست: تصمیم سیستم‌عامل پذیرفته می‌شود
     radius = float(site.gps_radius_meters)
     if (ev.transition or "").lower() == "exit":
-        if distance is not None and distance < max(radius - tolerance, 0.0) * 0.5:
+        if getattr(ev, "engine", None) == "platform":
+            return None
+        if distance < max(radius - ev.accuracy, 0.0) * 0.5:
             return "out_of_range"  # «خروج» از عمق داخل حصار معنا ندارد
         return None
-    if ev.latitude is None or ev.longitude is None or distance is None:
-        return "no_location"
-    if distance > radius + tolerance:
+    if distance > radius + ev.accuracy + EVENT_DISTANCE_MARGIN_METERS:
         return "out_of_range"
     return None
 
