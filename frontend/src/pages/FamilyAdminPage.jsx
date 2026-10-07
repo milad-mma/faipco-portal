@@ -841,13 +841,14 @@ function ChildGenderRules({ gender, cr, setRule, disabled }) {
   );
 }
 
-function SettingsTab({ canManage, initial, meta, onSaved }) {
+function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
   const [s, setS] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   useEffect(() => setS(initial), [initial]);
 
-  const ro = !canManage;
+  // مدیر یک یا چند سایت (نه همه): تنظیمات مشترک فقط خواندنی
+  const ro = !canManage || !editable;
   const setRule = (group, key, value) => setS((cur) => ({ ...cur, rules: { ...cur.rules, [group]: { ...cur.rules[group], [key]: value } } }));
   const mr = s.rules.marriage;
   const cr = s.rules.child;
@@ -1117,7 +1118,13 @@ function SettingsTab({ canManage, initial, meta, onSaved }) {
       </Card>
 
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
-      {canManage && (
+      {canManage && !editable && (
+        <Alert severity="info">
+          این قواعد و تنظیمات بین همه‌ی سایت‌ها مشترک است و فقط کسی که مجوز مدیریت مشخصات خانوادگی را برای همه‌ی سایت‌ها
+          دارد می‌تواند آن را تغییر دهد. بررسی و تأیید پرونده‌های سایت‌های شما در تب فهرست انجام می‌شود.
+        </Alert>
+      )}
+      {!ro && (
         <Box>
           <Button variant="contained" size="large" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveOutlinedIcon />} onClick={save} disabled={saving}>
             ذخیره تنظیمات
@@ -1178,7 +1185,7 @@ export default function FamilyAdminPage() {
           {tab === "list" ? (
             <ListTab canManage={canManage} formSettings={formSettings} />
           ) : (
-            <SettingsTab canManage={canManage} initial={settingsData.settings} meta={settingsData.meta} onSaved={setSettingsData} />
+            <SettingsTab canManage={canManage} editable={settingsData.editable !== false} initial={settingsData.settings} meta={settingsData.meta} onSaved={setSettingsData} />
           )}
         </>
       )}

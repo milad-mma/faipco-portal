@@ -82,7 +82,9 @@
 - سرویس: `backend/app/services/family_service.py`، API: `/api/v1/family/*`
 - Migration: 096 (جدول‌ها و مجوزها)، 097 (`family_members.student_cert_expiry`)، 098 (`family_profiles.prior_insurance_days` و `hr_prior_insurance_days`)
 - جدول‌ها: `family_profiles`، `family_members`، `family_documents` (bytea)، `family_change_logs`
-- تنظیمات: `system_settings.family_settings` (JSON)
+- تنظیمات: `system_settings.family_settings` (JSON)؛ بین همه‌ی سایت‌ها مشترک. `GET /family/settings` برای دارندگان `family.view`/`family.manage` باز است و `editable` می‌دهد:
+  فقط `family.manage` برای همه‌ی سایت‌ها می‌تواند `PUT` بزند؛ مدیر یک سایت تب «قواعد و تنظیمات» را فقط‌خواندنی با پیام
+  توضیح می‌بیند (قبلاً دکمه‌ی ذخیره داشت و با 403 خطا می‌گرفت). بررسی/تأیید پرونده‌ها و فیلدهای HR سایت‌محورند.
 - زمان‌بند: مدارک آپلودشده‌ای که ۷۲ ساعت در فرم ثبت نشده‌اند پاک می‌شوند (هر ۶ ساعت)
 
 ## استقرار

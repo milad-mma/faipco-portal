@@ -168,10 +168,14 @@ async def _manage_sites(db: AsyncSession, user: User) -> set[int] | None:
 
 @router.get("/settings")
 async def get_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """تنظیمات کامل + تعریف فیلدها/مدارک/گزینه‌ها؛ برای دارندگان family.view (فقط‌خواندنی) و family.manage."""
+    """
+    تنظیمات کامل + تعریف فیلدها/مدارک/گزینه‌ها؛ برای دارندگان family.view (فقط‌خواندنی) و family.manage.
+    editable: فقط family.manage برای همه‌ی سایت‌ها (تنظیمات بین سایت‌ها مشترک است؛ مدیر یک سایت فقط می‌بیند).
+    """
     await _view_sites(db, current_user)
     service = FamilyService(db)
-    return {"settings": await service.get_settings(), "meta": service.settings_meta()}
+    editable = await get_sites_with_permission(db, current_user, "family.manage") is None
+    return {"settings": await service.get_settings(), "meta": service.settings_meta(), "editable": editable}
 
 
 @router.put("/settings")
@@ -187,7 +191,11 @@ async def update_settings(
             detail="تنظیمات مشخصات خانوادگی بین همه‌ی سایت‌ها مشترک است و فقط با مجوز family.manage برای همه‌ی سایت‌ها قابل تغییر است",
         )
     service = FamilyService(db)
-    return {"settings": await service.update_settings(payload.model_dump(exclude_unset=True)), "meta": service.settings_meta()}
+    return {
+        "settings": await service.update_settings(payload.model_dump(exclude_unset=True)),
+        "meta": service.settings_meta(),
+        "editable": True,
+    }
 
 
 @router.get("/profiles", response_model=FamilyListOut)
