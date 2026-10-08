@@ -32,6 +32,8 @@ const SyncPage = lazyPage(() => import("./pages/SyncPage"));
 const NoticesPage = lazyPage(() => import("./pages/NoticesPage"));
 const MyVehiclesPage = lazyPage(() => import("./pages/MyVehiclesPage"));
 const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
+const InsuranceHubPage = lazyPage(() => import("./pages/InsuranceHubPage"));
+const InsuranceInvoiceGuidePage = lazyPage(() => import("./pages/InsuranceInvoiceGuidePage"));
 const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
 const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
 const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
@@ -265,7 +267,9 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/feedback" element={<FeedbackSubmitPage />} />
           <Route path="/my-vehicles" element={<MyVehiclesPage />} />
+          <Route path="/insurance-hub" element={<InsuranceHubPage />} />
           <Route path="/insurance" element={<InsurancePage />} />
+          <Route path="/insurance/invoices" element={<InsuranceInvoiceGuidePage />} />
           <Route path="/family" element={<FamilyPage />} />
           <Route
             path="/family/admin"

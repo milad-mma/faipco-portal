@@ -1,5 +1,5 @@
 {
-  "count": 349,
+  "count": 350,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -88,6 +88,7 @@
     "GET /api/v1/hr/birthdays/export",
     "GET /api/v1/insurance/documents/{document_id}",
     "GET /api/v1/insurance/export",
+    "GET /api/v1/insurance/invoice-guide",
     "GET /api/v1/insurance/me",
     "GET /api/v1/insurance/registrations",
     "GET /api/v1/insurance/registrations/{registration_id}",

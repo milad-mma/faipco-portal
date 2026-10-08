@@ -104,3 +104,9 @@ export async function downloadInsuranceExport(siteId) {
   });
   return data;
 }
+
+// GET /insurance/invoice-guide؛ خروجی: { text } — راهنمای «پیگیری فاکتورهای ارسالی» (متن ساده با لینک)
+export async function fetchInsuranceInvoiceGuide() {
+  const { data } = await apiClient.get("/insurance/invoice-guide");
+  return data;
+}

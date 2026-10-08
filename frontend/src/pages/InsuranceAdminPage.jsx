@@ -35,6 +35,7 @@ import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import InsuranceRateInfo from "../components/InsuranceRateInfo";
+import LinkifiedText from "../components/LinkifiedText";
 import { useAuth } from "../context/AuthContext";
 import {
   deleteInsuranceRegistration,
@@ -770,6 +771,47 @@ function SettingsTab() {
           }
         >
           ذخیره متن اطلاعیه
+        </Button>
+      </Card>
+
+      {/* راهنمای «پیگیری فاکتورهای ارسالی» که پرسنل در صفحه‌ی بیمه تکمیلی می‌بینند (/insurance/invoices) */}
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+          راهنمای پیگیری فاکتورهای ارسالی
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          این متن در کارت «پیگیری فاکتورهای ارسالی» صفحه‌ی بیمه تکمیلی پرسنل نمایش داده می‌شود. خط‌ها و پاراگراف‌ها
+          همان‌طور که می‌نویسید می‌مانند. برای لینک، آدرس را مستقیم بنویسید (<b dir="ltr">https://...</b>) یا با
+          متن دلخواه: <b dir="ltr">[سامانه‌ی بیمه](https://example.com)</b>. متن خالی یعنی پرسنل پیام «هنوز نوشته نشده»
+          می‌بینند.
+        </Typography>
+        <TextField
+          label="متن راهنما"
+          value={settings.invoice_guide || ""}
+          onChange={(e) => setSettings({ ...settings, invoice_guide: e.target.value })}
+          inputProps={{ maxLength: 20000 }}
+          multiline
+          minRows={8}
+          fullWidth
+        />
+        {(settings.invoice_guide || "").trim() && (
+          <Box sx={{ mt: 2, p: 2, borderRadius: 2, bgcolor: "action.hover" }}>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              پیش‌نمایش (همان‌طور که پرسنل می‌بینند)
+            </Typography>
+            <Typography component="div" sx={{ whiteSpace: "pre-line", lineHeight: 2, overflowWrap: "anywhere" }}>
+              <LinkifiedText text={settings.invoice_guide} />
+            </Typography>
+          </Box>
+        )}
+        <Button
+          variant="contained"
+          sx={{ mt: 2 }}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+          disabled={saving}
+          onClick={() => save({ invoice_guide: settings.invoice_guide || "" }, "راهنمای پیگیری فاکتورها ذخیره شد.")}
+        >
+          ذخیره راهنما
         </Button>
       </Card>
         </>

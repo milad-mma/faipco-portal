@@ -523,13 +523,9 @@ export default function PersonalDashboardPage() {
           onClick={() => navigate(feedbackUnread ? "/feedback?tab=mine" : "/feedback")}
         />
         <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
-        {/* کاشی «ثبت نام بیمه تکمیلی»؛ اگر ماژول از پنل غیرفعال شود، مثل کاشی مرخصی برچسب «غیرفعال» می‌گیرد. */}
-        <ToolCard
-          icon={<HealthAndSafetyOutlinedIcon />}
-          label="ثبت نام بیمه تکمیلی"
-          disabled={Boolean(user?.insurance_disabled)}
-          onClick={() => navigate("/insurance")}
-        />
+        {/* کاشی «بیمه تکمیلی» ← صفحه‌ی بیمه (ثبت‌نام + پیگیری فاکتورها). همیشه باز است: با بسته بودن ثبت‌نام،
+            فقط کارت ثبت‌نام داخل آن صفحه «غیرفعال» می‌شود و پیگیری فاکتورها در دسترس می‌ماند. */}
+        <ToolCard icon={<HealthAndSafetyOutlinedIcon />} label="بیمه تکمیلی" onClick={() => navigate("/insurance-hub")} />
       </Box>
 
       {/* متولدین امروز؛ اگر امروز تولدی نباشد کارت نمایش داده نمی‌شود */}

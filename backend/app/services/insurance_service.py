@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 # کلید رکورد تنظیمات ماژول در جدول system_settings؛ مقدار آن JSON با کلیدهای
 # enabled / rate_table / notes است.
 SETTINGS_KEY = "insurance_settings"
+INVOICE_GUIDE_MAX = 20000  # راهنمای پیگیری فاکتورها
 
 # مدرکی که قبل از ثبت نهایی فرم آپلود می‌شود به یک عضو موقت با
 # member_type="pending" وصل می‌شود. اگر این عضو موقت بیش از این تعداد ساعت
@@ -96,6 +97,7 @@ class InsuranceService:
             "notes": self._sanitize_notes(stored.get("notes")) or list(rules.DEFAULT_NOTES),
             "reject_notice_title": (str(stored.get("reject_notice_title") or "").strip() or DEFAULT_REJECT_NOTICE_TITLE)[:REJECT_TITLE_MAX],
             "reject_notice_body": (str(stored.get("reject_notice_body") or "").strip() or DEFAULT_REJECT_NOTICE_BODY)[:REJECT_BODY_MAX],
+            "invoice_guide": str(stored.get("invoice_guide") or "").strip()[:INVOICE_GUIDE_MAX],
         }
 
     async def update_settings(self, patch: dict) -> dict:
@@ -117,6 +119,9 @@ class InsuranceService:
             current["reject_notice_title"] = str(patch["reject_notice_title"]).strip()[:REJECT_TITLE_MAX] or DEFAULT_REJECT_NOTICE_TITLE
         if patch.get("reject_notice_body") is not None:
             current["reject_notice_body"] = str(patch["reject_notice_body"]).strip()[:REJECT_BODY_MAX] or DEFAULT_REJECT_NOTICE_BODY
+        # راهنمای پیگیری فاکتورها؛ متن خالی = بدون راهنما (صفحه‌ی پرسنل پیام «هنوز نوشته نشده» نشان می‌دهد)
+        if patch.get("invoice_guide") is not None:
+            current["invoice_guide"] = str(patch["invoice_guide"]).strip()[:INVOICE_GUIDE_MAX]
         # ذخیره: رکورد موجود به‌روز می‌شود، وگرنه رکورد جدید ساخته می‌شود
         row = await self.db.get(SystemSetting, SETTINGS_KEY)
         if row is None:

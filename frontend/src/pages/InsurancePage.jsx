@@ -544,7 +544,7 @@ export default function InsurancePage() {
   if (loadError) {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
-        <BackLink to="/my-dashboard" />
+        <BackLink to="/insurance-hub" label="بازگشت به بیمه تکمیلی" />
         <Alert severity="error">{loadError}</Alert>
       </Box>
     );
@@ -559,7 +559,7 @@ export default function InsurancePage() {
 
   const header = (
     <>
-      <BackLink to="/my-dashboard" />
+      <BackLink to="/insurance-hub" label="بازگشت به بیمه تکمیلی" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }} ref={topRef}>
         فرم ثبت‌نام بیمه تکمیلی
       </Typography>

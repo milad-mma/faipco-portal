@@ -40,6 +40,7 @@ from app.schemas.insurance import (
     InsuranceRejectDocumentIn,
     InsuranceRejectDocumentOut,
     InsuranceSettingsIn,
+    InsuranceInvoiceGuideOut,
     InsuranceSettingsOut,
     InsuranceSiteStatusIn,
     InsuranceSiteStatusOut,
@@ -73,6 +74,16 @@ async def my_insurance(db: AsyncSession = Depends(get_db), current_user: User = 
     """داده‌ی کامل صفحه‌ی بیمه برای کاربر جاری (کاربر بدون پرسنل هم پاسخ می‌گیرد، با employee=null)."""
     employee = await db.get(Employee, current_user.employee_id) if current_user.employee_id else None
     return await InsuranceService(db).my_status(employee)
+
+
+@router.get("/invoice-guide", response_model=InsuranceInvoiceGuideOut)
+async def invoice_guide(db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)):
+    """
+    راهنمای «پیگیری فاکتورهای ارسالی» (متن ساده با لینک) برای صفحه‌ی بیمه تکمیلی پرسنل. دسترسی: هر کاربر واردشده؛
+    مستقل از فعال بودن ثبت‌نام (پیگیری فاکتور بعد از بسته شدن ثبت‌نام هم لازم است). ویرایش: تنظیمات بیمه (PUT /settings).
+    """
+    settings = await InsuranceService(db).get_settings()
+    return {"text": settings.get("invoice_guide", "")}
 
 
 @router.put("/me", response_model=InsuranceRegistrationOut)

@@ -759,7 +759,7 @@ seed_and_create_admin() {
 
 configure_firewall() {
   log "Configuring firewall (UFW)..."
-  ufw allow OpenSSH >/dev/null 2>&1 || true
+  ufw allow OpenSSH </dev/null >/dev/null 2>&1 || true
 
   if [[ -n "$REVERSE_PROXY_IP" ]]; then
     # حیاتی: بدون این، هرکسی که مستقیماً IP این سرور را بداند (نه فقط
@@ -769,16 +769,15 @@ configure_firewall() {
     # همان پروکسی خارجی معتبر آمده یا مستقیماً توسط یک مهاجم جعل شده است.
     # این یافته واقعی از یک تست نفوذ زنده تأیید شد.
     log "Restricting ports 80/443 to only the reverse proxy IP (${REVERSE_PROXY_IP})..."
-    ufw allow from "$REVERSE_PROXY_IP" to any port 80 >/dev/null 2>&1 || true
-    ufw allow from "$REVERSE_PROXY_IP" to any port 443 >/dev/null 2>&1 || true
-    # قانون‌های «باز برای همه» (از اجراهای قبلی بدون این گزینه) قانون‌های محدود بالا را بی‌اثر می‌کنند؛ برداشته می‌شوند
-    ufw delete allow 'Nginx Full' >/dev/null 2>&1 || true
-    ufw delete allow 'Nginx HTTP' >/dev/null 2>&1 || true
-    ufw delete allow 'Nginx HTTPS' >/dev/null 2>&1 || true
-    ufw delete allow 80 >/dev/null 2>&1 || true
-    ufw delete allow 443 >/dev/null 2>&1 || true
-    ufw delete allow 80/tcp >/dev/null 2>&1 || true
-    ufw delete allow 443/tcp >/dev/null 2>&1 || true
+    ufw allow from "$REVERSE_PROXY_IP" to any port 80 </dev/null >/dev/null 2>&1 || true
+    ufw allow from "$REVERSE_PROXY_IP" to any port 443 </dev/null >/dev/null 2>&1 || true
+    # قانون‌های «باز برای همه» (از اجراهای قبلی بدون این گزینه) قانون‌های محدود بالا را بی‌اثر می‌کنند؛ برداشته می‌شوند.
+    # --force حیاتی است: «ufw delete» بدون آن سؤال تأیید (y/n) می‌پرسد و در اجرای بدون ترمینال (آپدیت از پنل)
+    # برای همیشه منتظر پاسخ می‌ماند — پنل روی «در حال آپدیت…» گیر می‌کرد. </dev/null هم هر سؤال دیگری را می‌بندد.
+    local rule
+    for rule in "'Nginx Full'" "'Nginx HTTP'" "'Nginx HTTPS'" 80 443 80/tcp 443/tcp; do
+      eval "ufw --force delete allow $rule" </dev/null >/dev/null 2>&1 || true
+    done
   elif ufw status 2>/dev/null | grep -Eq '^(80|443)(/tcp)?[[:space:]]+ALLOW[[:space:]]+[0-9]'; then
     # پورت‌ها قبلاً (دستی یا با اجرای قدیمی) فقط به یک IP محدود شده‌اند: دوباره برای همه باز نمی‌شوند
     warn "Ports 80/443 are already restricted to specific IPs in UFW — leaving them as they are."
@@ -790,10 +789,10 @@ configure_firewall() {
     warn "  sudo bash install.sh --reverse-proxy-ip <its-IP>"
     warn "Otherwise, anyone who finds this server's direct IP can bypass IP-based restrictions"
     warn "(like the IP allowlist / anti-VPN feature) by connecting directly and forging headers."
-    ufw allow 'Nginx Full' >/dev/null 2>&1 || true
+    ufw allow 'Nginx Full' </dev/null >/dev/null 2>&1 || true
   fi
 
-  ufw --force enable >/dev/null 2>&1 || true
+  ufw --force enable </dev/null >/dev/null 2>&1 || true
 }
 
 print_summary() {
