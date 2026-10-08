@@ -7,6 +7,7 @@ main.py این روتر را زیر API_V1_PREFIX سوار می‌کند.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    dashboard,
     error_logs,
     access_gate,
     announcement,
@@ -48,6 +49,7 @@ api_router.include_router(employees.router, prefix="/employees", tags=["employee
 api_router.include_router(sites.router, prefix="/sites", tags=["sites"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])
 api_router.include_router(sync.router, prefix="/sync", tags=["sync"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(notices.router, prefix="/notices", tags=["notices"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 # اعلان Push، پشتیبان‌گیری و تنظیمات سیستم
