@@ -83,6 +83,7 @@ STATUS_LABELS = {
     "out_of_range": "خارج از محدوده‌ی سایت",
     "bad_time": "زمان رویداد نامعتبر",
     "flap": "خروج کوتاه (لغو شد)",
+    "other_site_open": "خروج از سایت دیگر (ورود باز در سایت فعلی)",
 }
 # «آنلاین در محیط کار» با اپ بسته: نرسیدن گزارش «هنوز آنلاین» بیش از این = نشست قبلی تمام شده و آنلاین شدن بعدی
 # نشست تازه است (همان BACKGROUND_STALE_SECONDS سرویس حضور)
@@ -91,7 +92,7 @@ ONLINE_SESSION_GAP = timedelta(minutes=25)
 FLAP_WINDOW = timedelta(minutes=15)
 NETWORK_LABELS = {"wifi": "وای‌فای", "cellular": "اینترنت همراه", "other": "شبکه"}
 # رویداد خروجی که واقعاً خروج است (نه جعلی/خارج از بازه‌ی زمان/از عمق محدوده)
-EXIT_OK_STATUSES = ("logged", "already_out", "duplicate", "disabled")
+EXIT_OK_STATUSES = ("logged", "already_out", "duplicate", "disabled")  # other_site_open خروج واقعی نیست
 # اعتبارسنجی رویداد Geofencing (_event_rejection): فقط موقعیتی با دقت بهتر از EVENT_TRUST_ACCURACY_METERS برای رد رویداد
 # استفاده می‌شود، با حاشیه‌ی اطمینان فاصله (خطای GPS داخل سالن)؛ رویداد قدیمی‌تر از EVENT_MAX_AGE یا جلوتر از
 # EVENT_MAX_FUTURE پذیرفته نمی‌شود
@@ -608,6 +609,16 @@ async def process_geofence_events(
                     status = "duplicate"
                 elif gap < timedelta(hours=cfg.repeat_guard_hours):
                     status = "already_in" if log_type == GpsLogType.check_in else "already_out"
+            elif (
+                last is not None
+                and log_type == GpsLogType.check_out
+                and last.log_type == GpsLogType.check_in
+                and last.matched_site_id is not None
+                and last.matched_site_id != site.id
+            ):
+                # خروج از سایت B وقتی ورودِ باز در سایت A است (سرویس گوگل با ثبت دوباره‌ی محدوده‌ها گاهی برای سایتِ
+                # دیگری که کاربر اصلاً آن‌جا نیست «خروج» می‌فرستد): حضور در A نباید بسته شود؛ ثبت نمی‌شود
+                status = "other_site_open"
             elif (
                 last is not None
                 and log_type == GpsLogType.check_in

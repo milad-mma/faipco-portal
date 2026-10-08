@@ -140,3 +140,11 @@ def test_resolve_event_time_uses_device_stopwatch_not_clock():
     # نسخه‌ی قدیمی اپ (بدون کرنومتر) ← رفتار قبلی
     at, uncertain, valid = svc.resolve_event_time(real, None, None, None, None, received)
     assert at == received - timedelta(minutes=10) and not uncertain and valid
+
+
+def test_other_site_exit_is_not_a_real_exit():
+    """خروج از سایت دیگر وقتی ورود باز در سایت فعلی است: برچسب دارد و خروج واقعی (بستن نشست) حساب نمی‌شود."""
+    svc = _svc()
+    assert "other_site_open" in svc.STATUS_LABELS
+    assert "other_site_open" not in svc.EXIT_OK_STATUSES
+    assert "other_site_open" not in svc.PRESENCE_OK_STATUSES
