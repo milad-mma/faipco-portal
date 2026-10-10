@@ -31,6 +31,7 @@ import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
+import { fetchLoanInboxCount } from "../api/loans";
 import { fetchMyFeedbackUnreadCount } from "../api/feedback";
 import { swr } from "../api/swrCache";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
@@ -116,7 +117,10 @@ export default function PersonalDashboardPage() {
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
   const [birthdays, setBirthdays] = useState(null);  // متولدین امروز؛ null = در حال بارگذاری
   const [photoUrl, setPhotoUrl] = useState(null);  // Object URL عکس پرسنلی؛ null = بدون عکس
-  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);  // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [pendingLoanCount, setPendingLoanCount] = useState(0); // ضمانت‌ها و تأییدهای وام منتظر این کاربر
+  // شمارنده‌ی کاشی «کارتابل درخواست» = جمع شمارنده‌ی ماژول‌های داخل آن
+  const requestsBadge = (leaveDisabled ? 0 : pendingLeaveCount) + pendingLoanCount;  // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
   const [feedbackUnread, setFeedbackUnread] = useState(0);  // پیام‌های انتقادات و پیشنهادات کاربر با پاسخ دیده‌نشده
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));  // برای تعیین تعداد اطلاعیه‌های اخیر
 
@@ -143,6 +147,8 @@ export default function PersonalDashboardPage() {
     swr("dashboard:pendingLeaveCount", fetchPendingLeaveRequestCount, (data) =>
       setPendingLeaveCount(data.pending_count || 0)
     ).catch(() => {});
+    // شمارنده‌ی کارتابل وام (ضمانت‌ها + تأییدهای مدیر واحد/سایت منتظر این کاربر)
+    swr("dashboard:pendingLoanCount", fetchLoanInboxCount, (data) => setPendingLoanCount(data?.count || 0)).catch(() => {});
     // پاسخ‌های دیده‌نشده‌ی بازبین به پیام‌های انتقادات و پیشنهادات این کاربر
     swr("dashboard:feedbackUnread", fetchMyFeedbackUnreadCount, (count) => setFeedbackUnread(count || 0)).catch(() => {});
   }, []);
@@ -421,12 +427,12 @@ export default function PersonalDashboardPage() {
             cursor: "pointer",
           }}
         >
-          {/* شمارنده درخواست‌های در انتظار تصمیم؛ فقط برای مدیر/سرپرستی که درخواستی منتظر
-              اوست نمایش داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
+          {/* شمارنده‌ی جمع همه‌ی ماژول‌های کارتابل درخواست: مرخصی/ماموریت منتظر تصمیم + ضمانت‌ها و تأییدهای وام.
+              برای کسی که چیزی منتظرش نیست صفر است و Badge پنهان می‌ماند. ماژول جدید کارتابل → شمارنده‌اش همین‌جا جمع شود. */}
           <Badge
             color="warning"
-            badgeContent={pendingLeaveCount}
-            invisible={leaveDisabled || !pendingLeaveCount}
+            badgeContent={requestsBadge}
+            invisible={!requestsBadge}
             sx={{ "& .MuiBadge-badge": { overflow: "visible" }, mb: 2 }}
           >
             <Box

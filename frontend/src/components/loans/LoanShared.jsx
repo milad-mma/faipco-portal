@@ -217,6 +217,19 @@ export function EmployeeSearch({ fetcher, value, onChange, label, excludeIds = [
       filterOptions={(x) => x}
       isOptionEqualToValue={(a, b) => a.id === b.id}
       getOptionLabel={(o) => o?.label || ""}
+      getOptionDisabled={(o) => Boolean(o.disabled_reason)}
+      renderOption={(props, o) => (
+        <li {...props} key={o.id}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ width: "100%" }} spacing={1}>
+            <span>{o.label}</span>
+            {o.disabled_reason && (
+              <Typography variant="caption" color="error">
+                {o.disabled_reason}
+              </Typography>
+            )}
+          </Stack>
+        </li>
+      )}
       onChange={(_, next) => onChange(next)}
       onInputChange={(_, text, reason) => {
         // بعد از انتخاب، MUI متن را به برچسب کامل «نام (کد)» برمی‌گرداند (reset)؛ آن را جست‌وجو نکن

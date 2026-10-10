@@ -352,7 +352,7 @@ class LoanService:
         if rules is not None and rules.guarantor_min_service_months:
             info = await self.service_info(g)
             if info["months"] is None or info["months"] < rules.guarantor_min_service_months:
-                return generic
+                return f"{name}: عدم سابقه کافی برای ضامن شدن؛ همکار دیگری انتخاب کنید"
         if rules is not None and rules.guarantor_max_active:
             count = (
                 await self.db.execute(
@@ -596,14 +596,28 @@ class LoanService:
         )
         policy = await self.current_policy(employee.site_id)
         rules = next((t for t in (policy.types if policy else []) if t.id == loan_type_id), None)
+        short_service: set[int] = set()
         if rules is not None and rows:
-            rows = await self._eligible_guarantors(rules, rows)
-        return [{"id": e.id, "label": employee_label(e, code=False)} for e in rows[:20]]
+            rows, short_service = await self._eligible_guarantors(rules, rows)
+        # کسی که فقط سابقه‌ی کافی ندارد در فهرست می‌آید ولی قابل انتخاب نیست («عدم سابقه کافی»)
+        return [
+            {
+                "id": e.id,
+                "label": employee_label(e, code=False),
+                "disabled_reason": "عدم سابقه کافی" if e.id in short_service else None,
+            }
+            for e in rows[:20]
+        ]
 
-    async def _eligible_guarantors(self, rules: LoanType, rows: list[Employee]) -> list[Employee]:
-        """همان قواعد _guarantor_problem، ولی یک‌جا برای یک فهرست (چند کوئری گروهی به‌جای کوئری برای هر نفر)."""
+    async def _eligible_guarantors(self, rules: LoanType, rows: list[Employee]) -> tuple[list[Employee], set[int]]:
+        """
+        همان قواعد _guarantor_problem، ولی یک‌جا برای یک فهرست (چند کوئری گروهی به‌جای کوئری برای هر نفر).
+        خروجی: (فهرست بدون کسانی که به سقف ضمانت رسیده‌اند یا وام تسویه‌نشده دارند، شناسه‌ی کسانی که فقط سابقه‌ی کافی
+        ندارند — این‌ها در فهرست می‌مانند و با برچسب «عدم سابقه کافی» غیرقابل‌انتخاب نمایش داده می‌شوند).
+        """
         ids = [e.id for e in rows]
         blocked: set[int] = set()
+        short_service: set[int] = set()
         if rules.guarantor_max_active:
             counts = (
                 await self.db.execute(
@@ -642,8 +656,11 @@ class LoanService:
                 start = overrides.get(e.id) or R.normalize_date(e.hire_date_jalali)
                 months = R.months_between(start, today) if start else None
                 if months is None or months < rules.guarantor_min_service_months:
-                    blocked.add(e.id)
-        return [e for e in rows if e.id not in blocked]
+                    short_service.add(e.id)
+        kept = [e for e in rows if e.id not in blocked]
+        # قابل‌انتخاب‌ها اول، بعد «عدم سابقه کافی»
+        kept.sort(key=lambda e: e.id in short_service)
+        return kept, short_service - blocked
 
     async def submit(self, employee: Employee, user: User, payload: dict) -> dict:
         # قفل ردیف پرسنل: دو درخواست هم‌زمان (دو کلیک/دو Worker) هر دو «باز» ثبت نشوند
