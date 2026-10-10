@@ -90,3 +90,15 @@ def test_members_kafala_and_limits():
         _emp(r.GENDER_FEMALE), r.MARITAL_MARRIED, "0912",
     )  # fmt: skip
     assert out[0]["gender"] == r.GENDER_MALE and out[0]["marital_status"] == r.MARITAL_MARRIED
+
+
+def test_normalize_mobile_formats_from_kara():
+    """قالب‌های رایج موبایل در کاراوب به ۱۱ رقم «09...» تبدیل می‌شوند؛ داده‌ی غیرقابل‌تبدیل رد می‌شود (نه خطای ۵۰۰)."""
+    from app.core import insurance_rules as r
+
+    for raw in ("09121234567", "9121234567", "+989121234567", "00989121234567", "989121234567",
+                "0912-123-4567", "0912 123 4567", "(0912) 1234567", "۰۹۱۲۱۲۳۴۵۶۷"):
+        assert r.normalize_mobile(raw) == "09121234567", raw
+        assert r.is_valid_mobile(r.normalize_mobile(raw)), raw
+    two_numbers = "09121234567-09351234567"
+    assert not r.is_valid_mobile(r.normalize_mobile(two_numbers))

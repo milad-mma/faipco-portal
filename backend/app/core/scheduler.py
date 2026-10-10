@@ -255,6 +255,19 @@ async def _error_logs_cleanup_job() -> None:
             logger.exception("پاک‌سازی گزارش خطاها ناموفق بود")
 
 
+async def _error_logs_auto_resolve_job() -> None:
+    """هر ساعت: گروه‌های «کاری لازم نیست» (اینترنت کاربر، کندی گذرا) که ۲۴ ساعت رخداد تازه نداشته‌اند، «حل شد»."""
+    from app.services.error_log_service import auto_resolve_quiet
+
+    async with AsyncSessionLocal() as db:
+        try:
+            resolved = await auto_resolve_quiet(db)
+            if resolved:
+                logger.info("گزارش خطاها: %s مورد «کاری لازم نیست» خودکار حل شد", resolved)
+        except Exception:  # noqa: BLE001
+            logger.exception("حل خودکار گزارش خطاها ناموفق بود")
+
+
 async def _flush_usage_stats_job() -> None:
     """Job هر ۶۰ ثانیه: شمارنده‌های در حافظه‌ی استفاده از پرتال (این Worker) را به دیتابیس UPSERT می‌کند."""
     from app.services.usage_stats_service import flush_usage
@@ -499,6 +512,15 @@ async def start_scheduler() -> None:
         id="error_logs_cleanup",
         replace_existing=True,
         misfire_grace_time=12 * 60 * 60,
+    )
+    # حل خودکار موارد «کاری لازم نیست» بعد از ۲۴ ساعت بی‌رخداد (هر ساعت؛ تکرار در دو Worker بی‌ضرر است)
+    scheduler.add_job(
+        _error_logs_auto_resolve_job,
+        trigger="interval",
+        hours=1,
+        id="error_logs_auto_resolve",
+        replace_existing=True,
+        misfire_grace_time=30 * 60,
     )
 
     scheduler.start()

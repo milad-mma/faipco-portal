@@ -21,7 +21,9 @@ export function reportClientError({ type = "error", message, stack, source, api,
     const text = String(message || "").slice(0, 2000);
     if (!text || IGNORE.some((re) => re.test(text) || re.test(String(stack || "")))) return;
     if (sent >= MAX_PER_PAGE_LOAD) return;
-    const key = `${type}|${text}|${api || ""}`;
+    // قطعی شبکه یک «حادثه» است نه چند خطا: وقتی اینترنت گوشی قطع می‌شود همه‌ی درخواست‌های هم‌زمان صفحه (داشبورد ۶ تا)
+    // با هم شکست می‌خورند؛ فقط اولی گزارش می‌شود و تا یک دقیقه قطعی‌های بعدی (هر API) نادیده گرفته می‌شوند
+    const key = type === "network" ? "network" : `${type}|${text}|${api || ""}`;
     const now = Date.now();
     if (now - (recent.get(key) || 0) < DEDUPE_MS) return;
     recent.set(key, now);

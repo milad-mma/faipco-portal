@@ -2,7 +2,7 @@
 Schemaهای Pydantic برای endpointهای احراز هویت (app/api/v1/endpoints/auth.py):
 ورود، تمدید توکن، تغییر رمز، بازنشانی رمز و به‌روزرسانی اطلاعات تماس.
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -53,8 +53,16 @@ class ContactInfoUpdateRequest(BaseModel):
     """
 
     email: EmailStr | None = None
-    mobile: str = Field(min_length=1)
+    mobile: str = Field(min_length=1, max_length=32)
     current_password: str | None = Field(default=None, max_length=256)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _empty_email_is_none(cls, value):
+        """فیلد ایمیلِ خالی در فرم («» یا فاصله) یعنی «ایمیل ندارم»، نه ایمیل نامعتبر (قبلاً 422 و صفحه‌ی سفید)."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value.strip() if isinstance(value, str) else value
 
 
 class TokenResponse(BaseModel):

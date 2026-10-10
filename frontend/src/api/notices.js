@@ -112,6 +112,8 @@ export async function createPayrollNotice({ title, body, priority, file }) {
 export async function fetchMyPayrollReceiptBlob(noticeId) {
   const { data } = await apiClient.get(`/notices/${noticeId}/payroll/mine`, {
     responseType: "blob",
+    // PDF روی اینترنت همراه کند (یا با VPN/پروکسی مرورگر) گاهی بیش از ۲۰ ثانیه‌ی پیش‌فرض طول می‌کشد
+    timeout: 60_000,
   });
   return data; // Blob از نوع application/pdf — فقط فیش خودِ کاربر جاری
 }
@@ -135,6 +137,8 @@ export async function createAttendanceCardNotice({ title, body, priority, cardSu
 export async function fetchMyAttendanceCardBlob(noticeId) {
   const { data } = await apiClient.get(`/notices/${noticeId}/attendance-card/mine`, {
     responseType: "blob",
+    // PDF روی اینترنت همراه کند (یا با VPN/پروکسی مرورگر) گاهی بیش از ۲۰ ثانیه‌ی پیش‌فرض طول می‌کشد
+    timeout: 60_000,
   });
   return data; // Blob از نوع application/pdf — فقط کارت خودِ کاربر جاری
 }

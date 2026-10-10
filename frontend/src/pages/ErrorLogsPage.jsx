@@ -3,6 +3,10 @@
  * اپ اندروید در یک فهرست. خطاهای یکسان یک ردیف با تعداد و آخرین زمان‌اند؛ هر ردیف توضیح ساده‌ی فارسی (اگر شناخته‌شده
  * باشد)، جزئیات فنی کامل و رخدادهای اخیر با کد پیگیری دارد. جست‌وجو با کد پیگیری‌ای که کاربر در پیام خطا دیده هم کار
  * می‌کند. پایین صفحه: ایمیل هشدار خطاهای جدید (فقط اگر ایمیل سامانه تنظیم شده باشد).
+ *
+ * تشخیص (diagnosis از سرور؛ backend/app/services/error_diagnosis.py): هر خطا یک برچسب رنگی «مشکل از کجاست» و یک جمله‌ی
+ * «کار شما» دارد. تب پیش‌فرض «نیاز به اقدام» فقط نارنجی/قرمز/نامشخص‌ها را نشان می‌دهد؛ «کاری لازم نیست» (اینترنت کاربر،
+ * کندی گذرا) جداست و بعد از ۲۴ ساعت بی‌رخداد خودکار «حل شد» می‌شود.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -44,6 +48,44 @@ import {
 import { monoFontSx } from "../theme";
 
 const PAGE_SIZE = 50;
+// رنگ و نشانه‌ی هر سطح تشخیص
+const LEVEL_STYLE = {
+  ok: { severity: "success", emoji: "🟢", label: "کاری لازم نیست" },
+  warn: { severity: "warning", emoji: "🟠", label: "نیاز به اقدام" },
+  critical: { severity: "error", emoji: "🔴", label: "نیاز به اقدام فوری" },
+  unknown: { severity: "info", emoji: "⚪", label: "نامشخص" },
+};
+// تب‌ها: وضعیت و فیلتر تشخیص
+const TABS = [
+  { key: "action", label: "نیاز به اقدام", state: "open", attention: "action" },
+  { key: "ok", label: "کاری لازم نیست", state: "open", attention: "ok" },
+  { key: "resolved", label: "حل‌شده", state: "resolved" },
+  { key: "all", label: "همه", state: "all" },
+];
+
+/** کادر «مشکل از کجاست / کار شما». compact: فقط عنوان و یک خط (برای کارت فهرست). */
+function DiagnosisBox({ diagnosis, compact = false }) {
+  if (!diagnosis) return null;
+  const style = LEVEL_STYLE[diagnosis.level] || LEVEL_STYLE.unknown;
+  return (
+    <Alert severity={style.severity} icon={false} sx={{ py: compact ? 0.25 : 1, px: compact ? 1.25 : 2, mt: compact ? 0.75 : 0 }}>
+      <Typography variant={compact ? "body2" : "subtitle2"} fontWeight={800}>
+        {style.emoji} مشکل از: {diagnosis.title}
+        {diagnosis.subject ? ` — کاربر ${diagnosis.subject}` : ""}
+      </Typography>
+      <Typography
+        variant={compact ? "caption" : "body2"}
+        sx={
+          compact
+            ? { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }
+            : { mt: 0.5 }
+        }
+      >
+        کار شما: {diagnosis.action}
+      </Typography>
+    </Alert>
+  );
+}
 const KIND_COLORS = { error: "error", slow: "warning", client: "info", android: "secondary" };
 
 const fmt = (value) => (value ? new Date(value).toLocaleString("fa-IR") : "—");
@@ -122,8 +164,9 @@ function DetailDialog({ id, onClose, onChanged }) {
               {data.resolved ? <Chip size="small" color="success" label="حل‌شده" /> : <Chip size="small" label="باز" />}
               <Chip size="small" variant="outlined" label={`${faNum(data.count)} بار`} />
             </Stack>
+            <DiagnosisBox diagnosis={data.diagnosis} />
             <Typography sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{data.message}</Typography>
-            {data.hint && (
+            {data.hint && !data.diagnosis?.action?.includes(data.hint) && (
               <Alert severity="info" icon={<LightbulbOutlinedIcon />}>
                 {data.hint}
               </Alert>
@@ -303,7 +346,9 @@ function AlertSettingsCard({ retentionDays }) {
 }
 
 export default function ErrorLogsPage() {
-  const [state, setState] = useState("open");
+  const [tab, setTab] = useState("action");
+  const tabDef = TABS.find((t) => t.key === tab) || TABS[0];
+  const state = tabDef.state;
   const [kind, setKind] = useState("");
   const [category, setCategory] = useState("");
   const [q, setQ] = useState("");
@@ -320,6 +365,7 @@ export default function ErrorLogsPage() {
     const seq = ++loadSeq.current;
     fetchErrorLogs({
       state,
+      attention: tabDef.attention,
       kind: kind || undefined,
       category: category || undefined,
       q: query || undefined,
@@ -332,7 +378,7 @@ export default function ErrorLogsPage() {
       .catch((e) => {
         if (seq === loadSeq.current) setError(e.response?.data?.detail || "دریافت گزارش خطاها ناموفق بود.");
       });
-  }, [state, kind, category, query, page]);
+  }, [state, tabDef.attention, kind, category, query, page]);
 
   useEffect(() => {
     load();
@@ -366,7 +412,7 @@ export default function ErrorLogsPage() {
   async function resolveAll() {
     setBusy(true);
     try {
-      await resolveAllErrorLogs({ kind: kind || undefined, category: category || undefined });
+      await resolveAllErrorLogs({ kind: kind || undefined, category: category || undefined, attention: tabDef.attention });
       load();
     } catch (e) {
       setError(e.response?.data?.detail || "ذخیره ناموفق بود.");
@@ -388,24 +434,48 @@ export default function ErrorLogsPage() {
         </Tooltip>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        همه‌ی خطاهای سرور، درخواست‌های کند، خطاهای مرورگر کاربران و خطاهای اپ اندروید. خطاهای یکسان یک ردیف با تعداد
-        تکرارند. کاربر کد پیگیری را که در پیام خطا دیده بفرستد، همین‌جا جست‌وجو کنید.
+        هر خطا یک تشخیص دارد: «مشکل از کجاست» و «کار شما». فقط تب «نیاز به اقدام» را دنبال کنید؛ بقیه یا کاری
+        لازم ندارند یا خودکار حل می‌شوند. کاربر کد پیگیری را که در پیام خطا دیده بفرستد، همین‌جا جست‌وجو کنید.
       </Typography>
+
+      {/* خلاصه‌ی اصلی: چند مورد واقعاً نیاز به اقدام دارد */}
+      {data?.attention && (
+        <Alert
+          severity={data.attention.action ? "warning" : "success"}
+          sx={{ mb: 2 }}
+          action={
+            data.attention.action && tab !== "action" ? (
+              <Button color="inherit" size="small" onClick={() => (setTab("action"), setPage(1))}>
+                نمایش
+              </Button>
+            ) : null
+          }
+        >
+          {data.attention.action
+            ? `${faNum(data.attention.action)} مورد نیاز به اقدام دارد.`
+            : "هیچ موردی نیاز به اقدام ندارد. پرتال سالم است."}
+          {data.attention.ok ? ` (${faNum(data.attention.ok)} مورد «کاری لازم نیست» هم باز است که خودکار حل می‌شود.)` : ""}
+        </Alert>
+      )}
 
       <SummaryChips summary={data?.summary} />
 
       <PillTabs
-        tabs={[
-          { key: "open", label: "باز" },
-          { key: "resolved", label: "حل‌شده" },
-          { key: "all", label: "همه" },
-        ]}
-        value={state}
+        tabs={TABS.map((t) => ({
+          key: t.key,
+          label:
+            t.key === "action" && data?.attention
+              ? `${t.label} (${faNum(data.attention.action)})`
+              : t.key === "ok" && data?.attention
+                ? `${t.label} (${faNum(data.attention.ok)})`
+                : t.label,
+        }))}
+        value={tab}
         onChange={(k) => {
-          setState(k);
+          setTab(k);
           setPage(1);
         }}
-        sx={{ maxWidth: 420 }}
+        sx={{ maxWidth: 640 }}
       />
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 2 }}>
@@ -453,6 +523,7 @@ export default function ErrorLogsPage() {
           ))}
         </TextField>
         {/* با جست‌وجوی فعال پنهان است: «همه» در سرور فقط با نوع و بخش فیلتر می‌شود، نه متن جست‌وجو */}
+        {/* «حل شدن همه» فقط همان تب (نیاز به اقدام / کاری لازم نیست) و همان نوع/بخش؛ با جست‌وجوی فعال پنهان است */}
         {state === "open" && !query && data?.total > 0 && (
           <Button onClick={resolveAll} disabled={busy} startIcon={<CheckCircleOutlineIcon />} color="success">
             حل شدن همه‌ی موارد این فیلتر
@@ -465,7 +536,9 @@ export default function ErrorLogsPage() {
       {!data ? (
         <CircularProgress />
       ) : data.items.length === 0 ? (
-        <Alert severity="success">{state === "open" ? "خطای بازی وجود ندارد." : "موردی پیدا نشد."}</Alert>
+        <Alert severity="success">
+          {tab === "action" ? "هیچ موردی نیاز به اقدام ندارد." : tab === "ok" ? "موردی نیست." : "موردی پیدا نشد."}
+        </Alert>
       ) : (
         <Stack spacing={1.25}>
           {data.items.map((item) => (
@@ -489,11 +562,7 @@ export default function ErrorLogsPage() {
                   >
                     {item.message}
                   </Typography>
-                  {item.hint && (
-                    <Typography variant="caption" color="info.main" sx={{ display: "block", mt: 0.5 }}>
-                      💡 {item.hint}
-                    </Typography>
-                  )}
+                  <DiagnosisBox diagnosis={item.diagnosis} compact />
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
                     آخرین بار: {fmt(item.last_seen)}
                     {item.last_user_label ? ` · کاربر: ${item.last_user_label}` : ""}

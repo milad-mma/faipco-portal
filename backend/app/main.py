@@ -23,6 +23,7 @@ from app.core.request_context import (
     current_request_id,
     current_request_label,
     current_user_agent,
+    current_user_ref,
 )
 from app.services import error_log_service
 
@@ -131,7 +132,13 @@ async def request_context_middleware(request: Request, call_next):
         try:
             response = await call_next(request)
         except Exception:  # noqa: BLE001 - خطای پیش‌بینی‌نشده‌ی Endpoint: ثبت با جزئیات کامل و پیام قابل‌پیگیری
-            logging.getLogger("faipco.http").exception("خطای پیش‌بینی‌نشده در %s %s", request.method, path)
+            # Endpoint در Task جدا اجرا می‌شود و current_user_ref که get_current_user آن‌جا ست کرده به این‌جا نمی‌رسد؛
+            # کاربر از request.state (همان درخواست) برداشته می‌شود تا در «گزارش خطاها» نام کاربر خالی نماند
+            user_token = current_user_ref.set(getattr(request.state, "user_ref", None))
+            try:
+                logging.getLogger("faipco.http").exception("خطای پیش‌بینی‌نشده در %s %s", request.method, path)
+            finally:
+                current_user_ref.reset(user_token)
             response = JSONResponse(
                 status_code=500,
                 content={"detail": f"خطای داخلی سرور رخ داد. کد پیگیری: {request_id}"},
@@ -158,8 +165,13 @@ async def request_context_middleware(request: Request, call_next):
         current_client_ip.reset(ip_token)
 
 
-# درخواست‌هایی که ذاتاً طولانی‌اند و «درخواست کند» حساب نمی‌شوند (بکاپ، بازیابی، آپدیت، فایل‌های حجیم)
-_SLOW_EXEMPT = ("/backup", "/restore", "/apply-update", "/check-update", "/app/releases", "/download")
+# درخواست‌هایی که ذاتاً طولانی‌اند و «درخواست کند» حساب نمی‌شوند: بکاپ، بازیابی، آپدیت، فایل‌های حجیم، و دکمه‌های
+# «آزمایش» که به سرویس بیرونی وصل می‌شوند و مدیر خودش نتیجه را می‌بیند (ایمیل آزمایشی، پیامک، SMB/FTP، اتصال کاراوب)،
+# و ارسال دوباره‌ی Push به همه‌ی مخاطبان یک اطلاعیه
+_SLOW_EXEMPT = (
+    "/backup", "/restore", "/apply-update", "/check-update", "/app/releases", "/download",
+    "/test", "/resend-push",
+)
 
 
 @app.exception_handler(StarletteHTTPException)

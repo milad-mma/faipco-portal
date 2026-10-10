@@ -406,10 +406,10 @@ class InsuranceService:
         registration.personnel_code = employee.personnel_code
         registration.first_name = employee.first_name
         registration.last_name = employee.last_name
-        registration.birth_date = view.birth_date or ""
+        registration.birth_date = self._fit(view.birth_date, 10)
         registration.gender = view.gender or 0
-        registration.national_id = view.national_id or ""
-        registration.employment_date = view.employment_date or ""
+        registration.national_id = self._fit(view.national_id, 10)
+        registration.employment_date = self._fit(view.employment_date, 10)
         # بقیه‌ی فیلدهای فرم (تأهل، شماره حساب، ...) از خروجی اعتبارسنجی
         for key, value in main.items():
             setattr(registration, key, value)
@@ -769,6 +769,15 @@ class InsuranceService:
             row.is_disabled = not enabled
         await self.db.commit()
 
+    @staticmethod
+    def _fit(value: str | None, max_len: int) -> str:
+        """
+        مقدار پرسنل (از کاراوب) فقط اگر در ستون جا شود؛ وگرنه خالی. داده‌ی بدقالب کاراوب (مثلاً دو شماره موبایل در یک
+        فیلد) قبلاً کل ثبت‌نام را با خطای ۵۰۰ «value too long» متوقف می‌کرد.
+        """
+        text = (value or "").strip()
+        return text if len(text) <= max_len else ""
+
     async def _get_or_create_shell(self, employee: Employee) -> InsuranceRegistration:
         """
         ثبت‌نام پرسنل را برمی‌گرداند؛ اگر وجود نداشت یک رکورد خالی (پوسته) با
@@ -785,13 +794,14 @@ class InsuranceService:
             first_name=employee.first_name,
             last_name=employee.last_name,
             father_name="",
-            birth_date=view.birth_date or "",
+            birth_date=self._fit(view.birth_date, 10),
             gender=view.gender or 0,
             marital_status=0,
-            national_id=view.national_id or "",
+            national_id=self._fit(view.national_id, 10),
             birth_certificate_no="",
-            mobile_number=view.mobile or "",
-            employment_date=view.employment_date or "",
+            # پوسته فقط نگه‌دارنده‌ی مدارک است؛ موبایل واقعی از فرم (اعتبارسنجی‌شده) در save نوشته می‌شود
+            mobile_number=view.mobile if view.mobile and rules.is_valid_mobile(view.mobile) else "",
+            employment_date=self._fit(view.employment_date, 10),
             insurance_no="",
             bank_code=0,
             account_number="",

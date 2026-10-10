@@ -16,6 +16,70 @@ export const apiClient = axios.create({
   timeout: 20_000,
 });
 
+// خطای اعتبارسنجی FastAPI (422) فهرستی از اشیای {type, loc, msg, ...} است، نه متن. صفحه‌هایی که
+// err.response.data.detail را مستقیم نمایش می‌دهند با این شیء از کار می‌افتادند (React error #31 / صفحه‌ی سفید)؛
+// همین‌جا یک‌بار به متن فارسی تبدیل می‌شود تا همه‌ی صفحه‌ها همیشه رشته بگیرند.
+const FIELD_LABELS = {
+  email: "ایمیل",
+  mobile: "موبایل",
+  mobile_number: "موبایل",
+  current_password: "رمز فعلی",
+  new_password: "رمز جدید",
+  password: "رمز عبور",
+  username: "نام کاربری",
+  national_id: "کد ملی",
+  title: "عنوان",
+  body: "متن",
+  file: "فایل",
+};
+function validationMessage(item) {
+  const loc = Array.isArray(item?.loc) ? item.loc.filter((p) => p !== "body" && p !== "query") : [];
+  const field = loc.length ? String(loc[loc.length - 1]) : "";
+  const label = FIELD_LABELS[field] || field;
+  const ctx = item?.ctx || {};
+  const type = item?.type || "";
+  let text;
+  if (type === "missing") text = "الزامی است";
+  else if (type === "string_too_short") text = ctx.min_length > 1 ? `حداقل ${ctx.min_length} نویسه باشد` : "نباید خالی باشد";
+  else if (type === "string_too_long") text = `حداکثر ${ctx.max_length} نویسه مجاز است`;
+  else if (type === "value_error" && /email/i.test(item?.msg || "")) text = "معتبر نیست";
+  else if (type === "value_error") text = String(item?.msg || "").replace(/^Value error,\s*/, "") || "معتبر نیست";
+  else text = "معتبر نیست";
+  return label ? `${label}: ${text}` : text;
+}
+function normalizeErrorDetail(error) {
+  const data = error?.response?.data;
+  if (data && Array.isArray(data.detail)) {
+    data.detail = data.detail.map(validationMessage).join("، ") || "اطلاعات واردشده معتبر نیست.";
+  }
+}
+
+// درخواست‌های پس‌زمینه که کاربر نتیجه‌شان را مستقیم نمی‌بیند (یا در نبودشان صفحه با پیش‌فرض کار می‌کند)، و پرسش‌های
+// دوره‌ای وضعیت آپدیت/بازیابی که هنگام ری‌استارت سرور قطعی‌شان طبیعی است: قطعی شبکه‌ی این‌ها در «گزارش خطاها» ثبت
+// نمی‌شود — فقط قطعی‌هایی که کاربر واقعاً با آن‌ها به مشکل می‌خورد (ورود، ذخیره‌ی فرم، باز کردن فیش، ...).
+const BACKGROUND_PATHS = [
+  "/system/version",
+  "/system/branding",
+  "/system/update-status",
+  "/system/check-status",
+  "/system/server-stats",
+  "/system/usage-stats",
+  "/system/ip-blocked-message",
+  "/system/mobile-app-feature",
+  "/backup/restore-status",
+  "/auth/captcha-status",
+  "/announcement/current",
+  "/feedback/mine/unread-count",
+  "/mobile/app/latest",
+  "/mobile/me",
+];
+function isBackgroundRequest(config) {
+  // فقط خواندن (GET)؛ ذخیره‌ی مدیر روی همین مسیرها (مثلاً PUT /system/branding/...) کار کاربر است و گزارش می‌شود
+  if (String(config?.method || "get").toLowerCase() !== "get") return false;
+  const path = String(config?.url || "").split("?")[0];
+  return BACKGROUND_PATHS.includes(path);
+}
+
 const SEARCH_PARAM_KEYS = ["search", "q"]; // نام پارامترهای جست‌وجو که قبل از ارسال یکسان‌سازی می‌شوند
 
 // --- تزریق خودکار Access Token در هر درخواست ---
@@ -62,6 +126,7 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+    normalizeErrorDetail(error);
 
     // درخواستی که اصلاً جواب نگرفت (قطع ارتباط، Timeout) — نه خطای HTTP — در «گزارش خطاها» ثبت می‌شود تا کندی/قطعی
     // بین مرورگر و سرور دیده شود. وقتی خود مرورگر آفلاین است گزارش نمی‌شود (آن مشکل اینترنت کاربر است).
@@ -71,7 +136,8 @@ apiClient.interceptors.response.use(
       error.code !== "ERR_CANCELED" &&
       error.message !== "Request aborted" &&
       navigator.onLine !== false &&
-      document.visibilityState !== "hidden"
+      document.visibilityState !== "hidden" &&
+      !isBackgroundRequest(originalRequest)
     ) {
       reportClientError({
         type: "network",

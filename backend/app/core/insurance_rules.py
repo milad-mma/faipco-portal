@@ -91,9 +91,22 @@ def normalize_national_id(value: str) -> str:
 
 
 def normalize_mobile(value: str) -> str:
-    """شماره موبایل ۱۰ رقمی بدون صفر را با صفر ابتدایی برمی‌گرداند."""
+    """
+    موبایل را به قالب ۱۱ رقمی «09xxxxxxxxx» می‌برد: فاصله، خط تیره و پرانتز حذف، پیش‌شماره‌ی ‎+98 / 0098 / 98‎ به
+    صفر تبدیل، و شماره‌ی ۱۰ رقمیِ بدون صفر با صفر ابتدایی. مثال: «‎+98 912-123 4567‎» ← «09121234567».
+    ورودی غیرقابل‌تبدیل (مثلاً دو شماره پشت سر هم در کاراوب) تغییرِ دیگری نمی‌کند؛ is_valid_mobile ردش می‌کند.
+    """
     text = to_english_digits(value).strip()
-    return "0" + text if len(text) == 10 and not text.startswith("0") else text
+    compact = re.sub(r"[\s\-()./]", "", text)
+    if compact.startswith("+"):
+        compact = compact[1:]
+    if compact.startswith("0098"):
+        compact = "0" + compact[4:]
+    elif compact.startswith("98") and len(compact) == 12:
+        compact = "0" + compact[2:]
+    if compact.isdigit():
+        return "0" + compact if len(compact) == 10 and not compact.startswith("0") else compact
+    return text
 
 
 def normalize_sheba(value: str) -> str:

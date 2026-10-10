@@ -33,7 +33,7 @@ router = APIRouter()
 PERMISSION = "system.logs"
 
 
-def _item(row: ErrorLog, with_detail: bool = False) -> dict:
+def _item(row: ErrorLog, with_detail: bool = False, diagnosis: dict | None = None) -> dict:
     data = {
         "id": row.id,
         "kind": row.kind,
@@ -52,6 +52,8 @@ def _item(row: ErrorLog, with_detail: bool = False) -> dict:
         "last_context": row.last_context,
         "resolved": row.resolved_at is not None,
         "resolved_at": row.resolved_at,
+        # تشخیص: مشکل از کجاست و کار مدیر چیست (error_diagnosis.py)
+        "diagnosis": diagnosis,
     }
     if with_detail:
         data["detail"] = row.detail
@@ -94,18 +96,35 @@ async def list_errors(
     state: str = Query(default="open", pattern="^(open|resolved|all)$"),
     q: str | None = Query(default=None, max_length=200),
     since_hours: int | None = Query(default=None, ge=1, le=24 * 31),
+    # action = فقط «نیاز به اقدام» (نارنجی، قرمز، نامشخص)، ok = فقط «کاری لازم نیست»
+    attention: str | None = Query(default=None, pattern="^(action|ok)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission(PERMISSION)),
 ):
+    from app.services.error_diagnosis import needs_action
+
     conds = _filters(kind, category, state, q, since_hours)
-    total = (await db.execute(select(func.count()).select_from(ErrorLog).where(*conds))).scalar_one()
-    rows = (
-        await db.execute(
-            select(ErrorLog).where(*conds).order_by(ErrorLog.last_seen.desc()).limit(page_size).offset((page - 1) * page_size)
+    if attention:
+        # تشخیص به آمار رخدادها وابسته است (SQL ساده نیست): همه‌ی گروه‌های فیلتر (حداکثر ۲۰۰۰) تشخیص داده و در پایتون
+        # فیلتر/صفحه‌بندی می‌شوند؛ تعداد گروه‌ها کم است (یکسان‌ها یک ردیف‌اند و بعد از ۳۰ روز پاک می‌شوند)
+        all_rows = list(
+            (await db.execute(select(ErrorLog).where(*conds).order_by(ErrorLog.last_seen.desc()).limit(2000))).scalars().all()
         )
-    ).scalars().all()
+        all_diag = await svc.diagnose_rows(db, all_rows)
+        wanted = [r for r in all_rows if needs_action(all_diag[r.id]) == (attention == "action")]
+        total = len(wanted)
+        rows = wanted[(page - 1) * page_size : page * page_size]
+        diagnoses = {r.id: all_diag[r.id] for r in rows}
+    else:
+        total = (await db.execute(select(func.count()).select_from(ErrorLog).where(*conds))).scalar_one()
+        rows = (
+            await db.execute(
+                select(ErrorLog).where(*conds).order_by(ErrorLog.last_seen.desc()).limit(page_size).offset((page - 1) * page_size)
+            )
+        ).scalars().all()
+        diagnoses = await svc.diagnose_rows(db, list(rows))
     # خلاصه: موارد باز ۲۴ ساعت اخیر به‌تفکیک نوع
     day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
     summary_rows = (
@@ -116,11 +135,16 @@ async def list_errors(
         )
     ).all()
     summary = {k: {"groups": int(g), "occurrences": int(c)} for k, g, c in summary_rows}
+    # شمارنده‌ی بالای صفحه: موارد باز «نیاز به اقدام» / «کاری لازم نیست» (همه‌ی گروه‌های باز، بدون فیلتر صفحه)
+    open_rows = list((await db.execute(select(ErrorLog).where(ErrorLog.resolved_at.is_(None)).limit(2000))).scalars().all())
+    open_diag = await svc.diagnose_rows(db, open_rows)
+    action_count = sum(1 for d in open_diag.values() if needs_action(d))
     categories = [{"key": k, "label": v} for k, v in svc.CATEGORY_LABELS.items()]
     return {
-        "items": [_item(r) for r in rows],
+        "items": [_item(r, diagnosis=diagnoses.get(r.id)) for r in rows],
         "total": int(total),
         "summary": summary,
+        "attention": {"action": action_count, "ok": len(open_rows) - action_count},
         "categories": categories,
         "kinds": [{"key": k, "label": v} for k, v in svc.KIND_LABELS.items()],
         "retention_days": svc.RETENTION_DAYS,
@@ -179,13 +203,27 @@ async def test_alert_email(db: AsyncSession = Depends(get_db), _user: User = Dep
 async def resolve_all(
     kind: str | None = Query(default=None, pattern="^(error|slow|client|android)$"),
     category: str | None = Query(default=None, max_length=32),
+    attention: str | None = Query(default=None, pattern="^(action|ok)$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(PERMISSION)),
 ):
+    """همه‌ی موارد باز (با فیلتر نوع/بخش و در صورت ارسال، فقط همان دسته‌ی تشخیص: action / ok) حل‌شده می‌شوند."""
+    from app.services.error_diagnosis import needs_action
+
     conds = _filters(kind, category, "open", None, None)
-    result = await db.execute(
-        update(ErrorLog).where(*conds).values(resolved_at=datetime.now(timezone.utc), resolved_by_user_id=user.id)
-    )
+    now = datetime.now(timezone.utc)
+    if attention:
+        rows = list((await db.execute(select(ErrorLog).where(*conds).limit(2000))).scalars().all())
+        diagnoses = await svc.diagnose_rows(db, rows)
+        count = 0
+        for r in rows:
+            if needs_action(diagnoses[r.id]) == (attention == "action"):
+                r.resolved_at = now
+                r.resolved_by_user_id = user.id
+                count += 1
+        await db.commit()
+        return {"resolved": count}
+    result = await db.execute(update(ErrorLog).where(*conds).values(resolved_at=now, resolved_by_user_id=user.id))
     await db.commit()
     return {"resolved": result.rowcount or 0}
 
@@ -252,8 +290,9 @@ async def get_error(
             .limit(50)
         )
     ).scalars().all()
+    diagnosis = (await svc.diagnose_rows(db, [row]))[row.id]
     return {
-        **_item(row, with_detail=True),
+        **_item(row, with_detail=True, diagnosis=diagnosis),
         "occurrences": [
             {
                 "occurred_at": o.occurred_at,
@@ -278,7 +317,7 @@ async def resolve_error(
     row.resolved_at = datetime.now(timezone.utc)
     row.resolved_by_user_id = user.id
     await db.commit()
-    return _item(row)
+    return _item(row, diagnosis=(await svc.diagnose_rows(db, [row]))[row.id])
 
 
 @router.post("/{error_id}/reopen")
@@ -291,4 +330,4 @@ async def reopen_error(
     row.resolved_at = None
     row.resolved_by_user_id = None
     await db.commit()
-    return _item(row)
+    return _item(row, diagnosis=(await svc.diagnose_rows(db, [row]))[row.id])

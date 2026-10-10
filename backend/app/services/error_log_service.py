@@ -468,8 +468,16 @@ async def flush() -> int:
 
 
 def _alert_worthy(item: dict) -> bool:
-    """ایمیل فوری فقط برای خطاهای واقعی: سرور، اپ، و از کار افتادن صفحه (نه درخواست کند یا قطعی اینترنت کاربر)."""
-    return item["kind"] in ("error", "android") or item["category"] == "frontend_crash"
+    """
+    ایمیل فوری فقط برای خطاهای واقعی: سرور، اپ، و از کار افتادن صفحه (نه درخواست کند یا قطعی اینترنت کاربر)، و فقط اگر
+    تشخیص «نیاز به اقدام» باشد (مثلاً «نسخه‌ی قدیمی در مرورگر» ایمیل نمی‌شود).
+    """
+    from app.services.error_diagnosis import diagnose, needs_action
+
+    if not (item["kind"] in ("error", "android") or item["category"] == "frontend_crash"):
+        return False
+    probe = {**item, "hint": hint_for(item["kind"], item["category"], item["message"])}
+    return needs_action(diagnose(probe))
 
 
 async def _flush_loop() -> None:
@@ -499,6 +507,92 @@ async def stop() -> None:
     await flush()
     if _alert_tasks:
         await asyncio.wait(list(_alert_tasks), timeout=10)
+
+
+# ---------------------------------------------------------------- تشخیص (error_diagnosis.py)
+
+
+def row_item(row: ErrorLog) -> dict:
+    """داده‌ی لازم برای diagnose از یک ردیف گروه."""
+    return {
+        "kind": row.kind,
+        "category": row.category,
+        "source": row.source,
+        "message": row.message,
+        "last_request": row.last_request,
+        "last_user_label": row.last_user_label,
+        "hint": hint_for(row.kind, row.category, row.message),
+    }
+
+
+async def diagnosis_stats(db: AsyncSession, rows: list[ErrorLog]) -> dict[int, dict]:
+    """
+    آمار لازم برای تشخیص: برای قطعی‌های شبکه‌ی مرورگر، تعداد IP متفاوت با قطعی شبکه (در هر صفحه‌ای) در ±۱۵ دقیقه‌ی
+    آخرین رخداد؛ برای درخواست‌های کند، تعداد رخداد ۲۴ ساعت اخیر. خروجی: {error_id: {...}}.
+    """
+    from app.services.error_diagnosis import NETWORK_WINDOW
+
+    stats: dict[int, dict] = {r.id: {} for r in rows}
+    slow_ids = [r.id for r in rows if r.kind == "slow"]
+    if slow_ids:
+        since = _now() - timedelta(hours=24)
+        result = await db.execute(
+            select(ErrorLogOccurrence.error_id, func.count())
+            .where(ErrorLogOccurrence.error_id.in_(slow_ids), ErrorLogOccurrence.occurred_at >= since)
+            .group_by(ErrorLogOccurrence.error_id)
+        )
+        for error_id, n in result.all():
+            stats[error_id]["occurrences_24h"] = int(n)
+    for r in rows:
+        if r.kind != "client" or r.category != "network":
+            continue
+        result = await db.execute(
+            select(func.count(func.distinct(ErrorLogOccurrence.ip)))
+            .join(ErrorLog, ErrorLog.id == ErrorLogOccurrence.error_id)
+            .where(
+                ErrorLog.kind == "client",
+                ErrorLog.category == "network",
+                ErrorLogOccurrence.occurred_at >= r.last_seen - NETWORK_WINDOW,
+                ErrorLogOccurrence.occurred_at <= r.last_seen + NETWORK_WINDOW,
+            )
+        )
+        stats[r.id]["distinct_ips_window"] = int(result.scalar_one() or 0)
+    return stats
+
+
+async def diagnose_rows(db: AsyncSession, rows: list[ErrorLog]) -> dict[int, dict]:
+    """تشخیص هر ردیف: {error_id: {key, level, title, action, subject}}."""
+    from app.services.error_diagnosis import diagnose
+
+    stats = await diagnosis_stats(db, rows)
+    return {r.id: diagnose(row_item(r), stats.get(r.id)) for r in rows}
+
+
+async def auto_resolve_quiet(db: AsyncSession) -> int:
+    """
+    گروه‌های بازی که تشخیصشان «کاری لازم نیست» است (اینترنت همان کاربر، کندی گذرا، نسخه‌ی قدیمی مرورگر) و ۲۴ ساعت
+    رخداد تازه نداشته‌اند، خودکار «حل شد» می‌شوند تا فهرست فقط موارد مهم را نشان دهد. خروجی: تعداد.
+    """
+    from app.services.error_diagnosis import AUTO_RESOLVE_AFTER
+
+    cutoff = _now() - AUTO_RESOLVE_AFTER
+    rows = (
+        await db.execute(
+            select(ErrorLog).where(ErrorLog.resolved_at.is_(None), ErrorLog.last_seen < cutoff).limit(2000)
+        )
+    ).scalars().all()
+    if not rows:
+        return 0
+    diagnoses = await diagnose_rows(db, list(rows))
+    now = _now()
+    count = 0
+    for r in rows:
+        if diagnoses[r.id]["level"] == "ok":
+            r.resolved_at = now
+            r.resolved_by_user_id = None
+            count += 1
+    await db.commit()
+    return count
 
 
 async def purge_old(db: AsyncSession) -> int:
