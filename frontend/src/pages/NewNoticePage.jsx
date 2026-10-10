@@ -340,7 +340,10 @@ export default function NewNoticePage() {
         file: payrollForm.file,
       });
       setPayrollResult(uploadResult);
-      const message = `اطلاعیه فیش حقوقی ارسال شد. تعداد پرسنل منطبق (دریافت‌کننده): ${uploadResult.matched_employee_count}`;
+      const loanPaid = uploadResult.loan_installments_paid
+        ? ` — ${uploadResult.loan_installments_paid} قسط وام از روی همین فیش «پرداخت شد» ثبت شد`
+        : "";
+      const message = `اطلاعیه فیش حقوقی ارسال شد. تعداد پرسنل منطبق (دریافت‌کننده): ${uploadResult.matched_employee_count}${loanPaid}`;
       setResult({ success: true, message });
     } catch (err) {
       // فرم و فایل انتخاب‌شده می‌مانند؛ فقط پیام خطا نمایش داده می‌شود

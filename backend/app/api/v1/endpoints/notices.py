@@ -530,6 +530,7 @@ async def create_payroll_notice(
 
     return PayrollNoticeResultOut(
         notice_id=result.notice.id,
+        loan_installments_paid=result.loan_installments_paid,
         matched_employee_count=result.matched_employee_count,
         missing_codes=result.missing_codes,
         invalid_row_count=result.invalid_row_count,

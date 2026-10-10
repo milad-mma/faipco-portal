@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -42,6 +43,8 @@ PayrollXmlError = PayrollParseError
 _XLSX_EXTENSIONS = (".xlsx", ".xlsm")  # پسوندهایی که با Parser اکسل خوانده می‌شوند
 
 
+logger = logging.getLogger(__name__)
+
 def parse_payroll_file(filename: str, file_bytes: bytes) -> list[ParsedReceiptItem]:
     """
     ورودی: نام و بایت‌های فایل. Parser را بر اساس پسوند انتخاب می‌کند (پسوند ناشناخته = XML).
@@ -61,6 +64,7 @@ class PayrollNoticeResult:
     missing_codes: list[str] = field(default_factory=list)  # کدهای موجود در فایل که پرسنلی با آن‌ها پیدا نشد
     invalid_row_count: int = 0  # ردیف‌هایی که اصلاً کد پرسنلی نداشتند
     out_of_scope_codes: list[str] = field(default_factory=list)  # کدهایی که فقط در سایت‌های غیرمجاز فرستنده پرسنل دارند
+    loan_installments_paid: int = 0  # اقساط وامی که از روی همین فیش خودکار «پرداخت شد» شدند
 
 
 class PayrollNoticeService:
@@ -157,8 +161,23 @@ class PayrollNoticeService:
 
         await self.db.commit()
 
+        # وام: تیک خودکار اقساطی که در این فیش کسر شده‌اند (Migration 108). خطای این بخش ارسال فیش را خراب نمی‌کند.
+        loan_installments_paid = 0
+        # Session جدا: خطا/rollback آن روی اطلاعیه‌ی ثبت‌شده و پاسخ همین درخواست اثر نمی‌گذارد
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.services.loan_service import LoanService
+
+            async with AsyncSessionLocal() as loan_db:
+                loan_installments_paid = await LoanService(loan_db).apply_payslips(
+                    notice.id, title, {eid: fields for eid, (_code, fields) in employee_receipt_data.items()}
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("تطبیق اقساط وام با فیش حقوقی ناموفق بود")
+
         return PayrollNoticeResult(
             notice=notice,
+            loan_installments_paid=loan_installments_paid,
             matched_employee_count=len(employee_receipt_data),
             missing_codes=sorted(set(missing_codes)),
             invalid_row_count=invalid_row_count,

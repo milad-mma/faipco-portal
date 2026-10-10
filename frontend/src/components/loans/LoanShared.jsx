@@ -158,7 +158,7 @@ export function InstallmentsTable({ item, onToggle, busyId }) {
                 <Chip
                   size="small"
                   color={i.paid ? "success" : "default"}
-                  label={i.paid ? "پرداخت شد" : "پرداخت نشده"}
+                  label={i.paid ? (i.from_payslip ? "پرداخت شد (فیش حقوقی)" : "پرداخت شد") : "پرداخت نشده"}
                   onClick={onToggle ? () => onToggle(i) : undefined}
                   disabled={busyId === i.id}
                 />

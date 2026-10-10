@@ -60,6 +60,7 @@ class ReplaceGuarantorIn(BaseModel):
 class SiteSettingsIn(BaseModel):
     is_enabled: bool
     site_manager_employee_id: int | None = None
+    payslip_loan_title: str | None = Field(default=None, max_length=200)
 
 
 class LoanTypeIn(BaseModel):
@@ -71,6 +72,9 @@ class LoanTypeIn(BaseModel):
     extra_requirement: str | None = Field(default=None, max_length=500)
     out_of_queue: bool = False
     is_active: bool = True
+    guarantor_max_active: int | None = Field(default=None, ge=0, le=1000)
+    guarantor_min_service_months: int | None = Field(default=None, ge=0, le=1000)
+    guarantor_no_active_loan: bool = False
 
 
 class PolicyIn(BaseModel):
@@ -79,9 +83,6 @@ class PolicyIn(BaseModel):
     rules_text: str | None = Field(default=None, max_length=20000)
     block_if_unsettled: bool = True
     approval_steps: list[str] | None = Field(default=None, max_length=10)
-    guarantor_max_active: int | None = Field(default=None, ge=0, le=1000)
-    guarantor_min_service_months: int | None = Field(default=None, ge=0, le=1000)
-    guarantor_no_active_loan: bool = False
     types: list[LoanTypeIn] = Field(default_factory=list, max_length=50)
 
 
@@ -167,11 +168,12 @@ async def my_loans(db: AsyncSession = Depends(get_db), current_user: User = Depe
 @router.get("/guarantor-candidates")
 async def guarantor_candidates(
     q: str | None = Query(default=None, max_length=100),
+    loan_type_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     employee = await _require_employee(db, current_user)
-    return await LoanService(db).guarantor_candidates(employee, q)
+    return await LoanService(db).guarantor_candidates(employee, q, loan_type_id)
 
 
 @router.post("")
@@ -278,7 +280,9 @@ async def update_site(
     await _require(db, current_user, site_id, "loans.policy")
     service = LoanService(db)
     try:
-        await service.update_site_settings(site_id, payload.is_enabled, payload.site_manager_employee_id)
+        await service.update_site_settings(
+            site_id, payload.is_enabled, payload.site_manager_employee_id, payload.payslip_loan_title
+        )
     except LoanError as e:
         raise _err(e) from e
     return {"ok": True}

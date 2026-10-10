@@ -158,6 +158,7 @@ class PayrollNoticeResultOut(BaseModel):
     missing_codes: list[str]
     invalid_row_count: int
     out_of_scope_codes: list[str] = []  # کدهایی که فقط در سایت‌های خارج از مجوز فرستنده پرسنل دارند (ارسال نشد)
+    loan_installments_paid: int = 0  # اقساط وامی که از روی این فیش خودکار «پرداخت شد» شدند
 
 
 class AttendanceCardResultOut(BaseModel):

@@ -9,8 +9,9 @@ export async function fetchMyLoans() {
   return data;
 }
 
-export async function searchGuarantors(q) {
-  const { data } = await apiClient.get("/loans/guarantor-candidates", { params: { q } });
+// همکاران قابل انتخاب به‌عنوان ضامن؛ loanTypeId: قواعد ضامنِ همان نوع وام اعمال می‌شود
+export async function searchGuarantors(q, loanTypeId) {
+  const { data } = await apiClient.get("/loans/guarantor-candidates", { params: { q, loan_type_id: loanTypeId || undefined } });
   return data; // [{ id, label }]
 }
 

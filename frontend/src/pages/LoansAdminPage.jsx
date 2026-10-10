@@ -25,7 +25,6 @@ import {
   MenuItem,
   Radio,
   RadioGroup,
-  Snackbar,
   Stack,
   Switch,
   Table,
@@ -39,6 +38,9 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import PillTabs from "../components/PillTabs";
+import ResultDialog from "../components/ResultDialog";
+import JalaliCalendarField from "../components/JalaliCalendarField";
+import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import LoanPolicyEditor, { FACTORY_TEMPLATE, STEP_LABELS } from "../components/loans/LoanPolicyEditor";
 import {
   AmountField,
@@ -87,25 +89,46 @@ const STATUS_FILTERS = [
   { value: "cancelled", label: "لغوشده" },
 ];
 
-// «۱۴۰۵/۰۸» → «1405/08»
-function digitsOnlySlash(value) {
-  return String(value || "")
-    .split("/")
-    .map((part) => digitsOnly(part))
-    .join("/");
+// ماه بعد به‌عنوان پیش‌فرض شروع اقساط: {year, month} شمسی
+function nextMonthJalali() {
+  const { jy, jm } = gregorianToJalali(new Date());
+  return jm === 12 ? { year: jy + 1, month: 1 } : { year: jy, month: jm + 1 };
 }
 
-function nextMonthJalali() {
-  // ماه بعد به‌عنوان پیش‌فرض شروع اقساط (YYYY/MM)
-  const fmt = new Intl.DateTimeFormat("en-US-u-ca-persian", { year: "numeric", month: "numeric" });
-  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map((p) => [p.type, p.value]));
-  let y = Number(String(parts.year).replace(/\D/g, ""));
-  let m = Number(parts.month) + 1;
-  if (m > 12) {
-    m = 1;
-    y += 1;
-  }
-  return `${y}/${String(m).padStart(2, "0")}`;
+// انتخاب ماه و سال شمسی (سال جاری تا دو سال بعد) برای ماه اولین قسط
+function JalaliMonthPicker({ value, onChange, label }) {
+  const { jy } = gregorianToJalali(new Date());
+  const years = [jy - 1, jy, jy + 1, jy + 2];
+  return (
+    <Stack direction="row" spacing={1.5}>
+      <TextField
+        select
+        label={`${label} — ماه`}
+        value={value.month}
+        onChange={(e) => onChange({ ...value, month: Number(e.target.value) })}
+        sx={{ flex: 1 }}
+      >
+        {JALALI_MONTH_NAMES.map((name, i) => (
+          <MenuItem key={i + 1} value={i + 1}>
+            {name}
+          </MenuItem>
+        ))}
+      </TextField>
+      <TextField
+        select
+        label="سال"
+        value={value.year}
+        onChange={(e) => onChange({ ...value, year: Number(e.target.value) })}
+        sx={{ minWidth: 110 }}
+      >
+        {years.map((y) => (
+          <MenuItem key={y} value={y}>
+            {y.toLocaleString("fa-IR", { useGrouping: false })}
+          </MenuItem>
+        ))}
+      </TextField>
+    </Stack>
+  );
 }
 
 // ---------- دیالوگ پرداخت ----------
@@ -135,7 +158,7 @@ function PayDialog({ item, onClose, onDone }) {
   }, [item]);
   if (!item) return null;
   const n = mode === "count" ? Number(count) || 0 : per ? Math.ceil(Number(amount || 0) / Number(per)) : 0;
-  const valid = Number(amount) > 0 && n >= 1 && n <= 120 && n <= Number(amount) && /^\d{4}\/\d{1,2}$/.test(digitsOnlySlash(firstMonth));
+  const valid = Number(amount) > 0 && n >= 1 && n <= 120 && n <= Number(amount);
   const perShown = mode === "count" && n ? Math.floor(Number(amount || 0) / n) : Number(per) || 0;
   const save = async () => {
     setSaving(true);
@@ -145,7 +168,7 @@ function PayDialog({ item, onClose, onDone }) {
         amount_approved: amount,
         installment_count: mode === "count" ? Number(count) : null,
         installment_amount: mode === "amount" ? Number(per) : null,
-        first_month: digitsOnlySlash(firstMonth),
+        first_month: `${firstMonth.year}/${String(firstMonth.month).padStart(2, "0")}`,
         extra_confirmed: extra,
         note: note || null,
       });
@@ -179,13 +202,7 @@ function PayDialog({ item, onClose, onDone }) {
           ) : (
             <AmountField label="مبلغ هر قسط (ریال)" value={per} onChange={setPer} />
           )}
-          <TextField
-            label="ماه اولین قسط"
-            value={firstMonth}
-            onChange={(e) => setFirstMonth(e.target.value)}
-            placeholder="1405/08"
-            inputProps={{ dir: "ltr" }}
-          />
+          <JalaliMonthPicker label="اولین قسط" value={firstMonth} onChange={setFirstMonth} />
           {n > 0 && (
             <Alert severity="info">
               {n.toLocaleString("fa-IR")} قسط حدود {formatRial(perShown)} (باقیمانده‌ی تقسیم روی قسط آخر)
@@ -731,17 +748,23 @@ function SettingsTab({ site, onSaved }) {
   const [manager, setManager] = useState(
     site.site_manager_employee_id ? { id: site.site_manager_employee_id, label: site.site_manager } : null,
   );
+  const [payslipTitle, setPayslipTitle] = useState(site.payslip_loan_title || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setEnabled(site.is_enabled);
+    setPayslipTitle(site.payslip_loan_title || "");
     setManager(site.site_manager_employee_id ? { id: site.site_manager_employee_id, label: site.site_manager } : null);
   }, [site]);
   const save = async () => {
     setSaving(true);
     setError("");
     try {
-      await updateLoanSite(site.site_id, { is_enabled: enabled, site_manager_employee_id: manager?.id ?? null });
+      await updateLoanSite(site.site_id, {
+        is_enabled: enabled,
+        site_manager_employee_id: manager?.id ?? null,
+        payslip_loan_title: payslipTitle.trim() || null,
+      });
       onSaved();
     } catch (e) {
       setError(errText(e, "ذخیره ناموفق بود"));
@@ -766,6 +789,13 @@ function SettingsTab({ site, onSaved }) {
           <Typography variant="caption" color="text.secondary">
             مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست و جدا تعریف نمی‌شود. «واحد مالی» = دارندگان مجوز loans.finance این سایت.
           </Typography>
+          <TextField
+            label="نام وام در فیش حقوقی (اختیاری)"
+            value={payslipTitle}
+            onChange={(e) => setPayslipTitle(e.target.value)}
+            placeholder="مثلاً: وام کارخانه"
+            helperText="با بارگذاری فیش حقوقی، قسطی که در بخش «وام» فیش کسر شده خودکار «پرداخت شد» می‌شود. اگر پر شود فقط ردیف وامی که نامش شامل این متن است بررسی می‌شود (تا قسط وام بانکی هم‌مبلغ اشتباه گرفته نشود)."
+          />
           {error && <Alert severity="error">{error}</Alert>}
           <Button variant="contained" onClick={save} disabled={saving} sx={{ alignSelf: "flex-start" }}>
             ذخیره
@@ -825,12 +855,12 @@ function ServiceTab({ siteId, toast }) {
                 {info.overridden ? " — اصلاح‌شده" : ""}
               </Typography>
             )}
-            <TextField
+            <JalaliCalendarField
               label="تاریخ شروع سابقه"
               value={start}
-              onChange={(e) => setStart(e.target.value)}
-              placeholder="1398/01/15"
-              inputProps={{ dir: "ltr" }}
+              onChange={(v) => setStart(v || "")}
+              disableFuture
+              size="medium"
             />
             <TextField label="دلیل" value={note} onChange={(e) => setNote(e.target.value)} />
             {error && <Alert severity="error">{error}</Alert>}
@@ -890,7 +920,7 @@ export default function LoansAdminPage() {
   const [siteId, setSiteId] = useState(null);
   const [tab, setTab] = useState(null);
   const [error, setError] = useState("");
-  const [toastText, setToastText] = useState("");
+  const [result, setResult] = useState(null); // دیالوگ نتیجه {severity, text}
   const [detailId, setDetailId] = useState(null);
   const [payItem, setPayItem] = useState(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -921,7 +951,7 @@ export default function LoansAdminPage() {
   }, [site]);
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]?.key;
   const refresh = () => setReloadKey((k) => k + 1);
-  const toast = (msg) => setToastText(msg);
+  const toast = (msg) => setResult({ severity: "success", text: msg });
 
   return (
     <Box>
@@ -997,7 +1027,7 @@ export default function LoansAdminPage() {
           refresh();
         }}
       />
-      <Snackbar open={Boolean(toastText)} autoHideDuration={4000} onClose={() => setToastText("")} message={toastText} />
+      <ResultDialog result={result} onClose={() => setResult(null)} />
     </Box>
   );
 }

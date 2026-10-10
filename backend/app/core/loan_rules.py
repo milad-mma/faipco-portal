@@ -227,3 +227,115 @@ def status_label(status: str, step: str | None, queue_position: int | None = Non
         STATUS_REJECTED: "رد شد",
         STATUS_CANCELLED: "لغو شد",
     }.get(status, status)
+
+
+# ---------- فیش حقوقی (تیک خودکار اقساط؛ Migration 108) ----------
+
+_MONTH_NAMES = ("فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند")
+
+
+def _to_int(value) -> int | None:
+    """«۲۰,۰۰۰,۰۰۰» یا «20000000» → 20000000؛ غیرعددی → None."""
+    from app.core.family_rules import to_english_digits
+
+    text = to_english_digits(value).replace(",", "").replace("٬", "").replace("،", "").strip()
+    return int(text) if text.isdigit() else None
+
+
+def payslip_month(fields: list[dict]) -> str | None:
+    """
+    ماه فیش از ردیف‌های مشخصات (section خالی): برچسب شامل «سال» و «ماه»؛ ماه عدد یا نام فارسی.
+    مثال: سال=1405، ماه=مهر → «1405/07». پیدا نشد → None.
+    """
+    year = month = None
+    for row in fields:
+        if row.get("section"):
+            continue
+        label = str(row.get("label") or "")
+        value = str(row.get("value") or "").strip()
+        if "سال" in label and year is None:
+            y = _to_int(value)
+            year = y if y and 1300 <= y <= 1500 else None
+        elif "ماه" in label and month is None:
+            m = _to_int(value)
+            if m and 1 <= m <= 12:
+                month = m
+            else:
+                month = next((i for i, n in enumerate(_MONTH_NAMES, start=1) if n in value), None)
+    return f"{year:04d}/{month:02d}" if year and month else None
+
+
+def payslip_loans(fields: list[dict]) -> list[dict]:
+    """
+    ردیف‌های بخش «وام» فیش → [{name, amount, remaining}]: مبلغ قسطی که این ماه کسر شده و مانده‌ی وام بعد از آن
+    (remaining=None اگر فیش مانده نداشت). دو شکل پشتیبانی می‌شود:
+    - سرستون‌دار (XML): «نام وام» / «مبلغ قسط» / «مانده» پشت سر هم برای هر وام؛
+    - برچسب/مقدار (XLSX): برچسب = نام وام، مقدار = مبلغ قسط؛ ردیف «مانده…» بلافاصله بعدش مانده‌ی همان وام است
+      (ردیف «جمع…» نادیده).
+    """
+    rows = [
+        r
+        for r in fields
+        if "وام" in str(r.get("section") or "") and not str(r.get("section") or "").startswith("__")
+    ]
+    out: list[dict] = []
+    has_columns = any("قسط" in str(r.get("label") or "") for r in rows)
+    if has_columns:
+        current: dict = {}
+
+        def flush():
+            nonlocal current
+            if current:
+                out.append(current)
+            current = {}
+
+        for r in rows:
+            label = str(r.get("label") or "")
+            value = r.get("value")
+            if "نام" in label:
+                if "name" in current:
+                    flush()
+                current["name"] = str(value or "").strip()
+            elif "قسط" in label:
+                if "amount" in current:
+                    flush()
+                current["amount"] = _to_int(value)
+            elif "مانده" in label:
+                if "remaining" in current:
+                    flush()
+                current["remaining"] = _to_int(value)
+        flush()
+    else:
+        for r in rows:
+            label = str(r.get("label") or "").strip()
+            if not label or label.startswith("جمع"):
+                continue
+            if "مانده" in label:
+                if out and out[-1].get("remaining") is None:
+                    out[-1]["remaining"] = _to_int(r.get("value"))
+                continue
+            out.append({"name": label, "amount": _to_int(r.get("value")), "remaining": None})
+    return [
+        {"name": x.get("name") or "", "amount": x["amount"], "remaining": x.get("remaining")}
+        for x in out
+        if x.get("amount")
+    ]
+
+
+def match_payslip_row(rows: list[dict], taken: set[int], amount: int, remaining_after: int, title: str = "") -> int | None:
+    """
+    اندیس ردیف وام فیش که قسط این وام است (None = پیدا نشد). شرط: همان مبلغ قسط، نام شامل title (اگر تنظیم شده)،
+    و اگر فیش «مانده» دارد باید با مانده‌ی پرتال بعد از همین قسط (remaining_after) برابر باشد — تا دو وام هم‌مبلغ
+    (مثلاً وام پرتال و وام بانکی) از هم جدا شوند. ردیفِ مانده‌دارِ منطبق بر ردیف بدون مانده ترجیح دارد.
+    """
+    fallback = None
+    for idx, row in enumerate(rows):
+        if idx in taken or row["amount"] != amount or (title and title not in row["name"]):
+            continue
+        if row.get("remaining") is None:
+            if fallback is None:
+                fallback = idx
+            continue
+        if row["remaining"] == remaining_after:
+            return idx
+    return fallback

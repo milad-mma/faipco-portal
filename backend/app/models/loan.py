@@ -28,6 +28,8 @@ class LoanSiteSettings(Base, TimestampMixin):
     site_manager_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
+    # بخشی از «نام وام» در فیش حقوقی (اختیاری؛ Migration 108) برای تیک خودکار اقساط از روی فیش
+    payslip_loan_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # آخرین شماره‌ی نوبت داده‌شده در این سایت (با قفل ردیف افزایش می‌یابد تا دو Worker شماره‌ی تکراری ندهند)
     last_queue_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -42,10 +44,6 @@ class LoanPolicy(Base, TimestampMixin):
     rules_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # متن دستورالعمل برای پرسنل
     block_if_unsettled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     approval_steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    # قواعد اختیاری ضامن (None/False = بدون محدودیت)
-    guarantor_max_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    guarantor_min_service_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    guarantor_no_active_loan: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     types: Mapped[list["LoanType"]] = relationship(
         back_populates="policy", cascade="all, delete-orphan", order_by="LoanType.sort_order"
@@ -65,6 +63,10 @@ class LoanType(Base):
     out_of_queue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # قواعد اختیاری ضامنِ همین نوع (Migration 109؛ None/False = بدون محدودیت)
+    guarantor_max_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    guarantor_min_service_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    guarantor_no_active_loan: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     policy: Mapped[LoanPolicy] = relationship(back_populates="types")
 
@@ -154,6 +156,8 @@ class LoanInstallment(Base):
     due_month: Mapped[str] = mapped_column(String(7), nullable=False)  # YYYY/MM
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # منبع پرداخت: "payslip:YYYY/MM" یا "payslip-notice:ID" (Migration 108)؛ خالی = تیک دستی مالی
+    paid_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     request: Mapped[LoanRequest] = relationship(back_populates="installments")
 

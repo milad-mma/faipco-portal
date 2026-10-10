@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select, update
@@ -61,10 +62,20 @@ def _clean(text, limit: int = MAX_NOTE) -> str | None:
     return value[:limit] or None
 
 
-def employee_label(emp: Employee | None) -> str | None:
+def employee_label(emp: Employee | None, code: bool = True) -> str | None:
+    """«نام نام‌خانوادگی (کد پرسنلی)»؛ code=False برای صفحه‌های پرسنل (کد همکاران به پرسنل نشان داده نمی‌شود)."""
     if emp is None:
         return None
-    return f"{emp.first_name} {emp.last_name} ({emp.personnel_code})"
+    name = f"{emp.first_name} {emp.last_name}"
+    return f"{name} ({emp.personnel_code})" if code else name
+
+
+_CODE_IN_LABEL = re.compile(r"\s*\(\d+\)")
+
+
+def _strip_codes(text: str | None) -> str | None:
+    """حذف «(کد پرسنلی)» از متن‌های تاریخچه برای نمایش به پرسنل."""
+    return _CODE_IN_LABEL.sub("", text) if text else text
 
 
 # ---------- اعلان Push (پس‌زمینه، Session جدا؛ مثل درخواست مرخصی) ----------
@@ -321,10 +332,11 @@ class LoanService:
         approver = await self.db.get(Employee, approver_id)
         return approver_id if approver is not None and approver.is_active and approver.is_enabled else None
 
-    async def _guarantor_problem(self, policy: LoanPolicy, requester: Employee, g: Employee | None) -> str | None:
+    async def _guarantor_problem(self, rules: LoanType | None, requester: Employee, g: Employee | None) -> str | None:
         """
-        چرا این همکار نمی‌تواند ضامن باشد (None = می‌تواند). برای قواعد مقررات (سابقه، تعداد ضمانت، وام فعال) فقط یک
-        پیام کلی برمی‌گردد تا وضعیت وام همکاران از روی پیام خطا قابل کشف نباشد.
+        چرا این همکار نمی‌تواند ضامن باشد (None = می‌تواند). rules: نوع وام (قواعد ضامنِ همان نوع؛ None = بدون قاعده).
+        برای قواعد (سابقه، تعداد ضمانت، وام فعال) فقط یک پیام کلی برمی‌گردد تا وضعیت وام همکاران از روی پیام خطا قابل
+        کشف نباشد.
         """
         if g is None or g.site_id != requester.site_id:
             return "همکار انتخاب‌شده از پرسنل سایت شما نیست"
@@ -337,11 +349,11 @@ class LoanService:
         has_user = (await self.db.execute(select(User.id).where(User.employee_id == g.id).limit(1))).first()
         if not has_user:
             return f"{name} حساب کاربری پرتال ندارد و نمی‌تواند ضمانت را تأیید کند"
-        if policy.guarantor_min_service_months:
+        if rules is not None and rules.guarantor_min_service_months:
             info = await self.service_info(g)
-            if info["months"] is None or info["months"] < policy.guarantor_min_service_months:
+            if info["months"] is None or info["months"] < rules.guarantor_min_service_months:
                 return generic
-        if policy.guarantor_max_active:
+        if rules is not None and rules.guarantor_max_active:
             count = (
                 await self.db.execute(
                     select(func.count(LoanRequestGuarantor.id))
@@ -353,9 +365,9 @@ class LoanService:
                     )
                 )
             ).scalar_one()
-            if count >= policy.guarantor_max_active:
+            if count >= rules.guarantor_max_active:
                 return generic
-        if policy.guarantor_no_active_loan:
+        if rules is not None and rules.guarantor_no_active_loan:
             busy = (
                 await self.db.execute(
                     select(LoanRequest.id)
@@ -372,7 +384,14 @@ class LoanService:
 
     # ---------- نمایش ----------
 
-    async def serialize(self, req: LoanRequest, *, positions: dict | None = None, detail: bool = False) -> dict:
+    async def serialize(
+        self, req: LoanRequest, *, positions: dict | None = None, detail: bool = False, public: bool = False
+    ) -> dict:
+        """public=True: نمایش به پرسنل (درخواست‌دهنده، ضامن، مدیر واحد/سایت) — بدون کد پرسنلی افراد."""
+
+        def label(emp):
+            return employee_label(emp, code=not public)
+
         if positions is None and req.status == R.STATUS_WAITING_FINANCE and not req.out_of_queue:
             positions = await self._queue_positions(req.site_id)
         position = (positions or {}).get(req.id)
@@ -387,7 +406,8 @@ class LoanService:
             "id": req.id,
             "site_id": req.site_id,
             "employee_id": req.employee_id,
-            "employee": employee_label(people.get(req.employee_id)),
+            "employee": label(people.get(req.employee_id)),
+            "loan_type_id": req.loan_type_id,
             "type_title": req.type_title,
             "out_of_queue": req.out_of_queue,
             "extra_requirement": req.extra_requirement,
@@ -408,7 +428,7 @@ class LoanService:
                         if i < req.step_index or req.status in (R.STATUS_ACTIVE, R.STATUS_SETTLED)
                         else ("current" if i == req.step_index and req.status in R.OPEN_STATUSES else "todo")
                     ),
-                    "person": employee_label(
+                    "person": label(
                         people.get(
                             req.unit_manager_employee_id
                             if key == R.STEP_UNIT_MANAGER
@@ -420,12 +440,12 @@ class LoanService:
                 }
                 for i, key in enumerate(req.steps or [])
             ],
-            "current_approver": employee_label(people.get(req.current_approver_employee_id)),
+            "current_approver": label(people.get(req.current_approver_employee_id)),
             "guarantors": [
                 {
                     "id": g.id,
                     "employee_id": g.employee_id,
-                    "name": employee_label(people.get(g.employee_id)),
+                    "name": label(people.get(g.employee_id)),
                     "status": g.status,
                     "note": g.note,
                 }
@@ -434,7 +454,14 @@ class LoanService:
             "queue_seq": req.queue_seq,
             "queue_position": position,
             "installments": [
-                {"id": i.id, "seq": i.seq, "due_month": i.due_month, "amount": i.amount, "paid": i.paid_at is not None}
+                {
+                    "id": i.id,
+                    "seq": i.seq,
+                    "due_month": i.due_month,
+                    "amount": i.amount,
+                    "paid": i.paid_at is not None,
+                    "from_payslip": bool(i.paid_source),
+                }
                 for i in req.installments
             ],
             "installments_total": total,
@@ -448,18 +475,23 @@ class LoanService:
         }
         if detail:
             out["events"] = [
-                {"action": e.action, "actor": e.actor_label, "note": e.note, "created_at": e.created_at}
+                {
+                    "action": e.action,
+                    "actor": _strip_codes(e.actor_label) if public else e.actor_label,
+                    "note": _strip_codes(e.note) if public else e.note,
+                    "created_at": e.created_at,
+                }
                 for e in req.events
             ]
         return out
 
-    async def _serialize_many(self, rows: list[LoanRequest], detail: bool = False) -> list[dict]:
+    async def _serialize_many(self, rows: list[LoanRequest], detail: bool = False, public: bool = False) -> list[dict]:
         cache: dict[int, dict] = {}
         out = []
         for req in rows:
             if req.site_id not in cache:
                 cache[req.site_id] = await self._queue_positions(req.site_id)
-            out.append(await self.serialize(req, positions=cache[req.site_id], detail=detail))
+            out.append(await self.serialize(req, positions=cache[req.site_id], detail=detail, public=public))
         return out
 
     def _requests_query(self):
@@ -479,9 +511,6 @@ class LoanService:
             "rules_text": policy.rules_text,
             "block_if_unsettled": policy.block_if_unsettled,
             "approval_steps": R.normalize_steps(policy.approval_steps),
-            "guarantor_max_active": policy.guarantor_max_active,
-            "guarantor_min_service_months": policy.guarantor_min_service_months,
-            "guarantor_no_active_loan": policy.guarantor_no_active_loan,
             "types": [
                 {
                     "id": t.id,
@@ -492,6 +521,9 @@ class LoanService:
                     "extra_requirement": t.extra_requirement,
                     "out_of_queue": t.out_of_queue,
                     "is_active": t.is_active,
+                    "guarantor_max_active": t.guarantor_max_active,
+                    "guarantor_min_service_months": t.guarantor_min_service_months,
+                    "guarantor_no_active_loan": t.guarantor_no_active_loan,
                 }
                 for t in policy.types
                 if include_inactive or t.is_active
@@ -511,7 +543,7 @@ class LoanService:
                 .order_by(LoanRequest.created_at.desc(), LoanRequest.id.desc())
             )
         ).scalars().all()
-        requests = await self._serialize_many(list(rows), detail=True)
+        requests = await self._serialize_many(list(rows), detail=True, public=True)
         block = None
         if any(r.status in R.OPEN_STATUSES for r in rows):
             block = "یک درخواست وام در حال بررسی دارید؛ تا نتیجه‌ی آن مشخص نشده درخواست جدید ممکن نیست."
@@ -538,7 +570,12 @@ class LoanService:
             "requests": requests,
         }
 
-    async def guarantor_candidates(self, employee: Employee, q: str | None) -> list[dict]:
+    async def guarantor_candidates(self, employee: Employee, q: str | None, loan_type_id: int | None = None) -> list[dict]:
+        """
+        همکاران قابل انتخاب به‌عنوان ضامن (فقط نام؛ کد پرسنلی نشان داده نمی‌شود و جست‌وجو هم فقط با نام است).
+        کسانی که طبق قواعد ضامنِ نوع وام انتخاب‌شده (loan_type_id) نمی‌توانند ضامن شوند (به سقف ضمانت رسیده‌اند، سابقه‌ی کافی ندارند،
+        خودشان وام تسویه‌نشده دارند) در فهرست نمی‌آیند.
+        """
         if not await self.is_site_enabled(employee.site_id):
             return []
         stmt = (
@@ -553,15 +590,60 @@ class LoanService:
         )
         text = (q or "").strip()
         if text:
-            like = f"%{text}%"
-            stmt = stmt.where(
-                or_(
-                    (Employee.first_name + " " + Employee.last_name).ilike(like),
-                    Employee.personnel_code.ilike(like),
+            stmt = stmt.where((Employee.first_name + " " + Employee.last_name).ilike(f"%{text}%"))
+        rows = list(
+            (await self.db.execute(stmt.order_by(Employee.last_name, Employee.first_name).limit(150))).scalars().all()
+        )
+        policy = await self.current_policy(employee.site_id)
+        rules = next((t for t in (policy.types if policy else []) if t.id == loan_type_id), None)
+        if rules is not None and rows:
+            rows = await self._eligible_guarantors(rules, rows)
+        return [{"id": e.id, "label": employee_label(e, code=False)} for e in rows[:20]]
+
+    async def _eligible_guarantors(self, rules: LoanType, rows: list[Employee]) -> list[Employee]:
+        """همان قواعد _guarantor_problem، ولی یک‌جا برای یک فهرست (چند کوئری گروهی به‌جای کوئری برای هر نفر)."""
+        ids = [e.id for e in rows]
+        blocked: set[int] = set()
+        if rules.guarantor_max_active:
+            counts = (
+                await self.db.execute(
+                    select(LoanRequestGuarantor.employee_id, func.count(LoanRequestGuarantor.id))
+                    .join(LoanRequest, LoanRequest.id == LoanRequestGuarantor.request_id)
+                    .where(
+                        LoanRequestGuarantor.employee_id.in_(ids),
+                        LoanRequestGuarantor.status.in_(("pending", "accepted")),
+                        LoanRequest.status.in_(R.UNSETTLED_STATUSES),
+                    )
+                    .group_by(LoanRequestGuarantor.employee_id)
                 )
+            ).all()
+            blocked |= {eid for eid, n in counts if n >= rules.guarantor_max_active}
+        if rules.guarantor_no_active_loan:
+            busy = (
+                await self.db.execute(
+                    select(LoanRequest.employee_id).where(
+                        LoanRequest.employee_id.in_(ids), LoanRequest.status.in_(R.UNSETTLED_STATUSES)
+                    )
+                )
+            ).scalars().all()
+            blocked |= set(busy)
+        if rules.guarantor_min_service_months:
+            overrides = dict(
+                (
+                    await self.db.execute(
+                        select(LoanServiceOverride.employee_id, LoanServiceOverride.start_date).where(
+                            LoanServiceOverride.employee_id.in_(ids)
+                        )
+                    )
+                ).all()
             )
-        rows = (await self.db.execute(stmt.order_by(Employee.last_name, Employee.first_name).limit(20))).scalars().all()
-        return [{"id": e.id, "label": employee_label(e)} for e in rows]
+            today = _today()
+            for e in rows:
+                start = overrides.get(e.id) or R.normalize_date(e.hire_date_jalali)
+                months = R.months_between(start, today) if start else None
+                if months is None or months < rules.guarantor_min_service_months:
+                    blocked.add(e.id)
+        return [e for e in rows if e.id not in blocked]
 
     async def submit(self, employee: Employee, user: User, payload: dict) -> dict:
         # قفل ردیف پرسنل: دو درخواست هم‌زمان (دو کلیک/دو Worker) هر دو «باز» ثبت نشوند
@@ -604,7 +686,7 @@ class LoanService:
             raise LoanError(f"این نوع وام {need} ضامن لازم دارد" if need else "این نوع وام ضامن نمی‌خواهد")
         people = await self._names(guarantor_ids)
         for gid in guarantor_ids:
-            problem = await self._guarantor_problem(policy, employee, people.get(gid))
+            problem = await self._guarantor_problem(loan_type, employee, people.get(gid))
             if problem:
                 raise LoanError(problem)
 
@@ -652,7 +734,7 @@ class LoanService:
         await self.db.flush()
         await self._enter_step(req)
         await self._commit()
-        return await self.serialize(await self._load_request(req.id), detail=True)
+        return await self.serialize(await self._load_request(req.id), detail=True, public=True)
 
     async def cancel(self, employee: Employee, user: User, request_id: int) -> dict:
         req = await self._load_request(request_id, lock=True)
@@ -664,7 +746,7 @@ class LoanService:
         req.current_approver_employee_id = None
         self._event(req, "cancelled", employee_label(employee), user.id)
         await self._commit()
-        return await self.serialize(req, detail=True)
+        return await self.serialize(req, detail=True, public=True)
 
     async def replace_guarantor(
         self, employee: Employee, user: User, request_id: int, guarantor_row_id: int, new_employee_id: int
@@ -679,9 +761,9 @@ class LoanService:
             raise LoanError("این ضامن قابل تغییر نیست")
         if any(g.employee_id == new_employee_id and g.id != row.id for g in req.guarantors):
             raise LoanError("این همکار قبلاً ضامن همین درخواست است")
-        policy = await self.db.get(LoanPolicy, req.policy_id) if req.policy_id else None
+        rules = await self.db.get(LoanType, req.loan_type_id) if req.loan_type_id else None
         new = await self.db.get(Employee, new_employee_id)
-        problem = await self._guarantor_problem(policy or LoanPolicy(), employee, new)
+        problem = await self._guarantor_problem(rules, employee, new)
         if problem:
             raise LoanError(problem)
         old = await self.db.get(Employee, row.employee_id)
@@ -692,7 +774,7 @@ class LoanService:
         self._event(req, "guarantor_replaced", employee_label(employee), user.id, f"{employee_label(old)} ← {employee_label(new)}")
         self._push([new.id], "/loans?tab=inbox", "یک همکار شما را ضامن درخواست وام خود کرده است.")
         await self._commit()
-        return await self.serialize(req, detail=True)
+        return await self.serialize(req, detail=True, public=True)
 
     async def inbox(self, employee: Employee) -> dict:
         guarantee_rows = (
@@ -721,8 +803,8 @@ class LoanService:
             )
         ).scalars().all()
         return {
-            "guarantee": await self._serialize_many(list(guarantee)),
-            "approvals": await self._serialize_many(list(approvals)),
+            "guarantee": await self._serialize_many(list(guarantee), public=True),
+            "approvals": await self._serialize_many(list(approvals), public=True),
         }
 
     async def inbox_count(self, employee: Employee) -> int:
@@ -773,7 +855,7 @@ class LoanService:
                 f"{employee.first_name} {employee.last_name} ضمانت وام شما را نپذیرفت؛ ضامن دیگری انتخاب کنید.",
             )
         await self._commit()
-        return await self.serialize(req)
+        return await self.serialize(req, public=True)
 
     async def approver_decide(self, employee: Employee, user: User, request_id: int, approve: bool, note) -> dict:
         if not (employee.is_active and employee.is_enabled):
@@ -794,7 +876,7 @@ class LoanService:
             req.current_approver_employee_id = None
             self._push([req.employee_id], "/loans?tab=mine", "درخواست وام شما رد شد.")
         await self._commit()
-        return await self.serialize(req)
+        return await self.serialize(req, public=True)
 
     # ---------- مدیریت: سایت و مقررات ----------
 
@@ -819,11 +901,14 @@ class LoanService:
                     "is_enabled": bool(st and st.is_enabled),
                     "site_manager_employee_id": mid,
                     "site_manager": employee_label(managers.get(mid)),
+                    "payslip_loan_title": st.payslip_loan_title if st else None,
                 }
             )
         return out
 
-    async def update_site_settings(self, site_id: int, is_enabled: bool, site_manager_employee_id: int | None) -> None:
+    async def update_site_settings(
+        self, site_id: int, is_enabled: bool, site_manager_employee_id: int | None, payslip_loan_title: str | None = None
+    ) -> None:
         if (await self.db.get(Site, site_id)) is None:
             raise LoanError("سایت پیدا نشد", 404)
         if site_manager_employee_id is not None:
@@ -838,6 +923,7 @@ class LoanService:
         settings = await self.site_settings(site_id, create=True)
         settings.is_enabled = bool(is_enabled)
         settings.site_manager_employee_id = site_manager_employee_id
+        settings.payslip_loan_title = _clean(payslip_loan_title, 200)
         await self.db.commit()
 
     async def list_policies(self, site_id: int) -> list[dict]:
@@ -882,8 +968,8 @@ class LoanService:
         policy.block_if_unsettled = bool(data.get("block_if_unsettled", True))
         policy.approval_steps = R.normalize_steps(data.get("approval_steps"))
 
-        def _opt_int(key):
-            value = data.get(key)
+        def _opt_int(item, key):
+            value = item.get(key)
             if value in (None, "", 0):
                 return None
             try:
@@ -893,10 +979,6 @@ class LoanService:
             if value < 0 or value > 1000:
                 raise LoanError("مقدار قواعد ضامن نامعتبر است")
             return value
-
-        policy.guarantor_max_active = _opt_int("guarantor_max_active")
-        policy.guarantor_min_service_months = _opt_int("guarantor_min_service_months")
-        policy.guarantor_no_active_loan = bool(data.get("guarantor_no_active_loan"))
 
         incoming = data.get("types") or []
         if not incoming:
@@ -926,6 +1008,10 @@ class LoanService:
             t.out_of_queue = bool(item.get("out_of_queue"))
             t.is_active = bool(item.get("is_active", True))
             t.sort_order = order
+            # قواعد ضامنِ همین نوع (بدون ضامن → بی‌معنی، خالی می‌شود)
+            t.guarantor_max_active = _opt_int(item, "guarantor_max_active") if g_count else None
+            t.guarantor_min_service_months = _opt_int(item, "guarantor_min_service_months") if g_count else None
+            t.guarantor_no_active_loan = bool(item.get("guarantor_no_active_loan")) if g_count else False
             keep.append(t)
         needs_guarantor = [t.title for t in keep if t.is_active and t.guarantor_count > 0]
         if needs_guarantor and R.STEP_GUARANTORS not in policy.approval_steps:
@@ -1056,22 +1142,89 @@ class LoanService:
         if req.status not in (R.STATUS_ACTIVE, R.STATUS_SETTLED):
             raise LoanError("اقساط این درخواست قابل تغییر نیست")
         inst = next(i for i in req.installments if i.id == installment_id)
+        actor = await self._actor(user)
         inst.paid_at = None if inst.paid_at else _now()
+        inst.paid_source = None  # تیک/لغو دستی مالی
         self._event(
-            req, "installment_paid" if inst.paid_at else "installment_unpaid", await self._actor(user), user.id, f"قسط {inst.seq} ({inst.due_month})"
+            req, "installment_paid" if inst.paid_at else "installment_unpaid", actor, user.id, f"قسط {inst.seq} ({inst.due_month})"
         )
+        self._sync_settled(req, actor, user.id)
+        await self._commit()
+        return await self.serialize(req, detail=True)
+
+    def _sync_settled(self, req: LoanRequest, actor: str, user_id: int | None) -> None:
+        """همه‌ی اقساط پرداخت‌شده ← «تسویه شد»؛ قسطی دوباره پرداخت‌نشده شد ← برگشت به «در حال بازپرداخت»."""
         if all(i.paid_at for i in req.installments):
             if req.status != R.STATUS_SETTLED:
                 req.status = R.STATUS_SETTLED
                 req.settled_at = _now()
-                self._event(req, "settled", await self._actor(user), user.id, "همه‌ی اقساط پرداخت شد")
+                self._event(req, "settled", actor, user_id, "همه‌ی اقساط پرداخت شد")
                 self._push([req.employee_id], "/loans?tab=mine", "وام شما تسویه شد.")
         elif req.status == R.STATUS_SETTLED:
             req.status = R.STATUS_ACTIVE
             req.settled_at = None
-            self._event(req, "unsettled", await self._actor(user), user.id, "یک قسط پرداخت‌نشده شد؛ وام دوباره باز است")
+            self._event(req, "unsettled", actor, user_id, "یک قسط پرداخت‌نشده شد؛ وام دوباره باز است")
+
+    async def apply_payslips(self, notice_id: int, notice_title: str, receipts: dict[int, list[dict]]) -> int:
+        """
+        تیک خودکار اقساط از روی فیش حقوقی (Migration 108). receipts: {employee_id: fields فیش}.
+        برای هر وام «در حال بازپرداخت» پرسنل: اولین قسط پرداخت‌نشده (که موعدش تا ماه فیش رسیده) اگر مبلغش در بخش
+        «وام» فیش کسر شده باشد (و اگر فیش «مانده» دارد، مانده‌اش با مانده‌ی پرتال بعد از همین قسط برابر باشد)
+        «پرداخت شد» می‌شود. هر وام از هر فیش‌ماه حداکثر یک قسط (بارگذاری دوباره‌ی فیش همان
+        ماه دوباره تیک نمی‌زند). اگر «عنوان وام در فیش» سایت تنظیم شده باشد، فقط ردیف‌های همان وام بررسی می‌شوند.
+        خروجی: تعداد اقساط تیک‌خورده.
+        """
+        if not receipts:
+            return 0
+        request_ids = (
+            await self.db.execute(
+                select(LoanRequest.id)
+                .where(LoanRequest.employee_id.in_(list(receipts)), LoanRequest.status == R.STATUS_ACTIVE)
+                .order_by(LoanRequest.paid_at, LoanRequest.id)
+            )
+        ).scalars().all()
+        if not request_ids:
+            return 0
+        titles: dict[int, str | None] = {}
+        used: dict[int, set[int]] = {}  # employee_id → اندیس ردیف‌های وام فیش که به قسطی نسبت داده شده‌اند
+        marked = 0
+        actor = "فیش حقوقی"
+        for rid in request_ids:
+            req = await self._load_request(rid, lock=True)
+            if req.status != R.STATUS_ACTIVE:
+                continue
+            fields = receipts.get(req.employee_id) or []
+            month = R.payslip_month(fields)
+            source = f"payslip:{month}" if month else f"payslip-notice:{notice_id}"
+            if any(i.paid_source == source for i in req.installments):
+                continue
+            pending = sorted((i for i in req.installments if not i.paid_at), key=lambda i: i.seq)
+            if not pending or (month and pending[0].due_month > month):
+                continue
+            inst = pending[0]
+            if req.site_id not in titles:
+                settings = await self.site_settings(req.site_id)
+                titles[req.site_id] = (settings.payslip_loan_title or "").strip() if settings else ""
+            title = titles[req.site_id]
+            taken = used.setdefault(req.employee_id, set())
+            remaining_after = sum(i.amount for i in pending) - inst.amount
+            match = R.match_payslip_row(R.payslip_loans(fields), taken, inst.amount, remaining_after, title)
+            if match is None:
+                continue
+            taken.add(match)
+            inst.paid_at = _now()
+            inst.paid_source = source
+            self._event(
+                req,
+                "installment_paid",
+                actor,
+                None,
+                f"قسط {inst.seq} ({inst.due_month}) از روی فیش حقوقی «{notice_title}»" + (f" ماه {month}" if month else ""),
+            )
+            self._sync_settled(req, actor, None)
+            marked += 1
         await self._commit()
-        return await self.serialize(req, detail=True)
+        return marked
 
     async def finance_settle(self, req: LoanRequest, user: User, note) -> dict:
         if req.status != R.STATUS_ACTIVE:

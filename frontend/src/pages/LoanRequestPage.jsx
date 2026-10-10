@@ -20,7 +20,6 @@ import {
   FormControlLabel,
   Radio,
   RadioGroup,
-  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -28,6 +27,7 @@ import {
 } from "@mui/material";
 import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
+import ResultDialog from "../components/ResultDialog";
 import {
   AmountField,
   EmployeeSearch,
@@ -160,7 +160,7 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
               <EmployeeSearch
                 key={i}
                 label={`ضامن ${(i + 1).toLocaleString("fa-IR")} (همکار)`}
-                fetcher={searchGuarantors}
+                fetcher={(q) => searchGuarantors(q, type.id)}
                 value={g}
                 excludeIds={guarantors.filter((x, j) => x && j !== i).map((x) => x.id)}
                 onChange={(next) => setGuarantors((prev) => prev.map((p, j) => (j === i ? next : p)))}
@@ -168,7 +168,8 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
             ))}
             {guarantors.length > 0 && (
               <Typography variant="caption" color="text.secondary">
-                برای هر ضامن اعلان می‌رود و باید در پرتال ضمانت را قبول کند.
+                فقط همکارانی در فهرست هستند که طبق مقررات وام سایت می‌توانند ضامن شوند. برای هر ضامن اعلان می‌رود و
+                باید در پرتال ضمانت را قبول کند.
               </Typography>
             )}
             <TextField
@@ -286,7 +287,7 @@ function ReplaceGuarantorDialog({ target, onClose, onDone }) {
         <Typography variant="body2" sx={{ mb: 2 }}>
           به‌جای {target.guarantor.name}
         </Typography>
-        <EmployeeSearch label="ضامن جدید" fetcher={searchGuarantors} value={value} onChange={setValue} excludeIds={exclude} />
+        <EmployeeSearch label="ضامن جدید" fetcher={(q) => searchGuarantors(q, target.item.loan_type_id)} value={value} onChange={setValue} excludeIds={exclude} />
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
@@ -397,7 +398,7 @@ export default function LoanRequestPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [newOpen, setNewOpen] = useState(false);
-  const [toast, setToast] = useState("");
+  const [result, setResult] = useState(null); // دیالوگ نتیجه {severity, text}
   const [action, setAction] = useState(null); // {item, kind, approve} | {cancel: item}
   const [replaceTarget, setReplaceTarget] = useState(null);
 
@@ -420,7 +421,7 @@ export default function LoanRequestPage() {
 
   const inboxCount = inbox.guarantee.length + inbox.approvals.length;
   const done = (msg) => {
-    setToast(msg);
+    setResult({ severity: "success", text: msg });
     setNewOpen(false);
     setAction(null);
     setReplaceTarget(null);
@@ -545,7 +546,7 @@ export default function LoanRequestPage() {
         onConfirm={confirmAction}
       />
       <ReplaceGuarantorDialog target={replaceTarget} onClose={() => setReplaceTarget(null)} onDone={done} />
-      <Snackbar open={Boolean(toast)} autoHideDuration={4000} onClose={() => setToast("")} message={toast} />
+      <ResultDialog result={result} onClose={() => setResult(null)} />
     </Box>
   );
 }

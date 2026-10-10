@@ -102,3 +102,46 @@ def test_effective_steps_dedupe_any_order_and_forced_guarantors():
 def test_installment_count_larger_than_total_rejected():
     with pytest.raises(R.LoanRuleError):
         R.build_installments(2, count=3, first_month="1405/08")
+
+
+def test_payslip_month_and_loans():
+    fields = [
+        {"label": "نام و نام خانوادگی", "value": "علی", "section": ""},
+        {"label": "سال", "value": "۱۴۰۵", "section": ""},
+        {"label": "ماه", "value": "مهر", "section": ""},
+        {"label": "نام وام", "value": "وام کارخانه", "section": "وام"},
+        {"label": "مبلغ قسط", "value": "20,000,000", "section": "وام"},
+        {"label": "مانده", "value": "180,000,000", "section": "وام"},
+        {"label": "نام وام", "value": "وام بانک", "section": "وام"},
+        {"label": "مبلغ قسط", "value": "5,000,000", "section": "وام"},
+        {"label": "جمع اقساط وام", "value": "25,000,000", "section": "__footer__"},
+    ]
+    assert R.payslip_month(fields) == "1405/07"
+    assert R.payslip_loans(fields) == [
+        {"name": "وام کارخانه", "amount": 20000000, "remaining": 180000000},
+        {"name": "وام بانک", "amount": 5000000, "remaining": None},
+    ]
+    # شکل برچسب/مقدار (XLSX)
+    xlsx = [
+        {"label": "سال", "value": "1405", "section": ""},
+        {"label": "ماه", "value": "8", "section": ""},
+        {"label": "وام کارخانه", "value": "20,000,000", "section": "وام"},
+        {"label": "مانده وام", "value": "160,000,000", "section": "وام"},
+    ]
+    assert R.payslip_month(xlsx) == "1405/08"
+    assert R.payslip_loans(xlsx) == [{"name": "وام کارخانه", "amount": 20000000, "remaining": 160000000}]
+
+
+def test_match_payslip_row_uses_remaining():
+    # دو وام هم‌مبلغ ۱۰ میلیونی در فیش؛ وام پرتال بعد از این قسط ۹۰ میلیون مانده دارد → ردیف دوم
+    rows = [
+        {"name": "وام کارخانه", "amount": 10_000_000, "remaining": 40_000_000},
+        {"name": "وام کارخانه", "amount": 10_000_000, "remaining": 90_000_000},
+    ]
+    assert R.match_payslip_row(rows, set(), 10_000_000, 90_000_000) == 1
+    # مانده‌ی هیچ ردیفی نمی‌خورد → تیک نمی‌خورد
+    assert R.match_payslip_row(rows, set(), 10_000_000, 70_000_000) is None
+    # ردیف بدون مانده → فقط با مبلغ
+    assert R.match_payslip_row([{"name": "x", "amount": 5, "remaining": None}], set(), 5, 0) == 0
+    # ردیف مصرف‌شده دوباره استفاده نمی‌شود
+    assert R.match_payslip_row(rows, {1}, 10_000_000, 90_000_000) is None

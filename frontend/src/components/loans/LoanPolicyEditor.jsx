@@ -29,6 +29,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { gregorianToJalali } from "../../utils/jalaliDate";
+import JalaliCalendarField from "../JalaliCalendarField";
 import { AmountField, digitsOnly, errText } from "./LoanShared";
 
 export const STEP_LABELS = {
@@ -52,6 +53,10 @@ const EMPTY_TYPE = {
   extra_requirement: "",
   out_of_queue: false,
   is_active: true,
+  // قواعد ضامنِ همین نوع (خالی = بدون محدودیت)
+  guarantor_max_active: "",
+  guarantor_min_service_months: "",
+  guarantor_no_active_loan: false,
 };
 
 // نمونه‌ی آماده: دستورالعمل کارخانه ۱۴۰۵/۰۷/۱۵
@@ -61,9 +66,6 @@ export const FACTORY_TEMPLATE = {
     "وام‌ها بدون بهره است.\nتا تسویه‌ی کامل وام قبلی، وام جدید پرداخت نمی‌شود.\nدر صورت ترک کار، باقیمانده‌ی وام از سنوات کسر می‌شود و ضامن‌ها مسئولیت تضامنی دارند.",
   block_if_unsettled: true,
   approval_steps: ["guarantors", "unit_manager", "site_manager", "finance"],
-  guarantor_max_active: null,
-  guarantor_min_service_months: null,
-  guarantor_no_active_loan: false,
   types: [
     { ...EMPTY_TYPE, title: "نوع الف", max_amount: 400000000, min_service_months: 24, guarantor_count: 2, extra_requirement: "سفته به مبلغ ۴۰۰ میلیون ریال" },
     { ...EMPTY_TYPE, title: "نوع ب", max_amount: 200000000, min_service_months: 12, guarantor_count: 2 },
@@ -79,14 +81,14 @@ function initialForm(source) {
     rules_text: base.rules_text || "",
     block_if_unsettled: base.block_if_unsettled ?? true,
     approval_steps: base.approval_steps?.length ? base.approval_steps : ["guarantors", "unit_manager", "site_manager", "finance"],
-    guarantor_max_active: base.guarantor_max_active ?? "",
-    guarantor_min_service_months: base.guarantor_min_service_months ?? "",
-    guarantor_no_active_loan: Boolean(base.guarantor_no_active_loan),
     types: (base.types?.length ? base.types : [EMPTY_TYPE]).map((t) => ({
       ...EMPTY_TYPE,
       ...t,
       id: base._copy ? undefined : t.id,
       extra_requirement: t.extra_requirement || "",
+      guarantor_max_active: t.guarantor_max_active ?? "",
+      guarantor_min_service_months: t.guarantor_min_service_months ?? "",
+      guarantor_no_active_loan: Boolean(t.guarantor_no_active_loan),
     })),
   };
 }
@@ -133,14 +135,15 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
       const toInt = (v) => (v === "" || v === null || v === undefined ? null : Number(digitsOnly(v)) || null);
       await onSave({
         ...form,
-        guarantor_max_active: toInt(form.guarantor_max_active),
-        guarantor_min_service_months: toInt(form.guarantor_min_service_months),
         types: form.types.map((t) => ({
           ...t,
           max_amount: Number(t.max_amount) || 0,
           min_service_months: Number(t.min_service_months) || 0,
           guarantor_count: Number(t.guarantor_count) || 0,
           extra_requirement: t.extra_requirement || null,
+          guarantor_max_active: toInt(t.guarantor_max_active),
+          guarantor_min_service_months: toInt(t.guarantor_min_service_months),
+          guarantor_no_active_loan: Boolean(t.guarantor_no_active_loan),
         })),
       });
     } catch (e) {
@@ -160,13 +163,13 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
               <TextField label="عنوان" value={form.title} onChange={(e) => set("title", e.target.value)} fullWidth required />
             </Grid>
             <Grid item xs={12} sm={4}>
-              <TextField
+              <JalaliCalendarField
                 label="تاریخ اجرا"
                 value={form.effective_from}
-                onChange={(e) => set("effective_from", e.target.value)}
-                fullWidth
-                placeholder="1405/07/15"
-                inputProps={{ dir: "ltr" }}
+                onChange={(v) => set("effective_from", v || todayJalali())}
+                required
+                clearable={false}
+                size="medium"
                 helperText="از این روز برای درخواست‌های جدید اجرا می‌شود"
               />
             </Grid>
@@ -218,40 +221,6 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
             <Typography variant="caption" color="text.secondary">
               اگر مدیر واحد و مدیر سایت یک نفر باشند، یک بار تأیید می‌کند. مرحله‌ی ضامن برای نوع وامی که ضامن نمی‌خواهد خودکار رد می‌شود.
             </Typography>
-          </Box>
-
-          <Box>
-            <Typography fontWeight={800} sx={{ mb: 1 }}>
-              قواعد ضامن (اختیاری — خالی یعنی بدون محدودیت)
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  label="حداکثر ضمانت هم‌زمان هر نفر"
-                  value={form.guarantor_max_active}
-                  onChange={(e) => set("guarantor_max_active", digitsOnly(e.target.value))}
-                  fullWidth
-                  size="small"
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  label="حداقل سابقه‌ی ضامن (ماه)"
-                  value={form.guarantor_min_service_months}
-                  onChange={(e) => set("guarantor_min_service_months", digitsOnly(e.target.value))}
-                  fullWidth
-                  size="small"
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <FormControlLabel
-                  control={
-                    <Switch checked={form.guarantor_no_active_loan} onChange={(e) => set("guarantor_no_active_loan", e.target.checked)} />
-                  }
-                  label="ضامن خودش وام تسویه‌نشده نداشته باشد"
-                />
-              </Grid>
-            </Grid>
           </Box>
 
           <Box>
@@ -330,6 +299,44 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                           </IconButton>
                         </Stack>
                       </Grid>
+                      {Number(t.guarantor_count) > 0 && (
+                        <>
+                          <Grid item xs={12}>
+                            <Typography variant="body2" fontWeight={700}>
+                              قواعد ضامنِ این نوع (اختیاری — خالی یعنی بدون محدودیت)
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={4}>
+                            <TextField
+                              label="حداکثر ضمانت هم‌زمان هر نفر"
+                              value={t.guarantor_max_active}
+                              onChange={(e) => setType(i, "guarantor_max_active", digitsOnly(e.target.value).slice(0, 4))}
+                              fullWidth
+                              size="small"
+                            />
+                          </Grid>
+                          <Grid item xs={6} sm={4}>
+                            <TextField
+                              label="حداقل سابقه‌ی ضامن (ماه)"
+                              value={t.guarantor_min_service_months}
+                              onChange={(e) => setType(i, "guarantor_min_service_months", digitsOnly(e.target.value).slice(0, 4))}
+                              fullWidth
+                              size="small"
+                            />
+                          </Grid>
+                          <Grid item xs={12} sm={4}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={t.guarantor_no_active_loan}
+                                  onChange={(e) => setType(i, "guarantor_no_active_loan", e.target.checked)}
+                                />
+                              }
+                              label="ضامن خودش وام تسویه‌نشده نداشته باشد"
+                            />
+                          </Grid>
+                        </>
+                      )}
                     </Grid>
                   </CardContent>
                 </Card>
