@@ -33,6 +33,9 @@ const NoticesPage = lazyPage(() => import("./pages/NoticesPage"));
 const MyVehiclesPage = lazyPage(() => import("./pages/MyVehiclesPage"));
 const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
 const InsuranceHubPage = lazyPage(() => import("./pages/InsuranceHubPage"));
+const RequestsHubPage = lazyPage(() => import("./pages/RequestsHubPage"));
+const LoanRequestPage = lazyPage(() => import("./pages/LoanRequestPage"));
+const LoansAdminPage = lazyPage(() => import("./pages/LoansAdminPage"));
 const InsuranceInvoiceGuidePage = lazyPage(() => import("./pages/InsuranceInvoiceGuidePage"));
 const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
 const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
@@ -286,6 +289,12 @@ export default function App() {
                 <TurnoverReportPage />
               </PermissionRoute>
             }
+          />
+          <Route path="/requests" element={<RequestsHubPage />} />
+          <Route path="/loans" element={<LoanRequestPage />} />
+          <Route
+            path="/loans/admin"
+            element={<PermissionRoute check={(u) => u?.can_admin_loans}><LoansAdminPage /></PermissionRoute>}
           />
           <Route path="/leave-requests" element={<LeaveRequestPage />} />
           <Route

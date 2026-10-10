@@ -638,7 +638,7 @@ export default function LeaveRequestPage() {
   if (user?.leave_requests_disabled) {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
-        <BackLink to="/my-dashboard" />
+        <BackLink to="/requests" label="بازگشت به کارتابل درخواست" />
         <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
           درخواست مرخصی/ماموریت
         </Typography>
@@ -716,7 +716,7 @@ function LeaveRequestPageContent() {
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
-      <BackLink to="/my-dashboard" />
+      <BackLink to="/requests" label="بازگشت به کارتابل درخواست" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         درخواست مرخصی/ماموریت
       </Typography>

@@ -401,11 +401,11 @@ export default function PersonalDashboardPage() {
             گزارش تردد
           </Typography>
         </Card>
-        {/* میان‌بر درخواست مرخصی/ماموریت؛ اگر ماژول برای سایت این پرسنل از پنل ادمین غیرفعال
-            شده باشد، کارت برچسب «غیرفعال» دارد و قابل کلیک نیست. */}
+        {/* میان‌بر «کارتابل درخواست» (مرخصی/ماموریت، مساعده، وام) ← /requests. همیشه باز است؛ غیرفعال بودن مرخصی
+            برای سایت پرسنل روی کارت مرخصی داخل همان صفحه نشان داده می‌شود. */}
         <Card
           variant="outlined"
-          onClick={leaveDisabled ? undefined : () => navigate("/leave-requests")}
+          onClick={() => navigate("/requests")}
           sx={{
             position: "relative",
             flex: 1,
@@ -418,11 +418,9 @@ export default function PersonalDashboardPage() {
             alignItems: "center",
             justifyContent: "center",
             textAlign: "center",
-            cursor: leaveDisabled ? "default" : "pointer",
-            opacity: leaveDisabled ? 0.55 : 1,
+            cursor: "pointer",
           }}
         >
-          {leaveDisabled && <DisabledChip />}
           {/* شمارنده درخواست‌های در انتظار تصمیم؛ فقط برای مدیر/سرپرستی که درخواستی منتظر
               اوست نمایش داده می‌شود (برای بقیه صفر است و Badge پنهان می‌ماند). */}
           <Badge
@@ -448,7 +446,7 @@ export default function PersonalDashboardPage() {
             </Box>
           </Badge>
           <Typography fontWeight={800} sx={{ fontSize: { xs: 14, md: 17 } }}>
-            درخواست مرخصی/ماموریت
+            کارتابل درخواست
           </Typography>
         </Card>
       </Stack>

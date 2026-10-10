@@ -375,6 +375,9 @@ class AuthService:
             base.family_disabled = not (await FamilyService(self.db).get_settings())["enabled"]
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.family_disabled = False
+        base.can_admin_loans = user.is_superuser or bool(
+            {"loans.policy", "loans.finance", "loans.view"} & set(permission_codes)
+        )
         base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
         base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
 
@@ -408,6 +411,17 @@ class AuthService:
             base.insurance_disabled = not await InsuranceService(self.db).is_site_enabled(employee_site_id)
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.insurance_disabled = False
+        # ماژول وام به‌ازای سایتِ پرسنل (Migration 107)
+        try:
+            from app.services.loan_service import LoanService
+
+            # Savepoint: خطای این بخش (مثلاً پیش از اجرای Migration 107) تراکنش ورود را خراب نکند
+            async with self.db.begin_nested():
+                base.loans_disabled = not await LoanService(self.db).is_site_enabled(
+                    row[0].site_id if row is not None else None
+                )
+        except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
+            base.loans_disabled = True
         base.can_view_sync = user.is_superuser or "sync.view" in permission_codes
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes

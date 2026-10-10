@@ -86,3 +86,13 @@ from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, Fam
 from app.models.site_transfer import SiteTransfer  # noqa: F401
 from app.models.termination_reason import TerminationReasonAlias, TerminationReasonCategory  # noqa: F401
 from app.models.error_log import ErrorLog, ErrorLogOccurrence  # noqa: F401
+from app.models.loan import (  # noqa: F401
+    LoanInstallment,
+    LoanPolicy,
+    LoanRequest,
+    LoanRequestEvent,
+    LoanRequestGuarantor,
+    LoanServiceOverride,
+    LoanSiteSettings,
+    LoanType,
+)

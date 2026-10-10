@@ -72,6 +72,8 @@ class UserOut(BaseModel):
     family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده
     can_view_turnover_report: bool = False  # reports.turnover — گزارش جذب و ترک کار
     can_manage_turnover_categories: bool = False  # reports.turnover_categories — دسته‌بندی علت ترک کار
+    can_admin_loans: bool = False  # loans.policy / loans.finance / loans.view — پنل مدیریت وام
+    loans_disabled: bool = True  # ماژول وام برای سایت پرسنل فعال نیست (کارت «درخواست وام» غیرفعال)
     insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت

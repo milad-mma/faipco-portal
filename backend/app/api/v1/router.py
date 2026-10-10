@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     insurance,
     leave_requests,
     leave_requests_admin,
+    loans,
     login_security,
     mapping_suggestions,
     mobile,
@@ -77,6 +78,8 @@ api_router.include_router(evaluation_reports.router, prefix="/performance/report
 # مرخصی: روتر کاربر و روتر مدیریتی هر دو زیر /leave-requests
 api_router.include_router(leave_requests.router, prefix="/leave-requests", tags=["leave-requests"])
 api_router.include_router(leave_requests_admin.router, prefix="/leave-requests", tags=["leave-requests"])
+# وام: پرسنل، کارتابل تأیید و مدیریت (مقررات/مالی) زیر /loans
+api_router.include_router(loans.router, prefix="/loans", tags=["loans"])
 # دروازه دسترسی (IP/سایت) و اعلان عمومی
 api_router.include_router(access_gate.router, prefix="/access-gate", tags=["access-gate"])
 api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])

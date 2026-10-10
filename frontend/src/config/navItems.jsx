@@ -31,6 +31,7 @@ import DnsOutlinedIcon from "@mui/icons-material/DnsOutlined";
 import BugReportOutlinedIcon from "@mui/icons-material/BugReportOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 
 /**
  * منبع واحد همه‌ی مقصدهای منوی برنامه.
@@ -93,6 +94,12 @@ export const NAV_ITEMS = [
         path: "/insurance/admin",
         icon: <HealthAndSafetyOutlinedIcon />,
         check: (u) => u?.can_view_insurance,
+      },
+      {
+        label: "وام پرسنل",
+        path: "/loans/admin",
+        icon: <AccountBalanceOutlinedIcon />,
+        check: (u) => u?.can_admin_loans,
       },
       {
         label: "مشخصات خانوادگی پرسنل",
