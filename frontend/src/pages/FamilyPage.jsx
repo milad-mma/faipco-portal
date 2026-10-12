@@ -413,7 +413,8 @@ export default function FamilyPage() {
       {!data.employee && <Alert severity="info">این بخش فقط برای حساب‌های متصل به پرسنل در دسترس است.</Alert>}
       {data.employee && !data.enabled && !submitted && <Alert severity="info">ثبت مشخصات خانوادگی در حال حاضر غیرفعال است.</Alert>}
 
-      {formSettings.notes?.length > 0 && data.employee && (
+      {/* توضیحات فرم فقط وقتی کاربر می‌تواند فرم را پر/ویرایش کند (پس از تأیید و قفل شدن، تکراری است) */}
+      {formSettings.notes?.length > 0 && data.employee && data.can_edit && (
         <Alert severity="info" icon={false} sx={{ mb: 2 }}>
           <Stack component="ul" sx={{ m: 0, pr: 2.5, pl: 0 }} spacing={0.5}>
             {formSettings.notes.map((n, i) => (
@@ -435,9 +436,15 @@ export default function FamilyPage() {
           </Typography>
         </Alert>
       )}
-      {submitted && profile.status === "approved" && (
+      {/* تأییدشده: یک پیام کوتاه (وضعیت در Chip بالا هست)؛ تاریخ اثر و، اگر قفل است، مراجعه به منابع انسانی */}
+      {submitted && profile.status === "approved" && (profile.effective_date || !data.can_edit) && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          مشخصات شما تأیید شده است{profile.effective_date ? ` (تاریخ اثر: ${profile.effective_date})` : ""}.
+          {[
+            profile.effective_date && `تاریخ اثر: ${profile.effective_date}`,
+            !data.can_edit && "برای هر تغییر به واحد منابع انسانی مراجعه کنید.",
+          ]
+            .filter(Boolean)
+            .join(" — ")}
         </Alert>
       )}
       {submitted && profile.status === "pending" && (
@@ -445,7 +452,7 @@ export default function FamilyPage() {
           مشخصات شما در انتظار بررسی واحد منابع انسانی است.
         </Alert>
       )}
-      {submitted && !data.can_edit && data.lock_reason && data.enabled && (
+      {submitted && profile.status !== "approved" && !data.can_edit && data.lock_reason && data.enabled && (
         <Alert severity="info" sx={{ mb: 2 }}>
           {data.lock_reason}
         </Alert>
