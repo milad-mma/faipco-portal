@@ -9,6 +9,7 @@ import { fetchAdminReport, fetchSiteReport } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { useAuth } from "../context/AuthContext";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 // کامپوننت صفحه؛ بر اساس نقش کاربر منبع گزارش (ادمین/سایت) را انتخاب و جدول را رندر می‌کند
 export default function NoticeReportsPage() {
@@ -46,6 +47,7 @@ export default function NoticeReportsPage() {
           reloadKey={siteId}
         />
       </Card>
+      <ModuleNotificationTemplates module="notices" title="متن اعلان اطلاعیه‌ها" />
     </Box>
   );
 }

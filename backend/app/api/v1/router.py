@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     mobile,
     monthly_attendance,
     notices,
+    notification_templates,
     push,
     sites,
     sync,
@@ -52,6 +53,9 @@ api_router.include_router(departments.router, prefix="/departments", tags=["depa
 api_router.include_router(sync.router, prefix="/sync", tags=["sync"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(notices.router, prefix="/notices", tags=["notices"])
+api_router.include_router(
+    notification_templates.router, prefix="/notification-templates", tags=["notification-templates"]
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 # اعلان Push، پشتیبان‌گیری و تنظیمات سیستم
 api_router.include_router(push.router, prefix="/push", tags=["push"])

@@ -58,6 +58,7 @@ import {
 import FamilySummary from "../components/FamilySummary";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 import { MEMBER_LABEL, STATUS_COLOR, saveBlob, toEn } from "../utils/family";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 /**
  * پنل منابع انسانی «مشخصات خانوادگی» (مسیر /family/admin):
@@ -1189,6 +1190,7 @@ export default function FamilyAdminPage() {
           )}
         </>
       )}
+      <ModuleNotificationTemplates module="family" title="متن اطلاعیه‌های خودکار مشخصات خانوادگی" />
     </Box>
   );
 }

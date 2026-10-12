@@ -43,6 +43,7 @@ import {
 } from "../api/loginSecurity";
 import { normalizeSearchText } from "../utils/searchText";
 import { monoFontSx } from "../theme";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 const RANGES = [
   { value: 24, label: "۲۴ ساعت اخیر" },
@@ -604,6 +605,7 @@ function SettingsTab() {
           ذخیره‌ی تنظیمات
         </Button>
       </Box>
+      <ModuleNotificationTemplates module="login_security" title="متن هشدار امنیت ورود" />
     </Stack>
   );
 }

@@ -1,5 +1,5 @@
 {
-  "count": 382,
+  "count": 384,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -152,6 +152,7 @@
     "GET /api/v1/notices/{notice_id}/attendance-card/mine",
     "GET /api/v1/notices/{notice_id}/payroll/mine",
     "GET /api/v1/notices/{notice_id}/readers",
+    "GET /api/v1/notification-templates/{module}",
     "GET /api/v1/performance/evaluations/{evaluation_id}",
     "GET /api/v1/performance/forms",
     "GET /api/v1/performance/forms/{form_id}",
@@ -354,6 +355,7 @@
     "PUT /api/v1/loans/admin/sites/{site_id}/notification-templates",
     "PUT /api/v1/login-security/settings",
     "PUT /api/v1/mobile/settings",
+    "PUT /api/v1/notification-templates/{module}",
     "PUT /api/v1/performance/departments/{department_id}/supervisor",
     "PUT /api/v1/performance/evaluations/{evaluation_id}/answers",
     "PUT /api/v1/performance/forms/categories/{category_id}",

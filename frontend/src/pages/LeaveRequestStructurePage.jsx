@@ -538,18 +538,18 @@ function ModuleStatusSection({ siteId, onError }) {
   );
 }
 
+// متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی همین سایت
+function LeaveNotifySection({ siteId }) {
+  const load = useCallback(() => fetchLeaveNotificationTemplates(siteId), [siteId]);
+  const save = useCallback((texts) => saveLeaveNotificationTemplates(siteId, texts), [siteId]);
+  return <NotificationTemplatesEditor key={siteId} load={load} save={save} />;
+}
+
 /**
  * صفحه‌ی تنظیمات درخواست مرخصی/ماموریت (مدیریتی).
  * سایت انتخاب می‌شود (پیش‌فرض از query string یا اولین سایت) و سپس چهار بخش نمایش داده می‌شود:
  * وضعیت ماژول، نوع‌های درخواست، تأییدکننده‌ی هر واحد و مسئول نیروی انسانی.
  */
-// متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی همین سایت
-function LeaveNotifySection({ siteId }) {
-  const load = useCallback(() => fetchLeaveNotificationTemplates(siteId), [siteId]);
-  const save = useCallback((texts) => saveLeaveNotificationTemplates(siteId, texts), [siteId]);
-  return <NotificationTemplatesEditor load={load} save={save} />;
-}
-
 export default function LeaveRequestStructurePage() {
   const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);

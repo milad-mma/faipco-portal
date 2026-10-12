@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, case, desc, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import notification_templates
 from app.core.profanity_filter import contains_prohibited_phrase
 from app.core.site_access import get_sites_with_permission
 from app.models.employee import Employee
@@ -163,17 +164,9 @@ class FeedbackService:
             user_ids = {row[0] for row in result.all()} - {sender.id}  # حذف خودِ فرستنده
             if not user_ids:
                 return
-            first_line = (
-                "پاسخ جدیدی از فرستنده در یکی از گفتگوهای انتقادات و پیشنهادات ثبت شده است."
-                if follow_up
-                else "پیام جدیدی در انتقادات و پیشنهادات ثبت شده است."
-            )
+            key = "feedback.follow_up" if follow_up else "feedback.new_message"
             # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            schedule_push(
-                user_ids,
-                "/feedback-report",
-                f"{first_line}\nجهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
-            )
+            schedule_push(user_ids, "/feedback-report", await notification_templates.render(self.db, None, key))
         except Exception:
             logger.exception("ارسال Push برای پیام جدید انتقادات و پیشنهادات با خطا مواجه شد")
 
@@ -192,7 +185,7 @@ class FeedbackService:
         schedule_push(
             {feedback.sender_id},
             "/feedback?tab=mine",
-            "پاسخی به پیام شما در انتقادات و پیشنهادات ثبت شد.\nبرای مشاهده روی این پیام بزنید.",
+            await notification_templates.render(self.db, None, "feedback.reply"),
         )
 
     async def _get_accessible_scope(self, current_user: User) -> tuple[set[int] | None, bool]:

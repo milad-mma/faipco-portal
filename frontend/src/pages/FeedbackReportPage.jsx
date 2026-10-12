@@ -52,6 +52,7 @@ import {
   saveFeedbackSettings,
   setFeedbackStatus,
 } from "../api/feedback";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 const CATEGORY_LABELS = {  // برچسب فارسی دسته‌های پیام
   complaint: "انتقاد",
@@ -98,6 +99,7 @@ export default function FeedbackReportPage() {
 
       {tab === "messages" && <FeedbackMessagesList canDelete={Boolean(user?.is_superuser)} />}
       {tab === "prohibited-words" && user?.is_superuser && <ProhibitedWordsManager />}
+      <ModuleNotificationTemplates module="feedback" title="متن اعلان‌های انتقادات و پیشنهادات" />
     </Box>
   );
 }

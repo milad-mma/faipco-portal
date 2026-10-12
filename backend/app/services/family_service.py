@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
+from app.services import notification_templates
 from app.core import family_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name, sniff_content_type
 from app.core.persian_date import get_current_jalali_date
@@ -746,9 +747,14 @@ class FamilyService:
         notice_id = await self._notify(
             emp.id,
             user,
-            "مشخصات خانوادگی تأیید شد",
-            f"مشخصات خانوادگی شما توسط واحد منابع انسانی تأیید شد (تاریخ اثر: {profile.effective_date})."
-            + (f"\n{profile.review_note}" if profile.review_note else ""),
+            await notification_templates.render(self.db, None, "family.approved_title"),
+            await notification_templates.render(
+                self.db,
+                None,
+                "family.approved_body",
+                effective_date=profile.effective_date or "",
+                note=profile.review_note or "",
+            ),
         )
         await self.db.commit()
         return notice_id
@@ -769,9 +775,11 @@ class FamilyService:
         profile.reviewed_by_id = user.id
         profile.review_note = note
         self._log(profile, action, user, note=note)
-        title = "مشخصات خانوادگی تأیید نشد" if action == "rejected" else "مشخصات خانوادگی نیاز به ویرایش دارد"
+        title = await notification_templates.render(
+            self.db, None, "family.rejected_title" if action == "rejected" else "family.returned_title"
+        )
         notice_id = await self._notify(
-            emp.id, user, title, f"{note}\nلطفاً از پنل کاربری، بخش «مشخصات خانوادگی»، فرم را اصلاح و دوباره ثبت کنید."
+            emp.id, user, title, await notification_templates.render(self.db, None, "family.reject_body", note=note)
         )
         await self.db.commit()
         return notice_id

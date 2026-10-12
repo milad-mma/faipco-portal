@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services import notification_templates
 from app.core.evaluation_rules import calculate_option_based_question_score, calculate_weighted_average
 from app.core.persian_date import get_current_jalali_date, jalali_year_range_utc
 from app.models.employee import Department, Employee
@@ -385,6 +386,7 @@ class EvaluationProcessService:
             select(User.id, User.employee_id).where(User.employee_id.in_(pending_by_evaluator.keys()))
         )
         notified = 0
+        reminder_text = await notification_templates.get_text(None, "evaluation.reminder")  # یک بار، نه برای هر نفر
         for user_id, employee_id in users_result.all():
             count = pending_by_evaluator.get(employee_id, 0)
             if count <= 0:
@@ -394,10 +396,7 @@ class EvaluationProcessService:
                     {user_id},
                     url="/my-performance?tab=personnel",
                     priority="normal",
-                    body=(
-                        f"{count} ارزیابی عملکرد انجام‌نشده دارید و مهلت آن رو به پایان است.\n"
-                        "جهت تکمیل روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                    ),
+                    body=notification_templates.fill(reminder_text, count=count),
                 )
                 notified += 1
             except Exception:
@@ -417,10 +416,7 @@ class EvaluationProcessService:
                 {target_user.id},
                 url="/my-performance",
                 priority="normal",
-                body=(
-                    "نتیجه ارزیابی عملکرد شما ثبت شد.\n"
-                    "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                ),
+                body=await notification_templates.render(self.db, None, "evaluation.result"),
             )
         except Exception:
             logger.exception("ارسال Push برای نتیجه ارزیابی عملکرد با خطا مواجه شد")

@@ -40,6 +40,7 @@ import {
 import { fetchTodayBirthdays } from "../api/employees";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import SiteFilterSelect from "../components/SiteFilterSelect";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);  // گزینه‌های ساعت ۰ تا ۲۳
 const MINUTES = [0, 15, 30, 45];  // گزینه‌های دقیقه با گام ۱۵ دقیقه
@@ -410,6 +411,7 @@ export default function BirthdayMessagesPage() {
           </Card>
         )}
       </Card>
+      <ModuleNotificationTemplates module="birthday" title="متن اعلان‌ها و عنوان اطلاعیه‌ی تبریک تولد" />
     </Box>
   );
 }

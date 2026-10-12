@@ -30,6 +30,7 @@ from app.core.deps import get_current_user
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
+from app.models.site import Site
 from app.models.user import User
 from app.services import notification_templates
 from app.services.loan_service import LoanError, LoanService
@@ -299,6 +300,8 @@ async def get_notification_templates(
 ):
     """متن اعلان‌های وام این سایت (پیش‌فرض یا تغییرداده‌شده) برای تب «متن اعلان‌ها»."""
     await _require(db, current_user, site_id, "loans.policy")
+    if await db.get(Site, site_id) is None:
+        raise HTTPException(status_code=404, detail="سایت پیدا نشد")
     return await notification_templates.list_templates(db, "loan", site_id)
 
 
@@ -308,7 +311,12 @@ async def put_notification_templates(
 ):
     """ذخیره‌ی متن اعلان‌ها؛ متن خالی = برگشت به پیش‌فرض."""
     await _require(db, current_user, site_id, "loans.policy")
-    return await notification_templates.save_templates(db, "loan", site_id, payload.texts)
+    if await db.get(Site, site_id) is None:
+        raise HTTPException(status_code=404, detail="سایت پیدا نشد")
+    try:
+        return await notification_templates.save_templates(db, "loan", site_id, payload.texts)
+    except notification_templates.TemplateError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/admin/sites/{site_id}/employees")

@@ -920,7 +920,7 @@ function ServiceTab({ siteId, toast }) {
 function LoanNotifyTab({ siteId }) {
   const load = useCallback(() => fetchLoanNotificationTemplates(siteId), [siteId]);
   const save = useCallback((texts) => saveLoanNotificationTemplates(siteId, texts), [siteId]);
-  return <NotificationTemplatesEditor load={load} save={save} />;
+  return <NotificationTemplatesEditor key={siteId} load={load} save={save} />;
 }
 
 // ---------- صفحه ----------

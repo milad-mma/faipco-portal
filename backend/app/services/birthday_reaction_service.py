@@ -15,6 +15,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import notification_templates
 from app.core.persian_date import get_current_jalali_date
 from app.core.site_access import get_accessible_site_ids
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
@@ -137,10 +138,7 @@ class BirthdayReactionService:
                 {target_user.id},
                 url="/my-dashboard",
                 priority="normal",
-                body=(
-                    "همکارانتان تولد شما را تبریک گفتند.\n"
-                    "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                ),
+                body=await notification_templates.render(self.db, None, "birthday.reaction"),
             )
         except Exception:
             logger.exception("ارسال Push اولین تبریک تولد با خطا مواجه شد")
@@ -242,6 +240,7 @@ class BirthdayReactionService:
 
         counts = await self.get_reactions_for_employees([emp_id for emp_id, _ in rows])
         notified = 0
+        summary_text = await notification_templates.get_text(None, "birthday.reaction_summary")  # یک بار
         for emp_id, user_id in rows:
             total = sum(counts.get(emp_id, {}).get("counts", {}).values())
             if total <= 0:
@@ -253,10 +252,7 @@ class BirthdayReactionService:
                     {user_id},
                     url="/my-dashboard",
                     priority="normal",
-                    body=(
-                        f"امروز {total} نفر از همکارانتان تولد شما را تبریک {verb}.\n"
-                        "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-                    ),
+                    body=notification_templates.fill(summary_text, count=total, verb=verb),
                 )
                 notified += 1
             except Exception:

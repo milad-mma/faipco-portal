@@ -49,6 +49,7 @@ import {
   fetchPublishedEvaluations,
   setEvaluationPeriodDisabled,
 } from "../api/evaluationPeriods";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 
 // برچسب فارسی وضعیت دوره
 const STATUS_LABELS = {
@@ -708,6 +709,7 @@ export default function EvaluationPeriodsPage() {
           {toast}
         </Alert>
       </Snackbar>
+      <ModuleNotificationTemplates module="evaluation" title="متن اعلان‌های ارزیابی عملکرد" />
     </Box>
   );
 }

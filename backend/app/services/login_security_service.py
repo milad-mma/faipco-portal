@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import notification_templates
 from app.core.captcha import random_answer, render_captcha_png
 from app.core.config import get_settings
 from app.core.rate_limit import (
@@ -270,7 +271,9 @@ async def maybe_send_alert(db: AsyncSession, cfg: LoginSecuritySettings) -> None
             await alert_recipient_ids(db),
             url="/login-security",
             priority="high",
-            body=f"هشدار امنیتی: {count} تلاش ناموفق ورود در {cfg.alert_window_minutes} دقیقه‌ی اخیر. گزارش امنیت ورود را بررسی کنید.",
+            body=await notification_templates.render(
+                db, None, "login_security.alert", count=count, minutes=cfg.alert_window_minutes
+            ),
         )
     except Exception:  # noqa: BLE001 - خطای Push نباید پاسخ ورود را خراب کند
         logger.exception("ارسال هشدار امنیت ورود ناموفق بود")

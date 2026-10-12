@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import notification_templates
 from app.core.persian_date import get_current_jalali_date
 from app.models.birthday_message_template import BirthdayMessageTemplate
 from app.models.employee import Employee
@@ -132,12 +133,13 @@ class BirthdayGreetingsService:
 
         now = datetime.now(timezone.utc)
         sent_count = 0
+        greeting_title = (await notification_templates.render(self.db, None, "birthday.greeting_title"))[:255]
         # برای هر متولد: ساخت اطلاعیه منتشرشده با یک متن تصادفی، هدف‌گیری فقط همان پرسنل، و ارسال Push
         for employee in birthday_employees:
             message_text = random.choice(templates).text
             notice = Notice(
                 sender_id=sender.id,
-                title="تولدت مبارک! 🎉",
+                title=greeting_title,
                 body=message_text,
                 priority=NoticePriority.normal,
                 status=NoticeStatus.published,

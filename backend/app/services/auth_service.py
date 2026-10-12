@@ -375,6 +375,16 @@ class AuthService:
             base.family_disabled = not (await FamilyService(self.db).get_settings())["enabled"]
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.family_disabled = False
+        # ماژول‌های سراسری که این کاربر متن اعلان‌هایشان را می‌تواند تغییر دهد (مجوز همان ماژول برای همه‌ی سایت‌ها)
+        from app.services.notification_templates import GLOBAL_MODULES
+
+        template_modules = []
+        for module, code in GLOBAL_MODULES.items():
+            if user.is_superuser or (
+                code in permission_codes and await get_sites_with_permission(self.db, user, code) is None
+            ):
+                template_modules.append(module)
+        base.notification_template_modules = template_modules
         base.can_admin_loans = user.is_superuser or bool(
             {"loans.policy", "loans.finance", "loans.view"} & set(permission_codes)
         )

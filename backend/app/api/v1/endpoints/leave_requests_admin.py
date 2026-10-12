@@ -534,6 +534,8 @@ async def get_leave_notification_templates(
 ):
     """متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی این سایت. مجوز: sites.manage (همان تنظیمات مرخصی)."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    if await db.get(Site, site_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت پیدا نشد")
     return await notification_templates.list_templates(db, "leave", site_id)
 
 
@@ -546,4 +548,9 @@ async def put_leave_notification_templates(
 ):
     """ذخیره‌ی متن اعلان‌ها؛ متن خالی = برگشت به پیش‌فرض."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
-    return await notification_templates.save_templates(db, "leave", site_id, payload.texts)
+    if await db.get(Site, site_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت پیدا نشد")
+    try:
+        return await notification_templates.save_templates(db, "leave", site_id, payload.texts)
+    except notification_templates.TemplateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

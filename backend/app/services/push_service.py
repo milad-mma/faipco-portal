@@ -13,6 +13,7 @@ from pywebpush import WebPushException, webpush
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import notification_templates
 from app.core.config import get_settings
 from app.models.push_subscription import PushSubscription
 from app.schemas.push import PushSubscriptionIn
@@ -103,6 +104,13 @@ class PushService:
         # ارسال‌ها با asyncio.gather به‌صورت موازی انجام می‌شوند و یک Semaphore
         # تعداد ارسال هم‌زمان را به ۲۰ محدود می‌کند تا فشار روی سرویس Push/شبکه
         # کنترل شود؛ به این ترتیب ارسال به صدها گیرنده از Timeout درخواست HTTP عبور نمی‌کند.
+        # متن پیش‌فرض اعلان اطلاعیه (قابل‌ویرایش در «متن اعلان‌ها»ی اطلاعیه‌ها؛ جدا برای فیش حقوقی/کارکرد)
+        default_body = None
+        if not body:
+            key = {"payroll": "notices.payroll", "attendance_card": "notices.attendance_card"}.get(
+                notice_type, "notices.new"
+            )
+            default_body = await notification_templates.render(self.db, None, key)
         sent_count = 0
         failed_count = 0
         stale_ids: list[int] = []  # شناسه اشتراک‌های منقضی برای حذف
@@ -115,10 +123,7 @@ class PushService:
             # عنوان/متن واقعی اطلاعیه در اعلان نمایش داده نمی‌شود؛ یک پیام
             # استاندارد و ثابت که فقط با نام مخاطب شخصی‌سازی می‌شود.
             notification_title = f"{recipient_name} عزیز،" if recipient_name else "پرتال سازمانی"
-            notification_body = body or (
-                "یک اطلاعیه جدید برای شما ارسال شده است.\n"
-                "جهت مشاهده روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید."
-            )
+            notification_body = body or default_body
             payload = json.dumps(
                 {
                     "title": notification_title,
