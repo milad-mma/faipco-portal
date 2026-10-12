@@ -17,12 +17,34 @@ export async function fetchCurrentUser() {
   return data;
 }
 
-// PUT /auth/me/password؛ تغییر رمز کاربر جاری با رمز فعلی و رمز جدید؛ خروجی ندارد
-export async function changePasswordRequest(currentPassword, newPassword) {
+// PUT /auth/me/password؛ تغییر رمز کاربر جاری. تأیید هویت با otpCode (کد پیامک/ایمیل) یا، اگر کاربر کانالی
+// ندارد، currentPassword؛ خروجی ندارد (client.js توکن‌های تازه را خودش ذخیره می‌کند)
+export async function changePasswordRequest({ currentPassword, otpCode, newPassword }) {
   await apiClient.put("/auth/me/password", {
-    current_password: currentPassword,
+    ...(otpCode ? { otp_code: otpCode } : {}),
+    ...(currentPassword ? { current_password: currentPassword } : {}),
     new_password: newPassword,
   });
+}
+
+// GET /auth/me/password/otp-options؛ خروجی: { otp_required, channels: { sms?, email? } (ماسک‌شده),
+// code_ttl_seconds, resend_cooldown_seconds }
+export async function fetchPasswordOtpOptions() {
+  const { data } = await apiClient.get("/auth/me/password/otp-options");
+  return data;
+}
+
+// POST /auth/me/password/otp؛ ارسال کد تغییر رمز. channel: "sms" | "email"؛
+// خروجی: { masked_contact, expires_in_seconds, resend_cooldown_seconds }
+export async function sendPasswordOtp(channel) {
+  const { data } = await apiClient.post("/auth/me/password/otp", { channel });
+  return data;
+}
+
+// POST /auth/me/mobile/otp؛ پیامک کد تأیید به شماره‌ی موبایل جدید؛ خروجی مثل sendPasswordOtp
+export async function sendMobileOtp(mobile) {
+  const { data } = await apiClient.post("/auth/me/mobile/otp", { mobile });
+  return data;
 }
 
 // POST /auth/forgot-password؛ ارسال کد بازیابی از طریق کانال انتخابی (پیش‌فرض پیامک)؛ خروجی: پاسخ سرور
@@ -52,12 +74,14 @@ export async function resetPasswordRequest(token, newPassword, identifier = null
 }
 
 // PUT /auth/me/contact-info؛ فقط فیلدهای ارسال‌شده (ایمیل/موبایل) را به‌روز می‌کند؛ خروجی: اطلاعات به‌روزشده.
-// currentPassword فقط وقتی لازم است که موبایل یا ایمیل نسبت به مقدار ذخیره‌شده تغییر کند (سرور بدون آن 400 می‌دهد).
-export async function updateMyContactInfo({ email, mobile, currentPassword }) {
+// تغییر موبایل: mobileOtpCode (کد پیامک‌شده به شماره‌ی جدید)؛ فقط اگر سرویس پیامک خاموش باشد currentPassword.
+// تغییر ایمیل تأیید نمی‌خواهد.
+export async function updateMyContactInfo({ email, mobile, currentPassword, mobileOtpCode }) {
   const payload = {};
   if (email !== undefined) payload.email = email;
   if (mobile !== undefined) payload.mobile = mobile;
   if (currentPassword) payload.current_password = currentPassword;
+  if (mobileOtpCode) payload.mobile_otp_code = mobileOtpCode;
   const { data } = await apiClient.put("/auth/me/contact-info", payload);
   return data;
 }

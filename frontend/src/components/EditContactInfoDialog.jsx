@@ -11,8 +11,9 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { updateMyContactInfo } from "../api/auth";
+import { fetchPasswordOtpOptions, sendMobileOtp, updateMyContactInfo } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
+import OtpCodeField from "./OtpCodeField";
 
 const GENDER_LABELS = { 1: "مرد", 2: "زن" };
 
@@ -35,15 +36,17 @@ const READONLY_FIELDS = [
  * ورودی: open و onClose. خروجی: Dialog با دو فیلد (موبایل اجباری) و پیام نتیجه.
  * اگر در نگاشت ستون‌های سایت کاربر، ستون ایمیل/موبایل مشخص شده باشد، Backend مقدار جدید را
  * در دیتابیس اصلی همان سایت هم به‌روزرسانی می‌کند (Write-back)، نه فقط در دیتابیس پرتال.
- * امنیت: ایمیل/موبایل مقصد بازیابی رمز است؛ وقتی کاربر یکی از آن‌ها را واقعاً تغییر می‌دهد، فیلد
- * «رمز عبور فعلی» ظاهر می‌شود و سرور بدون آن تغییر را نمی‌پذیرد (400) (نشست دزدیده‌شده به‌تنهایی کافی نباشد).
- * بدون تغییر، رمز خواسته نمی‌شود.
+ * امنیت: وقتی موبایل واقعاً تغییر می‌کند، کد تأیید به «شماره‌ی جدید» پیامک می‌شود و بدون آن ذخیره ممکن نیست
+ * (ثابت می‌کند شماره در دست کاربر است). فقط اگر سرویس پیامک در پنل خاموش باشد، «رمز عبور فعلی» پرسیده می‌شود.
+ * تغییر ایمیل هیچ تأییدی نمی‌خواهد.
  */
 export default function EditContactInfoDialog({ open, onClose }) {
   const { user, refetchUser } = useAuth();
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  const [mobileOtpCode, setMobileOtpCode] = useState("");
+  const [smsEnabled, setSmsEnabled] = useState(true); // از otp-options؛ خاموش = تغییر موبایل با رمز فعلی
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,8 +54,10 @@ export default function EditContactInfoDialog({ open, onClose }) {
   const usesNationalCode = user && !user.has_custom_password; // بدون رمز اختصاصی: «رمز فعلی» همان کد ملی است
   // مقایسه با مقدار ذخیره‌شده (موبایل فقط ارقام، ایمیل بدون حساسیت به حروف بزرگ/کوچک)
   const mobileChanged = mobile.replace(/\D/g, "") !== (user?.mobile || "").replace(/\D/g, "");
-  const emailChanged = email.trim().toLowerCase() !== (user?.email || "").trim().toLowerCase();
-  const needsPassword = mobileChanged || emailChanged;
+  const mobileDigits = mobile.replace(/\D/g, "");
+  const mobileValid = mobileDigits.length === 11 && mobileDigits.startsWith("0");
+  const needsOtp = mobileChanged && smsEnabled;
+  const needsPassword = mobileChanged && !smsEnabled;
 
   // با باز شدن دیالوگ، فیلدها از اطلاعات فعلی کاربر پر و پیام‌ها پاک می‌شوند
   useEffect(() => {
@@ -60,8 +65,12 @@ export default function EditContactInfoDialog({ open, onClose }) {
       setEmail(user?.email || "");
       setMobile(user?.mobile || "");
       setCurrentPassword("");
+      setMobileOtpCode("");
       setError("");
       setSuccessMessage("");
+      fetchPasswordOtpOptions()
+        .then((data) => setSmsEnabled(!!data.sms_enabled))
+        .catch(() => setSmsEnabled(true)); // پیش‌فرض: مسیر کد پیامکی (سرور خودش تصمیم نهایی را می‌گیرد)
     }
     // فقط به open وابسته است، نه به user: پس از ذخیره، refetchUser() مقدار user را تازه می‌کند
     // و وابستگی به user باعث اجرای دوباره‌ی افکت و پاک شدن پیام موفقیت می‌شد.
@@ -85,8 +94,10 @@ export default function EditContactInfoDialog({ open, onClose }) {
         email: email.trim(),
         mobile: mobile.trim(),
         currentPassword: needsPassword ? currentPassword : undefined,
+        mobileOtpCode: needsOtp ? mobileOtpCode : undefined,
       });
       setCurrentPassword("");
+      setMobileOtpCode("");
       setSuccessMessage("اطلاعات با موفقیت ذخیره شد.");
       await refetchUser();
     } catch (err) {
@@ -119,15 +130,26 @@ export default function EditContactInfoDialog({ open, onClose }) {
             fullWidth
             disabled={isSubmitting}
           />
+          {needsOtp && (
+            // فقط وقتی موبایل واقعاً تغییر کرده؛ کد به شماره‌ی جدید فرستاده می‌شود
+            <OtpCodeField
+              value={mobileOtpCode}
+              onChange={setMobileOtpCode}
+              onSend={() => sendMobileOtp(mobile.trim())}
+              resetKey={mobileDigits}
+              sendDisabled={!mobileValid}
+              sendLabel="ارسال کد به شماره جدید"
+              disabled={isSubmitting}
+            />
+          )}
           {needsPassword && (
-            // فقط وقتی موبایل/ایمیل واقعاً تغییر کرده نشان داده می‌شود؛ سرور بدون آن 400 می‌دهد
+            // سرویس پیامک خاموش است: تغییر موبایل با رمز فعلی تأیید می‌شود
             <TextField
               label={usesNationalCode ? "کد ملی (برای تأیید تغییر)" : "رمز عبور فعلی (برای تأیید تغییر)"}
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               autoComplete="current-password"
-              helperText="چون موبایل/ایمیل مقصد بازیابی رمز است، برای تغییر آن تأیید هویت لازم است."
               required
               fullWidth
               disabled={isSubmitting}
@@ -176,7 +198,12 @@ export default function EditContactInfoDialog({ open, onClose }) {
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={isSubmitting || !mobile.trim() || (needsPassword && !currentPassword)}
+          disabled={
+            isSubmitting ||
+            !mobile.trim() ||
+            (needsPassword && !currentPassword) ||
+            (needsOtp && mobileOtpCode.length !== 6)
+          }
         >
           {isSubmitting ? "در حال ذخیره..." : "ذخیره"}
         </Button>

@@ -265,15 +265,19 @@ class AuthService:
             ):
                 raise AuthError("رمز عبور فعلی وارد شده اشتباه است")
 
-    async def change_password(self, user: User, current_password: str, new_password: str) -> tuple[str, str]:
+    async def change_password(
+        self, user: User, current_password: str | None, new_password: str, *, verified: bool = False
+    ) -> tuple[str, str]:
         """
         تغییر رمز توسط خودِ کاربر؛ ورودی: کاربر، رمز فعلی (برای پرسنل بدون رمز اختصاصی = کد ملی) و رمز جدید.
         رمز جدید باید قانون قدرت رمز را رعایت کند (وگرنه AuthError). پس از تغییر has_custom_password=True
         و must_change_password=False می‌شود و ورود با کد ملی دیگر ممکن نیست.
         password_changed_at هم «اکنون» می‌شود، پس همه‌ی توکن‌های قبلی (این دستگاه و بقیه) باطل می‌شوند؛
         خروجی: جفت توکن تازه (access, refresh) تا Endpoint بتواند آن را به کلاینت بدهد و نشست جاری قطع نشود.
+        verified=True یعنی هویت قبلاً با کد تأیید (OTP) بررسی شده و رمز فعلی بررسی نمی‌شود.
         """
-        await self.verify_current_credential(user, current_password)
+        if not verified:
+            await self.verify_current_credential(user, current_password or "")
         try:
             validate_password_strength(new_password)
         except WeakPasswordError as e:

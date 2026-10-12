@@ -2,6 +2,7 @@
 Endpointهای احراز هویت (Authentication).
 - login: فرم ورود یکپارچه برای کاربران مدیریت و پرسنل؛ refresh: تمدید توکن.
 - me / me/password / me/contact-info: اطلاعات، رمز عبور و اطلاعات تماس کاربر جاری.
+- me/password/otp-options، me/password/otp، me/mobile/otp: کد تأیید یک‌بارمصرف برای تغییر رمز و موبایل.
 - forgot-password / verify-reset-code / reset-password: جریان بازنشانی رمز عبور با ایمیل یا پیامک.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -21,6 +22,8 @@ from app.schemas.auth import (
     ContactInfoUpdateRequest,
     ForgotPasswordRequest,
     LoginRequest,
+    MobileOtpRequest,
+    PasswordOtpRequest,
     RefreshRequest,
     ResetPasswordRequest,
     TokenResponse,
@@ -29,6 +32,8 @@ from app.schemas.auth import (
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 from app.services.employee_contact_service import ContactInfoUpdateError, normalize_mobile, update_my_contact_info
+from app.core.security import check_password_strength
+from app.services import otp_service
 from app.services.password_reset_service import (
     PasswordResetError,
     is_short_code,
@@ -127,6 +132,66 @@ async def read_current_user(
     return await AuthService(db).get_me(current_user)
 
 
+def _otp_http_error(e: otp_service.OtpError) -> HTTPException:
+    """OtpError → 429 (ارسال زودهنگام، با Retry-After) یا 400. هرگز 401 تا interceptor فرانت نشست را نبندد."""
+    if e.retry_after:
+        return HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+            headers={"Retry-After": str(e.retry_after)},
+        )
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/me/password/otp-options")
+async def password_otp_options(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """
+    روش تأیید هویت برای تغییر رمز کاربر جاری. دسترسی: هر کاربر واردشده.
+    خروجی: {otp_required, channels: {"sms"?: موبایل ماسک‌شده, "email"?: ایمیل ماسک‌شده}, sms_enabled,
+    code_ttl_seconds, resend_cooldown_seconds}. otp_required=false یعنی کانالی نیست و «رمز عبور فعلی» لازم است.
+    sms_enabled برای دیالوگ مشخصات: روشن = تغییر موبایل با کد پیامکی، خاموش = با رمز فعلی.
+    """
+    options = await otp_service.password_options(db, current_user)
+    return {
+        "otp_required": options.otp_required,
+        "sms_enabled": await otp_service.sms_available(db),
+        "channels": options.channels,
+        "code_ttl_seconds": otp_service.CODE_TTL_SECONDS,
+        "resend_cooldown_seconds": otp_service.RESEND_COOLDOWN_SECONDS,
+    }
+
+
+@router.post("/me/password/otp")
+async def send_password_otp(
+    payload: PasswordOtpRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    کد تأیید تغییر رمز را با پیامک (به موبایل کاربر) یا ایمیل (به ایمیل کاربر) می‌فرستد. دسترسی: هر کاربر واردشده.
+    خروجی: {masked_contact, expires_in_seconds, resend_cooldown_seconds}.
+    خطا: 400 (کانال در دسترس نیست / ارسال ناموفق)، 429 (ارسال دوباره زودتر از ۶۰ ثانیه).
+    """
+    options = await otp_service.password_options(db, current_user)
+    if payload.channel not in options.channels:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="این روش ارسال کد برای شما در دسترس نیست.")
+    if payload.channel == "sms":
+        destination = await otp_service.user_mobile(db, current_user)
+    else:
+        destination = await otp_service.user_email(db, current_user)
+    try:
+        ttl = await otp_service.request_code(
+            db, current_user, purpose=otp_service.PURPOSE_PASSWORD, channel=payload.channel, destination=destination
+        )
+    except otp_service.OtpError as e:
+        raise _otp_http_error(e)
+    return {
+        "masked_contact": options.channels[payload.channel],
+        "expires_in_seconds": ttl,
+        "resend_cooldown_seconds": otp_service.RESEND_COOLDOWN_SECONDS,
+    }
+
+
 @router.put("/me/password", response_model=TokenResponse)
 async def change_password(
     payload: ChangePasswordRequest,
@@ -134,18 +199,74 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    رمز عبور کاربر جاری را پس از بررسی رمز فعلی تغییر می‌دهد. چون تغییر رمز همه‌ی توکن‌های قبلی را باطل
-    می‌کند، جفت توکن تازه برمی‌گرداند تا نشست جاری بدون ورود مجدد ادامه یابد (کلاینت در client.js ذخیره می‌کند).
-    دسترسی: هر کاربر واردشده. خطا: 400 اگر رمز فعلی نادرست یا رمز جدید نامعتبر باشد.
+    رمز عبور کاربر جاری را تغییر می‌دهد. تأیید هویت: اگر کاربر موبایل/ایمیل قابل‌استفاده دارد، otp_code (از
+    POST /auth/me/password/otp)، وگرنه current_password. چون تغییر رمز همه‌ی توکن‌های قبلی را باطل می‌کند،
+    جفت توکن تازه برمی‌گرداند تا نشست جاری بدون ورود مجدد ادامه یابد (کلاینت در client.js ذخیره می‌کند).
+    دسترسی: هر کاربر واردشده. خطا: 400 اگر کد/رمز فعلی نادرست یا رمز جدید نامعتبر باشد.
     """
     service = AuthService(db)
+    options = await otp_service.password_options(db, current_user)
     try:
-        access_token, refresh_token = await service.change_password(
-            current_user, payload.current_password, payload.new_password
-        )
+        if options.otp_required:
+            # قدرت رمز پیش از مصرف کد بررسی می‌شود تا با رمز ضعیف، کد هدر نرود
+            weak = check_password_strength(payload.new_password)
+            if weak:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=weak)
+            try:
+                await otp_service.verify_and_consume(
+                    db, current_user, purpose=otp_service.PURPOSE_PASSWORD, code=payload.otp_code
+                )
+            except otp_service.OtpError as e:
+                raise _otp_http_error(e)
+            access_token, refresh_token = await service.change_password(
+                current_user, None, payload.new_password, verified=True
+            )
+        else:
+            if not payload.current_password:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="رمز عبور فعلی را وارد کنید.")
+            access_token, refresh_token = await service.change_password(
+                current_user, payload.current_password, payload.new_password
+            )
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/me/mobile/otp")
+async def send_mobile_otp(
+    payload: MobileOtpRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    کد تأیید تغییر موبایل را با پیامک به «شماره‌ی جدید» می‌فرستد. دسترسی: هر کاربر واردشده.
+    خروجی: {masked_contact, expires_in_seconds, resend_cooldown_seconds}.
+    خطا: 400 (شماره نامعتبر/تکراری، سرویس پیامک خاموش، ارسال ناموفق)، 429 (ارسال دوباره زودتر از ۶۰ ثانیه).
+    """
+    if current_user.employee_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="این حساب به هیچ پرسنلی متصل نیست، پس موبایل قابل‌ذخیره نیست",
+        )
+    try:
+        new_mobile = normalize_mobile(payload.mobile)
+    except ContactInfoUpdateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if new_mobile == (await otp_service.user_mobile(db, current_user) or ""):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="این شماره همان شماره‌ی فعلی شماست.")
+    if not await otp_service.sms_available(db):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="سرویس پیامک فعال نیست.")
+    try:
+        ttl = await otp_service.request_code(
+            db, current_user, purpose=otp_service.PURPOSE_MOBILE, channel="sms", destination=new_mobile
+        )
+    except otp_service.OtpError as e:
+        raise _otp_http_error(e)
+    return {
+        "masked_contact": otp_service.mask_mobile(new_mobile),
+        "expires_in_seconds": ttl,
+        "resend_cooldown_seconds": otp_service.RESEND_COOLDOWN_SECONDS,
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -169,38 +290,46 @@ async def update_my_contact_info_endpoint(
     """
     ایمیل/موبایل کاربر جاری را به‌روزرسانی می‌کند؛ اگر ستون متناظر در نگاشت ستون‌های سایت پرسنل
     تنظیم شده باشد، در دیتابیس اصلی سایت هم نوشته می‌شود (write-back)، وگرنه فقط در دیتابیس پرتال.
-    دسترسی: هر کاربر واردشده. اگر موبایل یا ایمیل نسبت به مقدار ذخیره‌شده واقعاً تغییر کند، رمز فعلی
-    (برای پرسنل بدون رمز اختصاصی: کد ملی) هم لازم است — ایمیل/موبایل مقصد بازیابی رمز است و نشست دزدیده‌شده
-    نباید بتواند آن را به‌تنهایی عوض کند. بدون تغییر، رمز لازم نیست.
-    خطا: 400 برای مقدار نامعتبر، خطای ذخیره یا رمز فعلی نادرست/وارد‌نشده.
+    دسترسی: هر کاربر واردشده. تغییر ایمیل تأیید نمی‌خواهد. اگر موبایل واقعاً تغییر کند، mobile_otp_code (کد
+    پیامک‌شده به شماره‌ی جدید با POST /auth/me/mobile/otp) لازم است؛ فقط وقتی سرویس پیامک خاموش است، رمز فعلی
+    (برای پرسنل بدون رمز اختصاصی: کد ملی) جای آن را می‌گیرد.
+    خطا: 400 برای مقدار نامعتبر، خطای ذخیره یا کد/رمز نادرست.
     """
-    # مقدار فعلی ذخیره‌شده (همان منبع /auth/me: اولویت با Employee)
-    stored_email = current_user.email
+    # موبایل فعلی ذخیره‌شده (همان منبع /auth/me: Employee)
     stored_mobile = None
     if current_user.employee_id is not None:
         employee = await db.get(Employee, current_user.employee_id)
         if employee is not None:
-            stored_email = employee.email or current_user.email
             stored_mobile = employee.mobile
 
     try:
         new_mobile = normalize_mobile(payload.mobile)
     except ContactInfoUpdateError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    email_changed = (payload.email or "").strip().lower() != (stored_email or "").strip().lower()
     mobile_changed = new_mobile != (stored_mobile or "")
 
-    if email_changed or mobile_changed:
+    if mobile_changed:
         # 400 (نه 401) تا interceptor فرانت آن را «توکن منقضی» تلقی و رفرش/خروج نکند
-        if not payload.current_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="برای تغییر موبایل یا ایمیل، رمز عبور فعلی خود را وارد کنید.",
-            )
-        try:
-            await AuthService(db).verify_current_credential(current_user, payload.current_password)
-        except AuthError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        if await otp_service.sms_available(db):
+            # کد پیامک‌شده به همان شماره‌ی جدید (ثابت می‌کند شماره در دست کاربر است)
+            try:
+                await otp_service.verify_and_consume(
+                    db, current_user, purpose=otp_service.PURPOSE_MOBILE,
+                    code=payload.mobile_otp_code, destination=new_mobile,
+                )
+            except otp_service.OtpError as e:
+                raise _otp_http_error(e)
+        else:
+            # سرویس پیامک خاموش است: مثل قبل با رمز فعلی
+            if not payload.current_password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="برای تغییر موبایل، رمز عبور فعلی خود را وارد کنید.",
+                )
+            try:
+                await AuthService(db).verify_current_credential(current_user, payload.current_password)
+            except AuthError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     try:
         result = await update_my_contact_info(db, current_user, email=payload.email, mobile=payload.mobile)

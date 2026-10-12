@@ -19,9 +19,23 @@ class RefreshRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    """بدنه‌ی PUT /auth/me/password."""
-    current_password: str
+    """
+    بدنه‌ی PUT /auth/me/password. اگر کاربر کانال OTP دارد (GET /auth/me/password/otp-options → otp_required)،
+    otp_code لازم است و current_password نادیده گرفته می‌شود؛ وگرنه current_password لازم است.
+    """
+    current_password: str | None = Field(default=None, max_length=256)
+    otp_code: str | None = Field(default=None, max_length=20)
     new_password: str = Field(min_length=6)
+
+
+class PasswordOtpRequest(BaseModel):
+    """بدنه‌ی POST /auth/me/password/otp: کانال ارسال کد تغییر رمز."""
+    channel: str = Field(pattern="^(sms|email)$")
+
+
+class MobileOtpRequest(BaseModel):
+    """بدنه‌ی POST /auth/me/mobile/otp: شماره‌ی موبایل جدید که کد به آن فرستاده می‌شود."""
+    mobile: str = Field(min_length=1, max_length=32)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -47,14 +61,15 @@ class ResetPasswordRequest(BaseModel):
 
 class ContactInfoUpdateRequest(BaseModel):
     """
-    بدنه‌ی PUT /auth/me/contact-info؛ موبایل اجباری است (منبع اصلی اطلاع‌رسانی/بازیابی حساب)
-    و ایمیل اختیاری. current_password فقط وقتی لازم است که موبایل یا ایمیل واقعاً تغییر کند
-    (برای پرسنل بدون رمز اختصاصی = کد ملی).
+    بدنه‌ی PUT /auth/me/contact-info؛ موبایل اجباری است (منبع اصلی اطلاع‌رسانی/بازیابی حساب) و ایمیل اختیاری.
+    تغییر ایمیل تأیید نمی‌خواهد. تغییر موبایل: mobile_otp_code (کد پیامک‌شده به شماره‌ی جدید)؛ فقط اگر سرویس
+    پیامک خاموش باشد، به‌جای آن current_password (برای پرسنل بدون رمز اختصاصی = کد ملی) لازم است.
     """
 
     email: EmailStr | None = None
     mobile: str = Field(min_length=1, max_length=32)
     current_password: str | None = Field(default=None, max_length=256)
+    mobile_otp_code: str | None = Field(default=None, max_length=20)
 
     @field_validator("email", mode="before")
     @classmethod

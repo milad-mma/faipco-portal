@@ -66,6 +66,7 @@ cd frontend && npm install && npm run dev
 | [`docs/backup-scheduling.md`](docs/backup-scheduling.md) | زمان‌بندی بکاپ + ارسال خودکار به سرور SMB/FTP |
 | [`docs/smtp-and-password-reset.md`](docs/smtp-and-password-reset.md) | تنظیمات SMTP، فراموشی رمز عبور، ارسال بکاپ به ایمیل |
 | [`docs/self-service-contact-info.md`](docs/self-service-contact-info.md) | ویرایش ایمیل/موبایل شخصی با Write-back به دیتابیس اصلی سایت |
+| [`docs/profile-otp.md`](docs/profile-otp.md) | کد تأیید پیامکی/ایمیلی برای تغییر رمز و موبایل |
 | [`docs/sms-password-reset.md`](docs/sms-password-reset.md) | فراموشی رمز عبور از طریق پیامک (ippanel) |
 | [`docs/schema-discovery.md`](docs/schema-discovery.md) | کشف خودکار ساختار دیتابیس سایت‌ها |
 | [`docs/performance-evaluation-structure.md`](docs/performance-evaluation-structure.md) | ساختار سازمانی ارزیابی عملکرد (سرپرست/مدیر سایت/سرشیفت) |
