@@ -39,6 +39,7 @@ from app.services import notification_templates
 logger = logging.getLogger(__name__)
 
 MAX_NOTE = 2000
+DEFAULT_AGREE_LABEL = "تمامی قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم."
 
 
 class LoanError(Exception):
@@ -405,6 +406,7 @@ class LoanService:
             "employee_id": req.employee_id,
             "employee": label(people.get(req.employee_id)),
             "loan_type_id": req.loan_type_id,
+            "policy_id": req.policy_id,
             "type_title": req.type_title,
             "out_of_queue": req.out_of_queue,
             "extra_requirement": req.extra_requirement,
@@ -506,6 +508,8 @@ class LoanService:
             "title": policy.title,
             "effective_from": policy.effective_from,
             "rules_text": policy.rules_text,
+            "guarantee_terms": policy.guarantee_terms,
+            "guarantee_agree_label": policy.guarantee_agree_label,
             "block_if_unsettled": policy.block_if_unsettled,
             "approval_steps": R.normalize_steps(policy.approval_steps),
             "types": [
@@ -816,10 +820,91 @@ class LoanService:
                 .order_by(LoanRequest.created_at)
             )
         ).scalars().all()
+        guarantee_items = await self._serialize_many(list(guarantee), public=True)
+        await self._attach_guarantee_terms(guarantee_items)
         return {
-            "guarantee": await self._serialize_many(list(guarantee), public=True),
+            "guarantee": guarantee_items,
             "approvals": await self._serialize_many(list(approvals), public=True),
         }
+
+    async def _attach_guarantee_terms(self, items: list[dict]) -> None:
+        """متن قوانین ضمانت و متن تیک پذیرشِ مقررات همان درخواست (برای نمایش در کارت ضمانت)."""
+        policy_ids = {i.get("policy_id") for i in items if i.get("policy_id")}
+        policies = {}
+        if policy_ids:
+            rows = (await self.db.execute(select(LoanPolicy).where(LoanPolicy.id.in_(policy_ids)))).scalars().all()
+            policies = {p.id: p for p in rows}
+        for item in items:
+            p = policies.get(item.get("policy_id"))
+            item["guarantee_terms"] = p.guarantee_terms if p else None
+            item["guarantee_agree_label"] = (p.guarantee_agree_label if p else None) or DEFAULT_AGREE_LABEL
+
+    async def inbox_history(
+        self, employee: Employee, user: User, kind: str, q: str | None, page: int, page_size: int
+    ) -> dict:
+        """
+        سوابق کارتابل با جست‌وجو (نام درخواست‌دهنده) و صفحه‌بندی:
+        - decisions: درخواست‌هایی که این کاربر (مدیر واحد/سایت) تأیید یا رد کرده؛
+        - guarantees: درخواست‌هایی که ضمانتشان را پذیرفته یا نپذیرفته.
+        خروجی: {items, total}؛ هر آیتم my_decision ({action, note, at}) دارد.
+        """
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 50)
+        if kind == "guarantees":
+            base = (
+                select(LoanRequest.id, LoanRequestGuarantor.decided_at.label("at"))
+                .join(LoanRequestGuarantor, LoanRequestGuarantor.request_id == LoanRequest.id)
+                .where(
+                    LoanRequestGuarantor.employee_id == employee.id,
+                    LoanRequestGuarantor.status.in_(("accepted", "rejected")),
+                )
+            )
+        else:
+            base = (
+                select(LoanRequest.id, func.max(LoanRequestEvent.created_at).label("at"))
+                .join(LoanRequestEvent, LoanRequestEvent.request_id == LoanRequest.id)
+                .where(LoanRequestEvent.actor_user_id == user.id, LoanRequestEvent.action.in_(("approved", "rejected")))
+                .group_by(LoanRequest.id)
+            )
+        text = (q or "").strip()
+        if text:
+            base = base.join(Employee, Employee.id == LoanRequest.employee_id).where(
+                (Employee.first_name + " " + Employee.last_name).ilike(f"%{text}%")
+            )
+        sub = base.subquery()
+        total = (await self.db.execute(select(func.count()).select_from(sub))).scalar_one()
+        id_rows = (
+            await self.db.execute(
+                select(sub.c.id).order_by(sub.c.at.desc().nulls_last(), sub.c.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        ).scalars().all()
+        if not id_rows:
+            return {"items": [], "total": total}
+        rows = (await self.db.execute(self._requests_query().where(LoanRequest.id.in_(id_rows)))).scalars().all()
+        by_id = {r.id: r for r in rows}
+        ordered = [by_id[i] for i in id_rows if i in by_id]
+        items = await self._serialize_many(ordered, public=True)
+        for item, req in zip(items, ordered):
+            if kind == "guarantees":
+                g = next((g for g in req.guarantors if g.employee_id == employee.id), None)
+                item["my_decision"] = {
+                    "action": "guarantee_accepted" if g and g.status == "accepted" else "guarantee_rejected",
+                    "note": g.note if g else None,
+                    "at": g.decided_at if g else None,
+                }
+            else:
+                ev = next(
+                    (e for e in reversed(req.events) if e.actor_user_id == user.id and e.action in ("approved", "rejected")),
+                    None,
+                )
+                item["my_decision"] = {
+                    "action": ev.action if ev else None,
+                    "note": ev.note if ev else None,
+                    "at": ev.created_at if ev else None,
+                }
+        return {"items": items, "total": total}
 
     async def inbox_count(self, employee: Employee) -> int:
         """شمارنده‌ی کارت «درخواست وام» (بدون ساختن کل کارتابل)."""
@@ -847,7 +932,9 @@ class LoanService:
         ).scalar_one()
         return guarantee + int(approvals)
 
-    async def guarantee_decide(self, employee: Employee, user: User, request_id: int, accept: bool, note) -> dict:
+    async def guarantee_decide(
+        self, employee: Employee, user: User, request_id: int, accept: bool, note, agreed: bool = False
+    ) -> dict:
         if not (employee.is_active and employee.is_enabled):
             raise LoanError("حساب پرسنلی شما فعال نیست", 403)
         req = await self._load_request(request_id, lock=True)
@@ -856,10 +943,19 @@ class LoanService:
         row = next((g for g in req.guarantors if g.employee_id == employee.id and g.status == "pending"), None)
         if row is None:
             raise LoanError("ضمانتی در انتظار تصمیم شما برای این درخواست نیست", 403)
+        agree_label = None
+        if accept:
+            policy = await self.db.get(LoanPolicy, req.policy_id) if req.policy_id else None
+            agree_label = (policy.guarantee_agree_label if policy else None) or DEFAULT_AGREE_LABEL
+            if not agreed:
+                raise LoanError(f"برای قبول ضمانت، تیک «{agree_label}» را بزنید")
         row.status = "accepted" if accept else "rejected"
         row.note = _clean(note)
         row.decided_at = _now()
-        self._event(req, "guarantee_accepted" if accept else "guarantee_rejected", employee_label(employee), user.id, note)
+        event_note = f"تیک «{agree_label}» زده شد" + (f" — {row.note}" if row.note else "") if accept else note
+        self._event(
+            req, "guarantee_accepted" if accept else "guarantee_rejected", employee_label(employee), user.id, event_note
+        )
         if accept and all(g.status == "accepted" for g in req.guarantors):
             await self._advance(req)
         elif not accept:
@@ -981,6 +1077,8 @@ class LoanService:
         policy.title = title
         policy.effective_from = effective
         policy.rules_text = _clean(data.get("rules_text"), 20000)
+        policy.guarantee_terms = _clean(data.get("guarantee_terms"), 20000)
+        policy.guarantee_agree_label = _clean(data.get("guarantee_agree_label"), 300)
         policy.block_if_unsettled = bool(data.get("block_if_unsettled", True))
         policy.approval_steps = R.normalize_steps(data.get("approval_steps"))
 

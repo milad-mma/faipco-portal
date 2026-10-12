@@ -64,6 +64,9 @@ export const FACTORY_TEMPLATE = {
   title: "دستورالعمل پرداخت وام",
   rules_text:
     "وام‌ها بدون بهره است.\nتا تسویه‌ی کامل وام قبلی، وام جدید پرداخت نمی‌شود.\nدر صورت ترک کار، باقیمانده‌ی وام از سنوات کسر می‌شود و ضامن‌ها مسئولیت تضامنی دارند.",
+  guarantee_terms:
+    "ضامن متعهد است در صورت ترک کار وام‌گیرنده یا عدم پرداخت اقساط، باقیمانده‌ی وام را به‌صورت تضامنی پرداخت کند.\nپرداخت از محل حقوق و مزایای ضامن قابل کسر است.",
+  guarantee_agree_label: "تمامی قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم.",
   block_if_unsettled: true,
   approval_steps: ["guarantors", "unit_manager", "site_manager", "finance"],
   types: [
@@ -79,6 +82,8 @@ function initialForm(source) {
     title: base.title || "",
     effective_from: base.effective_from && !base._copy ? base.effective_from : todayJalali(),
     rules_text: base.rules_text || "",
+    guarantee_terms: base.guarantee_terms || "",
+    guarantee_agree_label: base.guarantee_agree_label || "",
     block_if_unsettled: base.block_if_unsettled ?? true,
     approval_steps: base.approval_steps?.length ? base.approval_steps : ["guarantors", "unit_manager", "site_manager", "finance"],
     types: (base.types?.length ? base.types : [EMPTY_TYPE]).map((t) => ({
@@ -184,6 +189,23 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
             multiline
             minRows={3}
             fullWidth
+          />
+          <TextField
+            label="قوانین و مقررات ضمانت (به ضامن هنگام قبول ضمانت نشان داده می‌شود)"
+            value={form.guarantee_terms}
+            onChange={(e) => set("guarantee_terms", e.target.value)}
+            multiline
+            minRows={3}
+            fullWidth
+          />
+          <TextField
+            label="متن تیک پذیرش ضامن"
+            value={form.guarantee_agree_label}
+            onChange={(e) => set("guarantee_agree_label", e.target.value)}
+            fullWidth
+            inputProps={{ maxLength: 300 }}
+            placeholder="تمامی قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم."
+            helperText="خالی = متن پیش‌فرض. ضامن بدون زدن این تیک نمی‌تواند ضمانت را قبول کند."
           />
           <FormControlLabel
             control={<Switch checked={form.block_if_unsettled} onChange={(e) => set("block_if_unsettled", e.target.checked)} />}

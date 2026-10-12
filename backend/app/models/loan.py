@@ -44,6 +44,9 @@ class LoanPolicy(Base, TimestampMixin):
     rules_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # متن دستورالعمل برای پرسنل
     block_if_unsettled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     approval_steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # قوانین ضمانت و متن تیک پذیرش که ضامن هنگام قبول ضمانت می‌بیند (Migration 111)
+    guarantee_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guarantee_agree_label: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     types: Mapped[list["LoanType"]] = relationship(
         back_populates="policy", cascade="all, delete-orphan", order_by="LoanType.sort_order"

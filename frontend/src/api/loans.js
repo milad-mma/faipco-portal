@@ -40,8 +40,9 @@ export async function fetchLoanInboxCount() {
   return data; // { count }
 }
 
-export async function decideGuarantee(id, approve, note) {
-  const { data } = await apiClient.post(`/loans/${id}/guarantee`, { approve, note });
+// agreed: تیک «قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم» (برای قبول ضمانت لازم است)
+export async function decideGuarantee(id, approve, note, agreed = false) {
+  const { data } = await apiClient.post(`/loans/${id}/guarantee`, { approve, note, agreed });
   return data;
 }
 
@@ -151,5 +152,13 @@ export async function fetchLoanNotificationTemplates(siteId) {
 
 export async function saveLoanNotificationTemplates(siteId, texts) {
   const { data } = await apiClient.put(`/loans/admin/sites/${siteId}/notification-templates`, { texts });
+  return data;
+}
+
+// سوابق کارتابل: kind = "decisions" (تأییدها/ردهای من) | "guarantees" (ضمانت‌های من)؛ خروجی { items, total }
+export async function fetchLoanInboxHistory(kind, { q, page = 1, pageSize = 10 } = {}) {
+  const { data } = await apiClient.get("/loans/inbox/history", {
+    params: { kind, q: q || undefined, page, page_size: pageSize },
+  });
   return data;
 }

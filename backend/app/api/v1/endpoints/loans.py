@@ -53,6 +53,7 @@ class LoanSubmitIn(BaseModel):
 class DecisionIn(BaseModel):
     approve: bool
     note: str | None = Field(default=None, max_length=2000)
+    agreed: bool = False  # ضامن: تیک «قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم»
 
 
 class ReplaceGuarantorIn(BaseModel):
@@ -83,6 +84,8 @@ class PolicyIn(BaseModel):
     title: str = Field(max_length=200)
     effective_from: str = Field(max_length=10)
     rules_text: str | None = Field(default=None, max_length=20000)
+    guarantee_terms: str | None = Field(default=None, max_length=20000)
+    guarantee_agree_label: str | None = Field(default=None, max_length=300)
     block_if_unsettled: bool = True
     approval_steps: list[str] | None = Field(default=None, max_length=10)
     types: list[LoanTypeIn] = Field(default_factory=list, max_length=50)
@@ -197,6 +200,22 @@ async def inbox(db: AsyncSession = Depends(get_db), current_user: User = Depends
     return await LoanService(db).inbox(employee)
 
 
+@router.get("/inbox/history")
+async def inbox_history(
+    kind: Literal["decisions", "guarantees"] = Query(default="decisions"),
+    q: str | None = Query(default=None, max_length=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """سوابق کارتابل: تصمیم‌های من (مدیر واحد/سایت) یا ضمانت‌های من، با جست‌وجو و صفحه‌بندی."""
+    if current_user.employee_id is None:
+        return {"items": [], "total": 0}
+    employee = await _require_employee(db, current_user)
+    return await LoanService(db).inbox_history(employee, current_user, kind, q, page, page_size)
+
+
 @router.get("/inbox/count")
 async def inbox_count(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     if current_user.employee_id is None:
@@ -237,7 +256,9 @@ async def guarantee(
 ):
     employee = await _require_employee(db, current_user)
     try:
-        return await LoanService(db).guarantee_decide(employee, current_user, request_id, payload.approve, payload.note)
+        return await LoanService(db).guarantee_decide(
+            employee, current_user, request_id, payload.approve, payload.note, payload.agreed
+        )
     except LoanError as e:
         raise _err(e) from e
 

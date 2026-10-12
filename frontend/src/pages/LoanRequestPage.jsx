@@ -9,6 +9,8 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  Chip,
   Card,
   CardContent,
   CircularProgress,
@@ -21,6 +23,7 @@ import {
   Radio,
   RadioGroup,
   Stack,
+  TablePagination,
   TextField,
   Typography,
   useMediaQuery,
@@ -46,6 +49,7 @@ import {
   decideGuarantee,
   decideLoan,
   fetchLoanInbox,
+  fetchLoanInboxHistory,
   fetchMyLoans,
   replaceGuarantor,
   searchGuarantors,
@@ -360,7 +364,90 @@ function MyLoanCard({ item, onCancel, onReplace }) {
   );
 }
 
-function InboxCard({ item, kind, onAct }) {
+// کارت درخواست ضمانت: قوانین ضمانت و تیک پذیرش همین‌جا (بدون دیالوگ)
+function GuaranteeCard({ item, onDone }) {
+  const [agreed, setAgreed] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const act = async (approve) => {
+    setBusy(true);
+    setError("");
+    try {
+      await decideGuarantee(item.id, approve, note || null, approve && agreed);
+      onDone(approve ? "ضمانت پذیرفته شد" : "ضمانت نپذیرفته شد");
+    } catch (e) {
+      setError(errText(e, "ثبت ناموفق بود"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Typography fontWeight={800}>{item.employee}</Typography>
+        <Typography variant="body2">
+          {item.type_title} — {formatRial(item.amount_requested)}
+        </Typography>
+        {item.reason && (
+          <Typography variant="body2" color="text.secondary">
+            توضیح: {item.reason}
+          </Typography>
+        )}
+        {item.guarantee_terms && (
+          <Box
+            sx={{
+              mt: 1.5,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: "action.hover",
+              maxHeight: 260,
+              overflowY: "auto",
+            }}
+          >
+            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+              قوانین و مقررات ضمانت
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+              {item.guarantee_terms}
+            </Typography>
+          </Box>
+        )}
+        <FormControlLabel
+          sx={{ mt: 1, alignItems: "flex-start" }}
+          control={<Checkbox checked={agreed} onChange={(e) => setAgreed(e.target.checked)} sx={{ pt: 0.5 }} />}
+          label={<Typography variant="body2">{item.guarantee_agree_label}</Typography>}
+        />
+        <TextField
+          label="توضیح (اختیاری)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          fullWidth
+          size="small"
+          multiline
+          minRows={1}
+          inputProps={{ maxLength: 2000 }}
+          sx={{ mt: 1 }}
+        />
+        {error && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {error}
+          </Alert>
+        )}
+        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+          <Button variant="contained" disabled={!agreed || busy} onClick={() => act(true)}>
+            قبول ضمانت
+          </Button>
+          <Button color="error" variant="outlined" disabled={busy} onClick={() => act(false)}>
+            نمی‌پذیرم
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function InboxCard({ item, onAct }) {
   return (
     <Card variant="outlined" sx={{ borderRadius: 3 }}>
       <CardContent>
@@ -372,21 +459,102 @@ function InboxCard({ item, kind, onAct }) {
           سابقه: {formatService(item.service_months)}
           {item.reason ? ` — توضیح: ${item.reason}` : ""}
         </Typography>
-        {kind === "approval" && (
-          <Box sx={{ mt: 1 }}>
-            <GuarantorChips item={item} />
-          </Box>
-        )}
+        <Box sx={{ mt: 1 }}>
+          <GuarantorChips item={item} />
+        </Box>
         <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          <Button variant="contained" onClick={() => onAct(item, kind, true)}>
-            {kind === "guarantee" ? "قبول ضمانت" : "تأیید"}
+          <Button variant="contained" onClick={() => onAct(item, "approval", true)}>
+            تأیید
           </Button>
-          <Button color="error" variant="outlined" onClick={() => onAct(item, kind, false)}>
-            {kind === "guarantee" ? "نمی‌پذیرم" : "رد"}
+          <Button color="error" variant="outlined" onClick={() => onAct(item, "approval", false)}>
+            رد
           </Button>
         </Stack>
       </CardContent>
     </Card>
+  );
+}
+
+const DECISION_LABEL = {
+  approved: { label: "تأیید کردم", color: "success" },
+  rejected: { label: "رد کردم", color: "error" },
+  guarantee_accepted: { label: "ضمانت را پذیرفتم", color: "success" },
+  guarantee_rejected: { label: "ضمانت را نپذیرفتم", color: "error" },
+};
+
+// سوابق کارتابل با جست‌وجو و صفحه‌بندی: تصمیم‌های من (مدیر واحد/سایت) یا ضمانت‌های من
+function InboxHistory({ kind }) {
+  const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQuery(q.trim());
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    let alive = true;
+    setError("");
+    fetchLoanInboxHistory(kind, { q: query, page: page + 1, pageSize: rowsPerPage })
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError(errText(e, "دریافت سوابق ناموفق بود")));
+    return () => {
+      alive = false;
+    };
+  }, [kind, query, page, rowsPerPage]);
+
+  return (
+    <Stack spacing={1.5}>
+      <TextField label="جست‌وجوی نام درخواست‌دهنده" value={q} onChange={(e) => setQ(e.target.value)} size="small" sx={{ maxWidth: 360 }} />
+      {error && <Alert severity="error">{error}</Alert>}
+      {!data && !error && <CircularProgress />}
+      {data && !data.items.length && <Alert severity="info">موردی نیست.</Alert>}
+      {data?.items.map((item) => {
+        const d = DECISION_LABEL[item.my_decision?.action];
+        return (
+          <Card key={item.id} variant="outlined" sx={{ borderRadius: 3 }}>
+            <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography fontWeight={800}>{item.employee}</Typography>
+                {d && <Chip size="small" color={d.color} label={d.label} />}
+                <Box sx={{ flex: 1 }} />
+                <LoanStatusChip item={item} />
+              </Stack>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {item.type_title} — {formatRial(item.amount_approved ?? item.amount_requested)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatDateTime(item.my_decision?.at)}
+                {item.my_decision?.note ? ` — ${item.my_decision.note}` : ""}
+              </Typography>
+            </CardContent>
+          </Card>
+        );
+      })}
+      {data && data.total > 0 && (
+        <TablePagination
+          component="div"
+          count={data.total}
+          page={page}
+          onPageChange={(_, p) => setPage(p)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[10, 20, 50]}
+          labelRowsPerPage="تعداد در صفحه"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+        />
+      )}
+    </Stack>
   );
 }
 
@@ -401,6 +569,7 @@ export default function LoanRequestPage() {
   const [result, setResult] = useState(null); // دیالوگ نتیجه {severity, text}
   const [action, setAction] = useState(null); // {item, kind, approve} | {cancel: item}
   const [replaceTarget, setReplaceTarget] = useState(null);
+  const [inboxView, setInboxView] = useState("pending"); // pending | decisions | guarantees
 
   const load = useCallback(async () => {
     setLoadError("");
@@ -507,15 +676,31 @@ export default function LoanRequestPage() {
 
       {!loading && tab === "inbox" && (
         <Stack spacing={2}>
-          {!inboxCount && !loadError && <Alert severity="success">موردی در انتظار شما نیست.</Alert>}
-          {inbox.guarantee.length > 0 && <Typography fontWeight={800}>درخواست‌های ضمانت</Typography>}
-          {inbox.guarantee.map((item) => (
-            <InboxCard key={`g${item.id}`} item={item} kind="guarantee" onAct={(it, kind, approve) => setAction({ item: it, kind, approve })} />
-          ))}
-          {inbox.approvals.length > 0 && <Typography fontWeight={800}>در انتظار تأیید شما</Typography>}
-          {inbox.approvals.map((item) => (
-            <InboxCard key={`a${item.id}`} item={item} kind="approval" onAct={(it, kind, approve) => setAction({ item: it, kind, approve })} />
-          ))}
+          <PillTabs
+            tabs={[
+              { key: "pending", label: inboxCount ? `در انتظار شما (${inboxCount.toLocaleString("fa-IR")})` : "در انتظار شما" },
+              { key: "decisions", label: "تأییدها و ردهای من" },
+              { key: "guarantees", label: "ضمانت‌های من" },
+            ]}
+            value={inboxView}
+            onChange={setInboxView}
+            sx={{ mb: 0 }}
+          />
+          {inboxView === "pending" && (
+            <>
+              {!inboxCount && !loadError && <Alert severity="success">موردی در انتظار شما نیست.</Alert>}
+              {inbox.guarantee.length > 0 && <Typography fontWeight={800}>درخواست‌های ضمانت</Typography>}
+              {inbox.guarantee.map((item) => (
+                <GuaranteeCard key={`g${item.id}`} item={item} onDone={done} />
+              ))}
+              {inbox.approvals.length > 0 && <Typography fontWeight={800}>در انتظار تأیید شما</Typography>}
+              {inbox.approvals.map((item) => (
+                <InboxCard key={`a${item.id}`} item={item} onAct={(it, kind, approve) => setAction({ item: it, kind, approve })} />
+              ))}
+            </>
+          )}
+          {inboxView === "decisions" && <InboxHistory kind="decisions" />}
+          {inboxView === "guarantees" && <InboxHistory kind="guarantees" />}
         </Stack>
       )}
 

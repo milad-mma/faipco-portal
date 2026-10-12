@@ -37,6 +37,39 @@ const modernTypography = {
   button: { ...sharedTypography.button, fontSize: "0.8125rem" },
 };
 
+
+// عنوان ثابت بالای فیلدهای متنی (کل پروژه): به‌جای عنوانی که با کلیک روی کادر بالا می‌پرد و در کادرهای بدون فاصله‌ی
+// بالا (دیالوگ، کارت) نیمه‌کاره دیده می‌شد، عنوان همیشه بالای کادر و بیرون از آن نوشته می‌شود و شکاف عنوان روی
+// خط دور کادر هم حذف می‌شود. Select و Autocomplete و تقویم‌ها هم که روی TextField ساخته شده‌اند همین ظاهر را می‌گیرند.
+const staticLabelComponents = {
+  MuiInputLabel: {
+    defaultProps: { shrink: true },
+    styleOverrides: {
+      root: {
+        position: "relative",
+        transform: "none",
+        maxWidth: "100%",
+        whiteSpace: "normal",
+        overflow: "visible",
+        textOverflow: "clip",
+        fontSize: "0.8125rem",
+        fontWeight: 600,
+        lineHeight: 1.5,
+        marginBottom: 4,
+        pointerEvents: "auto",
+      },
+    },
+  },
+  MuiOutlinedInput: {
+    styleOverrides: {
+      notchedOutline: {
+        top: 0,
+        "& legend": { display: "none" },
+      },
+    },
+  },
+};
+
 // ============================================================
 // تم روشن مدرن — بر اساس طرح personnel_portal.html
 // ============================================================
@@ -80,6 +113,7 @@ export const modernLightTheme = createTheme({
     borderRadius: 6,
   },
   components: {
+    ...staticLabelComponents,
     MuiPaper: {
       styleOverrides: {
         root: { backgroundImage: "none" },
@@ -157,6 +191,7 @@ export const modernDarkTheme = createTheme({
     borderRadius: 6,
   },
   components: {
+    ...staticLabelComponents,
     MuiPaper: {
       styleOverrides: {
         root: { backgroundImage: "none" },
