@@ -117,3 +117,24 @@ class EvaluationShiftAssignment(Base, TimestampMixin):
 
     shift_lead: Mapped["EvaluationShiftLead"] = relationship()
     employee: Mapped["Employee"] = relationship()  # noqa: F821
+
+
+class EvaluationExemption(Base, TimestampMixin):
+    """
+    «معاف از ارزیابی» (Migration 110): این پرسنل در تولید انتساب ارزیابی نمی‌شود؛ scope=full یعنی ارزیاب هم نیست،
+    scope=target_only («فقط ارزیابی نشود»، پیش‌فرض) یعنی همچنان ارزیابی می‌کند.
+    هر پرسنل حداکثر یک ردیف؛ site_id همان سایت پرسنل (برای مجوز سایت‌محور و فهرست صفحه‌ی ساختار).
+    """
+
+    __tablename__ = "evaluation_exemptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="target_only")  # target_only | full
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    employee: Mapped["Employee"] = relationship()  # noqa: F821

@@ -53,6 +53,7 @@ from app.models.sms_settings import SmsSendingType, SmsSettings  # noqa: F401
 from app.models.password_reset_token import PasswordResetChannel, PasswordResetToken  # noqa: F401
 from app.models.evaluation import (  # noqa: F401
     EvaluationDepartmentSupervisor,
+    EvaluationExemption,
     EvaluationManager,
     EvaluationManagerAssignment,
     EvaluationShiftAssignment,

@@ -1,5 +1,5 @@
 {
-  "count": 384,
+  "count": 388,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/employees/{employee_id}/password",
@@ -31,6 +31,7 @@
     "DELETE /api/v1/performance/periods/{period_id}/assignments/{assignment_id}",
     "DELETE /api/v1/performance/shift-assignments/{employee_id}",
     "DELETE /api/v1/performance/shift-leads/{shift_lead_id}",
+    "DELETE /api/v1/performance/sites/{site_id}/exemptions/{employee_id}",
     "DELETE /api/v1/reports/turnover/categories/{category_id}",
     "DELETE /api/v1/sites/{site_id}",
     "DELETE /api/v1/sites/{site_id}/attendance-mapping",
@@ -170,6 +171,7 @@
     "GET /api/v1/performance/reports/sites/{site_id}/evaluations/{evaluation_id}/answers",
     "GET /api/v1/performance/reports/sites/{site_id}/periods/{period_id}",
     "GET /api/v1/performance/reports/sites/{site_id}/periods/{period_id}/export",
+    "GET /api/v1/performance/sites/{site_id}/exemptions",
     "GET /api/v1/performance/sites/{site_id}/manager-candidates",
     "GET /api/v1/performance/sites/{site_id}/structure",
     "GET /api/v1/push/vapid-public-key",
@@ -301,6 +303,8 @@
     "POST /api/v1/performance/periods/{period_id}/generate-assignments",
     "POST /api/v1/performance/reports/sites/{site_id}/compare/email",
     "POST /api/v1/performance/reports/sites/{site_id}/periods/{period_id}/email",
+    "POST /api/v1/performance/sites/{site_id}/exemptions",
+    "POST /api/v1/performance/sites/{site_id}/exemptions/{employee_id}/remove-pending",
     "POST /api/v1/performance/sites/{site_id}/managers",
     "POST /api/v1/push/subscribe",
     "POST /api/v1/push/unsubscribe",

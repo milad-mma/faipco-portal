@@ -89,3 +89,25 @@ export async function setShiftAssignment(employeeId, shiftLeadId) {
 export async function removeShiftAssignment(employeeId) {
   await apiClient.delete(`/performance/shift-assignments/${employeeId}`);
 }
+
+// ---------- معاف از ارزیابی (Migration 110) ----------
+
+export async function fetchEvaluationExemptions(siteId) {
+  const { data } = await apiClient.get(`/performance/sites/${siteId}/exemptions`);
+  return data; // [{ employee_id, employee, reason, scope, created_at, pending_count }]
+}
+
+// scope: "target_only" (فقط ارزیابی نشود، پیش‌فرض) | "full" (کامل)؛ برای پرسنلِ داخل فهرست، دلیل/نوع را ویرایش می‌کند
+export async function addEvaluationExemption(siteId, employeeId, reason, scope = "target_only") {
+  const { data } = await apiClient.post(`/performance/sites/${siteId}/exemptions`, { employee_id: employeeId, reason, scope });
+  return data;
+}
+
+export async function removeEvaluationExemption(siteId, employeeId) {
+  await apiClient.delete(`/performance/sites/${siteId}/exemptions/${employeeId}`);
+}
+
+export async function removeExemptPendingAssignments(siteId, employeeId) {
+  const { data } = await apiClient.post(`/performance/sites/${siteId}/exemptions/${employeeId}/remove-pending`);
+  return data; // { removed }
+}

@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.evaluation_exemption_service import exemption_sets
 from app.models.employee import Employee
 from app.models.evaluation_content import EvaluationForm, EvaluationPeriod
 from app.models.evaluation_process import EvaluationAssignment
@@ -46,7 +47,9 @@ class EvaluationAssignmentService:
         if period.site_id is not None:
             employees_query = employees_query.where(Employee.site_id == period.site_id)
         employees_result = await self.db.execute(employees_query)
-        employees = employees_result.scalars().all()
+        # معاف از ارزیابی (Migration 110): هیچ معافی هدف نیست؛ معافیت «کامل» ارزیاب هم نیست
+        exempt_ids, full_exempt_ids = await exemption_sets(self.db)
+        employees = [e for e in employees_result.scalars().all() if e.id not in full_exempt_ids]
 
         structure_service = EvaluationStructureService(self.db)
         # جفت‌های (ارزیاب، هدف) موجود برای همین دوره+فرم، تا تکراری ساخته نشوند
@@ -62,6 +65,9 @@ class EvaluationAssignmentService:
         for employee in employees:
             resolution = await structure_service.get_evaluation_targets(employee.id)
             for target in resolution["targets"]:
+                # هدف معاف، یا پرسنل غیرفعال/قطع همکاری در کاراوب یا غیرفعال‌شده در پرتال، ارزیابی نمی‌شود
+                if target.id in exempt_ids or not (target.is_active and target.is_enabled):
+                    continue
                 pair = (employee.id, target.id)
                 if pair in existing_pairs:
                     continue

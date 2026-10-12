@@ -48,6 +48,7 @@ import {
   setShiftAssignment,
   updateManagerTitle,
 } from "../api/evaluationStructure";
+import EvaluationExemptionsSection from "../components/EvaluationExemptionsSection";
 
 // Chip نام و کد پرسنلی یک فرد با دکمه‌ی حذف (onRemove)
 function PersonChip({ employee, onRemove }) {
@@ -577,6 +578,9 @@ export default function EvaluationStructurePage() {
               ))}
             </Stack>
           </Box>
+
+          {/* معاف از ارزیابی (Migration 110) */}
+          <EvaluationExemptionsSection siteId={siteId} onError={setError} />
         </Stack>
       )}
     </Box>
