@@ -142,3 +142,14 @@ export async function setServiceOverride(employeeId, startDate, note) {
 export async function deleteServiceOverride(employeeId) {
   await apiClient.delete(`/loans/admin/employees/${employeeId}/service`);
 }
+
+// متن اعلان‌های وام این سایت (قابل‌ویرایش)
+export async function fetchLoanNotificationTemplates(siteId) {
+  const { data } = await apiClient.get(`/loans/admin/sites/${siteId}/notification-templates`);
+  return data;
+}
+
+export async function saveLoanNotificationTemplates(siteId, texts) {
+  const { data } = await apiClient.put(`/loans/admin/sites/${siteId}/notification-templates`, { texts });
+  return data;
+}

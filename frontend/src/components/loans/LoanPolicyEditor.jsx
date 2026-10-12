@@ -114,14 +114,17 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
   const setType = (i, key, value) =>
     setForm((f) => ({ ...f, types: f.types.map((t, j) => (j === i ? { ...t, [key]: value } : t)) }));
 
-  const steps = form.approval_steps.filter((s) => s !== "finance");
+  // «مدیر سایت» همیشه بعد از ضامن‌ها و مدیر واحد است (جابه‌جا نمی‌شود)؛ «واحد مالی» همیشه آخر
+  const withSiteLast = (list) => [...list.filter((s) => s !== "site_manager"), ...(list.includes("site_manager") ? ["site_manager"] : [])];
+  const steps = withSiteLast(form.approval_steps.filter((s) => s !== "finance"));
   const moveStep = (i, dir) => {
     const next = [...steps];
     [next[i], next[i + dir]] = [next[i + dir], next[i]];
     set("approval_steps", [...next, "finance"]);
   };
   const removeStep = (key) => set("approval_steps", [...steps.filter((s) => s !== key), "finance"]);
-  const addStep = (key) => set("approval_steps", [...steps, key, "finance"]);
+  const addStep = (key) => set("approval_steps", [...withSiteLast([...steps, key]), "finance"]);
+  const movable = (i) => steps[i] !== "site_manager";
 
   const save = async () => {
     const needs = form.types.find((t) => t.is_active && Number(t.guarantor_count) > 0);
@@ -195,10 +198,15 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
               {steps.map((key, i) => (
                 <Stack key={key} direction="row" alignItems="center" spacing={1}>
                   <Chip label={`${(i + 1).toLocaleString("fa-IR")}. ${STEP_LABELS[key]}`} sx={{ flex: 1, justifyContent: "flex-start" }} />
-                  <IconButton size="small" disabled={i === 0} onClick={() => moveStep(i, -1)} aria-label="بالا">
+                  <IconButton size="small" disabled={i === 0 || !movable(i)} onClick={() => moveStep(i, -1)} aria-label="بالا">
                     <ArrowUpwardIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" disabled={i === steps.length - 1} onClick={() => moveStep(i, 1)} aria-label="پایین">
+                  <IconButton
+                    size="small"
+                    disabled={i === steps.length - 1 || !movable(i) || !movable(i + 1)}
+                    onClick={() => moveStep(i, 1)}
+                    aria-label="پایین"
+                  >
                     <ArrowDownwardIcon fontSize="small" />
                   </IconButton>
                   <IconButton size="small" color="error" onClick={() => removeStep(key)} aria-label="حذف">
@@ -219,7 +227,7 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
               ))}
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              اگر مدیر واحد و مدیر سایت یک نفر باشند، یک بار تأیید می‌کند. مرحله‌ی ضامن برای نوع وامی که ضامن نمی‌خواهد خودکار رد می‌شود.
+              «مدیر سایت» همیشه بعد از ضامن‌ها و مدیر واحد است؛ تا آن‌ها قبول نکنند درخواست به کارتابل مدیر سایت نمی‌رود. اگر مدیر واحد و مدیر سایت یک نفر باشند، یک بار تأیید می‌کند. مرحله‌ی ضامن برای نوع وامی که ضامن نمی‌خواهد خودکار رد می‌شود.
             </Typography>
           </Box>
 

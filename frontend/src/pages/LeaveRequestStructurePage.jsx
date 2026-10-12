@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Accordion,
@@ -28,9 +28,12 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import BackLink from "../components/BackLink";
 import EmployeePicker from "../components/EmployeePicker";
+import NotificationTemplatesEditor from "../components/NotificationTemplatesEditor";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
 import {
+  fetchLeaveNotificationTemplates,
+  saveLeaveNotificationTemplates,
   addLeaveRequestType,
   deleteLeaveRequestType,
   fetchActionLookup,
@@ -540,6 +543,13 @@ function ModuleStatusSection({ siteId, onError }) {
  * سایت انتخاب می‌شود (پیش‌فرض از query string یا اولین سایت) و سپس چهار بخش نمایش داده می‌شود:
  * وضعیت ماژول، نوع‌های درخواست، تأییدکننده‌ی هر واحد و مسئول نیروی انسانی.
  */
+// متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی همین سایت
+function LeaveNotifySection({ siteId }) {
+  const load = useCallback(() => fetchLeaveNotificationTemplates(siteId), [siteId]);
+  const save = useCallback((texts) => saveLeaveNotificationTemplates(siteId, texts), [siteId]);
+  return <NotificationTemplatesEditor load={load} save={save} />;
+}
+
 export default function LeaveRequestStructurePage() {
   const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);
@@ -623,6 +633,15 @@ export default function LeaveRequestStructurePage() {
             </AccordionSummary>
             <AccordionDetails>
               <HrOfficerSection siteId={siteId} onError={setError} />
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion variant="outlined">
+            <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+              <Typography fontWeight={700}>متن اعلان‌ها</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <LeaveNotifySection siteId={siteId} />
             </AccordionDetails>
           </Accordion>
         </Stack>

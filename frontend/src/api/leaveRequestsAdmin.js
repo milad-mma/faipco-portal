@@ -114,3 +114,14 @@ export async function fetchKaraSchemaDefaults() {
   const { data } = await apiClient.get("/leave-requests/kara-schema-defaults");
   return data;
 }
+
+// متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی این سایت (قابل‌ویرایش)
+export async function fetchLeaveNotificationTemplates(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/notification-templates`);
+  return data;
+}
+
+export async function saveLeaveNotificationTemplates(siteId, texts) {
+  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/notification-templates`, { texts });
+  return data;
+}

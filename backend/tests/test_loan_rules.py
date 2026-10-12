@@ -45,6 +45,13 @@ def test_normalize_steps_finance_always_last():
     assert R.normalize_steps(None) == R.DEFAULT_STEPS
     assert R.normalize_steps(["finance", "site_manager", "x", "site_manager"]) == ["site_manager", "finance"]
     assert R.normalize_steps([]) == ["finance"]
+    # مدیر سایت هیچ‌وقت قبل از ضامن‌ها/مدیر واحد نیست
+    assert R.normalize_steps(["site_manager", "guarantors", "unit_manager"]) == [
+        "guarantors",
+        "unit_manager",
+        "site_manager",
+        "finance",
+    ]
 
 
 def test_effective_steps_skips():
@@ -89,10 +96,10 @@ def test_status_label():
 
 
 def test_effective_steps_dedupe_any_order_and_forced_guarantors():
-    # مدیر سایت قبل از مدیر واحد چیده شده و هر دو یک نفرند → یک بار تأیید (اولی می‌ماند)
+    # مدیر سایت همیشه بعد از مدیر واحد (حتی اگر جلوتر چیده شده) و هر دو یک نفرند → یک بار تأیید (مدیر واحد)
     assert R.effective_steps(
         ["site_manager", "unit_manager", "finance"], guarantor_count=0, requester_id=1, unit_manager_id=2, site_manager_id=2
-    ) == ["site_manager", "finance"]
+    ) == ["unit_manager", "finance"]
     # نوع ضامن‌دار ولی مسیر بدون مرحله‌ی ضامن → ضامن‌ها اول اضافه می‌شوند (وگرنه هرگز پرسیده نمی‌شدند)
     assert R.effective_steps(
         ["unit_manager", "finance"], guarantor_count=2, requester_id=1, unit_manager_id=2, site_manager_id=None

@@ -39,6 +39,7 @@ import {
 } from "@mui/material";
 import PillTabs from "../components/PillTabs";
 import ResultDialog from "../components/ResultDialog";
+import NotificationTemplatesEditor from "../components/NotificationTemplatesEditor";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import LoanPolicyEditor, { FACTORY_TEMPLATE, STEP_LABELS } from "../components/loans/LoanPolicyEditor";
@@ -63,6 +64,8 @@ import {
   deleteServiceOverride,
   fetchEmployeeService,
   fetchLoanAdminSites,
+  fetchLoanNotificationTemplates,
+  saveLoanNotificationTemplates,
   fetchLoanPolicies,
   fetchLoanRequest,
   fetchLoanRequests,
@@ -913,6 +916,13 @@ function ServiceTab({ siteId, toast }) {
   );
 }
 
+// متن اعلان‌های وام همین سایت
+function LoanNotifyTab({ siteId }) {
+  const load = useCallback(() => fetchLoanNotificationTemplates(siteId), [siteId]);
+  const save = useCallback((texts) => saveLoanNotificationTemplates(siteId, texts), [siteId]);
+  return <NotificationTemplatesEditor load={load} save={save} />;
+}
+
 // ---------- صفحه ----------
 
 export default function LoansAdminPage() {
@@ -946,6 +956,7 @@ export default function LoansAdminPage() {
       site.can_view && { key: "requests", label: "همه‌ی درخواست‌ها" },
       site.can_policy && { key: "policy", label: "مقررات" },
       site.can_policy && { key: "settings", label: "تنظیمات سایت" },
+      site.can_policy && { key: "notify", label: "متن اعلان‌ها" },
       site.can_finance && { key: "service", label: "اصلاح سابقه" },
     ].filter(Boolean);
   }, [site]);
@@ -995,6 +1006,7 @@ export default function LoansAdminPage() {
             />
           )}
           {activeTab === "service" && <ServiceTab siteId={site.site_id} toast={toast} />}
+          {activeTab === "notify" && <LoanNotifyTab siteId={site.site_id} />}
         </>
       )}
       {detailId && (

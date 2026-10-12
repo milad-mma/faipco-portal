@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services import notification_templates
 from app.core.leave_request_rules import (
     LeaveRequestRulesError,
     compute_daily_duration,
@@ -1066,23 +1067,17 @@ class LeaveRequestService:
             site_id,
             cur_emp_no,
             "/leave-requests?tab=pending",
-            "یک درخواست مرخصی/ماموریت در انتظار تصمیم شماست.\n"
-            "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+            await notification_templates.render(self.db, site_id, "leave.approver_new"),
         )
 
     async def _notify_requester_of_forgotten_punch(self, site_id: int, emp_no: int, stage: str) -> None:
         """ورودی: سایت، کد پرسنلی درخواست‌دهنده و مرحله (supervisor / approved / rejected). اعلان Push مرحله‌ی تردد فراموش‌شده را با لینک به تب «درخواست‌های من» زمان‌بندی می‌کند."""
-        # متن اعلان هر مرحله
-        texts = {
-            "supervisor": "درخواست تردد فراموش‌شده شما توسط سرپرست تأیید شد و برای تأیید نهایی به منابع انسانی ارسال شد.",
-            "approved": "درخواست تردد فراموش‌شده شما توسط منابع انسانی تأیید و در سیستم حضور و غیاب ثبت شد.",
-            "rejected": "درخواست تردد فراموش‌شده شما رد شد.",
-        }
+        # متن اعلان هر مرحله (قابل‌ویرایش در «متن اعلان‌ها»ی تنظیمات مرخصی/ماموریت)
         _schedule_push(
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
-            texts[stage] + "\nجهت مشاهده جزئیات روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+            await notification_templates.render(self.db, site_id, f"leave.forgotten_{stage}"),
         )
 
     async def _notify_requester_of_decision(self, site_id: int, emp_no: int) -> None:
@@ -1091,8 +1086,7 @@ class LeaveRequestService:
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
-            "درخواست مرخصی/ماموریت شما بررسی شد.\n"
-            "جهت مشاهده نتیجه روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+            await notification_templates.render(self.db, site_id, "leave.requester_decided"),
         )
 
     # ---------- خواندن/نمایش ----------
@@ -1770,8 +1764,7 @@ class LeaveRequestService:
                     requester_site_id,
                     hr_emp_no,
                     "/leave-requests?tab=pending",
-                    "یک درخواست تردد فراموش‌شده (تأییدشده توسط سرپرست) در انتظار تأیید شماست.\n"
-                    "جهت بررسی روی این پیام بزنید و یا به پرتال سازمانی مراجعه نمائید.",
+                    await notification_templates.render(self.db, requester_site_id, "leave.hr_forgotten_pending"),
                 )
                 return  # تصمیم نهایی هنوز ثبت نمی‌شود
 

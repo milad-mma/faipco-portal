@@ -13,6 +13,7 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +43,7 @@ from app.schemas.leave_request import (
     SetHrOfficerIn,
     SetModuleDisabledIn,
 )
+from app.services import notification_templates
 from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, LEAVE_SCHEMA_DEFAULTS
 from app.services.leave_request_service import LeaveRequestError, LeaveRequestService
 from app.services.leave_request_xlsx import build_leave_requests_xlsx
@@ -517,3 +519,31 @@ async def admin_update_request(
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"ok": True}
+
+
+# ---------- متن اعلان‌ها (قابل‌ویرایش برای هر سایت؛ notification_templates) ----------
+
+
+class LeaveTemplatesIn(BaseModel):
+    texts: dict[str, str | None] = Field(default_factory=dict)
+
+
+@router.get("/sites/{site_id}/notification-templates")
+async def get_leave_notification_templates(
+    site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی این سایت. مجوز: sites.manage (همان تنظیمات مرخصی)."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    return await notification_templates.list_templates(db, "leave", site_id)
+
+
+@router.put("/sites/{site_id}/notification-templates")
+async def put_leave_notification_templates(
+    site_id: int,
+    payload: LeaveTemplatesIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """ذخیره‌ی متن اعلان‌ها؛ متن خالی = برگشت به پیش‌فرض."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    return await notification_templates.save_templates(db, "leave", site_id, payload.texts)

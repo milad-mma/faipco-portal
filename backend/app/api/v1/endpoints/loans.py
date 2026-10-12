@@ -31,6 +31,7 @@ from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.user import User
+from app.services import notification_templates
 from app.services.loan_service import LoanError, LoanService
 
 router = APIRouter()
@@ -286,6 +287,28 @@ async def update_site(
     except LoanError as e:
         raise _err(e) from e
     return {"ok": True}
+
+
+class TemplatesIn(BaseModel):
+    texts: dict[str, str | None] = Field(default_factory=dict)
+
+
+@router.get("/admin/sites/{site_id}/notification-templates")
+async def get_notification_templates(
+    site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """متن اعلان‌های وام این سایت (پیش‌فرض یا تغییرداده‌شده) برای تب «متن اعلان‌ها»."""
+    await _require(db, current_user, site_id, "loans.policy")
+    return await notification_templates.list_templates(db, "loan", site_id)
+
+
+@router.put("/admin/sites/{site_id}/notification-templates")
+async def put_notification_templates(
+    site_id: int, payload: TemplatesIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """ذخیره‌ی متن اعلان‌ها؛ متن خالی = برگشت به پیش‌فرض."""
+    await _require(db, current_user, site_id, "loans.policy")
+    return await notification_templates.save_templates(db, "loan", site_id, payload.texts)
 
 
 @router.get("/admin/sites/{site_id}/employees")

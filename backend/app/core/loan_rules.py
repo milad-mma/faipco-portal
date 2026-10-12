@@ -44,15 +44,18 @@ class LoanRuleError(ValueError):
 
 def normalize_steps(steps) -> list[str]:
     """
-    مسیر تأیید ذخیره‌شده/ورودی را تمیز می‌کند: فقط کلیدهای شناخته‌شده، بدون تکرار، و «مالی» همیشه آخر.
+    مسیر تأیید ذخیره‌شده/ورودی را تمیز می‌کند: فقط کلیدهای شناخته‌شده، بدون تکرار، «مدیر سایت» همیشه بعد از ضامن‌ها و
+    مدیر واحد (تا آن‌ها قبول نکرده‌اند درخواست به کارتابل مدیر سایت نمی‌رود) و «مالی» همیشه آخر.
     None/غیرفهرست → مسیر پیش‌فرض؛ فهرست خالی → فقط «مالی».
     """
     if not isinstance(steps, (list, tuple)):
         return list(DEFAULT_STEPS)
     out: list[str] = []
     for key in steps:
-        if key in STEP_KEYS and key != STEP_FINANCE and key not in out:
+        if key in STEP_KEYS and key not in (STEP_FINANCE, STEP_SITE_MANAGER) and key not in out:
             out.append(key)
+    if STEP_SITE_MANAGER in steps:
+        out.append(STEP_SITE_MANAGER)
     out.append(STEP_FINANCE)
     return out
 
