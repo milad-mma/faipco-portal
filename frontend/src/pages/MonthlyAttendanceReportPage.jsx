@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Grid, CircularProgress, Typography } from "@mui/material";
 import GroupsIcon from "@mui/icons-material/Groups";
+import HubCard from "../components/HubCard";
 import { useNavigate } from "react-router-dom";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
@@ -134,17 +129,18 @@ export default function MonthlyAttendanceReportPage() {
         <MonthlyAttendanceTable report={report} />
       )}
 
-      {/* فقط سرپرست‌ها: ورود به گزارش تردد زیرمجموعه‌ها */}
+      {/* فقط سرپرست‌ها: کارت ورود به گزارش تردد زیرمجموعه‌ها (هم‌شکل کارت‌های کارتابل درخواست) */}
       {hasStaff && (
-        <Box sx={{ mt: 3, display: "flex", justifyContent: "flex-start" }}>
-          <Button
-            variant="outlined"
-            startIcon={<GroupsIcon />}
-            onClick={() => navigate("/monthly-attendance/my-staff")}
-          >
-            تردد پرسنل من
-          </Button>
-        </Box>
+        <Grid container spacing={2} sx={{ mt: 2 }}>
+          <Grid item xs={12} sm={6}>
+            <HubCard
+              icon={<GroupsIcon />}
+              title="تردد پرسنل من"
+              description="گزارش تردد ماهانه‌ی پرسنل واحد شما و واحدهای زیرمجموعه."
+              onClick={() => navigate("/monthly-attendance/my-staff")}
+            />
+          </Grid>
+        </Grid>
       )}
 
       <AccessGateDialog
