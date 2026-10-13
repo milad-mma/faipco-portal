@@ -1,15 +1,18 @@
 """
-Endpoint گزارش تردد ماهانه‌ی شخصی.
+Endpoint گزارش تردد ماهانه‌ی شخصی و «تردد پرسنل من» (سرپرست).
 
 GET /monthly-attendance/report — گزارش تردد ماه شمسی کاربر لاگین‌شده را از
 دستگاه‌های حضور و غیاب واقعی (SQL Server سایت خودِ پرسنل) می‌خواند. فقط
 برای سایت‌هایی در دسترس است که AttendanceMapping (نگاشت جدول/ستون) دارند.
+GET /monthly-attendance/my-staff — فهرست پرسنل زیر نظر کاربر (services/my_staff_service.py).
+GET /monthly-attendance/my-staff/{employee_id}/report — همان گزارش برای یکی از آن‌ها.
 
 این ماژول مستقل از سیستم GPS در endpoints/attendance.py است؛ منبع داده‌اش
 دستگاه حضور و غیاب کارخانه است، نه خوداظهاری GPS.
 
-نکته‌ی امنیتی: کد پرسنلی همیشه از Employee کاربر لاگین‌شده (توکن) خوانده
-می‌شود و هیچ پارامتر ورودی نمی‌تواند آن را تغییر دهد.
+نکته‌ی امنیتی: در گزارش شخصی، کد پرسنلی همیشه از Employee کاربر لاگین‌شده (توکن) خوانده
+می‌شود. در گزارش سرپرست، employee_id ورودی فقط اگر در فهرست «پرسنل من» (محاسبه‌شده در سرور
+از زنجیره‌ی سازمانی کاراوب/تخصیص دستی) باشد پذیرفته می‌شود؛ وگرنه 404.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -25,46 +28,36 @@ from app.models.user import User
 from app.services import kara_attendance_overlay
 from app.services.kara_schema import KaraNames
 from app.services.monthly_attendance_service import MonthlyAttendanceError, get_monthly_attendance
+from app.services.my_staff_service import list_my_staff, staff_to_dict
 from app.services.site_branch import get_site_branch_value
 from app.services.access_gate_service import AccessGateBlocked, AccessGateService
 
 router = APIRouter()
 
 
-@router.get("/report")
-async def monthly_attendance_report(
-    year: int | None = Query(default=None),
-    month: int | None = Query(default=None, ge=1, le=12),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    گزارش تردد ماهانه‌ی خودِ کاربر لاگین‌شده را برمی‌گرداند (هر کاربر متصل به پرسنل).
-    ورودی: سال/ماه شمسی اختیاری (پیش‌فرض: ماه جاری). خروجی: ساختار get_monthly_attendance.
-    خطاها: 403 اگر دروازه‌ی دسترسی بسته باشد، 404 اگر پرسنل/نگاشت/اتصال سایت نباشد، 502 در خطای SQL Server.
-    """
-    # دروازه‌ی دسترسی: اگر ادمین اجبار را فعال کرده و کاربر اطلاعیه‌ی خوانده‌نشده
-    # یا ارزیابی انجام‌نشده دارد، 403 برمی‌گردد
+async def _check_gate(db: AsyncSession, current_user: User) -> None:
+    """دروازه‌ی دسترسی: اگر ادمین اجبار را فعال کرده و کاربر اطلاعیه‌ی خوانده‌نشده یا ارزیابی انجام‌نشده دارد، 403."""
     try:
         await AccessGateService(db).check(current_user, "attendance_report")
     except AccessGateBlocked as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-    # کاربر باید به یک پرسنل متصل باشد
-    if current_user.employee_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این کاربر به هیچ پرسنلی متصل نیست")
 
-    employee = await db.get(Employee, current_user.employee_id)
-    if employee is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
-
+async def build_report_for_employee(
+    db: AsyncSession, employee: Employee, year: int | None, month: int | None, *, whose: str = "شما"
+) -> dict:
+    """
+    گزارش تردد ماهانه‌ی یک پرسنل مشخص را از SQL Server سایت او می‌سازد (مشترک بین گزارش شخصی و سرپرست).
+    ورودی: پرسنل، سال/ماه شمسی اختیاری (پیش‌فرض: ماه جاری). خروجی: ساختار get_monthly_attendance.
+    خطاها: 404 اگر نگاشت/اتصال سایت نباشد، 502 در خطای SQL Server. whose فقط در متن خطا («شما» / «این پرسنل»).
+    """
     # وجود AttendanceMapping برای سایت پرسنل، به‌تنهایی یعنی گزارش برای او فعال است
     mapping_result = await db.execute(select(AttendanceMapping).where(AttendanceMapping.site_id == employee.site_id))
     mapping = mapping_result.scalar_one_or_none()
     if mapping is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="گزارش تردد ماهانه برای سایت شما فعال نیست",
+            detail=f"گزارش تردد ماهانه برای سایت {whose} فعال نیست",
         )
 
     # اتصال SQL Server سایت
@@ -115,6 +108,65 @@ async def monthly_attendance_report(
         )
     except MonthlyAttendanceError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
+@router.get("/report")
+async def monthly_attendance_report(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None, ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    گزارش تردد ماهانه‌ی خودِ کاربر لاگین‌شده را برمی‌گرداند (هر کاربر متصل به پرسنل).
+    ورودی: سال/ماه شمسی اختیاری (پیش‌فرض: ماه جاری). خروجی: ساختار get_monthly_attendance.
+    خطاها: 403 اگر دروازه‌ی دسترسی بسته باشد، 404 اگر پرسنل/نگاشت/اتصال سایت نباشد، 502 در خطای SQL Server.
+    """
+    await _check_gate(db, current_user)
+
+    # کاربر باید به یک پرسنل متصل باشد
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این کاربر به هیچ پرسنلی متصل نیست")
+
+    employee = await db.get(Employee, current_user.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+
+    return await build_report_for_employee(db, employee, year, month)
+
+
+@router.get("/my-staff")
+async def my_staff(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    فهرست «پرسنل من» سرپرست: پرسنل فعال واحدهایی که او (به معنای تأییدکننده‌ی مرخصی) بالای سرشان است،
+    با زیرمجموعه‌ها. برای کاربر غیرسرپرست لیست خالی (نه خطا) — صفحه بر اساس همین تصمیم می‌گیرد دکمه را نشان دهد یا نه.
+    خروجی: [{id, personnel_code, first_name, last_name, department_name}]
+    """
+    staff = await list_my_staff(db, current_user)
+    return [staff_to_dict(e) for e in staff]
+
+
+@router.get("/my-staff/{employee_id}/report")
+async def my_staff_report(
+    employee_id: int,
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None, ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    گزارش تردد ماهانه‌ی یکی از «پرسنل من» برای سرپرست. employee_id فقط اگر در فهرست زیرمجموعه‌های
+    (محاسبه‌شده در سرور) همین کاربر باشد پذیرفته می‌شود؛ وگرنه 404 (بدون لو دادن وجود پرسنل).
+    """
+    await _check_gate(db, current_user)
+    staff = await list_my_staff(db, current_user)
+    employee = next((e for e in staff if e.id == employee_id), None)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="این پرسنل زیر نظر شما نیست")
+    return await build_report_for_employee(db, employee, year, month, whose="این پرسنل")
 
 
 def _jalali_to_int(value: str | None) -> int | None:

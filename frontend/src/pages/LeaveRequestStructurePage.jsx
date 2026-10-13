@@ -493,7 +493,7 @@ function ApproversSection({ siteId, onError }) {
                 <TableCell>
                   <EmployeePicker
                     siteId={siteId}
-                    label="جست‌وجوی پرسنل"
+                    placeholder="جست‌وجوی پرسنل…"
                     onSelect={(employee) =>
                       handleSetApprover(department.id, employee)
                     }

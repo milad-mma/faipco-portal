@@ -134,3 +134,21 @@ def test_covers_all_sites():
     assert not covers_all_sites({1}, {1, 2})
     assert not covers_all_sites(set(), set())
     assert not covers_all_sites({1}, set())
+
+
+def test_subtree_codes_includes_roots_and_nested_children():
+    from app.core.org_tree import subtree_codes
+
+    parents = {"1": None, "2": "1", "3": "2", "4": None, "5": "4", "6": "6"}
+    assert subtree_codes(parents, {"1"}) == {"1", "2", "3"}
+    assert subtree_codes(parents, {"2", "4"}) == {"2", "3", "4", "5"}
+    assert subtree_codes(parents, set()) == set()
+    # ریشه‌ای که در نقشه نیست هم خودش برمی‌گردد (تخصیص دستی واحد)
+    assert subtree_codes(parents, {"99"}) == {"99"}
+
+
+def test_subtree_codes_cycle_does_not_hang():
+    from app.core.org_tree import subtree_codes
+
+    parents = {"a": "b", "b": "a"}
+    assert subtree_codes(parents, {"a"}) == {"a", "b"}

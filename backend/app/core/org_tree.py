@@ -121,3 +121,24 @@ def descendants_count(parents: dict[str, str | None], code: str) -> int:
         count += 1
         stack.extend(children.get(node, []))
     return count
+
+
+def subtree_codes(parents: dict[str, str | None], roots: set[str]) -> set[str]:
+    """
+    ورودی: نقشه‌ی بالادست واحدها و مجموعه‌ی واحدهای ریشه. خروجی: خودِ ریشه‌ها به‌علاوه‌ی همه‌ی
+    زیرواحدهای مستقیم و غیرمستقیم آن‌ها (برای «پرسنل من» سرپرست: واحدهای زیر نظر او تا پایین درخت).
+    داده‌ی حلقه‌ای قفل نمی‌کند.
+    """
+    children: dict[str, list[str]] = {}
+    for child, parent in parents.items():
+        if parent is not None:
+            children.setdefault(parent, []).append(child)
+    result: set[str] = set()
+    stack = [normalize_code(r) for r in roots]
+    while stack:
+        node = stack.pop()
+        if node is None or node in result:
+            continue
+        result.add(node)
+        stack.extend(children.get(node, []))
+    return result
