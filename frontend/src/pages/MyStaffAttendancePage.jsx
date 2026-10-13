@@ -164,7 +164,7 @@ export default function MyStaffAttendancePage() {
             <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
               <CircularProgress />
             </Box>
-          ) : report ? (
+          ) : report && selected ? (
             <>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                 {staffLabel(selected)}
