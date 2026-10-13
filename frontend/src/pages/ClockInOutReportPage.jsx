@@ -65,7 +65,15 @@ function buildPresetDate(dayDate) {
  * ورودی: mode یکی از "create" (دکمه‌ی بالای صفحه، انتخاب آزاد پرسنل) | "createForSlot" (آیکون + کنار اسلات خالی؛
  * پرسنل و نوع از preset می‌آید) | "edit" (ویرایش initialLog)، به همراه لیست سایت‌ها و callbackهای بستن/ذخیره.
  */
-function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteOptions }) {
+function LogEditDialog({
+  open,
+  onClose,
+  onSaved,
+  mode,
+  initialLog,
+  preset,
+  siteOptions,
+}) {
   const [employee, setEmployee] = useState(null); // پرسنل انتخابی؛ در حالت edit همیشه null (پرسنل رکورد ثابت است)
   const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جستجوی پرسنل برای Autocomplete
   const [employeeSearch, setEmployeeSearch] = useState(""); // متن جستجوی پرسنل
@@ -82,13 +90,20 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
     if (mode === "edit" && initialLog) {
       setLogType(initialLog.log_type);
       setDateValue(new Date(initialLog.created_at));
-      setSite(siteOptions.find((s) => s.id === initialLog.matched_site_id) || null);
+      setSite(
+        siteOptions.find((s) => s.id === initialLog.matched_site_id) || null,
+      );
       setEmployee(null);
     } else if (mode === "createForSlot" && preset) {
       setLogType(preset.logType);
       setDateValue(buildPresetDate(preset.dayDate));
       setSite(null);
-      setEmployee({ id: preset.employeeId, first_name: preset.employeeName, last_name: "", personnel_code: preset.personnelCode });
+      setEmployee({
+        id: preset.employeeId,
+        first_name: preset.employeeName,
+        last_name: "",
+        personnel_code: preset.personnelCode,
+      });
     } else {
       setLogType("check_in");
       setDateValue(new Date());
@@ -101,7 +116,7 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
   useEffect(() => {
     if (mode !== "create") return;
     fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) =>
-      setEmployeeOptions(data.items || [])
+      setEmployeeOptions(data.items || []),
     );
   }, [mode, employeeSearch]);
 
@@ -117,7 +132,11 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
     try {
       const createdAtIso = dateValue.toISOString();
       if (mode === "edit") {
-        await updateAttendanceLog(initialLog.id, { logType, createdAt: createdAtIso, siteId: site?.id || null });
+        await updateAttendanceLog(initialLog.id, {
+          logType,
+          createdAt: createdAtIso,
+          siteId: site?.id || null,
+        });
       } else {
         await createManualAttendanceLog({
           employeeId: employee.id,
@@ -143,7 +162,9 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
         {mode === "createForSlot" && "ثبت رکورد"}
         {mode === "edit" && "ویرایش رکورد"}
       </DialogTitle>
-      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+      <DialogContent
+        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
+      >
         {/* پرسنل: فیلد غیرفعال (قفل‌شده) یا Autocomplete جستجو */}
         {employeeIsLocked ? (
           <TextField
@@ -159,12 +180,18 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           <Autocomplete
             filterOptions={searchFilterOptions}
             options={employeeOptions}
-            getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}
+            getOptionLabel={(o) =>
+              `${o.first_name} ${o.last_name} (${o.personnel_code})`
+            }
             value={employee}
             onChange={(_, value) => setEmployee(value)}
             onInputChange={(_, value) => setEmployeeSearch(value)}
             renderInput={(params) => (
-              <TextField {...params} label="پرسنل (فقط دارای دسترسی ثبت ورود/خروج)" autoFocus />
+              <TextField
+                {...params}
+                label="پرسنل (فقط دارای دسترسی ثبت ورود/خروج)"
+                autoFocus
+              />
             )}
             isOptionEqualToValue={(o, v) => o.id === v.id}
             noOptionsText="پرسنلی با این مشخصات (و دسترسی ثبت ورود/خروج) پیدا نشد"
@@ -184,7 +211,11 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           <option value="check_out">خروج</option>
         </TextField>
 
-        <JalaliDateTimePicker value={dateValue} onChange={setDateValue} label="تاریخ و ساعت (شمسی)" />
+        <JalaliDateTimePicker
+          value={dateValue}
+          onChange={setDateValue}
+          label="تاریخ و ساعت (شمسی)"
+        />
 
         <Autocomplete
           filterOptions={searchFilterOptions}
@@ -192,7 +223,9 @@ function LogEditDialog({ open, onClose, onSaved, mode, initialLog, preset, siteO
           getOptionLabel={(o) => o.name}
           value={site}
           onChange={(_, value) => setSite(value)}
-          renderInput={(params) => <TextField {...params} label="سایت (اختیاری)" />}
+          renderInput={(params) => (
+            <TextField {...params} label="سایت (اختیاری)" />
+          )}
           isOptionEqualToValue={(o, v) => o.id === v.id}
         />
         {error && <Alert severity="error">{error}</Alert>}
@@ -230,13 +263,22 @@ function LogCell({ log, type, canManage, row, onEdit, onAdd, onDelete }) {
       </Tooltip>
     );
   }
-  const timeLabel = new Date(log.created_at).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  const timeLabel = new Date(log.created_at).toLocaleTimeString("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return (
     <Stack direction="row" spacing={0.25} alignItems="center">
       <Chip
         size="small"
         color={type === "in" ? "success" : "default"}
-        icon={type === "in" ? <LoginOutlinedIcon fontSize="small" /> : <LogoutOutlinedIcon fontSize="small" />}
+        icon={
+          type === "in" ? (
+            <LoginOutlinedIcon fontSize="small" />
+          ) : (
+            <LogoutOutlinedIcon fontSize="small" />
+          )
+        }
         label={
           <Stack direction="row" spacing={0.25} alignItems="center">
             <span>{timeLabel}</span>
@@ -331,7 +373,10 @@ export default function ClockInOutReportPage() {
       if (cancelled) return;
       const combined = groupLogsByDay([...inData.items, ...outData.items]);
       setGroupedRows(combined);
-      if (inData.year != null && (inData.year !== period.year || inData.month !== period.month)) {
+      if (
+        inData.year != null &&
+        (inData.year !== period.year || inData.month !== period.month)
+      ) {
         skipNextFetch.current = true; // بار اول (ماه جاری): همان داده دوباره گرفته نشود
         setPeriod({ year: inData.year, month: inData.month });
       }
@@ -339,7 +384,14 @@ export default function ClockInOutReportPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, selectedEmployee, selectedSiteId, period.year, period.month, reloadKey]);
+  }, [
+    page,
+    selectedEmployee,
+    selectedSiteId,
+    period.year,
+    period.month,
+    reloadKey,
+  ]);
 
   // جستجوی پرسنل برای فیلتر بالای صفحه؛ با تأخیر ۳۰۰ میلی‌ثانیه بعد از آخرین حرف (نه یک درخواست برای هر حرف)
   useEffect(() => {
@@ -359,13 +411,15 @@ export default function ClockInOutReportPage() {
   // (اگر مجوز بدون محدودیت سایت باشد، همه‌ی سایت‌ها)
   useEffect(() => {
     if (canManage) {
-      fetchMyAccessibleSites("attendance.manage_clock_records").then(({ unrestricted, sites }) => {
-        if (unrestricted) {
-          fetchSites().then((data) => setSiteOptions(data || []));
-        } else {
-          setSiteOptions(sites);
-        }
-      });
+      fetchMyAccessibleSites("attendance.manage_clock_records").then(
+        ({ unrestricted, sites }) => {
+          if (unrestricted) {
+            fetchSites().then((data) => setSiteOptions(data || []));
+          } else {
+            setSiteOptions(sites);
+          }
+        },
+      );
     }
   }, [canManage]);
 
@@ -392,12 +446,17 @@ export default function ClockInOutReportPage() {
       employeeName: row.employeeName,
       personnelCode: row.personnelCode,
       logType: type === "in" ? "check_in" : "check_out",
-      dayDate: row.sessions[0]?.checkIn?.created_at || row.sessions[0]?.checkOut?.created_at || new Date(),
+      dayDate:
+        row.sessions[0]?.checkIn?.created_at ||
+        row.sessions[0]?.checkOut?.created_at ||
+        new Date(),
     });
     setDialogMode("createForSlot");
   }
 
-  const pageRows = groupedRows ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : null; // ردیف‌های صفحه‌ی جاری
+  const pageRows = groupedRows
+    ? groupedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : null; // ردیف‌های صفحه‌ی جاری
 
   // تعداد زوج‌ستون‌های ورود/خروج: بیشترین تعداد نوبت در بین ردیف‌های همین صفحه (حداقل ۱)؛
   // ردیف‌هایی با نوبت کمتر، ستون‌های اضافه را خالی می‌بینند
@@ -409,7 +468,13 @@ export default function ClockInOutReportPage() {
   return (
     <Box>
       {/* عنوان صفحه و دکمه‌ی افزودن رکورد دستی (فقط با مجوز مدیریت) */}
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" rowGap={1}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        flexWrap="wrap"
+        rowGap={1}
+      >
         <Box>
           <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
             گزارش ثبت ورود و خروج
@@ -430,14 +495,28 @@ export default function ClockInOutReportPage() {
         )}
       </Stack>
       {/* هشدار آزمایشی بودن سیستم GPS */}
-      <Alert severity="warning" icon={<ScienceOutlinedIcon />} sx={{ mb: 3, mt: 1 }}>
-        این قابلیت آزمایشی است. ثبت ورود/خروج رسمی همچنان باید از طریق دستگاه‌های تعبیه‌شده در
-        کارخانه انجام شود.{canManage && " رکوردهایی که دستی ثبت/ویرایش شده‌اند با یک ⭐ کنار ساعت مشخص می‌شوند."} رکوردی
-        که علامت ؟ دارد «زمان نامطمئن» است (گوشی بین ثبت و ارسال خاموش و روشن شده است).
+      <Alert
+        severity="warning"
+        icon={<ScienceOutlinedIcon />}
+        sx={{ mb: 3, mt: 1 }}
+      >
+        این قابلیت آزمایشی است. ثبت ورود/خروج رسمی همچنان باید از طریق
+        دستگاه‌های تعبیه‌شده در کارخانه انجام شود.
+        {canManage &&
+          " رکوردهایی که دستی ثبت/ویرایش شده‌اند با یک ⭐ کنار ساعت مشخص می‌شوند."}{" "}
+        رکوردی که علامت ؟ دارد «زمان نامطمئن» است (گوشی بین ثبت و ارسال خاموش و
+        روشن شده است).
       </Alert>
 
       {/* فیلترها: سایت، پرسنل و ماه/سال؛ هر تغییر صفحه را به ۱ برمی‌گرداند */}
-      <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" rowGap={2} alignItems="center">
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ mb: 3 }}
+        flexWrap="wrap"
+        rowGap={2}
+        alignItems="flex-end"
+      >
         <SiteFilterSelect
           value={selectedSiteId}
           permission="attendance.manage_clock_records"
@@ -450,14 +529,18 @@ export default function ClockInOutReportPage() {
           filterOptions={searchFilterOptions}
           sx={{ minWidth: 260 }}
           options={employeeOptions}
-          getOptionLabel={(o) => `${o.first_name} ${o.last_name} (${o.personnel_code})`}
+          getOptionLabel={(o) =>
+            `${o.first_name} ${o.last_name} (${o.personnel_code})`
+          }
           value={selectedEmployee}
           onChange={(_, value) => {
             setSelectedEmployee(value);
             setPage(1);
           }}
           onInputChange={(_, value) => setEmployeeSearch(value)}
-          renderInput={(params) => <TextField {...params} label="فیلتر بر اساس پرسنل" size="small" />}
+          renderInput={(params) => (
+            <TextField {...params} label="فیلتر بر اساس پرسنل" size="small" />
+          )}
           isOptionEqualToValue={(o, v) => o.id === v.id}
         />
         <JalaliMonthYearFilter
@@ -480,17 +563,30 @@ export default function ClockInOutReportPage() {
         <Alert severity="info">هیچ رکوردی پیدا نشد.</Alert>
       ) : (
         <>
-          <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, overflowX: "auto" }}>
+          <TableContainer
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              overflowX: "auto",
+            }}
+          >
             <Table size="small">
               {/* سرستون‌ها: پرسنل، تاریخ، زوج‌ستون‌های پویای ورود/خروج و سایت مطابق */}
               <TableHead>
                 <TableRow>
                   <TableCell>پرسنل</TableCell>
                   <TableCell>تاریخ</TableCell>
-                  {Array.from({ length: maxSessions }, (_, i) => i).flatMap((i) => [
-                    <TableCell key={`h-in-${i}`}>{maxSessions > 1 ? `ورود ${i + 1}` : "ورود"}</TableCell>,
-                    <TableCell key={`h-out-${i}`}>{maxSessions > 1 ? `خروج ${i + 1}` : "خروج"}</TableCell>,
-                  ])}
+                  {Array.from({ length: maxSessions }, (_, i) => i).flatMap(
+                    (i) => [
+                      <TableCell key={`h-in-${i}`}>
+                        {maxSessions > 1 ? `ورود ${i + 1}` : "ورود"}
+                      </TableCell>,
+                      <TableCell key={`h-out-${i}`}>
+                        {maxSessions > 1 ? `خروج ${i + 1}` : "خروج"}
+                      </TableCell>,
+                    ],
+                  )}
                   <TableCell>سایت مطابق</TableCell>
                 </TableRow>
               </TableHead>
@@ -498,48 +594,58 @@ export default function ClockInOutReportPage() {
                 {pageRows.map((row) => (
                   <TableRow key={row.key}>
                     <TableCell>
-                      <Typography variant="body2">{row.employeeName}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
+                      <Typography variant="body2">
+                        {row.employeeName}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={monoFontSx}
+                      >
                         {row.personnelCode}
                       </Typography>
                     </TableCell>
                     <TableCell sx={monoFontSx}>{row.dateLabel}</TableCell>
                     {/* به ازای هر نوبت، یک سلول ورود و یک سلول خروج */}
-                    {Array.from({ length: maxSessions }, (_, i) => i).flatMap((i) => {
-                      const session = row.sessions[i];
-                      return [
-                        <TableCell key={`in-${i}`}>
-                          <LogCell
-                            log={session?.checkIn}
-                            type="in"
-                            canManage={canManage}
-                            row={row}
-                            onEdit={(log) => {
-                              setDialogMode("edit");
-                              setEditingLog(log);
-                            }}
-                            onAdd={handleAddMissing}
-                            onDelete={(log) => setDeleteTarget(log)}
-                          />
-                        </TableCell>,
-                        <TableCell key={`out-${i}`}>
-                          <LogCell
-                            log={session?.checkOut}
-                            type="out"
-                            canManage={canManage}
-                            row={row}
-                            onEdit={(log) => {
-                              setDialogMode("edit");
-                              setEditingLog(log);
-                            }}
-                            onAdd={handleAddMissing}
-                            onDelete={(log) => setDeleteTarget(log)}
-                          />
-                        </TableCell>,
-                      ];
-                    })}
+                    {Array.from({ length: maxSessions }, (_, i) => i).flatMap(
+                      (i) => {
+                        const session = row.sessions[i];
+                        return [
+                          <TableCell key={`in-${i}`}>
+                            <LogCell
+                              log={session?.checkIn}
+                              type="in"
+                              canManage={canManage}
+                              row={row}
+                              onEdit={(log) => {
+                                setDialogMode("edit");
+                                setEditingLog(log);
+                              }}
+                              onAdd={handleAddMissing}
+                              onDelete={(log) => setDeleteTarget(log)}
+                            />
+                          </TableCell>,
+                          <TableCell key={`out-${i}`}>
+                            <LogCell
+                              log={session?.checkOut}
+                              type="out"
+                              canManage={canManage}
+                              row={row}
+                              onEdit={(log) => {
+                                setDialogMode("edit");
+                                setEditingLog(log);
+                              }}
+                              onAdd={handleAddMissing}
+                              onDelete={(log) => setDeleteTarget(log)}
+                            />
+                          </TableCell>,
+                        ];
+                      },
+                    )}
                     <TableCell>
-                      {row.sessions[0]?.checkIn?.matched_site_name || row.sessions[0]?.checkOut?.matched_site_name || "—"}
+                      {row.sessions[0]?.checkIn?.matched_site_name ||
+                        row.sessions[0]?.checkOut?.matched_site_name ||
+                        "—"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -577,14 +683,25 @@ export default function ClockInOutReportPage() {
       />
 
       {/* دیالوگ تأیید حذف رکورد */}
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>حذف رکورد</DialogTitle>
         <DialogContent>
-          <Typography variant="body2">این رکورد برای همیشه حذف می‌شود. مطمئن هستید؟</Typography>
+          <Typography variant="body2">
+            این رکورد برای همیشه حذف می‌شود. مطمئن هستید؟
+          </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setDeleteTarget(null)}>انصراف</Button>
-          <Button color="error" variant="contained" onClick={handleConfirmDelete}>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleConfirmDelete}
+          >
             حذف
           </Button>
         </DialogActions>

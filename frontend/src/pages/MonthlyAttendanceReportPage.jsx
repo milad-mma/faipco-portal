@@ -53,14 +53,21 @@ function formatMinutes(minutes) {
 
 // متن چیپ/تولتیپ یک غیبت ساعتی: عنوان به همراه مدت در پرانتز، مثلاً «مرخصی ساعتی استحقاقی (1:43)»
 function hourlyText(mark) {
-  return mark.minutes ? `${mark.label} (${formatMinutes(mark.minutes)})` : mark.label;
+  return mark.minutes
+    ? `${mark.label} (${formatMinutes(mark.minutes)})`
+    : mark.label;
 }
 
 // استایل چیپ فشرده با متن قابل‌شکستن در چند خط، تا جدول در موبایل جا شود
 const compactChipSx = {
   height: "auto",
   fontSize: { xs: "0.62rem", sm: "0.7rem" },
-  "& .MuiChip-label": { px: 0.75, py: 0.25, whiteSpace: "normal", lineHeight: 1.35 },
+  "& .MuiChip-label": {
+    px: 0.75,
+    py: 0.25,
+    whiteSpace: "normal",
+    lineHeight: 1.35,
+  },
 };
 
 /**
@@ -83,7 +90,6 @@ export default function MonthlyAttendanceReportPage() {
     setGateOpen(Boolean(gateStatus.blocked_features?.["attendance_report"]));
   }, [gateStatus]);
 
-
   const topScrollRef = useRef(null); // ظرف اسکرول‌بار افقی بالای جدول
   const tableScrollRef = useRef(null); // ظرف خود جدول (TableContainer)
   const [tableScrollWidth, setTableScrollWidth] = useState(0); // عرض قابل‌اسکرول جدول برای هم‌عرض کردن اسکرول‌بار بالا
@@ -103,43 +109,59 @@ export default function MonthlyAttendanceReportPage() {
     }
     const requestId = ++latestRequest.current;
     const requested = { year: period.year, month: period.month };
-    const cacheKey = requested.year == null ? "monthly:current" : `monthly:${requested.year}-${requested.month}`;
+    const cacheKey =
+      requested.year == null
+        ? "monthly:current"
+        : `monthly:${requested.year}-${requested.month}`;
     setIsLoading(true);
     setError("");
     const params = { ...requested };
     let shownFromCache = false;
-    swr(cacheKey, () => fetchMonthlyAttendanceReport(params), (data, fromCache) => {
-      if (requestId !== latestRequest.current) return;
-      if (fromCache) shownFromCache = true;
-      setReport(data);
-      setIsLoading(false);
-      if (data.year !== requested.year || data.month !== requested.month) {
-        skipNextFetch.current = true; // بار اول (ماه جاری): همان گزارش دوباره گرفته نشود
-        setPeriod({ year: data.year, month: data.month });
-        requested.year = data.year; // پاسخ تازه‌ی بعد از Cache دوباره period را عوض نکند
-        requested.month = data.month;
-      }
-    })
+    swr(
+      cacheKey,
+      () => fetchMonthlyAttendanceReport(params),
+      (data, fromCache) => {
+        if (requestId !== latestRequest.current) return;
+        if (fromCache) shownFromCache = true;
+        setReport(data);
+        setIsLoading(false);
+        if (data.year !== requested.year || data.month !== requested.month) {
+          skipNextFetch.current = true; // بار اول (ماه جاری): همان گزارش دوباره گرفته نشود
+          setPeriod({ year: data.year, month: data.month });
+          requested.year = data.year; // پاسخ تازه‌ی بعد از Cache دوباره period را عوض نکند
+          requested.month = data.month;
+        }
+      },
+    )
       .catch((err) => {
         if (requestId !== latestRequest.current || shownFromCache) return; // نسخه‌ی قبلی روی صفحه می‌ماند
-        setError(err.response?.data?.detail || "دریافت گزارش تردد با خطا مواجه شد.");
+        setError(
+          err.response?.data?.detail || "دریافت گزارش تردد با خطا مواجه شد.",
+        );
       })
-      .finally(() => requestId === latestRequest.current && setIsLoading(false));
+      .finally(
+        () => requestId === latestRequest.current && setIsLoading(false),
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period.year, period.month]);
 
   const transitColumnCount = report?.max_transits_in_month || 1; // حداقل یک ستون، حتی اگر ماه کلاً خالی باشد
   // ستون «مرخصی / ماموریت» فقط وقتی نمایش داده می‌شود که در این ماه واقعاً موردی باشد
   const hasAbsences = Boolean(
-    report?.days?.some((d) => d.day_status || (d.hourly_absences && d.hourly_absences.length))
+    report?.days?.some(
+      (d) => d.day_status || (d.hourly_absences && d.hourly_absences.length),
+    ),
   );
 
   // رنگ پس‌زمینه‌ی ردیف یک روز: تعطیل قرمز کم‌رنگ، غیبت روزانه به رنگ نوع آن، غیبت زرد، در غیر این صورت بدون رنگ
   function rowBackground(day) {
-    if (day.day_status === "not_employed") return alpha(theme.palette.text.disabled, 0.08);
+    if (day.day_status === "not_employed")
+      return alpha(theme.palette.text.disabled, 0.08);
     if (day.is_holiday) return "rgba(211, 47, 47, 0.08)";
-    if (day.daily_absence) return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
-    if (day.day_status === "absent") return alpha(theme.palette.warning.main, 0.14);
+    if (day.daily_absence)
+      return alpha(theme.palette[KIND_COLOR[day.daily_absence.kind]].main, 0.1);
+    if (day.day_status === "absent")
+      return alpha(theme.palette.warning.main, 0.14);
     return undefined;
   }
 
@@ -172,7 +194,8 @@ export default function MonthlyAttendanceReportPage() {
   }
 
   return (
-    <Box>
+    // هم‌عرض بقیه‌ی صفحه‌های پرسنل (اطلاعیه‌ها، مرخصی)؛ قبلاً تمام‌عرض بود و جدول در دسکتاپ کش می‌آمد
+    <Box sx={{ maxWidth: 1100, mx: "auto" }}>
       <BackLink to="/my-dashboard" />
       <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
         گزارش تردد ماهانه
@@ -180,8 +203,9 @@ export default function MonthlyAttendanceReportPage() {
 
       {/* توضیح منبع داده‌ی گزارش */}
       <Alert severity="info" sx={{ mb: 3 }}>
-        همکار گرامی، گزارش حاضر بر اساس اطلاعات ثبت‌شده مربوط به ورود و خروج شما، از طریق دستگاه‌های ثبت
-        و کنترل تردد مستقر در محوطه کارخانه، تهیه و تنظیم گردیده است.
+        همکار گرامی، گزارش حاضر بر اساس اطلاعات ثبت‌شده مربوط به ورود و خروج
+        شما، از طریق دستگاه‌های ثبت و کنترل تردد مستقر در محوطه کارخانه، تهیه و
+        تنظیم گردیده است.
       </Alert>
 
       {/* فیلتر ماه/سال شمسی */}
@@ -196,7 +220,13 @@ export default function MonthlyAttendanceReportPage() {
 
       {/* راهنمای رنگ چیپ‌ها؛ فقط وقتی در این ماه غیبت/مرخصی/تعطیلی وجود دارد */}
       {hasAbsences && (
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mb: 1.5 }}
+        >
           <Chip size="small" color="success" variant="outlined" label="مرخصی" />
           <Chip size="small" color="info" variant="outlined" label="ماموریت" />
           <Chip size="small" color="error" variant="outlined" label="تعطیل" />
@@ -218,7 +248,11 @@ export default function MonthlyAttendanceReportPage() {
       ) : report ? (
         <>
           {/* اسکرول‌بار افقی بالای جدول: یک Box خالی هم‌عرض جدول */}
-          <Box ref={topScrollRef} onScroll={handleTopScroll} sx={{ overflowX: "auto", overflowY: "hidden", mb: 0.5 }}>
+          <Box
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
+            sx={{ overflowX: "auto", overflowY: "hidden", mb: 0.5 }}
+          >
             <Box sx={{ width: tableScrollWidth, height: 1 }} />
           </Box>
           <TableContainer
@@ -256,8 +290,17 @@ export default function MonthlyAttendanceReportPage() {
               {/* یک ردیف به ازای هر روز ماه */}
               <TableBody>
                 {report.days.map((day) => (
-                  <TableRow key={day.date} hover sx={{ bgcolor: rowBackground(day) }}>
-                    <TableCell sx={{ color: day.is_holiday ? "error.main" : undefined, fontWeight: day.is_holiday ? 700 : undefined }}>
+                  <TableRow
+                    key={day.date}
+                    hover
+                    sx={{ bgcolor: rowBackground(day) }}
+                  >
+                    <TableCell
+                      sx={{
+                        color: day.is_holiday ? "error.main" : undefined,
+                        fontWeight: day.is_holiday ? 700 : undefined,
+                      }}
+                    >
                       {day.weekday}
                     </TableCell>
                     <TableCell
@@ -268,17 +311,33 @@ export default function MonthlyAttendanceReportPage() {
                       }}
                     >
                       {/* در موبایل بدون سال (۰۶/۲۱) تا ستون باریک‌تر شود */}
-                      <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
+                      <Box
+                        component="span"
+                        sx={{ display: { xs: "none", sm: "inline" } }}
+                      >
                         {day.date}
                       </Box>
-                      <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
+                      <Box
+                        component="span"
+                        sx={{ display: { xs: "inline", sm: "none" } }}
+                      >
                         {day.date.slice(5)}
                       </Box>
                     </TableCell>
                     {hasAbsences && (
-                      <TableCell sx={{ "&&": { whiteSpace: "normal" }, minWidth: { xs: 84, sm: 120 }, maxWidth: 220 }}>
+                      <TableCell
+                        sx={{
+                          "&&": { whiteSpace: "normal" },
+                          minWidth: { xs: 84, sm: 120 },
+                          maxWidth: 220,
+                        }}
+                      >
                         {/* چیپ غیبت روزانه یا وضعیت روز، و زیر آن چیپ‌های غیبت ساعتی (زیر هم) */}
-                        <Stack direction="column" spacing={0.5} alignItems="flex-start">
+                        <Stack
+                          direction="column"
+                          spacing={0.5}
+                          alignItems="flex-start"
+                        >
                           {day.daily_absence ? (
                             <Chip
                               size="small"
@@ -350,7 +409,8 @@ export default function MonthlyAttendanceReportPage() {
         open={gateOpen}
         gate={gateStatus?.blocked_features?.["attendance_report"]}
         count={
-          gateStatus?.blocked_features?.["attendance_report"] === "pending_evaluations"
+          gateStatus?.blocked_features?.["attendance_report"] ===
+          "pending_evaluations"
             ? gateStatus?.pending_evaluations
             : gateStatus?.unread_notices
         }

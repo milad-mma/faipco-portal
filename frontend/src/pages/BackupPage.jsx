@@ -17,13 +17,17 @@ import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
-import { downloadBackupArchive, fetchRestoreStatus, restoreBackupArchive } from "../api/backup";
+import {
+  downloadBackupArchive,
+  fetchRestoreStatus,
+  restoreBackupArchive,
+} from "../api/backup";
 import { bustAppCache } from "../api/system";
 import { monoFontSx } from "../theme";
 import BackupScheduleSettings from "../components/BackupScheduleSettings";
 
-const CONFIRM_PHRASE = "RESTORE";  // عبارتی که کاربر باید برای تأیید بازیابی تایپ کند
-const POLL_INTERVAL_MS = 3000;  // فاصله‌ی پرسیدن وضعیت بازیابی از سرور
+const CONFIRM_PHRASE = "RESTORE"; // عبارتی که کاربر باید برای تأیید بازیابی تایپ کند
+const POLL_INTERVAL_MS = 3000; // فاصله‌ی پرسیدن وضعیت بازیابی از سرور
 const MAX_POLL_ATTEMPTS = 60; // حداکثر تعداد پرسش وضعیت (۳ ثانیه × ۶۰ = حدود ۳ دقیقه)
 
 // کامپوننت صفحه‌ی پشتیبان‌گیری؛ ورودی ندارد.
@@ -32,8 +36,8 @@ export default function BackupPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
-  const [restoreFile, setRestoreFile] = useState(null);  // فایل zip انتخاب‌شده برای بازیابی
-  const [confirmText, setConfirmText] = useState("");  // متن تأییدی که کاربر تایپ کرده
+  const [restoreFile, setRestoreFile] = useState(null); // فایل zip انتخاب‌شده برای بازیابی
+  const [confirmText, setConfirmText] = useState(""); // متن تأییدی که کاربر تایپ کرده
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null); // { success, message } | null
   const [restoreLog, setRestoreLog] = useState(""); // خروجی زنده اسکریپت Restore
@@ -55,9 +59,11 @@ export default function BackupPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);  // آزادسازی URL موقت پس از شروع دانلود
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000); // آزادسازی URL موقت پس از شروع دانلود
     } catch (err) {
-      setDownloadError(err.response?.data?.detail || "ساخت بکاپ با خطا مواجه شد.");
+      setDownloadError(
+        err.response?.data?.detail || "ساخت بکاپ با خطا مواجه شد.",
+      );
     } finally {
       setIsDownloading(false);
     }
@@ -69,7 +75,7 @@ export default function BackupPage() {
     if (attemptsLeft <= 0) {
       setRestoreResult({
         success: false,
-        message: "بعد از ۳ دقیقه هنوز نتیجه مشخص نشد — لطفاً دستی از سرور چک کنید: sudo cat /tmp/faipco-restore.log",
+        message: "نتیجه‌ی بازیابی مشخص نشد؛ لاگ سرور را بررسی کنید.",
       });
       setIsRestoring(false);
       return;
@@ -78,13 +84,19 @@ export default function BackupPage() {
       const status = await fetchRestoreStatus();
       setRestoreLog(status.log || "");
       if (status.is_finished) {
-        setRestoreResult({ success: true, message: "بازیابی با موفقیت انجام شد." });
+        setRestoreResult({
+          success: true,
+          message: "بازیابی با موفقیت انجام شد.",
+        });
         setIsRestoring(false);
         setTimeout(() => window.location.reload(), 2000);
         return;
       }
       if (status.is_failed) {
-        setRestoreResult({ success: false, message: "بازیابی با خطا مواجه شد — جزئیات کامل در لاگ زیر است." });
+        setRestoreResult({
+          success: false,
+          message: "بازیابی با خطا مواجه شد — جزئیات کامل در لاگ زیر است.",
+        });
         setIsRestoring(false);
         return;
       }
@@ -101,11 +113,17 @@ export default function BackupPage() {
     setRestoreResult(null);
     setRestoreLog("");
     if (!restoreFile) {
-      setRestoreResult({ success: false, message: "فایل بکاپ را انتخاب کنید." });
+      setRestoreResult({
+        success: false,
+        message: "فایل بکاپ را انتخاب کنید.",
+      });
       return;
     }
     if (confirmText !== CONFIRM_PHRASE) {
-      setRestoreResult({ success: false, message: `برای تأیید، دقیقاً «${CONFIRM_PHRASE}» را تایپ کنید.` });
+      setRestoreResult({
+        success: false,
+        message: `برای تأیید، دقیقاً «${CONFIRM_PHRASE}» را تایپ کنید.`,
+      });
       return;
     }
     setIsRestoring(true);
@@ -115,7 +133,10 @@ export default function BackupPage() {
       // و کار در پس‌زمینه ادامه می‌یابد، پس وضعیت واقعی به‌صورت دوره‌ای پرسیده می‌شود
       pollRestoreStatus(MAX_POLL_ATTEMPTS);
     } catch (err) {
-      setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی با خطا مواجه شد." });
+      setRestoreResult({
+        success: false,
+        message: err.response?.data?.detail || "بازیابی با خطا مواجه شد.",
+      });
       setIsRestoring(false);
     }
   }
@@ -143,7 +164,7 @@ export default function BackupPage() {
         پشتیبان‌گیری
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        یک بکاپ کامل (Schema و داده) از کل پرتال بسازید — قابل بازیابی روی همین سرور، از همین صفحه.
+        بکاپ کامل پرتال؛ قابل بازیابی از همین صفحه.
       </Typography>
 
       {/* کارت دانلود بکاپ: فهرست محتوای بکاپ و دکمه‌ی دانلود */}
@@ -151,12 +172,19 @@ export default function BackupPage() {
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           چه چیزی داخل بکاپ است؟
         </Typography>
-        <Typography variant="body2" color="text.secondary" component="ul" sx={{ pl: 2.5, m: 0 }}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          component="ul"
+          sx={{ pl: 2.5, m: 0 }}
+        >
           <li>همه پرسنل، سایت‌ها، واحدهای سازمانی، سمت‌ها</li>
-          <li>همه اطلاعیه‌ها (متنی، فیش حقوقی، فیش کارکرد) و آمار بازدید آن‌ها</li>
+          <li>
+            همه اطلاعیه‌ها (متنی، فیش حقوقی، فیش کارکرد) و آمار بازدید آن‌ها
+          </li>
           <li>همه کاربران، نقش‌ها و مجوزهای دسترسی</li>
-          <li>تنظیمات Sync هر سایت و تاریخچه Sync</li>
-          <li>ساختار کامل دیتابیس (Schema) — نه فقط داده</li>
+          <li>تنظیمات و تاریخچه‌ی همگام‌سازی هر سایت</li>
+          <li>ساختار کامل دیتابیس، نه فقط داده</li>
         </Typography>
 
         <Divider sx={{ my: 2.5 }} />
@@ -169,7 +197,13 @@ export default function BackupPage() {
         <Button
           variant="contained"
           size="large"
-          startIcon={isDownloading ? <CircularProgress size={18} color="inherit" /> : <CloudDownloadOutlinedIcon />}
+          startIcon={
+            isDownloading ? (
+              <CircularProgress size={18} color="inherit" />
+            ) : (
+              <CloudDownloadOutlinedIcon />
+            )
+          }
           onClick={handleDownload}
           disabled={isDownloading}
         >
@@ -178,11 +212,14 @@ export default function BackupPage() {
       </Card>
 
       {/* کارت بازیابی: پیام‌های وضعیت، لاگ زنده، انتخاب فایل و تأیید */}
-      <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3, borderColor: "error.main" }}>
+      <Card
+        variant="outlined"
+        sx={{ p: 3, borderRadius: 3, mb: 3, borderColor: "error.main" }}
+      >
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <WarningAmberOutlinedIcon color="error" fontSize="small" />
           <Typography variant="subtitle2" fontWeight={700} color="error.main">
-            بازیابی از همین پنل (روی همین سرور)
+            بازیابی از فایل بکاپ
           </Typography>
         </Stack>
 
@@ -193,8 +230,12 @@ export default function BackupPage() {
         )}
 
         {isRestoring && !restoreResult && (
-          <Alert severity="info" icon={<CircularProgress size={18} />} sx={{ mb: 2 }}>
-            در حال بازیابی — این بخش هر چند ثانیه یک‌بار به‌صورت خودکار به‌روزرسانی می‌شود.
+          <Alert
+            severity="info"
+            icon={<CircularProgress size={18} />}
+            sx={{ mb: 2 }}
+          >
+            در حال بازیابی…
           </Alert>
         )}
 
@@ -224,9 +265,8 @@ export default function BackupPage() {
         {!restoreResult?.success && (
           <>
             <Alert severity="warning" sx={{ mb: 2 }}>
-              این کار همهٔ داده‌های فعلی روی همین سرور (پرسنل، اطلاعیه‌ها، کاربران، سایت‌ها و...)
-              را کاملاً پاک و با محتوای فایل بکاپ جایگزین می‌کند. برگشت‌ناپذیر است. سرویس چند
-              ثانیه Restart می‌شود، ولی نیازی به ورود دوباره نیست.
+              همه‌ی داده‌های فعلی پاک و با محتوای فایل بکاپ جایگزین می‌شود. این
+              کار برگشت‌ناپذیر است.
             </Alert>
 
             <Stack spacing={2}>
@@ -251,7 +291,13 @@ export default function BackupPage() {
                 onChange={(e) => setConfirmText(e.target.value)}
                 disabled={isRestoring}
                 sx={{ direction: "ltr" }}
-                inputProps={{ style: { textAlign: "center", fontFamily: "monospace", letterSpacing: 2 } }}
+                inputProps={{
+                  style: {
+                    textAlign: "center",
+                    fontFamily: "monospace",
+                    letterSpacing: 2,
+                  },
+                }}
               />
 
               <Box>
@@ -263,11 +309,23 @@ export default function BackupPage() {
                 <Button
                   variant="contained"
                   color="error"
-                  startIcon={isRestoring ? <CircularProgress size={18} color="inherit" /> : <WarningAmberOutlinedIcon />}
+                  startIcon={
+                    isRestoring ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <WarningAmberOutlinedIcon />
+                    )
+                  }
                   onClick={handleRestore}
-                  disabled={isRestoring || confirmText !== CONFIRM_PHRASE || !restoreFile}
+                  disabled={
+                    isRestoring ||
+                    confirmText !== CONFIRM_PHRASE ||
+                    !restoreFile
+                  }
                 >
-                  {isRestoring ? "در حال بازیابی..." : "بازیابی و جایگزینی کامل داده"}
+                  {isRestoring
+                    ? "در حال بازیابی..."
+                    : "بازیابی و جایگزینی کامل داده"}
                 </Button>
               </Box>
             </Stack>
@@ -280,31 +338,34 @@ export default function BackupPage() {
         <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
           نگهداری اپلیکیشن
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          ابزارهای عمومی نگهداری اپ — مستقل از بکاپ/بازیابی.
-        </Typography>
-
-        <Divider sx={{ mb: 2 }} />
+        <Divider sx={{ my: 2 }} />
 
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
           پاک‌کردن کش اپلیکیشن برای همه کاربران
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          دفعه بعدی که هر کاربر سایت را باز کند (یا صفحه را Refresh کند)، اپ کاملاً تازه دریافت
-          می‌کند — انگار اولین‌بار است. اگه گوشی نصب‌شده‌ای رفتار عجیب دارد (مثلاً آیکون یا صفحه
-          قدیمی می‌ماند)، معمولاً همین کافی است. نیازی به هماهنگی خاصی نیست و برای کاربران فعلی
-          هیچ داده‌ای پاک نمی‌شود — فقط فایل‌های ذخیره‌شده اپ (نه اطلاعات ورود یا داده‌های سرور).
+          اپ در بازدید بعدی هر کاربر تازه بارگذاری می‌شود؛ داده‌ای پاک نمی‌شود.
+          برای وقتی که آیکون یا صفحه‌ی قدیمی روی گوشی کسی مانده است.
         </Typography>
 
         {cacheBustResult && (
-          <Alert severity={cacheBustResult.success ? "success" : "error"} sx={{ mb: 2 }}>
+          <Alert
+            severity={cacheBustResult.success ? "success" : "error"}
+            sx={{ mb: 2 }}
+          >
             {cacheBustResult.message}
           </Alert>
         )}
 
         <Button
           variant="outlined"
-          startIcon={isBustingCache ? <CircularProgress size={18} /> : <DeleteSweepOutlinedIcon />}
+          startIcon={
+            isBustingCache ? (
+              <CircularProgress size={18} />
+            ) : (
+              <DeleteSweepOutlinedIcon />
+            )
+          }
           onClick={handleBustCache}
           disabled={isBustingCache}
         >

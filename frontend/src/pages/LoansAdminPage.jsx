@@ -42,7 +42,10 @@ import ResultDialog from "../components/ResultDialog";
 import NotificationTemplatesEditor from "../components/NotificationTemplatesEditor";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
-import LoanPolicyEditor, { FACTORY_TEMPLATE, STEP_LABELS } from "../components/loans/LoanPolicyEditor";
+import LoanPolicyEditor, {
+  FACTORY_TEMPLATE,
+  STEP_LABELS,
+} from "../components/loans/LoanPolicyEditor";
 import {
   AmountField,
   digitsOnly,
@@ -160,9 +163,17 @@ function PayDialog({ item, onClose, onDone }) {
     }
   }, [item]);
   if (!item) return null;
-  const n = mode === "count" ? Number(count) || 0 : per ? Math.ceil(Number(amount || 0) / Number(per)) : 0;
+  const n =
+    mode === "count"
+      ? Number(count) || 0
+      : per
+        ? Math.ceil(Number(amount || 0) / Number(per))
+        : 0;
   const valid = Number(amount) > 0 && n >= 1 && n <= 120 && n <= Number(amount);
-  const perShown = mode === "count" && n ? Math.floor(Number(amount || 0) / n) : Number(per) || 0;
+  const perShown =
+    mode === "count" && n
+      ? Math.floor(Number(amount || 0) / n)
+      : Number(per) || 0;
   const save = async () => {
     setSaving(true);
     setError("");
@@ -183,17 +194,40 @@ function PayDialog({ item, onClose, onDone }) {
     }
   };
   return (
-    <Dialog open onClose={saving ? undefined : onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
+    <Dialog
+      open
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+      fullScreen={fullScreen}
+    >
       <DialogTitle>پرداخت وام — {item.employee}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography variant="body2">
             {item.type_title} — درخواستی: {formatRial(item.amount_requested)}
           </Typography>
-          <AmountField label="مبلغ پرداختی (ریال)" value={amount} onChange={setAmount} fullWidth />
-          <RadioGroup row value={mode} onChange={(e) => setMode(e.target.value)}>
-            <FormControlLabel value="count" control={<Radio />} label="تعداد قسط" />
-            <FormControlLabel value="amount" control={<Radio />} label="مبلغ هر قسط" />
+          <AmountField
+            label="مبلغ پرداختی (ریال)"
+            value={amount}
+            onChange={setAmount}
+            fullWidth
+          />
+          <RadioGroup
+            row
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+          >
+            <FormControlLabel
+              value="count"
+              control={<Radio />}
+              label="تعداد قسط"
+            />
+            <FormControlLabel
+              value="amount"
+              control={<Radio />}
+              label="مبلغ هر قسط"
+            />
           </RadioGroup>
           {mode === "count" ? (
             <TextField
@@ -203,21 +237,41 @@ function PayDialog({ item, onClose, onDone }) {
               inputProps={{ inputMode: "numeric" }}
             />
           ) : (
-            <AmountField label="مبلغ هر قسط (ریال)" value={per} onChange={setPer} />
+            <AmountField
+              label="مبلغ هر قسط (ریال)"
+              value={per}
+              onChange={setPer}
+            />
           )}
-          <JalaliMonthPicker label="اولین قسط" value={firstMonth} onChange={setFirstMonth} />
+          <JalaliMonthPicker
+            label="اولین قسط"
+            value={firstMonth}
+            onChange={setFirstMonth}
+          />
           {n > 0 && (
             <Alert severity="info">
-              {n.toLocaleString("fa-IR")} قسط حدود {formatRial(perShown)} (باقیمانده‌ی تقسیم روی قسط آخر)
+              {n.toLocaleString("fa-IR")} قسط حدود {formatRial(perShown)}{" "}
+              (باقیمانده‌ی تقسیم روی قسط آخر)
             </Alert>
           )}
           {item.extra_requirement && (
             <FormControlLabel
-              control={<Checkbox checked={extra} onChange={(e) => setExtra(e.target.checked)} />}
+              control={
+                <Checkbox
+                  checked={extra}
+                  onChange={(e) => setExtra(e.target.checked)}
+                />
+              }
               label={`«${item.extra_requirement}» دریافت شد`}
             />
           )}
-          <TextField label="توضیح (اختیاری)" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} />
+          <TextField
+            label="توضیح (اختیاری)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            multiline
+            minRows={2}
+          />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -225,7 +279,11 @@ function PayDialog({ item, onClose, onDone }) {
         <Button onClick={onClose} disabled={saving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={save} disabled={saving || !valid || (item.extra_requirement && !extra)}>
+        <Button
+          variant="contained"
+          onClick={save}
+          disabled={saving || !valid || (item.extra_requirement && !extra)}
+        >
           ثبت پرداخت
         </Button>
       </DialogActions>
@@ -235,7 +293,17 @@ function PayDialog({ item, onClose, onDone }) {
 
 // ---------- دیالوگ عمومی متن ----------
 
-function PromptDialog({ open, title, label, initial = "", required, numeric, confirmLabel = "ثبت", onClose, onConfirm }) {
+function PromptDialog({
+  open,
+  title,
+  label,
+  initial = "",
+  required,
+  numeric,
+  confirmLabel = "ثبت",
+  onClose,
+  onConfirm,
+}) {
   const [value, setValue] = useState(initial);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -257,13 +325,22 @@ function PromptDialog({ open, title, label, initial = "", required, numeric, con
     }
   };
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+    >
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <TextField
           label={label}
           value={value}
-          onChange={(e) => setValue(numeric ? digitsOnly(e.target.value).slice(0, 7) : e.target.value)}
+          onChange={(e) =>
+            setValue(
+              numeric ? digitsOnly(e.target.value).slice(0, 7) : e.target.value,
+            )
+          }
           fullWidth
           autoFocus
           multiline={!numeric}
@@ -280,7 +357,11 @@ function PromptDialog({ open, title, label, initial = "", required, numeric, con
         <Button onClick={onClose} disabled={saving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={confirm} disabled={saving || (required && !String(value).trim())}>
+        <Button
+          variant="contained"
+          onClick={confirm}
+          disabled={saving || (required && !String(value).trim())}
+        >
           {confirmLabel}
         </Button>
       </DialogActions>
@@ -320,47 +401,80 @@ function DetailDialog({ id, canFinance, onClose, onChanged, onPay }) {
     }
   };
   const runPrompt = async (value) => {
-    const fn = { reject: rejectLoan, settle: settleLoan, queue: (rid, v) => setLoanQueue(rid, Number(v)) }[prompt.kind];
+    const fn = {
+      reject: rejectLoan,
+      settle: settleLoan,
+      queue: (rid, v) => setLoanQueue(rid, Number(v)),
+    }[prompt.kind];
     setItem(await fn(item.id, value || null));
     setPrompt(null);
     onChanged();
   };
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md" fullScreen={fullScreen}>
+    <Dialog
+      open
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      fullScreen={fullScreen}
+    >
       <DialogTitle>جزئیات درخواست وام</DialogTitle>
       <DialogContent dividers>
         {!item && !error && <CircularProgress />}
         {error && <Alert severity="error">{error}</Alert>}
         {item && (
           <Stack spacing={1.5}>
-            <Stack direction="row" justifyContent="space-between" flexWrap="wrap" useFlexGap spacing={1}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              useFlexGap
+              spacing={1}
+            >
               <Typography fontWeight={800}>{item.employee}</Typography>
               <LoanStatusChip item={item} />
             </Stack>
             <Typography variant="body2">
               {item.type_title} — درخواستی: {formatRial(item.amount_requested)}
-              {item.amount_approved ? ` — پرداختی: ${formatRial(item.amount_approved)}` : ""}
+              {item.amount_approved
+                ? ` — پرداختی: ${formatRial(item.amount_approved)}`
+                : ""}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               سابقه هنگام ثبت: {formatService(item.service_months)}
-              {item.queue_seq ? ` — شماره‌ی نوبت: ${item.queue_seq.toLocaleString("fa-IR")}` : ""}
+              {item.queue_seq
+                ? ` — شماره‌ی نوبت: ${item.queue_seq.toLocaleString("fa-IR")}`
+                : ""}
               {item.is_manual ? " — ثبت دستی" : ""}
             </Typography>
-            {item.reason && <Typography variant="body2">توضیح پرسنل: {item.reason}</Typography>}
+            {item.reason && (
+              <Typography variant="body2">
+                توضیح پرسنل: {item.reason}
+              </Typography>
+            )}
             <LoanSteps item={item} vertical={fullScreen} />
             <GuarantorChips item={item} />
             {item.extra_requirement && (
               <Typography variant="body2">
-                مدرک اضافه: {item.extra_requirement} — {item.extra_confirmed ? "دریافت شد" : "دریافت نشده"}
+                مدرک اضافه: {item.extra_requirement} —{" "}
+                {item.extra_confirmed ? "دریافت شد" : "دریافت نشده"}
               </Typography>
             )}
-            <InstallmentsTable item={item} onToggle={canFinance ? toggle : undefined} busyId={busy} />
+            <InstallmentsTable
+              item={item}
+              onToggle={canFinance ? toggle : undefined}
+              busyId={busy}
+            />
             {canFinance && item.installments?.length > 0 && (
               <Typography variant="caption" color="text.secondary">
                 برای ثبت پرداخت یک قسط روی وضعیت آن بزنید.
               </Typography>
             )}
-            {item.finance_note && <Typography variant="body2">توضیح مالی: {item.finance_note}</Typography>}
+            {item.finance_note && (
+              <Typography variant="body2">
+                توضیح مالی: {item.finance_note}
+              </Typography>
+            )}
             <LoanHistory item={item} />
           </Stack>
         )}
@@ -372,19 +486,52 @@ function DetailDialog({ id, canFinance, onClose, onChanged, onPay }) {
               پرداخت و اقساط
             </Button>
             {!item.out_of_queue && (
-              <Button onClick={() => setPrompt({ kind: "queue", title: "تغییر شماره‌ی نوبت", label: "شماره‌ی نوبت", numeric: true, required: true, initial: String(item.queue_seq || "") })}>
+              <Button
+                onClick={() =>
+                  setPrompt({
+                    kind: "queue",
+                    title: "تغییر شماره‌ی نوبت",
+                    label: "شماره‌ی نوبت",
+                    numeric: true,
+                    required: true,
+                    initial: String(item.queue_seq || ""),
+                  })
+                }
+              >
                 تغییر نوبت
               </Button>
             )}
           </>
         )}
-        {item && canFinance && ["in_review", "waiting_finance"].includes(item.status) && (
-          <Button color="error" onClick={() => setPrompt({ kind: "reject", title: "رد درخواست", label: "دلیل رد", required: true })}>
-            رد
-          </Button>
-        )}
+        {item &&
+          canFinance &&
+          ["in_review", "waiting_finance"].includes(item.status) && (
+            <Button
+              color="error"
+              onClick={() =>
+                setPrompt({
+                  kind: "reject",
+                  title: "رد درخواست",
+                  label: "دلیل رد",
+                  required: true,
+                })
+              }
+            >
+              رد
+            </Button>
+          )}
         {item && canFinance && item.status === "active" && (
-          <Button onClick={() => setPrompt({ kind: "settle", title: "تسویه‌ی یکجا", label: "توضیح (اختیاری)" })}>تسویه‌ی یکجا</Button>
+          <Button
+            onClick={() =>
+              setPrompt({
+                kind: "settle",
+                title: "تسویه‌ی یکجا",
+                label: "توضیح (اختیاری)",
+              })
+            }
+          >
+            تسویه‌ی یکجا
+          </Button>
         )}
         <Button onClick={onClose}>بستن</Button>
       </DialogActions>
@@ -421,11 +568,24 @@ function RequestsTable({ rows, onOpen, showPosition }) {
         </TableHead>
         <TableBody>
           {rows.map((r) => (
-            <TableRow key={r.id} hover sx={{ cursor: "pointer" }} onClick={() => onOpen(r)}>
-              {showPosition && <TableCell>{r.queue_position ? r.queue_position.toLocaleString("fa-IR") : "—"}</TableCell>}
+            <TableRow
+              key={r.id}
+              hover
+              sx={{ cursor: "pointer" }}
+              onClick={() => onOpen(r)}
+            >
+              {showPosition && (
+                <TableCell>
+                  {r.queue_position
+                    ? r.queue_position.toLocaleString("fa-IR")
+                    : "—"}
+                </TableCell>
+              )}
               <TableCell>{r.employee}</TableCell>
               <TableCell>{r.type_title}</TableCell>
-              <TableCell>{formatRial(r.amount_approved ?? r.amount_requested)}</TableCell>
+              <TableCell>
+                {formatRial(r.amount_approved ?? r.amount_requested)}
+              </TableCell>
               <TableCell>
                 <LoanStatusChip item={r} />
               </TableCell>
@@ -484,17 +644,33 @@ function ManualDialog({ open, siteId, onClose, onDone }) {
     }
   };
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+    >
       <DialogTitle>ثبت دستی در صف (نوبت‌های قبلی)</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Alert severity="info">
-            برای کسانی که پیش از راه‌اندازی پرتال در نوبت بوده‌اند. بدون مسیر تأیید مستقیم در صف پرداخت قرار می‌گیرد. اگر وام قبلاً
-            پرداخت شده، بعد از ثبت، «پرداخت و اقساط» را بزنید تا اقساط باقیمانده ثبت شود.
+            برای کسانی که پیش از راه‌اندازی پرتال در نوبت بوده‌اند. بدون مسیر
+            تأیید مستقیم در صف پرداخت قرار می‌گیرد. اگر وام قبلاً پرداخت شده،
+            بعد از ثبت، «پرداخت و اقساط» را بزنید تا اقساط باقیمانده ثبت شود.
           </Alert>
-          <EmployeeSearch label="پرسنل" fetcher={(q) => searchLoanSiteEmployees(siteId, q)} value={employee} onChange={setEmployee} />
+          <EmployeeSearch
+            label="پرسنل"
+            fetcher={(q) => searchLoanSiteEmployees(siteId, q)}
+            value={employee}
+            onChange={setEmployee}
+          />
           {policy?.types?.length ? (
-            <TextField select label="نوع وام" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+            <TextField
+              select
+              label="نوع وام"
+              value={typeId}
+              onChange={(e) => setTypeId(e.target.value)}
+            >
               {policy.types.map((t) => (
                 <MenuItem key={t.id} value={t.id}>
                   {t.title}
@@ -509,14 +685,24 @@ function ManualDialog({ open, siteId, onClose, onDone }) {
               helperText="مقررات جاری برای این سایت تعریف نشده؛ عنوان را دستی بنویسید"
             />
           )}
-          <AmountField label="مبلغ (ریال)" value={amount} onChange={setAmount} />
+          <AmountField
+            label="مبلغ (ریال)"
+            value={amount}
+            onChange={setAmount}
+          />
           <TextField
             label="شماره‌ی نوبت (اختیاری)"
             value={seq}
             onChange={(e) => setSeq(digitsOnly(e.target.value).slice(0, 7))}
             helperText="خالی = آخر صف"
           />
-          <TextField label="توضیح" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} />
+          <TextField
+            label="توضیح"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            multiline
+            minRows={2}
+          />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -524,7 +710,13 @@ function ManualDialog({ open, siteId, onClose, onDone }) {
         <Button onClick={onClose} disabled={saving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={save} disabled={saving || !employee || !(typeId || typeTitle.trim()) || !amount}>
+        <Button
+          variant="contained"
+          onClick={save}
+          disabled={
+            saving || !employee || !(typeId || typeTitle.trim()) || !amount
+          }
+        >
           ثبت
         </Button>
       </DialogActions>
@@ -540,13 +732,18 @@ function QueueTab({ siteId, onOpen, reloadKey, onManual }) {
   useEffect(() => {
     setRows(null);
     setError("");
-    Promise.all([fetchLoanRequests(siteId, "waiting_finance"), fetchLoanRequests(siteId, "active")])
+    Promise.all([
+      fetchLoanRequests(siteId, "waiting_finance"),
+      fetchLoanRequests(siteId, "active"),
+    ])
       .then(([waiting, active]) => setRows({ waiting, active }))
       .catch((e) => setError(errText(e, "دریافت صف ناموفق بود")));
   }, [siteId, reloadKey]);
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!rows) return <CircularProgress />;
-  const queued = rows.waiting.filter((r) => !r.out_of_queue).sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
+  const queued = rows.waiting
+    .filter((r) => !r.out_of_queue)
+    .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
   const outside = rows.waiting.filter((r) => r.out_of_queue);
   return (
     <Stack spacing={2}>
@@ -576,7 +773,14 @@ function RequestsTab({ siteId, onOpen, reloadKey }) {
   }, [siteId, status, reloadKey]);
   return (
     <Stack spacing={2}>
-      <TextField select size="small" label="وضعیت" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ maxWidth: 260 }}>
+      <TextField
+        select
+        size="small"
+        label="وضعیت"
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+        sx={{ maxWidth: 260 }}
+      >
         {STATUS_FILTERS.map((f) => (
           <MenuItem key={f.value} value={f.value}>
             {f.label}
@@ -628,21 +832,31 @@ function PolicyTab({ site, sites, toast }) {
   const startFromSource = () => {
     setNewOpen(false);
     const p = sources.find((x) => `p${x.id}` === sourceKey);
-    if (sourceKey === "factory") setEditor({ source: { ...FACTORY_TEMPLATE, _copy: true } });
+    if (sourceKey === "factory")
+      setEditor({ source: { ...FACTORY_TEMPLATE, _copy: true } });
     else if (p) setEditor({ source: { ...p, _copy: true, _copyId: p.id } });
     else setEditor({ source: null });
   };
 
   const save = async (payload) => {
     if (editor.policy) await updateLoanPolicy(editor.policy.id, payload);
-    else await createLoanPolicy(site.site_id, { ...payload, copy_from_policy_id: editor.source?._copyId || null });
+    else
+      await createLoanPolicy(site.site_id, {
+        ...payload,
+        copy_from_policy_id: editor.source?._copyId || null,
+      });
     setEditor(null);
     toast("مقررات ذخیره شد");
     load();
   };
 
   const remove = async (p) => {
-    if (!window.confirm(`مقررات «${p.title}» حذف شود؟ درخواست‌های ثبت‌شده باقی می‌مانند.`)) return;
+    if (
+      !window.confirm(
+        `مقررات «${p.title}» حذف شود؟ درخواست‌های ثبت‌شده باقی می‌مانند.`,
+      )
+    )
+      return;
     try {
       await deleteLoanPolicy(p.id);
       load();
@@ -653,9 +867,21 @@ function PolicyTab({ site, sites, toast }) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}>
-        <Typography variant="body2" color="text.secondary" sx={{ flex: "1 1 260px" }}>
-          هر نسخه از «تاریخ اجرا» برای درخواست‌های جدید اعمال می‌شود؛ درخواست‌های قبلی با قانون زمان ثبتشان می‌مانند.
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+        spacing={1}
+      >
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ flex: "1 1 260px" }}
+        >
+          هر نسخه از «تاریخ اجرا» برای درخواست‌های جدید اعمال می‌شود؛
+          درخواست‌های قبلی با قانون زمان ثبتشان می‌مانند.
         </Typography>
         <Button variant="contained" onClick={openNew} disabled={!rows}>
           نسخه‌ی جدید
@@ -663,18 +889,32 @@ function PolicyTab({ site, sites, toast }) {
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
       {!rows && !error && <CircularProgress />}
-      {rows && !rows.length && <Alert severity="warning">برای این سایت هنوز مقرراتی تعریف نشده؛ پرسنل نمی‌توانند درخواست وام بدهند.</Alert>}
+      {rows && !rows.length && (
+        <Alert severity="warning">
+          برای این سایت هنوز مقرراتی تعریف نشده؛ پرسنل نمی‌توانند درخواست وام
+          بدهند.
+        </Alert>
+      )}
       {rows?.map((p) => (
         <Card key={p.id} variant="outlined" sx={{ borderRadius: 3 }}>
           <CardContent>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
               <Typography fontWeight={800}>{p.title}</Typography>
               <Chip size="small" label={`از ${p.effective_from}`} />
-              {p.is_current && <Chip size="small" color="success" label="جاری" />}
+              {p.is_current && (
+                <Chip size="small" color="success" label="جاری" />
+              )}
               {p.is_future && <Chip size="small" color="info" label="آینده" />}
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              مسیر تأیید: {p.approval_steps.map((s) => STEP_LABELS[s]).join(" ← ")}
+              مسیر تأیید:{" "}
+              {p.approval_steps.map((s) => STEP_LABELS[s]).join(" ← ")}
             </Typography>
             <Box sx={{ overflowX: "auto", mt: 1 }}>
               <Table size="small">
@@ -689,13 +929,24 @@ function PolicyTab({ site, sites, toast }) {
                 </TableHead>
                 <TableBody>
                   {p.types.map((t) => (
-                    <TableRow key={t.id} sx={{ opacity: t.is_active ? 1 : 0.5 }}>
+                    <TableRow
+                      key={t.id}
+                      sx={{ opacity: t.is_active ? 1 : 0.5 }}
+                    >
                       <TableCell>{t.title}</TableCell>
                       <TableCell>{formatRial(t.max_amount)}</TableCell>
-                      <TableCell>{formatService(t.min_service_months)}</TableCell>
-                      <TableCell>{t.guarantor_count.toLocaleString("fa-IR")}</TableCell>
                       <TableCell>
-                        {[t.extra_requirement, t.out_of_queue ? "خارج از نوبت" : null, t.is_active ? null : "غیرفعال"]
+                        {formatService(t.min_service_months)}
+                      </TableCell>
+                      <TableCell>
+                        {t.guarantor_count.toLocaleString("fa-IR")}
+                      </TableCell>
+                      <TableCell>
+                        {[
+                          t.extra_requirement,
+                          t.out_of_queue ? "خارج از نوبت" : null,
+                          t.is_active ? null : "غیرفعال",
+                        ]
                           .filter(Boolean)
                           .join(" — ")}
                       </TableCell>
@@ -704,7 +955,13 @@ function PolicyTab({ site, sites, toast }) {
                 </TableBody>
               </Table>
             </Box>
-            <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ mt: 1 }}
+              flexWrap="wrap"
+              useFlexGap
+            >
               <Button size="small" onClick={() => setEditor({ policy: p })}>
                 ویرایش
               </Button>
@@ -715,12 +972,25 @@ function PolicyTab({ site, sites, toast }) {
           </CardContent>
         </Card>
       ))}
-      <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">
+      <Dialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
         <DialogTitle>شروع نسخه‌ی جدید از</DialogTitle>
         <DialogContent>
-          <TextField select fullWidth value={sourceKey} onChange={(e) => setSourceKey(e.target.value)} sx={{ mt: 1 }}>
+          <TextField
+            select
+            fullWidth
+            value={sourceKey}
+            onChange={(e) => setSourceKey(e.target.value)}
+            sx={{ mt: 1 }}
+          >
             <MenuItem value="empty">خالی</MenuItem>
-            <MenuItem value="factory">نمونه: دستورالعمل کارخانه (الف/ب/ج)</MenuItem>
+            <MenuItem value="factory">
+              نمونه: دستورالعمل کارخانه (الف/ب/ج)
+            </MenuItem>
             {sources.map((p) => (
               <MenuItem key={p.id} value={`p${p.id}`}>
                 {p.site_name} — {p.title} (از {p.effective_from})
@@ -749,15 +1019,23 @@ function PolicyTab({ site, sites, toast }) {
 function SettingsTab({ site, onSaved }) {
   const [enabled, setEnabled] = useState(site.is_enabled);
   const [manager, setManager] = useState(
-    site.site_manager_employee_id ? { id: site.site_manager_employee_id, label: site.site_manager } : null,
+    site.site_manager_employee_id
+      ? { id: site.site_manager_employee_id, label: site.site_manager }
+      : null,
   );
-  const [payslipTitle, setPayslipTitle] = useState(site.payslip_loan_title || "");
+  const [payslipTitle, setPayslipTitle] = useState(
+    site.payslip_loan_title || "",
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setEnabled(site.is_enabled);
     setPayslipTitle(site.payslip_loan_title || "");
-    setManager(site.site_manager_employee_id ? { id: site.site_manager_employee_id, label: site.site_manager } : null);
+    setManager(
+      site.site_manager_employee_id
+        ? { id: site.site_manager_employee_id, label: site.site_manager }
+        : null,
+    );
   }, [site]);
   const save = async () => {
     setSaving(true);
@@ -780,7 +1058,12 @@ function SettingsTab({ site, onSaved }) {
       <CardContent>
         <Stack spacing={2}>
           <FormControlLabel
-            control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
+            control={
+              <Switch
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+            }
             label="درخواست وام برای پرسنل این سایت فعال باشد"
           />
           <EmployeeSearch
@@ -790,7 +1073,8 @@ function SettingsTab({ site, onSaved }) {
             onChange={setManager}
           />
           <Typography variant="caption" color="text.secondary">
-            مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست و جدا تعریف نمی‌شود. «واحد مالی» = دارندگان مجوز loans.finance این سایت.
+            مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست و جدا تعریف نمی‌شود.
+            «واحد مالی» = دارندگان مجوز loans.finance این سایت.
           </Typography>
           <TextField
             label="نام وام در فیش حقوقی (اختیاری)"
@@ -800,7 +1084,12 @@ function SettingsTab({ site, onSaved }) {
             helperText="با بارگذاری فیش حقوقی، قسطی که در بخش «وام» فیش کسر شده خودکار «پرداخت شد» می‌شود. اگر پر شود فقط ردیف وامی که نامش شامل این متن است بررسی می‌شود (تا قسط وام بانکی هم‌مبلغ اشتباه گرفته نشود)."
           />
           {error && <Alert severity="error">{error}</Alert>}
-          <Button variant="contained" onClick={save} disabled={saving} sx={{ alignSelf: "flex-start" }}>
+          <Button
+            variant="contained"
+            onClick={save}
+            disabled={saving}
+            sx={{ alignSelf: "flex-start" }}
+          >
             ذخیره
           </Button>
         </Stack>
@@ -827,7 +1116,10 @@ function ServiceTab({ siteId, toast }) {
   }, [load]);
   useEffect(() => {
     setInfo(null);
-    if (employee) fetchEmployeeService(employee.id).then(setInfo).catch(() => setInfo(null));
+    if (employee)
+      fetchEmployeeService(employee.id)
+        .then(setInfo)
+        .catch(() => setInfo(null));
   }, [employee]);
   const save = async () => {
     setError("");
@@ -845,16 +1137,23 @@ function ServiceTab({ siteId, toast }) {
   return (
     <Stack spacing={2}>
       <Alert severity="info">
-        سابقه‌ی وام از تاریخ استخدام دوره‌ی فعلی حساب می‌شود (کسی که ترک کار کرده و برگشته، از تاریخ استخدام جدید). فقط برای
-        موارد استثنا (مثل انتقال بین سایت‌ها بدون ترک کار) تاریخ شروع سابقه را این‌جا اصلاح کنید.
+        سابقه‌ی وام از تاریخ استخدام دوره‌ی فعلی حساب می‌شود (کسی که ترک کار
+        کرده و برگشته، از تاریخ استخدام جدید). فقط برای موارد استثنا (مثل انتقال
+        بین سایت‌ها بدون ترک کار) تاریخ شروع سابقه را این‌جا اصلاح کنید.
       </Alert>
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent>
           <Stack spacing={2}>
-            <EmployeeSearch label="پرسنل" fetcher={(q) => searchLoanSiteEmployees(siteId, q)} value={employee} onChange={setEmployee} />
+            <EmployeeSearch
+              label="پرسنل"
+              fetcher={(q) => searchLoanSiteEmployees(siteId, q)}
+              value={employee}
+              onChange={setEmployee}
+            />
             {info && (
               <Typography variant="body2">
-                سابقه‌ی فعلی: {formatService(info.months)} {info.start_date ? `(از ${info.start_date})` : ""}
+                سابقه‌ی فعلی: {formatService(info.months)}{" "}
+                {info.start_date ? `(از ${info.start_date})` : ""}
                 {info.overridden ? " — اصلاح‌شده" : ""}
               </Typography>
             )}
@@ -865,9 +1164,18 @@ function ServiceTab({ siteId, toast }) {
               disableFuture
               size="medium"
             />
-            <TextField label="دلیل" value={note} onChange={(e) => setNote(e.target.value)} />
+            <TextField
+              label="دلیل"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
             {error && <Alert severity="error">{error}</Alert>}
-            <Button variant="contained" onClick={save} disabled={!employee || !start || !note.trim()} sx={{ alignSelf: "flex-start" }}>
+            <Button
+              variant="contained"
+              onClick={save}
+              disabled={!employee || !start || !note.trim()}
+              sx={{ alignSelf: "flex-start" }}
+            >
               ثبت
             </Button>
           </Stack>
@@ -897,10 +1205,13 @@ function ServiceTab({ siteId, toast }) {
                       size="small"
                       color="error"
                       onClick={() => {
-                        if (!window.confirm("اصلاح سابقه‌ی این پرسنل حذف شود؟")) return;
+                        if (!window.confirm("اصلاح سابقه‌ی این پرسنل حذف شود؟"))
+                          return;
                         deleteServiceOverride(r.employee_id)
                           .then(load)
-                          .catch((err) => setError(errText(err, "حذف ناموفق بود")));
+                          .catch((err) =>
+                            setError(errText(err, "حذف ناموفق بود")),
+                          );
                       }}
                     >
                       حذف
@@ -918,8 +1229,14 @@ function ServiceTab({ siteId, toast }) {
 
 // متن اعلان‌های وام همین سایت
 function LoanNotifyTab({ siteId }) {
-  const load = useCallback(() => fetchLoanNotificationTemplates(siteId), [siteId]);
-  const save = useCallback((texts) => saveLoanNotificationTemplates(siteId, texts), [siteId]);
+  const load = useCallback(
+    () => fetchLoanNotificationTemplates(siteId),
+    [siteId],
+  );
+  const save = useCallback(
+    (texts) => saveLoanNotificationTemplates(siteId, texts),
+    [siteId],
+  );
   return <NotificationTemplatesEditor key={siteId} load={load} save={save} />;
 }
 
@@ -966,36 +1283,58 @@ export default function LoansAdminPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap spacing={1}>
-        <Typography variant="h5" fontWeight={700}>
-          وام پرسنل
-        </Typography>
-        {sites && sites.length > 1 && (
-          <TextField select size="small" label="سایت" value={siteId ?? ""} onChange={(e) => setSiteId(Number(e.target.value))} sx={{ minWidth: 200 }}>
-            {sites.map((s) => (
-              <MenuItem key={s.site_id} value={s.site_id}>
-                {s.site_name}
-              </MenuItem>
-            ))}
-          </TextField>
-        )}
-      </Stack>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
+        وام پرسنل
+      </Typography>
+      {/* انتخاب سایت زیر عنوان (سمت راست)، مثل بقیه‌ی صفحه‌های مدیریتی */}
+      {sites && sites.length > 1 && (
+        <TextField
+          select
+          size="small"
+          label="سایت"
+          value={siteId ?? ""}
+          onChange={(e) => setSiteId(Number(e.target.value))}
+          sx={{ minWidth: 220, mb: 2 }}
+        >
+          {sites.map((s) => (
+            <MenuItem key={s.site_id} value={s.site_id}>
+              {s.site_name}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
       {error && <Alert severity="error">{error}</Alert>}
       {!sites && !error && <CircularProgress />}
-      {sites && !sites.length && <Alert severity="info">سایتی برای مدیریت وام در دسترس شما نیست.</Alert>}
+      {sites && !sites.length && (
+        <Alert severity="info">سایتی برای مدیریت وام در دسترس شما نیست.</Alert>
+      )}
       {site && (
         <>
           {!site.is_enabled && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              درخواست وام برای این سایت فعال نیست{site.can_policy ? " (تب «تنظیمات سایت»)" : ""}.
+              درخواست وام برای این سایت فعال نیست
+              {site.can_policy ? " (تب «تنظیمات سایت»)" : ""}.
             </Alert>
           )}
           <PillTabs tabs={tabs} value={activeTab} onChange={setTab} />
           {activeTab === "queue" && (
-            <QueueTab siteId={site.site_id} reloadKey={reloadKey} onOpen={(r) => setDetailId(r.id)} onManual={() => setManualOpen(true)} />
+            <QueueTab
+              siteId={site.site_id}
+              reloadKey={reloadKey}
+              onOpen={(r) => setDetailId(r.id)}
+              onManual={() => setManualOpen(true)}
+            />
           )}
-          {activeTab === "requests" && <RequestsTab siteId={site.site_id} reloadKey={reloadKey} onOpen={(r) => setDetailId(r.id)} />}
-          {activeTab === "policy" && <PolicyTab site={site} sites={sites} toast={toast} />}
+          {activeTab === "requests" && (
+            <RequestsTab
+              siteId={site.site_id}
+              reloadKey={reloadKey}
+              onOpen={(r) => setDetailId(r.id)}
+            />
+          )}
+          {activeTab === "policy" && (
+            <PolicyTab site={site} sites={sites} toast={toast} />
+          )}
           {activeTab === "settings" && (
             <SettingsTab
               site={site}
@@ -1005,7 +1344,9 @@ export default function LoansAdminPage() {
               }}
             />
           )}
-          {activeTab === "service" && <ServiceTab siteId={site.site_id} toast={toast} />}
+          {activeTab === "service" && (
+            <ServiceTab siteId={site.site_id} toast={toast} />
+          )}
           {activeTab === "notify" && <LoanNotifyTab siteId={site.site_id} />}
         </>
       )}

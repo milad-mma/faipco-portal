@@ -47,7 +47,7 @@ const PRIORITY_LABELS = {
   urgent: "فوری",
 };
 
-const ROWS_PER_PAGE = 10;  // تعداد اطلاعیه در هر صفحه (سمت سرور)
+const ROWS_PER_PAGE = 10; // تعداد اطلاعیه در هر صفحه (سمت سرور)
 // حداکثر تعداد Chip مقصد داخل سطر جدول؛ مقصدهای بیشتر با کلیک روی «و N مورد دیگر»
 // در یک Dialog قابل‌اسکرول نمایش داده می‌شوند تا سطر بیش‌ازحد بزرگ نشود.
 const INLINE_TARGET_LIMIT = 3;
@@ -58,11 +58,26 @@ const INLINE_TARGET_LIMIT = 3;
  * به‌طور پیش‌فرض فقط هدر خلاصه (عنوان، تاریخ، اولویت) دیده می‌شود؛ با کلیک، متن، مقصدها،
  * تعداد مخاطب/دیده‌شده و دکمه‌های عملیات باز می‌شوند.
  */
-function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onDelete, isDeleting, renderTargets }) {
-  const [expanded, setExpanded] = useState(false);  // باز/بسته بودن بدنه‌ی کارت
+function SentNoticeCard({
+  notice: n,
+  showSender,
+  allowDelete,
+  onShowReaders,
+  onDelete,
+  isDeleting,
+  renderTargets,
+}) {
+  const [expanded, setExpanded] = useState(false); // باز/بسته بودن بدنه‌ی کارت
 
   return (
-    <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", opacity: n.is_deleted ? 0.6 : 1 }}>
+    <Card
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        overflow: "hidden",
+        opacity: n.is_deleted ? 0.6 : 1,
+      }}
+    >
       {/* هدر خلاصه‌ی کارت؛ کلیک روی آن بدنه را باز/بسته می‌کند */}
       <Box
         onClick={() => setExpanded((v) => !v)}
@@ -77,19 +92,34 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
         }}
       >
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ wordBreak: "break-word" }}>
+          <Typography
+            variant="subtitle2"
+            fontWeight={700}
+            sx={{ wordBreak: "break-word" }}
+          >
             {n.title}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
             {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
           </Typography>
         </Box>
-        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-          <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
+        <Stack
+          direction="row"
+          spacing={0.5}
+          alignItems="center"
+          sx={{ flexShrink: 0 }}
+        >
+          <Chip
+            size="small"
+            label={PRIORITY_LABELS[n.priority] || n.priority}
+          />
           <ExpandMoreIcon
             fontSize="small"
             color="action"
-            sx={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+            sx={{
+              transform: expanded ? "rotate(180deg)" : "none",
+              transition: "transform 0.15s",
+            }}
           />
         </Stack>
       </Box>
@@ -117,7 +147,13 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
             {renderTargets(n)}
 
             {/* تعداد مخاطبان، تعداد دیده‌شده و وضعیت حذف */}
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+            <Stack
+              direction="row"
+              spacing={2}
+              flexWrap="wrap"
+              useFlexGap
+              alignItems="center"
+            >
               <Typography variant="caption" sx={monoFontSx}>
                 مخاطبان: {n.audience_count}
               </Typography>
@@ -125,23 +161,47 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
                 دیده‌شده: {n.read_count}/{n.audience_count}
               </Typography>
               {n.is_deleted ? (
-                <Chip size="small" color="error" variant="outlined" label="حذف شده" />
+                <Chip
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  label="حذف شده"
+                />
               ) : (
-                <Chip size="small" color="success" variant="outlined" label="فعال" />
+                <Chip
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  label="فعال"
+                />
               )}
             </Stack>
 
             <Divider />
 
             {/* دکمه‌های مشاهده‌ی خوانندگان و حذف */}
-            <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
-              <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => onShowReaders(n.id)}>
+            <Stack
+              direction="row"
+              spacing={0.5}
+              justifyContent="flex-end"
+              alignItems="center"
+            >
+              <Button
+                size="small"
+                startIcon={<VisibilityOutlinedIcon />}
+                onClick={() => onShowReaders(n.id)}
+              >
                 چه کسانی دیدند
               </Button>
               {allowDelete && !n.is_deleted && (
                 <Tooltip title="حذف اطلاعیه">
                   <span>
-                    <IconButton size="small" color="error" disabled={isDeleting} onClick={() => onDelete(n)}>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      disabled={isDeleting}
+                      onClick={() => onDelete(n)}
+                    >
                       <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
                   </span>
@@ -162,19 +222,24 @@ function SentNoticeCard({ notice: n, showSender, allowDelete, onShowReaders, onD
  * حذف همیشه Soft-Delete است: اطلاعیه از پنل مخاطبان کنار می‌رود ولی ردیفش در گزارش با برچسب «حذف شده» می‌ماند.
  * Backend حذف را برای فرستنده‌ی اطلاعیه یا ادمین مجاز می‌کند.
  */
-export default function NoticeReportTable({ fetchPage, showSender = false, allowDelete = false, reloadKey }) {
+export default function NoticeReportTable({
+  fetchPage,
+  showSender = false,
+  allowDelete = false,
+  reloadKey,
+}) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));  // زیر breakpoint sm نمای کارتی به‌جای جدول
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm")); // زیر breakpoint sm نمای کارتی به‌جای جدول
 
   const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);  // تعداد کل اطلاعیه‌ها برای صفحه‌بندی
-  const [page, setPage] = useState(0);  // ایندکس صفحه از صفر (سرور از ۱ می‌شمارد)
+  const [total, setTotal] = useState(0); // تعداد کل اطلاعیه‌ها برای صفحه‌بندی
+  const [page, setPage] = useState(0); // ایندکس صفحه از صفر (سرور از ۱ می‌شمارد)
   const [isLoading, setIsLoading] = useState(true);
 
-  const [readersNoticeId, setReadersNoticeId] = useState(null);  // اطلاعیه‌ای که دیالوگ خوانندگانش باز است
-  const [bodyNotice, setBodyNotice] = useState(null);  // اطلاعیه‌ای که دیالوگ متن کاملش باز است
-  const [targetsNotice, setTargetsNotice] = useState(null);  // اطلاعیه‌ای که دیالوگ فهرست کامل مقصدهایش باز است
-  const [deletingId, setDeletingId] = useState(null);  // شناسه‌ی اطلاعیه‌ی در حال حذف (برای غیرفعال کردن دکمه)
+  const [readersNoticeId, setReadersNoticeId] = useState(null); // اطلاعیه‌ای که دیالوگ خوانندگانش باز است
+  const [bodyNotice, setBodyNotice] = useState(null); // اطلاعیه‌ای که دیالوگ متن کاملش باز است
+  const [targetsNotice, setTargetsNotice] = useState(null); // اطلاعیه‌ای که دیالوگ فهرست کامل مقصدهایش باز است
+  const [deletingId, setDeletingId] = useState(null); // شناسه‌ی اطلاعیه‌ی در حال حذف (برای غیرفعال کردن دکمه)
 
   // یک صفحه از سرور می‌خواند (ایندکس صفر‌پایه به شماره‌ی ۱‌پایه تبدیل می‌شود) و items/total را به‌روز می‌کند
   function loadPage(pageIndex) {
@@ -201,7 +266,11 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
 
   // پس از تأیید، اطلاعیه را حذف (Soft-Delete) و صفحه را به‌روز می‌کند
   async function handleDelete(notice) {
-    if (!window.confirm(`اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`)) {
+    if (
+      !window.confirm(
+        `اطلاعیه «${notice.title}» حذف شود؟ این اطلاعیه فوراً از پنل همه دریافت‌کنندگان حذف می‌شود.`,
+      )
+    ) {
       return;
     }
     setDeletingId(notice.id);
@@ -234,7 +303,13 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
       );
     }
     return (
-      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center">
+      <Stack
+        direction="row"
+        spacing={0.5}
+        flexWrap="wrap"
+        useFlexGap
+        alignItems="center"
+      >
         {n.targets.slice(0, INLINE_TARGET_LIMIT - 1).map((t, i) => (
           <Chip key={i} size="small" variant="outlined" label={t.label} />
         ))}
@@ -252,7 +327,11 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
 
   if (!isLoading && items.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ py: 3, textAlign: "center" }}
+      >
         هنوز اطلاعیه‌ای ثبت نشده.
       </Typography>
     );
@@ -286,16 +365,30 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
           rowsPerPage={ROWS_PER_PAGE}
           rowsPerPageOptions={[ROWS_PER_PAGE]}
           labelRowsPerPage="سطر در هر صفحه"
-          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}–${to} از ${count}`
+          }
         />
 
-        <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
+        <NoticeReadersDialog
+          noticeId={readersNoticeId}
+          onClose={() => setReadersNoticeId(null)}
+        />
 
         {/* دیالوگ فهرست کامل مقصدهای یک اطلاعیه (قابل‌اسکرول) */}
-        <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
+        <Dialog
+          open={Boolean(targetsNotice)}
+          onClose={() => setTargetsNotice(null)}
+          fullWidth
+          maxWidth="xs"
+        >
           <DialogTitle>
             مقصدهای اطلاعیه «{targetsNotice?.title}»
-            <Typography variant="caption" color="text.secondary" display="block">
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+            >
               {targetsNotice?.targets.length} مورد
             </Typography>
           </DialogTitle>
@@ -338,9 +431,16 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
           </TableHead>
           <TableBody>
             {items.map((n) => (
-              <TableRow key={n.id} hover sx={n.is_deleted ? { opacity: 0.6 } : undefined}>
-                <TableCell sx={monoFontSx}>
-                  {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR")}
+              <TableRow
+                key={n.id}
+                hover
+                sx={n.is_deleted ? { opacity: 0.6 } : undefined}
+              >
+                {/* تاریخ در یک خط (نه شکسته در دو خط) */}
+                <TableCell sx={{ ...monoFontSx, whiteSpace: "nowrap" }}>
+                  {new Date(n.publish_at || n.created_at).toLocaleString(
+                    "fa-IR",
+                  )}
                 </TableCell>
                 {showSender && <TableCell>{n.sender_name}</TableCell>}
                 <TableCell>
@@ -348,7 +448,11 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                   {n.attachment_items?.length > 0 && (
                     <AttachFileOutlinedIcon
                       fontSize="inherit"
-                      sx={{ color: "text.secondary", verticalAlign: "middle", mr: 0.5 }}
+                      sx={{
+                        color: "text.secondary",
+                        verticalAlign: "middle",
+                        mr: 0.5,
+                      }}
                       titleAccess={`${n.attachment_items.length.toLocaleString("fa-IR")} پیوست`}
                     />
                   )}
@@ -361,11 +465,12 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <Chip size="small" label={PRIORITY_LABELS[n.priority] || n.priority} />
+                  <Chip
+                    size="small"
+                    label={PRIORITY_LABELS[n.priority] || n.priority}
+                  />
                 </TableCell>
-                <TableCell sx={{ maxWidth: 260 }}>
-                  {renderTargets(n)}
-                </TableCell>
+                <TableCell sx={{ maxWidth: 260 }}>{renderTargets(n)}</TableCell>
                 <TableCell sx={monoFontSx} align="center">
                   {n.audience_count}
                 </TableCell>
@@ -374,9 +479,19 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                 </TableCell>
                 <TableCell align="center">
                   {n.is_deleted ? (
-                    <Chip size="small" color="error" variant="outlined" label="حذف شده" />
+                    <Chip
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      label="حذف شده"
+                    />
                   ) : (
-                    <Chip size="small" color="success" variant="outlined" label="فعال" />
+                    <Chip
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                      label="فعال"
+                    />
                   )}
                 </TableCell>
                 <TableCell align="center">
@@ -384,6 +499,7 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
                     size="small"
                     startIcon={<VisibilityOutlinedIcon />}
                     onClick={() => setReadersNoticeId(n.id)}
+                    sx={{ whiteSpace: "nowrap" }}
                   >
                     چه کسانی دیدند
                   </Button>
@@ -421,19 +537,34 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
         rowsPerPage={ROWS_PER_PAGE}
         rowsPerPageOptions={[ROWS_PER_PAGE]}
         labelRowsPerPage="سطر در هر صفحه"
-        labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+        labelDisplayedRows={({ from, to, count }) =>
+          `${from}–${to} از ${count}`
+        }
       />
 
-      <NoticeReadersDialog noticeId={readersNoticeId} onClose={() => setReadersNoticeId(null)} />
+      <NoticeReadersDialog
+        noticeId={readersNoticeId}
+        onClose={() => setReadersNoticeId(null)}
+      />
 
       {/* دیالوگ نمایش متن کامل اطلاعیه */}
-      <Dialog open={Boolean(bodyNotice)} onClose={() => setBodyNotice(null)} fullWidth maxWidth="sm">
+      <Dialog
+        open={Boolean(bodyNotice)}
+        onClose={() => setBodyNotice(null)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>{bodyNotice?.title}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-            <LinkifiedText text={bodyNotice?.body} onInternalClick={() => setBodyNotice(null)} />
+            <LinkifiedText
+              text={bodyNotice?.body}
+              onInternalClick={() => setBodyNotice(null)}
+            />
           </Typography>
-          {bodyNotice && <NoticeAttachments items={bodyNotice.attachment_items} />}
+          {bodyNotice && (
+            <NoticeAttachments items={bodyNotice.attachment_items} />
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setBodyNotice(null)}>بستن</Button>
@@ -441,7 +572,12 @@ export default function NoticeReportTable({ fetchPage, showSender = false, allow
       </Dialog>
 
       {/* دیالوگ فهرست کامل مقصدهای یک اطلاعیه؛ خودِ دیالوگ اسکرول می‌شود تا سطر جدول بزرگ نشود */}
-      <Dialog open={Boolean(targetsNotice)} onClose={() => setTargetsNotice(null)} fullWidth maxWidth="xs">
+      <Dialog
+        open={Boolean(targetsNotice)}
+        onClose={() => setTargetsNotice(null)}
+        fullWidth
+        maxWidth="xs"
+      >
         <DialogTitle>
           مقصدهای اطلاعیه «{targetsNotice?.title}»
           <Typography variant="caption" color="text.secondary" display="block">

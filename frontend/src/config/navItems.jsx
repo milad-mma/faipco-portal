@@ -68,7 +68,12 @@ export const NAV_ITEMS = [
   // داخل هر گروه پرکاربردترین اول و تنظیمات آخر. گروه‌ها (groupOnly) صفحه‌ی مستقل ندارند و
   // کلیک روی عنوان گروه به اولین زیرمنوی در‌دسترس کاربر می‌رود.
   // داشبورد مدیریتی (فقط ادمین اصلی)
-  { label: "داشبورد", path: "/", icon: <DashboardOutlinedIcon />, adminOnly: true },
+  {
+    label: "داشبورد",
+    path: "/",
+    icon: <DashboardOutlinedIcon />,
+    adminOnly: true,
+  },
   // گروه پرسنل و سازمان: فهرست پرسنل، واحدها، خودروها و بیمه‌ی تکمیلی
   {
     label: "پرسنل و سازمان",
@@ -80,9 +85,17 @@ export const NAV_ITEMS = [
         label: "پرسنل",
         path: "/employees",
         icon: <PersonOutlineIcon />,
-        check: (u) => u?.can_view_employees || u?.can_update_employees || u?.can_create_employees,
+        check: (u) =>
+          u?.can_view_employees ||
+          u?.can_update_employees ||
+          u?.can_create_employees,
       },
-      { label: "واحدهای سازمانی", path: "/departments", icon: <CorporateFareOutlinedIcon />, check: (u) => u?.can_manage_sites },
+      {
+        label: "واحدهای سازمانی",
+        path: "/departments",
+        icon: <CorporateFareOutlinedIcon />,
+        check: (u) => u?.can_manage_sites,
+      },
       {
         label: "خودروهای پرسنل",
         path: "/vehicle-report",
@@ -111,7 +124,8 @@ export const NAV_ITEMS = [
         label: "گزارش جذب و ترک کار",
         path: "/reports/turnover",
         icon: <InsightsOutlinedIcon />,
-        check: (u) => u?.can_view_turnover_report || u?.can_manage_turnover_categories,
+        check: (u) =>
+          u?.can_view_turnover_report || u?.can_manage_turnover_categories,
       },
     ],
   },
@@ -148,10 +162,11 @@ export const NAV_ITEMS = [
         hiddenForAdmin: true,
       },
       {
-        label: "درخواست‌های مرخصی/ماموریت",
+        label: "درخواست‌های مرخصی",
         path: "/leave-requests/all",
         icon: <EventNoteOutlinedIcon />,
-        check: (u) => u?.can_view_leave_requests || u?.can_manage_leave_requests,
+        check: (u) =>
+          u?.can_view_leave_requests || u?.can_manage_leave_requests,
       },
       {
         label: "تنظیمات مرخصی/ماموریت",
@@ -235,15 +250,30 @@ export const NAV_ITEMS = [
         icon: <SupervisorAccountOutlinedIcon />,
         check: (u) => u?.can_manage_users,
       },
-      { label: "مدیریت نقش/مجوز", path: "/role-management", icon: <LockOutlinedIcon />, check: (u) => u?.can_manage_roles },
+      {
+        label: "مدیریت نقش/مجوز",
+        path: "/role-management",
+        icon: <LockOutlinedIcon />,
+        check: (u) => u?.can_manage_roles,
+      },
       {
         label: "انتصاب دسته‌جمعی نقش",
         path: "/bulk-role-assignment",
         icon: <GroupAddOutlinedIcon />,
         check: (u) => u?.can_manage_users,
       },
-      { label: "رنج‌های IP مجاز", path: "/ip-allowlist", icon: <VpnLockOutlinedIcon />, check: (u) => u?.can_manage_ip_allowlist },
-      { label: "امنیت ورود", path: "/login-security", icon: <GppMaybeOutlinedIcon />, check: (u) => u?.can_manage_login_security },
+      {
+        label: "رنج‌های IP مجاز",
+        path: "/ip-allowlist",
+        icon: <VpnLockOutlinedIcon />,
+        check: (u) => u?.can_manage_ip_allowlist,
+      },
+      {
+        label: "امنیت ورود",
+        path: "/login-security",
+        icon: <GppMaybeOutlinedIcon />,
+        check: (u) => u?.can_manage_login_security,
+      },
     ],
   },
   // گروه سامانه: سایت‌ها، همگام‌سازی، تنظیمات، پشتیبان‌گیری، گزارش خطاها و به‌روزرسانی
@@ -253,7 +283,12 @@ export const NAV_ITEMS = [
     icon: <DnsOutlinedIcon />,
     groupOnly: true,
     children: [
-      { label: "سایت‌ها", path: "/sites", icon: <ApartmentOutlinedIcon />, check: (u) => u?.can_view_sites },
+      {
+        label: "سایت‌ها",
+        path: "/sites",
+        icon: <ApartmentOutlinedIcon />,
+        check: (u) => u?.can_view_sites,
+      },
       {
         label: "همگام‌سازی دیتابیس",
         path: "/sync",
@@ -272,8 +307,18 @@ export const NAV_ITEMS = [
         icon: <CloudDownloadOutlinedIcon />,
         check: (u) => u?.can_manage_backup || u?.can_bust_cache,
       },
-      { label: "گزارش خطاها", path: "/error-logs", icon: <BugReportOutlinedIcon />, check: (u) => u?.can_view_error_logs },
-      { label: "بررسی و اعمال آپدیت", path: "/update", icon: <SystemUpdateAltOutlinedIcon />, adminOnly: true },
+      {
+        label: "گزارش خطاها",
+        path: "/error-logs",
+        icon: <BugReportOutlinedIcon />,
+        check: (u) => u?.can_view_error_logs,
+      },
+      {
+        label: "بررسی و اعمال آپدیت",
+        path: "/update",
+        icon: <SystemUpdateAltOutlinedIcon />,
+        adminOnly: true,
+      },
     ],
   },
 ];
@@ -287,6 +332,7 @@ export function isItemVisible(item, user) {
   if (item.adminOnly && !user?.is_superuser) return false;
   if (item.hiddenForAdmin && user?.is_superuser) return false;
   if (item.check) return Boolean(item.check(user));
-  if (item.children?.length) return item.children.some((child) => isItemVisible(child, user));
+  if (item.children?.length)
+    return item.children.some((child) => isItemVisible(child, user));
   return true;
 }

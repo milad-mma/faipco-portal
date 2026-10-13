@@ -54,12 +54,21 @@ import {
 
 // ترتیب نمایش دکمه‌های افزودن عضو و رنگ هر نوع عضو
 const MEMBER_ORDER = ["spouse", "son", "daughter", "father", "mother"];
-const MEMBER_BUTTON_COLOR = { spouse: "primary", son: "success", daughter: "info", father: "warning", mother: "error" };
+const MEMBER_BUTTON_COLOR = {
+  spouse: "primary",
+  son: "success",
+  daughter: "info",
+  father: "warning",
+  mother: "error",
+};
 // برچسب کدهای عددی جنسیت و تأهل (کدها همان مقادیر ذخیره‌شده در سرور هستند)
 const GENDER_LABEL = { 1: "مرد", 2: "زن" };
 const MARITAL_LABEL = { 2: "مجرد", 3: "متاهل" };
 // تبدیل ارقام فارسی/عربی به انگلیسی
-const toEn = (v) => String(v ?? "").replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+const toEn = (v) =>
+  String(v ?? "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
 // فقط ارقام را نگه می‌دارد و به max کاراکتر محدود می‌کند
 const digitsOnly = (v, max) => toEn(v).replace(/\D/g, "").slice(0, max);
 
@@ -81,18 +90,23 @@ function validateNationalId(raw) {
 function uploadErrorMessage(err) {
   const detail = err.response?.data?.detail;
   if (typeof detail === "string" && detail) return detail;
-  if (Array.isArray(detail)) return "فایل به‌درستی ارسال نشد؛ لطفاً دوباره انتخاب کنید.";
+  if (Array.isArray(detail))
+    return "فایل به‌درستی ارسال نشد؛ لطفاً دوباره انتخاب کنید.";
   if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT")
     return "ارسال فایل بیش از حد طول کشید؛ اتصال اینترنت را بررسی و دوباره تلاش کنید یا فایل کم‌حجم‌تری انتخاب کنید.";
-  if (!err.response) return "ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.";
-  if (err.response.status === 413) return "حجم فایل برای سرور بیش از حد مجاز است.";
-  if (err.response.status >= 500) return `خطای سرور هنگام ذخیره فایل (کد ${err.response.status})؛ لطفاً به واحد فناوری اطلاع دهید.`;
+  if (!err.response)
+    return "ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.";
+  if (err.response.status === 413)
+    return "حجم فایل برای سرور بیش از حد مجاز است.";
+  if (err.response.status >= 500)
+    return `خطای سرور هنگام ذخیره فایل (کد ${err.response.status})؛ لطفاً به واحد فناوری اطلاع دهید.`;
   return `آپلود فایل با خطا مواجه شد (کد ${err.response.status}).`;
 }
 
 // مدرک کفالت این عضو توسط مدیر رد شده و هنوز مدرک جدیدی جایگزین نشده است
 const isDocRejected = (m) => Boolean(m.document_rejected_at) && !m.document;
-const REJECTED_DOC_TEXT = "مدرک این عضو تأیید نشد. علت را از واحد منابع انسانی پیگیری و مدرک جدید را آپلود کنید.";
+const REJECTED_DOC_TEXT =
+  "مدرک این عضو تأیید نشد. علت را از واحد منابع انسانی پیگیری و مدرک جدید را آپلود کنید.";
 
 // فقط قالب تاریخ شمسی «YYYY/MM/DD» را بررسی می‌کند (درستی روز/ماه سمت سرور)
 const validateJalali = (d) => /^\d{4}\/\d{2}\/\d{2}$/.test(toEn(d).trim());
@@ -114,10 +128,28 @@ function ReadOnlyField({ label, value }) {
 // کارت هر بخش فرم: سربرگ با شماره‌ی دایره‌ای و عنوان، محتوای بخش در بدنه
 function SectionCard({ num, title, subtitle, children }) {
   return (
-    <Card variant="outlined" sx={{ borderRadius: 2, mb: 2.5, overflow: "hidden" }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ px: 2.5, py: 1.5, bgcolor: "action.hover" }}>
+    <Card
+      variant="outlined"
+      sx={{ borderRadius: 2, mb: 2.5, overflow: "hidden" }}
+    >
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        sx={{ px: 2.5, py: 1.5, bgcolor: "action.hover" }}
+      >
         <Box
-          sx={{ width: 30, height: 30, borderRadius: "50%", bgcolor: "primary.main", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}
+          sx={{
+            width: 30,
+            height: 30,
+            borderRadius: "50%",
+            bgcolor: "primary.main",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 800,
+          }}
         >
           {num}
         </Box>
@@ -140,18 +172,42 @@ function SectionCard({ num, title, subtitle, children }) {
  * بسته به نوع عضو و جنسیت پرسنل، برخی فیلدها مقدار ثابت دارند و نمایش داده
  * نمی‌شوند؛ برای برخی اعضا بخش کفالت و آپلود مدرک نشان داده می‌شود.
  */
-function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, onRemove, errors, disabled }) {
+function MemberCard({
+  member,
+  index,
+  typeInfo,
+  employee,
+  mainMobile,
+  onChange,
+  onRemove,
+  errors,
+  disabled,
+}) {
   const cfg = typeInfo[member.member_type];
   const type = member.member_type;
   const empMale = employee.gender === 1;
   // فیلدهای ثابت: جنسیت عضو از نوع عضو (همسر = مخالف پرسنل)، همسر همیشه متأهل،
   // فرزندان پرسنل مرد نام پدر = نام پرسنل، فرزندان و پدرِ پرسنل مرد نام خانوادگی = پرسنل
-  const genderFixed = type === "spouse" ? (empMale ? 2 : 1) : type === "son" || type === "father" ? 1 : 2;
+  const genderFixed =
+    type === "spouse"
+      ? empMale
+        ? 2
+        : 1
+      : type === "son" || type === "father"
+        ? 1
+        : 2;
   const maritalFixed = type === "spouse" ? 3 : null;
-  const fatherFixed = empMale && (type === "son" || type === "daughter") ? employee.first_name : null;
-  const familyFixed = empMale && (type === "son" || type === "daughter" || type === "father") ? employee.last_name : null;
+  const fatherFixed =
+    empMale && (type === "son" || type === "daughter")
+      ? employee.first_name
+      : null;
+  const familyFixed =
+    empMale && (type === "son" || type === "daughter" || type === "father")
+      ? employee.last_name
+      : null;
   // وضعیت کفالت برای پدر/مادر و برای همه‌ی اعضای پرسنل زن پرسیده می‌شود
-  const needsKafala = employee.gender === 2 || type === "father" || type === "mother";
+  const needsKafala =
+    employee.gender === 2 || type === "father" || type === "mother";
   const [uploadPct, setUploadPct] = useState(null); // درصد آپلود؛ null = آپلودی در جریان نیست
   const [uploadErr, setUploadErr] = useState("");
   const fileRef = useRef(null);
@@ -194,25 +250,73 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
   // عنوان کارت: برای انواعی که چند عضو مجازند شماره هم اضافه می‌شود
   const title = cfg.max_count > 1 ? `${cfg.title} ${index}` : cfg.title;
   return (
-    <Card variant="outlined" sx={{ borderRadius: 2, p: 2, borderColor: Object.keys(err).length ? "error.main" : "divider" }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+    <Card
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        p: 2,
+        borderColor: Object.keys(err).length ? "error.main" : "divider",
+      }}
+    >
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ mb: 1.5 }}
+      >
         <Chip label={title} color={MEMBER_BUTTON_COLOR[type]} size="small" />
-        <IconButton size="small" color="error" onClick={onRemove} disabled={disabled} aria-label="حذف عضو">
+        <IconButton
+          size="small"
+          color="error"
+          onClick={onRemove}
+          disabled={disabled}
+          aria-label="حذف عضو"
+        >
           <DeleteOutlineOutlinedIcon fontSize="small" />
         </IconButton>
       </Stack>
       <Grid container spacing={1.5}>
         <Grid item xs={12} sm={6} md={3}>
-          <TextField size="small" fullWidth required label="نام" value={member.first_name} onChange={set("first_name")} error={Boolean(err.first_name)} inputProps={{ maxLength: 100 }} disabled={disabled} />
+          <TextField
+            size="small"
+            fullWidth
+            required
+            label="نام"
+            value={member.first_name}
+            onChange={set("first_name")}
+            error={Boolean(err.first_name)}
+            inputProps={{ maxLength: 100 }}
+            disabled={disabled}
+          />
         </Grid>
         {familyFixed === null && (
           <Grid item xs={12} sm={6} md={3}>
-            <TextField size="small" fullWidth required label="نام خانوادگی" value={member.last_name} onChange={set("last_name")} error={Boolean(err.last_name)} inputProps={{ maxLength: 100 }} disabled={disabled} />
+            <TextField
+              size="small"
+              fullWidth
+              required
+              label="نام خانوادگی"
+              value={member.last_name}
+              onChange={set("last_name")}
+              error={Boolean(err.last_name)}
+              inputProps={{ maxLength: 100 }}
+              disabled={disabled}
+            />
           </Grid>
         )}
         {fatherFixed === null && (
           <Grid item xs={12} sm={6} md={3}>
-            <TextField size="small" fullWidth required label="نام پدر" value={member.father_name} onChange={set("father_name")} error={Boolean(err.father_name)} inputProps={{ maxLength: 100 }} disabled={disabled} />
+            <TextField
+              size="small"
+              fullWidth
+              required
+              label="نام پدر"
+              value={member.father_name}
+              onChange={set("father_name")}
+              error={Boolean(err.father_name)}
+              inputProps={{ maxLength: 100 }}
+              disabled={disabled}
+            />
           </Grid>
         )}
         <Grid item xs={12} sm={6} md={3}>
@@ -223,7 +327,14 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
             label="تاریخ تولد"
             placeholder="1370/01/01"
             value={member.birth_date}
-            onChange={(e) => onChange({ ...member, birth_date: toEn(e.target.value).replace(/[^\d/]/g, "").slice(0, 10) })}
+            onChange={(e) =>
+              onChange({
+                ...member,
+                birth_date: toEn(e.target.value)
+                  .replace(/[^\d/]/g, "")
+                  .slice(0, 10),
+              })
+            }
             error={Boolean(err.birth_date)}
             helperText={err.birth_date || ""}
             inputProps={{ dir: "ltr", style: { textAlign: "left" } }}
@@ -232,7 +343,17 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
         </Grid>
         {maritalFixed === null && (
           <Grid item xs={12} sm={6} md={3}>
-            <TextField select size="small" fullWidth required label="وضعیت تاهل" value={member.marital_status || ""} onChange={set("marital_status")} error={Boolean(err.marital_status)} disabled={disabled}>
+            <TextField
+              select
+              size="small"
+              fullWidth
+              required
+              label="وضعیت تاهل"
+              value={member.marital_status || ""}
+              onChange={set("marital_status")}
+              error={Boolean(err.marital_status)}
+              disabled={disabled}
+            >
               <MenuItem value="">انتخاب</MenuItem>
               <MenuItem value={2}>مجرد</MenuItem>
               <MenuItem value={3}>متاهل</MenuItem>
@@ -246,10 +367,19 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
             required
             label="کد ملی"
             value={member.national_id}
-            onChange={(e) => onChange({ ...member, national_id: digitsOnly(e.target.value, 10) })}
+            onChange={(e) =>
+              onChange({
+                ...member,
+                national_id: digitsOnly(e.target.value, 10),
+              })
+            }
             error={Boolean(err.national_id)}
             helperText={err.national_id || ""}
-            inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }}
+            inputProps={{
+              dir: "ltr",
+              style: { textAlign: "left" },
+              inputMode: "numeric",
+            }}
             disabled={disabled}
           />
         </Grid>
@@ -260,15 +390,28 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
             required
             label="شماره شناسنامه"
             value={member.birth_certificate_no}
-            onChange={(e) => onChange({ ...member, birth_certificate_no: digitsOnly(e.target.value, 20) })}
+            onChange={(e) =>
+              onChange({
+                ...member,
+                birth_certificate_no: digitsOnly(e.target.value, 20),
+              })
+            }
             error={Boolean(err.birth_certificate_no)}
-            inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }}
+            inputProps={{
+              dir: "ltr",
+              style: { textAlign: "left" },
+              inputMode: "numeric",
+            }}
             disabled={disabled}
           />
         </Grid>
       </Grid>
       {/* خلاصه‌ی مقادیر ثابتی که کاربر نمی‌تواند تغییر دهد */}
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: "block", mt: 1 }}
+      >
         جنسیت: {GENDER_LABEL[genderFixed]}
         {maritalFixed ? " — وضعیت تاهل: متاهل" : ""}
         {familyFixed ? ` — نام خانوادگی: ${familyFixed}` : ""}
@@ -278,13 +421,51 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
 
       {/* بخش کفالت: انتخاب بله/خیر؛ با «بله» آپلود مدرک اجباری می‌شود، با «خیر» مدرک قبلی پاک می‌شود */}
       {needsKafala && (
-        <Box sx={{ mt: 2, p: 2, borderRadius: 2, border: "1px solid", borderColor: err.kafala ? "error.main" : "#f1dfa8", bgcolor: "#fffbf0" }}>
+        <Box
+          sx={{
+            mt: 2,
+            p: 2,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: err.kafala ? "error.main" : "#f1dfa8",
+            bgcolor: "#fffbf0",
+          }}
+        >
           <Typography fontWeight={700} sx={{ mb: 1 }}>
             وضعیت تکفل شخص مورد نظر:
           </Typography>
-          <RadioGroup value={member.kafala_status || ""} onChange={(e) => onChange({ ...member, kafala_status: e.target.value, ...(e.target.value === "no" ? { document: null, document_id: null } : {}) })}>
-            <FormControlLabel value="yes" control={<Radio size="small" />} label={<Typography fontWeight={700} color="#1a7a3a">✔ شخص مورد نظر تحت کفالت اینجانب می‌باشد.</Typography>} disabled={disabled} />
-            <FormControlLabel value="no" control={<Radio size="small" />} label={<Typography fontWeight={700} color="#c62828">✖ شخص مورد نظر تحت کفالت اینجانب نمی‌باشد.</Typography>} disabled={disabled} />
+          <RadioGroup
+            value={member.kafala_status || ""}
+            onChange={(e) =>
+              onChange({
+                ...member,
+                kafala_status: e.target.value,
+                ...(e.target.value === "no"
+                  ? { document: null, document_id: null }
+                  : {}),
+              })
+            }
+          >
+            <FormControlLabel
+              value="yes"
+              control={<Radio size="small" />}
+              label={
+                <Typography fontWeight={700} color="#1a7a3a">
+                  ✔ شخص مورد نظر تحت کفالت اینجانب می‌باشد.
+                </Typography>
+              }
+              disabled={disabled}
+            />
+            <FormControlLabel
+              value="no"
+              control={<Radio size="small" />}
+              label={
+                <Typography fontWeight={700} color="#c62828">
+                  ✖ شخص مورد نظر تحت کفالت اینجانب نمی‌باشد.
+                </Typography>
+              }
+              disabled={disabled}
+            />
           </RadioGroup>
           {err.kafala && (
             <Typography variant="caption" color="error">
@@ -299,45 +480,116 @@ function MemberCard({ member, index, typeInfo, employee, mainMobile, onChange, o
           {member.kafala_status === "yes" && (
             <Box sx={{ mt: 1.5 }}>
               <Typography fontWeight={700} variant="body2" sx={{ mb: 1 }}>
-                📎 آپلود تصویر مدرک کفالت یا حضانت <span style={{ color: "#c62828" }}>*</span>{" "}
-                <Typography component="span" variant="caption" color="text.secondary">
+                📎 آپلود تصویر مدرک کفالت یا حضانت{" "}
+                <span style={{ color: "#c62828" }}>*</span>{" "}
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color="text.secondary"
+                >
                   (تصویر یا PDF — حداکثر ۱۰ مگابایت)
                 </Typography>
               </Typography>
               {member.document ? (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 1.5, border: "1px solid", borderColor: "success.main", borderRadius: 1, bgcolor: "#fff" }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  sx={{
+                    p: 1.5,
+                    border: "1px solid",
+                    borderColor: "success.main",
+                    borderRadius: 1,
+                    bgcolor: "#fff",
+                  }}
+                >
                   <CheckCircleOutlineIcon color="success" fontSize="small" />
                   <Typography variant="body2" sx={{ flex: 1 }} noWrap>
                     {member.document.file_name}
                   </Typography>
-                  <Button size="small" color="error" onClick={handleRemoveDoc} disabled={disabled}>
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={handleRemoveDoc}
+                    disabled={disabled}
+                  >
                     حذف
                   </Button>
                 </Stack>
               ) : (
                 <Box>
                   {uploadPct === null ? (
-                    <Button component="label" variant="outlined" startIcon={<CloudUploadOutlinedIcon />} disabled={disabled} sx={{ borderStyle: "dashed", borderColor: err.document ? "error.main" : undefined }}>
+                    <Button
+                      component="label"
+                      variant="outlined"
+                      startIcon={<CloudUploadOutlinedIcon />}
+                      disabled={disabled}
+                      sx={{
+                        borderStyle: "dashed",
+                        borderColor: err.document ? "error.main" : undefined,
+                      }}
+                    >
                       برای انتخاب فایل کلیک کنید
-                      <input ref={fileRef} type="file" hidden accept="image/*,application/pdf" onChange={handleFile} />
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        hidden
+                        accept="image/*,application/pdf"
+                        onChange={handleFile}
+                      />
                     </Button>
                   ) : (
                     // وضعیت آپلود: متن «در حال بارگذاری» با درصد و نوار پیشرفت؛ بعد از ۱۰۰٪ تا پاسخ سرور «در حال ذخیره»
-                    <Box sx={{ p: 1.5, border: "1px solid", borderColor: "primary.light", borderRadius: 1, bgcolor: "#fff" }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        border: "1px solid",
+                        borderColor: "primary.light",
+                        borderRadius: 1,
+                        bgcolor: "#fff",
+                      }}
+                    >
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ mb: 1 }}
+                      >
                         <CircularProgress size={18} />
-                        <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
-                          {uploadPct < 100 ? "در حال بارگذاری فایل..." : "در حال ذخیره در سرور..."}
+                        <Typography
+                          variant="body2"
+                          fontWeight={700}
+                          sx={{ flex: 1 }}
+                        >
+                          {uploadPct < 100
+                            ? "در حال بارگذاری فایل..."
+                            : "در حال ذخیره در سرور..."}
                         </Typography>
-                        <Typography variant="body2" fontWeight={800} color="primary.main" dir="ltr">
+                        <Typography
+                          variant="body2"
+                          fontWeight={800}
+                          color="primary.main"
+                          dir="ltr"
+                        >
                           {`${uploadPct.toLocaleString("fa-IR")}٪`}
                         </Typography>
                       </Stack>
-                      <LinearProgress variant={uploadPct < 100 ? "determinate" : "indeterminate"} value={uploadPct} sx={{ height: 8, borderRadius: 4 }} />
+                      <LinearProgress
+                        variant={
+                          uploadPct < 100 ? "determinate" : "indeterminate"
+                        }
+                        value={uploadPct}
+                        sx={{ height: 8, borderRadius: 4 }}
+                      />
                     </Box>
                   )}
                   {(uploadErr || err.document) && (
-                    <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
+                    <Typography
+                      variant="caption"
+                      color="error"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
                       {uploadErr || err.document}
                     </Typography>
                   )}
@@ -384,7 +636,11 @@ export default function InsurancePage() {
       sheba: complete ? reg.sheba : "",
       account_type: complete ? reg.account_type : "",
       account_owner_national_id: complete ? reg.account_owner_national_id : "",
-      account_owner: complete ? reg.account_owner : emp ? `${emp.first_name} ${emp.last_name}` : "",
+      account_owner: complete
+        ? reg.account_owner
+        : emp
+          ? `${emp.first_name} ${emp.last_name}`
+          : "",
     });
     // اعضای ثبت‌نام قبلی به ساختار فرم تبدیل می‌شوند (عضو موقت نگهدارنده‌ی مدرک حذف می‌شود)
     setMembers(
@@ -405,7 +661,7 @@ export default function InsurancePage() {
           document: m.document,
           document_id: m.document?.id || null,
           document_rejected_at: m.document_rejected_at || null,
-        }))
+        })),
     );
     setErrors({});
     setMemberErrors({});
@@ -419,7 +675,11 @@ export default function InsurancePage() {
         setData(d);
         fillForm(d.registration, d.employee);
       })
-      .catch((e) => setLoadError(e.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
+      .catch((e) =>
+        setLoadError(
+          e.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد.",
+        ),
+      );
   }, []);
 
   const employee = data?.employee;
@@ -441,14 +701,28 @@ export default function InsurancePage() {
     if (!cfg || (memberCounts[type] || 0) >= cfg.max_count) return;
     setMembers([
       ...members,
-      { key: ++memberSeq, member_type: type, first_name: "", last_name: "", father_name: "", birth_date: "", marital_status: type === "spouse" ? 3 : "", national_id: "", birth_certificate_no: "", kafala_status: null, document: null, document_id: null },
+      {
+        key: ++memberSeq,
+        member_type: type,
+        first_name: "",
+        last_name: "",
+        father_name: "",
+        birth_date: "",
+        marital_status: type === "spouse" ? 3 : "",
+        national_id: "",
+        birth_certificate_no: "",
+        kafala_status: null,
+        document: null,
+        document_id: null,
+      },
     ]);
   }
 
   // تغییر وضعیت تأهل شخص اصلی؛ انتخاب «مجرد» عضو همسر را از فرم حذف می‌کند
   function setMarital(value) {
     setForm({ ...form, marital_status: value });
-    if (String(value) === "2") setMembers(members.filter((m) => m.member_type !== "spouse"));
+    if (String(value) === "2")
+      setMembers(members.filter((m) => m.member_type !== "spouse"));
   }
 
   // اعتبارسنجی سمت کلاینت کل فرم؛ خطاها را در state می‌گذارد و true/false برمی‌گرداند
@@ -456,29 +730,65 @@ export default function InsurancePage() {
     const e = {};
     const norm = (v) => (toEn(v).length === 9 ? "0" + toEn(v) : toEn(v)); // کد ملی ۹ رقمی → صفر ابتدایی
     // فیلدهای اجباری شخص اصلی
-    const req = ["father_name", "birth_certificate_no", "mobile_number", "marital_status", "insurance_no", "bank_code", "account_number", "sheba", "account_type", "account_owner", "account_owner_national_id"];
-    for (const k of req) if (String(form[k] ?? "").trim() === "") e[k] = "این فیلد الزامی است.";
+    const req = [
+      "father_name",
+      "birth_certificate_no",
+      "mobile_number",
+      "marital_status",
+      "insurance_no",
+      "bank_code",
+      "account_number",
+      "sheba",
+      "account_type",
+      "account_owner",
+      "account_owner_national_id",
+    ];
+    for (const k of req)
+      if (String(form[k] ?? "").trim() === "") e[k] = "این فیلد الزامی است.";
     // قواعد قالب: کد ملی صاحب حساب = کد ملی پرسنل، شبا ۲۴ رقم، شماره بیمه ۱۰ رقم، موبایل معتبر
-    if (norm(form.account_owner_national_id) !== norm(employee.national_id || "")) e.account_owner_national_id = "کد ملی صاحب حساب باید با کد ملی شخص اصلی یکسان باشد.";
-    if (!/^\d{24}$/.test(toEn(form.sheba).replace(/^IR/i, ""))) e.sheba = "شماره شبا باید دقیقاً ۲۴ رقم باشد (بدون IR).";
-    if (!/^\d{10}$/.test(toEn(form.insurance_no))) e.insurance_no = "شماره بیمه تامین اجتماعی باید دقیقاً ۱۰ رقم باشد.";
-    if (!/^0?9\d{9}$/.test(toEn(form.mobile_number).trim())) e.mobile_number = "شماره موبایل معتبر نیست.";
+    if (
+      norm(form.account_owner_national_id) !== norm(employee.national_id || "")
+    )
+      e.account_owner_national_id =
+        "کد ملی صاحب حساب باید با کد ملی شخص اصلی یکسان باشد.";
+    if (!/^\d{24}$/.test(toEn(form.sheba).replace(/^IR/i, "")))
+      e.sheba = "شماره شبا باید دقیقاً ۲۴ رقم باشد (بدون IR).";
+    if (!/^\d{10}$/.test(toEn(form.insurance_no)))
+      e.insurance_no = "شماره بیمه تامین اجتماعی باید دقیقاً ۱۰ رقم باشد.";
+    if (!/^0?9\d{9}$/.test(toEn(form.mobile_number).trim()))
+      e.mobile_number = "شماره موبایل معتبر نیست.";
     // اعتبارسنجی هر عضو؛ فیلدهایی که مقدار ثابت دارند بررسی نمی‌شوند
     const me = {};
     members.forEach((m) => {
       const err = {};
       const empMale = employee.gender === 1;
       if (!m.first_name.trim()) err.first_name = true;
-      if (!(empMale && ["son", "daughter", "father"].includes(m.member_type)) && !m.last_name.trim()) err.last_name = true;
-      if (!(empMale && ["son", "daughter"].includes(m.member_type)) && !m.father_name.trim()) err.father_name = true;
-      if (!validateJalali(m.birth_date)) err.birth_date = "فرمت تاریخ: ۱۳۷۰/۰۱/۰۱";
-      if (!validateNationalId(m.national_id)) err.national_id = "کد ملی معتبر نیست.";
+      if (
+        !(empMale && ["son", "daughter", "father"].includes(m.member_type)) &&
+        !m.last_name.trim()
+      )
+        err.last_name = true;
+      if (
+        !(empMale && ["son", "daughter"].includes(m.member_type)) &&
+        !m.father_name.trim()
+      )
+        err.father_name = true;
+      if (!validateJalali(m.birth_date))
+        err.birth_date = "فرمت تاریخ: ۱۳۷۰/۰۱/۰۱";
+      if (!validateNationalId(m.national_id))
+        err.national_id = "کد ملی معتبر نیست.";
       if (!m.birth_certificate_no.trim()) err.birth_certificate_no = true;
-      if (m.member_type !== "spouse" && !m.marital_status) err.marital_status = true;
-      const needsKafala = employee.gender === 2 || m.member_type === "father" || m.member_type === "mother";
+      if (m.member_type !== "spouse" && !m.marital_status)
+        err.marital_status = true;
+      const needsKafala =
+        employee.gender === 2 ||
+        m.member_type === "father" ||
+        m.member_type === "mother";
       if (needsKafala) {
-        if (!m.kafala_status) err.kafala = "انتخاب یکی از گزینه‌های بالا الزامی است.";
-        else if (m.kafala_status === "yes" && !m.document_id) err.document = "آپلود مدرک کفالت یا حضانت اجباری است.";
+        if (!m.kafala_status)
+          err.kafala = "انتخاب یکی از گزینه‌های بالا الزامی است.";
+        else if (m.kafala_status === "yes" && !m.document_id)
+          err.document = "آپلود مدرک کفالت یا حضانت اجباری است.";
       }
       if (Object.keys(err).length) me[m.key] = err;
     });
@@ -490,7 +800,10 @@ export default function InsurancePage() {
   // کلیک «بررسی و ثبت»: اگر فرم معتبر بود پنجره‌ی بررسی نهایی باز می‌شود
   function handleReview() {
     if (!validate()) {
-      setResult({ severity: "error", text: "لطفاً خطاهای فرم را برطرف کنید. فیلدها و اعضای دارای خطا با رنگ قرمز مشخص شده‌اند." });
+      setResult({
+        severity: "error",
+        text: "لطفاً خطاهای فرم را برطرف کنید. فیلدها و اعضای دارای خطا با رنگ قرمز مشخص شده‌اند.",
+      });
       return;
     }
     setReviewOpen(true);
@@ -524,12 +837,23 @@ export default function InsurancePage() {
       setData({ ...data, registration: saved });
       fillForm(saved, employee); // خروج از فرم و نمایش اطلاعات ثبت‌شده
       setReviewOpen(false);
-      setResult({ severity: "success", text: isEdit ? "ویرایش ثبت‌نام با موفقیت انجام شد." : "ثبت‌نام شما با موفقیت انجام شد." });
+      setResult({
+        severity: "success",
+        text: isEdit
+          ? "ویرایش ثبت‌نام با موفقیت انجام شد."
+          : "ثبت‌نام شما با موفقیت انجام شد.",
+      });
       topRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
       setReviewOpen(false);
       const detail = e.response?.data?.detail;
-      setResult({ severity: "error", text: typeof detail === "string" && detail ? detail : "ثبت اطلاعات با خطا مواجه شد." });
+      setResult({
+        severity: "error",
+        text:
+          typeof detail === "string" && detail
+            ? detail
+            : "ثبت اطلاعات با خطا مواجه شد.",
+      });
     } finally {
       setSaving(false);
     }
@@ -591,7 +915,8 @@ export default function InsurancePage() {
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
         {header}
         <Alert severity="warning" sx={{ mt: 2 }}>
-          اطلاعات پرسنلی شما برای ثبت‌نام کامل نیست ({employee.missing.join("، ")}). لطفاً به واحد منابع انسانی اطلاع دهید.
+          اطلاعات پرسنلی شما برای ثبت‌نام کامل نیست (
+          {employee.missing.join("، ")}). لطفاً به واحد منابع انسانی اطلاع دهید.
         </Alert>
       </Box>
     );
@@ -599,15 +924,29 @@ export default function InsurancePage() {
 
   // دیالوگ نتیجه‌ی ثبت یا خطای فرم (در هر دو حالت نمایش و فرم رندر می‌شود)
   const resultDialog = (
-    <Dialog open={Boolean(result)} onClose={() => setResult(null)} fullWidth maxWidth="xs">
+    <Dialog
+      open={Boolean(result)}
+      onClose={() => setResult(null)}
+      fullWidth
+      maxWidth="xs"
+    >
       <DialogContent sx={{ textAlign: "center", pt: 4 }}>
-        {result?.severity === "success" ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 64 }} /> : <ErrorOutlineIcon color="error" sx={{ fontSize: 64 }} />}
+        {result?.severity === "success" ? (
+          <CheckCircleOutlineIcon color="success" sx={{ fontSize: 64 }} />
+        ) : (
+          <ErrorOutlineIcon color="error" sx={{ fontSize: 64 }} />
+        )}
         <Typography fontWeight={700} sx={{ mt: 1.5 }}>
           {result?.text}
         </Typography>
       </DialogContent>
       <DialogActions sx={{ justifyContent: "center", pb: 2.5 }}>
-        <Button variant="contained" color={result?.severity === "success" ? "success" : "primary"} onClick={() => setResult(null)} autoFocus>
+        <Button
+          variant="contained"
+          color={result?.severity === "success" ? "success" : "primary"}
+          onClick={() => setResult(null)}
+          autoFocus
+        >
           متوجه شدم
         </Button>
       </DialogActions>
@@ -615,7 +954,11 @@ export default function InsurancePage() {
   );
 
   // نام خانوادگی نمایشی عضو (برای اعضایی که نام خانوادگی‌شان ثابت و برابر پرسنل است)
-  const memberLastName = (m) => (employee.gender === 1 && ["son", "daughter", "father"].includes(m.member_type) ? employee.last_name : m.last_name);
+  const memberLastName = (m) =>
+    employee.gender === 1 &&
+    ["son", "daughter", "father"].includes(m.member_type)
+      ? employee.last_name
+      : m.last_name;
 
   // حالت نمایش: خلاصه‌ی فقط‌خواندنی ثبت‌نام با دکمه‌ی «ویرایش ثبت نام»
   if (mode === "view") {
@@ -624,17 +967,37 @@ export default function InsurancePage() {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
         {header}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between" sx={{ mb: 2 }}>
-          <Alert severity="success" icon={<CheckCircleOutlineIcon />} sx={{ flex: 1 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          alignItems={{ sm: "center" }}
+          justifyContent="space-between"
+          sx={{ mb: 2 }}
+        >
+          <Alert
+            severity="success"
+            icon={<CheckCircleOutlineIcon />}
+            sx={{ flex: 1 }}
+          >
             ثبت‌نام شما انجام شده است. اطلاعات ثبت‌شده در ادامه آمده است.
           </Alert>
-          <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={() => setMode("edit")} sx={{ flexShrink: 0 }}>
+          <Button
+            variant="contained"
+            startIcon={<EditOutlinedIcon />}
+            onClick={() => setMode("edit")}
+            sx={{ flexShrink: 0 }}
+          >
             ویرایش ثبت نام
           </Button>
         </Stack>
         {rejected.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            مدرک ارائه‌شده برای {rejected.map((m) => `${m.first_name} ${memberLastName(m)}`).join("، ")} مورد تأیید نیست. لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی مراجعه نمائید؛ مدرک جدید را با «ویرایش ثبت نام» آپلود کنید.
+            مدرک ارائه‌شده برای{" "}
+            {rejected
+              .map((m) => `${m.first_name} ${memberLastName(m)}`)
+              .join("، ")}{" "}
+            مورد تأیید نیست. لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی
+            مراجعه نمائید؛ مدرک جدید را با «ویرایش ثبت نام» آپلود کنید.
           </Alert>
         )}
 
@@ -678,7 +1041,15 @@ export default function InsurancePage() {
           </Grid>
         </SectionCard>
 
-        <SectionCard num="۳" title="اعضای خانواده" subtitle={members.length ? `(${members.length.toLocaleString("fa-IR")} نفر)` : ""}>
+        <SectionCard
+          num="۳"
+          title="اعضای خانواده"
+          subtitle={
+            members.length
+              ? `(${members.length.toLocaleString("fa-IR")} نفر)`
+              : ""
+          }
+        >
           {members.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               عضوی ثبت نشده است.
@@ -686,23 +1057,86 @@ export default function InsurancePage() {
           ) : (
             <Stack spacing={1.5}>
               {members.map((m) => {
-                const idx = members.filter((x) => x.member_type === m.member_type).indexOf(m) + 1;
+                const idx =
+                  members
+                    .filter((x) => x.member_type === m.member_type)
+                    .indexOf(m) + 1;
                 const cfg = typeInfo[m.member_type];
-                const title = cfg ? (cfg.max_count > 1 ? `${cfg.title} ${idx}` : cfg.title) : m.member_type;
+                const title = cfg
+                  ? cfg.max_count > 1
+                    ? `${cfg.title} ${idx}`
+                    : cfg.title
+                  : m.member_type;
                 const bad = isDocRejected(m);
                 return (
-                  <Card key={m.key} variant="outlined" sx={{ borderRadius: 2, p: 2, borderColor: bad ? "warning.main" : "divider" }}>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-                      <Chip label={title} color={MEMBER_BUTTON_COLOR[m.member_type]} size="small" />
-                      {m.kafala_status === "yes" && <Chip size="small" variant="outlined" color="success" label="تحت کفالت" />}
-                      {m.kafala_status === "no" && <Chip size="small" variant="outlined" color="error" label="غیر تحت کفالت" />}
-                      {m.document && <Chip size="small" icon={<CheckCircleOutlineIcon />} color="success" label="مدرک آپلود شده" />}
-                      {bad && <Chip size="small" icon={<ErrorOutlineIcon />} color="warning" label="مدرک تأیید نشد" />}
+                  <Card
+                    key={m.key}
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 2,
+                      p: 2,
+                      borderColor: bad ? "warning.main" : "divider",
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                      sx={{ mb: 1.5 }}
+                    >
+                      <Chip
+                        label={title}
+                        color={MEMBER_BUTTON_COLOR[m.member_type]}
+                        size="small"
+                      />
+                      {m.kafala_status === "yes" && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          label="تحت کفالت"
+                        />
+                      )}
+                      {m.kafala_status === "no" && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          label="غیر تحت کفالت"
+                        />
+                      )}
+                      {m.document && (
+                        <Chip
+                          size="small"
+                          icon={<CheckCircleOutlineIcon />}
+                          color="success"
+                          label="مدرک آپلود شده"
+                        />
+                      )}
+                      {bad && (
+                        <Chip
+                          size="small"
+                          icon={<ErrorOutlineIcon />}
+                          color="warning"
+                          label="مدرک تأیید نشد"
+                        />
+                      )}
                     </Stack>
                     <Grid container spacing={1.5}>
                       {[
-                        ["نام و نام خانوادگی", `${m.first_name} ${memberLastName(m)}`],
-                        ["نام پدر", employee.gender === 1 && ["son", "daughter"].includes(m.member_type) ? employee.first_name : m.father_name],
+                        [
+                          "نام و نام خانوادگی",
+                          `${m.first_name} ${memberLastName(m)}`,
+                        ],
+                        [
+                          "نام پدر",
+                          employee.gender === 1 &&
+                          ["son", "daughter"].includes(m.member_type)
+                            ? employee.first_name
+                            : m.father_name,
+                        ],
                         ["تاریخ تولد", m.birth_date],
                         ["کد ملی", m.national_id],
                         ["شماره شناسنامه", m.birth_certificate_no],
@@ -729,11 +1163,7 @@ export default function InsurancePage() {
           <InsuranceRateInfo rateTable={data.rate_table} notes={data.notes} />
         </SectionCard>
 
-        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 4 }}>
-          <Button variant="contained" size="large" startIcon={<EditOutlinedIcon />} onClick={() => setMode("edit")}>
-            ویرایش ثبت نام
-          </Button>
-        </Box>
+        {/* دکمه‌ی «ویرایش ثبت نام» فقط یک‌بار و بالای صفحه است */}
         {resultDialog}
       </Box>
     );
@@ -746,49 +1176,130 @@ export default function InsurancePage() {
   }
 
   // سازنده‌ی onChange برای فیلدهای شخص اصلی با تبدیل اختیاری مقدار (مثلاً فقط ارقام)
-  const setF = (key, transform) => (e) => setForm({ ...form, [key]: transform ? transform(e.target.value) : e.target.value });
+  const setF = (key, transform) => (e) =>
+    setForm({
+      ...form,
+      [key]: transform ? transform(e.target.value) : e.target.value,
+    });
   // پراپ‌های خطا/راهنمای هر فیلد از روی state خطاها
-  const fieldProps = (key) => ({ error: Boolean(errors[key]), helperText: errors[key] || "" });
+  const fieldProps = (key) => ({
+    error: Boolean(errors[key]),
+    helperText: errors[key] || "",
+  });
   const showSpouseBtn = String(form.marital_status) !== "2"; // دکمه‌ی همسر برای مجرد پنهان است
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
       {header}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {isEdit ? "در حال ویرایش ثبت‌نام قبلی هستید؛ پس از تغییر، دوباره ثبت کنید." : "اطلاعات خود و اعضای خانواده را برای بیمه تکمیلی تکمیل کنید."}
+        {isEdit
+          ? "در حال ویرایش ثبت‌نام قبلی هستید؛ پس از تغییر، دوباره ثبت کنید."
+          : "اطلاعات خود و اعضای خانواده را برای بیمه تکمیلی تکمیل کنید."}
       </Typography>
 
       {/* بخش ۱: فیلدهای فقط‌خواندنی از رکورد پرسنل + فیلدهای قابل ویرایش */}
       <SectionCard num="۱" title="اطلاعات شخص اصلی">
         <Grid container spacing={2} sx={{ mb: 2 }}>
-          <Grid item xs={6} md={3}><ReadOnlyField label="کد پرسنلی" value={employee.personnel_code} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="نام" value={employee.first_name} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="نام خانوادگی" value={employee.last_name} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="جنسیت" value={GENDER_LABEL[employee.gender]} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="تاریخ استخدام" value={employee.employment_date} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="کد ملی" value={employee.national_id} /></Grid>
-          <Grid item xs={6} md={3}><ReadOnlyField label="تاریخ تولد" value={employee.birth_date} /></Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField label="کد پرسنلی" value={employee.personnel_code} />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField label="نام" value={employee.first_name} />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField label="نام خانوادگی" value={employee.last_name} />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField
+              label="جنسیت"
+              value={GENDER_LABEL[employee.gender]}
+            />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField
+              label="تاریخ استخدام"
+              value={employee.employment_date}
+            />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField label="کد ملی" value={employee.national_id} />
+          </Grid>
+          <Grid item xs={6} md={3}>
+            <ReadOnlyField label="تاریخ تولد" value={employee.birth_date} />
+          </Grid>
         </Grid>
         <Divider sx={{ mb: 2 }} />
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth required label="نام پدر" value={form.father_name} onChange={setF("father_name")} inputProps={{ maxLength: 100 }} {...fieldProps("father_name")} />
+            <TextField
+              fullWidth
+              required
+              label="نام پدر"
+              value={form.father_name}
+              onChange={setF("father_name")}
+              inputProps={{ maxLength: 100 }}
+              {...fieldProps("father_name")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth required label="شماره شناسنامه" value={form.birth_certificate_no} onChange={setF("birth_certificate_no", (v) => digitsOnly(v, 20))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("birth_certificate_no")} />
+            <TextField
+              fullWidth
+              required
+              label="شماره شناسنامه"
+              value={form.birth_certificate_no}
+              onChange={setF("birth_certificate_no", (v) => digitsOnly(v, 20))}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("birth_certificate_no")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth required label="شماره تماس" value={form.mobile_number} onChange={setF("mobile_number", (v) => digitsOnly(v, 11))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("mobile_number")} />
+            <TextField
+              fullWidth
+              required
+              label="شماره تماس"
+              value={form.mobile_number}
+              onChange={setF("mobile_number", (v) => digitsOnly(v, 11))}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("mobile_number")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField select fullWidth required label="وضعیت تاهل" value={form.marital_status} onChange={(e) => setMarital(e.target.value)} {...fieldProps("marital_status")}>
+            <TextField
+              select
+              fullWidth
+              required
+              label="وضعیت تاهل"
+              value={form.marital_status}
+              onChange={(e) => setMarital(e.target.value)}
+              {...fieldProps("marital_status")}
+            >
               <MenuItem value="">انتخاب کنید</MenuItem>
               <MenuItem value={2}>مجرد</MenuItem>
               <MenuItem value={3}>متاهل</MenuItem>
             </TextField>
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth required label="شماره بیمه تأمین اجتماعی (۱۰ رقم)" value={form.insurance_no} onChange={setF("insurance_no", (v) => digitsOnly(v, 10))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("insurance_no")} />
+            <TextField
+              fullWidth
+              required
+              label="شماره بیمه تأمین اجتماعی (۱۰ رقم)"
+              value={form.insurance_no}
+              onChange={setF("insurance_no", (v) => digitsOnly(v, 10))}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("insurance_no")}
+            />
           </Grid>
         </Grid>
       </SectionCard>
@@ -797,7 +1308,15 @@ export default function InsurancePage() {
       <SectionCard num="۲" title="اطلاعات بانکی">
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField select fullWidth required label="بانک" value={form.bank_code} onChange={setF("bank_code")} {...fieldProps("bank_code")}>
+            <TextField
+              select
+              fullWidth
+              required
+              label="بانک"
+              value={form.bank_code}
+              onChange={setF("bank_code")}
+              {...fieldProps("bank_code")}
+            >
               <MenuItem value="">انتخاب بانک</MenuItem>
               {Object.entries(data.bank_codes).map(([code, name]) => (
                 <MenuItem key={code} value={Number(code)}>
@@ -807,13 +1326,48 @@ export default function InsurancePage() {
             </TextField>
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth required label="شماره حساب" value={form.account_number} onChange={setF("account_number", (v) => digitsOnly(v, 40))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("account_number")} />
+            <TextField
+              fullWidth
+              required
+              label="شماره حساب"
+              value={form.account_number}
+              onChange={setF("account_number", (v) => digitsOnly(v, 40))}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("account_number")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth required label="شماره شبا (۲۴ رقم بدون IR)" placeholder="24 رقم" value={form.sheba} onChange={setF("sheba", (v) => digitsOnly(v.replace(/^IR/i, ""), 24))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("sheba")} />
+            <TextField
+              fullWidth
+              required
+              label="شماره شبا (۲۴ رقم بدون IR)"
+              placeholder="24 رقم"
+              value={form.sheba}
+              onChange={setF("sheba", (v) =>
+                digitsOnly(v.replace(/^IR/i, ""), 24),
+              )}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("sheba")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField select fullWidth required label="نوع حساب" value={form.account_type} onChange={setF("account_type")} {...fieldProps("account_type")}>
+            <TextField
+              select
+              fullWidth
+              required
+              label="نوع حساب"
+              value={form.account_type}
+              onChange={setF("account_type")}
+              {...fieldProps("account_type")}
+            >
               <MenuItem value="">انتخاب کنید</MenuItem>
               {Object.entries(data.account_types).map(([code, name]) => (
                 <MenuItem key={code} value={Number(code)}>
@@ -823,23 +1377,58 @@ export default function InsurancePage() {
             </TextField>
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth required label="کد ملی صاحب حساب" value={form.account_owner_national_id} onChange={setF("account_owner_national_id", (v) => digitsOnly(v, 10))} inputProps={{ dir: "ltr", style: { textAlign: "left" }, inputMode: "numeric" }} {...fieldProps("account_owner_national_id")} />
+            <TextField
+              fullWidth
+              required
+              label="کد ملی صاحب حساب"
+              value={form.account_owner_national_id}
+              onChange={setF("account_owner_national_id", (v) =>
+                digitsOnly(v, 10),
+              )}
+              inputProps={{
+                dir: "ltr",
+                style: { textAlign: "left" },
+                inputMode: "numeric",
+              }}
+              {...fieldProps("account_owner_national_id")}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth required label="نام صاحب حساب" value={form.account_owner} onChange={setF("account_owner")} inputProps={{ maxLength: 200 }} {...fieldProps("account_owner")} />
+            <TextField
+              fullWidth
+              required
+              label="نام صاحب حساب"
+              value={form.account_owner}
+              onChange={setF("account_owner")}
+              inputProps={{ maxLength: 200 }}
+              {...fieldProps("account_owner")}
+            />
           </Grid>
         </Grid>
       </SectionCard>
 
       {/* بخش ۳: دکمه‌های افزودن عضو (تا سقف هر نوع) و کارت هر عضو */}
       <SectionCard num="۳" title="اعضای خانواده" subtitle="(اختیاری)">
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mb: 2 }}
+        >
           {MEMBER_ORDER.filter((t) => typeInfo[t]).map((t) => {
             const cfg = typeInfo[t];
             const atMax = (memberCounts[t] || 0) >= cfg.max_count;
             if (t === "spouse" && !showSpouseBtn) return null;
             return (
-              <Button key={t} size="small" variant="outlined" color={MEMBER_BUTTON_COLOR[t]} onClick={() => addMember(t)} disabled={atMax}>
+              <Button
+                key={t}
+                size="small"
+                variant="outlined"
+                color={MEMBER_BUTTON_COLOR[t]}
+                onClick={() => addMember(t)}
+                disabled={atMax}
+              >
                 + {cfg.title}
               </Button>
             );
@@ -852,7 +1441,10 @@ export default function InsurancePage() {
         ) : (
           <Stack spacing={2}>
             {members.map((m) => {
-              const idx = members.filter((x) => x.member_type === m.member_type).indexOf(m) + 1; // شماره‌ی عضو بین هم‌نوع‌ها
+              const idx =
+                members
+                  .filter((x) => x.member_type === m.member_type)
+                  .indexOf(m) + 1; // شماره‌ی عضو بین هم‌نوع‌ها
 
               return (
                 <MemberCard
@@ -863,8 +1455,12 @@ export default function InsurancePage() {
                   employee={employee}
                   mainMobile={form.mobile_number}
                   errors={memberErrors[m.key]}
-                  onChange={(next) => setMembers(members.map((x) => (x.key === m.key ? next : x)))}
-                  onRemove={() => setMembers(members.filter((x) => x.key !== m.key))}
+                  onChange={(next) =>
+                    setMembers(members.map((x) => (x.key === m.key ? next : x)))
+                  }
+                  onRemove={() =>
+                    setMembers(members.filter((x) => x.key !== m.key))
+                  }
                 />
               );
             })}
@@ -877,7 +1473,9 @@ export default function InsurancePage() {
         <InsuranceRateInfo rateTable={data.rate_table} notes={data.notes} />
       </SectionCard>
 
-      <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1.5, mb: 4 }}>
+      <Box
+        sx={{ display: "flex", justifyContent: "flex-start", gap: 1.5, mb: 4 }}
+      >
         {isEdit && (
           <Button size="large" onClick={cancelEdit}>
             انصراف از ویرایش
@@ -889,7 +1487,12 @@ export default function InsurancePage() {
       </Box>
 
       {/* پنجره‌ی بررسی نهایی: خلاصه‌ی شخص اصلی و اعضا قبل از ارسال به سرور */}
-      <Dialog open={reviewOpen} onClose={() => !saving && setReviewOpen(false)} fullWidth maxWidth="md">
+      <Dialog
+        open={reviewOpen}
+        onClose={() => !saving && setReviewOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
         <DialogTitle>بررسی نهایی اطلاعات</DialogTitle>
         <DialogContent dividers>
           <Typography fontWeight={700} sx={{ mb: 1 }}>
@@ -899,7 +1502,10 @@ export default function InsurancePage() {
             <TableBody>
               {[
                 ["کد پرسنلی", employee.personnel_code],
-                ["نام و نام خانوادگی", `${employee.first_name} ${employee.last_name}`],
+                [
+                  "نام و نام خانوادگی",
+                  `${employee.first_name} ${employee.last_name}`,
+                ],
                 ["نام پدر", form.father_name],
                 ["تاریخ تولد", employee.birth_date],
                 ["جنسیت", GENDER_LABEL[employee.gender]],
@@ -913,10 +1519,15 @@ export default function InsurancePage() {
                 ["شماره حساب", form.account_number],
                 ["شماره شبا", form.sheba],
                 ["نوع حساب", accountTypeName(form.account_type)],
-                ["صاحب حساب", `${form.account_owner} (${form.account_owner_national_id})`],
+                [
+                  "صاحب حساب",
+                  `${form.account_owner} (${form.account_owner_national_id})`,
+                ],
               ].map(([l, v]) => (
                 <TableRow key={l}>
-                  <TableCell sx={{ color: "text.secondary", width: 180 }}>{l}</TableCell>
+                  <TableCell sx={{ color: "text.secondary", width: 180 }}>
+                    {l}
+                  </TableCell>
                   <TableCell>{v || "—"}</TableCell>
                 </TableRow>
               ))}
@@ -931,13 +1542,25 @@ export default function InsurancePage() {
                 <TableBody>
                   {members.map((m) => {
                     const empMale = employee.gender === 1;
-                    const last = empMale && ["son", "daughter", "father"].includes(m.member_type) ? employee.last_name : m.last_name;
-                    const kaf = m.kafala_status === "yes" ? "تحت کفالت (با مدرک)" : m.kafala_status === "no" ? "غیر تحت کفالت" : "";
+                    const last =
+                      empMale &&
+                      ["son", "daughter", "father"].includes(m.member_type)
+                        ? employee.last_name
+                        : m.last_name;
+                    const kaf =
+                      m.kafala_status === "yes"
+                        ? "تحت کفالت (با مدرک)"
+                        : m.kafala_status === "no"
+                          ? "غیر تحت کفالت"
+                          : "";
                     return (
                       <TableRow key={m.key}>
-                        <TableCell sx={{ width: 110 }}>{typeInfo[m.member_type]?.title}</TableCell>
+                        <TableCell sx={{ width: 110 }}>
+                          {typeInfo[m.member_type]?.title}
+                        </TableCell>
                         <TableCell>
-                          {m.first_name} {last} — کد ملی {m.national_id} — متولد {m.birth_date}
+                          {m.first_name} {last} — کد ملی {m.national_id} — متولد{" "}
+                          {m.birth_date}
                           {kaf ? ` — ${kaf}` : ""}
                         </TableCell>
                       </TableRow>
@@ -952,7 +1575,14 @@ export default function InsurancePage() {
           <Button onClick={() => setReviewOpen(false)} disabled={saving}>
             بازگشت و ویرایش
           </Button>
-          <Button variant="contained" onClick={handleSubmit} disabled={saving} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}>
+          <Button
+            variant="contained"
+            onClick={handleSubmit}
+            disabled={saving}
+            startIcon={
+              saving ? <CircularProgress size={16} color="inherit" /> : null
+            }
+          >
             تأیید و ثبت
           </Button>
         </DialogActions>

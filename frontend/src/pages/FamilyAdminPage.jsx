@@ -67,8 +67,20 @@ import ModuleNotificationTemplates from "../components/ModuleNotificationTemplat
  * - تب «قواعد و تنظیمات» (family.manage): فیلدهای فرم، مدارک و دوره تمدید، شرایط حق تاهل و حق اولاد، هشدارها.
  */
 
-const STATUS_LABEL = { none: "ثبت نشده", draft: "ثبت نشده", pending: "در انتظار بررسی", approved: "تأیید شده", rejected: "رد شده", returned: "بازگشت برای ویرایش" };
-const MARITAL_LABEL = { single: "مجرد", married: "متاهل", divorced: "مطلقه", widowed: "همسر فوت‌شده" };
+const STATUS_LABEL = {
+  none: "ثبت نشده",
+  draft: "ثبت نشده",
+  pending: "در انتظار بررسی",
+  approved: "تأیید شده",
+  rejected: "رد شده",
+  returned: "بازگشت برای ویرایش",
+};
+const MARITAL_LABEL = {
+  single: "مجرد",
+  married: "متاهل",
+  divorced: "مطلقه",
+  widowed: "همسر فوت‌شده",
+};
 const FLAGS = {
   marriage: "مشمول حق تاهل",
   children: "دارای فرزند واجد شرایط",
@@ -76,12 +88,21 @@ const FLAGS = {
   no_insurance_days: "سابقه بیمه نامشخص",
   pending_changes: "تغییرات تأییدنشده",
 };
-const fa = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("fa-IR"));
-const faDateTime = (iso) => (iso ? new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "—");
+const fa = (n) =>
+  n === null || n === undefined ? "—" : Number(n).toLocaleString("fa-IR");
+const faDateTime = (iso) =>
+  iso
+    ? new Date(iso).toLocaleString("fa-IR", {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    : "—";
 
 function EligibleIcon({ value }) {
-  if (value === true) return <CheckCircleOutlineIcon color="success" fontSize="small" />;
-  if (value === false) return <CancelOutlinedIcon color="disabled" fontSize="small" />;
+  if (value === true)
+    return <CheckCircleOutlineIcon color="success" fontSize="small" />;
+  if (value === false)
+    return <CancelOutlinedIcon color="disabled" fontSize="small" />;
   return <Typography variant="caption">—</Typography>;
 }
 
@@ -91,19 +112,30 @@ function EvaluationCard({ title, evaluation, color }) {
   if (!evaluation) return null;
   const { marriage, child } = evaluation;
   return (
-    <Card variant="outlined" sx={{ p: 1.5, borderRadius: 2, borderColor: `${color}.main` }}>
+    <Card
+      variant="outlined"
+      sx={{ p: 1.5, borderRadius: 2, borderColor: `${color}.main` }}
+    >
       <Typography fontWeight={800} sx={{ mb: 1 }}>
         {title}
       </Typography>
       <Stack direction="row" spacing={1} alignItems="center">
         <EligibleIcon value={marriage.eligible} />
         <Typography variant="body2">
-          حق تاهل: <b>{marriage.eligible === null ? "غیرفعال" : marriage.eligible ? "مشمول" : "غیرمشمول"}</b>
+          حق تاهل:{" "}
+          <b>
+            {marriage.eligible === null
+              ? "غیرفعال"
+              : marriage.eligible
+                ? "مشمول"
+                : "غیرمشمول"}
+          </b>
           {marriage.reason ? ` — ${marriage.reason}` : ""}
         </Typography>
       </Stack>
       <Typography variant="body2" sx={{ mt: 1 }}>
-        حق اولاد: <b>{fa(child.eligible_count)}</b> فرزند واجد شرایط از {fa(child.total)}
+        حق اولاد: <b>{fa(child.eligible_count)}</b> فرزند واجد شرایط از{" "}
+        {fa(child.total)}
         {child.blocked_reason ? ` — ${child.blocked_reason}` : ""}
       </Typography>
       {child.children.length > 0 && (
@@ -112,7 +144,8 @@ function EvaluationCard({ title, evaluation, color }) {
             <Stack key={i} direction="row" spacing={1} alignItems="center">
               <EligibleIcon value={c.eligible} />
               <Typography variant="caption">
-                {MEMBER_LABEL[c.member_type]} — {c.name} ({c.age === null ? "سن نامشخص" : `${fa(c.age)} سال`}): {c.reason}
+                {MEMBER_LABEL[c.member_type]} — {c.name} (
+                {c.age === null ? "سن نامشخص" : `${fa(c.age)} سال`}): {c.reason}
               </Typography>
             </Stack>
           ))}
@@ -124,7 +157,16 @@ function EvaluationCard({ title, evaluation, color }) {
 
 // ---------- دیالوگ‌های کوچک ----------
 
-function NoteDialog({ open, title, label, confirmText, color = "primary", withDate, onClose, onConfirm }) {
+function NoteDialog({
+  open,
+  title,
+  label,
+  confirmText,
+  color = "primary",
+  withDate,
+  onClose,
+  onConfirm,
+}) {
   const [note, setNote] = useState("");
   const [date, setDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -154,17 +196,37 @@ function NoteDialog({ open, title, label, confirmText, color = "primary", withDa
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
           {withDate && (
-            <JalaliCalendarField label="تاریخ اثر (خالی = امروز)" value={date} onChange={(v) => setDate(v || "")} />
+            <JalaliCalendarField
+              label="تاریخ اثر (خالی = امروز)"
+              value={date}
+              onChange={(v) => setDate(v || "")}
+            />
           )}
-          <TextField multiline minRows={3} label={label} value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 2000 }} />
-          {error && <Alert severity="error">{typeof error === "string" ? error : "خطا"}</Alert>}
+          <TextField
+            multiline
+            minRows={3}
+            label={label}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            inputProps={{ maxLength: 2000 }}
+          />
+          {error && (
+            <Alert severity="error">
+              {typeof error === "string" ? error : "خطا"}
+            </Alert>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
           انصراف
         </Button>
-        <Button variant="contained" color={color} onClick={submit} disabled={busy || (noteRequired && !note.trim())}>
+        <Button
+          variant="contained"
+          color={color}
+          onClick={submit}
+          disabled={busy || (noteRequired && !note.trim())}
+        >
           {confirmText}
         </Button>
       </DialogActions>
@@ -195,14 +257,22 @@ function HrFieldsDialog({ target, onClose, onSaved }) {
       const p = String(prior).trim();
       const t = String(total).trim();
       const payload = {
-        ...(p === "" ? { clear_hr_prior_insurance_days: true } : { hr_prior_insurance_days: Number(p) }),
-        ...(t === "" ? { clear_insurance_days: true } : { insurance_days: Number(t) }),
+        ...(p === ""
+          ? { clear_hr_prior_insurance_days: true }
+          : { hr_prior_insurance_days: Number(p) }),
+        ...(t === ""
+          ? { clear_insurance_days: true }
+          : { insurance_days: Number(t) }),
       };
       if (target.withNote) payload.hr_note = note;
       await updateFamilyHrFields(target.employee_id, payload);
       onSaved();
     } catch (err) {
-      setError(typeof err.response?.data?.detail === "string" ? err.response.data.detail : "ذخیره با خطا مواجه شد.");
+      setError(
+        typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : "ذخیره با خطا مواجه شد.",
+      );
     } finally {
       setBusy(false);
     }
@@ -216,10 +286,21 @@ function HrFieldsDialog({ target, onClose, onSaved }) {
           {info && (
             <Alert severity="info" icon={false}>
               <Typography variant="body2">
-                روزهای پس از استخدام: <b>{info.since_hire_days === null ? "تاریخ استخدام ثبت نشده" : fa(info.since_hire_days)}</b>
+                روزهای پس از استخدام:{" "}
+                <b>
+                  {info.since_hire_days === null
+                    ? "تاریخ استخدام ثبت نشده"
+                    : fa(info.since_hire_days)}
+                </b>
               </Typography>
               <Typography variant="body2">
-                سابقه‌ی قبلی اعلام‌شده توسط پرسنل: <b>{info.employee_prior_days === null || info.employee_prior_days === undefined ? "—" : fa(info.employee_prior_days)}</b>
+                سابقه‌ی قبلی اعلام‌شده توسط پرسنل:{" "}
+                <b>
+                  {info.employee_prior_days === null ||
+                  info.employee_prior_days === undefined
+                    ? "—"
+                    : fa(info.employee_prior_days)}
+                </b>
               </Typography>
             </Alert>
           )}
@@ -240,7 +321,14 @@ function HrFieldsDialog({ target, onClose, onSaved }) {
             helperText="اگر پر شود، جایگزین محاسبه‌ی خودکار می‌شود و با گذشت زمان زیاد نمی‌شود. خالی = محاسبه‌ی خودکار."
           />
           {target?.withNote && (
-            <TextField multiline minRows={2} label="یادداشت داخلی" value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 4000 }} />
+            <TextField
+              multiline
+              minRows={2}
+              label="یادداشت داخلی"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              inputProps={{ maxLength: 4000 }}
+            />
           )}
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
@@ -280,7 +368,11 @@ function InsuranceImportDialog({ open, onClose, onDone }) {
       setResult(res);
       onDone();
     } catch (err) {
-      setError(typeof err.response?.data?.detail === "string" ? err.response.data.detail : "ورود فایل با خطا مواجه شد.");
+      setError(
+        typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : "ورود فایل با خطا مواجه شد.",
+      );
     } finally {
       setBusy(false);
     }
@@ -291,24 +383,62 @@ function InsuranceImportDialog({ open, onClose, onDone }) {
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            فایل xlsx با یک ستون «کد پرسنلی» و یک ستون «سابقه (روز)». ردیف‌های خالی نادیده گرفته می‌شوند.
+            فایل xlsx با یک ستون «کد پرسنلی» و یک ستون «سابقه (روز)». ردیف‌های
+            خالی نادیده گرفته می‌شوند.
           </Typography>
-          <TextField select size="small" label="مقدار ستون روز" value={mode} onChange={(e) => setMode(e.target.value)}>
-            <MenuItem value="prior">سابقه‌ی بیمه‌ی پیش از استخدام (با روزهای پس از استخدام جمع می‌شود)</MenuItem>
-            <MenuItem value="total">کل سابقه‌ی بیمه (جایگزین محاسبه‌ی خودکار)</MenuItem>
+          <TextField
+            select
+            size="small"
+            label="مقدار ستون روز"
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+          >
+            <MenuItem value="prior">
+              سابقه‌ی بیمه‌ی پیش از استخدام (با روزهای پس از استخدام جمع می‌شود)
+            </MenuItem>
+            <MenuItem value="total">
+              کل سابقه‌ی بیمه (جایگزین محاسبه‌ی خودکار)
+            </MenuItem>
           </TextField>
-          <SiteFilterSelect value={siteId} permission="family.manage" onChange={setSiteId} sx={{ width: "100%" }} />
+          <SiteFilterSelect
+            value={siteId}
+            permission="family.manage"
+            onChange={setSiteId}
+            sx={{ width: "100%" }}
+          />
           <Button component="label" variant="outlined">
             {file ? file.name : "انتخاب فایل Excel"}
-            <input hidden type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <input
+              hidden
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
           </Button>
           {error && <Alert severity="error">{error}</Alert>}
           {result && (
-            <Alert severity={result.not_found.length || result.invalid.length || result.ambiguous.length ? "warning" : "success"}>
+            <Alert
+              severity={
+                result.not_found.length ||
+                result.invalid.length ||
+                result.ambiguous.length
+                  ? "warning"
+                  : "success"
+              }
+            >
               <div>{fa(result.updated)} نفر به‌روز شد.</div>
-              {result.not_found.length > 0 && <div>کد پرسنلی پیدا نشد: {result.not_found.join("، ")}</div>}
-              {result.invalid.length > 0 && <div>مقدار نامعتبر: {result.invalid.join("، ")}</div>}
-              {result.ambiguous.length > 0 && <div>کد تکراری در چند سایت (سایت را انتخاب کنید): {result.ambiguous.join("، ")}</div>}
+              {result.not_found.length > 0 && (
+                <div>کد پرسنلی پیدا نشد: {result.not_found.join("، ")}</div>
+              )}
+              {result.invalid.length > 0 && (
+                <div>مقدار نامعتبر: {result.invalid.join("، ")}</div>
+              )}
+              {result.ambiguous.length > 0 && (
+                <div>
+                  کد تکراری در چند سایت (سایت را انتخاب کنید):{" "}
+                  {result.ambiguous.join("، ")}
+                </div>
+              )}
             </Alert>
           )}
         </Stack>
@@ -325,7 +455,14 @@ function InsuranceImportDialog({ open, onClose, onDone }) {
 
 // ---------- جزئیات پرونده ----------
 
-function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onChanged }) {
+function DetailDialog({
+  profileId,
+  asOf,
+  canManage,
+  formSettings,
+  onClose,
+  onChanged,
+}) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
   const [detail, setDetail] = useState(null);
@@ -338,7 +475,9 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
     try {
       setDetail(await fetchFamilyProfile(profileId, asOf));
     } catch (err) {
-      setError(err.response?.data?.detail || "بارگذاری جزئیات با خطا مواجه شد.");
+      setError(
+        err.response?.data?.detail || "بارگذاری جزئیات با خطا مواجه شد.",
+      );
     }
   }, [profileId, asOf]);
 
@@ -358,7 +497,11 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
   }
 
   async function doAction({ note, date }) {
-    if (action === "approve") await approveFamilyProfile(profileId, { effective_date: date || null, note: note || null });
+    if (action === "approve")
+      await approveFamilyProfile(profileId, {
+        effective_date: date || null,
+        note: note || null,
+      });
     else if (action === "reject") await rejectFamilyProfile(profileId, note);
     else await returnFamilyProfile(profileId, note);
     setAction(null);
@@ -369,12 +512,25 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
   const p = detail?.profile;
   const emp = detail?.employee;
   return (
-    <Dialog open={Boolean(profileId)} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen}>
+    <Dialog
+      open={Boolean(profileId)}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      fullScreen={fullScreen}
+    >
       <DialogTitle>
-        مشخصات خانوادگی {emp ? `— ${emp.first_name} ${emp.last_name} (${emp.personnel_code})` : ""}
+        مشخصات خانوادگی{" "}
+        {emp
+          ? `— ${emp.first_name} ${emp.last_name} (${emp.personnel_code})`
+          : ""}
       </DialogTitle>
       <DialogContent dividers>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
         {!detail && !error && (
           <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
             <CircularProgress />
@@ -382,10 +538,25 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
         )}
         {detail && (
           <Stack spacing={2}>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-              <Chip color={STATUS_COLOR[p.status]} label={STATUS_LABEL[p.status]} />
-              <Chip variant="outlined" label={`جنسیت: ${emp.gender === 1 ? "مرد" : emp.gender === 2 ? "زن" : "نامشخص"}`} />
-              <Chip variant="outlined" label={`سایت: ${emp.site_name || "—"}`} />
+            <Stack
+              direction="row"
+              spacing={1}
+              flexWrap="wrap"
+              useFlexGap
+              alignItems="center"
+            >
+              <Chip
+                color={STATUS_COLOR[p.status]}
+                label={STATUS_LABEL[p.status]}
+              />
+              <Chip
+                variant="outlined"
+                label={`جنسیت: ${emp.gender === 1 ? "مرد" : emp.gender === 2 ? "زن" : "نامشخص"}`}
+              />
+              <Chip
+                variant="outlined"
+                label={`سایت: ${emp.site_name || "—"}`}
+              />
               <Chip
                 variant="outlined"
                 color={detail.insurance?.days === null ? "warning" : "default"}
@@ -406,11 +577,26 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
                 }
                 icon={canManage ? <EditOutlinedIcon /> : undefined}
               />
-              {p.effective_date && <Chip variant="outlined" label={`تاریخ اثر: ${p.effective_date}`} />}
+              {p.effective_date && (
+                <Chip
+                  variant="outlined"
+                  label={`تاریخ اثر: ${p.effective_date}`}
+                />
+              )}
             </Stack>
-            {detail.hr_note && <Alert severity="info">یادداشت داخلی: {detail.hr_note}</Alert>}
-            {p.review_note && <Alert severity={p.status === "approved" ? "success" : "warning"}>توضیح بررسی: {p.review_note}</Alert>}
-            {detail.missing_documents.length > 0 && <Alert severity="error">مدارک اجباری ناقص: {detail.missing_documents.join("، ")}</Alert>}
+            {detail.hr_note && (
+              <Alert severity="info">یادداشت داخلی: {detail.hr_note}</Alert>
+            )}
+            {p.review_note && (
+              <Alert severity={p.status === "approved" ? "success" : "warning"}>
+                توضیح بررسی: {p.review_note}
+              </Alert>
+            )}
+            {detail.missing_documents.length > 0 && (
+              <Alert severity="error">
+                مدارک اجباری ناقص: {detail.missing_documents.join("، ")}
+              </Alert>
+            )}
             {detail.warnings.length > 0 && (
               <Alert severity="warning">
                 {detail.warnings.map((w, i) => (
@@ -422,22 +608,37 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
             <Grid container spacing={1.5}>
               {detail.evaluation_approved && (
                 <Grid item xs={12} md={p.status === "approved" ? 12 : 6}>
-                  <EvaluationCard title="شمول (نسخه‌ی تأییدشده)" evaluation={detail.evaluation_approved} color="success" />
+                  <EvaluationCard
+                    title="شمول (نسخه‌ی تأییدشده)"
+                    evaluation={detail.evaluation_approved}
+                    color="success"
+                  />
                 </Grid>
               )}
               {p.status !== "approved" && (
                 <Grid item xs={12} md={detail.evaluation_approved ? 6 : 12}>
-                  <EvaluationCard title="شمول در صورت تأیید نسخه‌ی جاری" evaluation={detail.evaluation_current} color="warning" />
+                  <EvaluationCard
+                    title="شمول در صورت تأیید نسخه‌ی جاری"
+                    evaluation={detail.evaluation_current}
+                    color="warning"
+                  />
                 </Grid>
               )}
             </Grid>
 
             <Divider />
-            <Typography fontWeight={800}>اطلاعات ثبت‌شده توسط پرسنل {p.submitted_at ? `(${faDateTime(p.submitted_at)})` : ""}</Typography>
+            <Typography fontWeight={800}>
+              اطلاعات ثبت‌شده توسط پرسنل{" "}
+              {p.submitted_at ? `(${faDateTime(p.submitted_at)})` : ""}
+            </Typography>
             {p.status === "draft" ? (
               <Alert severity="info">پرسنل هنوز فرم را ثبت نکرده است.</Alert>
             ) : (
-              <FamilySummary profile={p} formSettings={formSettings} onOpenDoc={openDoc} />
+              <FamilySummary
+                profile={p}
+                formSettings={formSettings}
+                onOpenDoc={openDoc}
+              />
             )}
 
             {detail.logs.length > 0 && (
@@ -449,7 +650,9 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
                     <Typography key={log.id} variant="caption">
                       {faDateTime(log.created_at)} — {log.action_label}
                       {log.actor_name ? ` — ${log.actor_name}` : ""}
-                      {log.effective_date ? ` — تاریخ اثر ${log.effective_date}` : ""}
+                      {log.effective_date
+                        ? ` — تاریخ اثر ${log.effective_date}`
+                        : ""}
                       {log.note ? ` — ${log.note}` : ""}
                     </Typography>
                   ))}
@@ -463,12 +666,20 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
         {detail && canManage && p.status !== "draft" && (
           <>
             {["pending", "returned", "rejected"].includes(p.status) && (
-              <Button variant="contained" color="success" onClick={() => setAction("approve")}>
+              <Button
+                variant="contained"
+                color="success"
+                onClick={() => setAction("approve")}
+              >
                 تأیید
               </Button>
             )}
             {p.status === "pending" && (
-              <Button variant="outlined" color="error" onClick={() => setAction("reject")}>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={() => setAction("reject")}
+              >
                 رد
               </Button>
             )}
@@ -494,7 +705,9 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
       />
       <NoteDialog
         open={action === "reject" || action === "return"}
-        title={action === "reject" ? "رد مشخصات خانوادگی" : "بازگشت برای ویرایش"}
+        title={
+          action === "reject" ? "رد مشخصات خانوادگی" : "بازگشت برای ویرایش"
+        }
         label="دلیل (به پرسنل نمایش داده می‌شود)"
         confirmText={action === "reject" ? "رد" : "بازگشت"}
         color={action === "reject" ? "error" : "primary"}
@@ -517,7 +730,13 @@ function DetailDialog({ profileId, asOf, canManage, formSettings, onClose, onCha
 // ---------- تب فهرست ----------
 
 function ListTab({ canManage, formSettings }) {
-  const [filters, setFilters] = useState({ search: "", siteId: null, status: "", flag: "", asOf: "" });
+  const [filters, setFilters] = useState({
+    search: "",
+    siteId: null,
+    status: "",
+    flag: "",
+    asOf: "",
+  });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [data, setData] = useState(null);
@@ -539,12 +758,26 @@ function ListTab({ canManage, formSettings }) {
   const load = useCallback(async () => {
     setError("");
     try {
-      setData(await fetchFamilyProfiles({ ...params, page: page + 1, page_size: rowsPerPage }));
+      setData(
+        await fetchFamilyProfiles({
+          ...params,
+          page: page + 1,
+          page_size: rowsPerPage,
+        }),
+      );
     } catch (err) {
       setError(err.response?.data?.detail || "بارگذاری فهرست با خطا مواجه شد.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.siteId, filters.status, filters.flag, filters.asOf, page, rowsPerPage]);
+  }, [
+    filters.search,
+    filters.siteId,
+    filters.status,
+    filters.flag,
+    filters.asOf,
+    page,
+    rowsPerPage,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(load, 300);
@@ -559,8 +792,14 @@ function ListTab({ canManage, formSettings }) {
   async function handleExport() {
     setExporting(true);
     try {
-      const blob = await downloadFamilyExport({ site_id: params.site_id, as_of: params.as_of });
-      saveBlob(blob, `family_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const blob = await downloadFamilyExport({
+        site_id: params.site_id,
+        as_of: params.as_of,
+      });
+      saveBlob(
+        blob,
+        `family_export_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
     } catch {
       setError("خروجی Excel با خطا مواجه شد.");
     } finally {
@@ -574,15 +813,39 @@ function ListTab({ canManage, formSettings }) {
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
         <Grid container spacing={1.5} alignItems="center">
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth size="small" label="جستجو (کد پرسنلی / نام)" value={filters.search} onChange={(e) => setFilter({ search: e.target.value })} />
+            <TextField
+              fullWidth
+              size="small"
+              label="جستجو (کد پرسنلی / نام)"
+              value={filters.search}
+              onChange={(e) => setFilter({ search: e.target.value })}
+            />
           </Grid>
           <Grid item xs={12} sm={6} md={2}>
-            <SiteFilterSelect value={filters.siteId} permission={canManage ? "family.manage" : "family.view"} onChange={(v) => setFilter({ siteId: v })} sx={{ width: "100%" }} />
+            <SiteFilterSelect
+              value={filters.siteId}
+              permission={canManage ? "family.manage" : "family.view"}
+              onChange={(v) => setFilter({ siteId: v })}
+              sx={{ width: "100%" }}
+            />
           </Grid>
           <Grid item xs={6} md={2}>
-            <TextField select fullWidth size="small" label="وضعیت" value={filters.status} onChange={(e) => setFilter({ status: e.target.value })}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="وضعیت"
+              value={filters.status}
+              onChange={(e) => setFilter({ status: e.target.value })}
+            >
               <MenuItem value="">همه</MenuItem>
-              {Object.entries({ none: "ثبت نشده", pending: "در انتظار بررسی", approved: "تأیید شده", rejected: "رد شده", returned: "بازگشت برای ویرایش" }).map(([k, v]) => (
+              {Object.entries({
+                none: "ثبت نشده",
+                pending: "در انتظار بررسی",
+                approved: "تأیید شده",
+                rejected: "رد شده",
+                returned: "بازگشت برای ویرایش",
+              }).map(([k, v]) => (
                 <MenuItem key={k} value={k}>
                   {v}
                 </MenuItem>
@@ -590,7 +853,14 @@ function ListTab({ canManage, formSettings }) {
             </TextField>
           </Grid>
           <Grid item xs={6} md={2}>
-            <TextField select fullWidth size="small" label="فیلتر" value={filters.flag} onChange={(e) => setFilter({ flag: e.target.value })}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="فیلتر"
+              value={filters.flag}
+              onChange={(e) => setFilter({ flag: e.target.value })}
+            >
               <MenuItem value="">—</MenuItem>
               {Object.entries(FLAGS).map(([k, v]) => (
                 <MenuItem key={k} value={k}>
@@ -600,37 +870,97 @@ function ListTab({ canManage, formSettings }) {
             </TextField>
           </Grid>
           <Grid item xs={6} md={1.5}>
-            <JalaliCalendarField label="تاریخ مبنا (خالی = امروز)" value={filters.asOf} onChange={(v) => setFilter({ asOf: v || "" })} />
+            <JalaliCalendarField
+              label="تاریخ مبنا (خالی = امروز)"
+              value={filters.asOf}
+              onChange={(v) => setFilter({ asOf: v || "" })}
+            />
           </Grid>
           <Grid item xs={6} md={1.5}>
-            <Button fullWidth variant="outlined" startIcon={exporting ? <CircularProgress size={16} /> : <FileDownloadOutlinedIcon />} onClick={handleExport} disabled={exporting}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={
+                exporting ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <FileDownloadOutlinedIcon />
+                )
+              }
+              onClick={handleExport}
+              disabled={exporting}
+            >
               Excel
             </Button>
           </Grid>
         </Grid>
         {s && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ mt: 1.5 }}
+          >
             <Chip size="small" label={`پرسنل فعال: ${fa(s.employees)}`} />
             <Chip size="small" label={`ثبت نشده: ${fa(s.not_submitted)}`} />
-            <Chip size="small" color="warning" label={`در انتظار بررسی: ${fa(s.pending)}`} onClick={() => setFilter({ status: "pending" })} />
-            <Chip size="small" color="success" label={`تأیید شده: ${fa(s.approved)}`} />
-            <Chip size="small" variant="outlined" label={`مشمول حق تاهل: ${fa(s.marriage_eligible)}`} />
-            <Chip size="small" variant="outlined" label={`فرزندان واجد شرایط: ${fa(s.eligible_children)}`} />
-            {s.warnings > 0 && <Chip size="small" color="error" variant="outlined" label={`دارای هشدار: ${fa(s.warnings)}`} onClick={() => setFilter({ flag: "warnings" })} />}
+            <Chip
+              size="small"
+              color="warning"
+              label={`در انتظار بررسی: ${fa(s.pending)}`}
+              onClick={() => setFilter({ status: "pending" })}
+            />
+            <Chip
+              size="small"
+              color="success"
+              label={`تأیید شده: ${fa(s.approved)}`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`مشمول حق تاهل: ${fa(s.marriage_eligible)}`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`فرزندان واجد شرایط: ${fa(s.eligible_children)}`}
+            />
+            {s.warnings > 0 && (
+              <Chip
+                size="small"
+                color="error"
+                variant="outlined"
+                label={`دارای هشدار: ${fa(s.warnings)}`}
+                onClick={() => setFilter({ flag: "warnings" })}
+              />
+            )}
             <Box sx={{ flex: 1 }} />
             {canManage && (
-              <Button size="small" startIcon={<UploadFileOutlinedIcon />} onClick={() => setImportOpen(true)}>
+              <Button
+                size="small"
+                startIcon={<UploadFileOutlinedIcon />}
+                onClick={() => setImportOpen(true)}
+              >
                 ورود سابقه بیمه از Excel
               </Button>
             )}
           </Stack>
         )}
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-          شمول حق تاهل و تعداد فرزند واجد شرایط بر اساس آخرین نسخه‌ی تأییدشده‌ی هر پرونده و قواعد تب «قواعد و تنظیمات» در تاریخ مبنا محاسبه می‌شود.
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mt: 1 }}
+        >
+          شمول حق تاهل و تعداد فرزند واجد شرایط بر اساس آخرین نسخه‌ی تأییدشده‌ی
+          هر پرونده و قواعد تب «قواعد و تنظیمات» در تاریخ مبنا محاسبه می‌شود.
         </Typography>
       </Card>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{typeof error === "string" ? error : "خطا"}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {typeof error === "string" ? error : "خطا"}
+        </Alert>
+      )}
       {!data && !error && (
         <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress />
@@ -664,30 +994,53 @@ function ListTab({ canManage, formSettings }) {
                     <TableCell>{item.site_name}</TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} alignItems="center">
-                        <Chip size="small" color={STATUS_COLOR[item.status]} label={STATUS_LABEL[item.status]} />
+                        <Chip
+                          size="small"
+                          color={STATUS_COLOR[item.status]}
+                          label={STATUS_LABEL[item.status]}
+                        />
                         {item.has_pending_changes && (
                           <Tooltip title="تغییرات جدید هنوز تأیید نشده؛ محاسبه بر اساس نسخه‌ی تأییدشده‌ی قبلی است">
-                            <Chip size="small" variant="outlined" label="تغییر" />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label="تغییر"
+                            />
                           </Tooltip>
                         )}
                         {item.warnings.length > 0 && (
                           <Tooltip title={item.warnings.join(" | ")}>
-                            <ReportProblemOutlinedIcon color="warning" fontSize="small" />
+                            <ReportProblemOutlinedIcon
+                              color="warning"
+                              fontSize="small"
+                            />
                           </Tooltip>
                         )}
                       </Stack>
                     </TableCell>
-                    <TableCell>{MARITAL_LABEL[item.marital_status] || "—"}</TableCell>
-                    <TableCell align="center">
-                      {item.status === "none" ? "—" : `${fa(item.sons)} / ${fa(item.daughters)}`}
+                    <TableCell>
+                      {MARITAL_LABEL[item.marital_status] || "—"}
                     </TableCell>
                     <TableCell align="center">
-                      <Tooltip title={item.insurance_source || "تاریخ استخدام ثبت نشده"}>
+                      {item.status === "none"
+                        ? "—"
+                        : `${fa(item.sons)} / ${fa(item.daughters)}`}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip
+                        title={
+                          item.insurance_source || "تاریخ استخدام ثبت نشده"
+                        }
+                      >
                         <span>
                           {canManage ? (
                             <Button
                               size="small"
-                              color={item.insurance_days === null ? "warning" : "inherit"}
+                              color={
+                                item.insurance_days === null
+                                  ? "warning"
+                                  : "inherit"
+                              }
                               onClick={() =>
                                 setHrTarget({
                                   employee_id: item.employee_id,
@@ -697,7 +1050,9 @@ function ListTab({ canManage, formSettings }) {
                                 })
                               }
                             >
-                              {item.insurance_days === null ? "ثبت" : fa(item.insurance_days)}
+                              {item.insurance_days === null
+                                ? "ثبت"
+                                : fa(item.insurance_days)}
                             </Button>
                           ) : (
                             fa(item.insurance_days)
@@ -708,10 +1063,18 @@ function ListTab({ canManage, formSettings }) {
                     <TableCell align="center">
                       <EligibleIcon value={item.marriage_eligible} />
                     </TableCell>
-                    <TableCell align="center">{item.eligible_children === null ? "—" : fa(item.eligible_children)}</TableCell>
+                    <TableCell align="center">
+                      {item.eligible_children === null
+                        ? "—"
+                        : fa(item.eligible_children)}
+                    </TableCell>
                     <TableCell>
                       {item.profile_id && item.status !== "none" && (
-                        <IconButton size="small" onClick={() => setDetailId(item.profile_id)} aria-label="جزئیات">
+                        <IconButton
+                          size="small"
+                          onClick={() => setDetailId(item.profile_id)}
+                          aria-label="جزئیات"
+                        >
                           <VisibilityOutlinedIcon fontSize="small" />
                         </IconButton>
                       )}
@@ -720,7 +1083,11 @@ function ListTab({ canManage, formSettings }) {
                 ))}
                 {data.items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} align="center" sx={{ py: 4, color: "text.secondary" }}>
+                    <TableCell
+                      colSpan={10}
+                      align="center"
+                      sx={{ py: 4, color: "text.secondary" }}
+                    >
                       موردی یافت نشد.
                     </TableCell>
                   </TableRow>
@@ -740,7 +1107,9 @@ function ListTab({ canManage, formSettings }) {
             }}
             rowsPerPageOptions={[25, 50, 100]}
             labelRowsPerPage="تعداد در صفحه"
-            labelDisplayedRows={({ from, to, count }) => `${fa(from)}–${fa(to)} از ${fa(count)}`}
+            labelDisplayedRows={({ from, to, count }) =>
+              `${fa(from)}–${fa(to)} از ${fa(count)}`
+            }
           />
         </Card>
       )}
@@ -761,17 +1130,34 @@ function ListTab({ canManage, formSettings }) {
           load();
         }}
       />
-      <InsuranceImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      <InsuranceImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={load}
+      />
     </Box>
   );
 }
 
 // ---------- تب تنظیمات ----------
 
-const SECTION_TITLES = { profile: "کارمند", spouse: "همسر", child: "فرزندان (پسر و دختر)", son: "فقط پسر", daughter: "فقط دختر" };
+const SECTION_TITLES = {
+  profile: "کارمند",
+  spouse: "همسر",
+  child: "فرزندان (پسر و دختر)",
+  son: "فقط پسر",
+  daughter: "فقط دختر",
+};
 const MODE_LABELS = { required: "اجباری", optional: "اختیاری", hidden: "مخفی" };
 
-function NumberField({ label, value, onChange, disabled, helperText, allowEmpty = true }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+  disabled,
+  helperText,
+  allowEmpty = true,
+}) {
   return (
     <TextField
       fullWidth
@@ -789,8 +1175,21 @@ function NumberField({ label, value, onChange, disabled, helperText, allowEmpty 
   );
 }
 
+// هر سوئیچ در یک خط کامل (نه کنار هم با شکست نامنظم) تا ردیف‌ها مرتب زیر هم بیایند
 function SwitchRow({ label, checked, onChange, disabled }) {
-  return <FormControlLabel control={<Switch checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />} label={label} />;
+  return (
+    <FormControlLabel
+      sx={{ display: "flex", mx: 0, width: "fit-content" }}
+      control={
+        <Switch
+          checked={Boolean(checked)}
+          onChange={(e) => onChange(e.target.checked)}
+          disabled={disabled}
+        />
+      }
+      label={label}
+    />
+  );
 }
 
 // تنظیمات شمول حق اولاد یک جنسیت (پسر یا دختر) — برای هر دو با همان ترتیب و همان متن‌ها
@@ -827,16 +1226,36 @@ function ChildGenderRules({ gender, cr, setRule, disabled }) {
         />
       </Grid>
       <Grid item xs={12}>
-        <SwitchRow label={`${who} بالای سن شروع شرط تحصیل، فقط اگر در حال تحصیل باشد مشمول است`} checked={cr[k("require_study")]} onChange={set("require_study")} disabled={disabled} />
+        <SwitchRow
+          label={`${who} بالای سن شروع شرط تحصیل، فقط اگر در حال تحصیل باشد مشمول است`}
+          checked={cr[k("require_study")]}
+          onChange={set("require_study")}
+          disabled={disabled}
+        />
         <SwitchRow
           label={`برای شمول ${who} محصل، گواهی تحصیل معتبر (منقضی‌نشده) لازم است`}
           checked={cr[k("require_valid_student_certificate")]}
           onChange={set("require_valid_student_certificate")}
           disabled={disabled || !cr[k("require_study")]}
         />
-        <SwitchRow label={`${who} از کار افتاده بدون شرط سن و تحصیل مشمول است`} checked={cr[k("extend_if_disabled")]} onChange={set("extend_if_disabled")} disabled={disabled} />
-        <SwitchRow label={`${who} با ازدواج از شمول خارج می‌شود`} checked={cr[k("stop_on_marriage")]} onChange={set("stop_on_marriage")} disabled={disabled} />
-        <SwitchRow label={`${who} با اشتغال از شمول خارج می‌شود`} checked={cr[k("stop_on_employment")]} onChange={set("stop_on_employment")} disabled={disabled} />
+        <SwitchRow
+          label={`${who} از کار افتاده بدون شرط سن و تحصیل مشمول است`}
+          checked={cr[k("extend_if_disabled")]}
+          onChange={set("extend_if_disabled")}
+          disabled={disabled}
+        />
+        <SwitchRow
+          label={`${who} با ازدواج از شمول خارج می‌شود`}
+          checked={cr[k("stop_on_marriage")]}
+          onChange={set("stop_on_marriage")}
+          disabled={disabled}
+        />
+        <SwitchRow
+          label={`${who} با اشتغال از شمول خارج می‌شود`}
+          checked={cr[k("stop_on_employment")]}
+          onChange={set("stop_on_employment")}
+          disabled={disabled}
+        />
       </Grid>
     </>
   );
@@ -850,7 +1269,11 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
 
   // مدیر یک یا چند سایت (نه همه): تنظیمات مشترک فقط خواندنی
   const ro = !canManage || !editable;
-  const setRule = (group, key, value) => setS((cur) => ({ ...cur, rules: { ...cur.rules, [group]: { ...cur.rules[group], [key]: value } } }));
+  const setRule = (group, key, value) =>
+    setS((cur) => ({
+      ...cur,
+      rules: { ...cur.rules, [group]: { ...cur.rules[group], [key]: value } },
+    }));
   const mr = s.rules.marriage;
   const cr = s.rules.child;
 
@@ -862,7 +1285,13 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
       onSaved(res);
       setMessage({ severity: "success", text: "تنظیمات ذخیره شد." });
     } catch (err) {
-      setMessage({ severity: "error", text: typeof err.response?.data?.detail === "string" ? err.response.data.detail : "ذخیره با خطا مواجه شد." });
+      setMessage({
+        severity: "error",
+        text:
+          typeof err.response?.data?.detail === "string"
+            ? err.response.data.detail
+            : "ذخیره با خطا مواجه شد.",
+      });
     } finally {
       setSaving(false);
     }
@@ -877,7 +1306,9 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
       label={f.label}
       value={s.fields[f.key]}
       disabled={ro}
-      onChange={(e) => setS({ ...s, fields: { ...s.fields, [f.key]: e.target.value } })}
+      onChange={(e) =>
+        setS({ ...s, fields: { ...s.fields, [f.key]: e.target.value } })
+      }
     >
       {Object.entries(MODE_LABELS).map(([k, v]) => (
         <MenuItem key={k} value={k}>
@@ -888,14 +1319,24 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
   );
   return (
     <Stack spacing={2}>
-      {ro && <Alert severity="info">فقط دارنده‌ی مجوز «مدیریت مشخصات خانوادگی» می‌تواند تنظیمات را تغییر دهد.</Alert>}
+      {ro && (
+        <Alert severity="info">
+          فقط دارنده‌ی مجوز «مدیریت مشخصات خانوادگی» می‌تواند تنظیمات را تغییر
+          دهد.
+        </Alert>
+      )}
 
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Typography fontWeight={800} sx={{ mb: 1 }}>
           کلیات فرم
         </Typography>
         <Stack>
-          <SwitchRow label="فرم «مشخصات خانوادگی» برای پرسنل فعال باشد" checked={s.enabled} onChange={(v) => setS({ ...s, enabled: v })} disabled={ro} />
+          <SwitchRow
+            label="فرم «مشخصات خانوادگی» برای پرسنل فعال باشد"
+            checked={s.enabled}
+            onChange={(v) => setS({ ...s, enabled: v })}
+            disabled={ro}
+          />
           <SwitchRow
             label="پس از تأیید، پرسنل نتواند فرم را ویرایش کند (فقط با «بازگشت برای ویرایش»)"
             checked={s.lock_after_approval}
@@ -918,19 +1359,31 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Typography fontWeight={800}>سابقه بیمه</Typography>
         <Typography variant="caption" color="text.secondary">
-          سابقه = روزهای پس از تاریخ استخدام (کاراوب) + سابقه‌ی پیش از استخدام. منابع انسانی می‌تواند برای هر نفر سابقه‌ی قبلی یا کل سابقه را دستی یا از Excel ثبت کند.
+          سابقه = روزهای پس از تاریخ استخدام (کاراوب) + سابقه‌ی پیش از استخدام.
+          منابع انسانی می‌تواند برای هر نفر سابقه‌ی قبلی یا کل سابقه را دستی یا
+          از Excel ثبت کند.
         </Typography>
         <Stack sx={{ mt: 1 }}>
           <SwitchRow
             label="روزهای پس از تاریخ استخدام خودکار جزو سابقه‌ی بیمه حساب شود"
             checked={s.insurance.auto_from_hire_date}
-            onChange={(v) => setS({ ...s, insurance: { ...s.insurance, auto_from_hire_date: v } })}
+            onChange={(v) =>
+              setS({
+                ...s,
+                insurance: { ...s.insurance, auto_from_hire_date: v },
+              })
+            }
             disabled={ro}
           />
           <SwitchRow
             label="اگر سابقه‌ی همین شرکت کافی نیست، سابقه‌ی بیمه‌ی پیش از استخدام (با پرینت سوابق) از خود پرسنل پرسیده شود"
             checked={s.insurance.ask_employee_prior}
-            onChange={(v) => setS({ ...s, insurance: { ...s.insurance, ask_employee_prior: v } })}
+            onChange={(v) =>
+              setS({
+                ...s,
+                insurance: { ...s.insurance, ask_employee_prior: v },
+              })
+            }
             disabled={ro}
           />
         </Stack>
@@ -943,11 +1396,31 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
         </Typography>
         <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
           <Grid item xs={12}>
-            <SwitchRow label="محاسبه‌ی حق تاهل فعال باشد" checked={mr.enabled} onChange={(v) => setRule("marriage", "enabled", v)} disabled={ro} />
-            <SwitchRow label="کارمند مرد متاهل مشمول است" checked={mr.male_married} onChange={(v) => setRule("marriage", "male_married", v)} disabled={ro} />
+            <SwitchRow
+              label="محاسبه‌ی حق تاهل فعال باشد"
+              checked={mr.enabled}
+              onChange={(v) => setRule("marriage", "enabled", v)}
+              disabled={ro}
+            />
+            <SwitchRow
+              label="کارمند مرد متاهل مشمول است"
+              checked={mr.male_married}
+              onChange={(v) => setRule("marriage", "male_married", v)}
+              disabled={ro}
+            />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField select fullWidth size="small" label="کارمند زن" value={mr.female_mode} onChange={(e) => setRule("marriage", "female_mode", e.target.value)} disabled={ro}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="کارمند زن"
+              value={mr.female_mode}
+              onChange={(e) =>
+                setRule("marriage", "female_mode", e.target.value)
+              }
+              disabled={ro}
+            >
               {Object.entries(meta.marriage_female_modes).map(([k, v]) => (
                 <MenuItem key={k} value={k}>
                   {v}
@@ -956,7 +1429,12 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
             </TextField>
           </Grid>
           <Grid item xs={12} md={6}>
-            <NumberField label="حداقل سابقه بیمه (روز) — خالی = بدون شرط" value={mr.min_insurance_days} onChange={(v) => setRule("marriage", "min_insurance_days", v)} disabled={ro} />
+            <NumberField
+              label="حداقل سابقه بیمه (روز) — خالی = بدون شرط"
+              value={mr.min_insurance_days}
+              onChange={(v) => setRule("marriage", "min_insurance_days", v)}
+              disabled={ro}
+            />
           </Grid>
         </Grid>
       </Card>
@@ -964,20 +1442,44 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Typography fontWeight={800}>حق اولاد</Typography>
         <Typography variant="caption" color="text.secondary">
-          شرایط کلی کارمند و شرایط هر فرزند برای محاسبه‌ی تعداد فرزند واجد شرایط.
+          شرایط کلی کارمند و شرایط هر فرزند برای محاسبه‌ی تعداد فرزند واجد
+          شرایط.
         </Typography>
         <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
           <Grid item xs={12}>
-            <SwitchRow label="محاسبه‌ی حق اولاد فعال باشد" checked={cr.enabled} onChange={(v) => setRule("child", "enabled", v)} disabled={ro} />
+            <SwitchRow
+              label="محاسبه‌ی حق اولاد فعال باشد"
+              checked={cr.enabled}
+              onChange={(v) => setRule("child", "enabled", v)}
+              disabled={ro}
+            />
           </Grid>
           <Grid item xs={12} md={4}>
-            <NumberField label="حداقل سابقه بیمه (روز) — خالی = بدون شرط" value={cr.min_insurance_days} onChange={(v) => setRule("child", "min_insurance_days", v)} disabled={ro} />
+            <NumberField
+              label="حداقل سابقه بیمه (روز) — خالی = بدون شرط"
+              value={cr.min_insurance_days}
+              onChange={(v) => setRule("child", "min_insurance_days", v)}
+              disabled={ro}
+            />
           </Grid>
           <Grid item xs={12} md={4}>
-            <NumberField label="سقف تعداد فرزند — خالی = بدون سقف" value={cr.max_children} onChange={(v) => setRule("child", "max_children", v)} disabled={ro} />
+            <NumberField
+              label="سقف تعداد فرزند — خالی = بدون سقف"
+              value={cr.max_children}
+              onChange={(v) => setRule("child", "max_children", v)}
+              disabled={ro}
+            />
           </Grid>
           <Grid item xs={12} md={4}>
-            <TextField select fullWidth size="small" label="کارمند زن" value={cr.female_mode} onChange={(e) => setRule("child", "female_mode", e.target.value)} disabled={ro}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="کارمند زن"
+              value={cr.female_mode}
+              onChange={(e) => setRule("child", "female_mode", e.target.value)}
+              disabled={ro}
+            >
               {Object.entries(meta.child_female_modes).map(([k, v]) => (
                 <MenuItem key={k} value={k}>
                   {v}
@@ -986,14 +1488,44 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
             </TextField>
           </Grid>
           <Grid item xs={12}>
-            <SwitchRow label="اگر همسر از محل کار خود حق اولاد می‌گیرد، مشمول نباشد" checked={cr.exclude_if_spouse_receives} onChange={(v) => setRule("child", "exclude_if_spouse_receives", v)} disabled={ro} />
-            <SwitchRow label="فرزندخوانده مشمول است" checked={cr.include_adopted} onChange={(v) => setRule("child", "include_adopted", v)} disabled={ro} />
-            <SwitchRow label="فرزند همسر مشمول است" checked={cr.include_step} onChange={(v) => setRule("child", "include_step", v)} disabled={ro} />
-            <SwitchRow label="پس از طلاق فقط فرزندی که حضانتش با کارمند (یا مشترک) است مشمول باشد" checked={cr.require_custody_after_divorce} onChange={(v) => setRule("child", "require_custody_after_divorce", v)} disabled={ro} />
+            <SwitchRow
+              label="اگر همسر از محل کار خود حق اولاد می‌گیرد، مشمول نباشد"
+              checked={cr.exclude_if_spouse_receives}
+              onChange={(v) =>
+                setRule("child", "exclude_if_spouse_receives", v)
+              }
+              disabled={ro}
+            />
+            <SwitchRow
+              label="فرزندخوانده مشمول است"
+              checked={cr.include_adopted}
+              onChange={(v) => setRule("child", "include_adopted", v)}
+              disabled={ro}
+            />
+            <SwitchRow
+              label="فرزند همسر مشمول است"
+              checked={cr.include_step}
+              onChange={(v) => setRule("child", "include_step", v)}
+              disabled={ro}
+            />
+            <SwitchRow
+              label="پس از طلاق فقط فرزندی که حضانتش با کارمند (یا مشترک) است مشمول باشد"
+              checked={cr.require_custody_after_divorce}
+              onChange={(v) =>
+                setRule("child", "require_custody_after_divorce", v)
+              }
+              disabled={ro}
+            />
           </Grid>
           {/* پسر و دختر: تنظیمات، ترتیب و متن‌های یکسان */}
           {["son", "daughter"].map((g) => (
-            <ChildGenderRules key={g} gender={g} cr={cr} setRule={setRule} disabled={ro} />
+            <ChildGenderRules
+              key={g}
+              gender={g}
+              cr={cr}
+              setRule={setRule}
+              disabled={ro}
+            />
           ))}
         </Grid>
       </Card>
@@ -1002,17 +1534,29 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
         <Typography fontWeight={800} sx={{ mb: 1 }}>
           مدارک
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً گواهی تحصیل فقط برای پسر یا دختری که به سن شروع شرط تحصیل رسیده و در حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است؛ انقضای گواهی اشتغال به تحصیل از «تاریخ اعتبار» همان گواهی محاسبه می‌شود.
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          هر مدرک فقط وقتی از پرسنل خواسته می‌شود که شرطش برقرار باشد (مثلاً
+          گواهی تحصیل فقط برای پسر یا دختری که به سن شروع شرط تحصیل رسیده و در
+          حال تحصیل است). دوره‌ی تمدید مبنای انقضا و هشدار است؛ انقضای گواهی
+          اشتغال به تحصیل از «تاریخ اعتبار» همان گواهی محاسبه می‌شود.
         </Typography>
         <Stack spacing={1.25}>
           {Object.entries(meta.doc_types).map(([key, spec]) => (
-            <Grid container spacing={1} alignItems="center" key={key}>
+            // هم‌ترازی پایین: هر دو فیلد برچسب بالای خود دارند و ورودی‌هایشان در یک خط قرار می‌گیرند
+            <Grid container spacing={1} alignItems="flex-end" key={key}>
               <Grid item xs={12} md={5}>
                 <Typography variant="body2" fontWeight={700}>
                   {spec.label}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 0.75 }}
+                >
                   {spec.hint}
                 </Typography>
               </Grid>
@@ -1021,9 +1565,18 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
                   select
                   fullWidth
                   size="small"
+                  label="نمایش در فرم"
                   value={s.documents[key].mode}
                   disabled={ro}
-                  onChange={(e) => setS({ ...s, documents: { ...s.documents, [key]: { ...s.documents[key], mode: e.target.value } } })}
+                  onChange={(e) =>
+                    setS({
+                      ...s,
+                      documents: {
+                        ...s.documents,
+                        [key]: { ...s.documents[key], mode: e.target.value },
+                      },
+                    })
+                  }
                 >
                   {Object.entries(MODE_LABELS).map(([k, v]) => (
                     <MenuItem key={k} value={k}>
@@ -1035,7 +1588,11 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
               <Grid item xs={6} md={4}>
                 {spec.expiry_field ? (
                   // گواهی اشتغال به تحصیل: انقضا = «تاریخ اعتبار» که پرسنل همراه گواهی وارد می‌کند (دوره تمدید ندارد)
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mb: 1 }}
+                  >
                     انقضا: «تاریخ اعتبار گواهی» که پرسنل همراه گواهی وارد می‌کند
                   </Typography>
                 ) : (
@@ -1043,7 +1600,15 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
                     label="تمدید هر چند ماه — خالی = ندارد"
                     value={s.documents[key].renewal_months}
                     disabled={ro}
-                    onChange={(v) => setS({ ...s, documents: { ...s.documents, [key]: { ...s.documents[key], renewal_months: v } } })}
+                    onChange={(v) =>
+                      setS({
+                        ...s,
+                        documents: {
+                          ...s.documents,
+                          [key]: { ...s.documents[key], renewal_months: v },
+                        },
+                      })
+                    }
                   />
                 )}
               </Grid>
@@ -1056,12 +1621,22 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
         <Typography fontWeight={800} sx={{ mb: 1 }}>
           فیلدهای فرم
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          نام و نام خانوادگی اعضا، تاریخ تولد فرزندان، وضعیت تاهل و «دارای فرزند» همیشه اجباری‌اند.
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          نام و نام خانوادگی اعضا، تاریخ تولد فرزندان، وضعیت تاهل و «دارای
+          فرزند» همیشه اجباری‌اند.
         </Typography>
         {sections.map((section) => (
           <Box key={section} sx={{ mb: 1.5 }}>
-            <Typography variant="body2" fontWeight={800} color="primary" sx={{ mb: 0.75 }}>
+            <Typography
+              variant="body2"
+              fontWeight={800}
+              color="primary"
+              sx={{ mb: 0.75 }}
+            >
               {SECTION_TITLES[section]}
             </Typography>
             <Grid container spacing={1}>
@@ -1079,7 +1654,12 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
         <Grid container spacing={2}>
           {["son", "daughter"].map((section) => (
             <Grid item xs={12} md={6} key={section}>
-              <Typography variant="body2" fontWeight={800} color="primary" sx={{ mb: 0.75 }}>
+              <Typography
+                variant="body2"
+                fontWeight={800}
+                color="primary"
+                sx={{ mb: 0.75 }}
+              >
                 {SECTION_TITLES[section]}
               </Typography>
               <Stack spacing={1}>
@@ -1103,7 +1683,12 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
             <NumberField
               label="هشدار رسیدن پسر/دختر به سن شروع شرط تحصیل، چند ماه قبل (۰ = خاموش)"
               value={s.alerts.son_age_warning_months}
-              onChange={(v) => setS({ ...s, alerts: { ...s.alerts, son_age_warning_months: v ?? 0 } })}
+              onChange={(v) =>
+                setS({
+                  ...s,
+                  alerts: { ...s.alerts, son_age_warning_months: v ?? 0 },
+                })
+              }
               disabled={ro}
             />
           </Grid>
@@ -1111,7 +1696,12 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
             <NumberField
               label="هشدار انقضای مدرک، چند روز قبل (۰ = خاموش)"
               value={s.alerts.doc_expiry_warning_days}
-              onChange={(v) => setS({ ...s, alerts: { ...s.alerts, doc_expiry_warning_days: v ?? 0 } })}
+              onChange={(v) =>
+                setS({
+                  ...s,
+                  alerts: { ...s.alerts, doc_expiry_warning_days: v ?? 0 },
+                })
+              }
               disabled={ro}
             />
           </Grid>
@@ -1121,13 +1711,26 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
       {canManage && !editable && (
         <Alert severity="info">
-          این قواعد و تنظیمات بین همه‌ی سایت‌ها مشترک است و فقط کسی که مجوز مدیریت مشخصات خانوادگی را برای همه‌ی سایت‌ها
-          دارد می‌تواند آن را تغییر دهد. بررسی و تأیید پرونده‌های سایت‌های شما در تب فهرست انجام می‌شود.
+          این قواعد و تنظیمات بین همه‌ی سایت‌ها مشترک است و فقط کسی که مجوز
+          مدیریت مشخصات خانوادگی را برای همه‌ی سایت‌ها دارد می‌تواند آن را تغییر
+          دهد. بررسی و تأیید پرونده‌های سایت‌های شما در تب فهرست انجام می‌شود.
         </Alert>
       )}
       {!ro && (
         <Box>
-          <Button variant="contained" size="large" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveOutlinedIcon />} onClick={save} disabled={saving}>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={
+              saving ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : (
+                <SaveOutlinedIcon />
+              )
+            }
+            onClick={save}
+            disabled={saving}
+          >
             ذخیره تنظیمات
           </Button>
         </Box>
@@ -1148,7 +1751,11 @@ export default function FamilyAdminPage() {
   useEffect(() => {
     fetchFamilySettings()
       .then(setSettingsData)
-      .catch((err) => setError(err.response?.data?.detail || "بارگذاری تنظیمات با خطا مواجه شد."));
+      .catch((err) =>
+        setError(
+          err.response?.data?.detail || "بارگذاری تنظیمات با خطا مواجه شد.",
+        ),
+      );
   }, []);
 
   // تنظیمات فرم به قالبی که FamilySummary انتظار دارد
@@ -1172,7 +1779,8 @@ export default function FamilyAdminPage() {
         مشخصات خانوادگی پرسنل
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        وضعیت تاهل، همسر و فرزندان پرسنل، بررسی و تأیید، و محاسبه‌ی شمول حق تاهل و حق اولاد بر اساس قواعدی که همین‌جا تنظیم می‌کنید.
+        وضعیت تاهل، همسر و فرزندان پرسنل، بررسی و تأیید، و محاسبه‌ی شمول حق تاهل
+        و حق اولاد بر اساس قواعدی که همین‌جا تنظیم می‌کنید.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {!settingsData && !error && (
@@ -1186,11 +1794,20 @@ export default function FamilyAdminPage() {
           {tab === "list" ? (
             <ListTab canManage={canManage} formSettings={formSettings} />
           ) : (
-            <SettingsTab canManage={canManage} editable={settingsData.editable !== false} initial={settingsData.settings} meta={settingsData.meta} onSaved={setSettingsData} />
+            <SettingsTab
+              canManage={canManage}
+              editable={settingsData.editable !== false}
+              initial={settingsData.settings}
+              meta={settingsData.meta}
+              onSaved={setSettingsData}
+            />
           )}
         </>
       )}
-      <ModuleNotificationTemplates module="family" title="متن اطلاعیه‌های خودکار مشخصات خانوادگی" />
+      <ModuleNotificationTemplates
+        module="family"
+        title="متن اطلاعیه‌های خودکار مشخصات خانوادگی"
+      />
     </Box>
   );
 }

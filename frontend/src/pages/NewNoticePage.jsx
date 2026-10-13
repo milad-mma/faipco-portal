@@ -26,7 +26,6 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
@@ -38,6 +37,7 @@ import {
   publishNotice,
   uploadNoticeAttachment,
 } from "../api/notices";
+import BackLink from "../components/BackLink";
 import { useAuth } from "../context/AuthContext";
 import NoticeAttachmentPicker from "../components/NoticeAttachmentPicker";
 import { fetchSites } from "../api/sites";
@@ -93,21 +93,23 @@ export default function NewNoticePage() {
   const [createMode, setCreateMode] = useState("normal"); // "normal" | "payroll" | "attendance_card"
   const [form, setForm] = useState(EMPTY_FORM);
   const [payrollForm, setPayrollForm] = useState(EMPTY_PAYROLL_FORM);
-  const [payrollResult, setPayrollResult] = useState(null);  // پاسخ آپلود فیش حقوقی (matched_employee_count، missing_codes، invalid_row_count)
-  const [attendanceCardForm, setAttendanceCardForm] = useState(EMPTY_ATTENDANCE_CARD_FORM);
-  const [attendanceCardResult, setAttendanceCardResult] = useState(null);  // پاسخ آپلود فیش کارکرد، با همان ساختار
+  const [payrollResult, setPayrollResult] = useState(null); // پاسخ آپلود فیش حقوقی (matched_employee_count، missing_codes، invalid_row_count)
+  const [attendanceCardForm, setAttendanceCardForm] = useState(
+    EMPTY_ATTENDANCE_CARD_FORM,
+  );
+  const [attendanceCardResult, setAttendanceCardResult] = useState(null); // پاسخ آپلود فیش کارکرد، با همان ساختار
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // نتیجه نهایی ارسال — با رنگ سبز (موفق) یا قرمز (ناموفق) نمایش داده می‌شود
   const [result, setResult] = useState(null); // { success: boolean, message: string } | null
 
-  const [availableTargets, setAvailableTargets] = useState(null);  // مقصدها و مجوزهای ارسال کاربر از سرور؛ null = در حال بارگذاری
+  const [availableTargets, setAvailableTargets] = useState(null); // مقصدها و مجوزهای ارسال کاربر از سرور؛ null = در حال بارگذاری
   const [sites, setSites] = useState([]);
   const [departments, setDepartments] = useState([]);
 
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [employeeOptions, setEmployeeOptions] = useState([]);  // نتایج جست‌وجوی پرسنل برای «ارسال به شخص خاص»
+  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جست‌وجوی پرسنل برای «ارسال به شخص خاص»
   const [employeeSearchLoading, setEmployeeSearchLoading] = useState(false);
 
   // بارگذاری اولیه مجوزهای ارسال، سایت‌ها و واحدها
@@ -136,7 +138,8 @@ export default function NewNoticePage() {
   // محدودیت جستجوی «ارسال به شخص خاص» — اگر کاربر فقط سرپرست واحد است (نه
   // مدیر سایت/میانی)، سرور employee_target_department_ids را برمی‌گرداند و
   // جستجو باید فقط در همان واحد(های) خودش انجام شود، نه کل سازمان.
-  const employeeScopeDepartmentIds = availableTargets?.employee_target_department_ids || null;
+  const employeeScopeDepartmentIds =
+    availableTargets?.employee_target_department_ids || null;
 
   // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه (debounce)، محدود به واحدهای مجاز در صورت وجود
   useEffect(() => {
@@ -159,11 +162,14 @@ export default function NewNoticePage() {
   // سایت‌ها و واحدهایی که کاربر اجازه ارسال به آن‌ها را دارد
   const allowedSites = useMemo(
     () => sites.filter((s) => availableTargets?.site_ids.includes(s.id)),
-    [sites, availableTargets]
+    [sites, availableTargets],
   );
   const allowedDepartments = useMemo(
-    () => departments.filter((d) => availableTargets?.department_ids.includes(d.id)),
-    [departments, availableTargets]
+    () =>
+      departments.filter((d) =>
+        availableTargets?.department_ids.includes(d.id),
+      ),
+    [departments, availableTargets],
   );
 
   // کاربر حداقل یک نوع مخاطب برای اطلاعیه متنی دارد
@@ -174,8 +180,9 @@ export default function NewNoticePage() {
       allowedDepartments.length > 0 ||
       availableTargets.can_target_employee);
 
-  const allDepartmentsSelected =  // همه واحدهای مجاز انتخاب شده‌اند
-    allowedDepartments.length > 0 && form.departmentIds.length === allowedDepartments.length;
+  const allDepartmentsSelected = // همه واحدهای مجاز انتخاب شده‌اند
+    allowedDepartments.length > 0 &&
+    form.departmentIds.length === allowedDepartments.length;
 
   // افزودن/حذف یک واحد از مخاطبان
   function toggleDepartment(deptId) {
@@ -191,13 +198,16 @@ export default function NewNoticePage() {
   function toggleSelectAllDepartments() {
     setForm((prev) => ({
       ...prev,
-      departmentIds: allDepartmentsSelected ? [] : allowedDepartments.map((d) => d.id),
+      departmentIds: allDepartmentsSelected
+        ? []
+        : allowedDepartments.map((d) => d.id),
     }));
   }
 
-  const supervisorOptions = availableTargets?.supervisor_employees || [];  // سرپرستانی که کاربر می‌تواند به آن‌ها ارسال کند
+  const supervisorOptions = availableTargets?.supervisor_employees || []; // سرپرستانی که کاربر می‌تواند به آن‌ها ارسال کند
   const allSupervisorsSelected =
-    supervisorOptions.length > 0 && form.supervisors.length === supervisorOptions.length;
+    supervisorOptions.length > 0 &&
+    form.supervisors.length === supervisorOptions.length;
 
   // افزودن/حذف یک سرپرست از مخاطبان
   function toggleSupervisor(employeeId) {
@@ -213,7 +223,9 @@ export default function NewNoticePage() {
   function toggleSelectAllSupervisors() {
     setForm((prev) => ({
       ...prev,
-      supervisors: allSupervisorsSelected ? [] : supervisorOptions.map((e) => e.id),
+      supervisors: allSupervisorsSelected
+        ? []
+        : supervisorOptions.map((e) => e.id),
     }));
   }
 
@@ -242,8 +254,12 @@ export default function NewNoticePage() {
 
     const targets = [];
     if (form.targetAll) targets.push({ target_type: "all" });
-    form.siteIds.forEach((id) => targets.push({ target_type: "site", target_id: id }));
-    form.departmentIds.forEach((id) => targets.push({ target_type: "department", target_id: id }));
+    form.siteIds.forEach((id) =>
+      targets.push({ target_type: "site", target_id: id }),
+    );
+    form.departmentIds.forEach((id) =>
+      targets.push({ target_type: "department", target_id: id }),
+    );
 
     const employeeIds = new Set();
     form.supervisors.forEach((id) => {
@@ -292,7 +308,9 @@ export default function NewNoticePage() {
           const detail = uploadErr.response?.data?.detail;
           uploadErr.response = uploadErr.response && {
             ...uploadErr.response,
-            data: { detail: `«${file.name}»: ${typeof detail === "string" ? detail : "آپلود ناموفق بود."}` },
+            data: {
+              detail: `«${file.name}»: ${typeof detail === "string" ? detail : "آپلود ناموفق بود."}`,
+            },
           };
           throw uploadErr;
         }
@@ -300,16 +318,24 @@ export default function NewNoticePage() {
       publishing = true;
       await publishNotice(created.id);
       createdId = null;
-      setResult({ success: true, message: "اطلاعیه با موفقیت ثبت و منتشر شد." });
+      setResult({
+        success: true,
+        message: "اطلاعیه با موفقیت ثبت و منتشر شد.",
+      });
       setForm(EMPTY_FORM);
       setAttachments([]);
     } catch (err) {
       const message =
-        err.response?.data?.detail?.[0]?.msg || err.response?.data?.detail || "ثبت اطلاعیه با خطا مواجه شد.";
+        err.response?.data?.detail?.[0]?.msg ||
+        err.response?.data?.detail ||
+        "ثبت اطلاعیه با خطا مواجه شد.";
       // اگر پیش‌نویس ساخته شد ولی آپلود/انتشار نشد، پیش‌نویس ناقص حذف می‌شود تا با تلاش دوباره تکراری نشود
-      if (createdId && (!publishing || err.response)) deleteNotice(createdId).catch(() => {});
+      if (createdId && (!publishing || err.response))
+        deleteNotice(createdId).catch(() => {});
       // خطا کنار دکمه‌ی ارسال نمایش داده می‌شود و فرم (متن، مخاطبان، پیوست‌ها) دست‌نخورده می‌ماند تا با اصلاح دوباره بفرستد
-      setError(typeof message === "string" ? message : "ثبت اطلاعیه با خطا مواجه شد.");
+      setError(
+        typeof message === "string" ? message : "ثبت اطلاعیه با خطا مواجه شد.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -347,7 +373,9 @@ export default function NewNoticePage() {
       setResult({ success: true, message });
     } catch (err) {
       // فرم و فایل انتخاب‌شده می‌مانند؛ فقط پیام خطا نمایش داده می‌شود
-      setError(err.response?.data?.detail || "آپلود فیش حقوقی با خطا مواجه شد.");
+      setError(
+        err.response?.data?.detail || "آپلود فیش حقوقی با خطا مواجه شد.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -365,7 +393,9 @@ export default function NewNoticePage() {
       return;
     }
     if (!attendanceCardForm.cardSubtitle.trim()) {
-      setError("ماه/سالی که روی خودِ کارت چاپ می‌شود را وارد کنید (مثلاً «تیر ماه 1405»).");
+      setError(
+        "ماه/سالی که روی خودِ کارت چاپ می‌شود را وارد کنید (مثلاً «تیر ماه 1405»).",
+      );
       return;
     }
     if (!attendanceCardForm.file) {
@@ -387,7 +417,9 @@ export default function NewNoticePage() {
       setResult({ success: true, message });
     } catch (err) {
       // فرم و فایل انتخاب‌شده می‌مانند؛ فقط پیام خطا نمایش داده می‌شود
-      setError(err.response?.data?.detail || "آپلود فیش کارکرد با خطا مواجه شد.");
+      setError(
+        err.response?.data?.detail || "آپلود فیش کارکرد با خطا مواجه شد.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -405,7 +437,7 @@ export default function NewNoticePage() {
     setAttendanceCardResult(null);
   }
 
-    // تا بارگذاری مجوزها، نشانگر بارگذاری نمایش داده می‌شود
+  // تا بارگذاری مجوزها، نشانگر بارگذاری نمایش داده می‌شود
   if (!availableTargets) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -414,33 +446,37 @@ export default function NewNoticePage() {
     );
   }
 
-    // کاربری که هیچ مجوز ارسالی ندارد فقط پیام هشدار و دکمه بازگشت را می‌بیند
-  if (!canAnyNormalTarget && !availableTargets.can_upload_payroll && !availableTargets.can_upload_attendance_card) {
+  // کاربری که هیچ مجوز ارسالی ندارد فقط پیام هشدار و دکمه بازگشت را می‌بیند
+  if (
+    !canAnyNormalTarget &&
+    !availableTargets.can_upload_payroll &&
+    !availableTargets.can_upload_attendance_card
+  ) {
     return (
       <Box sx={{ maxWidth: 640, mx: "auto" }}>
-        <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/notices")} sx={{ mb: 2 }}>
-          بازگشت
-        </Button>
-        <Alert severity="warning">شما مجاز به ارسال هیچ نوع اطلاعیه‌ای نیستید.</Alert>
+        <BackLink to="/notices" label="بازگشت" />
+        <Alert severity="warning">
+          شما مجاز به ارسال هیچ نوع اطلاعیه‌ای نیستید.
+        </Alert>
       </Box>
     );
   }
 
   return (
     <Box sx={{ maxWidth: 640, mx: "auto" }}>
-      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
-        <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/notices")}>
-          بازگشت
-        </Button>
-        <Typography variant="h5" fontWeight={700}>
-          اطلاعیه جدید
-        </Typography>
-      </Stack>
+      {/* سرصفحه مثل بقیه‌ی صفحه‌ها: دکمه‌ی بازگشت مشترک و عنوان راست‌چین */}
+      <BackLink to="/notices" label="بازگشت" />
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
+        اطلاعیه جدید
+      </Typography>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
         {/* پیام نتیجه ارسال؛ برای فیش‌ها کدهای پیدانشده و تعداد ردیف‌های بدون کد پرسنلی هم اضافه می‌شود */}
         {result && (
-          <Alert severity={result.success ? "success" : "error"} sx={{ mb: 3, whiteSpace: "pre-line" }}>
+          <Alert
+            severity={result.success ? "success" : "error"}
+            sx={{ mb: 3, whiteSpace: "pre-line" }}
+          >
             {result.message}
             {result.success &&
               payrollResult?.missing_codes?.length > 0 &&
@@ -476,9 +512,10 @@ export default function NewNoticePage() {
         ) : (
           <Stack spacing={2}>
             {/* تب انتخاب حالت، فقط وقتی کاربر به بیش از یک حالت دسترسی دارد */}
-            {((canAnyNormalTarget ? 1 : 0) +
+            {(canAnyNormalTarget ? 1 : 0) +
               (availableTargets?.can_upload_payroll ? 1 : 0) +
-              (availableTargets?.can_upload_attendance_card ? 1 : 0)) > 1 && (
+              (availableTargets?.can_upload_attendance_card ? 1 : 0) >
+              1 && (
               <PillTabs
                 value={createMode}
                 onChange={(k) => {
@@ -487,7 +524,9 @@ export default function NewNoticePage() {
                   setError("");
                 }}
                 tabs={[
-                  ...(canAnyNormalTarget ? [{ key: "normal", label: "اطلاعیه متنی" }] : []),
+                  ...(canAnyNormalTarget
+                    ? [{ key: "normal", label: "اطلاعیه متنی" }]
+                    : []),
                   ...(availableTargets?.can_upload_payroll
                     ? [{ key: "payroll", label: "فیش حقوقی" }]
                     : []),
@@ -523,13 +562,19 @@ export default function NewNoticePage() {
                   disabled={isSubmitting}
                 />
                 {canAttach && (
-                  <NoticeAttachmentPicker files={attachments} onChange={setAttachments} disabled={isSubmitting} />
+                  <NoticeAttachmentPicker
+                    files={attachments}
+                    onChange={setAttachments}
+                    disabled={isSubmitting}
+                  />
                 )}
                 <TextField
                   select
                   label="اولویت"
                   value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, priority: e.target.value })
+                  }
                   disabled={isSubmitting}
                 >
                   {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
@@ -550,7 +595,9 @@ export default function NewNoticePage() {
                     control={
                       <Checkbox
                         checked={form.targetAll}
-                        onChange={(e) => setForm({ ...form, targetAll: e.target.checked })}
+                        onChange={(e) =>
+                          setForm({ ...form, targetAll: e.target.checked })
+                        }
                         disabled={isSubmitting}
                       />
                     }
@@ -566,12 +613,23 @@ export default function NewNoticePage() {
                     disabled={isSubmitting}
                     options={allowedSites}
                     getOptionLabel={(s) => s.name}
-                    value={allowedSites.filter((s) => form.siteIds.includes(s.id))}
-                    onChange={(_, selected) => setForm({ ...form, siteIds: selected.map((s) => s.id) })}
-                    renderInput={(params) => <TextField {...params} label="ارسال به کل این سایت‌ها" />}
+                    value={allowedSites.filter((s) =>
+                      form.siteIds.includes(s.id),
+                    )}
+                    onChange={(_, selected) =>
+                      setForm({ ...form, siteIds: selected.map((s) => s.id) })
+                    }
+                    renderInput={(params) => (
+                      <TextField {...params} label="ارسال به کل این سایت‌ها" />
+                    )}
                     renderTags={(value, getTagProps) =>
                       value.map((option, index) => (
-                        <Chip size="small" label={option.name} {...getTagProps({ index })} key={option.id} />
+                        <Chip
+                          size="small"
+                          label={option.name}
+                          {...getTagProps({ index })}
+                          key={option.id}
+                        />
                       ))
                     }
                   />
@@ -579,8 +637,19 @@ export default function NewNoticePage() {
 
                 {/* انتخاب واحدها با گزینه «انتخاب همه» */}
                 {allowedDepartments.length > 0 && (
-                  <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
-                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  <Box
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      fontWeight={600}
+                      sx={{ mb: 0.5 }}
+                    >
                       ارسال به یک یا چند واحد سازمانی
                     </Typography>
                     {allowedDepartments.length > 1 && (
@@ -589,12 +658,19 @@ export default function NewNoticePage() {
                           control={
                             <Checkbox
                               checked={allDepartmentsSelected}
-                              indeterminate={form.departmentIds.length > 0 && !allDepartmentsSelected}
+                              indeterminate={
+                                form.departmentIds.length > 0 &&
+                                !allDepartmentsSelected
+                              }
                               onChange={toggleSelectAllDepartments}
                               disabled={isSubmitting}
                             />
                           }
-                          label={<Typography fontWeight={600}>انتخاب همه واحدها</Typography>}
+                          label={
+                            <Typography fontWeight={600}>
+                              انتخاب همه واحدها
+                            </Typography>
+                          }
                         />
                         <Divider sx={{ my: 0.5 }} />
                       </>
@@ -620,8 +696,19 @@ export default function NewNoticePage() {
 
                 {/* انتخاب سرپرستان واحد با گزینه «انتخاب همه» */}
                 {supervisorOptions.length > 0 && (
-                  <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
-                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  <Box
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      fontWeight={600}
+                      sx={{ mb: 0.5 }}
+                    >
                       ارسال به یک یا چند سرپرست واحد
                     </Typography>
                     {supervisorOptions.length > 1 && (
@@ -630,12 +717,19 @@ export default function NewNoticePage() {
                           control={
                             <Checkbox
                               checked={allSupervisorsSelected}
-                              indeterminate={form.supervisors.length > 0 && !allSupervisorsSelected}
+                              indeterminate={
+                                form.supervisors.length > 0 &&
+                                !allSupervisorsSelected
+                              }
                               onChange={toggleSelectAllSupervisors}
                               disabled={isSubmitting}
                             />
                           }
-                          label={<Typography fontWeight={600}>انتخاب همه سرپرستان</Typography>}
+                          label={
+                            <Typography fontWeight={600}>
+                              انتخاب همه سرپرستان
+                            </Typography>
+                          }
                         />
                         <Divider sx={{ my: 0.5 }} />
                       </>
@@ -667,10 +761,14 @@ export default function NewNoticePage() {
                     options={employeeOptions}
                     loading={employeeSearchLoading}
                     filterOptions={(x) => x}
-                    getOptionLabel={(e) => `${e.first_name} ${e.last_name} (${e.personnel_code})`}
+                    getOptionLabel={(e) =>
+                      `${e.first_name} ${e.last_name} (${e.personnel_code})`
+                    }
                     isOptionEqualToValue={(a, b) => a.id === b.id}
                     value={form.employees}
-                    onChange={(_, selected) => setForm({ ...form, employees: selected })}
+                    onChange={(_, selected) =>
+                      setForm({ ...form, employees: selected })
+                    }
                     onInputChange={(_, value) => setEmployeeSearch(value)}
                     renderInput={(params) => (
                       <TextField
@@ -697,10 +795,20 @@ export default function NewNoticePage() {
                 )}
 
                 <Box>
-                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                  {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {error}
+                    </Alert>
+                  )}
                   <Button
                     variant="contained"
-                    startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
+                    startIcon={
+                      isSubmitting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <SendOutlinedIcon />
+                      )
+                    }
                     onClick={handleCreate}
                     disabled={isSubmitting}
                   >
@@ -714,13 +822,15 @@ export default function NewNoticePage() {
             {createMode === "payroll" && (
               <>
                 <Alert severity="info">
-                  فقط کارکنانی که کدشان در فایل باشد، به‌صورت خودکار مخاطب این اطلاعیه می‌شوند —
-                  هرکس فقط فیش خودش را می‌بیند.
+                  فقط کارکنانی که کدشان در فایل باشد، به‌صورت خودکار مخاطب این
+                  اطلاعیه می‌شوند — هرکس فقط فیش خودش را می‌بیند.
                 </Alert>
                 <TextField
                   label="عنوان اطلاعیه"
                   value={payrollForm.title}
-                  onChange={(e) => setPayrollForm({ ...payrollForm, title: e.target.value })}
+                  onChange={(e) =>
+                    setPayrollForm({ ...payrollForm, title: e.target.value })
+                  }
                   onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
@@ -728,7 +838,9 @@ export default function NewNoticePage() {
                 <TextField
                   label="توضیح (اختیاری — برای همه دریافت‌کنندگان یکسان است)"
                   value={payrollForm.body}
-                  onChange={(e) => setPayrollForm({ ...payrollForm, body: e.target.value })}
+                  onChange={(e) =>
+                    setPayrollForm({ ...payrollForm, body: e.target.value })
+                  }
                   onKeyDown={handleBodyKeyDown}
                   multiline
                   rows={2}
@@ -739,7 +851,9 @@ export default function NewNoticePage() {
                   select
                   label="اولویت"
                   value={payrollForm.priority}
-                  onChange={(e) => setPayrollForm({ ...payrollForm, priority: e.target.value })}
+                  onChange={(e) =>
+                    setPayrollForm({ ...payrollForm, priority: e.target.value })
+                  }
                   disabled={isSubmitting}
                 >
                   {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
@@ -754,20 +868,37 @@ export default function NewNoticePage() {
                   startIcon={<UploadFileOutlinedIcon />}
                   disabled={isSubmitting}
                 >
-                  {payrollForm.file ? payrollForm.file.name : "انتخاب فایل XML یا XLSX فیش حقوقی"}
+                  {payrollForm.file
+                    ? payrollForm.file.name
+                    : "انتخاب فایل XML یا XLSX فیش حقوقی"}
                   <input
                     type="file"
                     accept=".xml,text/xml,application/xml,.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     hidden
-                    onChange={(e) => setPayrollForm({ ...payrollForm, file: e.target.files?.[0] || null })}
+                    onChange={(e) =>
+                      setPayrollForm({
+                        ...payrollForm,
+                        file: e.target.files?.[0] || null,
+                      })
+                    }
                   />
                 </Button>
 
                 <Box>
-                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                  {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {error}
+                    </Alert>
+                  )}
                   <Button
                     variant="contained"
-                    startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
+                    startIcon={
+                      isSubmitting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <SendOutlinedIcon />
+                      )
+                    }
                     onClick={handleCreatePayroll}
                     disabled={isSubmitting}
                   >
@@ -781,13 +912,18 @@ export default function NewNoticePage() {
             {createMode === "attendance_card" && (
               <>
                 <Alert severity="info">
-                  فقط کارکنانی که کدشان در فایل باشد، به‌صورت خودکار مخاطب این اطلاعیه می‌شوند —
-                  هرکس فقط کارت کارکرد خودش را می‌بیند.
+                  فقط کارکنانی که کدشان در فایل باشد، به‌صورت خودکار مخاطب این
+                  اطلاعیه می‌شوند — هرکس فقط کارت کارکرد خودش را می‌بیند.
                 </Alert>
                 <TextField
                   label="عنوان اطلاعیه"
                   value={attendanceCardForm.title}
-                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, title: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceCardForm({
+                      ...attendanceCardForm,
+                      title: e.target.value,
+                    })
+                  }
                   onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
@@ -796,7 +932,12 @@ export default function NewNoticePage() {
                 <TextField
                   label="ماه/سال روی خودِ کارت"
                   value={attendanceCardForm.cardSubtitle}
-                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, cardSubtitle: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceCardForm({
+                      ...attendanceCardForm,
+                      cardSubtitle: e.target.value,
+                    })
+                  }
                   onKeyDown={handleTitleKeyDown}
                   fullWidth
                   disabled={isSubmitting}
@@ -806,7 +947,12 @@ export default function NewNoticePage() {
                 <TextField
                   label="توضیح (اختیاری — برای همه دریافت‌کنندگان یکسان است)"
                   value={attendanceCardForm.body}
-                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, body: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceCardForm({
+                      ...attendanceCardForm,
+                      body: e.target.value,
+                    })
+                  }
                   onKeyDown={handleBodyKeyDown}
                   multiline
                   rows={2}
@@ -817,7 +963,12 @@ export default function NewNoticePage() {
                   select
                   label="اولویت"
                   value={attendanceCardForm.priority}
-                  onChange={(e) => setAttendanceCardForm({ ...attendanceCardForm, priority: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceCardForm({
+                      ...attendanceCardForm,
+                      priority: e.target.value,
+                    })
+                  }
                   disabled={isSubmitting}
                 >
                   {Object.entries(PRIORITY_LABELS).map(([value, { label }]) => (
@@ -832,22 +983,37 @@ export default function NewNoticePage() {
                   startIcon={<UploadFileOutlinedIcon />}
                   disabled={isSubmitting}
                 >
-                  {attendanceCardForm.file ? attendanceCardForm.file.name : "انتخاب فایل اکسل فیش کارکرد"}
+                  {attendanceCardForm.file
+                    ? attendanceCardForm.file.name
+                    : "انتخاب فایل اکسل فیش کارکرد"}
                   <input
                     type="file"
                     accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     hidden
                     onChange={(e) =>
-                      setAttendanceCardForm({ ...attendanceCardForm, file: e.target.files?.[0] || null })
+                      setAttendanceCardForm({
+                        ...attendanceCardForm,
+                        file: e.target.files?.[0] || null,
+                      })
                     }
                   />
                 </Button>
 
                 <Box>
-                  {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                  {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {error}
+                    </Alert>
+                  )}
                   <Button
                     variant="contained"
-                    startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : <SendOutlinedIcon />}
+                    startIcon={
+                      isSubmitting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <SendOutlinedIcon />
+                      )
+                    }
                     onClick={handleCreateAttendanceCard}
                     disabled={isSubmitting}
                   >

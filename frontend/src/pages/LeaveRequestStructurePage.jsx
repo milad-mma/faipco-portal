@@ -14,6 +14,7 @@ import {
   Stack,
   Switch,
   FormControlLabel,
+  Grid,
   Table,
   TableBody,
   TableCell,
@@ -134,7 +135,9 @@ function TypesSection({ siteId, onError }) {
       setCardNo("");
       load();
     } catch (err) {
-      onError(err.response?.data?.detail || "افزودن نوع درخواست با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail || "افزودن نوع درخواست با خطا مواجه شد.",
+      );
     }
   }
 
@@ -144,7 +147,9 @@ function TypesSection({ siteId, onError }) {
       await updateLeaveRequestType(type.id, { is_active: !type.is_active });
       load();
     } catch (err) {
-      onError(err.response?.data?.detail || "ویرایش نوع درخواست با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail || "ویرایش نوع درخواست با خطا مواجه شد.",
+      );
     }
   }
 
@@ -181,13 +186,29 @@ function TypesSection({ siteId, onError }) {
             {types.map((t) => (
               <TableRow key={t.id}>
                 <TableCell>{t.title}</TableCell>
-                <TableCell>{t.is_forgotten_punch ? "تردد فراموش‌شده" : t.is_mission ? "ماموریت" : "مرخصی"}</TableCell>
-                <TableCell>{t.is_forgotten_punch ? "—" : t.is_hourly ? "ساعتی" : "روزانه"}</TableCell>
+                <TableCell>
+                  {t.is_forgotten_punch
+                    ? "تردد فراموش‌شده"
+                    : t.is_mission
+                      ? "ماموریت"
+                      : "مرخصی"}
+                </TableCell>
+                <TableCell>
+                  {t.is_forgotten_punch
+                    ? "—"
+                    : t.is_hourly
+                      ? "ساعتی"
+                      : "روزانه"}
+                </TableCell>
                 <TableCell>{t.action_id ?? "—"}</TableCell>
                 <TableCell>{t.operation_id ?? "—"}</TableCell>
                 <TableCell>{t.card_no ?? "—"}</TableCell>
                 <TableCell>
-                  <Switch checked={t.is_active} onChange={() => handleToggleActive(t)} size="small" />
+                  <Switch
+                    checked={t.is_active}
+                    onChange={() => handleToggleActive(t)}
+                    size="small"
+                  />
                 </TableCell>
                 <TableCell>
                   <IconButton size="small" onClick={() => handleDelete(t)}>
@@ -200,82 +221,148 @@ function TypesSection({ siteId, onError }) {
         </Table>
       </TableContainer>
 
-      {/* انتخاب از فهرست WF_Action: عنوان و ActionId را پر می‌کند */}
-      {actionLookup.length > 0 && (
-        <Box sx={{ mb: 1.5 }}>
-          <Autocomplete
-            filterOptions={searchFilterOptions}
-            options={actionLookup}
-            getOptionLabel={(item) => `${item.title} (ActionId=${item.action_id})`}
-            onChange={(_, item) => {
-              if (item) {
-                setTitle(item.title);
-                setActionId(String(item.action_id));
-                setActionIdTouched(true);
-              }
-            }}
-            renderInput={(params) => (
-              <TextField {...params} size="small" label="انتخاب از فهرست رسمی WF_Action (اختیاری)" />
-            )}
-            sx={{ maxWidth: 400 }}
-          />
-          <Typography variant="caption" color="text.secondary">
-            با انتخاب از این فهرست، عنوان و ActionId خودکار پر می‌شود - سوئیچ‌های ماموریت/ساعتی را هم
-            دستی تنظیم کنید.
-          </Typography>
-        </Box>
-      )}
-
-      {/* انتخاب از فهرست WF_OperationTypes: OperationId را پر می‌کند */}
-      {operationLookup.length > 0 && (
-        <Box sx={{ mb: 1.5 }}>
-          <Autocomplete
-            filterOptions={searchFilterOptions}
-            options={operationLookup}
-            getOptionLabel={(item) => `${item.title} (OperationId=${item.operation_id})`}
-            onChange={(_, item) => {
-              if (item) setOperationId(String(item.operation_id));
-            }}
-            renderInput={(params) => (
-              <TextField {...params} size="small" label="انتخاب از فهرست رسمی WF_OperationTypes (اختیاری)" />
-            )}
-            sx={{ maxWidth: 400 }}
-          />
-        </Box>
-      )}
-
-      {/* انتخاب کارت از فهرست Cards: Card_No و ActionId مشتق از کارت را پر می‌کند */}
-      {cardLookup.length > 0 && (
-        <Box sx={{ mb: 1.5 }}>
-          <Autocomplete
-            filterOptions={searchFilterOptions}
-            options={cardLookup}
-            getOptionLabel={(item) => `${item.title} (Card_No=${item.card_no})`}
-            onChange={(_, item) => {
-              if (item) {
-                setCardNo(String(item.card_no));
-                // ActionId در کاراوب از کارت مشتق می‌شود؛ با انتخاب کارت خودکار پر می‌شود
-                if (item.action_id != null) {
-                  setActionId(String(item.action_id));
-                  setActionIdTouched(true);
+      {/* فرم افزودن نوع جدید: سه فهرست مرجع کاراوب در یک ردیف، فیلدهای کد در ردیف دوم، سوئیچ‌ها و دکمه در ردیف سوم */}
+      <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 1 }}>
+        افزودن نوع جدید
+      </Typography>
+      {(actionLookup.length > 0 ||
+        operationLookup.length > 0 ||
+        cardLookup.length > 0) && (
+        <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+          {cardLookup.length > 0 && (
+            <Grid item xs={12} md={4}>
+              {/* انتخاب کارت: Card_No و ActionId مشتق از کارت را پر می‌کند */}
+              <Autocomplete
+                filterOptions={searchFilterOptions}
+                options={cardLookup}
+                getOptionLabel={(item) =>
+                  `${item.title} (Card_No=${item.card_no})`
                 }
-              }
-            }}
-            renderInput={(params) => (
-              <TextField {...params} size="small" label="انتخاب کارت از فهرست رسمی Cards (الزامی)" />
-            )}
-            sx={{ maxWidth: 400 }}
-          />
-          <Typography variant="caption" color="text.secondary">
-            بدون انتخاب کارت، ثبت درخواست از این نوع با خطا مواجه می‌شود (Card_No در WF_Requests به
-            جدول Cards وصل است) - با انتخاب کارت، ActionId هم خودکار درست پر می‌شود.
-          </Typography>
-        </Box>
+                onChange={(_, item) => {
+                  if (item) {
+                    setCardNo(String(item.card_no));
+                    // ActionId در کاراوب از کارت مشتق می‌شود؛ با انتخاب کارت خودکار پر می‌شود
+                    if (item.action_id != null) {
+                      setActionId(String(item.action_id));
+                      setActionIdTouched(true);
+                    }
+                  }
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    label="کارت (Cards)"
+                    helperText="بدون کارت، ثبت درخواست این نوع خطا می‌دهد."
+                  />
+                )}
+              />
+            </Grid>
+          )}
+          {actionLookup.length > 0 && (
+            <Grid item xs={12} md={4}>
+              {/* انتخاب از WF_Action: عنوان و ActionId را پر می‌کند */}
+              <Autocomplete
+                filterOptions={searchFilterOptions}
+                options={actionLookup}
+                getOptionLabel={(item) =>
+                  `${item.title} (ActionId=${item.action_id})`
+                }
+                onChange={(_, item) => {
+                  if (item) {
+                    setTitle(item.title);
+                    setActionId(String(item.action_id));
+                    setActionIdTouched(true);
+                  }
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    label="عملیات (WF_Action)"
+                    helperText="عنوان و ActionId را پر می‌کند."
+                  />
+                )}
+              />
+            </Grid>
+          )}
+          {operationLookup.length > 0 && (
+            <Grid item xs={12} md={4}>
+              {/* انتخاب از WF_OperationTypes: OperationId را پر می‌کند */}
+              <Autocomplete
+                filterOptions={searchFilterOptions}
+                options={operationLookup}
+                getOptionLabel={(item) =>
+                  `${item.title} (OperationId=${item.operation_id})`
+                }
+                onChange={(_, item) => {
+                  if (item) setOperationId(String(item.operation_id));
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    label="نوع عملیات (WF_OperationTypes)"
+                    helperText="OperationId را پر می‌کند."
+                  />
+                )}
+              />
+            </Grid>
+          )}
+        </Grid>
       )}
-
-      {/* فرم افزودن نوع جدید: عنوان، سوئیچ‌ها (تردد فراموش‌شده، ماموریت و ساعتی را قفل می‌کند)، کدهای کاراوب و دکمه‌ی افزودن */}
-      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField size="small" label="عنوان نوع جدید" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Grid container spacing={1.5} sx={{ mb: 1 }}>
+        <Grid item xs={12} md={4}>
+          <TextField
+            size="small"
+            fullWidth
+            label="عنوان نوع جدید"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Grid>
+        <Grid item xs={4} md={2.66}>
+          <TextField
+            size="small"
+            fullWidth
+            type="number"
+            label="ActionId"
+            value={actionId}
+            onChange={(e) => {
+              setActionId(e.target.value);
+              setActionIdTouched(true);
+            }}
+          />
+        </Grid>
+        <Grid item xs={4} md={2.66}>
+          <TextField
+            size="small"
+            fullWidth
+            type="number"
+            label="OperationId"
+            value={operationId}
+            onChange={(e) => setOperationId(e.target.value)}
+          />
+        </Grid>
+        <Grid item xs={4} md={2.66}>
+          <TextField
+            size="small"
+            fullWidth
+            type="number"
+            label="Card_No"
+            value={cardNo}
+            onChange={(e) => setCardNo(e.target.value)}
+          />
+        </Grid>
+      </Grid>
+      {/* سوئیچ‌ها (تردد فراموش‌شده، ماموریت و ساعتی را قفل می‌کند) و دکمه‌ی افزودن در یک ردیف هم‌تراز */}
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
         <FormControlLabel
           control={
             <Switch
@@ -294,43 +381,32 @@ function TypesSection({ siteId, onError }) {
         {!isForgottenPunch && (
           <>
             <FormControlLabel
-              control={<Switch checked={isMission} onChange={(e) => handleMissionChange(e.target.checked)} />}
+              control={
+                <Switch
+                  checked={isMission}
+                  onChange={(e) => handleMissionChange(e.target.checked)}
+                />
+              }
               label="ماموریت (خاموش=مرخصی)"
             />
             <FormControlLabel
-              control={<Switch checked={isHourly} onChange={(e) => handleHourlyChange(e.target.checked)} />}
+              control={
+                <Switch
+                  checked={isHourly}
+                  onChange={(e) => handleHourlyChange(e.target.checked)}
+                />
+              }
               label="ساعتی (خاموش=روزانه)"
             />
           </>
         )}
-        <TextField
-          size="small"
-          type="number"
-          label="ActionId (پیشنهادی، قابل‌ویرایش)"
-          value={actionId}
-          onChange={(e) => {
-            setActionId(e.target.value);
-            setActionIdTouched(true);
-          }}
-          sx={{ width: 200 }}
-        />
-        <TextField
-          size="small"
-          type="number"
-          label="OperationId (اختیاری)"
-          value={operationId}
-          onChange={(e) => setOperationId(e.target.value)}
-          sx={{ width: 180 }}
-        />
-        <TextField
-          size="small"
-          type="number"
-          label="Card_No (اختیاری)"
-          value={cardNo}
-          onChange={(e) => setCardNo(e.target.value)}
-          sx={{ width: 160 }}
-        />
-        <Button startIcon={<AddOutlinedIcon />} onClick={handleAdd} disabled={!title.trim()}>
+        <Box sx={{ flex: 1 }} />
+        <Button
+          variant="contained"
+          startIcon={<AddOutlinedIcon />}
+          onClick={handleAdd}
+          disabled={!title.trim()}
+        >
           افزودن
         </Button>
       </Stack>
@@ -360,7 +436,9 @@ function ApproversSection({ siteId, onError }) {
       await setLeaveRequestApprover(departmentId, employee.id);
       load();
     } catch (err) {
-      onError(err.response?.data?.detail || "تعیین تأییدکننده با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail || "تعیین تأییدکننده با خطا مواجه شد.",
+      );
     }
   }
 
@@ -377,35 +455,56 @@ function ApproversSection({ siteId, onError }) {
   if (departments === null || approvers === null) return null;
 
   return (
-    <Stack spacing={1.5}>
-      {/* یک کارت به ازای هر واحد سازمانی */}
-      {departments.map((department) => {
-        const current = approvers.find((a) => a.department_id === department.id); // تأییدکننده‌ی فعلی این واحد
-        return (
-          <Box key={department.id} sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              {department.name}
-            </Typography>
-            {current ? (
-              <Chip
-                label={`${current.approver_employee.first_name} ${current.approver_employee.last_name}`}
-                onDelete={() => handleRemoveApprover(department.id)}
-                sx={{ mb: 1 }}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                هنوز تأییدکننده‌ای تعیین نشده.
-              </Typography>
-            )}
-            <EmployeePicker
-              siteId={siteId}
-              label="تعیین/تغییر تأییدکننده"
-              onSelect={(employee) => handleSetApprover(department.id, employee)}
-            />
-          </Box>
-        );
-      })}
-    </Stack>
+    // جدول فشرده (مثل صفحه‌ی «واحدهای سازمانی»): واحد | تأییدکننده‌ی فعلی | تعیین/تغییر
+    <TableContainer>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>واحد سازمانی</TableCell>
+            <TableCell>تأییدکننده‌ی فعلی</TableCell>
+            <TableCell sx={{ width: { md: "45%" } }}>
+              تعیین/تغییر تأییدکننده
+            </TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {departments.map((department) => {
+            const current = approvers.find(
+              (a) => a.department_id === department.id,
+            ); // تأییدکننده‌ی فعلی این واحد
+            return (
+              <TableRow key={department.id}>
+                <TableCell sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {department.name}
+                </TableCell>
+                <TableCell>
+                  {current ? (
+                    <Chip
+                      size="small"
+                      label={`${current.approver_employee.first_name} ${current.approver_employee.last_name}`}
+                      onDelete={() => handleRemoveApprover(department.id)}
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      تعیین نشده
+                    </Typography>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <EmployeePicker
+                    siteId={siteId}
+                    label="جست‌وجوی پرسنل"
+                    onSelect={(employee) =>
+                      handleSetApprover(department.id, employee)
+                    }
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -431,7 +530,10 @@ function HrOfficerSection({ siteId, onError }) {
       await setLeaveRequestHrOfficer(siteId, employee.id);
       load();
     } catch (err) {
-      onError(err.response?.data?.detail || "تعیین مسئول نیروی انسانی با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail ||
+          "تعیین مسئول نیروی انسانی با خطا مواجه شد.",
+      );
     }
   }
 
@@ -441,7 +543,9 @@ function HrOfficerSection({ siteId, onError }) {
       await removeLeaveRequestHrOfficer(siteId);
       load();
     } catch (err) {
-      onError(err.response?.data?.detail || "حذف مسئول نیروی انسانی با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail || "حذف مسئول نیروی انسانی با خطا مواجه شد.",
+      );
     }
   }
 
@@ -450,8 +554,8 @@ function HrOfficerSection({ siteId, onError }) {
   return (
     <Stack spacing={1.5}>
       <Typography variant="body2" color="text.secondary">
-        درخواست «تردد فراموش‌شده» اول توسط سرپرست پرسنل تأیید می‌شود و بعد برای این فرد ارجاع می‌شود؛ تردد فقط
-        پس از تأیید او در کاراوب ثبت می‌شود.
+        درخواست «تردد فراموش‌شده» اول توسط سرپرست پرسنل تأیید می‌شود و بعد برای
+        این فرد ارجاع می‌شود؛ تردد فقط پس از تأیید او در کاراوب ثبت می‌شود.
       </Typography>
       {officer ? (
         <Box>
@@ -461,9 +565,15 @@ function HrOfficerSection({ siteId, onError }) {
           />
         </Box>
       ) : (
-        <Alert severity="warning">هنوز مسئول نیروی انسانی تعیین نشده - ثبت تردد فراموش‌شده ممکن نیست.</Alert>
+        <Alert severity="warning">
+          هنوز مسئول نیروی انسانی تعیین نشده - ثبت تردد فراموش‌شده ممکن نیست.
+        </Alert>
       )}
-      <EmployeePicker siteId={siteId} label="تعیین/تغییر مسئول نیروی انسانی" onSelect={handleSet} />
+      <EmployeePicker
+        siteId={siteId}
+        label="تعیین/تغییر مسئول نیروی انسانی"
+        onSelect={handleSet}
+      />
     </Stack>
   );
 }
@@ -489,9 +599,13 @@ function ModuleStatusSection({ siteId, onError }) {
   async function handleToggle(event) {
     setSaving(true);
     try {
-      setModuleStatus(await setLeaveRequestModuleDisabled(siteId, !event.target.checked));
+      setModuleStatus(
+        await setLeaveRequestModuleDisabled(siteId, !event.target.checked),
+      );
     } catch (err) {
-      onError(err.response?.data?.detail || "تغییر وضعیت ماژول با خطا مواجه شد.");
+      onError(
+        err.response?.data?.detail || "تغییر وضعیت ماژول با خطا مواجه شد.",
+      );
     } finally {
       setSaving(false);
     }
@@ -503,8 +617,8 @@ function ModuleStatusSection({ siteId, onError }) {
   if (!moduleStatus.has_mapping) {
     return (
       <Alert severity="warning" sx={{ mb: 2 }}>
-        برای این سایت هنوز نگاشت مرخصی/ماموریت تنظیم نشده است؛ تا تنظیم نشود، درخواست مرخصی/ماموریت در دسترس پرسنل
-        نیست.
+        برای این سایت هنوز نگاشت مرخصی/ماموریت تنظیم نشده است؛ تا تنظیم نشود،
+        درخواست مرخصی/ماموریت در دسترس پرسنل نیست.
       </Alert>
     );
   }
@@ -522,10 +636,13 @@ function ModuleStatusSection({ siteId, onError }) {
       }}
     >
       <FormControlLabel
-        control={<Switch checked={enabled} onChange={handleToggle} disabled={saving} />}
+        control={
+          <Switch checked={enabled} onChange={handleToggle} disabled={saving} />
+        }
         label={
           <Typography fontWeight={700}>
-            درخواست مرخصی/ماموریت برای این سایت {enabled ? "فعال است" : "غیرفعال است"}
+            درخواست مرخصی/ماموریت برای این سایت{" "}
+            {enabled ? "فعال است" : "غیرفعال است"}
           </Typography>
         }
       />
@@ -540,8 +657,14 @@ function ModuleStatusSection({ siteId, onError }) {
 
 // متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی همین سایت
 function LeaveNotifySection({ siteId }) {
-  const load = useCallback(() => fetchLeaveNotificationTemplates(siteId), [siteId]);
-  const save = useCallback((texts) => saveLeaveNotificationTemplates(siteId, texts), [siteId]);
+  const load = useCallback(
+    () => fetchLeaveNotificationTemplates(siteId),
+    [siteId],
+  );
+  const save = useCallback(
+    (texts) => saveLeaveNotificationTemplates(siteId, texts),
+    [siteId],
+  );
   return <NotificationTemplatesEditor key={siteId} load={load} save={save} />;
 }
 
@@ -575,11 +698,12 @@ export default function LeaveRequestStructurePage() {
         تنظیمات درخواست مرخصی/ماموریت
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        نوع‌های قابل‌انتخاب پرسنل، تأییدکننده هر واحد سازمانی و مسئول نیروی انسانی سایت.
+        نوع‌های قابل‌انتخاب پرسنل، تأییدکننده هر واحد سازمانی و مسئول نیروی
+        انسانی سایت.
       </Typography>
       <Alert severity="info" sx={{ mb: 2 }}>
-        نگاشت ستون‌های جدول‌های کاراوب در «تنظیمات سایت» است - از صفحه سایت موردنظر، تب «نگاشت مرخصی/ماموریت» را
-        باز کنید.
+        نگاشت ستون‌های جدول‌های کاراوب در «تنظیمات سایت» است - از صفحه سایت
+        موردنظر، تب «نگاشت مرخصی/ماموریت» را باز کنید.
       </Alert>
 
       {/* انتخاب سایت */}
@@ -620,7 +744,9 @@ export default function LeaveRequestStructurePage() {
 
           <Accordion variant="outlined">
             <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
-              <Typography fontWeight={700}>تأییدکننده هر واحد سازمانی</Typography>
+              <Typography fontWeight={700}>
+                تأییدکننده هر واحد سازمانی
+              </Typography>
             </AccordionSummary>
             <AccordionDetails>
               <ApproversSection siteId={siteId} onError={setError} />
@@ -629,7 +755,9 @@ export default function LeaveRequestStructurePage() {
 
           <Accordion variant="outlined">
             <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
-              <Typography fontWeight={700}>مسئول نیروی انسانی (تأیید نهایی تردد فراموش‌شده)</Typography>
+              <Typography fontWeight={700}>
+                مسئول نیروی انسانی (تأیید نهایی تردد فراموش‌شده)
+              </Typography>
             </AccordionSummary>
             <AccordionDetails>
               <HrOfficerSection siteId={siteId} onError={setError} />

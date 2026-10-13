@@ -62,7 +62,13 @@ const GENDER_LABEL = { 1: "مرد", 2: "زن" };
 const MARITAL_LABEL = { 2: "مجرد", 3: "متاهل" };
 // عبارتی که در عنوان/متن اطلاعیه‌ی رد مدرک با نام و نام خانوادگی عضو جایگزین می‌شود (هم‌نام با بک‌اند)
 const MEMBER_PLACEHOLDER = "{نام عضو}";
-const RELATION_LABEL = { spouse: "همسر", son: "فرزند پسر", daughter: "فرزند دختر", father: "پدر", mother: "مادر" };
+const RELATION_LABEL = {
+  spouse: "همسر",
+  son: "فرزند پسر",
+  daughter: "فرزند دختر",
+  father: "پدر",
+  mother: "مادر",
+};
 // تاریخ ISO را به تاریخ شمسی کوتاه تبدیل می‌کند؛ خالی → «—»
 const faDate = (iso) => (iso ? new Date(iso).toLocaleDateString("fa-IR") : "—");
 
@@ -101,7 +107,10 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
     } catch {
       // تنظیمات در دسترس نبود؛ متن پیش‌فرض
     }
-    setRejectText({ title: title.split(MEMBER_PLACEHOLDER).join(name), body: body.split(MEMBER_PLACEHOLDER).join(name) });
+    setRejectText({
+      title: title.split(MEMBER_PLACEHOLDER).join(name),
+      body: body.split(MEMBER_PLACEHOLDER).join(name),
+    });
     setRejectTarget(member);
   }
 
@@ -109,7 +118,9 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
   function loadDetail() {
     fetchInsuranceRegistration(id)
       .then(setReg)
-      .catch((e) => setError(e.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد."));
+      .catch((e) =>
+        setError(e.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد."),
+      );
   }
   useEffect(loadDetail, [id]);
 
@@ -123,7 +134,9 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
         title: rejectText.title.trim(),
         body: rejectText.body.trim(),
       });
-      setNotice(`مدرک ${res.member_name} رد شد و اطلاعیه برای ${reg.first_name} ${reg.last_name} ارسال شد.`);
+      setNotice(
+        `مدرک ${res.member_name} رد شد و اطلاعیه برای ${reg.first_name} ${reg.last_name} ارسال شد.`,
+      );
       setRejectTarget(null);
       loadDetail();
       onChanged?.();
@@ -146,7 +159,12 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
 
   // حذف ثبت‌نام پس از تأیید کاربر؛ در موفقیت به والد اطلاع می‌دهد تا فهرست تازه شود
   async function handleDelete() {
-    if (!window.confirm(`ثبت‌نام «${reg.first_name} ${reg.last_name}» و همه اعضا و مدارکش حذف شود؟`)) return;
+    if (
+      !window.confirm(
+        `ثبت‌نام «${reg.first_name} ${reg.last_name}» و همه اعضا و مدارکش حذف شود؟`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       await deleteInsuranceRegistration(reg.id);
@@ -167,7 +185,11 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
           </Alert>
         )}
         {notice && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice("")}>
+          <Alert
+            severity="success"
+            sx={{ mb: 2 }}
+            onClose={() => setNotice("")}
+          >
             {notice}
           </Alert>
         )}
@@ -193,7 +215,10 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
                 ["شماره حساب", reg.account_number],
                 ["شبا", reg.sheba],
                 ["نوع حساب", reg.account_type],
-                ["صاحب حساب", `${reg.account_owner} (${reg.account_owner_national_id})`],
+                [
+                  "صاحب حساب",
+                  `${reg.account_owner} (${reg.account_owner_national_id})`,
+                ],
                 ["تاریخ ثبت", faDate(reg.created_at)],
                 ["آخرین ویرایش", faDate(reg.updated_at)],
               ].map(([l, v]) => (
@@ -201,7 +226,11 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
                   <Typography variant="caption" color="text.secondary">
                     {l}
                   </Typography>
-                  <Typography variant="body2" fontWeight={700} sx={{ direction: "ltr", textAlign: "right" }}>
+                  <Typography
+                    variant="body2"
+                    fontWeight={700}
+                    sx={{ direction: "ltr", textAlign: "right" }}
+                  >
                     {v ?? "—"}
                   </Typography>
                 </Grid>
@@ -232,30 +261,56 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
                   <TableBody>
                     {reg.members.map((m) => (
                       <TableRow key={m.id}>
-                        <TableCell>{RELATION_LABEL[m.member_type] || m.member_type}</TableCell>
+                        <TableCell>
+                          {RELATION_LABEL[m.member_type] || m.member_type}
+                        </TableCell>
                         <TableCell>
                           {m.first_name} {m.last_name}
                         </TableCell>
                         <TableCell>{m.father_name}</TableCell>
-                        <TableCell sx={{ direction: "ltr" }}>{m.birth_date}</TableCell>
-                        <TableCell sx={{ direction: "ltr" }}>{m.national_id}</TableCell>
+                        <TableCell sx={{ direction: "ltr" }}>
+                          {m.birth_date}
+                        </TableCell>
+                        <TableCell sx={{ direction: "ltr" }}>
+                          {m.national_id}
+                        </TableCell>
                         <TableCell>{MARITAL_LABEL[m.marital_status]}</TableCell>
-                        <TableCell>{m.kafala_status === "yes" ? "بله" : m.kafala_status === "no" ? "خیر" : "—"}</TableCell>
+                        <TableCell>
+                          {m.kafala_status === "yes"
+                            ? "بله"
+                            : m.kafala_status === "no"
+                              ? "خیر"
+                              : "—"}
+                        </TableCell>
                         {/* مدرک: دانلود و (با insurance.manage) رد؛ مدرک ردشده‌ای که هنوز جایگزین نشده با تراشه */}
                         <TableCell>
                           {m.document ? (
                             <Stack direction="row" spacing={0.5}>
-                              <Button size="small" startIcon={<DownloadOutlinedIcon />} onClick={() => openDoc(m.document)}>
+                              <Button
+                                size="small"
+                                startIcon={<DownloadOutlinedIcon />}
+                                onClick={() => openDoc(m.document)}
+                              >
                                 دانلود
                               </Button>
                               {canManage && (
-                                <Button size="small" color="error" onClick={() => openReject(m)} disabled={busy}>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  onClick={() => openReject(m)}
+                                  disabled={busy}
+                                >
                                   رد مدرک
                                 </Button>
                               )}
                             </Stack>
                           ) : m.document_rejected_at ? (
-                            <Chip size="small" color="error" variant="outlined" label="مدرک رد شده" />
+                            <Chip
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              label="مدرک رد شده"
+                            />
                           ) : (
                             "—"
                           )}
@@ -271,7 +326,12 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between" }}>
         {canManage && reg ? (
-          <Button color="error" startIcon={<DeleteOutlineOutlinedIcon />} onClick={handleDelete} disabled={busy}>
+          <Button
+            color="error"
+            startIcon={<DeleteOutlineOutlinedIcon />}
+            onClick={handleDelete}
+            disabled={busy}
+          >
             حذف ثبت‌نام
           </Button>
         ) : (
@@ -281,18 +341,29 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
       </DialogActions>
 
       {/* تأیید رد مدرک با متن اطلاعیه‌ای که برای ثبت‌نام‌کننده فرستاده می‌شود */}
-      <Dialog open={Boolean(rejectTarget)} onClose={() => !busy && setRejectTarget(null)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={Boolean(rejectTarget)}
+        onClose={() => !busy && setRejectTarget(null)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>رد مدرک</DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" sx={{ mb: 2 }}>
-            مدرک <b>{rejectTarget?.first_name} {rejectTarget?.last_name}</b> حذف می‌شود و این اطلاعیه برای{" "}
-            {reg?.first_name} {reg?.last_name} ارسال می‌شود. می‌توانید عنوان و متن را برای همین مورد ویرایش کنید:
+            مدرک{" "}
+            <b>
+              {rejectTarget?.first_name} {rejectTarget?.last_name}
+            </b>{" "}
+            حذف می‌شود و این اطلاعیه برای {reg?.first_name} {reg?.last_name}{" "}
+            ارسال می‌شود. می‌توانید عنوان و متن را برای همین مورد ویرایش کنید:
           </Typography>
           <Stack spacing={2}>
             <TextField
               label="عنوان اطلاعیه"
               value={rejectText.title}
-              onChange={(e) => setRejectText({ ...rejectText, title: e.target.value })}
+              onChange={(e) =>
+                setRejectText({ ...rejectText, title: e.target.value })
+              }
               inputProps={{ maxLength: 255 }}
               fullWidth
               disabled={busy}
@@ -300,7 +371,9 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
             <TextField
               label="متن اطلاعیه"
               value={rejectText.body}
-              onChange={(e) => setRejectText({ ...rejectText, body: e.target.value })}
+              onChange={(e) =>
+                setRejectText({ ...rejectText, body: e.target.value })
+              }
               inputProps={{ maxLength: 2000 }}
               multiline
               minRows={3}
@@ -313,7 +386,14 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
           <Button onClick={() => setRejectTarget(null)} disabled={busy}>
             انصراف
           </Button>
-          <Button color="error" variant="contained" onClick={handleReject} disabled={busy || !rejectText.title.trim() || !rejectText.body.trim()}>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleReject}
+            disabled={
+              busy || !rejectText.title.trim() || !rejectText.body.trim()
+            }
+          >
             رد مدرک و ارسال اطلاعیه
           </Button>
         </DialogActions>
@@ -356,7 +436,9 @@ function RegistrationsTab({ canManage }) {
       page_size: pageSize,
     })
       .then(setData)
-      .catch((e) => setError(e.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."));
+      .catch((e) =>
+        setError(e.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."),
+      );
   }
   useEffect(load, [query, siteId, memberFilter, page, pageSize]);
 
@@ -365,7 +447,10 @@ function RegistrationsTab({ canManage }) {
     setExporting(true);
     try {
       const blob = await downloadInsuranceExport(siteId);
-      saveBlob(blob, `insurance_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      saveBlob(
+        blob,
+        `insurance_export_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
     } catch {
       setError("خروجی Excel با خطا مواجه شد.");
     } finally {
@@ -375,24 +460,45 @@ function RegistrationsTab({ canManage }) {
 
   return (
     <Box>
-      <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ mb: 2 }}>
+      {/* هم‌ترازی پایین: فیلدها برچسب بالای خود دارند و دکمه‌ها با خط ورودی‌ها هم‌سطح می‌شوند */}
+      <Stack
+        direction="row"
+        spacing={1.5}
+        flexWrap="wrap"
+        useFlexGap
+        alignItems="flex-end"
+        sx={{ mb: 2 }}
+      >
         <TextField
           size="small"
           label="جستجو (کد پرسنلی، نام، کد ملی)"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (setPage(0), setQuery(search.trim()))}
+          onKeyDown={(e) =>
+            e.key === "Enter" && (setPage(0), setQuery(search.trim()))
+          }
           sx={{ minWidth: 260 }}
         />
-        <Button variant="outlined" size="small" onClick={() => (setPage(0), setQuery(search.trim()))}>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => (setPage(0), setQuery(search.trim()))}
+        >
           جستجو
         </Button>
         {query && (
-          <Button size="small" onClick={() => (setSearch(""), setQuery(""), setPage(0))}>
+          <Button
+            size="small"
+            onClick={() => (setSearch(""), setQuery(""), setPage(0))}
+          >
             پاک
           </Button>
         )}
-        <SiteFilterSelect value={siteId} permission="insurance.view" onChange={(v) => (setSiteId(v), setPage(0))} />
+        <SiteFilterSelect
+          value={siteId}
+          permission="insurance.view"
+          onChange={(v) => (setSiteId(v), setPage(0))}
+        />
         <TextField
           select
           size="small"
@@ -408,16 +514,39 @@ function RegistrationsTab({ canManage }) {
           ))}
         </TextField>
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" color="success" startIcon={exporting ? <CircularProgress size={16} color="inherit" /> : <DownloadOutlinedIcon />} onClick={handleExport} disabled={exporting}>
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={
+            exporting ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <DownloadOutlinedIcon />
+            )
+          }
+          onClick={handleExport}
+          disabled={exporting}
+        >
           خروجی Excel
         </Button>
       </Stack>
       {/* آمار کلی (مستقل از جستجو) */}
       {data && (
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
-          <Chip label={`ثبت‌نام‌شده: ${data.registered.toLocaleString("fa-IR")}`} color="success" size="small" />
-          <Chip label={`پرسنل فعال: ${data.eligible.toLocaleString("fa-IR")}`} size="small" />
-          <Chip label={`ثبت‌نام‌نکرده: ${Math.max(data.eligible - data.registered, 0).toLocaleString("fa-IR")}`} color="warning" size="small" />
+          <Chip
+            label={`ثبت‌نام‌شده: ${data.registered.toLocaleString("fa-IR")}`}
+            color="success"
+            size="small"
+          />
+          <Chip
+            label={`پرسنل فعال: ${data.eligible.toLocaleString("fa-IR")}`}
+            size="small"
+          />
+          <Chip
+            label={`ثبت‌نام‌نکرده: ${Math.max(data.eligible - data.registered, 0).toLocaleString("fa-IR")}`}
+            color="warning"
+            size="small"
+          />
         </Stack>
       )}
       {error && (
@@ -428,7 +557,11 @@ function RegistrationsTab({ canManage }) {
       {!data ? (
         <CircularProgress size={24} />
       ) : (
-        <TableContainer component={Card} variant="outlined" sx={{ borderRadius: 2 }}>
+        <TableContainer
+          component={Card}
+          variant="outlined"
+          sx={{ borderRadius: 2 }}
+        >
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -448,38 +581,70 @@ function RegistrationsTab({ canManage }) {
             <TableBody>
               {data.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={11} align="center" sx={{ color: "text.secondary", py: 4 }}>
+                  <TableCell
+                    colSpan={11}
+                    align="center"
+                    sx={{ color: "text.secondary", py: 4 }}
+                  >
                     ثبت‌نامی یافت نشد.
                   </TableCell>
                 </TableRow>
               )}
               {data.items.map((r) => (
                 <TableRow key={r.id} hover>
-                  <TableCell sx={{ direction: "ltr" }}>{r.personnel_code}</TableCell>
+                  <TableCell sx={{ direction: "ltr" }}>
+                    {r.personnel_code}
+                  </TableCell>
                   <TableCell>{r.first_name}</TableCell>
                   <TableCell>{r.last_name}</TableCell>
-                  <TableCell sx={{ direction: "ltr" }}>{r.national_id}</TableCell>
-                  <TableCell sx={{ direction: "ltr" }}>{r.mobile_number}</TableCell>
+                  <TableCell sx={{ direction: "ltr" }}>
+                    {r.national_id}
+                  </TableCell>
+                  <TableCell sx={{ direction: "ltr" }}>
+                    {r.mobile_number}
+                  </TableCell>
                   <TableCell>
                     {r.site_name}
                     {r.department_name ? ` / ${r.department_name}` : ""}
                   </TableCell>
-                  <TableCell align="center">{r.members_count.toLocaleString("fa-IR")}</TableCell>
-                  <TableCell align="center">{r.documents_count.toLocaleString("fa-IR")}</TableCell>
+                  <TableCell align="center">
+                    {r.members_count.toLocaleString("fa-IR")}
+                  </TableCell>
+                  <TableCell align="center">
+                    {r.documents_count.toLocaleString("fa-IR")}
+                  </TableCell>
                   {/* تعداد اعضای غیر تحت کفالت و مدارک ردشده */}
                   <TableCell>
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
                       {r.non_dependent_count > 0 && (
-                        <Chip size="small" variant="outlined" label={`غیر تحت کفالت: ${r.non_dependent_count.toLocaleString("fa-IR")}`} />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`غیر تحت کفالت: ${r.non_dependent_count.toLocaleString("fa-IR")}`}
+                        />
                       )}
                       {r.rejected_documents_count > 0 && (
-                        <Chip size="small" color="error" variant="outlined" label={`مدرک ردشده: ${r.rejected_documents_count.toLocaleString("fa-IR")}`} />
+                        <Chip
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          label={`مدرک ردشده: ${r.rejected_documents_count.toLocaleString("fa-IR")}`}
+                        />
                       )}
                     </Stack>
                   </TableCell>
                   <TableCell>{faDate(r.created_at)}</TableCell>
                   <TableCell align="center">
-                    <IconButton size="small" onClick={() => setOpenId(r.id)} aria-label="جزئیات">
+                    <IconButton
+                      size="small"
+                      onClick={() => setOpenId(r.id)}
+                      aria-label="جزئیات"
+                    >
                       <VisibilityOutlinedIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
@@ -493,10 +658,15 @@ function RegistrationsTab({ canManage }) {
             page={page}
             onPageChange={(_, p) => setPage(p)}
             rowsPerPage={pageSize}
-            onRowsPerPageChange={(e) => (setPageSize(Number(e.target.value)), setPage(0))}
+            onRowsPerPageChange={(e) => (
+              setPageSize(Number(e.target.value)),
+              setPage(0)
+            )}
             rowsPerPageOptions={[25, 50, 100]}
             labelRowsPerPage="تعداد در صفحه"
-            labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+            labelDisplayedRows={({ from, to, count }) =>
+              `${from}–${to} از ${count}`
+            }
           />
         </TableContainer>
       )}
@@ -530,7 +700,12 @@ function SettingsTab() {
   useEffect(() => {
     fetchInsuranceSettings()
       .then(setSettings)
-      .catch(() => setMessage({ severity: "error", text: "دریافت تنظیمات با خطا مواجه شد." }));
+      .catch(() =>
+        setMessage({
+          severity: "error",
+          text: "دریافت تنظیمات با خطا مواجه شد.",
+        }),
+      );
     fetchInsuranceSiteStatuses()
       .then(setSiteStatuses)
       .catch(() => setSiteStatuses([]));
@@ -542,9 +717,17 @@ function SettingsTab() {
     setMessage(null);
     try {
       setSiteStatuses(await setInsuranceSiteEnabled(siteId, enabled));
-      setMessage({ severity: "success", text: enabled ? "ثبت‌نام این سایت فعال شد." : "ثبت‌نام این سایت غیرفعال شد." });
+      setMessage({
+        severity: "success",
+        text: enabled
+          ? "ثبت‌نام این سایت فعال شد."
+          : "ثبت‌نام این سایت غیرفعال شد.",
+      });
     } catch (e) {
-      setMessage({ severity: "error", text: e.response?.data?.detail || "ذخیره با خطا مواجه شد." });
+      setMessage({
+        severity: "error",
+        text: e.response?.data?.detail || "ذخیره با خطا مواجه شد.",
+      });
     } finally {
       setSaving(false);
     }
@@ -558,19 +741,31 @@ function SettingsTab() {
       setSettings(await updateInsuranceSettings(patch));
       setMessage({ severity: "success", text: successText });
     } catch (e) {
-      setMessage({ severity: "error", text: e.response?.data?.detail || "ذخیره با خطا مواجه شد." });
+      setMessage({
+        severity: "error",
+        text: e.response?.data?.detail || "ذخیره با خطا مواجه شد.",
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  if (!settings) return message ? <Alert severity={message.severity}>{message.text}</Alert> : <CircularProgress size={24} />;
+  if (!settings)
+    return message ? (
+      <Alert severity={message.severity}>{message.text}</Alert>
+    ) : (
+      <CircularProgress size={24} />
+    );
   // مدیر یک یا چند سایت (نه همه): تنظیمات مشترک فقط خواندنی؛ فقط کلید فعال/غیرفعال سایت‌های خودش
   const readOnly = settings.editable === false;
   // توابع کمکی ویرایش جدول نرخ و نکات در state محلی (بدون ارسال به سرور)
   const table = settings.rate_table;
   const setTable = (next) => setSettings({ ...settings, rate_table: next });
-  const setRow = (i, key, value) => setTable({ ...table, rows: table.rows.map((r, j) => (j === i ? { ...r, [key]: value } : r)) });
+  const setRow = (i, key, value) =>
+    setTable({
+      ...table,
+      rows: table.rows.map((r, j) => (j === i ? { ...r, [key]: value } : r)),
+    });
   // جابه‌جایی سطر i با سطر قبلی (dir=-1) یا بعدی (dir=+1)
   const moveRow = (i, dir) => {
     const rows = [...table.rows];
@@ -599,8 +794,9 @@ function SettingsTab() {
           فعال بودن ثبت‌نام در هر سایت
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          با غیرفعال‌کردن یک سایت، کاشی «بیمه تکمیلی» در داشبورد پرسنل آن سایت برچسب «غیرفعال» می‌گیرد و صفحه ثبت‌نام
-          بسته می‌شود؛ ثبت‌نام‌های موجود و این فهرست دست‌نخورده می‌مانند. سایت‌های دیگر مستقل‌اند.
+          با غیرفعال‌کردن یک سایت، کاشی «بیمه تکمیلی» در داشبورد پرسنل آن سایت
+          برچسب «غیرفعال» می‌گیرد و صفحه ثبت‌نام بسته می‌شود؛ ثبت‌نام‌های موجود
+          و این فهرست دست‌نخورده می‌مانند. سایت‌های دیگر مستقل‌اند.
         </Typography>
         {siteStatuses === null ? (
           <CircularProgress size={20} />
@@ -613,11 +809,21 @@ function SettingsTab() {
             {siteStatuses.map((s) => (
               <FormControlLabel
                 key={s.site_id}
-                control={<Switch checked={s.enabled} disabled={saving} onChange={(e) => toggleSite(s.site_id, e.target.checked)} />}
+                control={
+                  <Switch
+                    checked={s.enabled}
+                    disabled={saving}
+                    onChange={(e) => toggleSite(s.site_id, e.target.checked)}
+                  />
+                }
                 label={
                   <Typography>
                     {s.site_name}{" "}
-                    <Typography component="span" variant="caption" color={s.enabled ? "success.main" : "text.secondary"}>
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color={s.enabled ? "success.main" : "text.secondary"}
+                    >
                       ({s.enabled ? "فعال" : "غیرفعال"})
                     </Typography>
                   </Typography>
@@ -631,8 +837,10 @@ function SettingsTab() {
       {readOnly ? (
         <>
           <Alert severity="info">
-            جدول نرخ، توضیحات و متن اطلاعیه‌ی رد بین همه‌ی سایت‌ها مشترک است و فقط کسی که مجوز «تنظیمات بیمه تکمیلی» را
-            برای همه‌ی سایت‌ها دارد می‌تواند آن‌ها را تغییر دهد. شما فعال/غیرفعال بودن ثبت‌نام سایت‌های خودتان را تنظیم می‌کنید.
+            جدول نرخ، توضیحات و متن اطلاعیه‌ی رد بین همه‌ی سایت‌ها مشترک است و
+            فقط کسی که مجوز «تنظیمات بیمه تکمیلی» را برای همه‌ی سایت‌ها دارد
+            می‌تواند آن‌ها را تغییر دهد. شما فعال/غیرفعال بودن ثبت‌نام سایت‌های
+            خودتان را تنظیم می‌کنید.
           </Alert>
           <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
             <Typography fontWeight={700} sx={{ mb: 1.5 }}>
@@ -643,177 +851,369 @@ function SettingsTab() {
         </>
       ) : (
         <>
-      {/* ویرایشگر جدول نرخ: عناوین ستون‌ها + یک ردیف ورودی به ازای هر بازه‌ی سنی */}
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
-          جدول نرخ حق بیمه تکمیلی پرسنل
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          همان‌طور که در بخش ۴ فرم ثبت‌نام به پرسنل نمایش داده می‌شود. مبالغ عدد بدون جداکننده.
-        </Typography>
-        <Grid container spacing={1.5} sx={{ mb: 2 }}>
-          <Grid item xs={6} md={3}>
-            <TextField size="small" fullWidth label="عنوان ستون سن" value={table.age_header} onChange={(e) => setTable({ ...table, age_header: e.target.value })} />
-          </Grid>
-          <Grid item xs={6} md={3}>
-            <TextField size="small" fullWidth label="واحد" value={table.unit} onChange={(e) => setTable({ ...table, unit: e.target.value })} />
-          </Grid>
-          <Grid item xs={6} md={3}>
-            <TextField size="small" fullWidth label="عنوان ستون غیر تحت تکفل" value={table.non_dependent_header} onChange={(e) => setTable({ ...table, non_dependent_header: e.target.value })} />
-          </Grid>
-          <Grid item xs={6} md={3}>
-            <TextField size="small" fullWidth label="عنوان ستون تحت تکفل" value={table.dependent_header} onChange={(e) => setTable({ ...table, dependent_header: e.target.value })} />
-          </Grid>
-        </Grid>
-        <Stack spacing={1.5}>
-          {table.rows.map((row, i) => (
-            <Stack key={i} direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <TextField size="small" label="بازه سنی" value={row.age_label} onChange={(e) => setRow(i, "age_label", e.target.value)} sx={{ minWidth: 180 }} />
-              <TextField size="small" label="غیر تحت تکفل" type="number" value={row.non_dependent} onChange={(e) => setRow(i, "non_dependent", e.target.value)} inputProps={{ dir: "ltr", min: 0 }} sx={{ width: 170 }} />
-              <TextField size="small" label="تحت تکفل" type="number" value={row.dependent} onChange={(e) => setRow(i, "dependent", e.target.value)} inputProps={{ dir: "ltr", min: 0 }} sx={{ width: 170 }} />
-              <Button size="small" onClick={() => moveRow(i, -1)} disabled={i === 0}>
-                ▲
-              </Button>
-              <Button size="small" onClick={() => moveRow(i, 1)} disabled={i === table.rows.length - 1}>
-                ▼
-              </Button>
-              <IconButton size="small" color="error" onClick={() => setTable({ ...table, rows: table.rows.filter((_, j) => j !== i) })} disabled={table.rows.length <= 1}>
-                <DeleteOutlineOutlinedIcon fontSize="small" />
-              </IconButton>
+          {/* ویرایشگر جدول نرخ: عناوین ستون‌ها + یک ردیف ورودی به ازای هر بازه‌ی سنی */}
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+              جدول نرخ حق بیمه تکمیلی پرسنل
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              همان‌طور که در بخش ۴ فرم ثبت‌نام به پرسنل نمایش داده می‌شود. مبالغ
+              عدد بدون جداکننده.
+            </Typography>
+            <Grid container spacing={1.5} sx={{ mb: 2 }}>
+              <Grid item xs={6} md={3}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="عنوان ستون سن"
+                  value={table.age_header}
+                  onChange={(e) =>
+                    setTable({ ...table, age_header: e.target.value })
+                  }
+                />
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="واحد"
+                  value={table.unit}
+                  onChange={(e) => setTable({ ...table, unit: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="عنوان ستون غیر تحت تکفل"
+                  value={table.non_dependent_header}
+                  onChange={(e) =>
+                    setTable({ ...table, non_dependent_header: e.target.value })
+                  }
+                />
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="عنوان ستون تحت تکفل"
+                  value={table.dependent_header}
+                  onChange={(e) =>
+                    setTable({ ...table, dependent_header: e.target.value })
+                  }
+                />
+              </Grid>
+            </Grid>
+            <Stack spacing={1.5}>
+              {table.rows.map((row, i) => (
+                // دکمه‌های جابه‌جایی/حذف با پایین فیلدها (که برچسب بالای خود دارند) هم‌تراز می‌شوند
+                <Stack
+                  key={i}
+                  direction="row"
+                  spacing={1}
+                  alignItems="flex-end"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
+                  <TextField
+                    size="small"
+                    label="بازه سنی"
+                    value={row.age_label}
+                    onChange={(e) => setRow(i, "age_label", e.target.value)}
+                    sx={{ minWidth: 180 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="غیر تحت تکفل"
+                    type="number"
+                    value={row.non_dependent}
+                    onChange={(e) => setRow(i, "non_dependent", e.target.value)}
+                    inputProps={{ dir: "ltr", min: 0 }}
+                    sx={{ width: 170 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="تحت تکفل"
+                    type="number"
+                    value={row.dependent}
+                    onChange={(e) => setRow(i, "dependent", e.target.value)}
+                    inputProps={{ dir: "ltr", min: 0 }}
+                    sx={{ width: 170 }}
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => moveRow(i, -1)}
+                    disabled={i === 0}
+                  >
+                    ▲
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => moveRow(i, 1)}
+                    disabled={i === table.rows.length - 1}
+                  >
+                    ▼
+                  </Button>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() =>
+                      setTable({
+                        ...table,
+                        rows: table.rows.filter((_, j) => j !== i),
+                      })
+                    }
+                    disabled={table.rows.length <= 1}
+                  >
+                    <DeleteOutlineOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
             </Stack>
-          ))}
-        </Stack>
-        <Button size="small" startIcon={<AddOutlinedIcon />} sx={{ mt: 1.5 }} onClick={() => setTable({ ...table, rows: [...table.rows, { age_label: "", non_dependent: 0, dependent: 0 }] })}>
-          افزودن ردیف
-        </Button>
-      </Card>
+            <Button
+              size="small"
+              startIcon={<AddOutlinedIcon />}
+              sx={{ mt: 1.5 }}
+              onClick={() =>
+                setTable({
+                  ...table,
+                  rows: [
+                    ...table.rows,
+                    { age_label: "", non_dependent: 0, dependent: 0 },
+                  ],
+                })
+              }
+            >
+              افزودن ردیف
+            </Button>
+          </Card>
 
-      {/* ویرایشگر نکات: هر نکته یک فیلد چندخطی با جابه‌جایی و حذف */}
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
-          توضیحات زیر جدول (باکس آبی)
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          هر نکته یک ردیف. برای پررنگ کردن بخشی از متن آن را بین دو ستاره بگذارید: **متن**؛ برای زیرخط: __متن__.
-        </Typography>
-        <Stack spacing={1.5}>
-          {notes.map((n, i) => (
-            <Stack key={i} direction="row" spacing={1} alignItems="flex-start">
-              <TextField size="small" fullWidth multiline value={n} onChange={(e) => setNotes(notes.map((x, j) => (j === i ? e.target.value : x)))} inputProps={{ maxLength: 500 }} />
-              <Button size="small" onClick={() => moveNote(i, -1)} disabled={i === 0}>
-                ▲
-              </Button>
-              <Button size="small" onClick={() => moveNote(i, 1)} disabled={i === notes.length - 1}>
-                ▼
-              </Button>
-              <IconButton size="small" color="error" onClick={() => setNotes(notes.filter((_, j) => j !== i))}>
-                <DeleteOutlineOutlinedIcon fontSize="small" />
-              </IconButton>
+          {/* ویرایشگر نکات: هر نکته یک فیلد چندخطی با جابه‌جایی و حذف */}
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+              توضیحات زیر جدول (باکس آبی)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              هر نکته یک ردیف. برای پررنگ کردن بخشی از متن آن را بین دو ستاره
+              بگذارید: **متن**؛ برای زیرخط: __متن__.
+            </Typography>
+            <Stack spacing={1.5}>
+              {notes.map((n, i) => (
+                <Stack
+                  key={i}
+                  direction="row"
+                  spacing={1}
+                  alignItems="flex-start"
+                >
+                  <TextField
+                    size="small"
+                    fullWidth
+                    multiline
+                    value={n}
+                    onChange={(e) =>
+                      setNotes(
+                        notes.map((x, j) => (j === i ? e.target.value : x)),
+                      )
+                    }
+                    inputProps={{ maxLength: 500 }}
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => moveNote(i, -1)}
+                    disabled={i === 0}
+                  >
+                    ▲
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => moveNote(i, 1)}
+                    disabled={i === notes.length - 1}
+                  >
+                    ▼
+                  </Button>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => setNotes(notes.filter((_, j) => j !== i))}
+                  >
+                    <DeleteOutlineOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
             </Stack>
-          ))}
-        </Stack>
-        <Button size="small" startIcon={<AddOutlinedIcon />} sx={{ mt: 1.5 }} onClick={() => setNotes([...notes, ""])}>
-          افزودن نکته
-        </Button>
-      </Card>
+            <Button
+              size="small"
+              startIcon={<AddOutlinedIcon />}
+              sx={{ mt: 1.5 }}
+              onClick={() => setNotes([...notes, ""])}
+            >
+              افزودن نکته
+            </Button>
+          </Card>
 
-      {/* پیش‌نمایش زنده با همان کامپوننتی که در فرم پرسنل استفاده می‌شود */}
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 1.5 }}>
-          پیش‌نمایش (همان‌طور که پرسنل می‌بینند)
-        </Typography>
-        <InsuranceRateInfo rateTable={table} notes={notes} />
-      </Card>
-
-      <Box>
-        <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />} disabled={saving} onClick={() => save({ rate_table: table, notes }, "جدول نرخ و توضیحات ذخیره شد.")}>
-          ذخیره جدول و توضیحات
-        </Button>
-      </Box>
-
-      {/* متن پیش‌فرض اطلاعیه‌ی رد مدرک؛ در پنجره‌ی رد هر مورد هم قابل ویرایش است */}
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
-          اطلاعیه‌ی رد مدرک
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          وقتی مدرک یک عضو رد می‌شود، این اطلاعیه (همراه نوتیف) برای ثبت‌نام‌کننده فرستاده می‌شود. عبارت{" "}
-          <b>{MEMBER_PLACEHOLDER}</b> با نام و نام خانوادگی آن عضو جایگزین می‌شود. متن خالی یعنی متن پیش‌فرض.
-        </Typography>
-        <Stack spacing={2}>
-          <TextField
-            label="عنوان اطلاعیه"
-            value={settings.reject_notice_title || ""}
-            onChange={(e) => setSettings({ ...settings, reject_notice_title: e.target.value })}
-            inputProps={{ maxLength: 255 }}
-            fullWidth
-          />
-          <TextField
-            label="متن اطلاعیه"
-            value={settings.reject_notice_body || ""}
-            onChange={(e) => setSettings({ ...settings, reject_notice_body: e.target.value })}
-            inputProps={{ maxLength: 2000 }}
-            multiline
-            minRows={3}
-            fullWidth
-          />
-        </Stack>
-        <Button
-          variant="contained"
-          sx={{ mt: 2 }}
-          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
-          disabled={saving}
-          onClick={() =>
-            save(
-              { reject_notice_title: settings.reject_notice_title || "", reject_notice_body: settings.reject_notice_body || "" },
-              "متن اطلاعیه‌ی رد مدرک ذخیره شد."
-            )
-          }
-        >
-          ذخیره متن اطلاعیه
-        </Button>
-      </Card>
-
-      {/* راهنمای «پیگیری فاکتورهای ارسالی» که پرسنل در صفحه‌ی بیمه تکمیلی می‌بینند (/insurance/invoices) */}
-      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
-          راهنمای پیگیری فاکتورهای ارسالی
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          این متن در کارت «پیگیری فاکتورهای ارسالی» صفحه‌ی بیمه تکمیلی پرسنل نمایش داده می‌شود. خط‌ها و پاراگراف‌ها
-          همان‌طور که می‌نویسید می‌مانند. برای لینک، آدرس را مستقیم بنویسید (<b dir="ltr">https://...</b>) یا با
-          متن دلخواه: <b dir="ltr">[سامانه‌ی بیمه](https://example.com)</b>. متن خالی یعنی پرسنل پیام «هنوز نوشته نشده»
-          می‌بینند.
-        </Typography>
-        <TextField
-          label="متن راهنما"
-          value={settings.invoice_guide || ""}
-          onChange={(e) => setSettings({ ...settings, invoice_guide: e.target.value })}
-          inputProps={{ maxLength: 20000 }}
-          multiline
-          minRows={8}
-          fullWidth
-        />
-        {(settings.invoice_guide || "").trim() && (
-          <Box sx={{ mt: 2, p: 2, borderRadius: 2, bgcolor: "action.hover" }}>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          {/* پیش‌نمایش زنده با همان کامپوننتی که در فرم پرسنل استفاده می‌شود */}
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }}>
               پیش‌نمایش (همان‌طور که پرسنل می‌بینند)
             </Typography>
-            <Typography component="div" sx={{ whiteSpace: "pre-line", lineHeight: 2, overflowWrap: "anywhere" }}>
-              <LinkifiedText text={settings.invoice_guide} />
-            </Typography>
+            <InsuranceRateInfo rateTable={table} notes={notes} />
+          </Card>
+
+          <Box>
+            <Button
+              variant="contained"
+              startIcon={
+                saving ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <SaveOutlinedIcon />
+                )
+              }
+              disabled={saving}
+              onClick={() =>
+                save(
+                  { rate_table: table, notes },
+                  "جدول نرخ و توضیحات ذخیره شد.",
+                )
+              }
+            >
+              ذخیره جدول و توضیحات
+            </Button>
           </Box>
-        )}
-        <Button
-          variant="contained"
-          sx={{ mt: 2 }}
-          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
-          disabled={saving}
-          onClick={() => save({ invoice_guide: settings.invoice_guide || "" }, "راهنمای پیگیری فاکتورها ذخیره شد.")}
-        >
-          ذخیره راهنما
-        </Button>
-      </Card>
+
+          {/* متن پیش‌فرض اطلاعیه‌ی رد مدرک؛ در پنجره‌ی رد هر مورد هم قابل ویرایش است */}
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+              اطلاعیه‌ی رد مدرک
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              وقتی مدرک یک عضو رد می‌شود، این اطلاعیه (همراه نوتیف) برای
+              ثبت‌نام‌کننده فرستاده می‌شود. عبارت <b>{MEMBER_PLACEHOLDER}</b> با
+              نام و نام خانوادگی آن عضو جایگزین می‌شود. متن خالی یعنی متن
+              پیش‌فرض.
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="عنوان اطلاعیه"
+                value={settings.reject_notice_title || ""}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    reject_notice_title: e.target.value,
+                  })
+                }
+                inputProps={{ maxLength: 255 }}
+                fullWidth
+              />
+              <TextField
+                label="متن اطلاعیه"
+                value={settings.reject_notice_body || ""}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    reject_notice_body: e.target.value,
+                  })
+                }
+                inputProps={{ maxLength: 2000 }}
+                multiline
+                minRows={3}
+                fullWidth
+              />
+            </Stack>
+            <Button
+              variant="contained"
+              sx={{ mt: 2 }}
+              startIcon={
+                saving ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <SaveOutlinedIcon />
+                )
+              }
+              disabled={saving}
+              onClick={() =>
+                save(
+                  {
+                    reject_notice_title: settings.reject_notice_title || "",
+                    reject_notice_body: settings.reject_notice_body || "",
+                  },
+                  "متن اطلاعیه‌ی رد مدرک ذخیره شد.",
+                )
+              }
+            >
+              ذخیره متن اطلاعیه
+            </Button>
+          </Card>
+
+          {/* راهنمای «پیگیری فاکتورهای ارسالی» که پرسنل در صفحه‌ی بیمه تکمیلی می‌بینند (/insurance/invoices) */}
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+              راهنمای پیگیری فاکتورهای ارسالی
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              این متن در کارت «پیگیری فاکتورهای ارسالی» صفحه‌ی بیمه تکمیلی پرسنل
+              نمایش داده می‌شود. خط‌ها و پاراگراف‌ها همان‌طور که می‌نویسید
+              می‌مانند. برای لینک، آدرس را مستقیم بنویسید (
+              <b dir="ltr">https://...</b>) یا با متن دلخواه:{" "}
+              <b dir="ltr">[سامانه‌ی بیمه](https://example.com)</b>. متن خالی
+              یعنی پرسنل پیام «هنوز نوشته نشده» می‌بینند.
+            </Typography>
+            <TextField
+              label="متن راهنما"
+              value={settings.invoice_guide || ""}
+              onChange={(e) =>
+                setSettings({ ...settings, invoice_guide: e.target.value })
+              }
+              inputProps={{ maxLength: 20000 }}
+              multiline
+              minRows={8}
+              fullWidth
+            />
+            {(settings.invoice_guide || "").trim() && (
+              <Box
+                sx={{ mt: 2, p: 2, borderRadius: 2, bgcolor: "action.hover" }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mb: 1 }}
+                >
+                  پیش‌نمایش (همان‌طور که پرسنل می‌بینند)
+                </Typography>
+                <Typography
+                  component="div"
+                  sx={{
+                    whiteSpace: "pre-line",
+                    lineHeight: 2,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  <LinkifiedText text={settings.invoice_guide} />
+                </Typography>
+              </Box>
+            )}
+            <Button
+              variant="contained"
+              sx={{ mt: 2 }}
+              startIcon={
+                saving ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <SaveOutlinedIcon />
+                )
+              }
+              disabled={saving}
+              onClick={() =>
+                save(
+                  { invoice_guide: settings.invoice_guide || "" },
+                  "راهنمای پیگیری فاکتورها ذخیره شد.",
+                )
+              }
+            >
+              ذخیره راهنما
+            </Button>
+          </Card>
         </>
       )}
     </Stack>
@@ -835,10 +1235,15 @@ export default function InsuranceAdminPage() {
         بیمه تکمیلی
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        ثبت‌نام‌های بیمه تکمیلی پرسنل و اعضای خانواده، خروجی Excel برای بیمه‌گر و تنظیمات فرم.
+        ثبت‌نام‌های بیمه تکمیلی پرسنل و اعضای خانواده، خروجی Excel برای بیمه‌گر
+        و تنظیمات فرم.
       </Typography>
       <PillTabs value={tab} onChange={setTab} tabs={tabs} sx={{ mb: 2 }} />
-      {tab === "list" ? <RegistrationsTab canManage={canManage} /> : <SettingsTab />}
+      {tab === "list" ? (
+        <RegistrationsTab canManage={canManage} />
+      ) : (
+        <SettingsTab />
+      )}
     </Box>
   );
 }

@@ -18,12 +18,9 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
-import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -48,6 +45,7 @@ import {
 } from "../api/leaveRequestsAdmin";
 import OrgRootFilterSection from "../components/OrgRootFilterSection";
 import SchemaDiscoveryDialog from "../components/SchemaDiscoveryDialog";
+import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
 
 // انواع دیتابیس منبع قابل اتصال
@@ -160,10 +158,10 @@ const EMPTY_LEAVE_MAPPING = {
   persian_start_date_column: "PersianStartDate",
   application_id_column: "ApplicationId",
   source_column: "Source",
-  destination_column: "Distination",  // املای نام ستون در کاراوب همین است
+  destination_column: "Distination", // املای نام ستون در کاراوب همین است
   branch_code_column: "BranchCode",
   branch_code_value: null,
-  application_id_value: 4,  // مقدار ApplicationId درخواست‌های ثبت‌شده از پرتال
+  application_id_value: 4, // مقدار ApplicationId درخواست‌های ثبت‌شده از پرتال
   kara_schema: {},
   action_id_column: "ActionId",
   action_lookup_table_name: "WF_Action",
@@ -192,7 +190,7 @@ const EMPTY_LEAVE_MAPPING = {
   wf_reviews_type_column: "ReviewType",
   wf_reviews_date_column: "ReviewDate",
   wf_reviews_show_to_personal_column: "ShowToPersonal",
-  wf_reviews_approved_type_value: 4,  // مقدار ReviewType برای نظر «تأیید»
+  wf_reviews_approved_type_value: 4, // مقدار ReviewType برای نظر «تأیید»
 };
 
 // عنوان فارسی گروه‌های کلیدهای kara_schema (پیشوند قبل از نقطه در کلید، مثل datafile.table).
@@ -200,9 +198,11 @@ const EMPTY_LEAVE_MAPPING = {
 // پیش‌فرض همان نام واقعی کاراوب است.
 const KARA_SCHEMA_GROUPS = {
   // تب «نگاشت تردد»
-  datafile: "ستون‌های تکمیلی جدول تردد (اعمال مرخصی/ماموریت ساعتی؛ Modify/Direction/VT/AC/DeviceNumber برای درج تردد فراموش‌شده)",
+  datafile:
+    "ستون‌های تکمیلی جدول تردد (اعمال مرخصی/ماموریت ساعتی؛ Modify/Direction/VT/AC/DeviceNumber برای درج تردد فراموش‌شده)",
   log_datafile: "لاگ تغییر ترددها (اختیاری)",
-  daily_work: "کارکرد روزانه - شماره شیفت هر روز (برای تعطیل شیفتی و کسر مرخصی)",
+  daily_work:
+    "کارکرد روزانه - شماره شیفت هر روز (برای تعطیل شیفتی و کسر مرخصی)",
   shifts: "شیفت‌ها - ساعت کسر مرخصی استحقاقی",
   grp_shift: "تقویم شیفت گروهی (برای کسر مرخصی ماه‌های آینده)",
   emp_grps: "گروه شیفت پرسنل",
@@ -210,7 +210,8 @@ const KARA_SCHEMA_GROUPS = {
   wf_requests: "ستون‌های تکمیلی جدول درخواست",
   wf_reviews: "ستون شناسه جدول نظر تأییدکننده",
   wf_attachment: "ستون شناسه درخواست در جدول پیوست‌ها",
-  wf_moveup: "جدول صعود/ارجاع (ارجاع تردد فراموش‌شده از سرپرست به مسئول نیروی انسانی)",
+  wf_moveup:
+    "جدول صعود/ارجاع (ارجاع تردد فراموش‌شده از سرپرست به مسئول نیروی انسانی)",
   wf_parallel: "ستون شناسه درخواست در جدول تأیید موازی",
   wf_request_state: "جدول وضعیت/ابطال درخواست",
   users: "کاربران کاراوب (ثبت‌کننده تغییر - برای ثبت در کارکرد الزامی)",
@@ -256,23 +257,44 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
   return (
     <Stack spacing={2}>
       <Box>
-        <Button size="small" variant="outlined" onClick={fillWithDefaults} disabled={disabled}>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={fillWithDefaults}
+          disabled={disabled}
+        >
           پر کردن فیلدهای خالی با نام‌های کاراوب
         </Button>
       </Box>
       {groups.map(({ group, keys: groupKeys }) => {
         const tableKey = `${group}.table`;
         const hasTable = groupKeys.includes(tableKey);
-        const mapped = hasTable ? Boolean(current[tableKey]) : groupKeys.some((k) => current[k]);  // جدول‌دار: نام جدول پر؛ بدون جدول: حداقل یک ستون پر
+        const mapped = hasTable
+          ? Boolean(current[tableKey])
+          : groupKeys.some((k) => current[k]); // جدول‌دار: نام جدول پر؛ بدون جدول: حداقل یک ستون پر
         return (
           <Box key={group}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ mb: 1 }}
+            >
               <Typography variant="body2" fontWeight={700}>
                 {KARA_SCHEMA_GROUPS[group] || group}
               </Typography>
-              <Chip size="small" color={mapped ? "success" : "default"} label={mapped ? "نگاشت شده" : "نگاشت نشده"} />
+              <Chip
+                size="small"
+                color={mapped ? "success" : "default"}
+                label={mapped ? "نگاشت شده" : "نگاشت نشده"}
+              />
               {mapped && (
-                <Button size="small" color="error" onClick={() => clearGroup(groupKeys)} disabled={disabled}>
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={() => clearGroup(groupKeys)}
+                  disabled={disabled}
+                >
                   پاک کردن
                 </Button>
               )}
@@ -301,7 +323,9 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
                     label={label}
                     value={current[key] || ""}
                     placeholder={defaults[key]}
-                    onChange={(e) => onChange({ ...current, [key]: e.target.value })}
+                    onChange={(e) =>
+                      onChange({ ...current, [key]: e.target.value })
+                    }
                     disabled={disabled}
                     sx={{ minWidth: 190 }}
                     inputProps={{ dir: "ltr" }}
@@ -317,9 +341,20 @@ function KaraSchemaFields({ values, defaults, onChange, disabled }) {
 }
 
 // آکاردئون جمع‌شونده‌ی ستون‌های تکمیلی کاراوب با عنوان و توضیح؛ بقیه‌ی ورودی‌ها به KaraSchemaFields داده می‌شوند
-function KaraSchemaAccordion({ title, description, values, defaults, onChange, disabled }) {
+function KaraSchemaAccordion({
+  title,
+  description,
+  values,
+  defaults,
+  onChange,
+  disabled,
+}) {
   return (
-    <Accordion variant="outlined" disableGutters sx={{ borderRadius: 2, "&:before": { display: "none" } }}>
+    <Accordion
+      variant="outlined"
+      disableGutters
+      sx={{ borderRadius: 2, "&:before": { display: "none" } }}
+    >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Typography variant="subtitle2" fontWeight={700}>
           {title}
@@ -329,7 +364,12 @@ function KaraSchemaAccordion({ title, description, values, defaults, onChange, d
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {description}
         </Typography>
-        <KaraSchemaFields values={values} defaults={defaults} onChange={onChange} disabled={disabled} />
+        <KaraSchemaFields
+          values={values}
+          defaults={defaults}
+          onChange={onChange}
+          disabled={disabled}
+        />
       </AccordionDetails>
     </Accordion>
   );
@@ -342,14 +382,23 @@ export default function SiteSettingsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // تب اولیه از پارامتر ?tab=؛ مقدار نامعتبر یا خالی = connection
-  const initialTab = ["mapping", "gps", "attendance-mapping", "leave-mapping"].includes(searchParams.get("tab"))
+  const initialTab = [
+    "mapping",
+    "gps",
+    "attendance-mapping",
+    "leave-mapping",
+  ].includes(searchParams.get("tab"))
     ? searchParams.get("tab")
     : "connection";
 
-  const [site, setSite] = useState(null);  // اطلاعات سایت؛ null = یافت نشد/در حال بارگذاری
-  const [attendanceMappingForm, setAttendanceMappingForm] = useState(EMPTY_ATTENDANCE_MAPPING);
-  const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] = useState(false);  // آیا نگاشت تردد روی سرور ذخیره شده است (برای نمایش دکمه‌ی حذف)
-  const [isSavingAttendanceMapping, setIsSavingAttendanceMapping] = useState(false);
+  const [site, setSite] = useState(null); // اطلاعات سایت؛ null = یافت نشد/در حال بارگذاری
+  const [attendanceMappingForm, setAttendanceMappingForm] = useState(
+    EMPTY_ATTENDANCE_MAPPING,
+  );
+  const [hasExistingAttendanceMapping, setHasExistingAttendanceMapping] =
+    useState(false); // آیا نگاشت تردد روی سرور ذخیره شده است (برای نمایش دکمه‌ی حذف)
+  const [isSavingAttendanceMapping, setIsSavingAttendanceMapping] =
+    useState(false);
   const [attendanceMappingResult, setAttendanceMappingResult] = useState(null); // { success, message } | null
   const [leaveMappingForm, setLeaveMappingForm] = useState(EMPTY_LEAVE_MAPPING);
   // نام‌های پیش‌فرض ستون‌های تکمیلی کاراوب ({ attendance, leave }) برای دکمه‌های «پر کردن»
@@ -360,21 +409,35 @@ export default function SiteSettingsPage() {
   function fillEmpty(form, mainDefaults, schemaDefaults) {
     const next = { ...form };
     for (const [key, value] of Object.entries(mainDefaults)) {
-      if (next[key] === "" || next[key] === null || next[key] === undefined) next[key] = value;
+      if (next[key] === "" || next[key] === null || next[key] === undefined)
+        next[key] = value;
     }
     const schema = { ...(next.kara_schema || {}) };
-    for (const [key, value] of Object.entries(schemaDefaults || {})) if (!schema[key] && value) schema[key] = value;
+    for (const [key, value] of Object.entries(schemaDefaults || {}))
+      if (!schema[key] && value) schema[key] = value;
     next.kara_schema = schema;
     return next;
   }
   // پر کردن فیلدهای خالی فرم نگاشت تردد با نام‌های کاراوب
   function fillAttendanceWithKara() {
-    setAttendanceMappingForm(fillEmpty(attendanceMappingForm, KARA_ATTENDANCE_MAIN_DEFAULTS, karaDefaults?.attendance));
+    setAttendanceMappingForm(
+      fillEmpty(
+        attendanceMappingForm,
+        KARA_ATTENDANCE_MAIN_DEFAULTS,
+        karaDefaults?.attendance,
+      ),
+    );
   }
   // پر کردن فیلدهای خالی فرم مرخصی با نام‌های کاراوب (kara_schema و مقدار شعبه جزو پیش‌فرض‌های اصلی نیستند)
   function fillLeaveWithKara() {
-    const { kara_schema: _ignored, branch_code_value: _bv, ...mainDefaults } = EMPTY_LEAVE_MAPPING;
-    setLeaveMappingForm(fillEmpty(leaveMappingForm, mainDefaults, karaDefaults?.leave));
+    const {
+      kara_schema: _ignored,
+      branch_code_value: _bv,
+      ...mainDefaults
+    } = EMPTY_LEAVE_MAPPING;
+    setLeaveMappingForm(
+      fillEmpty(leaveMappingForm, mainDefaults, karaDefaults?.leave),
+    );
   }
   // بارگذاری نام‌های پیش‌فرض ستون‌های تکمیلی کاراوب از سرور
   useEffect(() => {
@@ -390,12 +453,16 @@ export default function SiteSettingsPage() {
 
   const [connectionForm, setConnectionForm] = useState(EMPTY_CONNECTION);
   const [hasExistingConnection, setHasExistingConnection] = useState(false);
-  const [schemaDiscoveryOpen, setSchemaDiscoveryOpen] = useState(false);  // دیالوگ کشف خودکار جداول/ستون‌های دیتابیس منبع
+  const [schemaDiscoveryOpen, setSchemaDiscoveryOpen] = useState(false); // دیالوگ کشف خودکار جداول/ستون‌های دیتابیس منبع
   const [mappingForm, setMappingForm] = useState(EMPTY_MAPPING);
   const [hasExistingMapping, setHasExistingMapping] = useState(false);
-  const [gpsForm, setGpsForm] = useState({ gps_latitude: "", gps_longitude: "", gps_radius_meters: "" });
+  const [gpsForm, setGpsForm] = useState({
+    gps_latitude: "",
+    gps_longitude: "",
+    gps_radius_meters: "",
+  });
   const [isSavingGps, setIsSavingGps] = useState(false);
-  const [gpsResult, setGpsResult] = useState(null);  // { success, message } | null
+  const [gpsResult, setGpsResult] = useState(null); // { success, message } | null
 
   const [error, setError] = useState("");
   const [result, setResult] = useState(null); // نتیجه‌ی ذخیره/حذف تب‌های اتصال و Mapping: { success, message } | null
@@ -410,94 +477,105 @@ export default function SiteSettingsPage() {
       fetchSiteMapping(siteId).catch(() => null),
       fetchSiteAttendanceMapping(siteId).catch(() => null),
       fetchLeaveRequestMapping(siteId).catch(() => null),
-    ]).then(([siteData, connection, mapping, attendanceMapping, leaveMapping]) => {
-      setSite(siteData || null);
-      if (siteData) {
-        setGpsForm({
-          gps_latitude: siteData.gps_latitude ?? "",
-          gps_longitude: siteData.gps_longitude ?? "",
-          gps_radius_meters: siteData.gps_radius_meters ?? "",
-        });
-      }
-      if (connection) {
-        setConnectionForm({
-          db_type: connection.db_type,
-          host: connection.host,
-          port: connection.port,
-          database_name: connection.database_name,
-          username: connection.username,
-          password: "", // پسورد هرگز از سرور برنمی‌گردد؛ خالی یعنی بدون تغییر
-        });
-        setHasExistingConnection(true);
-      }
-      if (mapping) {
-        setMappingForm({
-          table_name: mapping.table_name,
-          personnel_code_column: mapping.personnel_code_column,
-          national_code_column: mapping.national_code_column || "",
-          first_name_column: mapping.first_name_column,
-          last_name_column: mapping.last_name_column,
-          mobile_column: mapping.mobile_column || "",
-          email_column: mapping.email_column || "",
-          address_column: mapping.address_column || "",
-          birth_date_column: mapping.birth_date_column || "",
-          hire_date_column: mapping.hire_date_column || "",
-          gender_column: mapping.gender_column || "",
-          is_active_column: mapping.is_active_column || "",
-          is_active_inverted: mapping.is_active_inverted || false,
-          branch_code_column: mapping.branch_code_column || "",
-          branch_code_value: mapping.branch_code_value || "",
-          department_column: mapping.department_column || "",
-          department_lookup_table: mapping.department_lookup_table || "",
-          department_lookup_id_column: mapping.department_lookup_id_column || "",
-          department_lookup_name_column: mapping.department_lookup_name_column || "",
-          department_lookup_parent_column: mapping.department_lookup_parent_column || "",
-          root_department_codes: mapping.root_department_codes || [],
-          position_column: mapping.position_column || "",
-          position_lookup_table: mapping.position_lookup_table || "",
-          position_lookup_id_column: mapping.position_lookup_id_column || "",
-          position_lookup_name_column: mapping.position_lookup_name_column || "",
-          photo_table: mapping.photo_table || "",
-          photo_emp_no_column: mapping.photo_emp_no_column || "",
-          photo_thumbnail_column: mapping.photo_thumbnail_column || "",
-          termination_date_column: mapping.termination_date_column || "",
-          termination_reason_column: mapping.termination_reason_column || "",
-          education_column: mapping.education_column || "",
-          education_lookup_table: mapping.education_lookup_table || "",
-          education_lookup_id_column: mapping.education_lookup_id_column || "",
-          education_lookup_name_column: mapping.education_lookup_name_column || "",
-          turnover_start_month: mapping.turnover_start_month || "",
-          history_table: mapping.history_table || "",
-          history_order_column: mapping.history_order_column || "",
-        });
-        setHasExistingMapping(true);
-      }
-      if (attendanceMapping) {
-        setAttendanceMappingForm({
-          table_name: attendanceMapping.table_name,
-          personnel_code_column: attendanceMapping.personnel_code_column,
-          mapping_mode: attendanceMapping.mapping_mode || "single_column",
-          date_column: attendanceMapping.date_column || "",
-          time_column: attendanceMapping.time_column || "",
-          enter_date_column: attendanceMapping.enter_date_column || "",
-          enter_time_column: attendanceMapping.enter_time_column || "",
-          exit_date_column: attendanceMapping.exit_date_column || "",
-          exit_time_column: attendanceMapping.exit_time_column || "",
-          calendar_table_name: attendanceMapping.calendar_table_name || "",
-          calendar_year_column: attendanceMapping.calendar_year_column || "",
-          calendar_month_column: attendanceMapping.calendar_month_column || "",
-          calendar_day_column_prefix: attendanceMapping.calendar_day_column_prefix || "",
-          calendar_branch_column: attendanceMapping.calendar_branch_column || "",
-          kara_schema: attendanceMapping.kara_schema || {},
-        });
-        setHasExistingAttendanceMapping(true);
-      }
-      if (leaveMapping) {
-        setLeaveMappingForm({ ...EMPTY_LEAVE_MAPPING, ...leaveMapping });
-        setHasExistingLeaveMapping(true);
-      }
-      setIsLoading(false);
-    });
+    ]).then(
+      ([siteData, connection, mapping, attendanceMapping, leaveMapping]) => {
+        setSite(siteData || null);
+        if (siteData) {
+          setGpsForm({
+            gps_latitude: siteData.gps_latitude ?? "",
+            gps_longitude: siteData.gps_longitude ?? "",
+            gps_radius_meters: siteData.gps_radius_meters ?? "",
+          });
+        }
+        if (connection) {
+          setConnectionForm({
+            db_type: connection.db_type,
+            host: connection.host,
+            port: connection.port,
+            database_name: connection.database_name,
+            username: connection.username,
+            password: "", // پسورد هرگز از سرور برنمی‌گردد؛ خالی یعنی بدون تغییر
+          });
+          setHasExistingConnection(true);
+        }
+        if (mapping) {
+          setMappingForm({
+            table_name: mapping.table_name,
+            personnel_code_column: mapping.personnel_code_column,
+            national_code_column: mapping.national_code_column || "",
+            first_name_column: mapping.first_name_column,
+            last_name_column: mapping.last_name_column,
+            mobile_column: mapping.mobile_column || "",
+            email_column: mapping.email_column || "",
+            address_column: mapping.address_column || "",
+            birth_date_column: mapping.birth_date_column || "",
+            hire_date_column: mapping.hire_date_column || "",
+            gender_column: mapping.gender_column || "",
+            is_active_column: mapping.is_active_column || "",
+            is_active_inverted: mapping.is_active_inverted || false,
+            branch_code_column: mapping.branch_code_column || "",
+            branch_code_value: mapping.branch_code_value || "",
+            department_column: mapping.department_column || "",
+            department_lookup_table: mapping.department_lookup_table || "",
+            department_lookup_id_column:
+              mapping.department_lookup_id_column || "",
+            department_lookup_name_column:
+              mapping.department_lookup_name_column || "",
+            department_lookup_parent_column:
+              mapping.department_lookup_parent_column || "",
+            root_department_codes: mapping.root_department_codes || [],
+            position_column: mapping.position_column || "",
+            position_lookup_table: mapping.position_lookup_table || "",
+            position_lookup_id_column: mapping.position_lookup_id_column || "",
+            position_lookup_name_column:
+              mapping.position_lookup_name_column || "",
+            photo_table: mapping.photo_table || "",
+            photo_emp_no_column: mapping.photo_emp_no_column || "",
+            photo_thumbnail_column: mapping.photo_thumbnail_column || "",
+            termination_date_column: mapping.termination_date_column || "",
+            termination_reason_column: mapping.termination_reason_column || "",
+            education_column: mapping.education_column || "",
+            education_lookup_table: mapping.education_lookup_table || "",
+            education_lookup_id_column:
+              mapping.education_lookup_id_column || "",
+            education_lookup_name_column:
+              mapping.education_lookup_name_column || "",
+            turnover_start_month: mapping.turnover_start_month || "",
+            history_table: mapping.history_table || "",
+            history_order_column: mapping.history_order_column || "",
+          });
+          setHasExistingMapping(true);
+        }
+        if (attendanceMapping) {
+          setAttendanceMappingForm({
+            table_name: attendanceMapping.table_name,
+            personnel_code_column: attendanceMapping.personnel_code_column,
+            mapping_mode: attendanceMapping.mapping_mode || "single_column",
+            date_column: attendanceMapping.date_column || "",
+            time_column: attendanceMapping.time_column || "",
+            enter_date_column: attendanceMapping.enter_date_column || "",
+            enter_time_column: attendanceMapping.enter_time_column || "",
+            exit_date_column: attendanceMapping.exit_date_column || "",
+            exit_time_column: attendanceMapping.exit_time_column || "",
+            calendar_table_name: attendanceMapping.calendar_table_name || "",
+            calendar_year_column: attendanceMapping.calendar_year_column || "",
+            calendar_month_column:
+              attendanceMapping.calendar_month_column || "",
+            calendar_day_column_prefix:
+              attendanceMapping.calendar_day_column_prefix || "",
+            calendar_branch_column:
+              attendanceMapping.calendar_branch_column || "",
+            kara_schema: attendanceMapping.kara_schema || {},
+          });
+          setHasExistingAttendanceMapping(true);
+        }
+        if (leaveMapping) {
+          setLeaveMappingForm({ ...EMPTY_LEAVE_MAPPING, ...leaveMapping });
+          setHasExistingLeaveMapping(true);
+        }
+        setIsLoading(false);
+      },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
@@ -519,7 +597,10 @@ export default function SiteSettingsPage() {
       setHasExistingConnection(true);
       setResult({ success: true, message: "اطلاعات اتصال دیتابیس ذخیره شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "ذخیره اتصال با خطا مواجه شد." });
+      setResult({
+        success: false,
+        message: err.response?.data?.detail || "ذخیره اتصال با خطا مواجه شد.",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -535,7 +616,10 @@ export default function SiteSettingsPage() {
       setHasExistingConnection(false);
       setResult({ success: true, message: "اتصال دیتابیس حذف شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "حذف اتصال با خطا مواجه شد." });
+      setResult({
+        success: false,
+        message: err.response?.data?.detail || "حذف اتصال با خطا مواجه شد.",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -554,9 +638,14 @@ export default function SiteSettingsPage() {
       // خطای اعتبارسنجی 422 آرایه‌ای از اشیاء است، نه متن
       const detail = err.response?.data?.detail;
       const message = Array.isArray(detail)
-        ? detail.map((d) => String(d.msg || "").replace(/^Value error, /, "")).join("، ")
+        ? detail
+            .map((d) => String(d.msg || "").replace(/^Value error, /, ""))
+            .join("، ")
         : detail;
-      setResult({ success: false, message: message || "ذخیره Mapping با خطا مواجه شد." });
+      setResult({
+        success: false,
+        message: message || "ذخیره Mapping با خطا مواجه شد.",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -572,7 +661,10 @@ export default function SiteSettingsPage() {
       setHasExistingMapping(false);
       setResult({ success: true, message: "Mapping ستون‌ها حذف شد." });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "حذف Mapping با خطا مواجه شد." });
+      setResult({
+        success: false,
+        message: err.response?.data?.detail || "حذف Mapping با خطا مواجه شد.",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -581,7 +673,10 @@ export default function SiteSettingsPage() {
   // موقعیت فعلی دستگاه (Geolocation با دقت بالا) را در فیلدهای عرض و طول جغرافیایی می‌گذارد
   function handleUseCurrentLocation() {
     if (!("geolocation" in navigator)) {
-      setGpsResult({ success: false, message: "مرورگر شما از موقعیت‌یابی پشتیبانی نمی‌کند." });
+      setGpsResult({
+        success: false,
+        message: "مرورگر شما از موقعیت‌یابی پشتیبانی نمی‌کند.",
+      });
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -593,9 +688,13 @@ export default function SiteSettingsPage() {
         }));
       },
       () => {
-        setGpsResult({ success: false, message: "دریافت موقعیت فعلی با خطا مواجه شد — دسترسی مکان را بررسی کنید." });
+        setGpsResult({
+          success: false,
+          message:
+            "دریافت موقعیت فعلی با خطا مواجه شد — دسترسی مکان را بررسی کنید.",
+        });
       },
-      { enableHighAccuracy: true, timeout: 15000 }
+      { enableHighAccuracy: true, timeout: 15000 },
     );
   }
 
@@ -605,10 +704,20 @@ export default function SiteSettingsPage() {
     setGpsResult(null);
     setIsSavingGps(true);
     try {
-      const hasAny = gpsForm.gps_latitude !== "" || gpsForm.gps_longitude !== "" || gpsForm.gps_radius_meters !== "";
-      const hasAll = gpsForm.gps_latitude !== "" && gpsForm.gps_longitude !== "" && gpsForm.gps_radius_meters !== "";
+      const hasAny =
+        gpsForm.gps_latitude !== "" ||
+        gpsForm.gps_longitude !== "" ||
+        gpsForm.gps_radius_meters !== "";
+      const hasAll =
+        gpsForm.gps_latitude !== "" &&
+        gpsForm.gps_longitude !== "" &&
+        gpsForm.gps_radius_meters !== "";
       if (hasAny && !hasAll) {
-        setGpsResult({ success: false, message: "برای تنظیم موقعیت، هر سه فیلد را پر کنید (یا برای پاک‌کردن، هر سه را خالی بگذارید)." });
+        setGpsResult({
+          success: false,
+          message:
+            "برای تنظیم موقعیت، هر سه فیلد را پر کنید (یا برای پاک‌کردن، هر سه را خالی بگذارید).",
+        });
         return;
       }
       const updated = await updateSiteGpsLocation(siteId, {
@@ -621,9 +730,17 @@ export default function SiteSettingsPage() {
         gps_longitude: updated.gps_longitude ?? "",
         gps_radius_meters: updated.gps_radius_meters ?? "",
       });
-      setGpsResult({ success: true, message: hasAll ? "موقعیت GPS ذخیره شد." : "محدودیت مکانی این سایت غیرفعال شد." });
+      setGpsResult({
+        success: true,
+        message: hasAll
+          ? "موقعیت GPS ذخیره شد."
+          : "محدودیت مکانی این سایت غیرفعال شد.",
+      });
     } catch (err) {
-      setGpsResult({ success: false, message: err.response?.data?.detail || "ذخیره با خطا مواجه شد." });
+      setGpsResult({
+        success: false,
+        message: err.response?.data?.detail || "ذخیره با خطا مواجه شد.",
+      });
     } finally {
       setIsSavingGps(false);
     }
@@ -636,11 +753,15 @@ export default function SiteSettingsPage() {
     try {
       await upsertSiteAttendanceMapping(siteId, attendanceMappingForm);
       setHasExistingAttendanceMapping(true);
-      setAttendanceMappingResult({ success: true, message: "نگاشت تردد ذخیره شد." });
+      setAttendanceMappingResult({
+        success: true,
+        message: "نگاشت تردد ذخیره شد.",
+      });
     } catch (err) {
       setAttendanceMappingResult({
         success: false,
-        message: err.response?.data?.detail || "ذخیره نگاشت تردد با خطا مواجه شد.",
+        message:
+          err.response?.data?.detail || "ذخیره نگاشت تردد با خطا مواجه شد.",
       });
     } finally {
       setIsSavingAttendanceMapping(false);
@@ -655,11 +776,16 @@ export default function SiteSettingsPage() {
       const saved = await saveLeaveRequestMapping(siteId, leaveMappingForm);
       if (saved) setLeaveMappingForm({ ...EMPTY_LEAVE_MAPPING, ...saved });
       setHasExistingLeaveMapping(true);
-      setLeaveMappingResult({ success: true, message: "نگاشت مرخصی/ماموریت ذخیره شد." });
+      setLeaveMappingResult({
+        success: true,
+        message: "نگاشت مرخصی/ماموریت ذخیره شد.",
+      });
     } catch (err) {
       setLeaveMappingResult({
         success: false,
-        message: err.response?.data?.detail || "ذخیره نگاشت مرخصی/ماموریت با خطا مواجه شد.",
+        message:
+          err.response?.data?.detail ||
+          "ذخیره نگاشت مرخصی/ماموریت با خطا مواجه شد.",
       });
     } finally {
       setIsSavingLeaveMapping(false);
@@ -668,18 +794,27 @@ export default function SiteSettingsPage() {
 
   // پس از تأیید، نگاشت مرخصی/ماموریت را حذف و فرم را به پیش‌فرض برمی‌گرداند
   async function handleDeleteLeaveMapping() {
-    if (!window.confirm("نگاشت مرخصی/ماموریت این سایت حذف شود؟ ثبت درخواست جدید برای پرسنل این سایت دیگر ممکن نخواهد بود."))
+    if (
+      !window.confirm(
+        "نگاشت مرخصی/ماموریت این سایت حذف شود؟ ثبت درخواست جدید برای پرسنل این سایت دیگر ممکن نخواهد بود.",
+      )
+    )
       return;
     setIsSavingLeaveMapping(true);
     try {
       await deleteLeaveRequestMapping(siteId);
       setLeaveMappingForm(EMPTY_LEAVE_MAPPING);
       setHasExistingLeaveMapping(false);
-      setLeaveMappingResult({ success: true, message: "نگاشت مرخصی/ماموریت حذف شد." });
+      setLeaveMappingResult({
+        success: true,
+        message: "نگاشت مرخصی/ماموریت حذف شد.",
+      });
     } catch (err) {
       setLeaveMappingResult({
         success: false,
-        message: err.response?.data?.detail || "حذف نگاشت مرخصی/ماموریت با خطا مواجه شد.",
+        message:
+          err.response?.data?.detail ||
+          "حذف نگاشت مرخصی/ماموریت با خطا مواجه شد.",
       });
     } finally {
       setIsSavingLeaveMapping(false);
@@ -696,16 +831,25 @@ export default function SiteSettingsPage() {
       setMappingForm({
         ...mappingForm,
         table_name: tableName,
-        personnel_code_column: suggestions.personnel_code?.column || mappingForm.personnel_code_column,
-        national_code_column: suggestions.national_code?.column || mappingForm.national_code_column,
-        first_name_column: suggestions.first_name?.column || mappingForm.first_name_column,
-        last_name_column: suggestions.last_name?.column || mappingForm.last_name_column,
+        personnel_code_column:
+          suggestions.personnel_code?.column ||
+          mappingForm.personnel_code_column,
+        national_code_column:
+          suggestions.national_code?.column || mappingForm.national_code_column,
+        first_name_column:
+          suggestions.first_name?.column || mappingForm.first_name_column,
+        last_name_column:
+          suggestions.last_name?.column || mappingForm.last_name_column,
         email_column: suggestions.email?.column || mappingForm.email_column,
         mobile_column: suggestions.mobile?.column || mappingForm.mobile_column,
-        birth_date_column: suggestions.birth_date?.column || mappingForm.birth_date_column,
-        is_active_column: suggestions.is_active?.column || mappingForm.is_active_column,
-        department_column: suggestions.department?.column || mappingForm.department_column,
-        position_column: suggestions.position?.column || mappingForm.position_column,
+        birth_date_column:
+          suggestions.birth_date?.column || mappingForm.birth_date_column,
+        is_active_column:
+          suggestions.is_active?.column || mappingForm.is_active_column,
+        department_column:
+          suggestions.department?.column || mappingForm.department_column,
+        position_column:
+          suggestions.position?.column || mappingForm.position_column,
       });
       setTab("mapping");
     } else if (mappingType === "attendance_single") {
@@ -714,7 +858,8 @@ export default function SiteSettingsPage() {
         table_name: tableName,
         mapping_mode: "single_column",
         personnel_code_column:
-          suggestions.personnel_code?.column || attendanceMappingForm.personnel_code_column,
+          suggestions.personnel_code?.column ||
+          attendanceMappingForm.personnel_code_column,
         date_column: suggestions.date?.column || "",
         time_column: suggestions.time?.column || "",
         enter_date_column: "",
@@ -729,7 +874,8 @@ export default function SiteSettingsPage() {
         table_name: tableName,
         mapping_mode: "enter_exit_columns",
         personnel_code_column:
-          suggestions.personnel_code?.column || attendanceMappingForm.personnel_code_column,
+          suggestions.personnel_code?.column ||
+          attendanceMappingForm.personnel_code_column,
         date_column: "",
         time_column: "",
         enter_date_column: suggestions.enter_date?.column || "",
@@ -742,33 +888,47 @@ export default function SiteSettingsPage() {
       setMappingForm({
         ...mappingForm,
         department_lookup_table: tableName,
-        department_lookup_id_column: suggestions.lookup_id?.column || mappingForm.department_lookup_id_column,
+        department_lookup_id_column:
+          suggestions.lookup_id?.column ||
+          mappingForm.department_lookup_id_column,
         department_lookup_name_column:
-          suggestions.lookup_name?.column || mappingForm.department_lookup_name_column,
+          suggestions.lookup_name?.column ||
+          mappingForm.department_lookup_name_column,
       });
       setTab("mapping");
     } else if (mappingType === "position_lookup") {
       setMappingForm({
         ...mappingForm,
         position_lookup_table: tableName,
-        position_lookup_id_column: suggestions.lookup_id?.column || mappingForm.position_lookup_id_column,
-        position_lookup_name_column: suggestions.lookup_name?.column || mappingForm.position_lookup_name_column,
+        position_lookup_id_column:
+          suggestions.lookup_id?.column ||
+          mappingForm.position_lookup_id_column,
+        position_lookup_name_column:
+          suggestions.lookup_name?.column ||
+          mappingForm.position_lookup_name_column,
       });
       setTab("mapping");
     } else if (mappingType === "photo") {
       setMappingForm({
         ...mappingForm,
         photo_table: tableName,
-        photo_emp_no_column: suggestions.photo_emp_no?.column || mappingForm.photo_emp_no_column,
-        photo_thumbnail_column: suggestions.photo_thumbnail?.column || mappingForm.photo_thumbnail_column,
+        photo_emp_no_column:
+          suggestions.photo_emp_no?.column || mappingForm.photo_emp_no_column,
+        photo_thumbnail_column:
+          suggestions.photo_thumbnail?.column ||
+          mappingForm.photo_thumbnail_column,
       });
       setTab("mapping");
     } else if (mappingType === "calendar") {
       setAttendanceMappingForm({
         ...attendanceMappingForm,
         calendar_table_name: tableName,
-        calendar_year_column: suggestions.calendar_year?.column || attendanceMappingForm.calendar_year_column,
-        calendar_month_column: suggestions.calendar_month?.column || attendanceMappingForm.calendar_month_column,
+        calendar_year_column:
+          suggestions.calendar_year?.column ||
+          attendanceMappingForm.calendar_year_column,
+        calendar_month_column:
+          suggestions.calendar_month?.column ||
+          attendanceMappingForm.calendar_month_column,
       });
       setTab("attendance-mapping");
     }
@@ -776,17 +936,26 @@ export default function SiteSettingsPage() {
 
   // پس از تأیید، نگاشت تردد را حذف و فرم را خالی می‌کند
   async function handleDeleteAttendanceMapping() {
-    if (!window.confirm("نگاشت تردد این سایت حذف شود؟ گزارش تردد ماهانه برای پرسنل این سایت دیگر در دسترس نخواهد بود.")) return;
+    if (
+      !window.confirm(
+        "نگاشت تردد این سایت حذف شود؟ گزارش تردد ماهانه برای پرسنل این سایت دیگر در دسترس نخواهد بود.",
+      )
+    )
+      return;
     setIsSavingAttendanceMapping(true);
     try {
       await deleteSiteAttendanceMapping(siteId);
       setAttendanceMappingForm(EMPTY_ATTENDANCE_MAPPING);
       setHasExistingAttendanceMapping(false);
-      setAttendanceMappingResult({ success: true, message: "نگاشت تردد حذف شد." });
+      setAttendanceMappingResult({
+        success: true,
+        message: "نگاشت تردد حذف شد.",
+      });
     } catch (err) {
       setAttendanceMappingResult({
         success: false,
-        message: err.response?.data?.detail || "حذف نگاشت تردد با خطا مواجه شد.",
+        message:
+          err.response?.data?.detail || "حذف نگاشت تردد با خطا مواجه شد.",
       });
     } finally {
       setIsSavingAttendanceMapping(false);
@@ -803,15 +972,12 @@ export default function SiteSettingsPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 640, mx: "auto" }}>
-      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
-        <Button startIcon={<ArrowForwardOutlinedIcon />} onClick={() => navigate("/sites")}>
-          بازگشت
-        </Button>
-        <Typography variant="h5" fontWeight={700}>
-          تنظیمات سایت {site ? `— ${site.name}` : ""}
-        </Typography>
-      </Stack>
+    <Box sx={{ maxWidth: 960, mx: "auto" }}>
+      {/* سرصفحه مثل بقیه‌ی صفحه‌ها: دکمه‌ی بازگشت مشترک و عنوان راست‌چین؛ کارت پهن‌تر تا تب‌ها و فرم‌های بلند جا شوند */}
+      <BackLink to="/sites" label="بازگشت" />
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
+        تنظیمات سایت {site ? `— ${site.name}` : ""}
+      </Typography>
 
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
         {/* نوار تب‌ها؛ handleTabChange امضای MUI (event, value) دارد و با null به‌جای event صدا زده می‌شود.
@@ -835,7 +1001,12 @@ export default function SiteSettingsPage() {
               select
               label="نوع دیتابیس"
               value={connectionForm.db_type}
-              onChange={(e) => setConnectionForm({ ...connectionForm, db_type: e.target.value })}
+              onChange={(e) =>
+                setConnectionForm({
+                  ...connectionForm,
+                  db_type: e.target.value,
+                })
+              }
               disabled={isSaving}
             >
               {DB_TYPES.map((opt) => (
@@ -847,33 +1018,55 @@ export default function SiteSettingsPage() {
             <TextField
               label="Host"
               value={connectionForm.host}
-              onChange={(e) => setConnectionForm({ ...connectionForm, host: e.target.value })}
+              onChange={(e) =>
+                setConnectionForm({ ...connectionForm, host: e.target.value })
+              }
               disabled={isSaving}
             />
             <TextField
               label="Port"
               type="number"
               value={connectionForm.port}
-              onChange={(e) => setConnectionForm({ ...connectionForm, port: Number(e.target.value) })}
+              onChange={(e) =>
+                setConnectionForm({
+                  ...connectionForm,
+                  port: Number(e.target.value),
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="نام دیتابیس"
               value={connectionForm.database_name}
-              onChange={(e) => setConnectionForm({ ...connectionForm, database_name: e.target.value })}
+              onChange={(e) =>
+                setConnectionForm({
+                  ...connectionForm,
+                  database_name: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="نام کاربری"
               value={connectionForm.username}
-              onChange={(e) => setConnectionForm({ ...connectionForm, username: e.target.value })}
+              onChange={(e) =>
+                setConnectionForm({
+                  ...connectionForm,
+                  username: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="رمز عبور"
               type="password"
               value={connectionForm.password}
-              onChange={(e) => setConnectionForm({ ...connectionForm, password: e.target.value })}
+              onChange={(e) =>
+                setConnectionForm({
+                  ...connectionForm,
+                  password: e.target.value,
+                })
+              }
               disabled={isSaving}
               helperText={
                 hasExistingConnection
@@ -884,12 +1077,20 @@ export default function SiteSettingsPage() {
 
             {/* پیام نتیجه و دکمه‌های ذخیره، حذف و کشف ساختار دیتابیس */}
             {(result || error) && (
-              <Alert severity={error || !result?.success ? "error" : "success"}>{error || result.message}</Alert>
+              <Alert severity={error || !result?.success ? "error" : "success"}>
+                {error || result.message}
+              </Alert>
             )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
-                startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                startIcon={
+                  isSaving ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SaveOutlinedIcon />
+                  )
+                }
                 onClick={handleSaveConnection}
                 disabled={isSaving}
               >
@@ -907,7 +1108,10 @@ export default function SiteSettingsPage() {
                 </Button>
               )}
               {hasExistingConnection && (
-                <Button variant="outlined" onClick={() => setSchemaDiscoveryOpen(true)}>
+                <Button
+                  variant="outlined"
+                  onClick={() => setSchemaDiscoveryOpen(true)}
+                >
                   کشف ساختار دیتابیس
                 </Button>
               )}
@@ -917,7 +1121,18 @@ export default function SiteSettingsPage() {
 
         {/* تب Mapping ستون‌های جدول پرسنل */}
         {tab === "mapping" && (
-          <Stack spacing={2}>
+          <Box
+            // فیلدها دو ستونه (مثل تب «نگاشت مرخصی/ماموریت»)؛ عنوان‌ها، توضیح‌ها، آکاردئون‌ها و دکمه‌ها تمام‌عرض
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+              columnGap: 2,
+              rowGap: 2,
+              "& > :not(.MuiTextField-root)": { gridColumn: "1 / -1" },
+              "& > .MuiTextField-root .MuiInputBase-root": { height: 40 },
+              "& > .MuiTextField-root .MuiInputBase-input": { py: 1 },
+            }}
+          >
             {/* جدول اصلی پرسنل و ستون‌های پایه */}
             <Typography variant="subtitle2" fontWeight={700}>
               جدول اصلی پرسنل
@@ -925,78 +1140,132 @@ export default function SiteSettingsPage() {
             <TextField
               label="نام جدول"
               value={mappingForm.table_name}
-              onChange={(e) => setMappingForm({ ...mappingForm, table_name: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({ ...mappingForm, table_name: e.target.value })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون کد پرسنلی"
               value={mappingForm.personnel_code_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, personnel_code_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  personnel_code_column: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون کد ملی (اختیاری)"
               value={mappingForm.national_code_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, national_code_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  national_code_column: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون نام"
               value={mappingForm.first_name_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, first_name_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  first_name_column: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون نام خانوادگی"
               value={mappingForm.last_name_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, last_name_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  last_name_column: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون موبایل (اختیاری)"
               value={mappingForm.mobile_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, mobile_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  mobile_column: e.target.value,
+                })
+              }
               disabled={isSaving}
             />
             <TextField
               label="ستون ایمیل (اختیاری)"
               value={mappingForm.email_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, email_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({ ...mappingForm, email_column: e.target.value })
+              }
               disabled={isSaving}
               helperText="برای «فراموشی رمز عبور» و ارسال بکاپ به ایمیل استفاده می‌شود"
             />
             <TextField
               label="ستون آدرس (اختیاری)"
               value={mappingForm.address_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, address_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  address_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Address — فقط‌خواندنی در «مشخصات کاربری» پنل پرسنل"
               disabled={isSaving}
             />
             <TextField
               label="ستون تاریخ تولد شمسی (اختیاری — برای کارت «متولدین روز جاری» در داشبورد)"
               value={mappingForm.birth_date_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, birth_date_column: e.target.value })}
-              helperText='فرمت مورد انتظار مثل «1370/05/21» یا «13700521»'
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  birth_date_column: e.target.value,
+                })
+              }
+              helperText="فرمت مورد انتظار مثل «1370/05/21» یا «13700521»"
               disabled={isSaving}
             />
             <TextField
               label="ستون تاریخ استخدام شمسی (اختیاری — برای بیمه تکمیلی)"
               value={mappingForm.hire_date_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, hire_date_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  hire_date_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Emp_Date"
               disabled={isSaving}
             />
             <TextField
               label="ستون جنسیت (اختیاری — برای بیمه تکمیلی)"
               value={mappingForm.gender_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, gender_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  gender_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Gender (۱ = مرد، ۲ = زن)"
               disabled={isSaving}
             />
             <TextField
               label="ستون وضعیت فعال/غیرفعال (اختیاری)"
               value={mappingForm.is_active_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, is_active_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  is_active_column: e.target.value,
+                })
+              }
               helperText="اگر منبع ستونی مثل IsActive یا IsCut دارد که با ۰/۱ نشان می‌دهد"
               disabled={isSaving}
             />
@@ -1004,7 +1273,12 @@ export default function SiteSettingsPage() {
               control={
                 <Checkbox
                   checked={mappingForm.is_active_inverted}
-                  onChange={(e) => setMappingForm({ ...mappingForm, is_active_inverted: e.target.checked })}
+                  onChange={(e) =>
+                    setMappingForm({
+                      ...mappingForm,
+                      is_active_inverted: e.target.checked,
+                    })
+                  }
                   disabled={isSaving}
                 />
               }
@@ -1021,7 +1295,12 @@ export default function SiteSettingsPage() {
               <TextField
                 label="ستون شعبه در جدول پرسنل"
                 value={mappingForm.branch_code_column}
-                onChange={(e) => setMappingForm({ ...mappingForm, branch_code_column: e.target.value })}
+                onChange={(e) =>
+                  setMappingForm({
+                    ...mappingForm,
+                    branch_code_column: e.target.value,
+                  })
+                }
                 placeholder="BranchCode"
                 disabled={isSaving}
                 sx={{ flex: 1 }}
@@ -1029,15 +1308,21 @@ export default function SiteSettingsPage() {
               <TextField
                 label="کد شعبه این سایت"
                 value={mappingForm.branch_code_value}
-                onChange={(e) => setMappingForm({ ...mappingForm, branch_code_value: e.target.value })}
+                onChange={(e) =>
+                  setMappingForm({
+                    ...mappingForm,
+                    branch_code_value: e.target.value,
+                  })
+                }
                 placeholder="مثلاً 1"
                 disabled={isSaving}
                 sx={{ flex: 1 }}
               />
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              اگر هر دو پر باشند، فقط پرسنلی که مقدار این ستون برابر کد شعبه این سایت است همگام‌سازی می‌شوند؛
-              پرسنل شعبه‌های دیگر که قبلاً در این سایت بودند در همگام‌سازی بعدی غیرفعال می‌شوند.
+              اگر هر دو پر باشند، فقط پرسنلی که مقدار این ستون برابر کد شعبه این
+              سایت است همگام‌سازی می‌شوند؛ پرسنل شعبه‌های دیگر که قبلاً در این
+              سایت بودند در همگام‌سازی بعدی غیرفعال می‌شوند.
             </Typography>
 
             <Divider sx={{ my: 1 }} />
@@ -1049,25 +1334,41 @@ export default function SiteSettingsPage() {
             <TextField
               label="ستون کد واحد در جدول پرسنل"
               value={mappingForm.department_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, department_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  department_column: e.target.value,
+                })
+              }
               helperText="مثال: Sec_No"
               disabled={isSaving}
             />
             <Typography variant="caption" color="text.secondary">
-              اگر جدول جداگانه‌ای این کد را به نام واقعی واحد ترجمه می‌کند (مثل dbo.Sections)،
-              سه فیلد زیر را هم پر کنید تا نام واحدها خودکار همگام شود:
+              اگر جدول جداگانه‌ای این کد را به نام واقعی واحد ترجمه می‌کند (مثل
+              dbo.Sections)، سه فیلد زیر را هم پر کنید تا نام واحدها خودکار
+              همگام شود:
             </Typography>
             <TextField
               label="نام جدول Lookup"
               value={mappingForm.department_lookup_table}
-              onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_table: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  department_lookup_table: e.target.value,
+                })
+              }
               helperText="مثال: dbo.Sections"
               disabled={isSaving}
             />
             <TextField
               label="ستون کد در جدول Lookup"
               value={mappingForm.department_lookup_id_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, department_lookup_id_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  department_lookup_id_column: e.target.value,
+                })
+              }
               helperText="مثال: Sec_No"
               disabled={isSaving}
             />
@@ -1075,7 +1376,10 @@ export default function SiteSettingsPage() {
               label="ستون نام واحد در جدول Lookup"
               value={mappingForm.department_lookup_name_column}
               onChange={(e) =>
-                setMappingForm({ ...mappingForm, department_lookup_name_column: e.target.value })
+                setMappingForm({
+                  ...mappingForm,
+                  department_lookup_name_column: e.target.value,
+                })
               }
               helperText="مثال: Title"
               disabled={isSaving}
@@ -1100,25 +1404,40 @@ export default function SiteSettingsPage() {
             <TextField
               label="ستون کد سمت در جدول پرسنل"
               value={mappingForm.position_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, position_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  position_column: e.target.value,
+                })
+              }
               helperText="مثال: Pos_No"
               disabled={isSaving}
             />
             <Typography variant="caption" color="text.secondary">
-              اگر جدول جداگانه‌ای این کد را به نام واقعی سمت ترجمه می‌کند (مثل Position با
-              ستون‌های Pos_No/Title)، سه فیلد زیر را هم پر کنید:
+              اگر جدول جداگانه‌ای این کد را به نام واقعی سمت ترجمه می‌کند (مثل
+              Position با ستون‌های Pos_No/Title)، سه فیلد زیر را هم پر کنید:
             </Typography>
             <TextField
               label="نام جدول Lookup"
               value={mappingForm.position_lookup_table}
-              onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_table: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  position_lookup_table: e.target.value,
+                })
+              }
               helperText="مثال: Position"
               disabled={isSaving}
             />
             <TextField
               label="ستون کد در جدول Lookup"
               value={mappingForm.position_lookup_id_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, position_lookup_id_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  position_lookup_id_column: e.target.value,
+                })
+              }
               helperText="مثال: Pos_No"
               disabled={isSaving}
             />
@@ -1126,7 +1445,10 @@ export default function SiteSettingsPage() {
               label="ستون عنوان سمت در جدول Lookup"
               value={mappingForm.position_lookup_name_column}
               onChange={(e) =>
-                setMappingForm({ ...mappingForm, position_lookup_name_column: e.target.value })
+                setMappingForm({
+                  ...mappingForm,
+                  position_lookup_name_column: e.target.value,
+                })
               }
               helperText="مثال: Title"
               disabled={isSaving}
@@ -1139,27 +1461,39 @@ export default function SiteSettingsPage() {
               عکس پرسنل (اختیاری)
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              اگر جدول جداگانه‌ای عکس بندانگشتی پرسنل را نگه می‌دارد (مثل EmployeeExtendedInfo)،
-              هر سه فیلد زیر را پر کنید:
+              اگر جدول جداگانه‌ای عکس بندانگشتی پرسنل را نگه می‌دارد (مثل
+              EmployeeExtendedInfo)، هر سه فیلد زیر را پر کنید:
             </Typography>
             <TextField
               label="نام جدول عکس"
               value={mappingForm.photo_table}
-              onChange={(e) => setMappingForm({ ...mappingForm, photo_table: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({ ...mappingForm, photo_table: e.target.value })
+              }
               helperText="مثال: EmployeeExtendedInfo"
               disabled={isSaving}
             />
             <TextField
               label="ستون کد پرسنلی در جدول عکس"
               value={mappingForm.photo_emp_no_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, photo_emp_no_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  photo_emp_no_column: e.target.value,
+                })
+              }
               helperText="مثال: Emp_No"
               disabled={isSaving}
             />
             <TextField
               label="ستون تصویر بندانگشتی"
               value={mappingForm.photo_thumbnail_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, photo_thumbnail_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  photo_thumbnail_column: e.target.value,
+                })
+              }
               helperText="مثال: ThumbnailImg"
               disabled={isSaving}
             />
@@ -1171,28 +1505,44 @@ export default function SiteSettingsPage() {
               گزارش جذب و ترک کار (اختیاری)
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              این ستون‌ها فقط برای محاسبه‌ی آمار مستقیماً از جدول پرسنل منبع خوانده می‌شوند. ستون تاریخ استخدام (بالا) و
-              ستون تاریخ ترک کار برای گزارش الزامی‌اند؛ وضعیت فعال/غیرفعال، واحد، جنسیت، تاریخ تولد و سمت از همین فرم
-              استفاده می‌شوند.
+              این ستون‌ها فقط برای محاسبه‌ی آمار مستقیماً از جدول پرسنل منبع
+              خوانده می‌شوند. ستون تاریخ استخدام (بالا) و ستون تاریخ ترک کار
+              برای گزارش الزامی‌اند؛ وضعیت فعال/غیرفعال، واحد، جنسیت، تاریخ تولد
+              و سمت از همین فرم استفاده می‌شوند.
             </Typography>
             <TextField
               label="ستون تاریخ ترک کار شمسی"
               value={mappingForm.termination_date_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, termination_date_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  termination_date_column: e.target.value,
+                })
+              }
               helperText="کاراوب: End_Date"
               disabled={isSaving}
             />
             <TextField
               label="ستون علت ترک کار"
               value={mappingForm.termination_reason_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, termination_reason_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  termination_reason_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Cut_Reason (متن آزاد؛ در صفحه‌ی گزارش دسته‌بندی می‌شود)"
               disabled={isSaving}
             />
             <TextField
               label="ماه شروع آمار"
               value={mappingForm.turnover_start_month}
-              onChange={(e) => setMappingForm({ ...mappingForm, turnover_start_month: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  turnover_start_month: e.target.value,
+                })
+              }
               helperText="ماه شروع کار با سیستم منبع، مثل 1403/06؛ آمار قبل از آن نمایش داده نمی‌شود"
               inputProps={{ dir: "ltr" }}
               disabled={isSaving}
@@ -1200,58 +1550,98 @@ export default function SiteSettingsPage() {
             <TextField
               label="ستون کد مدرک تحصیلی در جدول پرسنل (گزارش ترک کار و «مشخصات کاربری»)"
               value={mappingForm.education_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, education_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  education_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Grade_No"
               disabled={isSaving}
             />
             <TextField
               label="جدول Lookup مدرک تحصیلی"
               value={mappingForm.education_lookup_table}
-              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_table: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  education_lookup_table: e.target.value,
+                })
+              }
               helperText="کاراوب: Grades"
               disabled={isSaving}
             />
             <TextField
               label="ستون کد در جدول Lookup مدرک"
               value={mappingForm.education_lookup_id_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_id_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  education_lookup_id_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Grade_No"
               disabled={isSaving}
             />
             <TextField
               label="ستون عنوان مدرک در جدول Lookup"
               value={mappingForm.education_lookup_name_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, education_lookup_name_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  education_lookup_name_column: e.target.value,
+                })
+              }
               helperText="کاراوب: Title"
               disabled={isSaving}
             />
             <Typography variant="caption" color="text.secondary">
-              کاراوب برای استخدام مجدد رکورد جدید نمی‌سازد و همان رکورد پرسنل را دوباره فعال می‌کند؛ دوره‌های قبلی (ترک کار
-              پیش از برگشت) فقط در جدول تاریخچه می‌ماند. با پر کردن دو فیلد زیر، گزارش آن دوره‌ها و «استخدام مجدد» را هم
-              حساب می‌کند. جدول تاریخچه باید همان ستون‌های جدول پرسنل را داشته باشد.
+              کاراوب برای استخدام مجدد رکورد جدید نمی‌سازد و همان رکورد پرسنل را
+              دوباره فعال می‌کند؛ دوره‌های قبلی (ترک کار پیش از برگشت) فقط در
+              جدول تاریخچه می‌ماند. با پر کردن دو فیلد زیر، گزارش آن دوره‌ها و
+              «استخدام مجدد» را هم حساب می‌کند. جدول تاریخچه باید همان ستون‌های
+              جدول پرسنل را داشته باشد.
             </Typography>
             <TextField
               label="جدول تاریخچه‌ی پرسنل"
               value={mappingForm.history_table}
-              onChange={(e) => setMappingForm({ ...mappingForm, history_table: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  history_table: e.target.value,
+                })
+              }
               helperText="کاراوب: LogEmployee"
               disabled={isSaving}
             />
             <TextField
               label="ستون زمان تغییر در جدول تاریخچه"
               value={mappingForm.history_order_column}
-              onChange={(e) => setMappingForm({ ...mappingForm, history_order_column: e.target.value })}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  history_order_column: e.target.value,
+                })
+              }
               helperText="کاراوب: ChangeDate"
               disabled={isSaving}
             />
 
             {(result || error) && (
-              <Alert severity={error || !result?.success ? "error" : "success"}>{error || result.message}</Alert>
+              <Alert severity={error || !result?.success ? "error" : "success"}>
+                {error || result.message}
+              </Alert>
             )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
-                startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                startIcon={
+                  isSaving ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SaveOutlinedIcon />
+                  )
+                }
                 onClick={handleSaveMapping}
                 disabled={isSaving}
               >
@@ -1269,20 +1659,22 @@ export default function SiteSettingsPage() {
                 </Button>
               )}
             </Stack>
-          </Stack>
+          </Box>
         )}
 
         {/* تب موقعیت GPS و شعاع مجاز سایت */}
         {tab === "gps" && (
           <Stack spacing={2.5}>
             <Alert severity="info">
-              اگر هر سه فیلد را پر و ذخیره کنید، «حضور دوره‌ای» و «ثبت ورود/خروج آزمایشی» فقط برای
-              پرسنل این سایت وقتی داخل این شعاع باشند مجاز می‌شود. اگر خالی بماند، هیچ محدودیت مکانی
-              برای این سایت اعمال نمی‌شود.
+              اگر هر سه فیلد را پر و ذخیره کنید، «حضور دوره‌ای» و «ثبت ورود/خروج
+              آزمایشی» فقط برای پرسنل این سایت وقتی داخل این شعاع باشند مجاز
+              می‌شود. اگر خالی بماند، هیچ محدودیت مکانی برای این سایت اعمال
+              نمی‌شود.
             </Alert>
             <Alert severity="warning">
-              دقت GPS داخل ساختمان‌های صنعتی معمولاً ضعیف می‌شود (گاهی ۵۰ تا ۱۰۰+ متر خطا). حداقل
-              ۱۰۰ تا ۱۵۰ متر شعاع پیشنهاد می‌شود تا پرسنلی که واقعاً حاضرند به‌اشتباه رد نشوند.
+              دقت GPS داخل ساختمان‌های صنعتی معمولاً ضعیف می‌شود (گاهی ۵۰ تا
+              ۱۰۰+ متر خطا). حداقل ۱۰۰ تا ۱۵۰ متر شعاع پیشنهاد می‌شود تا پرسنلی
+              که واقعاً حاضرند به‌اشتباه رد نشوند.
             </Alert>
 
             <Stack direction="row" spacing={2}>
@@ -1290,7 +1682,9 @@ export default function SiteSettingsPage() {
                 label="عرض جغرافیایی (Latitude)"
                 type="number"
                 value={gpsForm.gps_latitude}
-                onChange={(e) => setGpsForm({ ...gpsForm, gps_latitude: e.target.value })}
+                onChange={(e) =>
+                  setGpsForm({ ...gpsForm, gps_latitude: e.target.value })
+                }
                 disabled={isSavingGps}
                 fullWidth
                 inputProps={{ step: "any" }}
@@ -1299,7 +1693,9 @@ export default function SiteSettingsPage() {
                 label="طول جغرافیایی (Longitude)"
                 type="number"
                 value={gpsForm.gps_longitude}
-                onChange={(e) => setGpsForm({ ...gpsForm, gps_longitude: e.target.value })}
+                onChange={(e) =>
+                  setGpsForm({ ...gpsForm, gps_longitude: e.target.value })
+                }
                 disabled={isSavingGps}
                 fullWidth
                 inputProps={{ step: "any" }}
@@ -1309,7 +1705,9 @@ export default function SiteSettingsPage() {
               label="شعاع مجاز (متر)"
               type="number"
               value={gpsForm.gps_radius_meters}
-              onChange={(e) => setGpsForm({ ...gpsForm, gps_radius_meters: e.target.value })}
+              onChange={(e) =>
+                setGpsForm({ ...gpsForm, gps_radius_meters: e.target.value })
+              }
               disabled={isSavingGps}
               helperText="پیشنهاد: حداقل ۱۰۰ تا ۱۵۰ متر"
               inputProps={{ min: 1 }}
@@ -1322,12 +1720,20 @@ export default function SiteSettingsPage() {
             </Box>
 
             {gpsResult && (
-              <Alert severity={gpsResult.success ? "success" : "error"}>{gpsResult.message}</Alert>
+              <Alert severity={gpsResult.success ? "success" : "error"}>
+                {gpsResult.message}
+              </Alert>
             )}
             <Stack direction="row" spacing={1.5}>
               <Button
                 variant="contained"
-                startIcon={isSavingGps ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                startIcon={
+                  isSavingGps ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SaveOutlinedIcon />
+                  )
+                }
                 onClick={handleSaveGps}
                 disabled={isSavingGps}
               >
@@ -1339,15 +1745,33 @@ export default function SiteSettingsPage() {
 
         {/* تب نگاشت جدول تردد دستگاه‌ها */}
         {tab === "attendance-mapping" && (
-          <Stack spacing={2.5}>
+          <Box
+            // فیلدها دو ستونه (مثل تب «نگاشت مرخصی/ماموریت»)؛ عنوان‌ها، توضیح‌ها، آکاردئون‌ها و دکمه‌ها تمام‌عرض
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+              columnGap: 2,
+              rowGap: 2,
+              "& > :not(.MuiTextField-root)": { gridColumn: "1 / -1" },
+              "& > .MuiTextField-root .MuiInputBase-root": { height: 40 },
+              "& > .MuiTextField-root .MuiInputBase-input": { py: 1 },
+            }}
+          >
             <Alert severity="info">
-              اگر تنظیم شود، پرسنل این سایت می‌توانند تردد ماهانه واقعی خودشان (از دستگاه‌های حضور و
-              غیاب کارخانه) را در پنل کاربری خودشان ببینند — از همین اتصال دیتابیس بالا (تب «اتصال
-              دیتابیس») خوانده می‌شود. چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی نام جدول/ستون‌های
-              متفاوتی دارند، این‌ها را دقیقاً مطابق دیتابیس واقعی این سایت وارد کنید.
+              اگر تنظیم شود، پرسنل این سایت می‌توانند تردد ماهانه واقعی خودشان
+              (از دستگاه‌های حضور و غیاب کارخانه) را در پنل کاربری خودشان ببینند
+              — از همین اتصال دیتابیس بالا (تب «اتصال دیتابیس») خوانده می‌شود.
+              چون نرم‌افزارهای مختلف حضور و غیاب دستگاهی نام جدول/ستون‌های
+              متفاوتی دارند، این‌ها را دقیقاً مطابق دیتابیس واقعی این سایت وارد
+              کنید.
             </Alert>
             <Box>
-              <Button size="small" variant="outlined" onClick={fillAttendanceWithKara} disabled={isSavingAttendanceMapping}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={fillAttendanceWithKara}
+                disabled={isSavingAttendanceMapping}
+              >
                 پر کردن همه فیلدهای خالی با نام‌های کاراوب
               </Button>
             </Box>
@@ -1355,7 +1779,12 @@ export default function SiteSettingsPage() {
             <TextField
               label="نام جدول"
               value={attendanceMappingForm.table_name}
-              onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, table_name: e.target.value })}
+              onChange={(e) =>
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  table_name: e.target.value,
+                })
+              }
               disabled={isSavingAttendanceMapping}
               helperText="نام جدولی که رکوردهای خام ورود/خروج دستگاه در آن ذخیره می‌شود"
             />
@@ -1363,7 +1792,10 @@ export default function SiteSettingsPage() {
               label="ستون کد پرسنلی"
               value={attendanceMappingForm.personnel_code_column}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, personnel_code_column: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  personnel_code_column: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
             />
@@ -1386,8 +1818,12 @@ export default function SiteSettingsPage() {
               disabled={isSavingAttendanceMapping}
               helperText="بر اساس ساختار جدول واقعی نرم‌افزار حضور و غیاب این سایت انتخاب کنید"
             >
-              <MenuItem value="single_column">یک ستون تاریخ + یک ستون ساعت (هر ردیف = یک تردد منفرد)</MenuItem>
-              <MenuItem value="enter_exit_columns">ستون‌های جدای ورود و خروج (هر ردیف = یک نشست کامل)</MenuItem>
+              <MenuItem value="single_column">
+                یک ستون تاریخ + یک ستون ساعت (هر ردیف = یک تردد منفرد)
+              </MenuItem>
+              <MenuItem value="enter_exit_columns">
+                ستون‌های جدای ورود و خروج (هر ردیف = یک نشست کامل)
+              </MenuItem>
             </TextField>
 
             {/* فیلدهای تاریخ/ساعت بسته به روش نگاشت: تک‌ستونی یا ستون‌های جدای ورود و خروج */}
@@ -1396,16 +1832,26 @@ export default function SiteSettingsPage() {
                 <TextField
                   label="ستون تاریخ"
                   value={attendanceMappingForm.date_column}
-                  onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, date_column: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      date_column: e.target.value,
+                    })
+                  }
                   disabled={isSavingAttendanceMapping}
-                  helperText='فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524'
+                  helperText="فرمت مورد انتظار: عدد شمسی فشرده بدون جداکننده، مثل 14050524"
                 />
                 <TextField
                   label="ستون ساعت"
                   value={attendanceMappingForm.time_column}
-                  onChange={(e) => setAttendanceMappingForm({ ...attendanceMappingForm, time_column: e.target.value })}
+                  onChange={(e) =>
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      time_column: e.target.value,
+                    })
+                  }
                   disabled={isSavingAttendanceMapping}
-                  helperText='فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01'
+                  helperText="فرمت مورد انتظار: عدد فشرده بدون جداکننده، مثل 618 برای 06:18 یا 1401 برای 14:01"
                 />
               </>
             ) : (
@@ -1414,37 +1860,49 @@ export default function SiteSettingsPage() {
                   label="ستون تاریخ ورود"
                   value={attendanceMappingForm.enter_date_column}
                   onChange={(e) =>
-                    setAttendanceMappingForm({ ...attendanceMappingForm, enter_date_column: e.target.value })
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      enter_date_column: e.target.value,
+                    })
                   }
                   disabled={isSavingAttendanceMapping}
-                  helperText='مثلاً enterdate — فرمت: عدد شمسی فشرده، مثل 14050524'
+                  helperText="مثلاً enterdate — فرمت: عدد شمسی فشرده، مثل 14050524"
                 />
                 <TextField
                   label="ستون ساعت ورود"
                   value={attendanceMappingForm.enter_time_column}
                   onChange={(e) =>
-                    setAttendanceMappingForm({ ...attendanceMappingForm, enter_time_column: e.target.value })
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      enter_time_column: e.target.value,
+                    })
                   }
                   disabled={isSavingAttendanceMapping}
-                  helperText='مثلاً entertime — فرمت: عدد فشرده، مثل 618 یا 1401'
+                  helperText="مثلاً entertime — فرمت: عدد فشرده، مثل 618 یا 1401"
                 />
                 <TextField
                   label="ستون تاریخ خروج"
                   value={attendanceMappingForm.exit_date_column}
                   onChange={(e) =>
-                    setAttendanceMappingForm({ ...attendanceMappingForm, exit_date_column: e.target.value })
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      exit_date_column: e.target.value,
+                    })
                   }
                   disabled={isSavingAttendanceMapping}
-                  helperText='مثلاً exitdate'
+                  helperText="مثلاً exitdate"
                 />
                 <TextField
                   label="ستون ساعت خروج"
                   value={attendanceMappingForm.exit_time_column}
                   onChange={(e) =>
-                    setAttendanceMappingForm({ ...attendanceMappingForm, exit_time_column: e.target.value })
+                    setAttendanceMappingForm({
+                      ...attendanceMappingForm,
+                      exit_time_column: e.target.value,
+                    })
                   }
                   disabled={isSavingAttendanceMapping}
-                  helperText='مثلاً exittime — اگر کاربری هنوز خروج نزده باشد، این ستون‌ها می‌توانند خالی (NULL) باشند'
+                  helperText="مثلاً exittime — اگر کاربری هنوز خروج نزده باشد، این ستون‌ها می‌توانند خالی (NULL) باشند"
                 />
               </>
             )}
@@ -1454,16 +1912,24 @@ export default function SiteSettingsPage() {
             <Typography variant="subtitle2" fontWeight={700}>
               تقویم و تعطیلات (اختیاری)
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-              اگر پر شود، روزهای تعطیل در گزارش تردد با رنگ قرمز مشخص می‌شوند. یک جدول با یک ردیف
-              به‌ازای هر (سال، ماه شمسی) و ستون‌های روز شماره‌گذاری‌شده (مثلاً D1 تا D31) — هر ستون
-              روز، صفر یعنی روز عادی و هر عدد غیرصفر یعنی آن روز تعطیل است.
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mt: -1.5 }}
+            >
+              اگر پر شود، روزهای تعطیل در گزارش تردد با رنگ قرمز مشخص می‌شوند.
+              یک جدول با یک ردیف به‌ازای هر (سال، ماه شمسی) و ستون‌های روز
+              شماره‌گذاری‌شده (مثلاً D1 تا D31) — هر ستون روز، صفر یعنی روز عادی
+              و هر عدد غیرصفر یعنی آن روز تعطیل است.
             </Typography>
             <TextField
               label="نام جدول تقویم"
               value={attendanceMappingForm.calendar_table_name}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_table_name: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  calendar_table_name: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
             />
@@ -1471,7 +1937,10 @@ export default function SiteSettingsPage() {
               label="ستون سال"
               value={attendanceMappingForm.calendar_year_column}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_year_column: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  calendar_year_column: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
               helperText="ستونی که سال شمسی را دارد (مثلاً 1405)"
@@ -1480,7 +1949,10 @@ export default function SiteSettingsPage() {
               label="ستون ماه"
               value={attendanceMappingForm.calendar_month_column}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_month_column: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  calendar_month_column: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
               helperText="ستونی که شماره ماه شمسی را دارد (۱ تا ۱۲)"
@@ -1489,7 +1961,10 @@ export default function SiteSettingsPage() {
               label="پیشوند ستون‌های روز"
               value={attendanceMappingForm.calendar_day_column_prefix}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_day_column_prefix: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  calendar_day_column_prefix: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
               helperText='مثلاً "D" اگر ستون‌ها D1، D2، ... D31 نامگذاری شده‌اند'
@@ -1498,7 +1973,10 @@ export default function SiteSettingsPage() {
               label="ستون شعبه تقویم (اختیاری)"
               value={attendanceMappingForm.calendar_branch_column}
               onChange={(e) =>
-                setAttendanceMappingForm({ ...attendanceMappingForm, calendar_branch_column: e.target.value })
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  calendar_branch_column: e.target.value,
+                })
               }
               disabled={isSavingAttendanceMapping}
               helperText='برای تقویم مشترک بین چند شعبه (کاراوب: "BranchCode") - مقدارش «کد شعبه این سایت» در نگاشت پرسنل است'
@@ -1510,19 +1988,32 @@ export default function SiteSettingsPage() {
               description="جدول، کد پرسنلی، تاریخ و ساعت تردد همان نگاشت بالای همین صفحه است. با نگاشت ستون وضعیت (Status)، مرخصی/ماموریت ساعتی در گزارش دیده می‌شود؛ با کارکرد روزانه و شیفت‌ها، روزهای غیرکاری شیفتی «تعطیل» می‌شوند؛ بقیه ستون‌ها برای اعمال درخواست ساعتی روی تردد لازم‌اند. هر بخش فقط وقتی نگاشت شود فعال است."
               values={attendanceMappingForm.kara_schema}
               defaults={karaDefaults?.attendance}
-              onChange={(next) => setAttendanceMappingForm({ ...attendanceMappingForm, kara_schema: next })}
+              onChange={(next) =>
+                setAttendanceMappingForm({
+                  ...attendanceMappingForm,
+                  kara_schema: next,
+                })
+              }
               disabled={isSavingAttendanceMapping}
             />
 
             {attendanceMappingResult && (
-              <Alert severity={attendanceMappingResult.success ? "success" : "error"}>
+              <Alert
+                severity={attendanceMappingResult.success ? "success" : "error"}
+              >
                 {attendanceMappingResult.message}
               </Alert>
             )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
-                startIcon={isSavingAttendanceMapping ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                startIcon={
+                  isSavingAttendanceMapping ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SaveOutlinedIcon />
+                  )
+                }
                 onClick={handleSaveAttendanceMapping}
                 disabled={isSavingAttendanceMapping}
               >
@@ -1540,7 +2031,7 @@ export default function SiteSettingsPage() {
                 </Button>
               )}
             </Stack>
-          </Stack>
+          </Box>
         )}
 
         {/* تب نگاشت جدول درخواست‌های مرخصی/ماموریت (WF_Requests) و جداول مرجع؛
@@ -1550,21 +2041,33 @@ export default function SiteSettingsPage() {
             <Alert
               severity="info"
               action={
-                <Button color="inherit" size="small" onClick={() => navigate(`/leave-requests/settings?site=${siteId}`)}>
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() =>
+                    navigate(`/leave-requests/settings?site=${siteId}`)
+                  }
+                >
                   باز کردن
                 </Button>
               }
             >
-              نوع‌های درخواست، تأییدکننده هر واحد و مسئول نیروی انسانی (تأیید نهایی تردد فراموش‌شده) در صفحه
-              «تنظیمات درخواست مرخصی/ماموریت» تعیین می‌شوند.
+              نوع‌های درخواست، تأییدکننده هر واحد و مسئول نیروی انسانی (تأیید
+              نهایی تردد فراموش‌شده) در صفحه «تنظیمات درخواست مرخصی/ماموریت»
+              تعیین می‌شوند.
             </Alert>
             <Typography variant="body2" color="text.secondary">
-              نام جدول/ستون‌های جدول خام WF_Requests این سایت، به‌همراه جدول‌های مرجع مرتبط - مقادیر
-              پیش‌فرض دقیقاً مطابق نمونه‌ی بررسی‌شده است؛ فقط اگر نصب شما نام‌گذاری متفاوتی دارد تغییر
-              دهید.
+              نام جدول/ستون‌های جدول خام WF_Requests این سایت، به‌همراه جدول‌های
+              مرجع مرتبط - مقادیر پیش‌فرض دقیقاً مطابق نمونه‌ی بررسی‌شده است؛
+              فقط اگر نصب شما نام‌گذاری متفاوتی دارد تغییر دهید.
             </Typography>
             <Box>
-              <Button size="small" variant="outlined" onClick={fillLeaveWithKara} disabled={isSavingLeaveMapping}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={fillLeaveWithKara}
+                disabled={isSavingLeaveMapping}
+              >
                 پر کردن همه فیلدهای خالی با نام‌های کاراوب
               </Button>
             </Box>
@@ -1583,7 +2086,12 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
@@ -1605,7 +2113,12 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
@@ -1626,7 +2139,12 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
@@ -1649,20 +2167,32 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
               ))}
             </Stack>
 
-            <Divider textAlign="right">دیتابیس/جدول مشترک بین چند سایت (اختیاری)</Divider>
+            <Divider textAlign="right">
+              دیتابیس/جدول مشترک بین چند سایت (اختیاری)
+            </Divider>
             <Stack direction="row" spacing={1.5}>
               <TextField
                 size="small"
                 label="ستون BranchCode"
                 value={leaveMappingForm.branch_code_column || ""}
-                onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, branch_code_column: e.target.value || null })}
+                onChange={(e) =>
+                  setLeaveMappingForm({
+                    ...leaveMappingForm,
+                    branch_code_column: e.target.value || null,
+                  })
+                }
                 disabled={isSavingLeaveMapping}
               />
               <TextField
@@ -1673,14 +2203,17 @@ export default function SiteSettingsPage() {
                 onChange={(e) =>
                   setLeaveMappingForm({
                     ...leaveMappingForm,
-                    branch_code_value: e.target.value === "" ? null : Number(e.target.value),
+                    branch_code_value:
+                      e.target.value === "" ? null : Number(e.target.value),
                   })
                 }
                 disabled={isSavingLeaveMapping}
               />
             </Stack>
 
-            <Divider textAlign="right">جدول مرجع WF_Action (اختیاری - پیشنهاد خودکار نوع‌ها)</Divider>
+            <Divider textAlign="right">
+              جدول مرجع WF_Action (اختیاری - پیشنهاد خودکار نوع‌ها)
+            </Divider>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
                 ["action_lookup_table_name", "نام جدول مرجع (WF_Action)"],
@@ -1692,17 +2225,27 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
               ))}
             </Stack>
 
-            <Divider textAlign="right">جدول مرجع WF_OperationTypes (اختیاری - نوع عملیات واقعی)</Divider>
+            <Divider textAlign="right">
+              جدول مرجع WF_OperationTypes (اختیاری - نوع عملیات واقعی)
+            </Divider>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
-                ["operation_lookup_table_name", "نام جدول مرجع (WF_OperationTypes)"],
+                [
+                  "operation_lookup_table_name",
+                  "نام جدول مرجع (WF_OperationTypes)",
+                ],
                 ["operation_lookup_id_column", "ستون OperationId در جدول مرجع"],
                 ["operation_lookup_desc_column", "ستون عنوان فارسی (Name)"],
               ].map(([key, label]) => (
@@ -1711,14 +2254,21 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
               ))}
             </Stack>
 
-            <Divider textAlign="right">جدول کارت‌ها (WF_Cards - عنوان سفارشی هر شعبه، مثل خودِ کاراوب)</Divider>
+            <Divider textAlign="right">
+              جدول کارت‌ها (WF_Cards - عنوان سفارشی هر شعبه، مثل خودِ کاراوب)
+            </Divider>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
                 ["card_lookup_table_name", "نام جدول مرجع (WF_Cards)"],
@@ -1730,20 +2280,28 @@ export default function SiteSettingsPage() {
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
               ))}
             </Stack>
 
-            <Divider textAlign="right">تعیین خودکار تأییدکننده (زنجیره پرسنل ← بخش ← مدیر بخش)</Divider>
+            <Divider textAlign="right">
+              تعیین خودکار تأییدکننده (زنجیره پرسنل ← بخش ← مدیر بخش)
+            </Divider>
             <Typography variant="caption" color="text.secondary">
-              اگر این جدول‌ها تنظیم باشند، سیستم به‌طور خودکار مدیر بخشِ پرسنلِ درخواست‌دهنده را
-              به‌عنوان تأییدکننده تعیین می‌کند - دقیقاً مطابق منطق واقعی نرم‌افزار ورود/خروج. اگر
-              کسی خودش مدیر بخش خودش باشد (نمی‌تواند تأییدکننده خودش باشد)، خودکار به مدیرِ بخش
-              بالادستی صعود می‌کند. اگر خالی بماند یا پیدا نشود، به تخصیص دستی (تب «تأییدکننده هر
-              واحد» در تنظیمات درخواست مرخصی/ماموریت) برمی‌گردد.
+              اگر این جدول‌ها تنظیم باشند، سیستم به‌طور خودکار مدیر بخشِ پرسنلِ
+              درخواست‌دهنده را به‌عنوان تأییدکننده تعیین می‌کند - دقیقاً مطابق
+              منطق واقعی نرم‌افزار ورود/خروج. اگر کسی خودش مدیر بخش خودش باشد
+              (نمی‌تواند تأییدکننده خودش باشد)، خودکار به مدیرِ بخش بالادستی
+              صعود می‌کند. اگر خالی بماند یا پیدا نشود، به تخصیص دستی (تب
+              «تأییدکننده هر واحد» در تنظیمات درخواست مرخصی/ماموریت) برمی‌گردد.
             </Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
@@ -1753,46 +2311,71 @@ export default function SiteSettingsPage() {
                 ["section_table_name", "نام جدول بخش‌ها (Sections)"],
                 ["section_sec_no_column", "ستون شماره بخش در جدول بخش‌ها"],
                 ["section_manager_emp_no_column", "ستون کد پرسنلی مدیر بخش"],
-                ["section_parent_column", "ستون بخش بالادستی (برای صعود وقتی مدیر خودشه)"],
+                [
+                  "section_parent_column",
+                  "ستون بخش بالادستی (برای صعود وقتی مدیر خودشه)",
+                ],
               ].map(([key, label]) => (
                 <TextField
                   key={key}
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
               ))}
             </Stack>
 
-            <Divider textAlign="right">جدول WF_Reviews (نظر واقعی تأییدکننده)</Divider>
+            <Divider textAlign="right">
+              جدول WF_Reviews (نظر واقعی تأییدکننده)
+            </Divider>
             <Typography variant="caption" color="text.secondary">
-              کشف شده با بررسی داده واقعی: نظر واقعی تأییدکننده در ستون ManagerIdea ذخیره نمی‌شود - در
-              این جدول جداگانه (یک ردیف به‌ازای هر تصمیم) ذخیره می‌شود. ReviewType تصمیم را نشان
-              نمی‌دهد؛ کاراوب برای تأیید و رد، هر دو، همین یک مقدار ثابت (۴) را می‌نویسد و تصمیم واقعی
-              فقط در IsFinalApproved ذخیره می‌شود.
+              کشف شده با بررسی داده واقعی: نظر واقعی تأییدکننده در ستون
+              ManagerIdea ذخیره نمی‌شود - در این جدول جداگانه (یک ردیف به‌ازای
+              هر تصمیم) ذخیره می‌شود. ReviewType تصمیم را نشان نمی‌دهد؛ کاراوب
+              برای تأیید و رد، هر دو، همین یک مقدار ثابت (۴) را می‌نویسد و تصمیم
+              واقعی فقط در IsFinalApproved ذخیره می‌شود.
             </Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
               {[
                 ["wf_reviews_table_name", "نام جدول (WF_Reviews)"],
                 ["wf_reviews_request_id_column", "ستون شناسه درخواست"],
-                ["wf_reviews_reviewed_emp_no_column", "ستون کد پرسنلی تأییدکننده"],
+                [
+                  "wf_reviews_reviewed_emp_no_column",
+                  "ستون کد پرسنلی تأییدکننده",
+                ],
                 ["wf_reviews_description_column", "ستون متن نظر"],
                 ["wf_reviews_type_column", "ستون نوع تصمیم"],
                 ["wf_reviews_date_column", "ستون تاریخ تصمیم"],
-                ["wf_reviews_show_to_personal_column", "ستون قابل‌نمایش به پرسنل"],
+                [
+                  "wf_reviews_show_to_personal_column",
+                  "ستون قابل‌نمایش به پرسنل",
+                ],
                 ["wf_attachment_table_name", "جدول پیوست‌ها (برای حذف)"],
                 ["wf_moveup_table_name", "جدول صعود خودکار (برای حذف)"],
-                ["wf_parallel_approval_table_name", "جدول تأیید موازی (برای حذف)"],
+                [
+                  "wf_parallel_approval_table_name",
+                  "جدول تأیید موازی (برای حذف)",
+                ],
               ].map(([key, label]) => (
                 <TextField
                   key={key}
                   size="small"
                   label={label}
                   value={leaveMappingForm[key] || ""}
-                  onChange={(e) => setLeaveMappingForm({ ...leaveMappingForm, [key]: e.target.value })}
+                  onChange={(e) =>
+                    setLeaveMappingForm({
+                      ...leaveMappingForm,
+                      [key]: e.target.value,
+                    })
+                  }
                   disabled={isSavingLeaveMapping}
                   sx={{ minWidth: 220 }}
                 />
@@ -1807,7 +2390,8 @@ export default function SiteSettingsPage() {
                 onChange={(e) =>
                   setLeaveMappingForm({
                     ...leaveMappingForm,
-                    wf_reviews_approved_type_value: e.target.value === "" ? null : Number(e.target.value),
+                    wf_reviews_approved_type_value:
+                      e.target.value === "" ? null : Number(e.target.value),
                   })
                 }
                 disabled={isSavingLeaveMapping}
@@ -1820,17 +2404,29 @@ export default function SiteSettingsPage() {
               description="ثبت مرخصی/ماموریت روزانه در کارکرد فقط وقتی فعال است که «کاربران کاراوب» و «مرخصی/ماموریت روزانه» نگاشت شده باشند. برای ساعتی، ستون‌های تکمیلی تردد در تب «نگاشت تردد» هم لازم است. جدول تردد دوباره اینجا نگاشت نمی‌شود."
               values={leaveMappingForm.kara_schema}
               defaults={karaDefaults?.leave}
-              onChange={(next) => setLeaveMappingForm({ ...leaveMappingForm, kara_schema: next })}
+              onChange={(next) =>
+                setLeaveMappingForm({ ...leaveMappingForm, kara_schema: next })
+              }
               disabled={isSavingLeaveMapping}
             />
 
             {leaveMappingResult && (
-              <Alert severity={leaveMappingResult.success ? "success" : "error"}>{leaveMappingResult.message}</Alert>
+              <Alert
+                severity={leaveMappingResult.success ? "success" : "error"}
+              >
+                {leaveMappingResult.message}
+              </Alert>
             )}
             <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
               <Button
                 variant="contained"
-                startIcon={isSavingLeaveMapping ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />}
+                startIcon={
+                  isSavingLeaveMapping ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SaveOutlinedIcon />
+                  )
+                }
                 onClick={handleSaveLeaveMapping}
                 disabled={isSavingLeaveMapping}
               >
