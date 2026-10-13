@@ -29,6 +29,7 @@ const { jy: CURRENT_YEAR, jm: CURRENT_MONTH } = gregorianToJalali(new Date());
 
 // برچسب هر نفر در فهرست: «نام نام‌خانوادگی (کد پرسنلی)» تا جست‌وجو با کد هم کار کند
 function staffLabel(e) {
+  if (!e || typeof e !== "object") return ""; // MUI ممکن است با مقدار خالی هم صدا بزند
   return `${e.first_name} ${e.last_name} (${e.personnel_code})`;
 }
 
