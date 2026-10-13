@@ -1023,6 +1023,9 @@ function SettingsTab({ site, onSaved }) {
       ? { id: site.site_manager_employee_id, label: site.site_manager }
       : null,
   );
+  const [hr, setHr] = useState(
+    site.hr_employee_id ? { id: site.hr_employee_id, label: site.hr } : null,
+  );
   const [payslipTitle, setPayslipTitle] = useState(
     site.payslip_loan_title || "",
   );
@@ -1036,6 +1039,9 @@ function SettingsTab({ site, onSaved }) {
         ? { id: site.site_manager_employee_id, label: site.site_manager }
         : null,
     );
+    setHr(
+      site.hr_employee_id ? { id: site.hr_employee_id, label: site.hr } : null,
+    );
   }, [site]);
   const save = async () => {
     setSaving(true);
@@ -1044,6 +1050,7 @@ function SettingsTab({ site, onSaved }) {
       await updateLoanSite(site.site_id, {
         is_enabled: enabled,
         site_manager_employee_id: manager?.id ?? null,
+        hr_employee_id: hr?.id ?? null,
         payslip_loan_title: payslipTitle.trim() || null,
       });
       onSaved();
@@ -1071,6 +1078,12 @@ function SettingsTab({ site, onSaved }) {
             fetcher={(q) => searchLoanSiteEmployees(site.site_id, q)}
             value={manager}
             onChange={setManager}
+          />
+          <EmployeeSearch
+            label="منابع انسانی (تأییدکننده‌ی مرحله‌ی «منابع انسانی»)"
+            fetcher={(q) => searchLoanSiteEmployees(site.site_id, q)}
+            value={hr}
+            onChange={setHr}
           />
           <Typography variant="caption" color="text.secondary">
             مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست و جدا تعریف نمی‌شود.

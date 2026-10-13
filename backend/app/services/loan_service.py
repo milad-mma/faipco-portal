@@ -281,7 +281,11 @@ class LoanService:
             pending = [g.employee_id for g in req.guarantors if g.status == "pending"]
             self._push(pending, "/loans?tab=inbox", req.site_id, "loan.guarantor_requested")
             return
-        approver = req.unit_manager_employee_id if step == R.STEP_UNIT_MANAGER else req.site_manager_employee_id
+        approver = {
+            R.STEP_UNIT_MANAGER: req.unit_manager_employee_id,
+            R.STEP_HR: req.hr_employee_id,
+            R.STEP_SITE_MANAGER: req.site_manager_employee_id,
+        }.get(step)
         req.current_approver_employee_id = approver
         self._push([approver], "/loans?tab=inbox", req.site_id, "loan.approver_pending")
 
@@ -394,7 +398,13 @@ class LoanService:
             positions = await self._queue_positions(req.site_id)
         position = (positions or {}).get(req.id)
         people = await self._names(
-            [req.employee_id, req.unit_manager_employee_id, req.site_manager_employee_id, req.current_approver_employee_id]
+            [
+                req.employee_id,
+                req.unit_manager_employee_id,
+                req.hr_employee_id,
+                req.site_manager_employee_id,
+                req.current_approver_employee_id,
+            ]
             + [g.employee_id for g in req.guarantors]
         )
         step = self.current_step(req)
@@ -429,11 +439,11 @@ class LoanService:
                     ),
                     "person": label(
                         people.get(
-                            req.unit_manager_employee_id
-                            if key == R.STEP_UNIT_MANAGER
-                            else req.site_manager_employee_id
-                            if key == R.STEP_SITE_MANAGER
-                            else None
+                            {
+                                R.STEP_UNIT_MANAGER: req.unit_manager_employee_id,
+                                R.STEP_HR: req.hr_employee_id,
+                                R.STEP_SITE_MANAGER: req.site_manager_employee_id,
+                            }.get(key)
                         )
                     ),
                 }
@@ -709,7 +719,7 @@ class LoanService:
                 raise LoanError(problem)
 
         policy_steps = R.normalize_steps(policy.approval_steps)
-        unit_manager_id = site_manager_id = None
+        unit_manager_id = site_manager_id = hr_id = None
         if R.STEP_UNIT_MANAGER in policy_steps:
             unit_manager_id = await self.resolve_unit_manager(employee)
             if unit_manager_id is None:
@@ -719,12 +729,18 @@ class LoanService:
             site_manager_id = settings.site_manager_employee_id if settings else None
             if site_manager_id is None:
                 raise LoanError("مدیر سایت برای تأیید وام تعیین نشده است؛ با واحد مالی یا منابع انسانی هماهنگ کنید")
+        if R.STEP_HR in policy_steps:
+            settings = await self.site_settings(employee.site_id)
+            hr_id = settings.hr_employee_id if settings else None
+            if hr_id is None:
+                raise LoanError("تأییدکننده‌ی منابع انسانی برای وام تعیین نشده است؛ با واحد مالی یا منابع انسانی هماهنگ کنید")
         steps = R.effective_steps(
             policy_steps,
             guarantor_count=need,
             requester_id=employee.id,
             unit_manager_id=unit_manager_id,
             site_manager_id=site_manager_id,
+            hr_id=hr_id,
         )
 
         req = LoanRequest(
@@ -742,6 +758,7 @@ class LoanService:
             step_index=0,
             status=R.STATUS_IN_REVIEW,
             unit_manager_employee_id=unit_manager_id,
+            hr_employee_id=hr_id,
             site_manager_employee_id=site_manager_id,
             guarantors=[LoanRequestGuarantor(employee_id=gid, status="pending") for gid in guarantor_ids],
             events=[],
@@ -974,7 +991,7 @@ class LoanService:
             raise LoanError("حساب پرسنلی شما فعال نیست", 403)
         req = await self._load_request(request_id, lock=True)
         step = self.current_step(req)
-        if step not in (R.STEP_UNIT_MANAGER, R.STEP_SITE_MANAGER) or req.current_approver_employee_id != employee.id:
+        if step not in R.PERSON_STEPS or req.current_approver_employee_id != employee.id:
             raise LoanError("این درخواست در انتظار تصمیم شما نیست", 403)
         if not approve and not _clean(note):
             raise LoanError("دلیل رد را بنویسید")
@@ -1001,11 +1018,14 @@ class LoanService:
             s.site_id: s
             for s in (await self.db.execute(select(LoanSiteSettings))).scalars().all()
         }
-        managers = await self._names([s.site_manager_employee_id for s in settings.values()])
+        managers = await self._names(
+            [s.site_manager_employee_id for s in settings.values()] + [s.hr_employee_id for s in settings.values()]
+        )
         out = []
         for site in sites:
             st = settings.get(site.id)
             mid = st.site_manager_employee_id if st else None
+            hid = st.hr_employee_id if st else None
             out.append(
                 {
                     "site_id": site.id,
@@ -1013,28 +1033,42 @@ class LoanService:
                     "is_enabled": bool(st and st.is_enabled),
                     "site_manager_employee_id": mid,
                     "site_manager": employee_label(managers.get(mid)),
+                    "hr_employee_id": hid,
+                    "hr": employee_label(managers.get(hid)),
                     "payslip_loan_title": st.payslip_loan_title if st else None,
                 }
             )
         return out
 
+    async def _check_site_approver(self, site_id: int, employee_id: int | None, role: str) -> None:
+        """تأییدکننده‌ی سطح سایت (مدیر سایت / منابع انسانی) باید پرسنل فعال همین سایت با حساب پرتال باشد."""
+        if employee_id is None:
+            return
+        person = await self.db.get(Employee, employee_id)
+        if person is None or person.site_id != site_id:
+            raise LoanError(f"{role} باید از پرسنل همین سایت باشد")
+        if not (person.is_active and person.is_enabled):
+            raise LoanError(f"پرسنل انتخاب‌شده برای {role} فعال نیست")
+        has_user = (await self.db.execute(select(User.id).where(User.employee_id == person.id).limit(1))).first()
+        if not has_user:
+            raise LoanError(f"{role} باید حساب کاربری پرتال داشته باشد تا بتواند تأیید کند")
+
     async def update_site_settings(
-        self, site_id: int, is_enabled: bool, site_manager_employee_id: int | None, payslip_loan_title: str | None = None
+        self,
+        site_id: int,
+        is_enabled: bool,
+        site_manager_employee_id: int | None,
+        payslip_loan_title: str | None = None,
+        hr_employee_id: int | None = None,
     ) -> None:
         if (await self.db.get(Site, site_id)) is None:
             raise LoanError("سایت پیدا نشد", 404)
-        if site_manager_employee_id is not None:
-            manager = await self.db.get(Employee, site_manager_employee_id)
-            if manager is None or manager.site_id != site_id:
-                raise LoanError("مدیر سایت باید از پرسنل همین سایت باشد")
-            if not (manager.is_active and manager.is_enabled):
-                raise LoanError("پرسنل انتخاب‌شده برای مدیر سایت فعال نیست")
-            has_user = (await self.db.execute(select(User.id).where(User.employee_id == manager.id).limit(1))).first()
-            if not has_user:
-                raise LoanError("مدیر سایت باید حساب کاربری پرتال داشته باشد تا بتواند تأیید کند")
+        await self._check_site_approver(site_id, site_manager_employee_id, "مدیر سایت")
+        await self._check_site_approver(site_id, hr_employee_id, "تأییدکننده‌ی منابع انسانی")
         settings = await self.site_settings(site_id, create=True)
         settings.is_enabled = bool(is_enabled)
         settings.site_manager_employee_id = site_manager_employee_id
+        settings.hr_employee_id = hr_employee_id
         settings.payslip_loan_title = _clean(payslip_loan_title, 200)
         await self.db.commit()
 

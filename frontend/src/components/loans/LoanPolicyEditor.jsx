@@ -35,10 +35,11 @@ import { AmountField, digitsOnly, errText } from "./LoanShared";
 export const STEP_LABELS = {
   guarantors: "ضامن‌ها",
   unit_manager: "مدیر واحد (تأییدکننده‌ی مرخصی)",
+  hr: "منابع انسانی",
   site_manager: "مدیر سایت",
   finance: "واحد مالی",
 };
-const OPTIONAL_STEPS = ["guarantors", "unit_manager", "site_manager"];
+const OPTIONAL_STEPS = ["guarantors", "unit_manager", "hr", "site_manager"];
 
 function todayJalali() {
   const { jy, jm, jd } = gregorianToJalali(new Date());
@@ -66,13 +67,40 @@ export const FACTORY_TEMPLATE = {
     "وام‌ها بدون بهره است.\nتا تسویه‌ی کامل وام قبلی، وام جدید پرداخت نمی‌شود.\nدر صورت ترک کار، باقیمانده‌ی وام از سنوات کسر می‌شود و ضامن‌ها مسئولیت تضامنی دارند.",
   guarantee_terms:
     "ضامن متعهد است در صورت ترک کار وام‌گیرنده یا عدم پرداخت اقساط، باقیمانده‌ی وام را به‌صورت تضامنی پرداخت کند.\nپرداخت از محل حقوق و مزایای ضامن قابل کسر است.",
-  guarantee_agree_label: "تمامی قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم.",
+  guarantee_agree_label:
+    "تمامی قوانین و مقررات ضمانت را خوانده‌ام و قبول دارم.",
   block_if_unsettled: true,
-  approval_steps: ["guarantors", "unit_manager", "site_manager", "finance"],
+  approval_steps: [
+    "guarantors",
+    "unit_manager",
+    "hr",
+    "site_manager",
+    "finance",
+  ],
   types: [
-    { ...EMPTY_TYPE, title: "نوع الف", max_amount: 400000000, min_service_months: 24, guarantor_count: 2, extra_requirement: "سفته به مبلغ ۴۰۰ میلیون ریال" },
-    { ...EMPTY_TYPE, title: "نوع ب", max_amount: 200000000, min_service_months: 12, guarantor_count: 2 },
-    { ...EMPTY_TYPE, title: "نوع ج (اضطراری)", max_amount: 100000000, min_service_months: 3, guarantor_count: 2, out_of_queue: true },
+    {
+      ...EMPTY_TYPE,
+      title: "نوع الف",
+      max_amount: 400000000,
+      min_service_months: 24,
+      guarantor_count: 2,
+      extra_requirement: "سفته به مبلغ ۴۰۰ میلیون ریال",
+    },
+    {
+      ...EMPTY_TYPE,
+      title: "نوع ب",
+      max_amount: 200000000,
+      min_service_months: 12,
+      guarantor_count: 2,
+    },
+    {
+      ...EMPTY_TYPE,
+      title: "نوع ج (اضطراری)",
+      max_amount: 100000000,
+      min_service_months: 3,
+      guarantor_count: 2,
+      out_of_queue: true,
+    },
   ],
 };
 
@@ -80,12 +108,15 @@ function initialForm(source) {
   const base = source || {};
   return {
     title: base.title || "",
-    effective_from: base.effective_from && !base._copy ? base.effective_from : todayJalali(),
+    effective_from:
+      base.effective_from && !base._copy ? base.effective_from : todayJalali(),
     rules_text: base.rules_text || "",
     guarantee_terms: base.guarantee_terms || "",
     guarantee_agree_label: base.guarantee_agree_label || "",
     block_if_unsettled: base.block_if_unsettled ?? true,
-    approval_steps: base.approval_steps?.length ? base.approval_steps : ["guarantors", "unit_manager", "site_manager", "finance"],
+    approval_steps: base.approval_steps?.length
+      ? base.approval_steps
+      : ["guarantors", "unit_manager", "hr", "site_manager", "finance"],
     types: (base.types?.length ? base.types : [EMPTY_TYPE]).map((t) => ({
       ...EMPTY_TYPE,
       ...t,
@@ -102,7 +133,13 @@ function initialForm(source) {
  * open، policy (برای ویرایش) یا source (برای نسخه‌ی جدید: کپی از یک مقررات یا نمونه؛ _copy=true)،
  * onSave(payload) که Promise برمی‌گرداند.
  */
-export default function LoanPolicyEditor({ open, policy, source, onClose, onSave }) {
+export default function LoanPolicyEditor({
+  open,
+  policy,
+  source,
+  onClose,
+  onSave,
+}) {
   const [form, setForm] = useState(() => initialForm(policy || source));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -117,30 +154,47 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
   const setType = (i, key, value) =>
-    setForm((f) => ({ ...f, types: f.types.map((t, j) => (j === i ? { ...t, [key]: value } : t)) }));
+    setForm((f) => ({
+      ...f,
+      types: f.types.map((t, j) => (j === i ? { ...t, [key]: value } : t)),
+    }));
 
   // «مدیر سایت» همیشه بعد از ضامن‌ها و مدیر واحد است (جابه‌جا نمی‌شود)؛ «واحد مالی» همیشه آخر
-  const withSiteLast = (list) => [...list.filter((s) => s !== "site_manager"), ...(list.includes("site_manager") ? ["site_manager"] : [])];
-  const steps = withSiteLast(form.approval_steps.filter((s) => s !== "finance"));
+  const withSiteLast = (list) => [
+    ...list.filter((s) => s !== "site_manager"),
+    ...(list.includes("site_manager") ? ["site_manager"] : []),
+  ];
+  const steps = withSiteLast(
+    form.approval_steps.filter((s) => s !== "finance"),
+  );
   const moveStep = (i, dir) => {
     const next = [...steps];
     [next[i], next[i + dir]] = [next[i + dir], next[i]];
     set("approval_steps", [...next, "finance"]);
   };
-  const removeStep = (key) => set("approval_steps", [...steps.filter((s) => s !== key), "finance"]);
-  const addStep = (key) => set("approval_steps", [...withSiteLast([...steps, key]), "finance"]);
+  const removeStep = (key) =>
+    set("approval_steps", [...steps.filter((s) => s !== key), "finance"]);
+  const addStep = (key) =>
+    set("approval_steps", [...withSiteLast([...steps, key]), "finance"]);
   const movable = (i) => steps[i] !== "site_manager";
 
   const save = async () => {
-    const needs = form.types.find((t) => t.is_active && Number(t.guarantor_count) > 0);
+    const needs = form.types.find(
+      (t) => t.is_active && Number(t.guarantor_count) > 0,
+    );
     if (needs && !form.approval_steps.includes("guarantors")) {
-      setError(`نوع «${needs.title || "بی‌نام"}» ضامن می‌خواهد؛ مرحله‌ی «ضامن‌ها» را به مسیر تأیید اضافه کنید یا تعداد ضامن را صفر کنید.`);
+      setError(
+        `نوع «${needs.title || "بی‌نام"}» ضامن می‌خواهد؛ مرحله‌ی «ضامن‌ها» را به مسیر تأیید اضافه کنید یا تعداد ضامن را صفر کنید.`,
+      );
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const toInt = (v) => (v === "" || v === null || v === undefined ? null : Number(digitsOnly(v)) || null);
+      const toInt = (v) =>
+        v === "" || v === null || v === undefined
+          ? null
+          : Number(digitsOnly(v)) || null;
       await onSave({
         ...form,
         types: form.types.map((t) => ({
@@ -162,13 +216,27 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
   };
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="md" fullScreen={fullScreen}>
-      <DialogTitle>{policy ? "ویرایش مقررات وام" : "مقررات وام — نسخه‌ی جدید"}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="md"
+      fullScreen={fullScreen}
+    >
+      <DialogTitle>
+        {policy ? "ویرایش مقررات وام" : "مقررات وام — نسخه‌ی جدید"}
+      </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Grid container spacing={2}>
             <Grid item xs={12} sm={8}>
-              <TextField label="عنوان" value={form.title} onChange={(e) => set("title", e.target.value)} fullWidth required />
+              <TextField
+                label="عنوان"
+                value={form.title}
+                onChange={(e) => set("title", e.target.value)}
+                fullWidth
+                required
+              />
             </Grid>
             <Grid item xs={12} sm={4}>
               <JalaliCalendarField
@@ -208,7 +276,12 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
             helperText="خالی = متن پیش‌فرض. ضامن بدون زدن این تیک نمی‌تواند ضمانت را قبول کند."
           />
           <FormControlLabel
-            control={<Switch checked={form.block_if_unsettled} onChange={(e) => set("block_if_unsettled", e.target.checked)} />}
+            control={
+              <Switch
+                checked={form.block_if_unsettled}
+                onChange={(e) => set("block_if_unsettled", e.target.checked)}
+              />
+            }
             label="تا تسویه‌ی کامل وام قبلی، درخواست وام جدید ممنوع"
           />
 
@@ -218,20 +291,40 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
             </Typography>
             <Stack spacing={1}>
               {steps.map((key, i) => (
-                <Stack key={key} direction="row" alignItems="center" spacing={1}>
-                  <Chip label={`${(i + 1).toLocaleString("fa-IR")}. ${STEP_LABELS[key]}`} sx={{ flex: 1, justifyContent: "flex-start" }} />
-                  <IconButton size="small" disabled={i === 0 || !movable(i)} onClick={() => moveStep(i, -1)} aria-label="بالا">
+                <Stack
+                  key={key}
+                  direction="row"
+                  alignItems="center"
+                  spacing={1}
+                >
+                  <Chip
+                    label={`${(i + 1).toLocaleString("fa-IR")}. ${STEP_LABELS[key]}`}
+                    sx={{ flex: 1, justifyContent: "flex-start" }}
+                  />
+                  <IconButton
+                    size="small"
+                    disabled={i === 0 || !movable(i)}
+                    onClick={() => moveStep(i, -1)}
+                    aria-label="بالا"
+                  >
                     <ArrowUpwardIcon fontSize="small" />
                   </IconButton>
                   <IconButton
                     size="small"
-                    disabled={i === steps.length - 1 || !movable(i) || !movable(i + 1)}
+                    disabled={
+                      i === steps.length - 1 || !movable(i) || !movable(i + 1)
+                    }
                     onClick={() => moveStep(i, 1)}
                     aria-label="پایین"
                   >
                     <ArrowDownwardIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" color="error" onClick={() => removeStep(key)} aria-label="حذف">
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => removeStep(key)}
+                    aria-label="حذف"
+                  >
                     <DeleteOutlineIcon fontSize="small" />
                   </IconButton>
                 </Stack>
@@ -243,13 +336,23 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                 sx={{ justifyContent: "flex-start" }}
               />
               {OPTIONAL_STEPS.filter((k) => !steps.includes(k)).map((k) => (
-                <Button key={k} size="small" startIcon={<AddIcon />} onClick={() => addStep(k)} sx={{ alignSelf: "flex-start" }}>
+                <Button
+                  key={k}
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => addStep(k)}
+                  sx={{ alignSelf: "flex-start" }}
+                >
                   افزودن مرحله‌ی {STEP_LABELS[k]}
                 </Button>
               ))}
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              «مدیر سایت» همیشه بعد از ضامن‌ها و مدیر واحد است؛ تا آن‌ها قبول نکنند درخواست به کارتابل مدیر سایت نمی‌رود. اگر مدیر واحد و مدیر سایت یک نفر باشند، یک بار تأیید می‌کند. مرحله‌ی ضامن برای نوع وامی که ضامن نمی‌خواهد خودکار رد می‌شود.
+              «مدیر سایت» همیشه بعد از ضامن‌ها، مدیر واحد و منابع انسانی است؛ تا
+              آن‌ها قبول نکنند درخواست به کارتابل مدیر سایت نمی‌رود. اگر دو
+              مرحله یک نفر باشند (مثلاً مدیر واحد و مدیر سایت)، یک بار تأیید
+              می‌کند. تأییدکننده‌ی «منابع انسانی» در تب تنظیمات تعیین می‌شود.
+              مرحله‌ی ضامن برای نوع وامی که ضامن نمی‌خواهد خودکار رد می‌شود.
             </Typography>
           </Box>
 
@@ -263,7 +366,13 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                   <CardContent>
                     <Grid container spacing={1.5} alignItems="center">
                       <Grid item xs={12} sm={4}>
-                        <TextField label="عنوان" value={t.title} onChange={(e) => setType(i, "title", e.target.value)} fullWidth size="small" />
+                        <TextField
+                          label="عنوان"
+                          value={t.title}
+                          onChange={(e) => setType(i, "title", e.target.value)}
+                          fullWidth
+                          size="small"
+                        />
                       </Grid>
                       <Grid item xs={12} sm={4}>
                         <AmountField
@@ -278,7 +387,13 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                         <TextField
                           label="حداقل سابقه (ماه)"
                           value={t.min_service_months}
-                          onChange={(e) => setType(i, "min_service_months", digitsOnly(e.target.value))}
+                          onChange={(e) =>
+                            setType(
+                              i,
+                              "min_service_months",
+                              digitsOnly(e.target.value),
+                            )
+                          }
                           fullWidth
                           size="small"
                         />
@@ -288,7 +403,9 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                           select
                           label="تعداد ضامن"
                           value={Number(t.guarantor_count) || 0}
-                          onChange={(e) => setType(i, "guarantor_count", e.target.value)}
+                          onChange={(e) =>
+                            setType(i, "guarantor_count", e.target.value)
+                          }
                           fullWidth
                           size="small"
                         >
@@ -303,26 +420,52 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                         <TextField
                           label="مدرک اضافه (اختیاری؛ مالی هنگام پرداخت تأیید می‌کند)"
                           value={t.extra_requirement}
-                          onChange={(e) => setType(i, "extra_requirement", e.target.value)}
+                          onChange={(e) =>
+                            setType(i, "extra_requirement", e.target.value)
+                          }
                           fullWidth
                           size="small"
                           placeholder="مثلاً: سفته به مبلغ ۴۰۰ میلیون ریال"
                         />
                       </Grid>
                       <Grid item xs={12} sm={6}>
-                        <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
                           <FormControlLabel
-                            control={<Switch checked={t.out_of_queue} onChange={(e) => setType(i, "out_of_queue", e.target.checked)} />}
+                            control={
+                              <Switch
+                                checked={t.out_of_queue}
+                                onChange={(e) =>
+                                  setType(i, "out_of_queue", e.target.checked)
+                                }
+                              />
+                            }
                             label="خارج از نوبت"
                           />
                           <FormControlLabel
-                            control={<Switch checked={t.is_active} onChange={(e) => setType(i, "is_active", e.target.checked)} />}
+                            control={
+                              <Switch
+                                checked={t.is_active}
+                                onChange={(e) =>
+                                  setType(i, "is_active", e.target.checked)
+                                }
+                              />
+                            }
                             label="فعال"
                           />
                           <IconButton
                             color="error"
                             disabled={form.types.length === 1}
-                            onClick={() => set("types", form.types.filter((_, j) => j !== i))}
+                            onClick={() =>
+                              set(
+                                "types",
+                                form.types.filter((_, j) => j !== i),
+                              )
+                            }
                             aria-label="حذف نوع"
                           >
                             <DeleteOutlineIcon />
@@ -333,14 +476,21 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                         <>
                           <Grid item xs={12}>
                             <Typography variant="body2" fontWeight={700}>
-                              قواعد ضامنِ این نوع (اختیاری — خالی یعنی بدون محدودیت)
+                              قواعد ضامنِ این نوع (اختیاری — خالی یعنی بدون
+                              محدودیت)
                             </Typography>
                           </Grid>
                           <Grid item xs={6} sm={4}>
                             <TextField
                               label="حداکثر ضمانت هم‌زمان هر نفر"
                               value={t.guarantor_max_active}
-                              onChange={(e) => setType(i, "guarantor_max_active", digitsOnly(e.target.value).slice(0, 4))}
+                              onChange={(e) =>
+                                setType(
+                                  i,
+                                  "guarantor_max_active",
+                                  digitsOnly(e.target.value).slice(0, 4),
+                                )
+                              }
                               fullWidth
                               size="small"
                             />
@@ -349,7 +499,13 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                             <TextField
                               label="حداقل سابقه‌ی ضامن (ماه)"
                               value={t.guarantor_min_service_months}
-                              onChange={(e) => setType(i, "guarantor_min_service_months", digitsOnly(e.target.value).slice(0, 4))}
+                              onChange={(e) =>
+                                setType(
+                                  i,
+                                  "guarantor_min_service_months",
+                                  digitsOnly(e.target.value).slice(0, 4),
+                                )
+                              }
                               fullWidth
                               size="small"
                             />
@@ -359,7 +515,13 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                               control={
                                 <Switch
                                   checked={t.guarantor_no_active_loan}
-                                  onChange={(e) => setType(i, "guarantor_no_active_loan", e.target.checked)}
+                                  onChange={(e) =>
+                                    setType(
+                                      i,
+                                      "guarantor_no_active_loan",
+                                      e.target.checked,
+                                    )
+                                  }
                                 />
                               }
                               label="ضامن خودش وام تسویه‌نشده نداشته باشد"
@@ -371,7 +533,11 @@ export default function LoanPolicyEditor({ open, policy, source, onClose, onSave
                   </CardContent>
                 </Card>
               ))}
-              <Button startIcon={<AddIcon />} onClick={() => set("types", [...form.types, { ...EMPTY_TYPE }])} sx={{ alignSelf: "flex-start" }}>
+              <Button
+                startIcon={<AddIcon />}
+                onClick={() => set("types", [...form.types, { ...EMPTY_TYPE }])}
+                sx={{ alignSelf: "flex-start" }}
+              >
                 افزودن نوع وام
               </Button>
             </Stack>

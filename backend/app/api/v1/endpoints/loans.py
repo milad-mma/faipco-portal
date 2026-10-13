@@ -63,6 +63,7 @@ class ReplaceGuarantorIn(BaseModel):
 class SiteSettingsIn(BaseModel):
     is_enabled: bool
     site_manager_employee_id: int | None = None
+    hr_employee_id: int | None = None  # تأییدکننده‌ی مرحله‌ی «منابع انسانی»
     payslip_loan_title: str | None = Field(default=None, max_length=200)
 
 
@@ -304,7 +305,11 @@ async def update_site(
     service = LoanService(db)
     try:
         await service.update_site_settings(
-            site_id, payload.is_enabled, payload.site_manager_employee_id, payload.payslip_loan_title
+            site_id,
+            payload.is_enabled,
+            payload.site_manager_employee_id,
+            payload.payslip_loan_title,
+            hr_employee_id=payload.hr_employee_id,
         )
     except LoanError as e:
         raise _err(e) from e

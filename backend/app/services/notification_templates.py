@@ -81,7 +81,7 @@ TEMPLATES: dict[str, dict[str, dict]] = {
         },
         "loan.approver_pending": {
             "label": "در انتظار تأیید مدیر",
-            "recipient": "مدیر واحد / مدیر سایت",
+            "recipient": "مدیر واحد / منابع انسانی / مدیر سایت",
             "when": "نوبت تأیید به او رسید",
             "default": "یک درخواست وام در انتظار تصمیم شماست." + _VIEW,
         },

@@ -28,6 +28,8 @@ class LoanSiteSettings(Base, TimestampMixin):
     site_manager_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
+    # تأییدکننده‌ی مرحله‌ی «منابع انسانی» (Migration 113)؛ مثل مدیر سایت یک پرسنل فعال همین سایت با حساب پرتال
+    hr_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     # بخشی از «نام وام» در فیش حقوقی (اختیاری؛ Migration 108) برای تیک خودکار اقساط از روی فیش
     payslip_loan_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # آخرین شماره‌ی نوبت داده‌شده در این سایت (با قفل ردیف افزایش می‌یابد تا دو Worker شماره‌ی تکراری ندهند)
@@ -98,7 +100,8 @@ class LoanRequest(Base, TimestampMixin):
     site_manager_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
-    # تأییدکننده‌ی مرحله‌ی جاری (مدیر واحد/سایت)؛ در مرحله‌ی ضامن و مالی خالی
+    hr_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    # تأییدکننده‌ی مرحله‌ی جاری (مدیر واحد/منابع انسانی/مدیر سایت)؛ در مرحله‌ی ضامن و مالی خالی
     current_approver_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
     )

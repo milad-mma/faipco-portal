@@ -13,16 +13,20 @@ from app.core.family_rules import format_jalali, parse_jalali
 # کلید مراحل مسیر تأیید (به ترتیب پیش‌فرض) و عنوان فارسی هر کدام
 STEP_GUARANTORS = "guarantors"
 STEP_UNIT_MANAGER = "unit_manager"
+STEP_HR = "hr"  # واحد منابع انسانی (یک نفر در تنظیمات وام سایت؛ Migration 113)
 STEP_SITE_MANAGER = "site_manager"
 STEP_FINANCE = "finance"
-STEP_KEYS = (STEP_GUARANTORS, STEP_UNIT_MANAGER, STEP_SITE_MANAGER, STEP_FINANCE)
+STEP_KEYS = (STEP_GUARANTORS, STEP_UNIT_MANAGER, STEP_HR, STEP_SITE_MANAGER, STEP_FINANCE)
 STEP_LABELS = {
     STEP_GUARANTORS: "ضامن‌ها",
     STEP_UNIT_MANAGER: "مدیر واحد",
+    STEP_HR: "منابع انسانی",
     STEP_SITE_MANAGER: "مدیر سایت",
     STEP_FINANCE: "واحد مالی",
 }
 DEFAULT_STEPS = list(STEP_KEYS)
+# مرحله‌هایی که یک «نفر» تأیید می‌کند (نه ضامن‌ها و نه واحد مالی)؛ اگر دو مرحله یک نفر باشند فقط اولی می‌ماند
+PERSON_STEPS = (STEP_UNIT_MANAGER, STEP_HR, STEP_SITE_MANAGER)
 
 # وضعیت‌های درخواست
 STATUS_IN_REVIEW = "in_review"  # در یکی از مراحل تأیید پیش از مالی
@@ -44,8 +48,8 @@ class LoanRuleError(ValueError):
 
 def normalize_steps(steps) -> list[str]:
     """
-    مسیر تأیید ذخیره‌شده/ورودی را تمیز می‌کند: فقط کلیدهای شناخته‌شده، بدون تکرار، «مدیر سایت» همیشه بعد از ضامن‌ها و
-    مدیر واحد (تا آن‌ها قبول نکرده‌اند درخواست به کارتابل مدیر سایت نمی‌رود) و «مالی» همیشه آخر.
+    مسیر تأیید ذخیره‌شده/ورودی را تمیز می‌کند: فقط کلیدهای شناخته‌شده، بدون تکرار، «مدیر سایت» همیشه بعد از ضامن‌ها،
+    مدیر واحد و منابع انسانی (تا آن‌ها قبول نکرده‌اند درخواست به کارتابل مدیر سایت نمی‌رود) و «مالی» همیشه آخر.
     None/غیرفهرست → مسیر پیش‌فرض؛ فهرست خالی → فقط «مالی».
     """
     if not isinstance(steps, (list, tuple)):
@@ -67,31 +71,34 @@ def effective_steps(
     requester_id: int,
     unit_manager_id: int | None,
     site_manager_id: int | None,
+    hr_id: int | None = None,
 ) -> list[str]:
     """
     مراحل واقعی یک درخواست هنگام ثبت (snapshot روی خود درخواست):
     - «ضامن‌ها» وقتی نوع وام ضامن نمی‌خواهد حذف می‌شود؛
-    - «مدیر واحد» وقتی خودِ درخواست‌دهنده است حذف می‌شود؛
-    - «مدیر سایت» وقتی خودِ درخواست‌دهنده یا همان مدیر واحد است حذف می‌شود (یک نفر دو بار تأیید نمی‌کند).
+    - مرحله‌ی هر نفری (مدیر واحد / منابع انسانی / مدیر سایت) که خودِ درخواست‌دهنده است حذف می‌شود؛
+    - اگر دو مرحله یک نفر باشند (مثلاً مدیر واحد همان مدیر سایت است) فقط اولین مرحله می‌ماند (یک نفر دو بار تأیید نمی‌کند).
     نبودنِ تأییدکننده‌ی لازم را این تابع بررسی نمی‌کند (سرویس پیش از این خطا می‌دهد).
     """
     steps = normalize_steps(policy_steps)
     # نوعی که ضامن می‌خواهد بدون مرحله‌ی ضامن معنی ندارد (ضامن‌ها هرگز پرسیده نمی‌شدند): اول مسیر اضافه می‌شود
     if guarantor_count > 0 and STEP_GUARANTORS not in steps:
         steps.insert(0, STEP_GUARANTORS)
+    person_of = {STEP_UNIT_MANAGER: unit_manager_id, STEP_HR: hr_id, STEP_SITE_MANAGER: site_manager_id}
     out: list[str] = []
+    seen_people: set[int] = set()
     for key in steps:
         if key == STEP_GUARANTORS and guarantor_count <= 0:
             continue
-        if key == STEP_UNIT_MANAGER and unit_manager_id == requester_id:
-            continue
-        if key == STEP_SITE_MANAGER and site_manager_id == requester_id:
-            continue
+        if key in PERSON_STEPS:
+            person = person_of[key]
+            if person == requester_id:
+                continue
+            if person is not None:
+                if person in seen_people:
+                    continue  # همین نفر قبلاً در مسیر هست
+                seen_people.add(person)
         out.append(key)
-    # مدیر واحد و مدیر سایت یک نفر: فقط اولین مرحله (به هر ترتیبی که چیده شده) می‌ماند
-    if STEP_UNIT_MANAGER in out and STEP_SITE_MANAGER in out and unit_manager_id == site_manager_id:
-        later = max(out.index(STEP_UNIT_MANAGER), out.index(STEP_SITE_MANAGER))
-        out.pop(later)
     return out
 
 

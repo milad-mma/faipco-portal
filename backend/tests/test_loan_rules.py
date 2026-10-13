@@ -52,12 +52,34 @@ def test_normalize_steps_finance_always_last():
         "site_manager",
         "finance",
     ]
+    # منابع انسانی مثل ضامن/مدیر واحد جابه‌جا می‌شود (قبل یا بعد از مدیر واحد)، ولی همیشه قبل از مدیر سایت
+    assert R.normalize_steps(["hr", "unit_manager", "site_manager"]) == ["hr", "unit_manager", "site_manager", "finance"]
+    assert R.normalize_steps(["site_manager", "hr"]) == ["hr", "site_manager", "finance"]
 
 
 def test_effective_steps_skips():
-    base = R.DEFAULT_STEPS
+    base = ["guarantors", "unit_manager", "site_manager", "finance"]  # مسیر بدون منابع انسانی
+    with_hr = R.DEFAULT_STEPS
     # بدون ضامن → مرحله‌ی ضامن حذف
     assert R.effective_steps(base, guarantor_count=0, requester_id=1, unit_manager_id=2, site_manager_id=3) == [
+        "unit_manager",
+        "site_manager",
+        "finance",
+    ]
+    # با منابع انسانی: بین مدیر واحد و مدیر سایت (مسیر پیش‌فرض)
+    assert R.effective_steps(with_hr, guarantor_count=0, requester_id=1, unit_manager_id=2, site_manager_id=3, hr_id=4) == [
+        "unit_manager",
+        "hr",
+        "site_manager",
+        "finance",
+    ]
+    # منابع انسانی همان مدیر سایت → فقط اولی (منابع انسانی) می‌ماند؛ منابع انسانی خودِ درخواست‌دهنده → حذف
+    assert R.effective_steps(with_hr, guarantor_count=0, requester_id=1, unit_manager_id=2, site_manager_id=4, hr_id=4) == [
+        "unit_manager",
+        "hr",
+        "finance",
+    ]
+    assert R.effective_steps(with_hr, guarantor_count=0, requester_id=4, unit_manager_id=2, site_manager_id=3, hr_id=4) == [
         "unit_manager",
         "site_manager",
         "finance",
