@@ -10,7 +10,16 @@
  * قابلیت‌های پیاده‌نشده با برچسب «به‌زودی» و ماژول‌های غیرفعال‌شده با برچسب «غیرفعال» نمایش داده می‌شوند.
  */
 import { useEffect, useState } from "react";
-import { Avatar, Badge, Box, Card, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
+import {
+  Avatar,
+  Badge,
+  Box,
+  Card,
+  Chip,
+  Stack,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
@@ -29,9 +38,13 @@ import { useAuth } from "../context/AuthContext";
 import { fetchMyNotices } from "../api/notices";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
-import { fetchEmployeePhotoThumbnailBlob, fetchTodayBirthdays } from "../api/employees";
+import {
+  fetchEmployeePhotoThumbnailBlob,
+  fetchTodayBirthdays,
+} from "../api/employees";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
 import { fetchLoanInboxCount } from "../api/loans";
+import { fetchAdvanceInboxCount } from "../api/advances";
 import { fetchMyFeedbackUnreadCount } from "../api/feedback";
 import { swr } from "../api/swrCache";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
@@ -45,7 +58,13 @@ function ComingSoonChip() {
     <Chip
       label="به‌زودی"
       size="small"
-      sx={{ position: "absolute", top: 6, insetInlineEnd: 6, fontSize: 10, height: 18 }}
+      sx={{
+        position: "absolute",
+        top: 6,
+        insetInlineEnd: 6,
+        fontSize: 10,
+        height: 18,
+      }}
     />
   );
 }
@@ -57,7 +76,13 @@ function DisabledChip() {
       label="غیرفعال"
       size="small"
       color="default"
-      sx={{ position: "absolute", top: 6, insetInlineEnd: 6, fontSize: 10, height: 18 }}
+      sx={{
+        position: "absolute",
+        top: 6,
+        insetInlineEnd: 6,
+        fontSize: 10,
+        height: 18,
+      }}
     />
   );
 }
@@ -86,14 +111,28 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick, badge = 0 }) {
         borderRadius: 2,
         cursor: comingSoon || disabled ? "default" : "pointer",
         opacity: comingSoon || disabled ? 0.55 : 1,
-        "&:hover": comingSoon || disabled ? {} : { backgroundColor: "action.hover" },
+        "&:hover":
+          comingSoon || disabled ? {} : { backgroundColor: "action.hover" },
       }}
     >
       {comingSoon && <ComingSoonChip />}
       {disabled && !comingSoon && <DisabledChip />}
       {/* در دسکتاپ آیکون و متن بزرگ‌تر است (کاشی‌ها در دسکتاپ بلندترند) */}
-      <Badge color="error" badgeContent={badge} invisible={!badge} sx={{ "& .MuiBadge-badge": { overflow: "visible" } }}>
-        <Box sx={{ color: "primary.main", display: "flex", "& svg": { fontSize: { xs: 24, md: 34 } } }}>{icon}</Box>
+      <Badge
+        color="error"
+        badgeContent={badge}
+        invisible={!badge}
+        sx={{ "& .MuiBadge-badge": { overflow: "visible" } }}
+      >
+        <Box
+          sx={{
+            color: "primary.main",
+            display: "flex",
+            "& svg": { fontSize: { xs: 24, md: 34 } },
+          }}
+        >
+          {icon}
+        </Box>
       </Badge>
       <Typography
         variant="caption"
@@ -110,47 +149,66 @@ function ToolCard({ icon, label, comingSoon, disabled, onClick, badge = 0 }) {
 // کامپوننت صفحه؛ داده‌های داشبورد شخصی را بارگذاری و چیدمان Grid را رندر می‌کند
 export default function PersonalDashboardPage() {
   const { user } = useAuth();
-  const leaveDisabled = Boolean(user?.leave_requests_disabled);  // ماژول مرخصی برای سایت این پرسنل غیرفعال است
+  const leaveDisabled = Boolean(user?.leave_requests_disabled); // ماژول مرخصی برای سایت این پرسنل غیرفعال است
   const navigate = useNavigate();
   const [recentNotices, setRecentNotices] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);  // تعداد کل اطلاعیه‌های خوانده‌نشده
+  const [unreadCount, setUnreadCount] = useState(0); // تعداد کل اطلاعیه‌های خوانده‌نشده
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
-  const [birthdays, setBirthdays] = useState(null);  // متولدین امروز؛ null = در حال بارگذاری
-  const [photoUrl, setPhotoUrl] = useState(null);  // Object URL عکس پرسنلی؛ null = بدون عکس
+  const [birthdays, setBirthdays] = useState(null); // متولدین امروز؛ null = در حال بارگذاری
+  const [photoUrl, setPhotoUrl] = useState(null); // Object URL عکس پرسنلی؛ null = بدون عکس
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingLoanCount, setPendingLoanCount] = useState(0); // ضمانت‌ها و تأییدهای وام منتظر این کاربر
+  const [pendingAdvanceCount, setPendingAdvanceCount] = useState(0); // تأییدهای مساعده منتظر این کاربر
   // شمارنده‌ی کاشی «کارتابل درخواست» = جمع شمارنده‌ی ماژول‌های داخل آن
-  const requestsBadge = (leaveDisabled ? 0 : pendingLeaveCount) + pendingLoanCount;  // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
-  const [feedbackUnread, setFeedbackUnread] = useState(0);  // پیام‌های انتقادات و پیشنهادات کاربر با پاسخ دیده‌نشده
-  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md"));  // برای تعیین تعداد اطلاعیه‌های اخیر
+  const requestsBadge =
+    (leaveDisabled ? 0 : pendingLeaveCount) +
+    pendingLoanCount +
+    pendingAdvanceCount; // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
+  const [feedbackUnread, setFeedbackUnread] = useState(0); // پیام‌های انتقادات و پیشنهادات کاربر با پاسخ دیده‌نشده
+  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md")); // برای تعیین تعداد اطلاعیه‌های اخیر
 
   // متولدین امروز را (با رعایت تنظیم حریم خصوصی) بارگذاری می‌کند؛ جدا تعریف شده تا پس از
   // ثبت/تغییر واکنش تبریک فقط همین بخش دوباره خوانده شود
   // (آخرین داده‌ی Cache شده فوراً نمایش داده می‌شود و پاسخ تازه جایگزینش می‌شود)
   function loadBirthdays() {
-    swr("dashboard:birthdays", () => fetchTodayBirthdays({ respectPrivacy: true }), setBirthdays).catch(() =>
-      setBirthdays((prev) => prev ?? [])
-    );
+    swr(
+      "dashboard:birthdays",
+      () => fetchTodayBirthdays({ respectPrivacy: true }),
+      setBirthdays,
+    ).catch(() => setBirthdays((prev) => prev ?? []));
   }
 
   // بارگذاری اولیه: اطلاعیه‌های اخیر، متولدین امروز و شمارنده درخواست‌های در انتظار
   useEffect(() => {
     // ۲۰ اطلاعیه اخیر گرفته می‌شود (دسکتاپ ۱۰ مورد، یا ۲۰ وقتی امروز تولدی نیست و کارت تمام ستون است؛ موبایل ۵ مورد). شمارنده
     // «خوانده‌نشده» از unread_total سرور است، یعنی همه اطلاعیه‌های خوانده‌نشده، نه فقط موارد نمایش‌داده‌شده.
-    swr("dashboard:notices", () => fetchMyNotices({ page: 1, pageSize: 20, archived: "all" }), (data) => {
-      setRecentNotices(data.items);
-      setUnreadCount(data.unread_total ?? data.items.filter((n) => !n.is_read).length);
-    }).catch(() => setRecentNotices((prev) => prev ?? []));
+    swr(
+      "dashboard:notices",
+      () => fetchMyNotices({ page: 1, pageSize: 20, archived: "all" }),
+      (data) => {
+        setRecentNotices(data.items);
+        setUnreadCount(
+          data.unread_total ?? data.items.filter((n) => !n.is_read).length,
+        );
+      },
+    ).catch(() => setRecentNotices((prev) => prev ?? []));
     loadBirthdays();
     // شمارنده درخواست‌های مرخصی/ماموریت در انتظار تصمیم این کاربر؛ برای کسی که
     // تأییدکننده نیست صفر برمی‌گردد (نه خطا).
     swr("dashboard:pendingLeaveCount", fetchPendingLeaveRequestCount, (data) =>
-      setPendingLeaveCount(data.pending_count || 0)
+      setPendingLeaveCount(data.pending_count || 0),
     ).catch(() => {});
     // شمارنده‌ی کارتابل وام (ضمانت‌ها + تأییدهای مدیر واحد/سایت منتظر این کاربر)
-    swr("dashboard:pendingLoanCount", fetchLoanInboxCount, (data) => setPendingLoanCount(data?.count || 0)).catch(() => {});
+    swr("dashboard:pendingLoanCount", fetchLoanInboxCount, (data) =>
+      setPendingLoanCount(data?.count || 0),
+    ).catch(() => {});
+    swr("dashboard:pendingAdvanceCount", fetchAdvanceInboxCount, (data) =>
+      setPendingAdvanceCount(data?.count || 0),
+    ).catch(() => {});
     // پاسخ‌های دیده‌نشده‌ی بازبین به پیام‌های انتقادات و پیشنهادات این کاربر
-    swr("dashboard:feedbackUnread", fetchMyFeedbackUnreadCount, (count) => setFeedbackUnread(count || 0)).catch(() => {});
+    swr("dashboard:feedbackUnread", fetchMyFeedbackUnreadCount, (count) =>
+      setFeedbackUnread(count || 0),
+    ).catch(() => {});
   }, []);
 
   // دریافت عکس پرسنلی به‌صورت Blob، فقط اگر برای کاربر عکس ثبت شده باشد (has_photo از /auth/me)
@@ -173,7 +231,7 @@ export default function PersonalDashboardPage() {
         urls.push(url);
         setPhotoUrl(url);
       },
-      { maxAgeMs: 10 * 60 * 1000 }
+      { maxAgeMs: 10 * 60 * 1000 },
     ).catch(() => {
       if (!lastBlob) setPhotoUrl(null);
     });
@@ -190,7 +248,10 @@ export default function PersonalDashboardPage() {
     }
     const { jd: todayJalaliDay } = gregorianToJalali(new Date());
     // همان کلید Cache صفحه‌ی «گزارش تردد ماهانه» (ماه جاری)؛ جابه‌جایی بین این دو صفحه فوری است
-    swr("monthly:current", () => fetchMonthlyAttendanceReport({}), (report) => {
+    swr(
+      "monthly:current",
+      () => fetchMonthlyAttendanceReport({}),
+      (report) => {
         const todayEntry = report.days.find((d) => d.day === todayJalaliDay);
         const transits = todayEntry?.transits || [];
         if (transits.length === 0) {
@@ -201,9 +262,15 @@ export default function PersonalDashboardPage() {
         // بدون برنامه دقیق شیفت نمی‌توان ورود یا خروج بودن تردد را قطعی تشخیص داد.
         setTodayAttendance({
           firstTransit: transits[0],
-          lastTransit: transits.length > 1 ? transits[transits.length - 1] : null,
+          lastTransit:
+            transits.length > 1 ? transits[transits.length - 1] : null,
         });
-    }).catch(() => setTodayAttendance((prev) => (prev && typeof prev === "object" ? prev : "unavailable")));
+      },
+    ).catch(() =>
+      setTodayAttendance((prev) =>
+        prev && typeof prev === "object" ? prev : "unavailable",
+      ),
+    );
   }, [user?.has_monthly_attendance]);
 
   // زمان تردد را برای نمایش برمی‌گرداند
@@ -235,7 +302,10 @@ export default function PersonalDashboardPage() {
       }}
     >
       {/* پروفایل */}
-      <Card variant="outlined" sx={{ gridArea: "profile", borderRadius: 2, overflow: "hidden" }}>
+      <Card
+        variant="outlined"
+        sx={{ gridArea: "profile", borderRadius: 2, overflow: "hidden" }}
+      >
         <Box
           sx={{
             background: "linear-gradient(90deg, #185E95 0%, #2E84AA 100%)",
@@ -269,9 +339,21 @@ export default function PersonalDashboardPage() {
         <Stack sx={{ px: 1.75, py: 1 }}>
           {/* ردیف‌های سایت/واحد/سمت؛ ردیف‌های بدون مقدار حذف می‌شوند */}
           {[
-            { icon: <ApartmentOutlinedIcon fontSize="small" />, label: "سایت", value: user?.site_name },
-            { icon: <AccountTreeOutlinedIcon fontSize="small" />, label: "واحد سازمانی", value: user?.department_name },
-            { icon: <WorkOutlineOutlinedIcon fontSize="small" />, label: "سمت", value: user?.position_title },
+            {
+              icon: <ApartmentOutlinedIcon fontSize="small" />,
+              label: "سایت",
+              value: user?.site_name,
+            },
+            {
+              icon: <AccountTreeOutlinedIcon fontSize="small" />,
+              label: "واحد سازمانی",
+              value: user?.department_name,
+            },
+            {
+              icon: <WorkOutlineOutlinedIcon fontSize="small" />,
+              label: "سمت",
+              value: user?.position_title,
+            },
           ]
             .filter((row) => row.value)
             .map((row) => (
@@ -280,10 +362,22 @@ export default function PersonalDashboardPage() {
                 direction="row"
                 alignItems="center"
                 justifyContent="space-between"
-                sx={{ minHeight: 32, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: "none" } }}
+                sx={{
+                  minHeight: 32,
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  "&:last-child": { borderBottom: "none" },
+                }}
               >
-                <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary" }}>
-                  <Box sx={{ color: "primary.main", display: "flex" }}>{row.icon}</Box>
+                <Stack
+                  direction="row"
+                  spacing={0.8}
+                  alignItems="center"
+                  sx={{ color: "text.secondary" }}
+                >
+                  <Box sx={{ color: "primary.main", display: "flex" }}>
+                    {row.icon}
+                  </Box>
                   <Typography variant="caption">{row.label}</Typography>
                 </Stack>
                 <Typography variant="body2" fontWeight={700}>
@@ -297,14 +391,23 @@ export default function PersonalDashboardPage() {
       {/* تردد امروز + اطلاعیه خوانده‌نشده */}
       <Stack direction="row" spacing={1.5} sx={{ gridArea: "stats" }}>
         <Card variant="outlined" sx={{ flex: 1, borderRadius: 2, p: 1.75 }}>
-          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
+          <Stack
+            direction="row"
+            spacing={0.8}
+            alignItems="center"
+            sx={{ color: "text.secondary", mb: 1 }}
+          >
             <LoginOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
             <Typography variant="caption">تردد امروز</Typography>
           </Stack>
           {/* اولین/آخرین تردد امروز؛ اگر سایت نگاشت تردد ندارد برچسب «به‌زودی» */}
           {user?.has_monthly_attendance ? (
             <>
-              <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                sx={{ fontSize: 13 }}
+              >
                 <Typography variant="caption" color="text.secondary">
                   اولین تردد:
                 </Typography>
@@ -314,7 +417,11 @@ export default function PersonalDashboardPage() {
                     : "—"}
                 </Typography>
               </Stack>
-              <Stack direction="row" justifyContent="space-between" sx={{ fontSize: 13 }}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                sx={{ fontSize: 13 }}
+              >
                 <Typography variant="caption" color="text.secondary">
                   آخرین تردد:
                 </Typography>
@@ -333,10 +440,23 @@ export default function PersonalDashboardPage() {
         <Card
           variant="outlined"
           onClick={() => navigate("/notices")}
-          sx={{ flex: 1, borderRadius: 2, p: 1.75, cursor: "pointer", "&:hover": { backgroundColor: "action.hover" } }}
+          sx={{
+            flex: 1,
+            borderRadius: 2,
+            p: 1.75,
+            cursor: "pointer",
+            "&:hover": { backgroundColor: "action.hover" },
+          }}
         >
-          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
-            <NotificationsNoneOutlinedIcon sx={{ fontSize: 16, color: "primary.main" }} />
+          <Stack
+            direction="row"
+            spacing={0.8}
+            alignItems="center"
+            sx={{ color: "text.secondary", mb: 1 }}
+          >
+            <NotificationsNoneOutlinedIcon
+              sx={{ fontSize: 16, color: "primary.main" }}
+            />
             <Typography variant="caption">اطلاعیه</Typography>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -370,7 +490,11 @@ export default function PersonalDashboardPage() {
         {/* میان‌بر گزارش تردد؛ بدون نگاشت تردد غیرقابل کلیک با برچسب «به‌زودی» */}
         <Card
           variant="outlined"
-          onClick={user?.has_monthly_attendance ? () => navigate("/monthly-attendance") : undefined}
+          onClick={
+            user?.has_monthly_attendance
+              ? () => navigate("/monthly-attendance")
+              : undefined
+          }
           sx={{
             position: "relative",
             flex: 1,
@@ -458,8 +582,16 @@ export default function PersonalDashboardPage() {
       </Stack>
 
       {/* اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
-      <Card variant="outlined" sx={{ gridArea: "recent", borderRadius: 2, p: 1.75 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+      <Card
+        variant="outlined"
+        sx={{ gridArea: "recent", borderRadius: 2, p: 1.75 }}
+      >
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          sx={{ mb: 1 }}
+        >
           <Typography fontWeight={800} fontSize={14}>
             اطلاعیه‌های اخیر
           </Typography>
@@ -481,27 +613,56 @@ export default function PersonalDashboardPage() {
           </Typography>
         ) : (
           <Stack spacing={1}>
-            {recentNotices.slice(0, isDesktop ? (birthdays !== null && birthdays.length === 0 ? 20 : 10) : 5).map((n) => (
-              <Stack
-                key={n.id}
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                spacing={1}
-                onClick={() => navigate("/notices")}
-                sx={{ cursor: "pointer" }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
-                  <Typography variant="caption" noWrap>
-                    {n.title}
+            {recentNotices
+              .slice(
+                0,
+                isDesktop
+                  ? birthdays !== null && birthdays.length === 0
+                    ? 20
+                    : 10
+                  : 5,
+              )
+              .map((n) => (
+                <Stack
+                  key={n.id}
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  spacing={1}
+                  onClick={() => navigate("/notices")}
+                  sx={{ cursor: "pointer" }}
+                >
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    sx={{ minWidth: 0 }}
+                  >
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        bgcolor: "primary.main",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography variant="caption" noWrap>
+                      {n.title}
+                    </Typography>
+                  </Stack>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ flexShrink: 0, fontSize: 10 }}
+                  >
+                    {new Date(n.publish_at || n.created_at).toLocaleString(
+                      "fa-IR",
+                      { dateStyle: "short", timeStyle: "short" },
+                    )}
                   </Typography>
                 </Stack>
-                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontSize: 10 }}>
-                  {new Date(n.publish_at || n.created_at).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" })}
-                </Typography>
-              </Stack>
-            ))}
+              ))}
           </Stack>
         )}
       </Card>
@@ -511,25 +672,49 @@ export default function PersonalDashboardPage() {
         sx={{
           gridArea: "tools",
           display: "grid",
-          gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)", md: "repeat(3, 1fr)" },
+          gridTemplateColumns: {
+            xs: "repeat(3, 1fr)",
+            sm: "repeat(6, 1fr)",
+            md: "repeat(3, 1fr)",
+          },
           // ردیف‌های کاشی هم‌اندازه‌اند و با کشیده شدن این ناحیه همه با هم بزرگ می‌شوند
           gridAutoRows: "1fr",
           gap: 1.25,
         }}
       >
-        <ToolCard icon={<DescriptionOutlinedIcon />} label="فیش حقوقی" onClick={() => navigate("/notices?type=payroll")} />
-        <ToolCard icon={<AssignmentOutlinedIcon />} label="فیش کارکرد" onClick={() => navigate("/notices?type=attendance_card")} />
-        <PerformanceEvaluationToolCard onClick={() => navigate("/my-performance")} />
+        <ToolCard
+          icon={<DescriptionOutlinedIcon />}
+          label="فیش حقوقی"
+          onClick={() => navigate("/notices?type=payroll")}
+        />
+        <ToolCard
+          icon={<AssignmentOutlinedIcon />}
+          label="فیش کارکرد"
+          onClick={() => navigate("/notices?type=attendance_card")}
+        />
+        <PerformanceEvaluationToolCard
+          onClick={() => navigate("/my-performance")}
+        />
         <ToolCard
           icon={<ForumOutlinedIcon />}
           label="انتقادات و پیشنهادات"
           badge={feedbackUnread}
-          onClick={() => navigate(feedbackUnread ? "/feedback?tab=mine" : "/feedback")}
+          onClick={() =>
+            navigate(feedbackUnread ? "/feedback?tab=mine" : "/feedback")
+          }
         />
-        <ToolCard icon={<DirectionsCarFilledOutlinedIcon />} label="خودروهای من" onClick={() => navigate("/my-vehicles")} />
+        <ToolCard
+          icon={<DirectionsCarFilledOutlinedIcon />}
+          label="خودروهای من"
+          onClick={() => navigate("/my-vehicles")}
+        />
         {/* کاشی «بیمه تکمیلی» ← صفحه‌ی بیمه (ثبت‌نام + پیگیری فاکتورها). همیشه باز است: با بسته بودن ثبت‌نام،
             فقط کارت ثبت‌نام داخل آن صفحه «غیرفعال» می‌شود و پیگیری فاکتورها در دسترس می‌ماند. */}
-        <ToolCard icon={<HealthAndSafetyOutlinedIcon />} label="بیمه تکمیلی" onClick={() => navigate("/insurance-hub")} />
+        <ToolCard
+          icon={<HealthAndSafetyOutlinedIcon />}
+          label="بیمه تکمیلی"
+          onClick={() => navigate("/insurance-hub")}
+        />
       </Box>
 
       {/* متولدین امروز؛ اگر امروز تولدی نباشد کارت نمایش داده نمی‌شود */}
@@ -547,13 +732,22 @@ export default function PersonalDashboardPage() {
             flexDirection: { md: "column" },
           }}
         >
-          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1, flexShrink: 0 }}>
+          <Stack
+            direction="row"
+            spacing={0.8}
+            alignItems="center"
+            sx={{ mb: 1, flexShrink: 0 }}
+          >
             <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
             <Typography fontWeight={800} fontSize={14} sx={{ flex: 1 }}>
               متولدین امروز
             </Typography>
             {birthdays?.length > 0 && (
-              <Chip label={`${birthdays.length} نفر`} size="small" sx={{ fontSize: 10, height: 20 }} />
+              <Chip
+                label={`${birthdays.length} نفر`}
+                size="small"
+                sx={{ fontSize: 10, height: 20 }}
+              />
             )}
           </Stack>
           {birthdays === null ? (
@@ -563,17 +757,38 @@ export default function PersonalDashboardPage() {
           ) : (
             <Stack
               spacing={1.5}
-              divider={<Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />}
-              sx={{ flex: { md: 1 }, minHeight: { md: 0 }, overflowY: { md: "auto" }, paddingInlineEnd: { md: 0.5 } }}
+              divider={
+                <Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />
+              }
+              sx={{
+                flex: { md: 1 },
+                minHeight: { md: 0 },
+                overflowY: { md: "auto" },
+                paddingInlineEnd: { md: 0.5 },
+              }}
             >
               {birthdays.map((e) => (
                 <Box key={e.id}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ minHeight: 34 }}>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ minHeight: 34 }}
+                  >
                     {/* آواتار پرسنل؛ اگر عکس او هنگام Sync از کاراوب ذخیره شده باشد همان نمایش داده می‌شود */}
-                    <EmployeeAvatar employeeId={e.id} hasPhoto={e.has_photo} size={30} />
+                    <EmployeeAvatar
+                      employeeId={e.id}
+                      hasPhoto={e.has_photo}
+                      size={30}
+                    />
                     {/* نام و واحد سازمانی در یک خط؛ noWrap روی کل ردیف است تا در صورت جا نشدن
                         به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
-                    <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, flex: 1 }} noWrap>
+                    <Typography
+                      variant="body2"
+                      fontWeight={700}
+                      sx={{ minWidth: 0, flex: 1 }}
+                      noWrap
+                    >
                       {e.first_name} {e.last_name}
                       {e.department_name && (
                         <Typography
