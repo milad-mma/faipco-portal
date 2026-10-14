@@ -61,6 +61,8 @@ cd frontend && npm install && npm run dev
 | [`docs/branding.md`](docs/branding.md) | برندینگ قابل‌تغییر (نام + لوگوی سامانه، از پنل «تنظیمات سامانه») |
 | [`docs/monthly-attendance.md`](docs/monthly-attendance.md) | گزارش تردد ماهانه (از دستگاه‌های حضور و غیاب، با نگاشت قابل‌تنظیم) + برچسب مرخصی/ماموریت/تعطیل/غیبت |
 | [`docs/leave-requests.md`](docs/leave-requests.md) | درخواست مرخصی/ماموریت و تردد فراموش‌شده (کارتابل، تأیید دو مرحله‌ای، گزارش مدیریتی) |
+| [`docs/loans.md`](docs/loans.md) | درخواست وام (مقررات نسخه‌دار هر سایت، ضامن‌ها، مسیر تأیید، صف پرداخت و اقساط) |
+| [`docs/advances.md`](docs/advances.md) | درخواست مساعده (بازه‌ی ثبت، مبلغ پلکانی طبق سابقه، تأیید گروهی مدیر واحد/مدیر سایت/مالی، ثبت پرداخت) |
 | [`docs/kara-integration.md`](docs/kara-integration.md) | ⚠️ مرجع فنی نوشتن/خواندن در دیتابیس کاراوب: نگاشت‌ها، رفتار دقیق، مجوزهای SQL، Migration ها |
 | [`docs/feedback.md`](docs/feedback.md) | انتقادات و پیشنهادات (با امکان ناشناس‌بودن) |
 | [`docs/backup-scheduling.md`](docs/backup-scheduling.md) | زمان‌بندی بکاپ + ارسال خودکار به سرور SMB/FTP |

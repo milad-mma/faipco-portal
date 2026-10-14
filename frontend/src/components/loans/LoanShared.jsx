@@ -43,8 +43,10 @@ export function formatRial(value) {
 export function rialWords(value) {
   const n = Number(value || 0);
   if (!n) return "";
-  if (n >= 1e9) return `${(n / 1e9).toLocaleString("fa-IR", { maximumFractionDigits: 2 })} میلیارد ریال`;
-  if (n >= 1e6) return `${(n / 1e6).toLocaleString("fa-IR", { maximumFractionDigits: 2 })} میلیون ریال`;
+  if (n >= 1e9)
+    return `${(n / 1e9).toLocaleString("fa-IR", { maximumFractionDigits: 2 })} میلیارد ریال`;
+  if (n >= 1e6)
+    return `${(n / 1e6).toLocaleString("fa-IR", { maximumFractionDigits: 2 })} میلیون ریال`;
   return formatRial(n);
 }
 
@@ -61,7 +63,10 @@ export function formatService(months) {
 export function formatDateTime(value) {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
+    return new Date(value).toLocaleString("fa-IR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
   } catch {
     return String(value);
   }
@@ -74,10 +79,18 @@ const STATUS_COLOR = {
   settled: "success",
   rejected: "error",
   cancelled: "default",
+  approved: "primary", // مساعده: تأیید مالی، در انتظار پرداخت
+  paid: "success", // مساعده: پرداخت شد
 };
 
 export function LoanStatusChip({ item }) {
-  return <Chip size="small" color={STATUS_COLOR[item.status] || "default"} label={item.status_label} />;
+  return (
+    <Chip
+      size="small"
+      color={STATUS_COLOR[item.status] || "default"}
+      label={item.status_label}
+    />
+  );
 }
 
 // مراحل تأیید یک درخواست (افقی در دسکتاپ، عمودی در موبایل با orientation)
@@ -88,7 +101,13 @@ export function LoanSteps({ item, vertical = false }) {
   const failed = item.status === "rejected";
   return (
     <Stepper
-      activeStep={active === -1 ? (steps.every((s) => s.state === "done") ? steps.length : 0) : active}
+      activeStep={
+        active === -1
+          ? steps.every((s) => s.state === "done")
+            ? steps.length
+            : 0
+          : active
+      }
       orientation={vertical ? "vertical" : "horizontal"}
       alternativeLabel={!vertical}
       sx={{ my: 1 }}
@@ -113,8 +132,16 @@ export function LoanSteps({ item, vertical = false }) {
   );
 }
 
-const GUARANTOR_LABEL = { pending: "در انتظار", accepted: "پذیرفت", rejected: "نپذیرفت" };
-const GUARANTOR_COLOR = { pending: "warning", accepted: "success", rejected: "error" };
+const GUARANTOR_LABEL = {
+  pending: "در انتظار",
+  accepted: "پذیرفت",
+  rejected: "نپذیرفت",
+};
+const GUARANTOR_COLOR = {
+  pending: "warning",
+  accepted: "success",
+  rejected: "error",
+};
 
 export function GuarantorChips({ item, renderAction }) {
   if (!item.guarantors?.length) return null;
@@ -158,7 +185,13 @@ export function InstallmentsTable({ item, onToggle, busyId }) {
                 <Chip
                   size="small"
                   color={i.paid ? "success" : "default"}
-                  label={i.paid ? (i.from_payslip ? "پرداخت شد (فیش حقوقی)" : "پرداخت شد") : "پرداخت نشده"}
+                  label={
+                    i.paid
+                      ? i.from_payslip
+                        ? "پرداخت شد (فیش حقوقی)"
+                        : "پرداخت شد"
+                      : "پرداخت نشده"
+                  }
                   onClick={onToggle ? () => onToggle(i) : undefined}
                   disabled={busyId === i.id}
                 />
@@ -168,7 +201,8 @@ export function InstallmentsTable({ item, onToggle, busyId }) {
         </TableBody>
       </Table>
       <Typography variant="body2" sx={{ mt: 1 }}>
-        پرداخت‌شده: {formatRial(item.installments_paid)} — باقیمانده: {formatRial(item.remaining)}
+        پرداخت‌شده: {formatRial(item.installments_paid)} — باقیمانده:{" "}
+        {formatRial(item.remaining)}
       </Typography>
     </Box>
   );
@@ -176,12 +210,19 @@ export function InstallmentsTable({ item, onToggle, busyId }) {
 
 // فیلد مبلغ (ریال) با جداکننده؛ value عدد یا ""، onChange(عدد یا "")
 export function AmountField({ value, onChange, helperText, ...props }) {
-  const shown = value === "" || value === null || value === undefined ? "" : Number(value).toLocaleString("en-US");
+  const shown =
+    value === "" || value === null || value === undefined
+      ? ""
+      : Number(value).toLocaleString("en-US");
   return (
     <TextField
       {...props}
       value={shown}
-      inputProps={{ inputMode: "numeric", dir: "ltr", ...(props.inputProps || {}) }}
+      inputProps={{
+        inputMode: "numeric",
+        dir: "ltr",
+        ...(props.inputProps || {}),
+      }}
       onChange={(e) => {
         const raw = digitsOnly(e.target.value).slice(0, 15);
         onChange(raw === "" ? "" : Number(raw));
@@ -192,14 +233,25 @@ export function AmountField({ value, onChange, helperText, ...props }) {
 }
 
 // جست‌وجوی پرسنل با fetcher(q) → [{id, label}]؛ value: {id, label} یا null
-export function EmployeeSearch({ fetcher, value, onChange, label, excludeIds = [], size = "small", sx }) {
+export function EmployeeSearch({
+  fetcher,
+  value,
+  onChange,
+  label,
+  excludeIds = [],
+  size = "small",
+  sx,
+}) {
   const [options, setOptions] = useState([]);
   const [input, setInput] = useState("");
   useEffect(() => {
     let alive = true;
     const t = setTimeout(() => {
       fetcher(input)
-        .then((rows) => alive && setOptions(rows.filter((r) => !excludeIds.includes(r.id))))
+        .then(
+          (rows) =>
+            alive && setOptions(rows.filter((r) => !excludeIds.includes(r.id))),
+        )
         .catch(() => alive && setOptions([]));
     }, 300);
     return () => {
@@ -212,7 +264,11 @@ export function EmployeeSearch({ fetcher, value, onChange, label, excludeIds = [
     <Autocomplete
       size={size}
       sx={sx}
-      options={value && !options.some((o) => o.id === value.id) ? [value, ...options] : options}
+      options={
+        value && !options.some((o) => o.id === value.id)
+          ? [value, ...options]
+          : options
+      }
       value={value}
       filterOptions={(x) => x}
       isOptionEqualToValue={(a, b) => a.id === b.id}
@@ -220,7 +276,13 @@ export function EmployeeSearch({ fetcher, value, onChange, label, excludeIds = [
       getOptionDisabled={(o) => Boolean(o.disabled_reason)}
       renderOption={(props, o) => (
         <li {...props} key={o.id}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ width: "100%" }} spacing={1}>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ width: "100%" }}
+            spacing={1}
+          >
             <span>{o.label}</span>
             {o.disabled_reason && (
               <Typography variant="caption" color="error">
@@ -271,4 +333,3 @@ export function LoanHistory({ item }) {
     </Stack>
   );
 }
-

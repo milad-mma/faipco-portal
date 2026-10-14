@@ -1,4 +1,5 @@
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import CorporateFareOutlinedIcon from "@mui/icons-material/CorporateFareOutlined";
@@ -113,6 +114,12 @@ export const NAV_ITEMS = [
         path: "/loans/admin",
         icon: <AccountBalanceOutlinedIcon />,
         check: (u) => u?.can_admin_loans,
+      },
+      {
+        label: "مساعده پرسنل",
+        path: "/advances/admin",
+        icon: <PaymentsOutlinedIcon />,
+        check: (u) => u?.can_admin_advances,
       },
       {
         label: "مشخصات خانوادگی پرسنل",

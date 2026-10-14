@@ -31,6 +31,7 @@ import {
 import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
 import ResultDialog from "../components/ResultDialog";
+import NoteDialog from "../components/NoteDialog";
 import {
   AmountField,
   EmployeeSearch,
@@ -80,7 +81,12 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
   }, [open]);
 
   useEffect(() => {
-    setGuarantors((prev) => Array.from({ length: type?.guarantor_count || 0 }, (_, i) => prev[i] || null));
+    setGuarantors((prev) =>
+      Array.from(
+        { length: type?.guarantor_count || 0 },
+        (_, i) => prev[i] || null,
+      ),
+    );
   }, [type?.id, type?.guarantor_count]);
 
   const ready =
@@ -110,15 +116,28 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
   };
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+      fullScreen={fullScreen}
+    >
       <DialogTitle>درخواست وام جدید</DialogTitle>
       <DialogContent dividers>
         <Typography fontWeight={700} sx={{ mb: 1 }}>
           نوع وام
         </Typography>
-        <RadioGroup value={typeId ?? ""} onChange={(e) => setTypeId(Number(e.target.value))}>
+        <RadioGroup
+          value={typeId ?? ""}
+          onChange={(e) => setTypeId(Number(e.target.value))}
+        >
           {types.map((t) => (
-            <Card key={t.id} variant="outlined" sx={{ mb: 1, opacity: t.ineligible_reason ? 0.6 : 1 }}>
+            <Card
+              key={t.id}
+              variant="outlined"
+              sx={{ mb: 1, opacity: t.ineligible_reason ? 0.6 : 1 }}
+            >
               <CardContent sx={{ py: 1, "&:last-child": { pb: 1 } }}>
                 <FormControlLabel
                   value={t.id}
@@ -129,8 +148,12 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
                       <Typography fontWeight={700}>{t.title}</Typography>
                       <Typography variant="body2" color="text.secondary">
                         تا {formatRial(t.max_amount)}
-                        {t.min_service_months ? ` — حداقل ${formatService(t.min_service_months)} سابقه` : ""}
-                        {t.guarantor_count ? ` — ${t.guarantor_count.toLocaleString("fa-IR")} ضامن` : ""}
+                        {t.min_service_months
+                          ? ` — حداقل ${formatService(t.min_service_months)} سابقه`
+                          : ""}
+                        {t.guarantor_count
+                          ? ` — ${t.guarantor_count.toLocaleString("fa-IR")} ضامن`
+                          : ""}
                         {t.out_of_queue ? " — خارج از نوبت" : ""}
                       </Typography>
                       {t.extra_requirement && (
@@ -158,7 +181,11 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
               onChange={setAmount}
               fullWidth
               error={amount > type.max_amount}
-              helperText={amount > type.max_amount ? `حداکثر ${formatRial(type.max_amount)}` : undefined}
+              helperText={
+                amount > type.max_amount
+                  ? `حداکثر ${formatRial(type.max_amount)}`
+                  : undefined
+              }
             />
             {guarantors.map((g, i) => (
               <EmployeeSearch
@@ -166,14 +193,21 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
                 label={`ضامن ${(i + 1).toLocaleString("fa-IR")} (همکار)`}
                 fetcher={(q) => searchGuarantors(q, type.id)}
                 value={g}
-                excludeIds={guarantors.filter((x, j) => x && j !== i).map((x) => x.id)}
-                onChange={(next) => setGuarantors((prev) => prev.map((p, j) => (j === i ? next : p)))}
+                excludeIds={guarantors
+                  .filter((x, j) => x && j !== i)
+                  .map((x) => x.id)}
+                onChange={(next) =>
+                  setGuarantors((prev) =>
+                    prev.map((p, j) => (j === i ? next : p)),
+                  )
+                }
               />
             ))}
             {guarantors.length > 0 && (
               <Typography variant="caption" color="text.secondary">
-                فقط همکارانی در فهرست هستند که طبق مقررات وام سایت می‌توانند ضامن شوند. برای هر ضامن اعلان می‌رود و
-                باید در پرتال ضمانت را قبول کند.
+                فقط همکارانی در فهرست هستند که طبق مقررات وام سایت می‌توانند
+                ضامن شوند. برای هر ضامن اعلان می‌رود و باید در پرتال ضمانت را
+                قبول کند.
               </Typography>
             )}
             <TextField
@@ -196,66 +230,12 @@ function NewLoanDialog({ open, onClose, data, onDone }) {
         <Button onClick={onClose} disabled={saving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={submit} disabled={!ready || saving}>
+        <Button
+          variant="contained"
+          onClick={submit}
+          disabled={!ready || saving}
+        >
           {saving ? <CircularProgress size={20} /> : "ثبت درخواست"}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
-function NoteDialog({ open, title, confirmLabel, required, warning, onClose, onConfirm }) {
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (open) {
-      setNote("");
-      setError("");
-    }
-  }, [open]);
-  const confirm = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      await onConfirm(note);
-    } catch (e) {
-      setError(errText(e, "عملیات ناموفق بود"));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle>{title}</DialogTitle>
-      <DialogContent>
-        {warning && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            {warning}
-          </Alert>
-        )}
-        <TextField
-          label={required ? "دلیل" : "توضیح (اختیاری)"}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          fullWidth
-          multiline
-          minRows={2}
-          autoFocus
-          inputProps={{ maxLength: 2000 }}
-        />
-        {error && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
-          </Alert>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
-          انصراف
-        </Button>
-        <Button variant="contained" onClick={confirm} disabled={saving || (required && !note.trim())}>
-          {confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>
@@ -291,7 +271,13 @@ function ReplaceGuarantorDialog({ target, onClose, onDone }) {
         <Typography variant="body2" sx={{ mb: 2 }}>
           به‌جای {target.guarantor.name}
         </Typography>
-        <EmployeeSearch label="ضامن جدید" fetcher={(q) => searchGuarantors(q, target.item.loan_type_id)} value={value} onChange={setValue} excludeIds={exclude} />
+        <EmployeeSearch
+          label="ضامن جدید"
+          fetcher={(q) => searchGuarantors(q, target.item.loan_type_id)}
+          value={value}
+          onChange={setValue}
+          excludeIds={exclude}
+        />
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
@@ -316,10 +302,18 @@ function MyLoanCard({ item, onCancel, onReplace }) {
   return (
     <Card variant="outlined" sx={{ borderRadius: 3 }}>
       <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="flex-start"
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+        >
           <Box>
             <Typography fontWeight={800}>
-              {item.type_title} — {formatRial(item.amount_approved ?? item.amount_requested)}
+              {item.type_title} —{" "}
+              {formatRial(item.amount_approved ?? item.amount_requested)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               ثبت: {formatDateTime(item.created_at)}
@@ -327,7 +321,9 @@ function MyLoanCard({ item, onCancel, onReplace }) {
           </Box>
           <LoanStatusChip item={item} />
         </Stack>
-        {item.status !== "cancelled" && <LoanSteps item={item} vertical={vertical} />}
+        {item.status !== "cancelled" && (
+          <LoanSteps item={item} vertical={vertical} />
+        )}
         <GuarantorChips
           item={item}
           renderAction={(g) =>
@@ -338,11 +334,13 @@ function MyLoanCard({ item, onCancel, onReplace }) {
             ) : null
           }
         />
-        {item.extra_requirement && ["waiting_finance", "in_review"].includes(item.status) && (
-          <Alert severity="info" sx={{ mt: 1 }}>
-            هنگام پرداخت، «{item.extra_requirement}» را به واحد مالی تحویل دهید.
-          </Alert>
-        )}
+        {item.extra_requirement &&
+          ["waiting_finance", "in_review"].includes(item.status) && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              هنگام پرداخت، «{item.extra_requirement}» را به واحد مالی تحویل
+              دهید.
+            </Alert>
+          )}
         {item.installments?.length > 0 && (
           <Box sx={{ mt: 2 }}>
             <InstallmentsTable item={item} />
@@ -355,7 +353,12 @@ function MyLoanCard({ item, onCancel, onReplace }) {
         )}
         <LoanHistory item={item} />
         {["in_review", "waiting_finance"].includes(item.status) && (
-          <Button color="error" size="small" sx={{ mt: 1 }} onClick={() => onCancel(item)}>
+          <Button
+            color="error"
+            size="small"
+            sx={{ mt: 1 }}
+            onClick={() => onCancel(item)}
+          >
             لغو درخواست
           </Button>
         )}
@@ -415,8 +418,18 @@ function GuaranteeCard({ item, onDone }) {
         )}
         <FormControlLabel
           sx={{ mt: 1, alignItems: "flex-start" }}
-          control={<Checkbox checked={agreed} onChange={(e) => setAgreed(e.target.checked)} sx={{ pt: 0.5 }} />}
-          label={<Typography variant="body2">{item.guarantee_agree_label}</Typography>}
+          control={
+            <Checkbox
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              sx={{ pt: 0.5 }}
+            />
+          }
+          label={
+            <Typography variant="body2">
+              {item.guarantee_agree_label}
+            </Typography>
+          }
         />
         <TextField
           label="توضیح (اختیاری)"
@@ -435,10 +448,19 @@ function GuaranteeCard({ item, onDone }) {
           </Alert>
         )}
         <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          <Button variant="contained" disabled={!agreed || busy} onClick={() => act(true)}>
+          <Button
+            variant="contained"
+            disabled={!agreed || busy}
+            onClick={() => act(true)}
+          >
             قبول ضمانت
           </Button>
-          <Button color="error" variant="outlined" disabled={busy} onClick={() => act(false)}>
+          <Button
+            color="error"
+            variant="outlined"
+            disabled={busy}
+            onClick={() => act(false)}
+          >
             نمی‌پذیرم
           </Button>
         </Stack>
@@ -463,10 +485,17 @@ function InboxCard({ item, onAct }) {
           <GuarantorChips item={item} />
         </Box>
         <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          <Button variant="contained" onClick={() => onAct(item, "approval", true)}>
+          <Button
+            variant="contained"
+            onClick={() => onAct(item, "approval", true)}
+          >
             تأیید
           </Button>
-          <Button color="error" variant="outlined" onClick={() => onAct(item, "approval", false)}>
+          <Button
+            color="error"
+            variant="outlined"
+            onClick={() => onAct(item, "approval", false)}
+          >
             رد
           </Button>
         </Stack>
@@ -502,7 +531,11 @@ function InboxHistory({ kind }) {
   useEffect(() => {
     let alive = true;
     setError("");
-    fetchLoanInboxHistory(kind, { q: query, page: page + 1, pageSize: rowsPerPage })
+    fetchLoanInboxHistory(kind, {
+      q: query,
+      page: page + 1,
+      pageSize: rowsPerPage,
+    })
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(errText(e, "دریافت سوابق ناموفق بود")));
     return () => {
@@ -512,7 +545,13 @@ function InboxHistory({ kind }) {
 
   return (
     <Stack spacing={1.5}>
-      <TextField label="جست‌وجوی نام درخواست‌دهنده" value={q} onChange={(e) => setQ(e.target.value)} size="small" sx={{ maxWidth: 360 }} />
+      <TextField
+        label="جست‌وجوی نام درخواست‌دهنده"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        size="small"
+        sx={{ maxWidth: 360 }}
+      />
       {error && <Alert severity="error">{error}</Alert>}
       {!data && !error && <CircularProgress />}
       {data && !data.items.length && <Alert severity="info">موردی نیست.</Alert>}
@@ -521,14 +560,21 @@ function InboxHistory({ kind }) {
         return (
           <Card key={item.id} variant="outlined" sx={{ borderRadius: 3 }}>
             <CardContent sx={{ "&:last-child": { pb: 2 } }}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
+              >
                 <Typography fontWeight={800}>{item.employee}</Typography>
                 {d && <Chip size="small" color={d.color} label={d.label} />}
                 <Box sx={{ flex: 1 }} />
                 <LoanStatusChip item={item} />
               </Stack>
               <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {item.type_title} — {formatRial(item.amount_approved ?? item.amount_requested)}
+                {item.type_title} —{" "}
+                {formatRial(item.amount_approved ?? item.amount_requested)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {formatDateTime(item.my_decision?.at)}
@@ -551,7 +597,9 @@ function InboxHistory({ kind }) {
           }}
           rowsPerPageOptions={[10, 20, 50]}
           labelRowsPerPage="تعداد در صفحه"
-          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}–${to} از ${count}`
+          }
         />
       )}
     </Stack>
@@ -603,7 +651,8 @@ export default function LoanRequestPage() {
       return done("درخواست لغو شد");
     }
     const { item, kind, approve } = action;
-    if (kind === "guarantee") await decideGuarantee(item.id, approve, note || null);
+    if (kind === "guarantee")
+      await decideGuarantee(item.id, approve, note || null);
     else await decideLoan(item.id, approve, note || null);
     done(approve ? "ثبت شد" : "رد شد");
   };
@@ -619,18 +668,33 @@ export default function LoanRequestPage() {
       <PillTabs
         tabs={[
           { key: "mine", label: "وام‌های من" },
-          { key: "inbox", label: inboxCount ? `کارتابل (${inboxCount.toLocaleString("fa-IR")})` : "کارتابل" },
+          {
+            key: "inbox",
+            label: inboxCount
+              ? `کارتابل (${inboxCount.toLocaleString("fa-IR")})`
+              : "کارتابل",
+          },
         ]}
         value={tab}
-        onChange={(key) => setSearchParams(key === "inbox" ? { tab: "inbox" } : {})}
+        onChange={(key) =>
+          setSearchParams(key === "inbox" ? { tab: "inbox" } : {})
+        }
       />
       {loading && <CircularProgress />}
       {loadError && <Alert severity="error">{loadError}</Alert>}
 
       {!loading && data && tab === "mine" && (
         <Stack spacing={2}>
-          {!data.enabled && <Alert severity="info">درخواست وام برای سایت شما در حال حاضر فعال نیست.</Alert>}
-          {data.enabled && !policy && <Alert severity="info">مقررات وام برای سایت شما هنوز تعریف نشده است.</Alert>}
+          {!data.enabled && (
+            <Alert severity="info">
+              درخواست وام برای سایت شما در حال حاضر فعال نیست.
+            </Alert>
+          )}
+          {data.enabled && !policy && (
+            <Alert severity="info">
+              مقررات وام برای سایت شما هنوز تعریف نشده است.
+            </Alert>
+          )}
           {policy && (
             <Card variant="outlined" sx={{ borderRadius: 3 }}>
               <CardContent>
@@ -639,14 +703,24 @@ export default function LoanRequestPage() {
                   از تاریخ {policy.effective_from}
                 </Typography>
                 {policy.rules_text && (
-                  <Typography variant="body2" sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ mt: 1, whiteSpace: "pre-wrap" }}
+                  >
                     {policy.rules_text}
                   </Typography>
                 )}
                 <Divider sx={{ my: 1.5 }} />
                 <Typography variant="body2">
-                  سابقه‌ی شما برای وام: <b>{data.service.label === "نامشخص" ? "نامشخص" : formatService(data.service.months)}</b>
-                  {data.service.start_date ? ` (از ${data.service.start_date})` : ""}
+                  سابقه‌ی شما برای وام:{" "}
+                  <b>
+                    {data.service.label === "نامشخص"
+                      ? "نامشخص"
+                      : formatService(data.service.months)}
+                  </b>
+                  {data.service.start_date
+                    ? ` (از ${data.service.start_date})`
+                    : ""}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   سابقه از تاریخ استخدام دوره‌ی فعلی حساب می‌شود.
@@ -655,7 +729,11 @@ export default function LoanRequestPage() {
                   {data.block_reason ? (
                     <Alert severity="warning">{data.block_reason}</Alert>
                   ) : (
-                    <Button variant="contained" onClick={() => setNewOpen(true)} disabled={!policy.types.length}>
+                    <Button
+                      variant="contained"
+                      onClick={() => setNewOpen(true)}
+                      disabled={!policy.types.length}
+                    >
                       درخواست وام جدید
                     </Button>
                   )}
@@ -668,7 +746,9 @@ export default function LoanRequestPage() {
               key={item.id}
               item={item}
               onCancel={(it) => setAction({ cancel: it })}
-              onReplace={(it, g) => setReplaceTarget({ item: it, guarantor: g })}
+              onReplace={(it, g) =>
+                setReplaceTarget({ item: it, guarantor: g })
+              }
             />
           ))}
         </Stack>
@@ -678,7 +758,12 @@ export default function LoanRequestPage() {
         <Stack spacing={2}>
           <PillTabs
             tabs={[
-              { key: "pending", label: inboxCount ? `در انتظار شما (${inboxCount.toLocaleString("fa-IR")})` : "در انتظار شما" },
+              {
+                key: "pending",
+                label: inboxCount
+                  ? `در انتظار شما (${inboxCount.toLocaleString("fa-IR")})`
+                  : "در انتظار شما",
+              },
               { key: "decisions", label: "تأییدها و ردهای من" },
               { key: "guarantees", label: "ضمانت‌های من" },
             ]}
@@ -688,14 +773,26 @@ export default function LoanRequestPage() {
           />
           {inboxView === "pending" && (
             <>
-              {!inboxCount && !loadError && <Alert severity="success">موردی در انتظار شما نیست.</Alert>}
-              {inbox.guarantee.length > 0 && <Typography fontWeight={800}>درخواست‌های ضمانت</Typography>}
+              {!inboxCount && !loadError && (
+                <Alert severity="success">موردی در انتظار شما نیست.</Alert>
+              )}
+              {inbox.guarantee.length > 0 && (
+                <Typography fontWeight={800}>درخواست‌های ضمانت</Typography>
+              )}
               {inbox.guarantee.map((item) => (
                 <GuaranteeCard key={`g${item.id}`} item={item} onDone={done} />
               ))}
-              {inbox.approvals.length > 0 && <Typography fontWeight={800}>در انتظار تأیید شما</Typography>}
+              {inbox.approvals.length > 0 && (
+                <Typography fontWeight={800}>در انتظار تأیید شما</Typography>
+              )}
               {inbox.approvals.map((item) => (
-                <InboxCard key={`a${item.id}`} item={item} onAct={(it, kind, approve) => setAction({ item: it, kind, approve })} />
+                <InboxCard
+                  key={`a${item.id}`}
+                  item={item}
+                  onAct={(it, kind, approve) =>
+                    setAction({ item: it, kind, approve })
+                  }
+                />
               ))}
             </>
           )}
@@ -704,7 +801,12 @@ export default function LoanRequestPage() {
         </Stack>
       )}
 
-      <NewLoanDialog open={newOpen} onClose={() => setNewOpen(false)} data={data} onDone={done} />
+      <NewLoanDialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        data={data}
+        onDone={done}
+      />
       <NoteDialog
         open={Boolean(action)}
         title={
@@ -718,8 +820,15 @@ export default function LoanRequestPage() {
                 ? "تأیید درخواست وام"
                 : "رد درخواست وام"
         }
-        confirmLabel={action?.cancel ? "لغو درخواست" : action?.approve ? "تأیید" : "رد"}
-        required={Boolean(action && !action.cancel && !action.approve && action.kind === "approval")}
+        confirmLabel={
+          action?.cancel ? "لغو درخواست" : action?.approve ? "تأیید" : "رد"
+        }
+        required={Boolean(
+          action &&
+          !action.cancel &&
+          !action.approve &&
+          action.kind === "approval",
+        )}
         warning={
           action?.cancel
             ? "با لغو، درخواست و نوبت آن از بین می‌رود."
@@ -730,7 +839,11 @@ export default function LoanRequestPage() {
         onClose={() => setAction(null)}
         onConfirm={confirmAction}
       />
-      <ReplaceGuarantorDialog target={replaceTarget} onClose={() => setReplaceTarget(null)} onDone={done} />
+      <ReplaceGuarantorDialog
+        target={replaceTarget}
+        onClose={() => setReplaceTarget(null)}
+        onDone={done}
+      />
       <ResultDialog result={result} onClose={() => setResult(null)} />
     </Box>
   );

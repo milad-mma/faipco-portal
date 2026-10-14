@@ -98,3 +98,10 @@ from app.models.loan import (  # noqa: F401
     LoanSiteSettings,
     LoanType,
 )
+from app.models.advance import (  # noqa: F401
+    AdvanceGroupMember,
+    AdvanceRequest,
+    AdvanceRequestEvent,
+    AdvanceSettings,
+    AdvanceTier,
+)

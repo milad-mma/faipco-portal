@@ -75,6 +75,8 @@ class UserOut(BaseModel):
     notification_template_modules: list[str] = []  # ماژول‌های سراسری با «متن اعلان‌ها»ی قابل‌ویرایش برای این کاربر
     can_admin_loans: bool = False  # loans.policy / loans.finance / loans.view — پنل مدیریت وام
     loans_disabled: bool = True  # ماژول وام برای سایت پرسنل فعال نیست (کارت «درخواست وام» غیرفعال)
+    can_admin_advances: bool = False  # advances.policy / advances.finance / advances.view — پنل مدیریت مساعده
+    advances_disabled: bool = True  # ماژول مساعده برای سایت پرسنل فعال نیست
     insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت

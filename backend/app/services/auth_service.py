@@ -392,6 +392,9 @@ class AuthService:
         base.can_admin_loans = user.is_superuser or bool(
             {"loans.policy", "loans.finance", "loans.view"} & set(permission_codes)
         )
+        base.can_admin_advances = user.is_superuser or bool(
+            {"advances.policy", "advances.finance", "advances.view"} & set(permission_codes)
+        )
         base.can_view_turnover_report = user.is_superuser or "reports.turnover" in permission_codes
         base.can_manage_turnover_categories = user.is_superuser or "reports.turnover_categories" in permission_codes
 
@@ -436,6 +439,16 @@ class AuthService:
                 )
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.loans_disabled = True
+        # ماژول مساعده (Migration 114)
+        try:
+            from app.services.advance_service import AdvanceService
+
+            async with self.db.begin_nested():
+                base.advances_disabled = not await AdvanceService(self.db).is_site_enabled(
+                    row[0].site_id if row is not None else None
+                )
+        except Exception:  # noqa: BLE001
+            base.advances_disabled = True
         base.can_view_sync = user.is_superuser or "sync.view" in permission_codes
         base.can_run_sync = user.is_superuser or "sync.run" in permission_codes
         base.can_bust_cache = user.is_superuser or "system.cache_bust" in permission_codes

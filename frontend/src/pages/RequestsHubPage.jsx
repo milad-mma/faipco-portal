@@ -17,6 +17,7 @@ import HubCard from "../components/HubCard";
 import { useAuth } from "../context/AuthContext";
 import { fetchPendingLeaveRequestCount } from "../api/leaveRequests";
 import { fetchLoanInboxCount } from "../api/loans";
+import { fetchAdvanceInboxCount } from "../api/advances";
 
 export default function RequestsHubPage() {
   const { user } = useAuth();
@@ -25,6 +26,8 @@ export default function RequestsHubPage() {
   const [pendingLeave, setPendingLeave] = useState(0);
   const [pendingLoans, setPendingLoans] = useState(0);
   const loansDisabled = Boolean(user?.loans_disabled);
+  const advancesDisabled = Boolean(user?.advances_disabled);
+  const [pendingAdvances, setPendingAdvances] = useState(0);
 
   useEffect(() => {
     fetchPendingLeaveRequestCount()
@@ -32,6 +35,9 @@ export default function RequestsHubPage() {
       .catch(() => {});
     fetchLoanInboxCount()
       .then((data) => setPendingLoans(data?.count || 0))
+      .catch(() => {});
+    fetchAdvanceInboxCount()
+      .then((data) => setPendingAdvances(data?.count || 0))
       .catch(() => {});
   }, []);
 
@@ -53,15 +59,30 @@ export default function RequestsHubPage() {
             }
             disabled={leaveDisabled}
             badge={pendingLeave}
-            onClick={leaveDisabled ? undefined : () => navigate("/leave-requests")}
+            onClick={
+              leaveDisabled ? undefined : () => navigate("/leave-requests")
+            }
           />
         </Grid>
         <Grid item xs={12} sm={6}>
           <HubCard
             icon={<PaymentsOutlinedIcon />}
             title="درخواست مساعده"
-            description="درخواست پرداخت بخشی از حقوق ماه جاری، پیش از روز پرداخت."
-            comingSoon
+            description={
+              advancesDisabled
+                ? "درخواست مساعده برای سایت شما فعال نیست؛ تأییدهای منتظر شما این‌جاست."
+                : "درخواست مساعده طبق سابقه، در بازه‌ی مجاز هر ماه؛ پیگیری یا تأیید درخواست‌ها."
+            }
+            disabled={advancesDisabled && !pendingAdvances}
+            badge={pendingAdvances}
+            onClick={
+              advancesDisabled && !pendingAdvances
+                ? undefined
+                : () =>
+                    navigate(
+                      advancesDisabled ? "/advances?tab=inbox" : "/advances",
+                    )
+            }
           />
         </Grid>
         <Grid item xs={12} sm={6}>
@@ -75,7 +96,11 @@ export default function RequestsHubPage() {
             }
             disabled={loansDisabled}
             badge={pendingLoans}
-            onClick={() => navigate(loansDisabled && pendingLoans ? "/loans?tab=inbox" : "/loans")}
+            onClick={() =>
+              navigate(
+                loansDisabled && pendingLoans ? "/loans?tab=inbox" : "/loans",
+              )
+            }
           />
         </Grid>
       </Grid>

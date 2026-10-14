@@ -109,4 +109,4 @@
 `api/v1/endpoints/loans.py`، فرانت: `pages/LoanRequestPage.jsx`، `pages/LoansAdminPage.jsx`، `components/loans/`.
 
 ## فاز ۲: مساعده
-همان الگو با تنظیمات خودش (سقف/درصد حقوق، دفعات در ماه، بازه‌ی ثبت، مسیر تأیید کوتاه‌تر) وقتی سیاستش مشخص شد.
+ساخته شد — `docs/advances.md` (Migration 114).

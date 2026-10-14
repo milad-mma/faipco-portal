@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     feedback,
     hr,
     insurance,
+    advances,
     leave_requests,
     leave_requests_admin,
     loans,
@@ -84,6 +85,8 @@ api_router.include_router(leave_requests.router, prefix="/leave-requests", tags=
 api_router.include_router(leave_requests_admin.router, prefix="/leave-requests", tags=["leave-requests"])
 # وام: پرسنل، کارتابل تأیید و مدیریت (مقررات/مالی) زیر /loans
 api_router.include_router(loans.router, prefix="/loans", tags=["loans"])
+# مساعده: پرسنل، کارتابل تأیید (گروهی) و مدیریت (تنظیمات/مالی) زیر /advances
+api_router.include_router(advances.router, prefix="/advances", tags=["advances"])
 # دروازه دسترسی (IP/سایت) و اعلان عمومی
 api_router.include_router(access_gate.router, prefix="/access-gate", tags=["access-gate"])
 api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])

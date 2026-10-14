@@ -73,17 +73,11 @@ async def _kara_sections(db: AsyncSession, site_id: int) -> list[dict]:
         return []
 
 
-async def list_my_staff(db: AsyncSession, user: User) -> list[Employee]:
+async def supervised_roots(db: AsyncSession, me: Employee) -> tuple[set[str], dict[str, str | None]]:
     """
-    ورودی: کاربر لاگین‌شده. خروجی: پرسنل فعال زیر نظر او (مستقیم و غیرمستقیم)، مرتب بر اساس نام خانوادگی.
-    کاربر بدون پرسنل یا بدون زیرمجموعه → لیست خالی.
+    ورودی: پرسنل. خروجی: (کد واحدهایی که این فرد سرپرست/تأییدکننده‌ی آن‌هاست، نقشه‌ی بالادست واحدهای کاراوب).
+    مجموعه‌ی خالی یعنی این فرد سرپرست هیچ واحدی نیست (نه در کاراوب، نه با تخصیص دستی).
     """
-    if user.employee_id is None:
-        return []
-    me = await db.get(Employee, user.employee_id)
-    if me is None:
-        return []
-
     # ۱) واحدهایی که در کاراوب مدیرشان این فرد است + نقشه‌ی بالادست برای پیمایش زیرمجموعه‌ها
     sections = await _kara_sections(db, me.site_id)
     parents = build_parent_map(sections, "SecNo", "ParentSecNo")
@@ -104,6 +98,26 @@ async def list_my_staff(db: AsyncSession, user: User) -> list[Employee]:
         )
     ).scalars().all()
     roots.update(c for c in (normalize_code(code) for code in manual_codes) if c is not None)
+    return roots, parents
+
+
+async def is_supervisor(db: AsyncSession, employee: Employee) -> bool:
+    """True اگر این پرسنل سرپرست دست‌کم یک واحد باشد (همان تعریف تأییدکننده‌ی مرخصی)."""
+    roots, _ = await supervised_roots(db, employee)
+    return bool(roots)
+
+
+async def list_my_staff(db: AsyncSession, user: User) -> list[Employee]:
+    """
+    ورودی: کاربر لاگین‌شده. خروجی: پرسنل فعال زیر نظر او (مستقیم و غیرمستقیم)، مرتب بر اساس نام خانوادگی.
+    کاربر بدون پرسنل یا بدون زیرمجموعه → لیست خالی.
+    """
+    if user.employee_id is None:
+        return []
+    me = await db.get(Employee, user.employee_id)
+    if me is None:
+        return []
+    roots, parents = await supervised_roots(db, me)
     if not roots:
         return []
 

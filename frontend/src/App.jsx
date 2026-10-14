@@ -37,6 +37,8 @@ const InsurancePage = lazyPage(() => import("./pages/InsurancePage"));
 const InsuranceHubPage = lazyPage(() => import("./pages/InsuranceHubPage"));
 const RequestsHubPage = lazyPage(() => import("./pages/RequestsHubPage"));
 const LoanRequestPage = lazyPage(() => import("./pages/LoanRequestPage"));
+const AdvanceRequestPage = lazyPage(() => import("./pages/AdvanceRequestPage"));
+const AdvancesAdminPage = lazyPage(() => import("./pages/AdvancesAdminPage"));
 const LoansAdminPage = lazyPage(() => import("./pages/LoansAdminPage"));
 const InsuranceInvoiceGuidePage = lazyPage(
   () => import("./pages/InsuranceInvoiceGuidePage"),
@@ -422,6 +424,15 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_admin_loans}>
                   <LoansAdminPage />
+                  <Route path="/advances" element={<AdvanceRequestPage />} />
+                  <Route
+                    path="/advances/admin"
+                    element={
+                      <PermissionRoute check={(u) => u?.can_admin_advances}>
+                        <AdvancesAdminPage />
+                      </PermissionRoute>
+                    }
+                  />
                 </PermissionRoute>
               }
             />
