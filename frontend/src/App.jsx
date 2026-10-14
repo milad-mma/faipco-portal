@@ -424,15 +424,15 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_admin_loans}>
                   <LoansAdminPage />
-                  <Route path="/advances" element={<AdvanceRequestPage />} />
-                  <Route
-                    path="/advances/admin"
-                    element={
-                      <PermissionRoute check={(u) => u?.can_admin_advances}>
-                        <AdvancesAdminPage />
-                      </PermissionRoute>
-                    }
-                  />
+                </PermissionRoute>
+              }
+            />
+            <Route path="/advances" element={<AdvanceRequestPage />} />
+            <Route
+              path="/advances/admin"
+              element={
+                <PermissionRoute check={(u) => u?.can_admin_advances}>
+                  <AdvancesAdminPage />
                 </PermissionRoute>
               }
             />
