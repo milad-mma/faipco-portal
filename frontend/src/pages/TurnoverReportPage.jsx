@@ -267,7 +267,7 @@ function ReportTab({ onGoCategories }) {
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
-        alignItems={{ xs: "stretch", sm: "center" }}
+        alignItems={{ xs: "stretch", sm: "flex-end" }}
         flexWrap="wrap"
         useFlexGap
         sx={{ mb: 2 }}

@@ -739,6 +739,8 @@ Endpoint اصلی `/employees/{id}/photo-thumbnail` عمداً فقط به خو�
 
 هر ردیفی که فیلد جست‌وجو، انتخاب سایت/وضعیت، تاریخ و دکمه کنار هم دارد یک قاعده دارد:
 - همه‌ی ورودی‌ها `size="small"` (ارتفاع ۴۰px) و هر دکمه‌ی همان ردیف `sx={{ height: 40, whiteSpace: "nowrap" }}`.
-- ظرف: `Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap" useFlexGap`؛
-  `alignItems="flex-end"` فقط برای فرم‌های برچسب‌دار با ارتفاع متفاوت است، نه ردیف فیلتر.
+- ظرف: `Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "flex-end" }} flexWrap="wrap" useFlexGap`.
+  **چرا flex-end و نه center:** در تم پرتال عنوان فیلد به‌صورت بلوک ثابت *بالای* کادر رندر می‌شود (`MuiInputLabel` در
+  `theme.js`)، پس فیلد برچسب‌دار ۲۴px بلندتر از فیلد بی‌برچسب است و `center` کادرها را ۱۲px جابه‌جا می‌کند؛ `flex-end`
+  لبه‌ی پایین کادرها (و دکمه‌های ۴۰px) را روی یک خط می‌گذارد، چه فیلد برچسب داشته باشد چه نه.
 - فیلد جست‌وجو `fullWidth={false}` با `minWidth: 260, flexGrow: 1`؛ بدون helperText داخل ردیف.

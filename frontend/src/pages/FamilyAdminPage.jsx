@@ -814,7 +814,7 @@ function ListTab({ canManage, formSettings }) {
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
-        <Grid container spacing={1.5} alignItems="center">
+        <Grid container spacing={1.5} alignItems="flex-end">
           <Grid item xs={12} sm={6} md={3}>
             <SearchField
               value={filters.search}
