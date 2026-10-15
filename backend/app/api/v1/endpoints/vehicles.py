@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
-from app.core.text_normalize import normalize_search_text, require_permission
+from app.core.deps import get_current_user, require_permission
+from app.core.text_normalize import normalize_search_text
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
