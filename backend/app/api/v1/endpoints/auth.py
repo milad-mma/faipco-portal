@@ -5,12 +5,13 @@ Endpointهای احراز هویت (Authentication).
 - me/password/otp-options، me/password/otp، me/mobile/otp: کد تأیید یک‌بارمصرف برای تغییر رمز و موبایل.
 - forgot-password / verify-reset-code / reset-password: جریان بازنشانی رمز عبور با ایمیل یا پیامک.
 """
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, oauth2_scheme
 from app.core.ip_allowlist import get_client_ip
 from app.core.rate_limit import check_login_lockout, record_failed_login, reset_login_attempts
 from app.services import login_security_service as login_security
@@ -30,9 +31,10 @@ from app.schemas.auth import (
     VerifyResetCodeRequest,
 )
 from app.schemas.user import UserOut
+from app.services import session_service
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 from app.services.employee_contact_service import ContactInfoUpdateError, normalize_mobile, update_my_contact_info
-from app.core.security import check_password_strength
+from app.core.security import check_password_strength, decode_token
 from app.services import otp_service
 from app.services.password_reset_service import (
     PasswordResetError,
@@ -63,6 +65,7 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
             captcha_id=payload.captcha_id,
             captcha_answer=payload.captcha_answer,
             user_agent=request.headers.get("user-agent"),
+            client_app=(request.headers.get("x-client-app") or "").strip().lower()[:20] or None,
         )
     except AuthIpBlockedError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -110,14 +113,19 @@ async def get_captcha(purpose: str = Query(default="login", pattern="^(login|for
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_token(payload: RefreshRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     با refresh token معتبر، جفت توکن جدید (access + refresh) صادر می‌کند.
     دسترسی: عمومی (نیازمند refresh token). خطا: 401 اگر توکن نامعتبر یا منقضی باشد.
     """
     service = AuthService(db)
     try:
-        access_token, new_refresh_token = await service.refresh(payload.refresh_token)
+        access_token, new_refresh_token = await service.refresh(
+            payload.refresh_token,
+            client_ip=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            client_app=(request.headers.get("x-client-app") or "").strip().lower()[:20] or None,
+        )
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
@@ -195,6 +203,7 @@ async def send_password_otp(
 @router.put("/me/password", response_model=TokenResponse)
 async def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -219,13 +228,13 @@ async def change_password(
             except otp_service.OtpError as e:
                 raise _otp_http_error(e)
             access_token, refresh_token = await service.change_password(
-                current_user, None, payload.new_password, verified=True
+                current_user, None, payload.new_password, verified=True, sid=_sid(request)
             )
         else:
             if not payload.current_password:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="رمز عبور فعلی را وارد کنید.")
             access_token, refresh_token = await service.change_password(
-                current_user, payload.current_password, payload.new_password
+                current_user, payload.current_password, payload.new_password, sid=_sid(request)
             )
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -269,16 +278,91 @@ async def send_mobile_otp(
     }
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = Field(default=None, max_length=4000)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
+    payload: LogoutRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    token: str | None = Depends(oauth2_scheme),
+):
+    """
+    خروج از همین دستگاه: فقط نشست جاری باطل می‌شود؛ دستگاه‌های دیگر کاربر وارد می‌مانند (Migration 115).
+    نشست از sid توکن دسترسی یا (اگر منقضی شده) از رفرش‌توکن داخل بدنه پیدا می‌شود؛ داشتن رفرش‌توکن خودش مالکیت نشست
+    را ثابت می‌کند. همیشه 204 (بدون افشای وضعیت). کلاینت پس از آن توکن‌های محلی را پاک می‌کند.
+    """
+    sid = None
+    for raw in (token, payload.refresh_token if payload else None):
+        data = decode_token(raw) if raw else None
+        if data and data.get("sid"):
+            sid = data["sid"]
+            break
+    await session_service.revoke_by_sid(db, sid, reason="logout")
+    await db.commit()
+
+
+# ---------- دستگاه‌های من (نشست‌ها) ----------
+
+
+def _sid(request: Request) -> str | None:
+    """sid نشست جاری که get_current_user روی request گذاشته است."""
+    return getattr(request.state, "session_sid", None)
+
+
+@router.get("/me/sessions")
+async def my_sessions(
+    request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """دستگاه‌های فعال من (برچسب دستگاه/مرورگر، IP، آخرین فعالیت) با علامت نشست جاری + سقف مؤثر."""
+    sessions = await session_service.active_sessions(db, current_user.id)
+    return {
+        "items": [session_service.to_dict(s, current_sid=_sid(request)) for s in sessions],
+        "max_sessions": await session_service.effective_limit(db, current_user),
+    }
+
+
+@router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_my_session(
+    session_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    خروج: همه‌ی توکن‌های صادرشده‌ی کاربر (در همه‌ی دستگاه‌ها) را با به‌روزکردن password_changed_at باطل می‌کند.
-    دسترسی: هر کاربر واردشده (پاسخ 204). کلاینت پس از آن توکن‌های محلی را پاک می‌کند.
-    """
-    await AuthService(db).logout(current_user)
+    """خروج از راه دور یکی از دستگاه‌های دیگرم (نشست جاری با این مسیر باطل نمی‌شود؛ برای آن /logout)."""
+    sessions = await session_service.active_sessions(db, current_user.id)
+    target = next((s for s in sessions if s.id == session_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دستگاه پیدا نشد یا قبلاً خارج شده است")
+    if target.sid == _sid(request):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="برای خروج از همین دستگاه از «خروج از حساب» استفاده کنید")
+    await session_service.revoke(db, session_id, user_id=current_user.id, reason="remote")
+    await db.commit()
+
+
+class MySessionLimitIn(BaseModel):
+    max_sessions: int = Field(ge=1, le=3)
+
+
+@router.put("/me/sessions/limit")
+async def set_my_session_limit(
+    payload: MySessionLimitIn, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """هر کاربر سقف دستگاه‌های هم‌زمان خودش را (۱ تا ۳) تعیین می‌کند؛ از ورود بعدی اعمال می‌شود، کسی همین حالا خارج نمی‌شود."""
+    current_user.max_sessions = payload.max_sessions
+    await db.commit()
+    return {"max_sessions": current_user.max_sessions}
+
+
+@router.post("/me/sessions/revoke-others", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_other_sessions(
+    request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """خروج از همه‌ی دستگاه‌های دیگر به‌جز همین دستگاه."""
+    await session_service.revoke_all(db, current_user.id, reason="remote", except_sid=_sid(request))
+    await db.commit()
 
 
 @router.put("/me/contact-info")

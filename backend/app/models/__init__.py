@@ -105,3 +105,4 @@ from app.models.advance import (  # noqa: F401
     AdvanceSettings,
     AdvanceTier,
 )
+from app.models.user_session import UserSession  # noqa: F401

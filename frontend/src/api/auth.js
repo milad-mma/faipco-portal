@@ -7,7 +7,11 @@ import { apiClient } from "./client";
 // POST /auth/login با نام کاربری و رمز (و در صورت نیاز کپچا: { captcha_id, captcha_answer })؛
 // خروجی: توکن‌های دسترسی و رفرش. پاسخ 401 فیلد captcha_required دارد.
 export async function loginRequest(username, password, captcha = null) {
-  const { data } = await apiClient.post("/auth/login", { username, password, ...(captcha || {}) });
+  const { data } = await apiClient.post("/auth/login", {
+    username,
+    password,
+    ...(captcha || {}),
+  });
   return data; // { access_token, refresh_token, token_type }
 }
 
@@ -19,7 +23,11 @@ export async function fetchCurrentUser() {
 
 // PUT /auth/me/password؛ تغییر رمز کاربر جاری. تأیید هویت با otpCode (کد پیامک/ایمیل) یا، اگر کاربر کانالی
 // ندارد، currentPassword؛ خروجی ندارد (client.js توکن‌های تازه را خودش ذخیره می‌کند)
-export async function changePasswordRequest({ currentPassword, otpCode, newPassword }) {
+export async function changePasswordRequest({
+  currentPassword,
+  otpCode,
+  newPassword,
+}) {
   await apiClient.put("/auth/me/password", {
     ...(otpCode ? { otp_code: otpCode } : {}),
     ...(currentPassword ? { current_password: currentPassword } : {}),
@@ -48,8 +56,16 @@ export async function sendMobileOtp(mobile) {
 }
 
 // POST /auth/forgot-password؛ ارسال کد بازیابی از طریق کانال انتخابی (پیش‌فرض پیامک)؛ خروجی: پاسخ سرور
-export async function forgotPasswordRequest(identifier, channel = "sms", captcha = null) {
-  const { data } = await apiClient.post("/auth/forgot-password", { identifier, channel, ...(captcha || {}) });
+export async function forgotPasswordRequest(
+  identifier,
+  channel = "sms",
+  captcha = null,
+) {
+  const { data } = await apiClient.post("/auth/forgot-password", {
+    identifier,
+    channel,
+    ...(captcha || {}),
+  });
   return data;
 }
 
@@ -64,7 +80,11 @@ export async function verifyResetCodeRequest(token, identifier = null) {
 }
 
 // POST /auth/reset-password؛ تنظیم رمز جدید با توکن بازیابی (identifier برای کد پیامکی الزامی)؛ خروجی: پاسخ سرور
-export async function resetPasswordRequest(token, newPassword, identifier = null) {
+export async function resetPasswordRequest(
+  token,
+  newPassword,
+  identifier = null,
+) {
   const { data } = await apiClient.post("/auth/reset-password", {
     token,
     new_password: newPassword,
@@ -76,7 +96,12 @@ export async function resetPasswordRequest(token, newPassword, identifier = null
 // PUT /auth/me/contact-info؛ فقط فیلدهای ارسال‌شده (ایمیل/موبایل) را به‌روز می‌کند؛ خروجی: اطلاعات به‌روزشده.
 // تغییر موبایل: mobileOtpCode (کد پیامک‌شده به شماره‌ی جدید)؛ فقط اگر سرویس پیامک خاموش باشد currentPassword.
 // تغییر ایمیل تأیید نمی‌خواهد.
-export async function updateMyContactInfo({ email, mobile, currentPassword, mobileOtpCode }) {
+export async function updateMyContactInfo({
+  email,
+  mobile,
+  currentPassword,
+  mobileOtpCode,
+}) {
   const payload = {};
   if (email !== undefined) payload.email = email;
   if (mobile !== undefined) payload.mobile = mobile;
@@ -86,15 +111,44 @@ export async function updateMyContactInfo({ email, mobile, currentPassword, mobi
   return data;
 }
 
+// GET /auth/me/sessions؛ دستگاه‌های (نشست‌های) فعال کاربر جاری؛
+// خروجی: { items: [{ id, device, client_app, ip, created_at, last_seen_at, current }], max_sessions }
+export async function fetchMySessions() {
+  const { data } = await apiClient.get("/auth/me/sessions");
+  return data;
+}
+
+// DELETE /auth/me/sessions/{id}؛ خروج از راه دور یکی از دستگاه‌های دیگر خودم (دستگاه جاری: 400)
+export async function revokeMySession(id) {
+  await apiClient.delete(`/auth/me/sessions/${id}`);
+}
+
+// POST /auth/me/sessions/revoke-others؛ خروج از همه‌ی دستگاه‌های دیگر به‌جز دستگاه جاری (204)
+export async function revokeOtherSessions() {
+  await apiClient.post("/auth/me/sessions/revoke-others");
+}
+
 // GET /auth/captcha؛ کپچای تصویری داخلی. purpose: "login" | "forgot"
 // خروجی: { required, captcha_id?, image? (data URL), expires_in? }
 export async function fetchCaptcha(purpose = "login") {
-  const { data } = await apiClient.get("/auth/captcha", { params: { purpose } });
+  const { data } = await apiClient.get("/auth/captcha", {
+    params: { purpose },
+  });
   return data;
 }
 
 // GET /auth/captcha-status؛ آیا ورود بعدی کپچا لازم دارد (بر اساس IP و شناسه)؛ خروجی: { required }
 export async function fetchCaptchaStatus(identifier = "") {
-  const { data } = await apiClient.get("/auth/captcha-status", { params: identifier ? { identifier } : {} });
+  const { data } = await apiClient.get("/auth/captcha-status", {
+    params: identifier ? { identifier } : {},
+  });
+  return data;
+}
+
+/** سقف دستگاه‌های هم‌زمان خودم (۱ تا ۳)؛ از ورود بعدی اعمال می‌شود */
+export async function setMySessionLimit(maxSessions) {
+  const { data } = await apiClient.put("/auth/me/sessions/limit", {
+    max_sessions: maxSessions,
+  });
   return data;
 }

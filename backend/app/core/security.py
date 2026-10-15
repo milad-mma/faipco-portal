@@ -102,11 +102,19 @@ def create_access_token(subject: str, extra_claims: dict | None = None) -> str:
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(subject: str) -> str:
-    """ورودی: شناسه کاربر (sub). خروجی: Refresh Token امضاشده با نوع "refresh"، iat و انقضای چندروزه."""
+def create_refresh_token(subject: str, extra_claims: dict | None = None) -> str:
+    """ورودی: شناسه کاربر (sub) و claimهای اضافی (مثل sid نشست). خروجی: Refresh Token با نوع "refresh"، iat و انقضای چندروزه."""
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {"sub": subject, "exp": expire, "iat": _issued_at(), "type": "refresh"}
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def token_pair(subject: str, sid: str) -> tuple[str, str]:
+    """جفت توکن (access, refresh) برای یک نشست مشخص؛ sid داخل هر دو توکن می‌نشیند (Migration 115)."""
+    claims = {"sid": sid}
+    return create_access_token(subject, claims), create_refresh_token(subject, claims)
 
 
 def is_token_revoked_by_password_change(payload: dict, password_changed_at: datetime | None) -> bool:

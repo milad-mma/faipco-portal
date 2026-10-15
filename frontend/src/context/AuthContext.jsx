@@ -80,26 +80,34 @@ export function AuthProvider({ children }) {
     return currentUser;
   }
 
-  // خروج: اول توکن‌ها از localStorage پاک و کاربر جاری خالی می‌شود (خروج فوری)، بعد با همان توکن
-  // ابطال سمت سرور انجام می‌شود (همه‌ی دستگاه‌های کاربر؛ خطا یا آفلاین بودن نادیده گرفته می‌شود)
+  // خروج: اول توکن‌ها از localStorage پاک و کاربر جاری خالی می‌شود (خروج فوری)، بعد نشست همین دستگاه سمت سرور
+  // باطل می‌شود (دستگاه‌های دیگر وارد می‌مانند؛ خطا یا آفلاین بودن نادیده گرفته می‌شود)
   function logout() {
     const token = localStorage.getItem("access_token");
+    const refreshToken = localStorage.getItem("refresh_token");
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
-    if (token) {
-      // چون رفرش‌توکن محلی پاک شده، interceptor در پاسخ 401 رفرش/تلاش مجدد نمی‌کند؛ نتیجه اهمیتی ندارد
+    if (token || refreshToken) {
+      // فقط نشست همین دستگاه باطل می‌شود؛ رفرش‌توکن هم فرستاده می‌شود تا اگر توکن دسترسی منقضی باشد باز هم نشست
+      // پیدا شود. چون رفرش‌توکن محلی پاک شده، interceptor در پاسخ 401 تلاش مجدد نمی‌کند؛ نتیجه اهمیتی ندارد
       apiClient
-        .post("/auth/logout", null, {
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 5_000,
-        })
+        .post(
+          "/auth/logout",
+          { refresh_token: refreshToken || null },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 5_000,
+          },
+        )
         .catch(() => {});
     }
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, refetchUser }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, login, logout, refetchUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

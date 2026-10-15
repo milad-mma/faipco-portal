@@ -1,7 +1,8 @@
 /**
  * صفحه‌ی «امنیت ورود» (مجوز system.login_security):
  * - تب گزارش: خلاصه‌ی بازه، قفل‌های فعال با دکمه‌ی رفع قفل، پرتکرارترین IPها و شناسه‌ها، فهرست رویدادها.
- * - تب تنظیمات: قفل پلکانی، محدودیت IP و IPهای معاف، کپچای داخلی، هشدار و مدت نگهداری گزارش.
+ * - تب تنظیمات: قفل پلکانی، محدودیت IP و IPهای معاف، کپچای داخلی، هشدار، مدت نگهداری گزارش و سقف دستگاه هم‌زمان.
+ * - تب دستگاه‌ها: نشست‌های (دستگاه‌های) همه‌ی کاربران با جست‌وجو، خروج اجباری و سقف اختصاصی هر کاربر.
  * جزئیات: docs/login-security.md
  */
 import { useCallback, useEffect, useState } from "react";
@@ -15,10 +16,15 @@ import {
   Card,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControlLabel,
   Grid,
   MenuItem,
+  Select,
   Stack,
   Switch,
   Table,
@@ -33,13 +39,17 @@ import {
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import LockOpenOutlinedIcon from "@mui/icons-material/LockOpenOutlined";
+import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import {
   fetchActiveLocks,
   fetchLoginSecuritySettings,
   fetchSecurityEvents,
   fetchSecuritySummary,
+  fetchSessions,
+  revokeSession,
   saveLoginSecuritySettings,
+  setUserMaxSessions,
   unlockKey,
 } from "../api/loginSecurity";
 import { normalizeSearchText } from "../utils/searchText";
@@ -64,6 +74,17 @@ const KIND_COLORS = {
   ip_blocked: "error",
   forgot_password: "default",
 };
+// علت خروج نشست (revoked_reason) → برچسب فارسی
+const REVOKE_REASON_LABELS = {
+  logout: "خروج",
+  remote: "خروج از راه دور",
+  admin: "توسط ادمین",
+  limit: "ورود دستگاه جدید",
+  password: "تغییر رمز",
+  deactivated: "غیرفعال‌سازی",
+  expired: "منقضی",
+};
+const MAX_SESSIONS_OPTIONS = [1, 2, 3];
 
 const faDateTime = (iso) =>
   iso
@@ -101,10 +122,13 @@ export default function LoginSecurityPage() {
         onChange={setTab}
         tabs={[
           { key: "report", label: "گزارش" },
+          { key: "sessions", label: "دستگاه‌ها" },
           { key: "settings", label: "تنظیمات" },
         ]}
       />
-      {tab === "report" ? <ReportTab /> : <SettingsTab />}
+      {tab === "report" && <ReportTab />}
+      {tab === "sessions" && <SessionsTab />}
+      {tab === "settings" && <SettingsTab />}
     </Box>
   );
 }
@@ -515,6 +539,320 @@ function TopTable({ title, head, rows, onPick }) {
   );
 }
 
+// ---------------------------------------------------------------- دستگاه‌ها
+
+// نام قابل نمایش کاربر یک نشست: نام پرسنل، در نبودش نام کاربری
+function sessionUserLabel(s) {
+  if (s.employee) {
+    if (typeof s.employee === "string") return s.employee;
+    const name = [s.employee.first_name, s.employee.last_name]
+      .filter(Boolean)
+      .join(" ");
+    return name || s.employee.full_name || s.employee.name || s.username;
+  }
+  return s.username || "—";
+}
+
+function SessionsTab() {
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebounced(searchInput.trim(), 300);
+  const [onlyActive, setOnlyActive] = useState(true);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [data, setData] = useState(null); // { items, total }
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState(null); // نشست در انتظار تأیید خروج اجباری؛ null = بسته
+  const [busyId, setBusyId] = useState(null); // id نشست/کاربری که عملیاتش در جریان است
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      setData(
+        await fetchSessions({
+          search,
+          onlyActive,
+          page,
+          pageSize: rowsPerPage,
+        }),
+      );
+    } catch (err) {
+      setError(errorText(err, "دریافت فهرست دستگاه‌ها ناموفق بود."));
+    }
+  }, [search, onlyActive, page, rowsPerPage]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // تغییر جست‌وجو یا فیلتر ← برگشت به صفحه‌ی اول
+  useEffect(() => {
+    setPage(0);
+  }, [search, onlyActive]);
+
+  async function handleRevoke() {
+    if (!confirm) return;
+    setBusyId(confirm.id);
+    try {
+      await revokeSession(confirm.id);
+      setConfirm(null);
+      await load();
+    } catch (err) {
+      setError(errorText(err, "خروج اجباری ناموفق بود."));
+      setConfirm(null);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // سقف اختصاصی دستگاه‌های یک کاربر؛ "" = پیش‌فرض (null)
+  async function handleMaxSessions(s, value) {
+    setBusyId(`u${s.user_id}`);
+    try {
+      await setUserMaxSessions(s.user_id, value === "" ? null : Number(value));
+      await load();
+    } catch (err) {
+      setError(errorText(err, "ذخیره‌ی سقف دستگاه ناموفق بود."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Stack spacing={2}>
+      <Card variant="outlined" sx={{ borderRadius: 2 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ p: 2 }}
+        >
+          <SearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="جست‌وجوی نام کاربری، نام، کد پرسنلی یا IP…"
+            size="small"
+            fullWidth={false}
+            sx={{ minWidth: 300, flex: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={onlyActive}
+                onChange={(e) => setOnlyActive(e.target.checked)}
+              />
+            }
+            label="فقط فعال‌ها"
+            sx={{ mr: 0, height: 40 }}
+          />
+          <Button
+            startIcon={<RefreshIcon />}
+            onClick={load}
+            sx={{ height: 40 }}
+          >
+            به‌روزرسانی
+          </Button>
+        </Stack>
+        {error && (
+          <Alert severity="error" sx={{ mx: 2, mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {data === null ? (
+          <Box sx={{ p: 2 }}>
+            <CircularProgress size={20} />
+          </Box>
+        ) : (
+          <>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>کاربر</TableCell>
+                    <TableCell>دستگاه</TableCell>
+                    <TableCell>IP</TableCell>
+                    <TableCell>ورود</TableCell>
+                    <TableCell>آخرین فعالیت</TableCell>
+                    <TableCell>وضعیت</TableCell>
+                    <TableCell>سقف</TableCell>
+                    <TableCell>عملیات</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {data.items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8}>
+                        <Typography variant="body2" color="text.secondary">
+                          دستگاهی یافت نشد.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {data.items.map((s) => {
+                    const active = !s.revoked_at;
+                    return (
+                      <TableRow
+                        key={s.id}
+                        sx={active ? undefined : { opacity: 0.7 }}
+                      >
+                        <TableCell sx={{ whiteSpace: "nowrap" }}>
+                          <Typography variant="body2">
+                            {sessionUserLabel(s)}
+                          </Typography>
+                          {s.employee && s.username && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={monoFontSx}
+                            >
+                              {s.username}
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            maxWidth: 220,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={s.device || ""}
+                        >
+                          {s.device || "—"}
+                          {s.client_app === "android" && (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label="اپ"
+                              sx={{ ml: 0.5, height: 18 }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell sx={monoFontSx}>{s.ip || "—"}</TableCell>
+                        <TableCell sx={{ whiteSpace: "nowrap" }}>
+                          {faDateTime(s.created_at)}
+                        </TableCell>
+                        <TableCell sx={{ whiteSpace: "nowrap" }}>
+                          {faDateTime(s.last_seen_at)}
+                        </TableCell>
+                        <TableCell>
+                          {active ? (
+                            <Chip
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              label="فعال"
+                            />
+                          ) : (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`خارج‌شده${
+                                s.revoked_reason
+                                  ? ` — ${REVOKE_REASON_LABELS[s.revoked_reason] || s.revoked_reason}`
+                                  : ""
+                              }`}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            size="small"
+                            value={s.max_sessions ?? ""}
+                            displayEmpty
+                            disabled={busyId === `u${s.user_id}`}
+                            onChange={(e) =>
+                              handleMaxSessions(s, e.target.value)
+                            }
+                            sx={{
+                              minWidth: 96,
+                              "& .MuiSelect-select": { py: 0.5 },
+                            }}
+                          >
+                            <MenuItem value="">پیش‌فرض</MenuItem>
+                            {MAX_SESSIONS_OPTIONS.map((n) => (
+                              <MenuItem key={n} value={n}>
+                                {n.toLocaleString("fa-IR")}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell align="left">
+                          {active && (
+                            <Button
+                              size="small"
+                              color="error"
+                              startIcon={<LogoutOutlinedIcon />}
+                              disabled={busyId === s.id}
+                              onClick={() => setConfirm(s)}
+                            >
+                              خروج
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              component="div"
+              count={data.total}
+              page={page}
+              onPageChange={(_, p) => setPage(p)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(e) => (
+                setRowsPerPage(Number(e.target.value)),
+                setPage(0)
+              )}
+              rowsPerPageOptions={[20, 50, 100]}
+              labelRowsPerPage="تعداد در صفحه"
+              labelDisplayedRows={({ from, to, count }) =>
+                `${from}–${to} از ${count}`
+              }
+            />
+          </>
+        )}
+      </Card>
+
+      {/* تأیید خروج اجباری یک دستگاه */}
+      <Dialog
+        open={Boolean(confirm)}
+        onClose={() => !busyId && setConfirm(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>خروج اجباری دستگاه</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            دستگاه «{confirm?.device || "نامشخص"}» کاربر «
+            {confirm ? sessionUserLabel(confirm) : ""}» از حساب خارج می‌شود و
+            باید دوباره وارد شود. ادامه می‌دهید؟
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setConfirm(null)} disabled={Boolean(busyId)}>
+            انصراف
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleRevoke}
+            disabled={Boolean(busyId)}
+            startIcon={
+              busyId ? <CircularProgress size={16} color="inherit" /> : null
+            }
+          >
+            خروج
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
+}
+
 // ---------------------------------------------------------------- تنظیمات
 
 // فیلد عددی که ارقام فارسی را هم می‌پذیرد؛ مقدار به‌صورت رشته در فرم نگه داشته می‌شود
@@ -548,6 +886,7 @@ function toForm(s) {
     alert_threshold: String(s.alert_threshold),
     alert_window_minutes: String(s.alert_window_minutes),
     retention_days: String(s.retention_days),
+    max_sessions: Number(s.max_sessions || 1),
   };
 }
 
@@ -574,6 +913,7 @@ function fromForm(f) {
     alert_threshold: n(f.alert_threshold),
     alert_window_minutes: n(f.alert_window_minutes),
     retention_days: n(f.retention_days),
+    max_sessions: Number(f.max_sessions || 1),
   };
 }
 
@@ -832,6 +1172,30 @@ function SettingsTab() {
               value={form.retention_days}
               onChange={set("retention_days")}
             />
+          </Grid>
+        </Grid>
+      </Section>
+
+      <Section
+        title="دستگاه‌های هم‌زمان"
+        subtitle="با ورود دستگاه جدید بیش از این تعداد، قدیمی‌ترین دستگاه خارج می‌شود؛ برای افراد خاص در تب «دستگاه‌ها» سقف اختصاصی بدهید."
+      >
+        <Grid container spacing={1.5}>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              select
+              size="small"
+              fullWidth
+              label="حداکثر دستگاه هم‌زمان هر کاربر"
+              value={form.max_sessions}
+              onChange={(e) => set("max_sessions")(Number(e.target.value))}
+            >
+              {MAX_SESSIONS_OPTIONS.map((n) => (
+                <MenuItem key={n} value={n}>
+                  {n.toLocaleString("fa-IR")}
+                </MenuItem>
+              ))}
+            </TextField>
           </Grid>
         </Grid>
       </Section>

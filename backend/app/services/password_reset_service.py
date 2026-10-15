@@ -362,4 +362,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str, identi
     user.must_change_password = False
     user.password_changed_at = now  # ابطال همه‌ی توکن‌های قبلی (مثلاً نشست مهاجمی که رمز قبلی را داشت)
     reset_token.used_at = now
+    from app.services import session_service
+
+    await session_service.revoke_all(db, user.id, reason="password")
     await db.commit()

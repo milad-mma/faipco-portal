@@ -16,6 +16,7 @@ from app.core.site_access import all_site_ids, covers_all_sites
 from app.core.permission_grants import grants_subquery
 from app.models.employee import Employee
 from app.models.user import User
+from app.services import session_service
 
 
 class UserRepository:
@@ -179,6 +180,7 @@ class UserRepository:
             user.is_active = enabled
             if not enabled:
                 self.mark_password_changed(user)  # نشست‌های باز پرسنل غیرفعال‌شده هم باطل می‌شوند
+                await session_service.revoke_all(self.db, user.id, reason="deactivated")
         await self.db.commit()
         await self.db.refresh(employee)
         return employee
@@ -197,6 +199,7 @@ class UserRepository:
         user.has_custom_password = True
         user.must_change_password = True
         self.mark_password_changed(user)  # نشست‌های قبلی پرسنل باطل می‌شوند
+        await session_service.revoke_all(self.db, user.id, reason="admin")
         await self.db.commit()
         return user
 
@@ -209,5 +212,6 @@ class UserRepository:
         user.password_hash = hash_password(secrets.token_urlsafe(32))
         user.has_custom_password = False
         self.mark_password_changed(user)  # نشست‌های قبلی پرسنل باطل می‌شوند
+        await session_service.revoke_all(self.db, user.id, reason="admin")
         await self.db.commit()
         return user

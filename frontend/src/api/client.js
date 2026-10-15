@@ -8,7 +8,8 @@ import { normalizeSearchText } from "../utils/searchText";
 import { isAndroidApp } from "../utils/androidApp";
 import { reportClientError } from "../utils/errorReporter";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"; // آدرس پایه‌ی API از متغیر محیطی Vite؛ در نبود آن آدرس توسعه‌ی محلی
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -33,24 +34,36 @@ const FIELD_LABELS = {
   file: "فایل",
 };
 function validationMessage(item) {
-  const loc = Array.isArray(item?.loc) ? item.loc.filter((p) => p !== "body" && p !== "query") : [];
+  const loc = Array.isArray(item?.loc)
+    ? item.loc.filter((p) => p !== "body" && p !== "query")
+    : [];
   const field = loc.length ? String(loc[loc.length - 1]) : "";
   const label = FIELD_LABELS[field] || field;
   const ctx = item?.ctx || {};
   const type = item?.type || "";
   let text;
   if (type === "missing") text = "الزامی است";
-  else if (type === "string_too_short") text = ctx.min_length > 1 ? `حداقل ${ctx.min_length} نویسه باشد` : "نباید خالی باشد";
-  else if (type === "string_too_long") text = `حداکثر ${ctx.max_length} نویسه مجاز است`;
-  else if (type === "value_error" && /email/i.test(item?.msg || "")) text = "معتبر نیست";
-  else if (type === "value_error") text = String(item?.msg || "").replace(/^Value error,\s*/, "") || "معتبر نیست";
+  else if (type === "string_too_short")
+    text =
+      ctx.min_length > 1
+        ? `حداقل ${ctx.min_length} نویسه باشد`
+        : "نباید خالی باشد";
+  else if (type === "string_too_long")
+    text = `حداکثر ${ctx.max_length} نویسه مجاز است`;
+  else if (type === "value_error" && /email/i.test(item?.msg || ""))
+    text = "معتبر نیست";
+  else if (type === "value_error")
+    text =
+      String(item?.msg || "").replace(/^Value error,\s*/, "") || "معتبر نیست";
   else text = "معتبر نیست";
   return label ? `${label}: ${text}` : text;
 }
 function normalizeErrorDetail(error) {
   const data = error?.response?.data;
   if (data && Array.isArray(data.detail)) {
-    data.detail = data.detail.map(validationMessage).join("، ") || "اطلاعات واردشده معتبر نیست.";
+    data.detail =
+      data.detail.map(validationMessage).join("، ") ||
+      "اطلاعات واردشده معتبر نیست.";
   }
 }
 
@@ -94,7 +107,10 @@ apiClient.interceptors.request.use((config) => {
   if (config.params) {
     for (const key of SEARCH_PARAM_KEYS) {
       if (typeof config.params[key] === "string") {
-        config.params = { ...config.params, [key]: normalizeSearchText(config.params[key]) };
+        config.params = {
+          ...config.params,
+          [key]: normalizeSearchText(config.params[key]),
+        };
       }
     }
   }
@@ -118,9 +134,13 @@ apiClient.interceptors.response.use(
   (response) => {
     // تغییر رمز همه‌ی توکن‌های قبلی کاربر را باطل می‌کند و سرور جفت توکن تازه برمی‌گرداند؛
     // همین‌جا ذخیره می‌شود تا نشست جاری بدون ورود مجدد ادامه یابد
-    if (response.config?.url?.includes("/auth/me/password") && response.data?.access_token) {
+    if (
+      response.config?.url?.includes("/auth/me/password") &&
+      response.data?.access_token
+    ) {
       localStorage.setItem("access_token", response.data.access_token);
-      if (response.data.refresh_token) localStorage.setItem("refresh_token", response.data.refresh_token);
+      if (response.data.refresh_token)
+        localStorage.setItem("refresh_token", response.data.refresh_token);
     }
     return response;
   },
@@ -188,15 +208,17 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       resolvePendingQueue(refreshError, null);
       // توکن‌ها فقط وقتی پاک می‌شوند و کاربر به صفحه‌ی ورود می‌رود که سرور رفرش‌توکن را با 401 رد کند؛
-      // در خطای شبکه (آفلاین) توکن‌ها می‌مانند تا AuthContext پس از وصل شدن اینترنت دوباره تلاش کند
+      // در خطای شبکه (آفلاین) توکن‌ها می‌مانند تا AuthContext پس از وصل شدن اینترنت دوباره تلاش کند.
+      // reason=signed_out: صفحه‌ی ورود توضیح می‌دهد که نشست این دستگاه باطل شده (ورود دستگاه جدید،
+      // خروج از راه دور، تغییر رمز) نه این‌که کاربر خودش خارج شده باشد.
       if (refreshError.response?.status === 401) {
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
-        window.location.href = "/login";
+        window.location.href = "/login?reason=signed_out";
       }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
     }
-  }
+  },
 );

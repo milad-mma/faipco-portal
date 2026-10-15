@@ -21,7 +21,9 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.request_context import current_client_ip
 from app.core.security import decode_token, is_token_revoked_by_password_change
+from app.services import session_service
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
@@ -90,6 +92,20 @@ async def get_current_user(
             detail="نشست منقضی شده؛ دوباره وارد شوید",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # نشست دستگاه (Migration 115): نشست sid توکن باید باطل نشده باشد (خروج، ابطال از راه دور، ورود دستگاه جدید
+    # بیش از سقف، تغییر رمز). توکن قدیمی بدون sid (صادرشده پیش از این نسخه) تا انقضای ۶۰ دقیقه‌ای‌اش پذیرفته می‌شود و
+    # در اولین تمدید، بی‌صدا نشست می‌گیرد — هیچ‌کس با استقرار خارج نمی‌شود.
+    sid = payload.get("sid")
+    if sid:
+        session = await session_service.validate(db, user.id, sid, ip=current_client_ip.get() or None)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="از این دستگاه خارج شده‌اید؛ دوباره وارد شوید",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    request.state.session_sid = sid
 
     # الزام تعویض رمز سمت سرور: فقط فلگ صریح must_change_password (نه ورود پیش‌فرض با کد ملی،
     # که برای پرسنل مجاز است) و فقط خارج از مسیرهای لازم برای خودِ تعویض رمز

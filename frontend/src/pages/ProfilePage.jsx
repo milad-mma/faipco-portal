@@ -29,6 +29,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
+import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
@@ -44,11 +45,16 @@ import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
 import BrandLogo, { surfaceTitleSx } from "../components/BrandLogo";
 import { useThemeMode } from "../context/ThemeModeContext";
-import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
+import {
+  enablePushNotifications,
+  getNotificationPermission,
+  isPushSupported,
+} from "../utils/push";
 import { fetchAppVersion } from "../api/system";
 import { updateMyBirthdayVisibility } from "../api/employees";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import EditContactInfoDialog from "../components/EditContactInfoDialog";
+import MyDevicesDialog from "../components/MyDevicesDialog";
 import { NAV_ITEMS } from "../config/navItems";
 
 /**
@@ -58,15 +64,15 @@ import { NAV_ITEMS } from "../config/navItems";
  * خودکار اینجا هم ظاهر می‌شود. آیتم‌های دارای زیرمنو (مثل «ارزیابی عملکرد») به‌صورت یک گروه
  * قابل‌جمع‌شدن (مثل منوی کناری Admin در Layout.jsx) نگه داشته می‌شوند و فقط زیرآیتم‌های دارای check می‌مانند.
  */
-const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter((item) => !item.adminOnly && (item.check || item.children?.length)).map(
-  (item) => ({
-    label: item.label,
-    icon: item.icon,
-    path: item.path,
-    check: item.check,
-    children: item.children?.filter((child) => child.check) || null,
-  })
-);
+const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter(
+  (item) => !item.adminOnly && (item.check || item.children?.length),
+).map((item) => ({
+  label: item.label,
+  icon: item.icon,
+  path: item.path,
+  check: item.check,
+  children: item.children?.filter((child) => child.check) || null,
+}));
 
 /**
  * کامپوننت صفحه پنل کاربری؛ ورودی ندارد.
@@ -75,17 +81,20 @@ const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter((item) => !item.adminOnly && (item.
 export default function ProfilePage() {
   const { user, logout, refetchUser } = useAuth();
   const { profileTitle, profileSubtitle, surfaces } = useBranding();
-  const profileCfg = surfaces.profile;  // تنظیمات برندینگ سطح «profile» (پس‌زمینه، نمایش عنوان/زیرعنوان)
+  const profileCfg = surfaces.profile; // تنظیمات برندینگ سطح «profile» (پس‌زمینه، نمایش عنوان/زیرعنوان)
   const navigate = useNavigate();
   const { mode, setMode, isManual, resetToSystem } = useThemeMode();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [contactInfoDialogOpen, setContactInfoDialogOpen] = useState(false);
+  const [devicesDialogOpen, setDevicesDialogOpen] = useState(false); // دیالوگ «دستگاه‌های من» (نشست‌های فعال)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());  // "default" | "granted" | "denied"
-  const [snackbar, setSnackbar] = useState("");  // متن Snackbar؛ رشته خالی = بسته
+  const [pushPermission, setPushPermission] = useState(() =>
+    getNotificationPermission(),
+  ); // "default" | "granted" | "denied"
+  const [snackbar, setSnackbar] = useState(""); // متن Snackbar؛ رشته خالی = بسته
   const [appVersion, setAppVersion] = useState("");
-  const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null);  // عنصر لنگر Popover توضیح گزینه تولد؛ null = بسته
-  const [birthdaySaving, setBirthdaySaving] = useState(false);  // در حال ذخیره تنظیم نمایش تولد
+  const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null); // عنصر لنگر Popover توضیح گزینه تولد؛ null = بسته
+  const [birthdaySaving, setBirthdaySaving] = useState(false); // در حال ذخیره تنظیم نمایش تولد
 
   // تنظیم مخفی‌سازی تولد در داشبورد را ذخیره و اطلاعات کاربر را دوباره از سرور می‌خواند
   async function handleToggleBirthdayVisibility(e) {
@@ -112,8 +121,12 @@ export default function ProfilePage() {
   // (و اگر هیچ‌کدام مجاز نباشد حذف می‌شود)؛ آیتم ساده با check(user) سنجیده می‌شود
   const extraAccessGroups = EXTRA_ACCESS_GROUPS.map((group) => {
     if (group.children) {
-      const visibleChildren = group.children.filter((child) => child.check(user));
-      return visibleChildren.length > 0 ? { ...group, children: visibleChildren } : null;
+      const visibleChildren = group.children.filter((child) =>
+        child.check(user),
+      );
+      return visibleChildren.length > 0
+        ? { ...group, children: visibleChildren }
+        : null;
     }
     return group.check(user) ? group : null;
   }).filter(Boolean);
@@ -130,7 +143,9 @@ export default function ProfilePage() {
     try {
       await enablePushNotifications();
       setPushPermission(getNotificationPermission());
-      setSnackbar("اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید");
+      setSnackbar(
+        "اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید",
+      );
     } catch (err) {
       setPushPermission(getNotificationPermission());
       setSnackbar(err.message || "فعال‌سازی اعلان با خطا مواجه شد");
@@ -149,23 +164,48 @@ export default function ProfilePage() {
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       {/* کارت برند: لوگو، عنوان/زیرعنوان (طبق تنظیمات برندینگ) و نسخه برنامه */}
-      <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
+      <Card
+        variant="outlined"
+        sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}
+      >
         <Box
           sx={{
-            background: profileCfg.background || "linear-gradient(135deg, #185E95 0%, #2E84AA 100%)",
+            background:
+              profileCfg.background ||
+              "linear-gradient(135deg, #185E95 0%, #2E84AA 100%)",
             display: "flex",
             justifyContent: "center",
             py: 3.5,
           }}
         >
-          <BrandLogo surface="profile" alt={profileTitle} sx={{ boxShadow: 2 }} />
+          <BrandLogo
+            surface="profile"
+            alt={profileTitle}
+            sx={{ boxShadow: 2 }}
+          />
         </Box>
-        <Stack alignItems="center" spacing={0.5} sx={{ textAlign: "center", px: 2.5, py: 2.5 }}>
+        <Stack
+          alignItems="center"
+          spacing={0.5}
+          sx={{ textAlign: "center", px: 2.5, py: 2.5 }}
+        >
           {profileCfg.show_title && (
-            <Typography sx={{ color: "primary.main", ...surfaceTitleSx(profileCfg, "title") }}>{profileTitle}</Typography>
+            <Typography
+              sx={{
+                color: "primary.main",
+                ...surfaceTitleSx(profileCfg, "title"),
+              }}
+            >
+              {profileTitle}
+            </Typography>
           )}
           {profileCfg.show_subtitle && (
-            <Typography sx={{ color: "text.secondary", ...surfaceTitleSx(profileCfg, "subtitle") }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                ...surfaceTitleSx(profileCfg, "subtitle"),
+              }}
+            >
               {profileSubtitle}
             </Typography>
           )}
@@ -183,7 +223,10 @@ export default function ProfilePage() {
 
       {/* میان‌بر مقصدهای مجاز؛ گروه‌های دارای زیرمنو به‌صورت قابل‌جمع‌شدن */}
       {extraAccessGroups.length > 0 && (
-        <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
+        <Card
+          variant="outlined"
+          sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}
+        >
           <List disablePadding>
             {extraAccessGroups.map((group) =>
               group.children ? (
@@ -191,12 +234,24 @@ export default function ProfilePage() {
                   <ListItemButton onClick={() => toggleGroup(group.label)}>
                     <ListItemIcon>{group.icon}</ListItemIcon>
                     <ListItemText primary={group.label} />
-                    {expandedGroups[group.label] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    {expandedGroups[group.label] ? (
+                      <ExpandLessIcon />
+                    ) : (
+                      <ExpandMoreIcon />
+                    )}
                   </ListItemButton>
-                  <Collapse in={Boolean(expandedGroups[group.label])} timeout="auto" unmountOnExit>
+                  <Collapse
+                    in={Boolean(expandedGroups[group.label])}
+                    timeout="auto"
+                    unmountOnExit
+                  >
                     <List disablePadding>
                       {group.children.map((child) => (
-                        <ListItemButton key={child.path} onClick={() => navigate(child.path)} sx={{ pr: 4 }}>
+                        <ListItemButton
+                          key={child.path}
+                          onClick={() => navigate(child.path)}
+                          sx={{ pr: 4 }}
+                        >
                           <ListItemIcon>{child.icon}</ListItemIcon>
                           <ListItemText primary={child.label} />
                         </ListItemButton>
@@ -205,11 +260,14 @@ export default function ProfilePage() {
                   </Collapse>
                 </Box>
               ) : (
-                <ListItemButton key={group.path} onClick={() => navigate(group.path)}>
+                <ListItemButton
+                  key={group.path}
+                  onClick={() => navigate(group.path)}
+                >
                   <ListItemIcon>{group.icon}</ListItemIcon>
                   <ListItemText primary={group.label} />
                 </ListItemButton>
-              )
+              ),
             )}
           </List>
         </Card>
@@ -299,9 +357,14 @@ export default function ProfilePage() {
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
         <List disablePadding>
           {isPushSupported() && (
-            <ListItemButton onClick={handleEnableNotifications} disabled={pushPermission !== "default"}>
+            <ListItemButton
+              onClick={handleEnableNotifications}
+              disabled={pushPermission !== "default"}
+            >
               <ListItemIcon>
-                <NotificationsActiveOutlinedIcon color={pushPermission === "granted" ? "success" : "inherit"} />
+                <NotificationsActiveOutlinedIcon
+                  color={pushPermission === "granted" ? "success" : "inherit"}
+                />
               </ListItemIcon>
               <ListItemText
                 primary={
@@ -325,16 +388,28 @@ export default function ProfilePage() {
               <ListItemIcon>
                 <FamilyRestroomOutlinedIcon />
               </ListItemIcon>
-              <ListItemText primary="مشخصات خانوادگی" secondary={user?.family_disabled ? "غیرفعال" : undefined} />
+              <ListItemText
+                primary="مشخصات خانوادگی"
+                secondary={user?.family_disabled ? "غیرفعال" : undefined}
+              />
             </ListItemButton>
           )}
+          <ListItemButton onClick={() => setDevicesDialogOpen(true)}>
+            <ListItemIcon>
+              <DevicesOutlinedIcon />
+            </ListItemIcon>
+            <ListItemText primary="دستگاه‌های من" />
+          </ListItemButton>
           <ListItemButton onClick={() => setPasswordDialogOpen(true)}>
             <ListItemIcon>
               <LockResetOutlinedIcon />
             </ListItemIcon>
             <ListItemText primary="تغییر رمز عبور" />
           </ListItemButton>
-          <ListItemButton onClick={() => setLogoutConfirmOpen(true)} sx={{ color: "error.main" }}>
+          <ListItemButton
+            onClick={() => setLogoutConfirmOpen(true)}
+            sx={{ color: "error.main" }}
+          >
             <ListItemIcon sx={{ color: "error.main" }}>
               <LogoutOutlinedIcon />
             </ListItemIcon>
@@ -344,15 +419,31 @@ export default function ProfilePage() {
       </Card>
 
       {/* دیالوگ‌های تغییر رمز و ویرایش مشخصات */}
-      <ChangePasswordDialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} />
-      <EditContactInfoDialog open={contactInfoDialogOpen} onClose={() => setContactInfoDialogOpen(false)} />
+      <ChangePasswordDialog
+        open={passwordDialogOpen}
+        onClose={() => setPasswordDialogOpen(false)}
+      />
+      <EditContactInfoDialog
+        open={contactInfoDialogOpen}
+        onClose={() => setContactInfoDialogOpen(false)}
+      />
+      <MyDevicesDialog
+        open={devicesDialogOpen}
+        onClose={() => setDevicesDialogOpen(false)}
+      />
 
       {/* دیالوگ تأیید خروج از حساب */}
-      <Dialog open={logoutConfirmOpen} onClose={() => setLogoutConfirmOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>خروج از حساب کاربری</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            در صورت خروج از سامانه، اعلان اطلاعیه‌های شرکت برای شما ارسال نخواهد شد.
+            در صورت خروج از سامانه، اعلان اطلاعیه‌های شرکت برای شما ارسال نخواهد
+            شد.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
@@ -362,7 +453,12 @@ export default function ProfilePage() {
           </Button>
         </DialogActions>
       </Dialog>
-      <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar("")} message={snackbar} />
+      <Snackbar
+        open={Boolean(snackbar)}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar("")}
+        message={snackbar}
+      />
     </Box>
   );
 }

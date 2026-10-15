@@ -53,6 +53,8 @@ class User(Base, TimestampMixin):
     # باشد رد می‌شوند؛ پس تغییر رمز، بازنشانی توسط Admin، غیرفعال‌سازی و «خروج» همه‌ی نشست‌های باز
     # کاربر را باطل می‌کند. NULL = هیچ ابطالی ثبت نشده (همه‌ی توکن‌های معتبر پذیرفته می‌شوند).
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # سقف نشست (دستگاه) هم‌زمان اختصاصی این کاربر (Migration 115)؛ خالی = پیش‌فرض تنظیمات امنیت ورود
+    max_sessions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

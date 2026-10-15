@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.text_normalize import normalize_search_text
+from app.services import session_service
 from app.core.security import (
-    create_access_token,
-    create_refresh_token,
+    token_pair,
     decode_token,
     hash_password,
     is_token_revoked_by_password_change,
@@ -130,6 +130,7 @@ class AuthService:
         captcha_id: str | None = None,
         captcha_answer: str | None = None,
         user_agent: str | None = None,
+        client_app: str | None = None,
     ) -> tuple[str, str]:
         """
         ورود یکپارچه؛ ورودی: شناسه (یوزرنیم/کد پرسنلی)، اعتبار (رمز/کد ملی) و IP کلاینت. خروجی: (access_token, refresh_token).
@@ -189,11 +190,20 @@ class AuthService:
             user = await self.repo.get_or_create_employee_user(employee)  # حساب پرسنل در اولین ورود ساخته می‌شود
 
         await reset_login_attempts(self.db, identifier)  # ورود موفق: شمارنده‌ی تلاش‌ها صفر می‌شود
-        access_token = create_access_token(subject=str(user.id))
-        refresh_token = create_refresh_token(subject=str(user.id))
-        return access_token, refresh_token
+        # نشست دستگاه (Migration 115): sid داخل توکن‌ها؛ اگر سقف نشست پر باشد قدیمی‌ترین دستگاه خارج می‌شود
+        session = await session_service.create_session(
+            self.db, user, ip=client_ip, user_agent=user_agent, client_app=client_app
+        )
+        await self.db.commit()
+        return token_pair(str(user.id), session.sid)
 
-    async def refresh(self, refresh_token: str) -> tuple[str, str]:
+    async def refresh(
+        self,
+        refresh_token: str,
+        client_ip: str | None = None,
+        user_agent: str | None = None,
+        client_app: str | None = None,
+    ) -> tuple[str, str]:
         """
         تمدید نشست به‌صورت Sliding Window؛ ورودی: refresh token، خروجی: access token و refresh token تازه (با انقضای جدید).
         تا وقتی کاربر حداقل هر REFRESH_TOKEN_EXPIRE_DAYS یک‌بار برنامه را باز کند، خودکار خارج نمی‌شود.
@@ -215,10 +225,19 @@ class AuthService:
         # رفرش‌توکن صادرشده پیش از آخرین تغییر رمز/خروج باطل است
         if is_token_revoked_by_password_change(payload, user.password_changed_at):
             raise AuthError("نشست منقضی شده؛ دوباره وارد شوید")
-
-        access_token = create_access_token(subject=str(user.id))
-        new_refresh_token = create_refresh_token(subject=str(user.id))
-        return access_token, new_refresh_token
+        sid = payload.get("sid")
+        if not sid:
+            # رفرش‌توکن قدیمی (پیش از Migration 115): بی‌صدا نشست می‌سازد، بدون اعمال سقف تا کسی خارج نشود
+            session = await session_service.create_session(
+                self.db, user, ip=client_ip, user_agent=user_agent, client_app=client_app, enforce_limit=False
+            )
+            await self.db.commit()
+            return token_pair(str(user.id), session.sid)
+        # نشست دستگاه باید هنوز فعال باشد (خروج از راه دور / ورود دستگاه جدید آن را باطل می‌کند)
+        session = await session_service.validate(self.db, user.id, sid, ip=client_ip)
+        if session is None:
+            raise AuthError("از این دستگاه خارج شده‌اید؛ دوباره وارد شوید")
+        return token_pair(str(user.id), session.sid)
 
     async def _ensure_employee_active(self, user: User) -> None:
         """
@@ -234,12 +253,12 @@ class AuthService:
         if row is not None and not (row[0] and row[1]):
             raise AuthError("حساب غیرفعال است")
 
-    async def logout(self, user: User) -> None:
+    async def logout(self, user: User, sid: str | None) -> None:
         """
-        خروج کاربر: زمان ابطال نشست‌ها (password_changed_at) را «اکنون» می‌کند تا همه‌ی توکن‌های صادرشده‌ی
-        قبلی (در همه‌ی دستگاه‌ها) رد شوند. فرانت پس از آن توکن‌های محلی را پاک می‌کند.
+        خروج از همین دستگاه: فقط نشست جاری (sid توکن) باطل می‌شود؛ دستگاه‌های دیگر کاربر وارد می‌مانند.
+        فرانت پس از آن توکن‌های محلی را پاک می‌کند.
         """
-        self.repo.mark_password_changed(user)
+        await session_service.revoke_by_sid(self.db, sid, reason="logout")
         await self.db.commit()
 
     async def verify_current_credential(self, user: User, current_password: str) -> None:
@@ -266,7 +285,13 @@ class AuthService:
                 raise AuthError("رمز عبور فعلی وارد شده اشتباه است")
 
     async def change_password(
-        self, user: User, current_password: str | None, new_password: str, *, verified: bool = False
+        self,
+        user: User,
+        current_password: str | None,
+        new_password: str,
+        *,
+        verified: bool = False,
+        sid: str | None = None,
     ) -> tuple[str, str]:
         """
         تغییر رمز توسط خودِ کاربر؛ ورودی: کاربر، رمز فعلی (برای پرسنل بدون رمز اختصاصی = کد ملی) و رمز جدید.
@@ -287,9 +312,14 @@ class AuthService:
         user.has_custom_password = True
         user.must_change_password = False
         self.repo.mark_password_changed(user)
+        # بقیه‌ی دستگاه‌ها خارج می‌شوند؛ دستگاه جاری با توکن تازه (همان sid) ادامه می‌دهد
+        await session_service.revoke_all(self.db, user.id, reason="password", except_sid=sid)
+        if sid is None:
+            session = await session_service.create_session(self.db, user, ip=None, user_agent=None, client_app=None)
+            sid = session.sid
         await self.db.commit()
         # توکن‌های تازه پس از commit صادر می‌شوند (iat >= password_changed_at)
-        return create_access_token(subject=str(user.id)), create_refresh_token(subject=str(user.id))
+        return token_pair(str(user.id), sid)
 
     async def get_me(self, user: User) -> UserOut:
         """

@@ -1024,6 +1024,18 @@ class SyncService:
             .values(is_active=False, password_changed_at=now)
             .execution_options(synchronize_session=False)
         )
+        # نشست‌های دستگاه این کاربران هم «غیرفعال‌شده» علامت می‌خورند (Migration 115)
+        from app.models.user_session import UserSession
+
+        await self.db.execute(
+            update(UserSession)
+            .where(
+                UserSession.revoked_at.is_(None),
+                UserSession.user_id.in_(select(User.id).where(User.employee_id.in_(employee_ids))),
+            )
+            .values(revoked_at=now, revoked_reason="deactivated")
+            .execution_options(synchronize_session=False)
+        )
 
     async def _record_transfer(self, employee: Employee, to_site_id: int, now: datetime) -> None:
         """

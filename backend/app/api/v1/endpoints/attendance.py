@@ -272,6 +272,12 @@ async def _authenticate_websocket_user(token: str, in_app: bool = False) -> tupl
         user = await UserRepository(db).get_by_id(int(user_id))
         if user is None or user.employee_id is None or not user.is_active:
             return None
+        # نشست دستگاه باید فعال باشد (خروج از راه دور / ورود دستگاه جدید)؛ Migration 115
+        from app.services import session_service
+
+        # توکن قدیمی بدون sid (پیش از Migration 115) تا انقضایش پذیرفته می‌شود؛ کسی با استقرار آفلاین نمی‌شود
+        if payload.get("sid") and await session_service.validate(db, user.id, payload.get("sid")) is None:
+            return None
         # «داخل اپ» فقط وقتی قابلیت اپ اندروید روشن است اثر دارد
         if in_app:
             from app.services.mobile_app_service import is_feature_enabled

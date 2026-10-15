@@ -32,6 +32,8 @@ class LoginSecuritySettings(BaseModel):
     alert_window_minutes: int = Field(default=10, ge=1, le=1440)
 
     retention_days: int = Field(default=90, ge=7, le=730)  # نگهداری گزارش رویدادها
+    # سقف دستگاه‌های هم‌زمان هر کاربر (Migration 115)؛ ورود دستگاه جدید، قدیمی‌ترین را خارج می‌کند. کاربر می‌تواند سقف اختصاصی داشته باشد.
+    max_sessions: int = Field(default=1, ge=1, le=3)
 
     @field_validator("lock_minutes")
     @classmethod
