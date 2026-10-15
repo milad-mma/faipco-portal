@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import PillTabs from "../components/PillTabs";
 import {
   Alert,
-  Autocomplete,
   Box,
   Chip,
   CircularProgress,
@@ -23,15 +22,13 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Typography,
 } from "@mui/material";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { fetchPresenceSessions } from "../api/attendance";
-import { fetchEmployees } from "../api/employees";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { monoFontSx } from "../theme";
-import { searchFilterOptions } from "../utils/searchText";
 
 const PAGE_SIZE = 50; // تعداد ردیف در هر صفحه
 
@@ -51,13 +48,10 @@ export default function PresenceReportPage() {
   const [sessions, setSessions] = useState(null); // جلسات صفحه فعلی؛ null = در حال بارگذاری
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1); // شماره صفحه از ۱
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState(null); // گزینه‌ی {id, label} از EmployeeSearchField؛ فقط .id برای فیلتر لازم است
   const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [onlyOnline, setOnlyOnline] = useState(false);
   const [kind, setKind] = useState("app"); // "app" = آنلاین در پرتال، "gps" = آنلاین در محیط کار
-
-  const [employeeOptions, setEmployeeOptions] = useState([]); // گزینه‌های Autocomplete پرسنل
-  const [employeeSearch, setEmployeeSearch] = useState(""); // متن تایپ‌شده در Autocomplete برای جست‌وجوی پرسنل
 
   // بارگذاری جلسات حضور با فیلترها و صفحه فعلی
   useEffect(() => {
@@ -74,21 +68,6 @@ export default function PresenceReportPage() {
       setTotal(data.total);
     });
   }, [page, selectedEmployee, selectedSiteId, onlyOnline, kind]);
-
-  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه بعد از آخرین حرف (نه یک درخواست برای هر حرف)؛
-  // پاسخ جست‌وجوی قدیمی‌تر روی نتیجه‌ی جدیدتر نوشته نمی‌شود
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      fetchEmployees({ search: employeeSearch, pageSize: 20 })
-        .then((data) => !cancelled && setEmployeeOptions(data.items || []))
-        .catch(() => {});
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [employeeSearch]);
 
   return (
     <Box>
@@ -135,23 +114,15 @@ export default function PresenceReportPage() {
             setPage(1);
           }}
         />
-        <Autocomplete
-          filterOptions={searchFilterOptions}
+        {/* فیلتر پرسنل با انتخابگر مشترک (جست‌وجوی سمت سرور) */}
+        <EmployeeSearchField
           sx={{ minWidth: 260 }}
-          options={employeeOptions}
-          getOptionLabel={(o) =>
-            `${o.first_name} ${o.last_name} (${o.personnel_code})`
-          }
           value={selectedEmployee}
-          onChange={(_, value) => {
+          onChange={(value) => {
             setSelectedEmployee(value);
             setPage(1);
           }}
-          onInputChange={(_, value) => setEmployeeSearch(value)}
-          renderInput={(params) => (
-            <TextField {...params} label="فیلتر بر اساس پرسنل" size="small" />
-          )}
-          isOptionEqualToValue={(o, v) => o.id === v.id}
+          label="فیلتر بر اساس پرسنل"
         />
         <FormControlLabel
           control={

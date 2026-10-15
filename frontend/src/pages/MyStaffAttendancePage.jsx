@@ -1,13 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  CircularProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, CircularProgress, Stack, Typography } from "@mui/material";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import BackLink from "../components/BackLink";
 import MonthlyAttendanceTable from "../components/MonthlyAttendanceTable";
@@ -17,7 +9,8 @@ import {
 } from "../api/monthlyAttendance";
 import { swr } from "../api/swrCache";
 import { gregorianToJalali } from "../utils/jalaliDate";
-import { searchFilterOptions } from "../utils/searchText";
+import { searchKey } from "../utils/searchText";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 
 /**
  * «تردد پرسنل من» — سرپرست یکی از زیرمجموعه‌هایش را انتخاب می‌کند و گزارش تردد ماهانه‌ی او را می‌بیند.
@@ -36,6 +29,26 @@ function staffLabel(e) {
 export default function MyStaffAttendancePage() {
   const [staff, setStaff] = useState(null); // null = هنوز بارگذاری نشده
   const [staffError, setStaffError] = useState("");
+  // همان فیلد جست‌وجوی مشترک پرسنل، ولی روی فهرست «پرسنل من» که یک بار از سرور آمده (کلیدواژه: نام/کد/واحد)
+  const staffFetcher = async (q) => {
+    const key = searchKey(q);
+    return (staff || [])
+      .filter(
+        (e) =>
+          !key ||
+          searchKey(`${staffLabel(e)} ${e.department_name || ""}`).includes(
+            key,
+          ),
+      )
+      .slice(0, 30)
+      .map((e) => ({
+        id: e.id,
+        label: e.department_name
+          ? `${staffLabel(e)} — ${e.department_name}`
+          : staffLabel(e),
+        employee: e,
+      }));
+  };
   const [selected, setSelected] = useState(null); // پرسنل انتخاب‌شده
   const [period, setPeriod] = useState({
     year: CURRENT_YEAR,
@@ -115,29 +128,20 @@ export default function MyStaffAttendancePage() {
             alignItems={{ xs: "stretch", sm: "flex-start" }}
             sx={{ mb: 3 }}
           >
-            <Autocomplete
-              options={staff}
-              value={selected}
-              onChange={(_, v) => setSelected(v)}
-              getOptionLabel={staffLabel}
-              filterOptions={(options, state) =>
-                searchFilterOptions(options, {
-                  inputValue: state.inputValue,
-                  getOptionLabel: staffLabel,
-                })
+            <EmployeeSearchField
+              fetcher={staffFetcher}
+              value={
+                selected
+                  ? {
+                      id: selected.id,
+                      label: staffLabel(selected),
+                      employee: selected,
+                    }
+                  : null
               }
-              isOptionEqualToValue={(a, b) => a.id === b.id}
-              noOptionsText="پرسنلی پیدا نشد"
-              groupBy={(e) => e.department_name || "بدون واحد"}
-              size="small"
+              onChange={(opt) => setSelected(opt ? opt.employee : null)}
+              label="پرسنل"
               sx={{ flex: 1, minWidth: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="پرسنل"
-                  placeholder="جست‌وجوی نام یا کد پرسنلی…"
-                />
-              )}
             />
             <JalaliMonthYearFilter
               year={period.year}

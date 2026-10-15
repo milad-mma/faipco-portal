@@ -10,8 +10,6 @@ import {
   Card,
   Chip,
   CircularProgress,
-  Grid,
-  InputAdornment,
   Stack,
   Table,
   TableBody,
@@ -19,11 +17,9 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
-import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import { fetchEmployees } from "../api/employees";
 import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
@@ -32,16 +28,20 @@ import { monoFontSx } from "../theme";
 import { roleDisplayName } from "../utils/roleLabels";
 import AssignAccessDialog from "../components/AssignAccessDialog";
 import SiteTransferReviewCard from "../components/SiteTransferReviewCard";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 
 // کامپوننت صفحه؛ ورودی ندارد. داده سایت‌ها، نمای کلی دسترسی و نتایج جست‌وجو را مدیریت می‌کند
 export default function AccessManagementPage() {
   const [sites, setSites] = useState([]);
-  const [overview, setOverview] = useState(null);  // فهرست دارندگان نقش/سرپرستی؛ null = در حال بارگذاری
+  const [overview, setOverview] = useState(null); // فهرست دارندگان نقش/سرپرستی؛ null = در حال بارگذاری
   const [mySiteIds, setMySiteIds] = useState(undefined); // undefined = هنوز لود نشده، null = نامحدود
 
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState([]);  // نتایج جست‌وجوی پرسنل
-  const [accessEmployee, setAccessEmployee] = useState(null);  // پرسنلی که دیالوگ دسترسی برایش باز است؛ null = دیالوگ بسته
+  // متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه به سرور می‌رود تا با هر حرف یک درخواست نرود
+  const debouncedSearch = useDebounced(search, 300);
+  const [results, setResults] = useState([]); // نتایج جست‌وجوی پرسنل
+  const [accessEmployee, setAccessEmployee] = useState(null); // پرسنلی که دیالوگ دسترسی برایش باز است؛ null = دیالوگ بسته
   const [transfersRefreshKey, setTransfersRefreshKey] = useState(0); // افزایش آن فهرست جابه‌جایی‌ها را تازه می‌کند
 
   // بارگذاری اولیه: فهرست سایت‌ها، نمای کلی دسترسی‌ها و سایت‌های مجاز کاربر
@@ -50,9 +50,11 @@ export default function AccessManagementPage() {
     loadOverview();
     // سایت‌هایی که کاربر روی آن‌ها users.manage دارد گرفته می‌شود تا جست‌وجوی
     // پرسنل فقط به همین سایت‌ها محدود شود (null = دسترسی نامحدود)
-    fetchMyAccessibleSites("users.manage").then(({ unrestricted, sites: accessibleSites }) => {
-      setMySiteIds(unrestricted ? null : accessibleSites.map((s) => s.id));
-    });
+    fetchMyAccessibleSites("users.manage").then(
+      ({ unrestricted, sites: accessibleSites }) => {
+        setMySiteIds(unrestricted ? null : accessibleSites.map((s) => s.id));
+      },
+    );
   }, []);
 
   // نمای کلی دسترسی‌ها را از سرور می‌گیرد و در overview می‌گذارد
@@ -60,27 +62,36 @@ export default function AccessManagementPage() {
     fetchAccessOverview().then(setOverview);
   }
 
-  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه (debounce) بعد از تغییر عبارت؛
+  // جست‌وجوی پرسنل بعد از تغییر عبارت تأخیردار؛ متن خالی درخواستی نمی‌فرستد و
   // تا وقتی سایت‌های مجاز لود نشده‌اند جست‌وجو انجام نمی‌شود
   useEffect(() => {
-    if (!search || mySiteIds === undefined) {
+    if (!debouncedSearch || mySiteIds === undefined) {
       setResults([]);
       return;
     }
-    const timer = setTimeout(async () => {
+    let cancelled = false; // جلوگیری از نشستن پاسخ درخواست قدیمی روی نتایج جدید
+    (async () => {
+      let items;
       if (mySiteIds === null) {
         // نامحدود — یک جست‌وجوی ساده کافی است
-        const data = await fetchEmployees({ search });
-        setResults(data.items);
+        const data = await fetchEmployees({ search: debouncedSearch });
+        items = data.items;
       } else {
         // محدود به چند سایت خاص — چون fetchEmployees فقط یک siteId
         // می‌گیرد، برای هر سایت مجاز جدا جست‌وجو و نتایج را با هم ادغام می‌کنیم
-        const pages = await Promise.all(mySiteIds.map((siteId) => fetchEmployees({ search, siteId })));
-        setResults(pages.flatMap((p) => p.items));
+        const pages = await Promise.all(
+          mySiteIds.map((siteId) =>
+            fetchEmployees({ search: debouncedSearch, siteId }),
+          ),
+        );
+        items = pages.flatMap((p) => p.items);
       }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search, mySiteIds]);
+      if (!cancelled) setResults(items);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSearch, mySiteIds]);
 
   // نام سایت را از روی id برمی‌گرداند؛ در صورت نبودن «—»
   const siteLabel = (id) => sites.find((s) => s.id === id)?.name || "—";
@@ -98,27 +109,22 @@ export default function AccessManagementPage() {
         مدیریت دسترسی
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        شخص مورد نظر را از بین پرسنل جستجو کنید و مستقیماً نقش سازمانی (مدیر سایت / مدیر میانی)
-        یا سرپرستی یک یا چند واحد را به او اختصاص دهید.
+        شخص مورد نظر را از بین پرسنل جستجو کنید و مستقیماً نقش سازمانی (مدیر
+        سایت / مدیر میانی) یا سرپرستی یک یا چند واحد را به او اختصاص دهید.
       </Typography>
 
       {/* جابه‌جایی‌های بین سایت‌ها که نقش‌هایشان هنوز بازبینی نشده (فقط اگر موردی باشد) */}
-      <SiteTransferReviewCard onOpenAccess={setAccessEmployee} refreshKey={transfersRefreshKey} />
+      <SiteTransferReviewCard
+        onOpenAccess={setAccessEmployee}
+        refreshKey={transfersRefreshKey}
+      />
 
       {/* کارت جست‌وجوی پرسنل و جدول نتایج */}
       <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
-        <TextField
-          fullWidth
-          placeholder="جستجو بر اساس نام، کد پرسنلی یا کد ملی برای دادن دسترسی جدید..."
+        <SearchField
+          placeholder="جست‌وجوی نام، کد پرسنلی یا کد ملی برای دادن دسترسی…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlinedIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
+          onChange={setSearch}
         />
 
         {/* جدول نتایج جست‌وجو با دکمه «دسترسی» برای هر پرسنل */}
@@ -189,7 +195,9 @@ export default function AccessManagementPage() {
               {overview === null ? (
                 <TableRow>
                   <TableCell colSpan={6}>
-                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+                    <Box
+                      sx={{ display: "flex", justifyContent: "center", py: 3 }}
+                    >
                       <CircularProgress size={24} />
                     </Box>
                   </TableCell>
@@ -199,75 +207,117 @@ export default function AccessManagementPage() {
                   {overview.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6}>
-                        <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
-                          هنوز هیچ‌کس نقش سازمانی، مجوز مستقیم یا سرپرستی واحدی ندارد.
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ py: 3, textAlign: "center" }}
+                        >
+                          هنوز هیچ‌کس نقش سازمانی، مجوز مستقیم یا سرپرستی واحدی
+                          ندارد.
                         </Typography>
                       </TableCell>
                     </TableRow>
                   )}
                   {/* یک ردیف برای هر پرسنل: نقش‌ها (با سایت یا «سراسری») و واحدهای تحت سرپرستی */}
                   {overview.map((entry) => (
-                <TableRow key={entry.employee_id} hover>
-                  <TableCell sx={monoFontSx}>{entry.personnel_code}</TableCell>
-                  <TableCell>
-                    {entry.first_name} {entry.last_name}
-                  </TableCell>
-                  <TableCell>{entry.site_name}</TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                      {entry.roles.length === 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
-                      {entry.roles.map((r, i) => (
-                        <Chip
-                          key={i}
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                          label={
-                            roleDisplayName(r.role_name) +
-                            (r.site_name ? ` — ${r.site_name}` : " (سراسری)")
-                          }
-                        />
-                      ))}
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    {/* مجوزهای خارج از نقش (استثناها) — چیپ متمایز تا گم نشوند */}
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                      {(entry.direct_permissions || []).length === 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
-                      {(entry.direct_permissions || []).map((p, i) => (
-                        <Tooltip key={i} title={p.description || ""} arrow>
-                          <Chip
-                            size="small"
-                            color="secondary"
-                            variant="outlined"
-                            label={p.code + (p.site_name ? ` — ${p.site_name}` : " (همه‌ی سایت‌ها)")}
-                          />
-                        </Tooltip>
-                      ))}
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                      {entry.supervised_departments.length === 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
-                      {entry.supervised_departments.map((d) => (
-                        <Chip key={d.id} size="small" label={`${d.name} (${d.site_name})`} />
-                      ))}
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    <TableRow key={entry.employee_id} hover>
+                      <TableCell sx={monoFontSx}>
+                        {entry.personnel_code}
+                      </TableCell>
+                      <TableCell>
+                        {entry.first_name} {entry.last_name}
+                      </TableCell>
+                      <TableCell>{entry.site_name}</TableCell>
+                      <TableCell>
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          {entry.roles.length === 0 && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              —
+                            </Typography>
+                          )}
+                          {entry.roles.map((r, i) => (
+                            <Chip
+                              key={i}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              label={
+                                roleDisplayName(r.role_name) +
+                                (r.site_name
+                                  ? ` — ${r.site_name}`
+                                  : " (سراسری)")
+                              }
+                            />
+                          ))}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        {/* مجوزهای خارج از نقش (استثناها) — چیپ متمایز تا گم نشوند */}
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          {(entry.direct_permissions || []).length === 0 && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              —
+                            </Typography>
+                          )}
+                          {(entry.direct_permissions || []).map((p, i) => (
+                            <Tooltip key={i} title={p.description || ""} arrow>
+                              <Chip
+                                size="small"
+                                color="secondary"
+                                variant="outlined"
+                                label={
+                                  p.code +
+                                  (p.site_name
+                                    ? ` — ${p.site_name}`
+                                    : " (همه‌ی سایت‌ها)")
+                                }
+                              />
+                            </Tooltip>
+                          ))}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          {entry.supervised_departments.length === 0 && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              —
+                            </Typography>
+                          )}
+                          {entry.supervised_departments.map((d) => (
+                            <Chip
+                              key={d.id}
+                              size="small"
+                              label={`${d.name} (${d.site_name})`}
+                            />
+                          ))}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </>
               )}
             </TableBody>
@@ -278,7 +328,11 @@ export default function AccessManagementPage() {
       {/* دیالوگ اختصاص دسترسی؛ فقط سایت‌های مجاز کاربر به آن داده می‌شود */}
       <AssignAccessDialog
         employee={accessEmployee}
-        sites={mySiteIds === null || mySiteIds === undefined ? sites : sites.filter((s) => mySiteIds.includes(s.id))}
+        sites={
+          mySiteIds === null || mySiteIds === undefined
+            ? sites
+            : sites.filter((s) => mySiteIds.includes(s.id))
+        }
         allSites={sites}
         onClose={closeAccessDialog}
       />

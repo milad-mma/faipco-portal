@@ -12,12 +12,13 @@ import asyncio
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
+from app.core.text_normalize import normalize_search_text
 from app.core.site_access import get_sites_with_permission, get_sites_with_permission_prefix
 from app.core.site_permission_deps import require_site_permission
 from app.db.session import get_db
@@ -396,11 +397,13 @@ async def list_all_for_site(
     status_filter: str | None = None,
     type_id: int | None = None,
     department: str | None = None,
+    search: str | None = Query(default=None, max_length=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    گزارش همه درخواست‌های یک سایت با فیلترهای اختیاری (بازه تاریخ، وضعیت، نوع، واحد).
+    گزارش همه درخواست‌های یک سایت با فیلترهای اختیاری (بازه تاریخ، وضعیت، نوع، واحد، جست‌وجوی متنی
+    روی نام درخواست‌دهنده / کد پرسنلی / نوع / توضیح).
     مجوز: leave_requests.view/manage یا مجوز به‌تفکیک نوع (با محدودیت‌های زیر)؛ وگرنه 403.
     خطاها: 400 برای خطای منطقی سرویس، 500 با متن خطا برای مشکل دیتابیس کاراوب.
     """
@@ -432,6 +435,18 @@ async def list_all_for_site(
             item
             for item in items
             if not (item["status"] == "pending" and item["start_hour"] is not None)
+        ]
+    key = normalize_search_text(search or "").strip()
+    if key:
+        items = [
+            item
+            for item in items
+            if key
+            in normalize_search_text(
+                " ".join(
+                    str(item.get(f) or "") for f in ("requester_name", "emp_no", "type_title", "description")
+                )
+            )
         ]
     return items
 

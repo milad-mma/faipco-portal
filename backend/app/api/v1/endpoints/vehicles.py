@@ -9,11 +9,12 @@ Endpoint های قابلیت «خودروهای من».
 /vehicles/{id}          (PATCH)   ویرایش هر خودرویی — فقط Admin
 /vehicles/{id}          (DELETE)  حذف هر خودرویی — فقط Admin
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user
+from app.core.text_normalize import normalize_search_text, require_permission
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
@@ -86,6 +87,7 @@ async def delete_my_vehicle(
 @router.get("", response_model=list[VehicleAdminOut])
 async def list_all_vehicles(
     site_id: int | None = None,
+    search: str | None = Query(default=None, max_length=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -111,7 +113,32 @@ async def list_all_vehicles(
     else:
         effective_site_ids = accessible_site_ids
 
-    return await VehicleService(db).list_all(effective_site_ids)
+    rows = await VehicleService(db).list_all(effective_site_ids)
+    # جست‌وجوی متنی سمت سرور (نام، کد پرسنلی، واحد، نوع خودرو، رنگ، پلاک) با نرمال‌سازی ارقام/حروف فارسی
+    key = normalize_search_text(search or "").strip()
+    if key:
+        rows = [
+            v
+            for v in rows
+            if key
+            in normalize_search_text(
+                " ".join(
+                    str(getattr(v, f, "") or "")
+                    for f in (
+                        "employee_name",
+                        "personnel_code",
+                        "department_name",
+                        "vehicle_type",
+                        "color",
+                        "plate_digits1",
+                        "plate_letter",
+                        "plate_digits2",
+                        "plate_iran_code",
+                    )
+                )
+            )
+        ]
+    return rows
 
 
 async def _require_vehicle_site(db: AsyncSession, user: User, vehicle_id: int) -> None:

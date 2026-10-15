@@ -2,9 +2,8 @@
  * اجزای مشترک صفحه‌های وام (پرسنل و مدیریت): قالب مبلغ، چیپ وضعیت، مراحل تأیید، جدول اقساط،
  * فیلد مبلغ با جداکننده‌ی هزارگان و جست‌وجوی پرسنل.
  */
-import { useEffect, useState } from "react";
+import EmployeeSearchField from "../EmployeeSearchField";
 import {
-  Autocomplete,
   Box,
   Chip,
   Stack,
@@ -232,75 +231,9 @@ export function AmountField({ value, onChange, helperText, ...props }) {
   );
 }
 
-// جست‌وجوی پرسنل با fetcher(q) → [{id, label}]؛ value: {id, label} یا null
-export function EmployeeSearch({
-  fetcher,
-  value,
-  onChange,
-  label,
-  excludeIds = [],
-  size = "small",
-  sx,
-}) {
-  const [options, setOptions] = useState([]);
-  const [input, setInput] = useState("");
-  useEffect(() => {
-    let alive = true;
-    const t = setTimeout(() => {
-      fetcher(input)
-        .then(
-          (rows) =>
-            alive && setOptions(rows.filter((r) => !excludeIds.includes(r.id))),
-        )
-        .catch(() => alive && setOptions([]));
-    }, 300);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, JSON.stringify(excludeIds)]);
-  return (
-    <Autocomplete
-      size={size}
-      sx={sx}
-      options={
-        value && !options.some((o) => o.id === value.id)
-          ? [value, ...options]
-          : options
-      }
-      value={value}
-      filterOptions={(x) => x}
-      isOptionEqualToValue={(a, b) => a.id === b.id}
-      getOptionLabel={(o) => o?.label || ""}
-      getOptionDisabled={(o) => Boolean(o.disabled_reason)}
-      renderOption={(props, o) => (
-        <li {...props} key={o.id}>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            sx={{ width: "100%" }}
-            spacing={1}
-          >
-            <span>{o.label}</span>
-            {o.disabled_reason && (
-              <Typography variant="caption" color="error">
-                {o.disabled_reason}
-              </Typography>
-            )}
-          </Stack>
-        </li>
-      )}
-      onChange={(_, next) => onChange(next)}
-      onInputChange={(_, text, reason) => {
-        // بعد از انتخاب، MUI متن را به برچسب کامل «نام (کد)» برمی‌گرداند (reset)؛ آن را جست‌وجو نکن
-        if (reason !== "reset") setInput(text);
-      }}
-      noOptionsText="کسی پیدا نشد"
-      renderInput={(params) => <TextField {...params} label={label} />}
-    />
-  );
+// جست‌وجوی پرسنل با fetcher(q) → [{id, label}]؛ value: {id, label} یا null — همان EmployeeSearchField مشترک
+export function EmployeeSearch(props) {
+  return <EmployeeSearchField {...props} />;
 }
 
 const EVENT_LABELS = {

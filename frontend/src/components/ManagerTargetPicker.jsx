@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
-import { Autocomplete, Box, Chip, Stack, TextField, Typography } from "@mui/material";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Chip, Stack, Typography } from "@mui/material";
 import { fetchManagerCandidates } from "../api/evaluationStructure";
-import { searchFilterOptions } from "../utils/searchText";
+import { searchKey } from "../utils/searchText";
+import EmployeeSearchField from "./EmployeeSearchField";
 
 /**
  * انتخابگر افزودن فرد به فهرست ارزیابی یک مدیر.
  * ورودی: siteId (سایت)، managerEmployeeId (خودِ مدیر، از فهرست حذف می‌شود)، excludeIds (افراد از قبل افزوده‌شده)
- * و onSelect (با فرد انتخاب‌شده صدا زده می‌شود).
- * خروجی: چیپ‌های «سرپرستان بدون مدیر» برای افزودن سریع + Autocomplete جست‌وجو در کل پرسنل سایت.
+ * و onSelect (با فرد انتخاب‌شده — شیء خام نامزد از سرور — صدا زده می‌شود).
+ * خروجی: چیپ‌های «سرپرستان بدون مدیر» برای افزودن سریع + انتخابگر مشترک پرسنل (EmployeeSearchField) که
+ * فهرست نامزدهای از قبل بارگذاری‌شده را در کلاینت فیلتر می‌کند؛ ظاهر و رفتار همان بقیه‌ی انتخابگرهاست.
  * فردی که از قبل تحت ارزیابی مدیر دیگری است، در جست‌وجو غیرفعال و با برچسب «تحت ارزیابی [نام مدیر]» نمایش داده می‌شود.
  */
-export default function ManagerTargetPicker({ siteId, managerEmployeeId, excludeIds = [], onSelect }) {
-  const [candidates, setCandidates] = useState(null);  // فهرست نامزدها از سرور؛ null = هنوز بارگذاری نشده
+export default function ManagerTargetPicker({
+  siteId,
+  managerEmployeeId,
+  excludeIds = [],
+  onSelect,
+}) {
+  const [candidates, setCandidates] = useState(null); // فهرست نامزدها از سرور؛ null = هنوز بارگذاری نشده
 
   // با تغییر سایت، فهرست نامزدها دوباره دریافت می‌شود
   useEffect(() => {
@@ -21,13 +28,44 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
   // نامزدها بدون خودِ مدیر و بدون افراد از قبل افزوده‌شده
   const availableCandidates = useMemo(() => {
     if (!candidates) return [];
-    return candidates.filter((c) => c.id !== managerEmployeeId && !excludeIds.includes(c.id));
+    return candidates.filter(
+      (c) => c.id !== managerEmployeeId && !excludeIds.includes(c.id),
+    );
   }, [candidates, managerEmployeeId, excludeIds]);
 
   // سرپرستانی که هنوز زیر هیچ مدیری نیستند و خودشان مدیر نیستند
   const unassignedSupervisors = useMemo(
-    () => availableCandidates.filter((c) => c.supervisor_department_name && !c.evaluated_by_name && !c.is_manager),
-    [availableCandidates]
+    () =>
+      availableCandidates.filter(
+        (c) =>
+          c.supervisor_department_name && !c.evaluated_by_name && !c.is_manager,
+      ),
+    [availableCandidates],
+  );
+
+  // fetcher محلی برای EmployeeSearchField: به‌جای سرور، همان فهرست بارگذاری‌شده را با searchKey فیلتر می‌کند
+  // (نام، کد پرسنلی)؛ افراد تحت ارزیابی مدیر دیگر با disabled_reason غیرفعال می‌شوند
+  const localFetcher = useCallback(
+    async (q) => {
+      const key = searchKey(q);
+      return availableCandidates
+        .filter(
+          (c) =>
+            !key ||
+            searchKey(
+              `${c.first_name} ${c.last_name} ${c.personnel_code}`,
+            ).includes(key),
+        )
+        .map((c) => ({
+          id: c.id,
+          label: `${c.first_name} ${c.last_name} (${c.personnel_code})`,
+          employee: c,
+          disabled_reason: c.evaluated_by_name
+            ? `تحت ارزیابی ${c.evaluated_by_name}`
+            : undefined,
+        }));
+    },
+    [availableCandidates],
   );
 
   if (!candidates) return null;
@@ -37,7 +75,11 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
       {/* بخش افزودن سریع سرپرستان بدون مدیر */}
       {unassignedSupervisors.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mb: 0.5 }}
+          >
             سرپرستان بدون مدیر (افزودن سریع):
           </Typography>
           <Stack direction="row" flexWrap="wrap" useFlexGap>
@@ -56,31 +98,17 @@ export default function ManagerTargetPicker({ siteId, managerEmployeeId, exclude
         </Box>
       )}
 
-      {/* جست‌وجو در کل پرسنل؛ افراد تحت ارزیابی مدیر دیگر غیرفعال‌اند. value همیشه null است تا بعد از انتخاب خالی شود */}
-      <Autocomplete
-        filterOptions={searchFilterOptions}
-        options={availableCandidates}
-        getOptionLabel={(c) => `${c.first_name} ${c.last_name} (${c.personnel_code})`}
-        getOptionDisabled={(c) => Boolean(c.evaluated_by_name)}
-        renderOption={(props, c) => (
-          <Box component="li" {...props} key={c.id}>
-            <Stack>
-              <Typography variant="body2">
-                {c.first_name} {c.last_name} ({c.personnel_code})
-              </Typography>
-              {c.evaluated_by_name && (
-                <Typography variant="caption" color="error">
-                  تحت ارزیابی {c.evaluated_by_name}
-                </Typography>
-              )}
-            </Stack>
-          </Box>
-        )}
-        onChange={(_, value) => {
-          if (value) onSelect(value);
+      {/* جست‌وجو در کل پرسنل سایت؛ بعد از انتخاب فیلد خالی می‌شود (clearOnSelect).
+          excludeIds هم به فیلد داده می‌شود تا با تغییر فهرست، نتایج دوباره ساخته شوند */}
+      <EmployeeSearchField
+        fetcher={localFetcher}
+        fetcherKey={candidates}
+        excludeIds={[managerEmployeeId, ...excludeIds]}
+        clearOnSelect
+        onChange={(opt) => {
+          if (opt?.employee) onSelect(opt.employee);
         }}
-        value={null}
-        renderInput={(params) => <TextField {...params} label="جست‌وجو در کل پرسنل سایت" size="small" />}
+        label="جست‌وجو در کل پرسنل سایت"
       />
     </Box>
   );

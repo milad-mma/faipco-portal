@@ -37,9 +37,9 @@ import {
   fetchAllAttendanceLogs,
   updateAttendanceLog,
 } from "../api/attendance";
-import { fetchEmployees } from "../api/employees";
 import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
 import { useAuth } from "../context/AuthContext";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 import JalaliMonthYearFilter from "../components/JalaliMonthYearFilter";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
@@ -74,9 +74,9 @@ function LogEditDialog({
   preset,
   siteOptions,
 }) {
-  const [employee, setEmployee] = useState(null); // پرسنل انتخابی؛ در حالت edit همیشه null (پرسنل رکورد ثابت است)
-  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جستجوی پرسنل برای Autocomplete
-  const [employeeSearch, setEmployeeSearch] = useState(""); // متن جستجوی پرسنل
+  // پرسنل انتخابی؛ در حالت create گزینه‌ی {id, label, employee} از EmployeeSearchField، در createForSlot شیء preset،
+  // در حالت edit همیشه null (پرسنل رکورد ثابت است). برای ذخیره فقط .id لازم است
+  const [employee, setEmployee] = useState(null);
   const [logType, setLogType] = useState("check_in"); // نوع رکورد: check_in | check_out
   const [dateValue, setDateValue] = useState(new Date()); // تاریخ و ساعت رکورد
   const [site, setSite] = useState(null); // سایت انتخابی (اختیاری)
@@ -111,14 +111,6 @@ function LogEditDialog({
       setEmployee(null);
     }
   }, [open, mode, initialLog, preset, siteOptions]);
-
-  // جستجوی پرسنل برای حالت create (همه‌ی پرسنل؛ ثبت خودکار با اپ اندروید برای همه است)
-  useEffect(() => {
-    if (mode !== "create") return;
-    fetchEmployees({ search: employeeSearch, pageSize: 20 }).then((data) =>
-      setEmployeeOptions(data.items || []),
-    );
-  }, [mode, employeeSearch]);
 
   // اعتبارسنجی و ذخیره: در حالت edit رکورد را به‌روز می‌کند، در غیر این صورت رکورد جدید می‌سازد و onSaved را صدا می‌زند
   async function handleSave() {
@@ -165,7 +157,7 @@ function LogEditDialog({
       <DialogContent
         sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
       >
-        {/* پرسنل: فیلد غیرفعال (قفل‌شده) یا Autocomplete جستجو */}
+        {/* پرسنل: فیلد غیرفعال (قفل‌شده) یا انتخابگر مشترک پرسنل (همه‌ی پرسنل؛ ثبت خودکار با اپ اندروید برای همه است) */}
         {employeeIsLocked ? (
           <TextField
             label="پرسنل"
@@ -177,24 +169,12 @@ function LogEditDialog({
             disabled
           />
         ) : (
-          <Autocomplete
-            filterOptions={searchFilterOptions}
-            options={employeeOptions}
-            getOptionLabel={(o) =>
-              `${o.first_name} ${o.last_name} (${o.personnel_code})`
-            }
+          <EmployeeSearchField
+            size="medium"
             value={employee}
-            onChange={(_, value) => setEmployee(value)}
-            onInputChange={(_, value) => setEmployeeSearch(value)}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="پرسنل (فقط دارای دسترسی ثبت ورود/خروج)"
-                autoFocus
-              />
-            )}
-            isOptionEqualToValue={(o, v) => o.id === v.id}
-            noOptionsText="پرسنلی با این مشخصات (و دسترسی ثبت ورود/خروج) پیدا نشد"
+            onChange={(value) => setEmployee(value)}
+            label="پرسنل"
+            autoFocus
           />
         )}
 
@@ -329,8 +309,6 @@ export default function ClockInOutReportPage() {
   const [selectedSiteId, setSelectedSiteId] = useState(null); // فیلتر سایت
   const [period, setPeriod] = useState({ year: null, month: null }); // ماه شمسی انتخابی؛ null = ماه جاری از سرور
 
-  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جستجوی پرسنل برای فیلتر
-  const [employeeSearch, setEmployeeSearch] = useState(""); // متن جستجوی پرسنل
   const [siteOptions, setSiteOptions] = useState([]); // سایت‌های قابل انتخاب در دیالوگ ثبت/ویرایش
 
   const [dialogMode, setDialogMode] = useState(null); // "create" | "createForSlot" | "edit" | null (بسته)
@@ -392,20 +370,6 @@ export default function ClockInOutReportPage() {
     period.month,
     reloadKey,
   ]);
-
-  // جستجوی پرسنل برای فیلتر بالای صفحه؛ با تأخیر ۳۰۰ میلی‌ثانیه بعد از آخرین حرف (نه یک درخواست برای هر حرف)
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      fetchEmployees({ search: employeeSearch, pageSize: 20 })
-        .then((data) => !cancelled && setEmployeeOptions(data.items || []))
-        .catch(() => {});
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [employeeSearch]);
 
   // سایت‌های قابل انتخاب در دیالوگ: فقط سایت‌هایی که کاربر برایشان مجوز مدیریت رکورد دارد
   // (اگر مجوز بدون محدودیت سایت باشد، همه‌ی سایت‌ها)
@@ -525,23 +489,15 @@ export default function ClockInOutReportPage() {
             setPage(1);
           }}
         />
-        <Autocomplete
-          filterOptions={searchFilterOptions}
+        {/* فیلتر پرسنل با انتخابگر مشترک؛ فقط .id گزینه برای درخواست لاگ‌ها لازم است */}
+        <EmployeeSearchField
           sx={{ minWidth: 260 }}
-          options={employeeOptions}
-          getOptionLabel={(o) =>
-            `${o.first_name} ${o.last_name} (${o.personnel_code})`
-          }
           value={selectedEmployee}
-          onChange={(_, value) => {
+          onChange={(value) => {
             setSelectedEmployee(value);
             setPage(1);
           }}
-          onInputChange={(_, value) => setEmployeeSearch(value)}
-          renderInput={(params) => (
-            <TextField {...params} label="فیلتر بر اساس پرسنل" size="small" />
-          )}
-          isOptionEqualToValue={(o, v) => o.id === v.id}
+          label="فیلتر بر اساس پرسنل"
         />
         <JalaliMonthYearFilter
           year={period.year}

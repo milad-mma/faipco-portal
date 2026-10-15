@@ -17,7 +17,6 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
-  InputAdornment,
   MenuItem,
   Stack,
   Switch,
@@ -33,7 +32,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import CleaningServicesOutlinedIcon from "@mui/icons-material/CleaningServicesOutlined";
 import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
@@ -51,6 +49,8 @@ import { fetchDepartments } from "../api/departments";
 import { fetchSites } from "../api/sites";
 import { monoFontSx } from "../theme";
 import { useAuth } from "../context/AuthContext";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 
 // ستون‌های جدول پرسنل؛ key همان مقدار sort_by ارسالی به سرور است (مطابق نگاشت _SORT_COLUMNS در بک‌اند).
 // مرتب‌سازی و صفحه‌بندی هر دو سمت سرور انجام می‌شوند.
@@ -64,7 +64,7 @@ const EMPLOYEE_COLUMNS = [
   { key: "is_enabled", label: "فعال در پرتال", align: "center" },
 ];
 
-const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];  // گزینه‌های تعداد سطر در هر صفحه
+const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]; // گزینه‌های تعداد سطر در هر صفحه
 
 // دیالوگ تعیین یا حذف رمز عبور اختصاصی یک پرسنل.
 // ورودی: پرسنل (null = بسته)، onClose و onChanged که پس از هر تغییر موفق صدا زده می‌شود.
@@ -72,9 +72,9 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");  // پیام موفقیت؛ پس از موفقیت فرم پنهان می‌شود
+  const [success, setSuccess] = useState(""); // پیام موفقیت؛ پس از موفقیت فرم پنهان می‌شود
   const [isSaving, setIsSaving] = useState(false);
-  const [unlockMessage, setUnlockMessage] = useState(null);  // { success, message } نتیجه‌ی رفع قفل ورود
+  const [unlockMessage, setUnlockMessage] = useState(null); // { success, message } نتیجه‌ی رفع قفل ورود
 
   // رفع قفل موقت ورود (بعد از تلاش‌های ناموفق پیاپی)
   async function handleUnlock() {
@@ -83,10 +83,15 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
       const { unlocked } = await unlockEmployeeLogin(employee.id);
       setUnlockMessage({
         success: true,
-        message: unlocked ? "قفل ورود این پرسنل برداشته شد و می‌تواند دوباره وارد شود." : "ورود این پرسنل قفل نبود.",
+        message: unlocked
+          ? "قفل ورود این پرسنل برداشته شد و می‌تواند دوباره وارد شود."
+          : "ورود این پرسنل قفل نبود.",
       });
     } catch (err) {
-      setUnlockMessage({ success: false, message: err.response?.data?.detail || "رفع قفل ورود ناموفق بود." });
+      setUnlockMessage({
+        success: false,
+        message: err.response?.data?.detail || "رفع قفل ورود ناموفق بود.",
+      });
     }
   }
 
@@ -104,8 +109,15 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
   // رمز جدید را اعتبارسنجی (حداقل ۱۰ کاراکتر با حرف کوچک، بزرگ و عدد؛ برابر با تکرار) و روی سرور ثبت می‌کند
   async function handleSave() {
     setError("");
-    if (password.length < 10 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-      setError("رمز عبور باید حداقل ۱۰ کاراکتر باشد و شامل حرف کوچک، حرف بزرگ، و عدد باشد.");
+    if (
+      password.length < 10 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      setError(
+        "رمز عبور باید حداقل ۱۰ کاراکتر باشد و شامل حرف کوچک، حرف بزرگ، و عدد باشد.",
+      );
       return;
     }
     if (password !== confirmPassword) {
@@ -116,7 +128,7 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
     try {
       await setEmployeePassword(employee.id, password);
       setSuccess(
-        "رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — روش قبلی ورود دیگر کار نمی‌کند. این پرسنل بعد از اولین ورود موفق، مجبور به تعیین یک رمز جدید (که فقط خودش می‌داند) خواهد شد."
+        "رمز عبور با موفقیت تنظیم شد. از این پس ورود این پرسنل فقط با «کد پرسنلی + این رمز» ممکن است — روش قبلی ورود دیگر کار نمی‌کند. این پرسنل بعد از اولین ورود موفق، مجبور به تعیین یک رمز جدید (که فقط خودش می‌داند) خواهد شد.",
       );
       onChanged?.();
     } catch (err) {
@@ -128,12 +140,19 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 
   // پس از تأیید، رمز اختصاصی را حذف و ورود پرسنل را به روش پیش‌فرض برمی‌گرداند
   async function handleReset() {
-    if (!window.confirm("رمز عبور اختصاصی این پرسنل حذف شود و روش ورود پیش‌فرض دوباره فعال شود؟")) return;
+    if (
+      !window.confirm(
+        "رمز عبور اختصاصی این پرسنل حذف شود و روش ورود پیش‌فرض دوباره فعال شود؟",
+      )
+    )
+      return;
     setIsSaving(true);
     setError("");
     try {
       await resetEmployeePassword(employee.id);
-      setSuccess("بازگردانده شد — این پرسنل از این پس دوباره با روش ورود پیش‌فرض وارد می‌شود.");
+      setSuccess(
+        "بازگردانده شد — این پرسنل از این پس دوباره با روش ورود پیش‌فرض وارد می‌شود.",
+      );
       onChanged?.();
     } catch (err) {
       setError(err.response?.data?.detail || "بازگرداندن با خطا مواجه شد.");
@@ -148,10 +167,14 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         رمز عبور ورود — {employee.first_name} {employee.last_name}
         <Typography variant="caption" color="text.secondary" display="block">
           کد پرسنلی: {employee.personnel_code} — روش فعلی ورود:{" "}
-          {employee.has_custom_password ? "رمز عبور اختصاصی" : "روش پیش‌فرض (بدون رمز اختصاصی)"}
+          {employee.has_custom_password
+            ? "رمز عبور اختصاصی"
+            : "روش پیش‌فرض (بدون رمز اختصاصی)"}
         </Typography>
       </DialogTitle>
-      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+      <DialogContent
+        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
+      >
         {/* فیلدهای رمز جدید و تکرار آن؛ پس از موفقیت پنهان می‌شوند */}
         {!success && (
           <>
@@ -176,7 +199,10 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         {error && <Alert severity="error">{error}</Alert>}
         {success && <Alert severity="success">{success}</Alert>}
         {unlockMessage && (
-          <Alert severity={unlockMessage.success ? "success" : "error"} sx={{ mt: 1.5 }}>
+          <Alert
+            severity={unlockMessage.success ? "success" : "error"}
+            sx={{ mt: 1.5 }}
+          >
             {unlockMessage.message}
           </Alert>
         )}
@@ -196,7 +222,11 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
         <Box>
           <Button onClick={onClose}>{success ? "بستن" : "انصراف"}</Button>
           {!success && (
-            <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={isSaving}
+            >
               {isSaving ? "در حال ذخیره..." : "ذخیره رمز عبور"}
             </Button>
           )}
@@ -211,22 +241,24 @@ function SetPasswordDialog({ employee, onClose, onChanged }) {
 export default function EmployeesPage() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
-  const [total, setTotal] = useState(0);  // تعداد کل نتایج برای صفحه‌بندی
+  const [total, setTotal] = useState(0); // تعداد کل نتایج برای صفحه‌بندی
   const [sites, setSites] = useState([]);
-  const [selectedSite, setSelectedSite] = useState("");  // خالی = همه‌ی سایت‌ها
+  const [selectedSite, setSelectedSite] = useState(""); // خالی = همه‌ی سایت‌ها
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);  // نمایش پرسنلی که در منبع Sync غیرفعال شده‌اند
+  // متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه به سرور می‌رود تا با هر حرف یک درخواست نرود
+  const debouncedSearch = useDebounced(search, 300);
+  const [showInactive, setShowInactive] = useState(false); // نمایش پرسنلی که در منبع Sync غیرفعال شده‌اند
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupPreview, setCleanupPreview] = useState(null); // { count, items } | null
   const [isCleanupLoading, setIsCleanupLoading] = useState(false);
   const [isCleanupDeleting, setIsCleanupDeleting] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState(null);  // { success, message } | null
+  const [cleanupResult, setCleanupResult] = useState(null); // { success, message } | null
   const [isLoading, setIsLoading] = useState(true);
-  const [togglingId, setTogglingId] = useState(null);  // شناسه‌ی پرسنلی که تغییر وضعیتش در جریان است
-  const [passwordEmployee, setPasswordEmployee] = useState(null);  // پرسنلی که دیالوگ رمزش باز است
+  const [togglingId, setTogglingId] = useState(null); // شناسه‌ی پرسنلی که تغییر وضعیتش در جریان است
+  const [passwordEmployee, setPasswordEmployee] = useState(null); // پرسنلی که دیالوگ رمزش باز است
   const [sortBy, setSortBy] = useState("personnel_code");
   const [sortDir, setSortDir] = useState("asc");
-  const [page, setPage] = useState(0);  // شماره‌ی صفحه از صفر (به سرور page + 1 فرستاده می‌شود)
+  const [page, setPage] = useState(0); // شماره‌ی صفحه از صفر (به سرور page + 1 فرستاده می‌شود)
   const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE_OPTIONS[0]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
@@ -251,7 +283,7 @@ export default function EmployeesPage() {
     setIsLoading(true);
     return fetchEmployees({
       siteId: selectedSite || undefined,
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       includeInactive: showInactive,
       includePortalDisabled: true, // پنل Admin همیشه پرسنل با پرتال غیرفعال را هم باید ببیند تا بتواند دوباره فعالشان کند
       page: page + 1,
@@ -270,14 +302,21 @@ export default function EmployeesPage() {
   useEffect(() => {
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSite, search, showInactive]);
+  }, [selectedSite, debouncedSearch, showInactive]);
 
-  // بارگذاری پرسنل با تأخیر ۳۰۰ میلی‌ثانیه پس از هر تغییر فیلتر، مرتب‌سازی یا صفحه (debounce)
+  // بارگذاری پرسنل پس از هر تغییر فیلتر، جست‌وجوی تأخیردار، مرتب‌سازی یا صفحه
   useEffect(() => {
-    const timer = setTimeout(loadEmployees, 300);
-    return () => clearTimeout(timer);
+    loadEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSite, search, showInactive, sortBy, sortDir, page, rowsPerPage]);
+  }, [
+    selectedSite,
+    debouncedSearch,
+    showInactive,
+    sortBy,
+    sortDir,
+    page,
+    rowsPerPage,
+  ]);
 
   // پس از تأیید، دسترسی پرسنل به پرتال را فعال/غیرفعال می‌کند (مستقل از Sync)
   async function handleToggleEnabled(employee) {
@@ -286,7 +325,7 @@ export default function EmployeesPage() {
       !window.confirm(
         nextEnabled
           ? `${employee.first_name} ${employee.last_name} در پرتال دوباره فعال شود؟`
-          : `${employee.first_name} ${employee.last_name} در پرتال غیرفعال شود؟ این پرسنل دیگر نمی‌تواند وارد پنل شود — این تنظیم مستقل از Sync است و با سینک بعدی تغییر نمی‌کند.`
+          : `${employee.first_name} ${employee.last_name} در پرتال غیرفعال شود؟ این پرسنل دیگر نمی‌تواند وارد پنل شود — این تنظیم مستقل از Sync است و با سینک بعدی تغییر نمی‌کند.`,
       )
     ) {
       return;
@@ -297,7 +336,9 @@ export default function EmployeesPage() {
       // فقط is_enabled از پاسخ ادغام می‌شود، چون پاسخ PATCH فیلدهای site_name/department_name را ندارد
       // (این دو فقط در GET فهرست با Join برمی‌گردند) و جایگزینی کامل آن‌ها را null می‌کرد
       setEmployees((prev) =>
-        prev.map((e) => (e.id === employee.id ? { ...e, is_enabled: updated.is_enabled } : e))
+        prev.map((e) =>
+          e.id === employee.id ? { ...e, is_enabled: updated.is_enabled } : e,
+        ),
       );
     } finally {
       setTogglingId(null);
@@ -313,7 +354,10 @@ export default function EmployeesPage() {
       const data = await previewOrphanedInactiveCleanup();
       setCleanupPreview(data);
     } catch (err) {
-      setCleanupResult({ success: false, message: err.response?.data?.detail || "بررسی با خطا مواجه شد." });
+      setCleanupResult({
+        success: false,
+        message: err.response?.data?.detail || "بررسی با خطا مواجه شد.",
+      });
     } finally {
       setIsCleanupLoading(false);
     }
@@ -321,18 +365,28 @@ export default function EmployeesPage() {
 
   // پس از تأیید، پرسنل غیرفعال بدون سابقه را حذف قطعی و نتیجه را نمایش می‌دهد
   async function handleExecuteCleanup() {
-    if (!window.confirm(`${cleanupPreview.count} پرسنل برای همیشه حذف می‌شوند. این عمل قابل‌بازگشت نیست. مطمئن هستید؟`)) {
+    if (
+      !window.confirm(
+        `${cleanupPreview.count} پرسنل برای همیشه حذف می‌شوند. این عمل قابل‌بازگشت نیست. مطمئن هستید؟`,
+      )
+    ) {
       return;
     }
     setIsCleanupDeleting(true);
     try {
       const { deleted_count } = await executeOrphanedInactiveCleanup();
-      setCleanupResult({ success: true, message: `${deleted_count} پرسنل بدون سابقه حذف شدند.` });
+      setCleanupResult({
+        success: true,
+        message: `${deleted_count} پرسنل بدون سابقه حذف شدند.`,
+      });
       setCleanupPreview(null);
       // اگر پرسنل غیرفعال در حال نمایش‌اند، فهرست بازخوانی می‌شود تا حذف‌شده‌ها دیده نشوند
       if (showInactive) loadEmployees();
     } catch (err) {
-      setCleanupResult({ success: false, message: err.response?.data?.detail || "حذف با خطا مواجه شد." });
+      setCleanupResult({
+        success: false,
+        message: err.response?.data?.detail || "حذف با خطا مواجه شد.",
+      });
     } finally {
       setIsCleanupDeleting(false);
     }
@@ -340,38 +394,50 @@ export default function EmployeesPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        sx={{ mb: 3 }}
+      >
         <Box>
           <Typography variant="h5" fontWeight={700}>
             پرسنل
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها (از طریق Mapping تعریف‌شده در صفحه «سایت‌ها»).
-            برای دادن دسترسی به کسی، از صفحه «مدیریت دسترسی» استفاده کنید.
+            فهرست پرسنل سینک‌شده از دیتابیس‌های سایت‌ها (از طریق Mapping
+            تعریف‌شده در صفحه «سایت‌ها»). برای دادن دسترسی به کسی، از صفحه
+            «مدیریت دسترسی» استفاده کنید.
           </Typography>
         </Box>
         {user?.can_create_employees && (
-          <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ flexShrink: 0 }}>
+          <Button
+            variant="contained"
+            startIcon={<PersonAddOutlinedIcon />}
+            onClick={() => setAddDialogOpen(true)}
+            sx={{ flexShrink: 0 }}
+          >
             افزودن دستی پرسنل
           </Button>
         )}
       </Stack>
 
       {/* نوار ابزار: جستجو، فیلتر سایت، نمایش غیرفعال‌ها و دکمه‌ی پاک‌سازی */}
-      <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-        <TextField
-          size="small"
-          placeholder="جستجو بر اساس نام، کد پرسنلی یا کد ملی..."
+      <Box
+        sx={{
+          display: "flex",
+          gap: 2,
+          mb: 2,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <SearchField
+          placeholder="جست‌وجوی نام، کد پرسنلی یا کد ملی…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={setSearch}
+          fullWidth={false}
           sx={{ minWidth: 280, flexGrow: 1 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlinedIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
         />
         <TextField
           select
@@ -389,7 +455,12 @@ export default function EmployeesPage() {
           ))}
         </TextField>
         <FormControlLabel
-          control={<Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />}
+          control={
+            <Checkbox
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+          }
           label={
             <Tooltip title="پرسنلی که قبلاً وارد پرتال شده بودند ولی بعداً در دیتابیس مبدأ (طبق Mapping) غیرفعال/کات اعلام شدند — سوابقشان (فیش حقوقی و...) حفظ می‌شود، پیش‌فرض از این لیست کنار گذاشته می‌شوند. پرسنلی که اصلاً هرگز فعال نبوده‌اند، از ابتدا وارد پرتال نمی‌شوند و اینجا هم دیده نمی‌شوند.">
               <span>نمایش پرسنل غیرفعال (Sync)</span>
@@ -440,7 +511,11 @@ export default function EmployeesPage() {
               {!isLoading && employees.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={EMPLOYEE_COLUMNS.length + 1}>
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ py: 3, textAlign: "center" }}
+                    >
                       {search
                         ? "با این عبارت جستجو، پرسنلی یافت نشد."
                         : "هیچ پرسنلی یافت نشد. ابتدا از بخش «همگام‌سازی دیتابیس»، همگام‌سازی را اجرا کنید."}
@@ -452,29 +527,51 @@ export default function EmployeesPage() {
                 <TableRow
                   key={emp.id}
                   hover
-                  sx={!emp.is_enabled || !emp.is_active ? { opacity: 0.6 } : undefined}
+                  sx={
+                    !emp.is_enabled || !emp.is_active
+                      ? { opacity: 0.6 }
+                      : undefined
+                  }
                 >
                   <TableCell sx={monoFontSx}>{emp.personnel_code}</TableCell>
                   <TableCell>
                     {emp.first_name} {emp.last_name}
                     {!emp.is_active && (
-                      <Chip size="small" variant="outlined" label="غیرفعال" sx={{ mr: 1 }} />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label="غیرفعال"
+                        sx={{ mr: 1 }}
+                      />
                     )}
                   </TableCell>
-                  <TableCell sx={monoFontSx}>{emp.national_code || "—"}</TableCell>
+                  <TableCell sx={monoFontSx}>
+                    {emp.national_code || "—"}
+                  </TableCell>
                   <TableCell sx={monoFontSx}>{emp.mobile || "—"}</TableCell>
                   <TableCell>{emp.site_name || emp.site_id}</TableCell>
                   <TableCell>{emp.department_name || "—"}</TableCell>
                   {/* وضعیت و کلید فعال بودن در پرتال */}
                   <TableCell align="center">
-                    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      justifyContent="center"
+                    >
                       <Chip
                         size="small"
                         label={emp.is_enabled ? "فعال" : "غیرفعال"}
                         color={emp.is_enabled ? "success" : "error"}
                         variant="outlined"
                       />
-                      <Tooltip title={emp.is_enabled ? "غیرفعال کردن در پرتال" : "فعال کردن در پرتال"}>
+                      <Tooltip
+                        title={
+                          emp.is_enabled
+                            ? "غیرفعال کردن در پرتال"
+                            : "فعال کردن در پرتال"
+                        }
+                      >
                         <span>
                           <Switch
                             size="small"
@@ -487,11 +584,22 @@ export default function EmployeesPage() {
                     </Stack>
                   </TableCell>
                   <TableCell align="center">
-                    <Tooltip title={emp.has_custom_password ? "دارای رمز عبور اختصاصی" : "تعیین رمز عبور"}>
-                      <IconButton size="small" onClick={() => setPasswordEmployee(emp)}>
+                    <Tooltip
+                      title={
+                        emp.has_custom_password
+                          ? "دارای رمز عبور اختصاصی"
+                          : "تعیین رمز عبور"
+                      }
+                    >
+                      <IconButton
+                        size="small"
+                        onClick={() => setPasswordEmployee(emp)}
+                      >
                         <LockResetOutlinedIcon
                           fontSize="small"
-                          color={emp.has_custom_password ? "primary" : "inherit"}
+                          color={
+                            emp.has_custom_password ? "primary" : "inherit"
+                          }
                         />
                       </IconButton>
                     </Tooltip>
@@ -515,7 +623,9 @@ export default function EmployeesPage() {
           }}
           rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
           labelRowsPerPage="سطر در هر صفحه"
-          labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}–${to} از ${count}`
+          }
         />
       </Card>
 
@@ -527,14 +637,21 @@ export default function EmployeesPage() {
       />
 
       {/* دیالوگ پاک‌سازی پرسنل غیرفعال بدون سابقه: توضیح، پیش‌نمایش و حذف */}
-      <Dialog open={cleanupDialogOpen} onClose={() => setCleanupDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={cleanupDialogOpen}
+        onClose={() => setCleanupDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>پاک‌سازی پرسنل غیرفعال بدون سابقه</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            پرسنلی که <strong>هیچ سابقه‌ای</strong> در پرتال ندارند (نه فیش حقوقی، نه فیش کارکرد، نه
-            ورود/خروج، نه Session آنلاین، نه حساب کاربری با رمز اختصاصی، نه خواندن هیچ اطلاعیه‌ای) —
-            احتمالاً هرگز واقعاً فعال نبوده‌اند، فقط قبل از رفع باگ Sync اشتباهاً وارد پرتال شده بودند.
-            پرسنلی که حتی یک نشانه از فعالیت واقعی داشته باشد، هرگز حذف نمی‌شود.
+            پرسنلی که <strong>هیچ سابقه‌ای</strong> در پرتال ندارند (نه فیش
+            حقوقی، نه فیش کارکرد، نه ورود/خروج، نه Session آنلاین، نه حساب
+            کاربری با رمز اختصاصی، نه خواندن هیچ اطلاعیه‌ای) — احتمالاً هرگز
+            واقعاً فعال نبوده‌اند، فقط قبل از رفع باگ Sync اشتباهاً وارد پرتال
+            شده بودند. پرسنلی که حتی یک نشانه از فعالیت واقعی داشته باشد، هرگز
+            حذف نمی‌شود.
           </DialogContentText>
 
           {isCleanupLoading && (
@@ -575,23 +692,30 @@ export default function EmployeesPage() {
             </>
           )}
           {cleanupResult && (
-            <Alert severity={cleanupResult.success ? "success" : "error"} sx={{ mt: 2 }}>
+            <Alert
+              severity={cleanupResult.success ? "success" : "error"}
+              sx={{ mt: 2 }}
+            >
               {cleanupResult.message}
             </Alert>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCleanupDialogOpen(false)}>بستن</Button>
-          {cleanupPreview && cleanupPreview.count > 0 && !cleanupResult?.success && (
-            <Button
-              color="error"
-              variant="contained"
-              disabled={isCleanupDeleting}
-              onClick={handleExecuteCleanup}
-            >
-              {isCleanupDeleting ? "در حال حذف..." : `حذف قطعی ${cleanupPreview.count} پرسنل`}
-            </Button>
-          )}
+          {cleanupPreview &&
+            cleanupPreview.count > 0 &&
+            !cleanupResult?.success && (
+              <Button
+                color="error"
+                variant="contained"
+                disabled={isCleanupDeleting}
+                onClick={handleExecuteCleanup}
+              >
+                {isCleanupDeleting
+                  ? "در حال حذف..."
+                  : `حذف قطعی ${cleanupPreview.count} پرسنل`}
+              </Button>
+            )}
         </DialogActions>
       </Dialog>
 
@@ -620,7 +744,7 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
   const [lastName, setLastName] = useState("");
   const [siteId, setSiteId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [departments, setDepartments] = useState([]);  // واحدهای سایت انتخاب‌شده
+  const [departments, setDepartments] = useState([]); // واحدهای سایت انتخاب‌شده
   const [nationalCode, setNationalCode] = useState("");
   const [mobile, setMobile] = useState("");
   const [positionTitle, setPositionTitle] = useState("");
@@ -653,7 +777,12 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
     fetchDepartments(siteId).then(setDepartments);
   }, [siteId]);
 
-  const canSave = personnelCode.trim() && firstName.trim() && lastName.trim() && siteId && !isSaving;  // کد پرسنلی، نام، نام خانوادگی و سایت الزامی‌اند
+  const canSave =
+    personnelCode.trim() &&
+    firstName.trim() &&
+    lastName.trim() &&
+    siteId &&
+    !isSaving; // کد پرسنلی، نام، نام خانوادگی و سایت الزامی‌اند
 
   // پرسنل جدید را با فیلدهای فرم (اختیاری‌های خالی = null) روی سرور ثبت می‌کند
   async function handleSave() {
@@ -684,13 +813,24 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
       <DialogTitle>افزودن دستی پرسنل</DialogTitle>
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
-          فقط برای پرسنلی استفاده کنید که واقعاً در دیتابیس مبدأ سایت (Sync) وجود ندارد. اگر بعداً
-          همین کد پرسنلی در همان سایت از طریق Sync هم دیده شود، اطلاعاتش به‌طور خودکار به‌روزرسانی می‌شود.
+          فقط برای پرسنلی استفاده کنید که واقعاً در دیتابیس مبدأ سایت (Sync)
+          وجود ندارد. اگر بعداً همین کد پرسنلی در همان سایت از طریق Sync هم دیده
+          شود، اطلاعاتش به‌طور خودکار به‌روزرسانی می‌شود.
         </Alert>
         <Stack spacing={2}>
           <Stack direction="row" spacing={2}>
-            <TextField label="نام" value={firstName} onChange={(e) => setFirstName(e.target.value)} fullWidth />
-            <TextField label="نام خانوادگی" value={lastName} onChange={(e) => setLastName(e.target.value)} fullWidth />
+            <TextField
+              label="نام"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="نام خانوادگی"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              fullWidth
+            />
           </Stack>
           <TextField
             label="کد پرسنلی"
@@ -699,7 +839,13 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
             fullWidth
             helperText="باید در همان سایت منحصربه‌فرد باشد"
           />
-          <TextField select label="سایت" value={siteId} onChange={(e) => setSiteId(e.target.value)} fullWidth>
+          <TextField
+            select
+            label="سایت"
+            value={siteId}
+            onChange={(e) => setSiteId(e.target.value)}
+            fullWidth
+          >
             {sites.map((site) => (
               <MenuItem key={site.id} value={site.id}>
                 {site.name}
@@ -721,10 +867,25 @@ function AddEmployeeDialog({ open, onClose, sites, onCreated }) {
               </MenuItem>
             ))}
           </TextField>
-          <TextField label="سمت (اختیاری)" value={positionTitle} onChange={(e) => setPositionTitle(e.target.value)} fullWidth />
+          <TextField
+            label="سمت (اختیاری)"
+            value={positionTitle}
+            onChange={(e) => setPositionTitle(e.target.value)}
+            fullWidth
+          />
           <Stack direction="row" spacing={2}>
-            <TextField label="کد ملی (اختیاری)" value={nationalCode} onChange={(e) => setNationalCode(e.target.value)} fullWidth />
-            <TextField label="موبایل (اختیاری)" value={mobile} onChange={(e) => setMobile(e.target.value)} fullWidth />
+            <TextField
+              label="کد ملی (اختیاری)"
+              value={nationalCode}
+              onChange={(e) => setNationalCode(e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="موبایل (اختیاری)"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              fullWidth
+            />
           </Stack>
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>

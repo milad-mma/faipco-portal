@@ -25,6 +25,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import BackLink from "../components/BackLink";
+import SearchField from "../components/SearchField";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
 import { useAuth } from "../context/AuthContext";
@@ -36,11 +37,21 @@ import {
   fetchAllLeaveRequestsForSite,
   fetchLeaveRequestTypes,
 } from "../api/leaveRequestsAdmin";
-import { matchesSearch } from "../utils/searchText";
+import useDebounced from "../hooks/useDebounced";
 
 // برچسب و رنگ چیپ هر وضعیت درخواست
-const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
-const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
+const STATUS_LABELS = {
+  pending: "در حال بررسی",
+  approved: "تائید شده",
+  rejected: "رد شده",
+  cancelled: "ابطال شده",
+};
+const STATUS_COLORS = {
+  pending: "warning",
+  approved: "success",
+  rejected: "error",
+  cancelled: "default",
+};
 
 // ساعت فشرده‌ی عددی (مثلاً 830) را به رشته‌ی «08:30» تبدیل می‌کند؛ null -> خط تیره
 function formatCompactTime(compact) {
@@ -53,7 +64,12 @@ function formatCompactTime(compact) {
 // آیا امروز جزو بازه‌ی خودِ مرخصی/ماموریت است (نه تاریخ ثبت)؛ ساعتی: تاریخ شروع = امروز، روزانه: امروز بین شروع و پایان.
 // درخواست‌های رد/ابطال‌شده هرگز «امروز فعال» نیستند.
 function isRequestActiveToday(item) {
-  if (item.status === "rejected" || item.status === "cancelled" || !item.start_date) return false;
+  if (
+    item.status === "rejected" ||
+    item.status === "cancelled" ||
+    !item.start_date
+  )
+    return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (item.start_hour != null) {
@@ -94,8 +110,10 @@ function toDateOnly(date) {
 function formatDuration(item) {
   if (item.is_forgotten_punch) return "—";
   if (item.start_hour != null && item.end_hour != null) {
-    const startMinutes = Math.floor(item.start_hour / 100) * 60 + (item.start_hour % 100);
-    const endMinutes = Math.floor(item.end_hour / 100) * 60 + (item.end_hour % 100);
+    const startMinutes =
+      Math.floor(item.start_hour / 100) * 60 + (item.start_hour % 100);
+    const endMinutes =
+      Math.floor(item.end_hour / 100) * 60 + (item.end_hour % 100);
     const diff = endMinutes - startMinutes;
     if (diff <= 0) return "—";
     const h = Math.floor(diff / 60);
@@ -127,7 +145,13 @@ function EditableText({ value, onSave, multiline }) {
           setDraft(value || "");
           setEditing(true);
         }}
-        sx={{ cursor: "pointer", minHeight: 24, "&:hover": { bgcolor: "action.hover" }, borderRadius: 1, px: 0.5 }}
+        sx={{
+          cursor: "pointer",
+          minHeight: 24,
+          "&:hover": { bgcolor: "action.hover" },
+          borderRadius: 1,
+          px: 0.5,
+        }}
       >
         {value || "—"}
       </Box>
@@ -146,10 +170,19 @@ function EditableText({ value, onSave, multiline }) {
           if (e.key === "Escape") setEditing(false);
         }}
       />
-      <IconButton size="small" color="success" disabled={saving} onClick={handleSave}>
+      <IconButton
+        size="small"
+        color="success"
+        disabled={saving}
+        onClick={handleSave}
+      >
         <CheckOutlinedIcon fontSize="small" />
       </IconButton>
-      <IconButton size="small" onClick={() => setEditing(false)} disabled={saving}>
+      <IconButton
+        size="small"
+        onClick={() => setEditing(false)}
+        disabled={saving}
+      >
         <CloseOutlinedIcon fontSize="small" />
       </IconButton>
     </Stack>
@@ -176,7 +209,13 @@ function EditableSelect({ value, options, onSave, renderValue }) {
     return (
       <Box
         onClick={() => setEditing(true)}
-        sx={{ cursor: "pointer", minHeight: 24, "&:hover": { bgcolor: "action.hover" }, borderRadius: 1, px: 0.5 }}
+        sx={{
+          cursor: "pointer",
+          minHeight: 24,
+          "&:hover": { bgcolor: "action.hover" },
+          borderRadius: 1,
+          px: 0.5,
+        }}
       >
         {renderValue(value)}
       </Box>
@@ -210,7 +249,8 @@ function EditableSelect({ value, options, onSave, renderValue }) {
 // متن بازه‌ی یک درخواست: ساعتی «شروع تا پایان»، روزانه «تاریخ تا تاریخ»؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد)
 function rangeLabel(item) {
   const fa = (d) => (d ? new Date(d).toLocaleDateString("fa-IR") : "—");
-  if (item.is_forgotten_punch) return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
+  if (item.is_forgotten_punch)
+    return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
   return item.start_hour != null
     ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
     : `${fa(item.start_date)} تا ${fa(item.end_date)}`;
@@ -218,7 +258,9 @@ function rangeLabel(item) {
 
 // برچسب چیپ وضعیت؛ تردد فراموش‌شده‌ی منتظر مسئول نیروی انسانی برچسب جدا دارد
 function statusChipLabel(item) {
-  return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
+  return item.awaiting_hr
+    ? "در انتظار منابع انسانی"
+    : STATUS_LABELS[item.status];
 }
 
 /**
@@ -231,17 +273,31 @@ function EditableTimeRange({ item, onSave }) {
   const isPunch = Boolean(item.is_forgotten_punch); // تردد فراموش‌شده
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [startDate, setStartDate] = useState(item.start_date ? new Date(item.start_date) : new Date());
-  const [endDate, setEndDate] = useState(item.end_date ? new Date(item.end_date) : new Date());
-  const [startTimeStr, setStartTimeStr] = useState(compactTimeToString(item.start_hour) || "08:00");
-  const [endTimeStr, setEndTimeStr] = useState(compactTimeToString(item.end_hour) || "10:00");
+  const [startDate, setStartDate] = useState(
+    item.start_date ? new Date(item.start_date) : new Date(),
+  );
+  const [endDate, setEndDate] = useState(
+    item.end_date ? new Date(item.end_date) : new Date(),
+  );
+  const [startTimeStr, setStartTimeStr] = useState(
+    compactTimeToString(item.start_hour) || "08:00",
+  );
+  const [endTimeStr, setEndTimeStr] = useState(
+    compactTimeToString(item.end_hour) || "10:00",
+  );
 
   if (!editing) {
     const label = rangeLabel(item);
     return (
       <Box
         onClick={() => setEditing(true)}
-        sx={{ cursor: "pointer", minHeight: 24, "&:hover": { bgcolor: "action.hover" }, borderRadius: 1, px: 0.5 }}
+        sx={{
+          cursor: "pointer",
+          minHeight: 24,
+          "&:hover": { bgcolor: "action.hover" },
+          borderRadius: 1,
+          px: 0.5,
+        }}
       >
         {label}
       </Box>
@@ -266,28 +322,74 @@ function EditableTimeRange({ item, onSave }) {
   }
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 260 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{ minWidth: 260 }}
+    >
       {isPunch ? (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ تردد" showTime={false} />
-          <TimeSelect24 label="ساعت تردد" value={startTimeStr} onChange={setStartTimeStr} />
+          <JalaliDateTimePicker
+            value={startDate}
+            onChange={setStartDate}
+            label="تاریخ تردد"
+            showTime={false}
+          />
+          <TimeSelect24
+            label="ساعت تردد"
+            value={startTimeStr}
+            onChange={setStartTimeStr}
+          />
         </>
       ) : isHourly ? (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ" showTime={false} />
-          <TimeSelect24 label="شروع" value={startTimeStr} onChange={setStartTimeStr} />
-          <TimeSelect24 label="پایان" value={endTimeStr} onChange={setEndTimeStr} />
+          <JalaliDateTimePicker
+            value={startDate}
+            onChange={setStartDate}
+            label="تاریخ"
+            showTime={false}
+          />
+          <TimeSelect24
+            label="شروع"
+            value={startTimeStr}
+            onChange={setStartTimeStr}
+          />
+          <TimeSelect24
+            label="پایان"
+            value={endTimeStr}
+            onChange={setEndTimeStr}
+          />
         </>
       ) : (
         <>
-          <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
-          <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
+          <JalaliDateTimePicker
+            value={startDate}
+            onChange={setStartDate}
+            label="تاریخ مرخصی/ماموریت"
+            showTime={false}
+          />
+          <JalaliDateTimePicker
+            value={endDate}
+            onChange={setEndDate}
+            label="تاریخ پایان"
+            showTime={false}
+          />
         </>
       )}
-      <IconButton size="small" color="success" disabled={saving} onClick={handleSave}>
+      <IconButton
+        size="small"
+        color="success"
+        disabled={saving}
+        onClick={handleSave}
+      >
         <CheckOutlinedIcon fontSize="small" />
       </IconButton>
-      <IconButton size="small" onClick={() => setEditing(false)} disabled={saving}>
+      <IconButton
+        size="small"
+        onClick={() => setEditing(false)}
+        disabled={saving}
+      >
         <CloseOutlinedIcon fontSize="small" />
       </IconButton>
     </Stack>
@@ -303,7 +405,7 @@ const STATUS_OPTIONS = [
 
 /**
  * صفحه‌ی مدیریتی لیست همه‌ی درخواست‌های مرخصی/ماموریت یک سایت.
- * شامل کارت «امروز» (بدون فیلتر)، فیلترهای سمت سرور (وضعیت/نوع/واحد/بازه‌ی تاریخ)، جست‌وجو و مرتب‌سازی سمت کلاینت،
+ * شامل کارت «امروز» (بدون فیلتر)، فیلترها و جست‌وجوی متنی سمت سرور (وضعیت/نوع/واحد/بازه‌ی تاریخ/جست‌وجو)، مرتب‌سازی سمت کلاینت،
  * ویرایش درجا و حذف (با مجوز مدیریت) و خروجی Excel. نقش محدود به نوع (مثل حراست) خروجی Excel و فیلتر تاریخ ندارد.
  */
 export default function LeaveRequestsAdminListPage() {
@@ -315,7 +417,8 @@ export default function LeaveRequestsAdminListPage() {
   const [todaySourceRequests, setTodaySourceRequests] = useState(null); // داده‌ی بدون فیلتر برای کارت «امروز»، جدا از requests
   const [types, setTypes] = useState([]); // نوع‌های درخواست سایت (برای فیلتر و ویرایش نوع)
   const [error, setError] = useState("");
-  const [search, setSearch] = useState(""); // جست‌وجوی متنی سمت کلاینت
+  const [search, setSearch] = useState(""); // متن جست‌وجو (سمت سرور، با تأخیر)
+  const debouncedSearch = useDebounced(search.trim(), 300); // متن جست‌وجوی اعمال‌شده (۳۰۰ms بعد از آخرین حرف)
   const [sortField, setSortField] = useState("submitted_at"); // ستون مرتب‌سازی
   const [sortDir, setSortDir] = useState("desc"); // جهت مرتب‌سازی
   const [statusFilter, setStatusFilter] = useState(""); // فیلتر وضعیت (سرور)
@@ -349,7 +452,11 @@ export default function LeaveRequestsAdminListPage() {
     // سایت‌هایی که کاربر برایشان leave_requests.manage دارد (برای نمایش دکمه‌های ویرایش/حذف فقط در همان سایت‌ها)
     if (user?.can_manage_leave_requests) {
       fetchMyAccessibleSites("leave_requests.manage")
-        .then((d) => setManageSiteIds(d.unrestricted ? null : new Set((d.sites || []).map((s) => s.id))))
+        .then((d) =>
+          setManageSiteIds(
+            d.unrestricted ? null : new Set((d.sites || []).map((s) => s.id)),
+          ),
+        )
         .catch(() => setManageSiteIds(null));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -363,8 +470,15 @@ export default function LeaveRequestsAdminListPage() {
     // کارت «امروز» فقط درخواست‌هایی را لازم دارد که با امروز هم‌پوشانی دارند؛ به‌جای کل سابقه، همان روز از سرور خواسته می‌شود
     const todayOnly = toDateOnly(new Date());
     Promise.all([
-      fetchAllLeaveRequestsForSite(siteId, { date_from: todayOnly, date_to: todayOnly }),
-      fetchAllLeaveRequestsForSite(siteId, serverFilters),
+      fetchAllLeaveRequestsForSite(siteId, {
+        date_from: todayOnly,
+        date_to: todayOnly,
+      }),
+      // جست‌وجوی متنی فقط برای جدول (خروجی Excel آن را نمی‌پذیرد)
+      fetchAllLeaveRequestsForSite(siteId, {
+        ...serverFilters,
+        search: debouncedSearch,
+      }),
     ])
       .then(([todayData, filteredData]) => {
         setTodaySourceRequests(todayData);
@@ -382,16 +496,22 @@ export default function LeaveRequestsAdminListPage() {
           }
         }
         setTodaySourceRequests([]);
-        setError(err.response?.data?.detail || "دریافت درخواست‌ها با خطا مواجه شد.");
+        setError(
+          err.response?.data?.detail || "دریافت درخواست‌ها با خطا مواجه شد.",
+        );
       });
   }
 
-  useEffect(load, [siteId, serverFilters]);
+  useEffect(load, [siteId, serverFilters, debouncedSearch]);
 
   // حذف مدیریتی یک درخواست پس از تأیید کاربر؛ هر درخواستی در هر مرحله‌ای قابل حذف است
   async function handleDelete(item) {
     const who = item.requester_name || item.emp_no;
-    if (!window.confirm(`درخواست «${item.type_title || "—"}» برای ${who} حذف شود؟ این عمل قابل بازگشت نیست.`)) {
+    if (
+      !window.confirm(
+        `درخواست «${item.type_title || "—"}» برای ${who} حذف شود؟ این عمل قابل بازگشت نیست.`,
+      )
+    ) {
       return;
     }
     setError("");
@@ -422,14 +542,18 @@ export default function LeaveRequestsAdminListPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err.response?.data?.detail || "تهیه خروجی Excel با خطا مواجه شد.");
+      setError(
+        err.response?.data?.detail || "تهیه خروجی Excel با خطا مواجه شد.",
+      );
     } finally {
       setIsExporting(false);
     }
   }
 
   // مجوز ویرایش/حذف درجا فقط برای سایت‌هایی که کاربر در آن‌ها leave_requests.manage دارد (null = همه)
-  const canEdit = Boolean(user?.can_manage_leave_requests) && (manageSiteIds === null || manageSiteIds.has(siteId));
+  const canEdit =
+    Boolean(user?.can_manage_leave_requests) &&
+    (manageSiteIds === null || manageSiteIds.has(siteId));
   // نقش محدود به نوع (مثل حراست): فقط مجوز به‌تفکیک نوع دارد؛ بدون خروجی Excel و بدون فیلتر بازه‌ی تاریخ (سرور هم اعمال می‌کند)
   const isTypeRestricted = Boolean(user?.leave_requests_type_restricted);
 
@@ -466,7 +590,11 @@ export default function LeaveRequestsAdminListPage() {
   // فهرست واحدها از خودِ داده‌ی بارگذاری‌شده ساخته می‌شود؛ فقط واحدهایی که درخواست دارند در فیلتر ظاهر می‌شوند
   const availableDepartments = useMemo(() => {
     if (!requests) return [];
-    return [...new Set(requests.map((item) => item.requester_department).filter(Boolean))].sort();
+    return [
+      ...new Set(
+        requests.map((item) => item.requester_department).filter(Boolean),
+      ),
+    ].sort();
   }, [requests]);
 
   // درخواست‌هایی که امروز جزو بازه‌ی آن‌هاست (برای کارت «امروز»)
@@ -478,19 +606,21 @@ export default function LeaveRequestsAdminListPage() {
   // با تغییر جست‌وجو/فیلترها/سایت به صفحه‌ی اول برمی‌گردد تا کاربر روی صفحه‌ای بدون ردیف نماند
   useEffect(() => {
     setPage(0);
-  }, [search, statusFilter, typeFilter, departmentFilter, dateFrom, dateTo, siteId]);
+  }, [
+    debouncedSearch,
+    statusFilter,
+    typeFilter,
+    departmentFilter,
+    dateFrom,
+    dateTo,
+    siteId,
+  ]);
 
-  // ردیف‌های جدول: اعمال جست‌وجوی متنی (نام، نوع، توضیحات، شماره پرسنلی) و سپس مرتب‌سازی
+  // ردیف‌های جدول: جست‌وجوی متنی سمت سرور اعمال شده؛ این‌جا فقط مرتب‌سازی
   const visibleRequests = useMemo(() => {
     if (!requests) return [];
-    let filtered = requests;
-    if (search.trim()) {
-      filtered = requests.filter((item) =>
-        matchesSearch(search, [item.requester_name, item.type_title, item.description, item.emp_no])
-      );
-    }
     // ستون‌های تاریخ به‌صورت عددی (timestamp) و بقیه به‌صورت رشته مقایسه می‌شوند
-    const sorted = [...filtered].sort((a, b) => {
+    const sorted = [...requests].sort((a, b) => {
       let av = a[sortField];
       let bv = b[sortField];
       if (sortField === "start_date" || sortField === "submitted_at") {
@@ -505,7 +635,7 @@ export default function LeaveRequestsAdminListPage() {
       return 0;
     });
     return sorted;
-  }, [requests, search, sortField, sortDir]);
+  }, [requests, sortField, sortDir]);
 
   return (
     <Box>
@@ -515,20 +645,33 @@ export default function LeaveRequestsAdminListPage() {
       </Typography>
 
       {/* نوار فیلتر: سایت، جست‌وجو، وضعیت، نوع، واحد و دکمه‌ی خروجی Excel */}
-      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-        <TextField select label="سایت" value={siteId} onChange={(e) => setSiteId(e.target.value)} sx={{ minWidth: 240 }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mb: 2 }}
+      >
+        <TextField
+          select
+          label="سایت"
+          value={siteId}
+          onChange={(e) => setSiteId(e.target.value)}
+          sx={{ minWidth: 240 }}
+        >
           {sites.map((site) => (
             <MenuItem key={site.id} value={site.id}>
               {site.name}
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          label="جست‌وجو"
-          placeholder="نام، نوع، توضیحات..."
+        <SearchField
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          sx={{ minWidth: 240 }}
+          onChange={setSearch}
+          placeholder="جست‌وجوی نام، کد پرسنلی، نوع یا توضیح…"
+          size="medium"
+          fullWidth={false}
+          sx={{ minWidth: 300 }}
         />
         <TextField
           select
@@ -592,7 +735,10 @@ export default function LeaveRequestsAdminListPage() {
 
       {/* کارت «امروز»: همیشه نمایش داده می‌شود، در حالت خالی با پیام روشن */}
       {todaySourceRequests !== null && (
-        <Card variant="outlined" sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}>
+        <Card
+          variant="outlined"
+          sx={{ mb: 3, p: 2, borderColor: "primary.main", borderWidth: 2 }}
+        >
           <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
             درخواست‌های مرخصی و ماموریت امروز ({todayRequests.length})
           </Typography>
@@ -603,32 +749,38 @@ export default function LeaveRequestsAdminListPage() {
                 : "برای امروز درخواستی وجود ندارد."}
             </Typography>
           ) : (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>نام و نام خانوادگی</TableCell>
-                  <TableCell>واحد</TableCell>
-                  <TableCell>نوع درخواست</TableCell>
-                  <TableCell>بازه زمانی</TableCell>
-                  <TableCell>وضعیت</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {todayRequests.map((item) => (
-                  <TableRow key={item.request_id}>
-                    <TableCell>{item.requester_name || item.emp_no}</TableCell>
-                    <TableCell>{item.requester_department || "—"}</TableCell>
-                    <TableCell>{item.type_title || "—"}</TableCell>
-                    <TableCell>{rangeLabel(item)}</TableCell>
-                    <TableCell>
-                      <Chip size="small" color={STATUS_COLORS[item.status]} label={statusChipLabel(item)} />
-                    </TableCell>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>نام و نام خانوادگی</TableCell>
+                    <TableCell>واحد</TableCell>
+                    <TableCell>نوع درخواست</TableCell>
+                    <TableCell>بازه زمانی</TableCell>
+                    <TableCell>وضعیت</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {todayRequests.map((item) => (
+                    <TableRow key={item.request_id}>
+                      <TableCell>
+                        {item.requester_name || item.emp_no}
+                      </TableCell>
+                      <TableCell>{item.requester_department || "—"}</TableCell>
+                      <TableCell>{item.type_title || "—"}</TableCell>
+                      <TableCell>{rangeLabel(item)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          color={STATUS_COLORS[item.status]}
+                          label={statusChipLabel(item)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </Card>
       )}
@@ -699,88 +851,127 @@ export default function LeaveRequestsAdminListPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {visibleRequests.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((item) => (
-                <TableRow key={item.request_id}>
-                  <TableCell>{item.requester_name || item.emp_no}</TableCell>
-                  <TableCell>{item.requester_department || "—"}</TableCell>
-                  <TableCell>
-                    {canEdit && types.length > 0 ? (
-                      <EditableSelect
-                        value={item.type_id || ""}
-                        options={types.map((t) => ({ value: t.id, label: t.title }))}
-                        renderValue={() => item.type_title || "—"}
-                        onSave={(v) => handleFieldSave(item.request_id, { leave_type_id: v })}
-                      />
-                    ) : (
-                      item.type_title || "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {canEdit ? (
-                      <EditableText
-                        value={item.description}
-                        multiline
-                        onSave={(v) => handleFieldSave(item.request_id, { description: v })}
-                      />
-                    ) : (
-                      item.description || "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {canEdit ? (
-                      <EditableTimeRange item={item} onSave={(payload) => handleFieldSave(item.request_id, payload)} />
-                    ) : (
-                      rangeLabel(item)
-                    )}
-                  </TableCell>
-                  <TableCell>{formatDuration(item)}</TableCell>
-                  <TableCell>
-                    {/* وضعیت: قابل تغییر با مجوز، به جز ابطال‌شده که در کاراوب ثبت شده و از پرتال قابل تغییر نیست */}
-                    {canEdit && item.status !== "cancelled" ? (
-                      <EditableSelect
-                        value={item.status}
-                        options={STATUS_OPTIONS}
-                        renderValue={(v) => <Chip size="small" color={STATUS_COLORS[v]} label={STATUS_LABELS[v]} />}
-                        onSave={(v) =>
-                          handleFieldSave(item.request_id, {
-                            is_final_approved: v === "approved" ? true : v === "rejected" ? false : null,
-                          })
-                        }
-                      />
-                    ) : (
-                      <Chip size="small" color={STATUS_COLORS[item.status]} label={statusChipLabel(item)} />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {canEdit ? (
-                      <EditableText
-                        value={item.manager_idea}
-                        multiline
-                        onSave={(v) => handleFieldSave(item.request_id, { manager_idea: v })}
-                      />
-                    ) : (
-                      item.manager_idea || "—"
-                    )}
-                  </TableCell>
-                  {/* حذف مدیریتی: هر درخواستی در هر مرحله‌ای قابل حذف است (ردیف WF_Reviews هم پاک می‌شود) */}
-                  {canEdit && (
+              {visibleRequests
+                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                .map((item) => (
+                  <TableRow key={item.request_id}>
+                    <TableCell>{item.requester_name || item.emp_no}</TableCell>
+                    <TableCell>{item.requester_department || "—"}</TableCell>
                     <TableCell>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        disabled={deletingId === item.request_id}
-                        onClick={() => handleDelete(item)}
-                        aria-label="حذف"
-                      >
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
+                      {canEdit && types.length > 0 ? (
+                        <EditableSelect
+                          value={item.type_id || ""}
+                          options={types.map((t) => ({
+                            value: t.id,
+                            label: t.title,
+                          }))}
+                          renderValue={() => item.type_title || "—"}
+                          onSave={(v) =>
+                            handleFieldSave(item.request_id, {
+                              leave_type_id: v,
+                            })
+                          }
+                        />
+                      ) : (
+                        item.type_title || "—"
+                      )}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell>
+                      {canEdit ? (
+                        <EditableText
+                          value={item.description}
+                          multiline
+                          onSave={(v) =>
+                            handleFieldSave(item.request_id, { description: v })
+                          }
+                        />
+                      ) : (
+                        item.description || "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {item.submitted_at
+                        ? new Date(item.submitted_at).toLocaleDateString(
+                            "fa-IR",
+                          )
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {canEdit ? (
+                        <EditableTimeRange
+                          item={item}
+                          onSave={(payload) =>
+                            handleFieldSave(item.request_id, payload)
+                          }
+                        />
+                      ) : (
+                        rangeLabel(item)
+                      )}
+                    </TableCell>
+                    <TableCell>{formatDuration(item)}</TableCell>
+                    <TableCell>
+                      {/* وضعیت: قابل تغییر با مجوز، به جز ابطال‌شده که در کاراوب ثبت شده و از پرتال قابل تغییر نیست */}
+                      {canEdit && item.status !== "cancelled" ? (
+                        <EditableSelect
+                          value={item.status}
+                          options={STATUS_OPTIONS}
+                          renderValue={(v) => (
+                            <Chip
+                              size="small"
+                              color={STATUS_COLORS[v]}
+                              label={STATUS_LABELS[v]}
+                            />
+                          )}
+                          onSave={(v) =>
+                            handleFieldSave(item.request_id, {
+                              is_final_approved:
+                                v === "approved"
+                                  ? true
+                                  : v === "rejected"
+                                    ? false
+                                    : null,
+                            })
+                          }
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          color={STATUS_COLORS[item.status]}
+                          label={statusChipLabel(item)}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {canEdit ? (
+                        <EditableText
+                          value={item.manager_idea}
+                          multiline
+                          onSave={(v) =>
+                            handleFieldSave(item.request_id, {
+                              manager_idea: v,
+                            })
+                          }
+                        />
+                      ) : (
+                        item.manager_idea || "—"
+                      )}
+                    </TableCell>
+                    {/* حذف مدیریتی: هر درخواستی در هر مرحله‌ای قابل حذف است (ردیف WF_Reviews هم پاک می‌شود) */}
+                    {canEdit && (
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          disabled={deletingId === item.request_id}
+                          onClick={() => handleDelete(item)}
+                          aria-label="حذف"
+                        >
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
           <TablePagination
@@ -795,7 +986,9 @@ export default function LeaveRequestsAdminListPage() {
             }}
             rowsPerPageOptions={[10, 25, 50, 100]}
             labelRowsPerPage="تعداد در هر صفحه:"
-            labelDisplayedRows={({ from, to, count }) => `${from}–${to} از ${count}`}
+            labelDisplayedRows={({ from, to, count }) =>
+              `${from}–${to} از ${count}`
+            }
           />
         </TableContainer>
       )}
@@ -806,10 +999,28 @@ export default function LeaveRequestsAdminListPage() {
           <Typography variant="body2" fontWeight={700} sx={{ mb: 1.5 }}>
             فیلتر بر اساس بازه تاریخ مرخصی/ماموریت
           </Typography>
-          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+          <Stack
+            direction="row"
+            spacing={2}
+            flexWrap="wrap"
+            useFlexGap
+            alignItems="center"
+          >
             {/* پیش‌فرض هر دو تاریخ خالی است (بدون فیلتر) */}
-            <JalaliDateTimePicker clearable value={dateFrom} onChange={setDateFrom} label="از تاریخ" showTime={false} />
-            <JalaliDateTimePicker clearable value={dateTo} onChange={setDateTo} label="تا تاریخ" showTime={false} />
+            <JalaliDateTimePicker
+              clearable
+              value={dateFrom}
+              onChange={setDateFrom}
+              label="از تاریخ"
+              showTime={false}
+            />
+            <JalaliDateTimePicker
+              clearable
+              value={dateTo}
+              onChange={setDateTo}
+              label="تا تاریخ"
+              showTime={false}
+            />
             {(dateFrom || dateTo) && (
               <Button
                 size="small"
@@ -832,7 +1043,12 @@ export default function LeaveRequestsAdminListPage() {
         onClose={() => setToast("")}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert severity="success" variant="filled" onClose={() => setToast("")} sx={{ width: "100%" }}>
+        <Alert
+          severity="success"
+          variant="filled"
+          onClose={() => setToast("")}
+          sx={{ width: "100%" }}
+        >
           {toast}
         </Alert>
       </Snackbar>

@@ -1,12 +1,17 @@
 import { apiClient } from "./client";
 
 export async function fetchLeaveRequestMapping(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/mapping`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/mapping`,
+  );
   return data;
 }
 
 export async function saveLeaveRequestMapping(siteId, payload) {
-  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/mapping`, payload);
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/mapping`,
+    payload,
+  );
   return data;
 }
 
@@ -20,12 +25,18 @@ export async function fetchLeaveRequestTypes(siteId) {
 }
 
 export async function addLeaveRequestType(siteId, payload) {
-  const { data } = await apiClient.post(`/leave-requests/sites/${siteId}/types`, payload);
+  const { data } = await apiClient.post(
+    `/leave-requests/sites/${siteId}/types`,
+    payload,
+  );
   return data;
 }
 
 export async function updateLeaveRequestType(typeId, payload) {
-  const { data } = await apiClient.put(`/leave-requests/types/${typeId}`, payload);
+  const { data } = await apiClient.put(
+    `/leave-requests/types/${typeId}`,
+    payload,
+  );
   return data;
 }
 
@@ -34,38 +45,58 @@ export async function deleteLeaveRequestType(typeId) {
 }
 
 export async function fetchLeaveRequestApprovers(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/approvers`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/approvers`,
+  );
   return data;
 }
 
-export async function setLeaveRequestApprover(departmentId, approverEmployeeId) {
-  const { data } = await apiClient.put(`/leave-requests/departments/${departmentId}/approver`, {
-    approver_employee_id: approverEmployeeId,
-  });
+export async function setLeaveRequestApprover(
+  departmentId,
+  approverEmployeeId,
+) {
+  const { data } = await apiClient.put(
+    `/leave-requests/departments/${departmentId}/approver`,
+    {
+      approver_employee_id: approverEmployeeId,
+    },
+  );
   return data;
 }
 
 export async function removeLeaveRequestApprover(departmentId) {
-  await apiClient.delete(`/leave-requests/departments/${departmentId}/approver`);
+  await apiClient.delete(
+    `/leave-requests/departments/${departmentId}/approver`,
+  );
 }
 
 export async function fetchLeaveRequestModuleStatus(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/module-status`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/module-status`,
+  );
   return data; // { has_mapping, is_disabled }
 }
 
 export async function setLeaveRequestModuleDisabled(siteId, isDisabled) {
-  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/module-status`, { is_disabled: isDisabled });
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/module-status`,
+    { is_disabled: isDisabled },
+  );
   return data;
 }
 
 export async function fetchLeaveRequestHrOfficer(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/hr-officer`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/hr-officer`,
+  );
   return data;
 }
 
 export async function setLeaveRequestHrOfficer(siteId, employeeId) {
-  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/hr-officer`, { employee_id: employeeId });
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/hr-officer`,
+    { employee_id: employeeId },
+  );
   return data;
 }
 
@@ -73,41 +104,61 @@ export async function removeLeaveRequestHrOfficer(siteId) {
   await apiClient.delete(`/leave-requests/sites/${siteId}/hr-officer`);
 }
 
-export async function fetchAllLeaveRequestsForSite(siteId, filters = {}) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/all`, { params: filters });
+// فهرست همه‌ی درخواست‌های سایت با فیلترهای سرور؛ search: جست‌وجوی متنی (نام، کد پرسنلی، نوع، توضیح) که سمت سرور اعمال می‌شود
+export async function fetchAllLeaveRequestsForSite(
+  siteId,
+  { search, ...filters } = {},
+) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/all`, {
+    params: { ...filters, search: search || undefined },
+  });
   return data;
 }
 
 export async function exportLeaveRequests(siteId, filters = {}) {
-  const response = await apiClient.get(`/leave-requests/sites/${siteId}/export`, {
-    params: filters,
-    responseType: "blob",
-  });
+  const response = await apiClient.get(
+    `/leave-requests/sites/${siteId}/export`,
+    {
+      params: filters,
+      responseType: "blob",
+    },
+  );
   return response.data;
 }
 
 export async function fetchActionLookup(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/action-lookup`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/action-lookup`,
+  );
   return data;
 }
 
 export async function fetchOperationLookup(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/operation-lookup`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/operation-lookup`,
+  );
   return data;
 }
 
 export async function fetchCardLookup(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/card-lookup`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/card-lookup`,
+  );
   return data;
 }
 
 export async function adminUpdateLeaveRequest(siteId, requestId, payload) {
-  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/requests/${requestId}`, payload);
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/requests/${requestId}`,
+    payload,
+  );
   return data;
 }
 
 export async function adminDeleteLeaveRequest(siteId, requestId) {
-  await apiClient.delete(`/leave-requests/sites/${siteId}/requests/${requestId}`);
+  await apiClient.delete(
+    `/leave-requests/sites/${siteId}/requests/${requestId}`,
+  );
 }
 
 export async function fetchKaraSchemaDefaults() {
@@ -117,11 +168,16 @@ export async function fetchKaraSchemaDefaults() {
 
 // متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی این سایت (قابل‌ویرایش)
 export async function fetchLeaveNotificationTemplates(siteId) {
-  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/notification-templates`);
+  const { data } = await apiClient.get(
+    `/leave-requests/sites/${siteId}/notification-templates`,
+  );
   return data;
 }
 
 export async function saveLeaveNotificationTemplates(siteId, texts) {
-  const { data } = await apiClient.put(`/leave-requests/sites/${siteId}/notification-templates`, { texts });
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/notification-templates`,
+    { texts },
+  );
   return data;
 }

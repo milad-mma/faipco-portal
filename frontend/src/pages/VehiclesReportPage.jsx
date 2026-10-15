@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  InputAdornment,
   Stack,
   Table,
   TableBody,
@@ -26,16 +25,23 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { useAuth } from "../context/AuthContext";
-import IranianLicensePlateInput, { isPlateComplete, PlateDisplay } from "../components/IranianLicensePlateInput";
+import IranianLicensePlateInput, {
+  isPlateComplete,
+  PlateDisplay,
+} from "../components/IranianLicensePlateInput";
 import SiteFilterSelect from "../components/SiteFilterSelect";
-import { deleteVehicleAdmin, fetchAllVehicles, updateVehicleAdmin } from "../api/vehicles";
-import { matchesSearch } from "../utils/searchText";
+import SearchField from "../components/SearchField";
+import {
+  deleteVehicleAdmin,
+  fetchAllVehicles,
+  updateVehicleAdmin,
+} from "../api/vehicles";
+import useDebounced from "../hooks/useDebounced";
 
-const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" };  // مقدار خالی پلاک ایرانی
+const EMPTY_PLATE = { digits1: "", letter: "", digits2: "", iranCode: "" }; // مقدار خالی پلاک ایرانی
 
 // ستون‌های مرتب‌پذیر جدول (key همان فیلد خودرو؛ plate به‌صورت رشته‌ی ترکیبی مقایسه می‌شود)
 const COLUMNS = [
@@ -47,7 +53,7 @@ const COLUMNS = [
   { key: "plate", label: "پلاک" },
 ];
 
-// ورودی: رکورد خودرو؛ خروجی: اجزای پلاک به‌صورت یک رشته‌ی پیوسته (برای جست‌وجو و مرتب‌سازی)
+// ورودی: رکورد خودرو؛ خروجی: اجزای پلاک به‌صورت یک رشته‌ی پیوسته (برای مرتب‌سازی)
 function plateAsString(v) {
   return `${v.plate_digits1}${v.plate_letter}${v.plate_digits2}${v.plate_iran_code}`;
 }
@@ -76,7 +82,8 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
     setError("");
   }, [vehicle]);
 
-  const canSave = vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSaving;  // همه‌ی فیلدها و پلاک کامل الزامی است
+  const canSave =
+    vehicleType.trim() && color.trim() && isPlateComplete(plate) && !isSaving; // همه‌ی فیلدها و پلاک کامل الزامی است
 
   // تغییرات خودرو را روی سرور ذخیره و نتیجه را به والد می‌دهد
   async function handleSave() {
@@ -105,13 +112,31 @@ function EditVehicleDialog({ vehicle, onClose, onSaved }) {
       <DialogTitle>ویرایش خودرو</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField label="نوع/مدل خودرو" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)} fullWidth />
-          <TextField label="رنگ خودرو" value={color} onChange={(e) => setColor(e.target.value)} fullWidth />
+          <TextField
+            label="نوع/مدل خودرو"
+            value={vehicleType}
+            onChange={(e) => setVehicleType(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="رنگ خودرو"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            fullWidth
+          />
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mb: 1 }}
+            >
               شماره پلاک
             </Typography>
-            <IranianLicensePlateInput value={plate} onChange={setPlate} disabled={isSaving} />
+            <IranianLicensePlateInput
+              value={plate}
+              onChange={setPlate}
+              disabled={isSaving}
+            />
           </Box>
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
@@ -135,23 +160,24 @@ export default function VehiclesReportPage() {
   const { user } = useAuth();
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [vehicles, setVehicles] = useState(null);
-  const [search, setSearch] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState(null);  // null = همه‌ی سایت‌های مجاز
+  const [search, setSearch] = useState(""); // متن جست‌وجو (سمت سرور، با تأخیر)
+  const debouncedSearch = useDebounced(search.trim(), 300); // متن جست‌وجوی اعمال‌شده (۳۰۰ms بعد از آخرین حرف)
+  const [selectedSiteId, setSelectedSiteId] = useState(null); // null = همه‌ی سایت‌های مجاز
   const [sortKey, setSortKey] = useState("employee_name");
   const [sortDir, setSortDir] = useState("asc");
-  const [editingVehicle, setEditingVehicle] = useState(null);  // خودرویی که دیالوگ ویرایشش باز است
-  const [vehicleToDelete, setVehicleToDelete] = useState(null);  // خودرویی که دیالوگ تأیید حذفش باز است
-  const [deletingId, setDeletingId] = useState(null);  // شناسه‌ی خودرویی که حذفش در جریان است
+  const [editingVehicle, setEditingVehicle] = useState(null); // خودرویی که دیالوگ ویرایشش باز است
+  const [vehicleToDelete, setVehicleToDelete] = useState(null); // خودرویی که دیالوگ تأیید حذفش باز است
+  const [deletingId, setDeletingId] = useState(null); // شناسه‌ی خودرویی که حذفش در جریان است
 
-  // خودروهای سایت انتخاب‌شده را از سرور می‌گیرد
+  // خودروهای سایت انتخاب‌شده را با جست‌وجوی متنی از سرور می‌گیرد
   function loadVehicles() {
-    fetchAllVehicles(selectedSiteId).then(setVehicles);
+    fetchAllVehicles(selectedSiteId, debouncedSearch).then(setVehicles);
   }
 
   useEffect(() => {
-    // بارگذاری مجدد خودروها با تغییر فیلتر سایت
+    // بارگذاری مجدد خودروها با تغییر فیلتر سایت یا متن جست‌وجو
     loadVehicles();
-  }, [selectedSiteId]);
+  }, [selectedSiteId, debouncedSearch]);
 
   // خودروی انتخاب‌شده را حذف و از فهرست برمی‌دارد
   async function handleConfirmDelete() {
@@ -168,7 +194,9 @@ export default function VehiclesReportPage() {
 
   // خودروی ویرایش‌شده را در فهرست ادغام و دیالوگ را می‌بندد
   function handleSaved(updated) {
-    setVehicles((prev) => prev.map((v) => (v.id === updated.id ? { ...v, ...updated } : v)));
+    setVehicles((prev) =>
+      prev.map((v) => (v.id === updated.id ? { ...v, ...updated } : v)),
+    );
     setEditingVehicle(null);
   }
 
@@ -182,23 +210,17 @@ export default function VehiclesReportPage() {
     }
   }
 
-  // جست‌وجو و مرتب‌سازی سمت فرانت‌اند روی کل فهرست؛ خروجی: فهرست نمایشی یا null در حال بارگذاری
+  // جست‌وجو سمت سرور اعمال شده؛ این‌جا فقط مرتب‌سازی؛ خروجی: فهرست نمایشی یا null در حال بارگذاری
   const displayedVehicles = useMemo(() => {
     if (vehicles === null) return null;
-    const filtered = search.trim()
-      ? vehicles.filter((v) =>
-          matchesSearch(search, [v.employee_name, v.site_name, v.department_name, v.vehicle_type, v.color, plateAsString(v)])
-        )
-      : vehicles;
-
-    const sorted = [...filtered].sort((a, b) => {
+    const sorted = [...vehicles].sort((a, b) => {
       const aVal = sortKey === "plate" ? plateAsString(a) : a[sortKey] || "";
       const bVal = sortKey === "plate" ? plateAsString(b) : b[sortKey] || "";
       const cmp = aVal.localeCompare(bVal, "fa");
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [vehicles, search, sortKey, sortDir]);
+  }, [vehicles, sortKey, sortDir]);
 
   return (
     <Box>
@@ -206,23 +228,26 @@ export default function VehiclesReportPage() {
         خودروهای پرسنل
       </Typography>
 
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }} flexWrap="wrap" rowGap={2}>
-        <TextField
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ mb: 2 }}
+        flexWrap="wrap"
+        rowGap={2}
+      >
+        <SearchField
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="جست‌وجو بر اساس نام، واحد، نوع خودرو، رنگ یا شماره پلاک..."
-          size="small"
+          onChange={setSearch}
+          placeholder="جست‌وجوی نام، کد پرسنلی، واحد، خودرو، رنگ یا پلاک…"
+          fullWidth={false}
           sx={{ flex: 1, minWidth: 240, maxWidth: 480 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlinedIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
         />
         {/* فیلتر سایت بر اساس سایت‌های مجاز کاربر برای vehicles.view_all */}
-        <SiteFilterSelect value={selectedSiteId} permission="vehicles.view_all" onChange={setSelectedSiteId} />
+        <SiteFilterSelect
+          value={selectedSiteId}
+          permission="vehicles.view_all"
+          onChange={setSelectedSiteId}
+        />
       </Stack>
 
       {/* محتوا: بارگذاری / فهرست خالی / کارت‌های موبایل / جدول دسکتاپ */}
@@ -231,9 +256,14 @@ export default function VehiclesReportPage() {
           <CircularProgress />
         </Box>
       ) : displayedVehicles.length === 0 ? (
-        <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
+        <Card
+          variant="outlined"
+          sx={{ p: 4, borderRadius: 2, textAlign: "center" }}
+        >
           <Typography variant="body2" color="text.secondary">
-            {search ? "چیزی با این مشخصات پیدا نشد." : "هیچ خودرویی ثبت نشده است."}
+            {search
+              ? "چیزی با این مشخصات پیدا نشد."
+              : "هیچ خودرویی ثبت نشده است."}
           </Typography>
         </Card>
       ) : isMobile ? (
@@ -241,18 +271,29 @@ export default function VehiclesReportPage() {
         <Stack spacing={1.5}>
           {displayedVehicles.map((v) => (
             <Card key={v.id} variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="flex-start"
+                sx={{ mb: 1 }}
+              >
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={700} noWrap>
                     {v.employee_name}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" noWrap>
-                    {[v.site_name, v.department_name].filter(Boolean).join(" — ") || "—"}
+                    {[v.site_name, v.department_name]
+                      .filter(Boolean)
+                      .join(" — ") || "—"}
                   </Typography>
                 </Box>
                 {user?.can_manage_vehicles && (
                   <Stack direction="row" sx={{ flexShrink: 0 }}>
-                    <IconButton size="small" onClick={() => setEditingVehicle(v)} aria-label="ویرایش">
+                    <IconButton
+                      size="small"
+                      onClick={() => setEditingVehicle(v)}
+                      aria-label="ویرایش"
+                    >
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
                     <IconButton
@@ -267,7 +308,11 @@ export default function VehiclesReportPage() {
                   </Stack>
                 )}
               </Stack>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+              >
                 <Box>
                   <Typography variant="body2">{v.vehicle_type}</Typography>
                   <Typography variant="caption" color="text.secondary">
@@ -302,7 +347,9 @@ export default function VehiclesReportPage() {
                       </TableSortLabel>
                     </TableCell>
                   ))}
-                  {user?.can_manage_vehicles && <TableCell align="left">عملیات</TableCell>}
+                  {user?.can_manage_vehicles && (
+                    <TableCell align="left">عملیات</TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -323,7 +370,11 @@ export default function VehiclesReportPage() {
                     </TableCell>
                     {user?.can_manage_vehicles && (
                       <TableCell align="left">
-                        <IconButton size="small" onClick={() => setEditingVehicle(v)} aria-label="ویرایش">
+                        <IconButton
+                          size="small"
+                          onClick={() => setEditingVehicle(v)}
+                          aria-label="ویرایش"
+                        >
                           <EditOutlinedIcon fontSize="small" />
                         </IconButton>
                         <IconButton
@@ -346,20 +397,35 @@ export default function VehiclesReportPage() {
       )}
 
       {/* دیالوگ ویرایش خودرو */}
-      <EditVehicleDialog vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} onSaved={handleSaved} />
+      <EditVehicleDialog
+        vehicle={editingVehicle}
+        onClose={() => setEditingVehicle(null)}
+        onSaved={handleSaved}
+      />
 
       {/* دیالوگ تأیید حذف خودرو */}
-      <Dialog open={Boolean(vehicleToDelete)} onClose={() => setVehicleToDelete(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={Boolean(vehicleToDelete)}
+        onClose={() => setVehicleToDelete(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>حذف خودرو</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            آیا از حذف خودروی {vehicleToDelete?.vehicle_type} متعلق به {vehicleToDelete?.employee_name} مطمئن هستید؟
-            این عمل قابل‌بازگشت نیست.
+            آیا از حذف خودروی {vehicleToDelete?.vehicle_type} متعلق به{" "}
+            {vehicleToDelete?.employee_name} مطمئن هستید؟ این عمل قابل‌بازگشت
+            نیست.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setVehicleToDelete(null)}>انصراف</Button>
-          <Button variant="contained" color="error" disabled={deletingId !== null} onClick={handleConfirmDelete}>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={deletingId !== null}
+            onClick={handleConfirmDelete}
+          >
             حذف
           </Button>
         </DialogActions>

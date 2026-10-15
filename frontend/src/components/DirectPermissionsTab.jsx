@@ -28,14 +28,17 @@ import {
   MenuItem,
   Stack,
   Switch,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
-import { fetchEmployeePermissions, replaceEmployeePermissions } from "../api/employees";
+import SearchField from "./SearchField";
+import {
+  fetchEmployeePermissions,
+  replaceEmployeePermissions,
+} from "../api/employees";
 import { fetchPermissions } from "../api/users";
 import { roleDisplayName } from "../utils/roleLabels";
 
@@ -43,17 +46,33 @@ import { roleDisplayName } from "../utils/roleLabels";
  * چیپ انتخاب سایت یک مجوز (یا یک گروه). value: null = همه‌ی سایت‌ها، وگرنه آرایه‌ی id سایت‌ها.
  * منو: «همه‌ی سایت‌ها» + یک تیک برای هر سایت. انتخاب همه‌ی سایت‌ها به‌صورت تکی = «همه».
  */
-function SiteScopeChip({ value, sites, nameOf, onChange, disabled, allowAll, size = "small" }) {
+function SiteScopeChip({
+  value,
+  sites,
+  nameOf,
+  onChange,
+  disabled,
+  allowAll,
+  size = "small",
+}) {
   const [anchor, setAnchor] = useState(null);
   const isAll = value === null;
-  const label = isAll ? "همه‌ی سایت‌ها" : value.map((id) => nameOf(id)).join("، ");
+  const label = isAll
+    ? "همه‌ی سایت‌ها"
+    : value.map((id) => nameOf(id)).join("، ");
 
   function toggleSite(id) {
     const current = isAll ? sites.map((s) => s.id) : value;
-    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id];
     if (next.length === 0) return; // حداقل یک سایت؛ برای برداشتن مجوز، تیک خودش برداشته می‌شود
     // فقط مدیر نامحدود می‌تواند «همه‌ی سایت‌ها» (شامل سایت‌های آینده) بدهد؛ مدیر سایتی همیشه سایت‌های مشخص
-    onChange(allowAll && sites.length > 0 && sites.every((s) => next.includes(s.id)) ? null : next);
+    onChange(
+      allowAll && sites.length > 0 && sites.every((s) => next.includes(s.id))
+        ? null
+        : next,
+    );
   }
 
   return (
@@ -66,9 +85,16 @@ function SiteScopeChip({ value, sites, nameOf, onChange, disabled, allowAll, siz
         color={isAll ? "default" : "primary"}
         onClick={disabled ? undefined : (e) => setAnchor(e.currentTarget)}
         disabled={disabled}
-        sx={{ maxWidth: 220, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
+        sx={{
+          maxWidth: 220,
+          "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" },
+        }}
       />
-      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+      >
         {allowAll && (
           <MenuItem
             dense
@@ -118,11 +144,16 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
         setInherited(mine.inherited || []);
         setAllowedSiteIds(mine.allowed_site_ids ?? null);
         const state = {};
-        for (const d of mine.direct || []) state[d.permission_id] = d.site_ids === null ? null : [...d.site_ids];
+        for (const d of mine.direct || [])
+          state[d.permission_id] = d.site_ids === null ? null : [...d.site_ids];
         setGrants(state);
         setSaved(state);
       })
-      .catch((err) => !ignore && setError(err.response?.data?.detail || "دریافت مجوزها ناموفق بود."));
+      .catch(
+        (err) =>
+          !ignore &&
+          setError(err.response?.data?.detail || "دریافت مجوزها ناموفق بود."),
+      );
     return () => {
       ignore = true;
     };
@@ -135,7 +166,12 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
     const groups = {};
     for (const p of permissions) {
       if (onlyDirect && !(p.id in grants)) continue;
-      if (q && !p.code.toLowerCase().includes(q) && !(p.description || "").toLowerCase().includes(q)) continue;
+      if (
+        q &&
+        !p.code.toLowerCase().includes(q) &&
+        !(p.description || "").toLowerCase().includes(q)
+      )
+        continue;
       const prefix = p.code.split(".")[0];
       (groups[prefix] ||= []).push(p);
     }
@@ -154,10 +190,16 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   const defaultScope = () => (unrestricted ? null : sites.map((s) => s.id));
   // ردیفی که بیننده اجازه‌ی تغییرش را ندارد (سراسری یا سایت خارج از اختیار): فقط نمایش
   const isLocked = (scope) =>
-    !unrestricted && (scope === null || scope.some((id) => !allowedSiteIds.includes(id)));
+    !unrestricted &&
+    (scope === null || scope.some((id) => !allowedSiteIds.includes(id)));
 
-  const dirty = useMemo(() => JSON.stringify(sortGrants(grants)) !== JSON.stringify(sortGrants(saved)), [grants, saved]);
-  const siteName = (id) => (allSites || sites).find((s) => s.id === id)?.name || "—";
+  const dirty = useMemo(
+    () =>
+      JSON.stringify(sortGrants(grants)) !== JSON.stringify(sortGrants(saved)),
+    [grants, saved],
+  );
+  const siteName = (id) =>
+    (allSites || sites).find((s) => s.id === id)?.name || "—";
 
   function setGrant(id, value) {
     setGrants((prev) => {
@@ -169,14 +211,18 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   }
 
   function toggleGroup(items, group) {
-    const scope = groupScope[group] === undefined ? defaultScope() : groupScope[group];
+    const scope =
+      groupScope[group] === undefined ? defaultScope() : groupScope[group];
     setGrants((prev) => {
-      const editable = items.filter((p) => !(p.id in prev) || !isLocked(prev[p.id]));
+      const editable = items.filter(
+        (p) => !(p.id in prev) || !isLocked(prev[p.id]),
+      );
       const allOn = editable.every((p) => p.id in prev);
       const next = { ...prev };
       for (const p of editable) {
         if (allOn) delete next[p.id];
-        else if (!(p.id in next)) next[p.id] = scope === null ? null : [...scope];
+        else if (!(p.id in next))
+          next[p.id] = scope === null ? null : [...scope];
       }
       return next;
     });
@@ -193,7 +239,8 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
       }));
       const result = await replaceEmployeePermissions(employee.id, payload);
       const state = {};
-      for (const d of result.direct || []) state[d.permission_id] = d.site_ids === null ? null : [...d.site_ids];
+      for (const d of result.direct || [])
+        state[d.permission_id] = d.site_ids === null ? null : [...d.site_ids];
       setGrants(state);
       setSaved(state);
       setInherited(result.inherited || []);
@@ -218,20 +265,38 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   return (
     <Stack spacing={1.5}>
       <Alert severity="info" sx={{ py: 0.5 }}>
-        مجوز مستقیم یک استثنا کنار نقش‌هاست و فقط «اضافه» می‌کند. مجوزهای خاکستری از نقش می‌رسند و از این‌جا برداشته
-        نمی‌شوند. برای هر مجوز می‌توانید سایت را محدود کنید (پیش‌فرض: همه‌ی سایت‌ها).
+        مجوز مستقیم یک استثنا کنار نقش‌هاست و فقط «اضافه» می‌کند. مجوزهای
+        خاکستری از نقش می‌رسند و از این‌جا برداشته نمی‌شوند. برای هر مجوز
+        می‌توانید سایت را محدود کنید (پیش‌فرض: همه‌ی سایت‌ها).
       </Alert>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField
-          size="small"
-          label="جست‌وجوی مجوز"
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
+        {/* فیلتر سمت کلاینت (فهرست کوچک است) */}
+        <SearchField
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
+          placeholder="جست‌وجوی مجوز…"
+          fullWidth={false}
           sx={{ flex: 1, minWidth: 160 }}
         />
         <FormControlLabel
-          control={<Switch size="small" checked={onlyDirect} onChange={(e) => setOnlyDirect(e.target.checked)} />}
-          label={<Typography variant="body2">فقط مستقیم‌ها ({directCount})</Typography>}
+          control={
+            <Switch
+              size="small"
+              checked={onlyDirect}
+              onChange={(e) => setOnlyDirect(e.target.checked)}
+            />
+          }
+          label={
+            <Typography variant="body2">
+              فقط مستقیم‌ها ({directCount})
+            </Typography>
+          }
         />
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
@@ -239,7 +304,11 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
 
       <Stack spacing={0.5} sx={{ maxHeight: 400, overflowY: "auto", pr: 0.5 }}>
         {grouped.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ py: 2, textAlign: "center" }}
+          >
             {onlyDirect ? "هنوز مجوز مستقیمی داده نشده." : "مجوزی پیدا نشد."}
           </Typography>
         )}
@@ -247,20 +316,39 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
           const selectedCount = items.filter((p) => p.id in grants).length;
           const allSelected = selectedCount === items.length;
           const isExpanded = expanded[group] !== false;
-          const scope = groupScope[group] === undefined ? defaultScope() : groupScope[group];
+          const scope =
+            groupScope[group] === undefined
+              ? defaultScope()
+              : groupScope[group];
           return (
-            <Box key={group} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+            <Box
+              key={group}
+              sx={{
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1.5,
+              }}
+            >
               <Stack
                 direction="row"
                 alignItems="center"
                 spacing={0.5}
                 sx={{ px: 1, py: 0.5, cursor: "pointer" }}
-                onClick={() => setExpanded((prev) => ({ ...prev, [group]: !isExpanded }))}
+                onClick={() =>
+                  setExpanded((prev) => ({ ...prev, [group]: !isExpanded }))
+                }
               >
                 <IconButton size="small" sx={{ p: 0.25 }}>
-                  {isExpanded ? <ExpandMoreOutlinedIcon fontSize="small" /> : <ChevronLeftOutlinedIcon fontSize="small" />}
+                  {isExpanded ? (
+                    <ExpandMoreOutlinedIcon fontSize="small" />
+                  ) : (
+                    <ChevronLeftOutlinedIcon fontSize="small" />
+                  )}
                 </IconButton>
-                <Tooltip title="انتخاب همه‌ی مجوزهای این گروه (با سایتِ انتخاب‌شده در چیپ گروه؛ مجوزهای تیک‌خورده‌ی قبلی عوض نمی‌شوند)" arrow>
+                <Tooltip
+                  title="انتخاب همه‌ی مجوزهای این گروه (با سایتِ انتخاب‌شده در چیپ گروه؛ مجوزهای تیک‌خورده‌ی قبلی عوض نمی‌شوند)"
+                  arrow
+                >
                   <Checkbox
                     size="small"
                     checked={allSelected}
@@ -275,14 +363,19 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
                 <Typography variant="caption" color="text.secondary">
                   {selectedCount}/{items.length}
                 </Typography>
-                <Tooltip title="سایت پیش‌فرض برای مجوزهایی که با تیک گروه اضافه می‌شوند" arrow>
+                <Tooltip
+                  title="سایت پیش‌فرض برای مجوزهایی که با تیک گروه اضافه می‌شوند"
+                  arrow
+                >
                   <Box onClick={(e) => e.stopPropagation()}>
                     <SiteScopeChip
                       value={scope}
                       sites={sites}
                       nameOf={siteName}
                       allowAll={unrestricted}
-                      onChange={(next) => setGroupScope((prev) => ({ ...prev, [group]: next }))}
+                      onChange={(next) =>
+                        setGroupScope((prev) => ({ ...prev, [group]: next }))
+                      }
                       disabled={!unrestricted && sites.length < 2}
                     />
                   </Box>
@@ -300,30 +393,67 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
                         direction="row"
                         alignItems="flex-start"
                         spacing={0.5}
-                        sx={{ pl: 1, pr: 1, py: 0.25, bgcolor: !direct && fromRoles.length ? "action.hover" : undefined }}
+                        sx={{
+                          pl: 1,
+                          pr: 1,
+                          py: 0.25,
+                          bgcolor:
+                            !direct && fromRoles.length
+                              ? "action.hover"
+                              : undefined,
+                        }}
                       >
-                        <Tooltip title={locked ? "این مجوز توسط مدیر ارشد یا برای سایت دیگری داده شده و از این‌جا قابل تغییر نیست" : ""} arrow>
+                        <Tooltip
+                          title={
+                            locked
+                              ? "این مجوز توسط مدیر ارشد یا برای سایت دیگری داده شده و از این‌جا قابل تغییر نیست"
+                              : ""
+                          }
+                          arrow
+                        >
                           <span>
                             <Checkbox
                               size="small"
                               checked={direct}
                               disabled={locked}
-                              onChange={() => setGrant(p.id, direct ? undefined : defaultScope())}
+                              onChange={() =>
+                                setGrant(
+                                  p.id,
+                                  direct ? undefined : defaultScope(),
+                                )
+                              }
                               sx={{ mt: -0.25 }}
                             />
                           </span>
                         </Tooltip>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body2" color={!direct && fromRoles.length ? "text.secondary" : "text.primary"}>
+                          <Typography
+                            variant="body2"
+                            color={
+                              !direct && fromRoles.length
+                                ? "text.secondary"
+                                : "text.primary"
+                            }
+                          >
                             {p.code}
                           </Typography>
                           {p.description && (
-                            <Typography variant="caption" color="text.secondary" display="block">
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              display="block"
+                            >
                               {p.description}
                             </Typography>
                           )}
                           {fromRoles.length > 0 && (
-                            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.25 }}>
+                            <Stack
+                              direction="row"
+                              spacing={0.5}
+                              flexWrap="wrap"
+                              useFlexGap
+                              sx={{ mt: 0.25 }}
+                            >
                               {fromRoles.map((r, i) => (
                                 <Chip
                                   key={i}
@@ -343,7 +473,9 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
                             nameOf={siteName}
                             allowAll={unrestricted}
                             onChange={(next) => setGrant(p.id, next)}
-                            disabled={locked || (!unrestricted && sites.length < 2)}
+                            disabled={
+                              locked || (!unrestricted && sites.length < 2)
+                            }
                           />
                         )}
                       </Stack>
@@ -357,11 +489,20 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
       </Stack>
 
       <Stack direction="row" spacing={1} alignItems="center">
-        <Button variant="contained" size="small" onClick={handleSave} disabled={!dirty || saving}>
+        <Button
+          variant="contained"
+          size="small"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+        >
           {saving ? "در حال ذخیره..." : "ذخیره‌ی مجوزهای مستقیم"}
         </Button>
         {dirty && (
-          <Button size="small" onClick={() => setGrants(saved)} disabled={saving}>
+          <Button
+            size="small"
+            onClick={() => setGrants(saved)}
+            disabled={saving}
+          >
             انصراف از تغییرات
           </Button>
         )}
@@ -374,5 +515,8 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
 function sortGrants(obj) {
   return Object.keys(obj)
     .sort((a, b) => Number(a) - Number(b))
-    .map((k) => [Number(k), obj[k] === null ? null : [...obj[k]].sort((a, b) => a - b)]);
+    .map((k) => [
+      Number(k),
+      obj[k] === null ? null : [...obj[k]].sort((a, b) => a - b),
+    ]);
 }

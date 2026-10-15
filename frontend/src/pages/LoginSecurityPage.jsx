@@ -6,6 +6,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import PillTabs from "../components/PillTabs";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 import {
   Alert,
   Box,
@@ -137,7 +139,7 @@ function ReportTab() {
 
   const [kind, setKind] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebounced(searchInput.trim(), 300); // متن جست‌وجوی اعمال‌شده (۳۰۰ms بعد از آخرین حرف)
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [events, setEvents] = useState(null);
@@ -180,14 +182,10 @@ function ReportTab() {
     loadEvents();
   }, [loadEvents]);
 
-  // جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه
+  // تغییر متن جست‌وجو ← برگشت به صفحه‌ی اول
   useEffect(() => {
-    const t = setTimeout(() => {
-      setSearch(searchInput.trim());
-      setPage(0);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+    setPage(0);
+  }, [search]);
 
   async function handleUnlock(key) {
     setUnlocking(key);
@@ -373,11 +371,12 @@ function ReportTab() {
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            size="small"
-            label="جست‌وجوی IP یا شناسه"
+          <SearchField
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            onChange={setSearchInput}
+            placeholder="جست‌وجوی IP یا شناسه…"
+            fullWidth={false}
+            sx={{ minWidth: 240 }}
           />
         </Stack>
         {events === null ? (

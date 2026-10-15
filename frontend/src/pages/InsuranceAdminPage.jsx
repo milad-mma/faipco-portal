@@ -37,6 +37,8 @@ import SiteFilterSelect from "../components/SiteFilterSelect";
 import InsuranceRateInfo from "../components/InsuranceRateInfo";
 import LinkifiedText from "../components/LinkifiedText";
 import { useAuth } from "../context/AuthContext";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 import {
   deleteInsuranceRegistration,
   downloadInsuranceDocument,
@@ -418,7 +420,8 @@ function RegistrationsTab({ canManage }) {
   const [siteId, setSiteId] = useState(null);
   const [memberFilter, setMemberFilter] = useState(""); // فیلتر وضعیت اعضا (MEMBER_FILTERS)
   const [search, setSearch] = useState(""); // متن داخل فیلد جستجو
-  const [query, setQuery] = useState(""); // عبارتی که واقعاً به سرور فرستاده شده (با Enter یا دکمه)
+  // عبارتی که واقعاً به سرور فرستاده می‌شود: متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه (جست‌وجوی زنده)
+  const query = useDebounced(search.trim(), 300);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [data, setData] = useState(null);
@@ -469,31 +472,13 @@ function RegistrationsTab({ canManage }) {
         alignItems="flex-end"
         sx={{ mb: 2 }}
       >
-        <TextField
-          size="small"
-          label="جستجو (کد پرسنلی، نام، کد ملی)"
+        <SearchField
+          placeholder="جست‌وجوی نام، کد پرسنلی یا کد ملی…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) =>
-            e.key === "Enter" && (setPage(0), setQuery(search.trim()))
-          }
+          onChange={(text) => (setSearch(text), setPage(0))}
+          fullWidth={false}
           sx={{ minWidth: 260 }}
         />
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() => (setPage(0), setQuery(search.trim()))}
-        >
-          جستجو
-        </Button>
-        {query && (
-          <Button
-            size="small"
-            onClick={() => (setSearch(""), setQuery(""), setPage(0))}
-          >
-            پاک
-          </Button>
-        )}
         <SiteFilterSelect
           value={siteId}
           permission="insurance.view"

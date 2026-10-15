@@ -32,6 +32,8 @@ import BackLink from "../components/BackLink";
 import PillTabs from "../components/PillTabs";
 import ResultDialog from "../components/ResultDialog";
 import NoteDialog from "../components/NoteDialog";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 import {
   AmountField,
   EmployeeSearch,
@@ -514,19 +516,12 @@ const DECISION_LABEL = {
 // سوابق کارتابل با جست‌وجو و صفحه‌بندی: تصمیم‌های من (مدیر واحد/سایت) یا ضمانت‌های من
 function InboxHistory({ kind }) {
   const [q, setQ] = useState("");
-  const [query, setQuery] = useState("");
+  // متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه به سرور می‌رود تا با هر حرف یک درخواست نرود
+  const query = useDebounced(q.trim(), 300);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQuery(q.trim());
-      setPage(0);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [q]);
 
   useEffect(() => {
     let alive = true;
@@ -545,11 +540,10 @@ function InboxHistory({ kind }) {
 
   return (
     <Stack spacing={1.5}>
-      <TextField
-        label="جست‌وجوی نام درخواست‌دهنده"
+      <SearchField
+        placeholder="جست‌وجوی نام یا کد پرسنلی درخواست‌دهنده…"
         value={q}
-        onChange={(e) => setQ(e.target.value)}
-        size="small"
+        onChange={(text) => (setQ(text), setPage(0))} // با تغییر عبارت به صفحه‌ی اول برمی‌گردد
         sx={{ maxWidth: 360 }}
       />
       {error && <Alert severity="error">{error}</Alert>}

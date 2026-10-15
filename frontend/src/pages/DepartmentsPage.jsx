@@ -3,7 +3,6 @@
 // و امکان جستجوی پرسنل و تعیین/تغییر سرپرست هر واحد را فراهم می‌کند.
 import { useEffect, useMemo, useState } from "react";
 import {
-  Autocomplete,
   Box,
   Button,
   Card,
@@ -16,13 +15,15 @@ import {
   TableHead,
   TableRow,
   TableSortLabel,
-  TextField,
   Typography,
 } from "@mui/material";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
-import { assignDepartmentSupervisor, fetchDepartments } from "../api/departments";
-import { fetchEmployees } from "../api/employees";
+import {
+  assignDepartmentSupervisor,
+  fetchDepartments,
+} from "../api/departments";
 import { fetchSites } from "../api/sites";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 import { monoFontSx } from "../theme";
 import { sortRows } from "../utils/tableSort";
 
@@ -34,51 +35,45 @@ const COLUMNS = [
   { key: "supervisor_name", label: "سرپرست فعلی" },
 ];
 
-// سلول تعیین سرپرست یک واحد: جستجوی پرسنل همان سایت با Autocomplete و دکمه‌ی ذخیره.
-// ورودی: واحد، نام سایت و تابع onSaved که پس از ذخیره با واحد به‌روزشده و پیام موفقیت صدا زده می‌شود.
-function SupervisorCell({ department, siteName, onSaved }) {
-  const [selected, setSelected] = useState(null);  // گزینه‌ی انتخاب‌شده؛ برای سرپرست فعلی یک placeholder با isPlaceholder
-  const [inputValue, setInputValue] = useState("");
-  const [options, setOptions] = useState([]);  // نتایج جستجوی پرسنل
-  const [isSearching, setIsSearching] = useState(false);
+// سلول تعیین سرپرست یک واحد: جستجوی پرسنل همان سایت با انتخابگر مشترک پرسنل و دکمه‌ی ذخیره.
+// ورودی: واحد و تابع onSaved که پس از ذخیره با واحد به‌روزشده و پیام موفقیت صدا زده می‌شود.
+function SupervisorCell({ department, onSaved }) {
+  const [selected, setSelected] = useState(null); // گزینه‌ی انتخاب‌شده {id, label}؛ برای سرپرست فعلی یک placeholder با isPlaceholder
   const [isSaving, setIsSaving] = useState(false);
 
-  // با تغییر واحد یا سرپرست، سرپرست فعلی به‌عنوان مقدار اولیه‌ی Autocomplete تنظیم می‌شود
-  // (فقط برای نمایش نام؛ برای ارسال واقعی به سرور همیشه از employee_id استفاده می‌شود)
+  // با تغییر واحد یا سرپرست، سرپرست فعلی به‌عنوان مقدار اولیه‌ی فیلد تنظیم می‌شود
+  // (فقط برای نمایش نام؛ id آن یک مقدار نگهبان است و هرگز به سرور فرستاده نمی‌شود — ذخیره فقط با انتخاب شخص جدید فعال است)
   useEffect(() => {
     setSelected(
       department.supervisor_user_id
-        ? { id: null, label: department.supervisor_name, isPlaceholder: true }
-        : null
+        ? {
+            id: `current-supervisor-${department.id}`,
+            label: department.supervisor_name || "—",
+            isPlaceholder: true,
+          }
+        : null,
     );
-    setInputValue("");
-    setOptions([]);
-  }, [department.id, department.supervisor_user_id, department.supervisor_name]);
+  }, [
+    department.id,
+    department.supervisor_user_id,
+    department.supervisor_name,
+  ]);
 
-  useEffect(() => {
-    // جستجوی پرسنل سایت واحد با تأخیر ۳۰۰ میلی‌ثانیه (debounce) پس از تایپ
-    if (!inputValue) {
-      setOptions([]);
-      return;
-    }
-    setIsSearching(true);
-    const timer = setTimeout(() => {
-      fetchEmployees({ siteId: department.site_id, search: inputValue })
-        .then((data) => setOptions(data.items))
-        .finally(() => setIsSearching(false));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [inputValue, department.site_id]);
-
-  const hasPendingChange = selected && !selected.isPlaceholder;  // فقط وقتی شخص جدیدی انتخاب شده ذخیره فعال است
+  const hasPendingChange = selected && !selected.isPlaceholder; // فقط وقتی شخص جدیدی انتخاب شده ذخیره فعال است
 
   // سرپرست انتخاب‌شده را برای واحد ثبت می‌کند و نتیجه را به والد اطلاع می‌دهد
   async function handleSave() {
     if (!hasPendingChange) return;
     setIsSaving(true);
     try {
-      const updated = await assignDepartmentSupervisor(department.id, selected.id);
-      onSaved(updated, `سرپرست واحد «${department.name}» با موفقیت به‌روزرسانی شد.`);
+      const updated = await assignDepartmentSupervisor(
+        department.id,
+        selected.id,
+      );
+      onSaved(
+        updated,
+        `سرپرست واحد «${department.name}» با موفقیت به‌روزرسانی شد.`,
+      );
     } finally {
       setIsSaving(false);
     }
@@ -86,26 +81,18 @@ function SupervisorCell({ department, siteName, onSaved }) {
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 340 }}>
-      <Autocomplete
+      {/* جست‌وجو فقط بین پرسنل سایتِ همین واحد؛ پاک‌کردن فیلد = بدون انتخاب (ذخیره غیرفعال) */}
+      <EmployeeSearchField
         size="small"
         sx={{ flexGrow: 1, minWidth: 240 }}
-        options={options}
-        loading={isSearching}
-        filterOptions={(x) => x}
+        siteId={department.site_id}
         value={selected}
-        onChange={(_, value) => setSelected(value)}
-        onInputChange={(_, value) => setInputValue(value)}
-        isOptionEqualToValue={(a, b) => (a.id ?? a.label) === (b.id ?? b.label)}
-        getOptionLabel={(opt) =>
-          opt.isPlaceholder ? opt.label || "—" : `${opt.first_name} ${opt.last_name} (${opt.personnel_code})`
+        onChange={(value) => setSelected(value)}
+        placeholder={
+          department.supervisor_user_id
+            ? undefined
+            : "بدون سرپرست — برای تعیین جستجو کنید"
         }
-        noOptionsText={inputValue ? "پرسنلی یافت نشد" : "برای جستجو تایپ کنید..."}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            placeholder={department.supervisor_user_id ? undefined : "بدون سرپرست — برای تعیین جستجو کنید"}
-          />
-        )}
       />
       <Button
         size="small"
@@ -127,8 +114,8 @@ export default function DepartmentsPage() {
   const [sites, setSites] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [order, setOrder] = useState("asc");
-  const [orderBy, setOrderBy] = useState(null);  // کلید ستون مرتب‌سازی؛ null = بدون مرتب‌سازی
-  const [snackbar, setSnackbar] = useState("");  // متن پیام Snackbar؛ خالی = بسته
+  const [orderBy, setOrderBy] = useState(null); // کلید ستون مرتب‌سازی؛ null = بدون مرتب‌سازی
+  const [snackbar, setSnackbar] = useState(""); // متن پیام Snackbar؛ خالی = بسته
 
   useEffect(() => {
     // بارگذاری اولیه‌ی سایت‌ها و واحدها
@@ -156,12 +143,17 @@ export default function DepartmentsPage() {
 
   // واحد به‌روزشده را در فهرست جایگزین می‌کند و پیام موفقیت را نشان می‌دهد
   function handleSupervisorSaved(updatedDepartment, message) {
-    setDepartments((prev) => prev.map((d) => (d.id === updatedDepartment.id ? updatedDepartment : d)));
+    setDepartments((prev) =>
+      prev.map((d) => (d.id === updatedDepartment.id ? updatedDepartment : d)),
+    );
     setSnackbar(message);
   }
 
   // نگاشت شناسه‌ی سایت به نام سایت
-  const siteNameById = useMemo(() => Object.fromEntries(sites.map((s) => [s.id, s.name])), [sites]);
+  const siteNameById = useMemo(
+    () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
+    [sites],
+  );
 
   // افزودن نام سایت به هر ردیف و مرتب‌سازی ردیف‌ها
   const rows = departments.map((dept) => ({
@@ -177,9 +169,9 @@ export default function DepartmentsPage() {
           واحدهای سازمانی
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          فهرست همه‌ی واحدهای سازمانی به همراه سرپرست هر واحد. برای واحدهایی که هنوز
-          سرپرست ندارند، از بین پرسنل جستجو کرده و انتخاب کنید؛ برای تغییر سرپرست فعلی
-          نیز کافی است شخص جدید را انتخاب و ذخیره کنید.
+          فهرست همه‌ی واحدهای سازمانی به همراه سرپرست هر واحد. برای واحدهایی که
+          هنوز سرپرست ندارند، از بین پرسنل جستجو کرده و انتخاب کنید؛ برای تغییر
+          سرپرست فعلی نیز کافی است شخص جدید را انتخاب و ذخیره کنید.
         </Typography>
       </Box>
 
@@ -208,7 +200,11 @@ export default function DepartmentsPage() {
               {!isLoading && sortedRows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={COLUMNS.length + 1}>
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ py: 3, textAlign: "center" }}
+                    >
                       هیچ واحد سازمانی‌ای یافت نشد.
                     </Typography>
                   </TableCell>
@@ -221,13 +217,26 @@ export default function DepartmentsPage() {
                   <TableCell sx={monoFontSx}>{dept.code}</TableCell>
                   <TableCell>
                     {dept.supervisor_user_id ? (
-                      <Chip size="small" color="success" variant="outlined" label={dept.supervisor_name || "—"} />
+                      <Chip
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        label={dept.supervisor_name || "—"}
+                      />
                     ) : (
-                      <Chip size="small" color="default" variant="outlined" label="بدون سرپرست" />
+                      <Chip
+                        size="small"
+                        color="default"
+                        variant="outlined"
+                        label="بدون سرپرست"
+                      />
                     )}
                   </TableCell>
                   <TableCell>
-                    <SupervisorCell department={dept} siteName={dept.site_name} onSaved={handleSupervisorSaved} />
+                    <SupervisorCell
+                      department={dept}
+                      onSaved={handleSupervisorSaved}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

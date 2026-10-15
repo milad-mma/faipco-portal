@@ -59,6 +59,8 @@ import FamilySummary from "../components/FamilySummary";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 import { MEMBER_LABEL, STATUS_COLOR, saveBlob, toEn } from "../utils/family";
 import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 
 /**
  * پنل منابع انسانی «مشخصات خانوادگی» (مسیر /family/admin):
@@ -745,10 +747,12 @@ function ListTab({ canManage, formSettings }) {
   const [hrTarget, setHrTarget] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه به سرور می‌رود تا با هر حرف یک درخواست نرود
+  const debouncedSearch = useDebounced(filters.search, 300);
 
   const asOfValid = !filters.asOf || /^\d{4}\/\d{2}\/\d{2}$/.test(filters.asOf);
   const params = {
-    search: filters.search || undefined,
+    search: debouncedSearch || undefined,
     site_id: filters.siteId || undefined,
     status_filter: filters.status || undefined,
     flag: filters.flag || undefined,
@@ -770,7 +774,7 @@ function ListTab({ canManage, formSettings }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    filters.search,
+    debouncedSearch,
     filters.siteId,
     filters.status,
     filters.flag,
@@ -780,8 +784,7 @@ function ListTab({ canManage, formSettings }) {
   ]);
 
   useEffect(() => {
-    const t = setTimeout(load, 300);
-    return () => clearTimeout(t);
+    load();
   }, [load]);
 
   const setFilter = (patch) => {
@@ -813,12 +816,9 @@ function ListTab({ canManage, formSettings }) {
       <Card variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
         <Grid container spacing={1.5} alignItems="center">
           <Grid item xs={12} sm={6} md={3}>
-            <TextField
-              fullWidth
-              size="small"
-              label="جستجو (کد پرسنلی / نام)"
+            <SearchField
               value={filters.search}
-              onChange={(e) => setFilter({ search: e.target.value })}
+              onChange={(text) => setFilter({ search: text })}
             />
           </Grid>
           <Grid item xs={12} sm={6} md={2}>

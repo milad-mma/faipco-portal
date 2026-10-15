@@ -321,7 +321,6 @@ function MyPersonnelTable({
           <TableHead>
             <TableRow>
               <TableCell>نام و نام خانوادگی</TableCell>
-              <TableCell>کد پرسنلی</TableCell>
               <TableCell>وضعیت</TableCell>
               <TableCell>امتیاز</TableCell>
               <TableCell>عملیات</TableCell>
@@ -333,7 +332,6 @@ function MyPersonnelTable({
                 <TableCell>
                   {item.target.first_name} {item.target.last_name}
                 </TableCell>
-                <TableCell>{item.target.personnel_code}</TableCell>
                 <TableCell>
                   <Chip
                     size="small"

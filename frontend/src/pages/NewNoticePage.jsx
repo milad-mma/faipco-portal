@@ -21,8 +21,6 @@ import {
   FormGroup,
   MenuItem,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -42,7 +40,7 @@ import { useAuth } from "../context/AuthContext";
 import NoticeAttachmentPicker from "../components/NoticeAttachmentPicker";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
-import { fetchEmployees } from "../api/employees";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 import PillTabs from "../components/PillTabs";
 import { searchFilterOptions } from "../utils/searchText";
 
@@ -54,7 +52,7 @@ const PRIORITY_LABELS = {
   urgent: { label: "فوری", color: "error" },
 };
 
-// مقدار اولیه فرم اطلاعیه متنی (employees: اشیای پرسنل انتخاب‌شده، supervisors: id سرپرستان)
+// مقدار اولیه فرم اطلاعیه متنی (employees: گزینه‌های {id, label, employee} انتخاب‌شده از EmployeeSearchField، supervisors: id سرپرستان)
 const EMPTY_FORM = {
   title: "",
   body: "",
@@ -108,10 +106,6 @@ export default function NewNoticePage() {
   const [sites, setSites] = useState([]);
   const [departments, setDepartments] = useState([]);
 
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [employeeOptions, setEmployeeOptions] = useState([]); // نتایج جست‌وجوی پرسنل برای «ارسال به شخص خاص»
-  const [employeeSearchLoading, setEmployeeSearchLoading] = useState(false);
-
   // بارگذاری اولیه مجوزهای ارسال، سایت‌ها و واحدها
   useEffect(() => {
     fetchAvailableTargets().then(setAvailableTargets);
@@ -138,26 +132,9 @@ export default function NewNoticePage() {
   // محدودیت جستجوی «ارسال به شخص خاص» — اگر کاربر فقط سرپرست واحد است (نه
   // مدیر سایت/میانی)، سرور employee_target_department_ids را برمی‌گرداند و
   // جستجو باید فقط در همان واحد(های) خودش انجام شود، نه کل سازمان.
+  // (جست‌وجوی خودِ پرسنل را EmployeeSearchField با همین departmentIds انجام می‌دهد)
   const employeeScopeDepartmentIds =
     availableTargets?.employee_target_department_ids || null;
-
-  // جست‌وجوی پرسنل با تأخیر ۳۰۰ میلی‌ثانیه (debounce)، محدود به واحدهای مجاز در صورت وجود
-  useEffect(() => {
-    if (!employeeSearch) {
-      setEmployeeOptions([]);
-      return;
-    }
-    setEmployeeSearchLoading(true);
-    const timer = setTimeout(() => {
-      fetchEmployees({
-        search: employeeSearch,
-        departmentIds: employeeScopeDepartmentIds || undefined,
-      })
-        .then((data) => setEmployeeOptions(data.items))
-        .finally(() => setEmployeeSearchLoading(false));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [employeeSearch, employeeScopeDepartmentIds]);
 
   // سایت‌ها و واحدهایی که کاربر اجازه ارسال به آن‌ها را دارد
   const allowedSites = useMemo(
@@ -746,51 +723,33 @@ export default function NewNoticePage() {
                               disabled={isSubmitting}
                             />
                           }
-                          label={`${emp.first_name} ${emp.last_name} (${emp.personnel_code})`}
+                          label={
+                            emp.personnel_code
+                              ? `${emp.first_name} ${emp.last_name} (${emp.personnel_code})`
+                              : `${emp.first_name} ${emp.last_name}`
+                          }
                         />
                       ))}
                     </FormGroup>
                   </Box>
                 )}
 
-                {/* انتخاب اشخاص خاص با جست‌وجوی سمت سرور (filterOptions بدون فیلتر محلی) */}
+                {/* انتخاب اشخاص خاص با انتخابگر مشترک پرسنل (جست‌وجوی سمت سرور؛ در حالت سرپرست محدود به واحدهای خودش) */}
                 {availableTargets?.can_target_employee && (
-                  <Autocomplete
+                  <EmployeeSearchField
                     multiple
+                    size="medium"
                     disabled={isSubmitting}
-                    options={employeeOptions}
-                    loading={employeeSearchLoading}
-                    filterOptions={(x) => x}
-                    getOptionLabel={(e) =>
-                      `${e.first_name} ${e.last_name} (${e.personnel_code})`
-                    }
-                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    departmentIds={employeeScopeDepartmentIds || undefined}
                     value={form.employees}
-                    onChange={(_, selected) =>
-                      setForm({ ...form, employees: selected })
+                    onChange={(selected) =>
+                      setForm({ ...form, employees: selected || [] })
                     }
-                    onInputChange={(_, value) => setEmployeeSearch(value)}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label={
-                          employeeScopeDepartmentIds
-                            ? "ارسال به یک یا چند نفر از پرسنل واحد خودم (جستجو کنید)"
-                            : "ارسال به یک یا چند شخص خاص (جستجو کنید)"
-                        }
-                      />
-                    )}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          size="small"
-                          label={`${option.first_name} ${option.last_name}`}
-                          {...getTagProps({ index })}
-                          key={option.id}
-                        />
-                      ))
+                    label={
+                      employeeScopeDepartmentIds
+                        ? "ارسال به یک یا چند نفر از پرسنل واحد خودم (جستجو کنید)"
+                        : "ارسال به یک یا چند شخص خاص (جستجو کنید)"
                     }
-                    noOptionsText="برای جستجو تایپ کنید..."
                   />
                 )}
 

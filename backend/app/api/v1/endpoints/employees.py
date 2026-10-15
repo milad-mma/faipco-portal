@@ -73,9 +73,10 @@ _SENSITIVE_FIELD_PERMISSIONS = ("employees.view", "users.manage")
 
 async def _sensitive_field_site_ids(db: AsyncSession, user: User) -> set[int] | None:
     """
-    سایت‌هایی که فراخوان مجاز است کد ملی/موبایل/وضعیت رمز پرسنل آن‌ها را ببیند.
+    سایت‌هایی که فراخوان مجاز است کد ملی/کد پرسنلی/موبایل/وضعیت رمز پرسنل آن‌ها را ببیند.
     None = همه‌ی سایت‌ها (superuser یا مجوز سراسری)؛ Set (حتی خالی) = فقط همان سایت‌ها.
-    کد ملی رمز پیش‌فرض ورود پرسنل است، پس هر کاربر لاگین‌شده‌ای نباید آن را ببیند.
+    کد پرسنلی نام کاربری و کد ملی رمز پیش‌فرض ورود پرسنل است، پس هر کاربر لاگین‌شده‌ای نباید آن‌ها را ببیند یا با
+    آن‌ها جست‌وجو کند (پرسنل عادی/سرپرست‌ها فقط با نام جست‌وجو می‌کنند و فقط نام می‌بینند).
     """
     if user.is_superuser:
         return None
@@ -97,6 +98,7 @@ def _mask_sensitive_fields(out: EmployeeOut, privileged_site_ids: set[int] | Non
     """فیلدهای حساس را برای فراخوانِ بدون مجوز روی سایت آن پرسنل None می‌کند (Schema اختیاری است؛ UI نمی‌شکند)."""
     if not _can_see_sensitive(out.site_id, privileged_site_ids):
         out.national_code = None
+        out.personnel_code = ""  # نام کاربری پیش‌فرض؛ فقط نام نمایش داده می‌شود
         out.mobile = None
         out.has_custom_password = None
     return out
@@ -169,13 +171,17 @@ async def list_employees(
             search_clauses = [
                 Employee.first_name.ilike(pattern),
                 Employee.last_name.ilike(pattern),
-                Employee.personnel_code.ilike(pattern),
+                (Employee.first_name + " " + Employee.last_name).ilike(pattern),
             ]
-            # جستجو با کد ملی فقط روی پرسنل سایت‌هایی که فراخوان مجاز به دیدن کد ملی‌شان است؛
-            # وگرنه می‌شد با جستجوی تدریجی کد ملی (رمز پیش‌فرض ورود) پرسنل دیگر را حدس زد
+            # جستجو با کد پرسنلی/کد ملی فقط روی پرسنل سایت‌هایی که فراخوان مجاز به دیدن‌شان است؛
+            # وگرنه می‌شد با جستجوی تدریجی نام کاربری/رمز پیش‌فرض ورود (کد پرسنلی/کد ملی) پرسنل دیگر را حدس زد
             if privileged_site_ids is None:
+                search_clauses.append(Employee.personnel_code.ilike(pattern))
                 search_clauses.append(Employee.national_code.ilike(pattern))
             elif privileged_site_ids:
+                search_clauses.append(
+                    and_(Employee.personnel_code.ilike(pattern), Employee.site_id.in_(privileged_site_ids))
+                )
                 search_clauses.append(
                     and_(Employee.national_code.ilike(pattern), Employee.site_id.in_(privileged_site_ids))
                 )

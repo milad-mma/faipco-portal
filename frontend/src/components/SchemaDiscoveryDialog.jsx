@@ -30,6 +30,7 @@ import {
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import SearchField from "./SearchField";
 import { discoverSiteSchema, suggestMappingForSite } from "../api/sites";
 import { searchKey } from "../utils/searchText";
 
@@ -44,8 +45,16 @@ const MAPPING_TYPES = {
   employee: {
     label: "نگاشت پرسنل (فیلدهای اصلی همان جدول)",
     concepts: [
-      "personnel_code", "national_code", "first_name", "last_name", "mobile", "email",
-      "birth_date", "is_active", "department", "position",
+      "personnel_code",
+      "national_code",
+      "first_name",
+      "last_name",
+      "mobile",
+      "email",
+      "birth_date",
+      "is_active",
+      "department",
+      "position",
     ],
   },
   attendance_single: {
@@ -54,7 +63,13 @@ const MAPPING_TYPES = {
   },
   attendance_enter_exit: {
     label: "نگاشت تردد - ستون‌های جدای ورود/خروج",
-    concepts: ["personnel_code", "enter_date", "enter_time", "exit_date", "exit_time"],
+    concepts: [
+      "personnel_code",
+      "enter_date",
+      "enter_time",
+      "exit_date",
+      "exit_time",
+    ],
   },
   department_lookup: {
     label: "جدول مرجع دپارتمان/واحد سازمانی (جدول جدا)",
@@ -107,8 +122,8 @@ const CONCEPT_LABELS = {
  * اعمال روی فرم فقط با دکمه‌ی جداگانه و تأیید صریح مدیر انجام می‌شود؛ چیزی خودکار ذخیره نمی‌شود.
  */
 function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
-  const [mappingType, setMappingType] = useState("employee");  // کلید نوع نگاشت انتخاب‌شده از MAPPING_TYPES
-  const [suggestions, setSuggestions] = useState(null);  // نتیجه‌ی پیشنهاد: { concept: {column, confidence, source} | null } یا null
+  const [mappingType, setMappingType] = useState("employee"); // کلید نوع نگاشت انتخاب‌شده از MAPPING_TYPES
+  const [suggestions, setSuggestions] = useState(null); // نتیجه‌ی پیشنهاد: { concept: {column, confidence, source} | null } یا null
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -119,7 +134,12 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
     setIsLoading(true);
     try {
       const columnNames = table.columns.map((c) => c.name);
-      const result = await suggestMappingForSite(siteId, table.name, columnNames, MAPPING_TYPES[mappingType].concepts);
+      const result = await suggestMappingForSite(
+        siteId,
+        table.name,
+        columnNames,
+        MAPPING_TYPES[mappingType].concepts,
+      );
       setSuggestions(result);
     } catch (err) {
       setError(err.response?.data?.detail || "دریافت پیشنهاد با خطا مواجه شد.");
@@ -128,16 +148,29 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
     }
   }
 
-  const hasAnySuggestion = suggestions && Object.values(suggestions).some((s) => s !== null);  // حداقل یک مفهوم پیشنهاد داشته باشد تا دکمه‌ی اعمال نمایش داده شود
+  const hasAnySuggestion =
+    suggestions && Object.values(suggestions).some((s) => s !== null); // حداقل یک مفهوم پیشنهاد داشته باشد تا دکمه‌ی اعمال نمایش داده شود
 
   return (
     <Box sx={{ mt: 2, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
-      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 1 }}>
-        پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها؛ برای مواردی که از نام مشخص نباشد، چند مقدار
-        واقعی نمونه هم بررسی می‌شود - فقط پیشنهاد، نیاز به تأیید شما)
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        color="text.secondary"
+        sx={{ display: "block", mb: 1 }}
+      >
+        پیشنهاد نگاشت برای این جدول (بر اساس نام ستون‌ها؛ برای مواردی که از نام
+        مشخص نباشد، چند مقدار واقعی نمونه هم بررسی می‌شود - فقط پیشنهاد، نیاز به
+        تأیید شما)
       </Typography>
       {/* انتخاب نوع نگاشت (با تغییرش پیشنهاد قبلی پاک می‌شود) و دکمه‌ی دریافت پیشنهاد */}
-      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
         <TextField
           select
           size="small"
@@ -158,7 +191,13 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
         <Button
           size="small"
           variant="outlined"
-          startIcon={isLoading ? <CircularProgress size={14} /> : <AutoFixHighOutlinedIcon />}
+          startIcon={
+            isLoading ? (
+              <CircularProgress size={14} />
+            ) : (
+              <AutoFixHighOutlinedIcon />
+            )
+          }
           onClick={handleSuggest}
           disabled={isLoading}
         >
@@ -181,20 +220,34 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
                 {CONCEPT_LABELS[concept] || concept}:{" "}
                 {suggestion ? (
                   <>
-                    <Box component="span" sx={{ fontFamily: "monospace", fontWeight: 700 }}>
+                    <Box
+                      component="span"
+                      sx={{ fontFamily: "monospace", fontWeight: 700 }}
+                    >
                       {suggestion.column}
                     </Box>{" "}
                     <Chip
                       size="small"
                       label={`اطمینان ${suggestion.confidence}`}
-                      color={suggestion.confidence === "بالا" ? "success" : "warning"}
+                      color={
+                        suggestion.confidence === "بالا" ? "success" : "warning"
+                      }
                     />
                     {suggestion.source === "نمونه داده" && (
-                      <Chip size="small" variant="outlined" label="بر اساس نمونه داده" sx={{ mr: 0.5 }} />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label="بر اساس نمونه داده"
+                        sx={{ mr: 0.5 }}
+                      />
                     )}
                   </>
                 ) : (
-                  <Typography component="span" variant="body2" color="text.secondary">
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                  >
                     پیشنهادی پیدا نشد
                   </Typography>
                 )}
@@ -206,7 +259,9 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
               size="small"
               variant="contained"
               sx={{ mt: 1.5 }}
-              onClick={() => onApplySuggestion(mappingType, table.name, suggestions)}
+              onClick={() =>
+                onApplySuggestion(mappingType, table.name, suggestions)
+              }
             >
               اعمال این پیشنهادها به فرم نگاشت
             </Button>
@@ -223,11 +278,16 @@ function TableSuggestionPanel({ table, siteId, onApplySuggestion }) {
  * و می‌تواند با پیشنهاد خودکار فرم را پر کند.
  * ورودی: open، onClose، siteId و onApplySuggestion (پس از اعمال پیشنهاد، دیالوگ بسته می‌شود).
  */
-export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySuggestion }) {
-  const [schema, setSchema] = useState(null);  // ساختار دریافتی: { tables: [{name, columns, foreign_keys}] } یا null
+export default function SchemaDiscoveryDialog({
+  open,
+  onClose,
+  siteId,
+  onApplySuggestion,
+}) {
+  const [schema, setSchema] = useState(null); // ساختار دریافتی: { tables: [{name, columns, foreign_keys}] } یا null
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [search, setSearch] = useState("");  // عبارت جست‌وجو در نام جدول/ستون
+  const [search, setSearch] = useState(""); // عبارت جست‌وجو در نام جدول/ستون
 
   // با هر بار باز شدن دیالوگ، وضعیت پاک و ساختار دیتابیس از سرور دریافت می‌شود
   useEffect(() => {
@@ -238,7 +298,11 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
     setIsLoading(true);
     discoverSiteSchema(siteId)
       .then((data) => setSchema(data))
-      .catch((err) => setError(err.response?.data?.detail || "کشف ساختار دیتابیس با خطا مواجه شد."))
+      .catch((err) =>
+        setError(
+          err.response?.data?.detail || "کشف ساختار دیتابیس با خطا مواجه شد.",
+        ),
+      )
       .finally(() => setIsLoading(false));
   }, [open, siteId]);
 
@@ -248,7 +312,9 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
     const term = searchKey(search);
     if (!term) return schema.tables;
     return schema.tables.filter(
-      (t) => t.name.toLowerCase().includes(term) || t.columns.some((c) => c.name.toLowerCase().includes(term))
+      (t) =>
+        t.name.toLowerCase().includes(term) ||
+        t.columns.some((c) => c.name.toLowerCase().includes(term)),
     );
   }, [schema, search]);
 
@@ -263,9 +329,10 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
       <DialogTitle>ساختار دیتابیس این سایت</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          فهرست کامل جدول‌ها و ستون‌های این دیتابیس - فقط خواندن اطلاعات ساختاری، بدون خواندن هیچ داده
-          واقعی. از این لیست برای پیدا کردن نام دقیق جدول/ستون‌ها هنگام تنظیم Mapping استفاده کنید، یا از
-          «دریافت پیشنهاد» برای پرشدن خودکار فرم (با تأیید خودتان) کمک بگیرید.
+          فهرست کامل جدول‌ها و ستون‌های این دیتابیس - فقط خواندن اطلاعات
+          ساختاری، بدون خواندن هیچ داده واقعی. از این لیست برای پیدا کردن نام
+          دقیق جدول/ستون‌ها هنگام تنظیم Mapping استفاده کنید، یا از «دریافت
+          پیشنهاد» برای پرشدن خودکار فرم (با تأیید خودتان) کمک بگیرید.
         </Typography>
 
         {/* وضعیت بارگذاری و خطا */}
@@ -280,12 +347,10 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
         {schema && (
           <>
             {/* جست‌وجو، شمارش جدول‌ها و آکاردئون هر جدول */}
-            <TextField
-              size="small"
-              label="جست‌وجوی نام جدول یا ستون"
+            <SearchField
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              fullWidth
+              onChange={setSearch}
+              placeholder="جست‌وجوی نام جدول یا ستون…"
             />
             <Typography variant="caption" color="text.secondary">
               {filteredTables.length} از {schema.tables.length} جدول
@@ -296,12 +361,19 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                 {/* سربرگ آکاردئون: نام جدول، تعداد ستون‌ها و کلیدهای خارجی */}
                 <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
-                    <Typography fontWeight={700} sx={{ fontFamily: "monospace" }}>
+                    <Typography
+                      fontWeight={700}
+                      sx={{ fontFamily: "monospace" }}
+                    >
                       {table.name}
                     </Typography>
                     <Chip size="small" label={`${table.columns.length} ستون`} />
                     {table.foreign_keys.length > 0 && (
-                      <Chip size="small" color="info" label={`${table.foreign_keys.length} کلید خارجی`} />
+                      <Chip
+                        size="small"
+                        color="info"
+                        label={`${table.foreign_keys.length} کلید خارجی`}
+                      />
                     )}
                   </Stack>
                 </AccordionSummary>
@@ -319,12 +391,16 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                       <TableBody>
                         {table.columns.map((col) => (
                           <TableRow key={col.name}>
-                            <TableCell sx={{ fontFamily: "monospace" }}>{col.name}</TableCell>
+                            <TableCell sx={{ fontFamily: "monospace" }}>
+                              {col.name}
+                            </TableCell>
                             <TableCell>
                               {col.data_type}
                               {col.max_length ? `(${col.max_length})` : ""}
                             </TableCell>
-                            <TableCell>{col.nullable ? "بله" : "خیر"}</TableCell>
+                            <TableCell>
+                              {col.nullable ? "بله" : "خیر"}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -334,14 +410,24 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
                   {/* فهرست کلیدهای خارجی رسمی جدول */}
                   {table.foreign_keys.length > 0 && (
                     <Box sx={{ mt: 2 }}>
-                      <Typography variant="caption" fontWeight={700} color="text.secondary">
-                        کلیدهای خارجی (فقط روابط رسماً تعریف‌شده - ممکن است روابط منطقی دیگری هم وجود
-                        داشته باشد که رسماً ثبت نشده‌اند)
+                      <Typography
+                        variant="caption"
+                        fontWeight={700}
+                        color="text.secondary"
+                      >
+                        کلیدهای خارجی (فقط روابط رسماً تعریف‌شده - ممکن است
+                        روابط منطقی دیگری هم وجود داشته باشد که رسماً ثبت
+                        نشده‌اند)
                       </Typography>
                       <Stack spacing={0.5} sx={{ mt: 0.5 }}>
                         {table.foreign_keys.map((fk, idx) => (
-                          <Typography key={idx} variant="caption" sx={{ fontFamily: "monospace" }}>
-                            {fk.column} → {fk.references_table}.{fk.references_column}
+                          <Typography
+                            key={idx}
+                            variant="caption"
+                            sx={{ fontFamily: "monospace" }}
+                          >
+                            {fk.column} → {fk.references_table}.
+                            {fk.references_column}
                           </Typography>
                         ))}
                       </Stack>
@@ -350,7 +436,11 @@ export default function SchemaDiscoveryDialog({ open, onClose, siteId, onApplySu
 
                   {/* پنل پیشنهاد نگاشت برای همین جدول */}
                   <Divider sx={{ my: 1.5 }} />
-                  <TableSuggestionPanel table={table} siteId={siteId} onApplySuggestion={handleApplySuggestion} />
+                  <TableSuggestionPanel
+                    table={table}
+                    siteId={siteId}
+                    onApplySuggestion={handleApplySuggestion}
+                  />
                 </AccordionDetails>
               </Accordion>
             ))}

@@ -35,6 +35,8 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import ReplayOutlinedIcon from "@mui/icons-material/ReplayOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
 import PillTabs from "../components/PillTabs";
+import SearchField from "../components/SearchField";
+import useDebounced from "../hooks/useDebounced";
 import {
   fetchErrorAlertSettings,
   fetchErrorLog,
@@ -68,7 +70,15 @@ function DiagnosisBox({ diagnosis, compact = false }) {
   if (!diagnosis) return null;
   const style = LEVEL_STYLE[diagnosis.level] || LEVEL_STYLE.unknown;
   return (
-    <Alert severity={style.severity} icon={false} sx={{ py: compact ? 0.25 : 1, px: compact ? 1.25 : 2, mt: compact ? 0.75 : 0 }}>
+    <Alert
+      severity={style.severity}
+      icon={false}
+      sx={{
+        py: compact ? 0.25 : 1,
+        px: compact ? 1.25 : 2,
+        mt: compact ? 0.75 : 0,
+      }}
+    >
       <Typography variant={compact ? "body2" : "subtitle2"} fontWeight={800}>
         {style.emoji} مشکل از: {diagnosis.title}
         {diagnosis.subject ? ` — کاربر ${diagnosis.subject}` : ""}
@@ -77,7 +87,12 @@ function DiagnosisBox({ diagnosis, compact = false }) {
         variant={compact ? "caption" : "body2"}
         sx={
           compact
-            ? { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }
+            ? {
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }
             : { mt: 0.5 }
         }
       >
@@ -86,7 +101,12 @@ function DiagnosisBox({ diagnosis, compact = false }) {
     </Alert>
   );
 }
-const KIND_COLORS = { error: "error", slow: "warning", client: "info", android: "secondary" };
+const KIND_COLORS = {
+  error: "error",
+  slow: "warning",
+  client: "info",
+  android: "secondary",
+};
 
 const fmt = (value) => (value ? new Date(value).toLocaleString("fa-IR") : "—");
 const faNum = (n) => Number(n || 0).toLocaleString("fa-IR");
@@ -99,7 +119,13 @@ function SummaryChips({ summary }) {
     ["android", "خطای اپ"],
   ];
   return (
-    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      flexWrap="wrap"
+      useFlexGap
+      sx={{ mb: 2 }}
+    >
       {items.map(([key, label]) => {
         const s = summary?.[key];
         return (
@@ -130,7 +156,8 @@ function DetailDialog({ id, onClose, onChanged }) {
         if (!ignore) setData(result);
       })
       .catch((e) => {
-        if (!ignore) setError(e.response?.data?.detail || "دریافت جزئیات ناموفق بود.");
+        if (!ignore)
+          setError(e.response?.data?.detail || "دریافت جزئیات ناموفق بود.");
       });
     return () => {
       ignore = true;
@@ -140,7 +167,9 @@ function DetailDialog({ id, onClose, onChanged }) {
   async function toggleResolved() {
     setBusy(true);
     try {
-      const updated = data.resolved ? await reopenErrorLog(id) : await resolveErrorLog(id);
+      const updated = data.resolved
+        ? await reopenErrorLog(id)
+        : await resolveErrorLog(id);
       setData((d) => ({ ...d, ...updated }));
       onChanged();
     } catch (e) {
@@ -154,35 +183,86 @@ function DetailDialog({ id, onClose, onChanged }) {
     <Dialog open={Boolean(id)} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>جزئیات خطا</DialogTitle>
       <DialogContent dividers>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
         {!data && !error && <CircularProgress size={24} />}
         {data && (
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip size="small" color={KIND_COLORS[data.kind]} label={data.kind_label} />
-              <Chip size="small" variant="outlined" label={data.category_label} />
-              {data.resolved ? <Chip size="small" color="success" label="حل‌شده" /> : <Chip size="small" label="باز" />}
-              <Chip size="small" variant="outlined" label={`${faNum(data.count)} بار`} />
+              <Chip
+                size="small"
+                color={KIND_COLORS[data.kind]}
+                label={data.kind_label}
+              />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={data.category_label}
+              />
+              {data.resolved ? (
+                <Chip size="small" color="success" label="حل‌شده" />
+              ) : (
+                <Chip size="small" label="باز" />
+              )}
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`${faNum(data.count)} بار`}
+              />
             </Stack>
             <DiagnosisBox diagnosis={data.diagnosis} />
-            <Typography sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{data.message}</Typography>
+            <Typography
+              sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+            >
+              {data.message}
+            </Typography>
             {data.hint && !data.diagnosis?.action?.includes(data.hint) && (
               <Alert severity="info" icon={<LightbulbOutlinedIcon />}>
                 {data.hint}
               </Alert>
             )}
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1 }}>
-              <Typography variant="body2">اولین بار: {fmt(data.first_seen)}</Typography>
-              <Typography variant="body2">آخرین بار: {fmt(data.last_seen)}</Typography>
-              <Typography variant="body2">منبع: {data.source || "—"}</Typography>
-              <Typography variant="body2">آخرین درخواست: {data.last_request || "—"}</Typography>
-              <Typography variant="body2">آخرین کاربر: {data.last_user_label || "—"}</Typography>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                gap: 1,
+              }}
+            >
+              <Typography variant="body2">
+                اولین بار: {fmt(data.first_seen)}
+              </Typography>
+              <Typography variant="body2">
+                آخرین بار: {fmt(data.last_seen)}
+              </Typography>
+              <Typography variant="body2">
+                منبع: {data.source || "—"}
+              </Typography>
+              <Typography variant="body2">
+                آخرین درخواست: {data.last_request || "—"}
+              </Typography>
+              <Typography variant="body2">
+                آخرین کاربر: {data.last_user_label || "—"}
+              </Typography>
               <Typography variant="body2" sx={monoFontSx}>
                 IP: {data.last_ip || "—"}
               </Typography>
             </Box>
             {data.last_context && (
-              <Box component="pre" dir="ltr" sx={{ m: 0, p: 1.5, borderRadius: 1, bgcolor: "action.hover", fontSize: 12, overflowX: "auto" }}>
+              <Box
+                component="pre"
+                dir="ltr"
+                sx={{
+                  m: 0,
+                  p: 1.5,
+                  borderRadius: 1,
+                  bgcolor: "action.hover",
+                  fontSize: 12,
+                  overflowX: "auto",
+                }}
+              >
                 {JSON.stringify(data.last_context, null, 2)}
               </Box>
             )}
@@ -194,7 +274,17 @@ function DetailDialog({ id, onClose, onChanged }) {
                 <Box
                   component="pre"
                   dir="ltr"
-                  sx={{ m: 0, p: 1.5, borderRadius: 1, bgcolor: "action.hover", fontSize: 12, maxHeight: 320, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}
+                  sx={{
+                    m: 0,
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: "action.hover",
+                    fontSize: 12,
+                    maxHeight: 320,
+                    overflow: "auto",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                  }}
                 >
                   {data.detail}
                 </Box>
@@ -206,11 +296,38 @@ function DetailDialog({ id, onClose, onChanged }) {
               </Typography>
               <Stack spacing={0.75}>
                 {data.occurrences.map((o, i) => (
-                  <Box key={i} sx={{ p: 1, borderRadius: 1, border: 1, borderColor: "divider" }}>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                      <Typography variant="caption">{fmt(o.occurred_at)}</Typography>
-                      {o.request_id && <Chip size="small" variant="outlined" label={`کد پیگیری: ${o.request_id}`} sx={monoFontSx} />}
-                      {o.user_label && <Typography variant="caption">کاربر: {o.user_label}</Typography>}
+                  <Box
+                    key={i}
+                    sx={{
+                      p: 1,
+                      borderRadius: 1,
+                      border: 1,
+                      borderColor: "divider",
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      flexWrap="wrap"
+                      useFlexGap
+                      alignItems="center"
+                    >
+                      <Typography variant="caption">
+                        {fmt(o.occurred_at)}
+                      </Typography>
+                      {o.request_id && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`کد پیگیری: ${o.request_id}`}
+                          sx={monoFontSx}
+                        />
+                      )}
+                      {o.user_label && (
+                        <Typography variant="caption">
+                          کاربر: {o.user_label}
+                        </Typography>
+                      )}
                       {o.ip && (
                         <Typography variant="caption" sx={monoFontSx}>
                           {o.ip}
@@ -218,7 +335,11 @@ function DetailDialog({ id, onClose, onChanged }) {
                       )}
                     </Stack>
                     {o.request && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", wordBreak: "break-all" }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", wordBreak: "break-all" }}
+                      >
                         {o.request}
                       </Typography>
                     )}
@@ -239,7 +360,13 @@ function DetailDialog({ id, onClose, onChanged }) {
           <Button
             onClick={toggleResolved}
             disabled={busy}
-            startIcon={data.resolved ? <ReplayOutlinedIcon /> : <CheckCircleOutlineIcon />}
+            startIcon={
+              data.resolved ? (
+                <ReplayOutlinedIcon />
+              ) : (
+                <CheckCircleOutlineIcon />
+              )
+            }
             color={data.resolved ? "inherit" : "success"}
           >
             {data.resolved ? "باز کردن دوباره" : "حل شد"}
@@ -263,20 +390,34 @@ function AlertSettingsCard({ retentionDays }) {
         setCfg(data);
         setRecipientsText((data.recipients || []).join("\n"));
       })
-      .catch(() => setMessage({ severity: "error", text: "دریافت تنظیمات هشدار ناموفق بود." }));
+      .catch(() =>
+        setMessage({
+          severity: "error",
+          text: "دریافت تنظیمات هشدار ناموفق بود.",
+        }),
+      );
   }, []);
 
   async function save() {
     setBusy(true);
     setMessage(null);
     try {
-      const recipients = recipientsText.split(/[\s,،;]+/).map((s) => s.trim()).filter(Boolean);
-      const data = await saveErrorAlertSettings({ enabled: cfg.enabled, recipients });
+      const recipients = recipientsText
+        .split(/[\s,،;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const data = await saveErrorAlertSettings({
+        enabled: cfg.enabled,
+        recipients,
+      });
       setCfg(data);
       setRecipientsText(data.recipients.join("\n"));
       setMessage({ severity: "success", text: "ذخیره شد." });
     } catch (e) {
-      setMessage({ severity: "error", text: e.response?.data?.detail || "ذخیره ناموفق بود." });
+      setMessage({
+        severity: "error",
+        text: e.response?.data?.detail || "ذخیره ناموفق بود.",
+      });
     } finally {
       setBusy(false);
     }
@@ -287,9 +428,15 @@ function AlertSettingsCard({ retentionDays }) {
     setMessage(null);
     try {
       const res = await sendTestErrorAlert();
-      setMessage({ severity: "success", text: `ایمیل آزمایشی به ${faNum(res.sent)} گیرنده فرستاده شد.` });
+      setMessage({
+        severity: "success",
+        text: `ایمیل آزمایشی به ${faNum(res.sent)} گیرنده فرستاده شد.`,
+      });
     } catch (e) {
-      setMessage({ severity: "error", text: e.response?.data?.detail || "ارسال ناموفق بود." });
+      setMessage({
+        severity: "error",
+        text: e.response?.data?.detail || "ارسال ناموفق بود.",
+      });
     } finally {
       setBusy(false);
     }
@@ -301,8 +448,10 @@ function AlertSettingsCard({ retentionDays }) {
         ایمیل هشدار خطاهای جدید
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        وقتی خطای جدیدی در سرور، اپ اندروید یا صفحه‌ای که از کار افتاده رخ دهد (یا خطای «حل‌شده» دوباره رخ دهد)، به این
-        آدرس‌ها ایمیل می‌شود. تکرار همان خطا دوباره ایمیل نمی‌شود. درخواست‌های کند و قطعی اینترنت کاربران ایمیل نمی‌شوند.
+        وقتی خطای جدیدی در سرور، اپ اندروید یا صفحه‌ای که از کار افتاده رخ دهد
+        (یا خطای «حل‌شده» دوباره رخ دهد)، به این آدرس‌ها ایمیل می‌شود. تکرار
+        همان خطا دوباره ایمیل نمی‌شود. درخواست‌های کند و قطعی اینترنت کاربران
+        ایمیل نمی‌شوند.
       </Typography>
       {!cfg ? (
         <CircularProgress size={20} />
@@ -310,11 +459,17 @@ function AlertSettingsCard({ retentionDays }) {
         <Stack spacing={1.5}>
           {!cfg.smtp_ready && (
             <Alert severity="warning">
-              ایمیل سامانه (SMTP) در «تنظیمات سامانه» فعال یا کامل نیست؛ تا تنظیم نشود هیچ هشداری فرستاده نمی‌شود.
+              ایمیل سامانه (SMTP) در «تنظیمات سامانه» فعال یا کامل نیست؛ تا
+              تنظیم نشود هیچ هشداری فرستاده نمی‌شود.
             </Alert>
           )}
           <FormControlLabel
-            control={<Switch checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />}
+            control={
+              <Switch
+                checked={cfg.enabled}
+                onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })}
+              />
+            }
             label="ارسال هشدار فعال باشد"
           />
           <TextField
@@ -327,7 +482,8 @@ function AlertSettingsCard({ retentionDays }) {
             fullWidth
           />
           <Typography variant="caption" color="text.secondary">
-            درخواستی که بیش از {faNum(cfg.slow_request_seconds)} ثانیه طول بکشد «درخواست کند» ثبت می‌شود. گزارش‌ها بعد از{" "}
+            درخواستی که بیش از {faNum(cfg.slow_request_seconds)} ثانیه طول بکشد
+            «درخواست کند» ثبت می‌شود. گزارش‌ها بعد از{" "}
             {faNum(retentionDays || 30)} روز خودکار پاک می‌شوند.
           </Typography>
           {message && <Alert severity={message.severity}>{message.text}</Alert>}
@@ -335,7 +491,10 @@ function AlertSettingsCard({ retentionDays }) {
             <Button variant="contained" onClick={save} disabled={busy}>
               ذخیره
             </Button>
-            <Button onClick={test} disabled={busy || !cfg.smtp_ready || !cfg.recipients.length}>
+            <Button
+              onClick={test}
+              disabled={busy || !cfg.smtp_ready || !cfg.recipients.length}
+            >
               ارسال ایمیل آزمایشی
             </Button>
           </Stack>
@@ -352,7 +511,7 @@ export default function ErrorLogsPage() {
   const [kind, setKind] = useState("");
   const [category, setCategory] = useState("");
   const [q, setQ] = useState("");
-  const [query, setQuery] = useState(""); // متن جست‌وجوی اعمال‌شده (با کمی تأخیر)
+  const query = useDebounced(q.trim(), 300); // متن جست‌وجوی اعمال‌شده (۳۰۰ms بعد از آخرین حرف)
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -376,7 +535,10 @@ export default function ErrorLogsPage() {
         if (seq === loadSeq.current) setData(result);
       })
       .catch((e) => {
-        if (seq === loadSeq.current) setError(e.response?.data?.detail || "دریافت گزارش خطاها ناموفق بود.");
+        if (seq === loadSeq.current)
+          setError(
+            e.response?.data?.detail || "دریافت گزارش خطاها ناموفق بود.",
+          );
       });
   }, [state, tabDef.attention, kind, category, query, page]);
 
@@ -384,14 +546,10 @@ export default function ErrorLogsPage() {
     load();
   }, [load]);
 
-  // جست‌وجو ۴۰۰ میلی‌ثانیه بعد از آخرین حرف
+  // تغییر متن جست‌وجو ← برگشت به صفحه‌ی اول
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setQuery(q.trim());
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [q]);
+    setPage(1);
+  }, [query]);
 
   // برگشت به تب ← تازه‌سازی
   useEffect(() => {
@@ -412,7 +570,11 @@ export default function ErrorLogsPage() {
   async function resolveAll() {
     setBusy(true);
     try {
-      await resolveAllErrorLogs({ kind: kind || undefined, category: category || undefined, attention: tabDef.attention });
+      await resolveAllErrorLogs({
+        kind: kind || undefined,
+        category: category || undefined,
+        attention: tabDef.attention,
+      });
       load();
     } catch (e) {
       setError(e.response?.data?.detail || "ذخیره ناموفق بود.");
@@ -423,7 +585,12 @@ export default function ErrorLogsPage() {
 
   return (
     <Box>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: 1 }}
+      >
         <Typography variant="h5" fontWeight={700}>
           گزارش خطاها
         </Typography>
@@ -434,8 +601,9 @@ export default function ErrorLogsPage() {
         </Tooltip>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        هر خطا یک تشخیص دارد: «مشکل از کجاست» و «کار شما». فقط تب «نیاز به اقدام» را دنبال کنید؛ بقیه یا کاری
-        لازم ندارند یا خودکار حل می‌شوند. کاربر کد پیگیری را که در پیام خطا دیده بفرستد، همین‌جا جست‌وجو کنید.
+        هر خطا یک تشخیص دارد: «مشکل از کجاست» و «کار شما». فقط تب «نیاز به
+        اقدام» را دنبال کنید؛ بقیه یا کاری لازم ندارند یا خودکار حل می‌شوند.
+        کاربر کد پیگیری را که در پیام خطا دیده بفرستد، همین‌جا جست‌وجو کنید.
       </Typography>
 
       {/* خلاصه‌ی اصلی: چند مورد واقعاً نیاز به اقدام دارد */}
@@ -445,7 +613,11 @@ export default function ErrorLogsPage() {
           sx={{ mb: 2 }}
           action={
             data.attention.action && tab !== "action" ? (
-              <Button color="inherit" size="small" onClick={() => (setTab("action"), setPage(1))}>
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => (setTab("action"), setPage(1))}
+              >
                 نمایش
               </Button>
             ) : null
@@ -454,7 +626,9 @@ export default function ErrorLogsPage() {
           {data.attention.action
             ? `${faNum(data.attention.action)} مورد نیاز به اقدام دارد.`
             : "هیچ موردی نیاز به اقدام ندارد. پرتال سالم است."}
-          {data.attention.ok ? ` (${faNum(data.attention.ok)} مورد «کاری لازم نیست» هم باز است که خودکار حل می‌شود.)` : ""}
+          {data.attention.ok
+            ? ` (${faNum(data.attention.ok)} مورد «کاری لازم نیست» هم باز است که خودکار حل می‌شود.)`
+            : ""}
         </Alert>
       )}
 
@@ -478,12 +652,16 @@ export default function ErrorLogsPage() {
         sx={{ maxWidth: 640 }}
       />
 
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 2 }}>
-        <TextField
-          size="small"
-          label="جست‌وجو (متن، کاربر، مسیر یا کد پیگیری)"
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        sx={{ mb: 2 }}
+      >
+        <SearchField
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={setQ}
+          placeholder="جست‌وجوی متن، کاربر، مسیر یا کد پیگیری…"
+          fullWidth={false}
           sx={{ minWidth: 280 }}
         />
         <TextField
@@ -525,19 +703,32 @@ export default function ErrorLogsPage() {
         {/* با جست‌وجوی فعال پنهان است: «همه» در سرور فقط با نوع و بخش فیلتر می‌شود، نه متن جست‌وجو */}
         {/* «حل شدن همه» فقط همان تب (نیاز به اقدام / کاری لازم نیست) و همان نوع/بخش؛ با جست‌وجوی فعال پنهان است */}
         {state === "open" && !query && data?.total > 0 && (
-          <Button onClick={resolveAll} disabled={busy} startIcon={<CheckCircleOutlineIcon />} color="success">
+          <Button
+            onClick={resolveAll}
+            disabled={busy}
+            startIcon={<CheckCircleOutlineIcon />}
+            color="success"
+          >
             حل شدن همه‌ی موارد این فیلتر
           </Button>
         )}
       </Stack>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
       {!data ? (
         <CircularProgress />
       ) : data.items.length === 0 ? (
         <Alert severity="success">
-          {tab === "action" ? "هیچ موردی نیاز به اقدام ندارد." : tab === "ok" ? "موردی نیست." : "موردی پیدا نشد."}
+          {tab === "action"
+            ? "هیچ موردی نیاز به اقدام ندارد."
+            : tab === "ok"
+              ? "موردی نیست."
+              : "موردی پیدا نشد."}
         </Alert>
       ) : (
         <Stack spacing={1.25}>
@@ -545,27 +736,75 @@ export default function ErrorLogsPage() {
             <Card
               key={item.id}
               variant="outlined"
-              sx={{ p: 1.75, borderRadius: 2, cursor: "pointer", "&:hover": { bgcolor: "action.hover" }, opacity: item.resolved ? 0.7 : 1 }}
+              sx={{
+                p: 1.75,
+                borderRadius: 2,
+                cursor: "pointer",
+                "&:hover": { bgcolor: "action.hover" },
+                opacity: item.resolved ? 0.7 : 1,
+              }}
               onClick={() => setOpenId(item.id)}
             >
-              <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="flex-start"
+                justifyContent="space-between"
+              >
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
-                    <Chip size="small" color={KIND_COLORS[item.kind]} label={item.kind_label} />
-                    <Chip size="small" variant="outlined" label={item.category_label} />
-                    <Chip size="small" variant="outlined" label={`${faNum(item.count)} بار`} />
-                    {item.resolved && <Chip size="small" color="success" variant="outlined" label="حل‌شده" />}
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    flexWrap="wrap"
+                    useFlexGap
+                    sx={{ mb: 0.75 }}
+                  >
+                    <Chip
+                      size="small"
+                      color={KIND_COLORS[item.kind]}
+                      label={item.kind_label}
+                    />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={item.category_label}
+                    />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`${faNum(item.count)} بار`}
+                    />
+                    {item.resolved && (
+                      <Chip
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        label="حل‌شده"
+                      />
+                    )}
                   </Stack>
                   <Typography
                     variant="body2"
-                    sx={{ wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                    sx={{
+                      wordBreak: "break-word",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
                   >
                     {item.message}
                   </Typography>
                   <DiagnosisBox diagnosis={item.diagnosis} compact />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5 }}
+                  >
                     آخرین بار: {fmt(item.last_seen)}
-                    {item.last_user_label ? ` · کاربر: ${item.last_user_label}` : ""}
+                    {item.last_user_label
+                      ? ` · کاربر: ${item.last_user_label}`
+                      : ""}
                     {item.last_request ? ` · ${item.last_request}` : ""}
                   </Typography>
                 </Box>
@@ -588,14 +827,23 @@ export default function ErrorLogsPage() {
           ))}
           {data.total > PAGE_SIZE && (
             <Stack alignItems="center" sx={{ mt: 1 }}>
-              <Pagination count={Math.ceil(data.total / PAGE_SIZE)} page={page} onChange={(_, v) => setPage(v)} color="primary" />
+              <Pagination
+                count={Math.ceil(data.total / PAGE_SIZE)}
+                page={page}
+                onChange={(_, v) => setPage(v)}
+                color="primary"
+              />
             </Stack>
           )}
         </Stack>
       )}
 
       <AlertSettingsCard retentionDays={data?.retention_days} />
-      <DetailDialog id={openId} onClose={() => setOpenId(null)} onChanged={load} />
+      <DetailDialog
+        id={openId}
+        onClose={() => setOpenId(null)}
+        onChanged={load}
+      />
     </Box>
   );
 }

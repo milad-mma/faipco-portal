@@ -21,9 +21,11 @@ export async function deleteMyVehicle(vehicleId) {
   await apiClient.delete(`/vehicles/me/${vehicleId}`);
 }
 
-// GET /vehicles (اختیاری به تفکیک سایت)؛ خروجی: همه‌ی خودروهای پرسنل
-export async function fetchAllVehicles(siteId) {
-  const { data } = await apiClient.get("/vehicles", { params: siteId ? { site_id: siteId } : {} });
+// GET /vehicles (اختیاری به تفکیک سایت و با جست‌وجوی متنی سمت سرور)؛ خروجی: همه‌ی خودروهای پرسنل
+export async function fetchAllVehicles(siteId, search) {
+  const { data } = await apiClient.get("/vehicles", {
+    params: { site_id: siteId || undefined, search: search || undefined },
+  });
   return data;
 }
 
