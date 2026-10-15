@@ -97,14 +97,14 @@ export default function PresenceReportPage() {
       </Alert>
 
       {/* نوار فیلترها؛ تغییر هر فیلتر صفحه را به ۱ برمی‌گرداند */}
-      {/* هم‌ترازی پایین: سوئیچ با خط ورودیِ فیلدهای برچسب‌دار هم‌سطح می‌شود */}
+      {/* همه‌ی فیلدها small (۴۰px)؛ هم‌ترازی وسط */}
       <Stack
-        direction="row"
-        spacing={2}
-        sx={{ mb: 3 }}
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
-        rowGap={2}
-        alignItems="flex-end"
+        useFlexGap
+        sx={{ mb: 3 }}
       >
         <SiteFilterSelect
           value={selectedSiteId}
@@ -113,10 +113,12 @@ export default function PresenceReportPage() {
             setSelectedSiteId(value);
             setPage(1);
           }}
+          size="small"
         />
         {/* فیلتر پرسنل با انتخابگر مشترک (جست‌وجوی سمت سرور) */}
         <EmployeeSearchField
-          sx={{ minWidth: 260 }}
+          size="small"
+          sx={{ minWidth: 260, flexGrow: 1 }}
           value={selectedEmployee}
           onChange={(value) => {
             setSelectedEmployee(value);

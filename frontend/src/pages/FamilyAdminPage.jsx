@@ -819,6 +819,7 @@ function ListTab({ canManage, formSettings }) {
             <SearchField
               value={filters.search}
               onChange={(text) => setFilter({ search: text })}
+              size="small"
             />
           </Grid>
           <Grid item xs={12} sm={6} md={2}>
@@ -826,6 +827,7 @@ function ListTab({ canManage, formSettings }) {
               value={filters.siteId}
               permission={canManage ? "family.manage" : "family.view"}
               onChange={(v) => setFilter({ siteId: v })}
+              size="small"
               sx={{ width: "100%" }}
             />
           </Grid>
@@ -874,6 +876,7 @@ function ListTab({ canManage, formSettings }) {
               label="تاریخ مبنا (خالی = امروز)"
               value={filters.asOf}
               onChange={(v) => setFilter({ asOf: v || "" })}
+              size="small"
             />
           </Grid>
           <Grid item xs={6} md={1.5}>
@@ -889,6 +892,7 @@ function ListTab({ canManage, formSettings }) {
               }
               onClick={handleExport}
               disabled={exporting}
+              sx={{ height: 40, whiteSpace: "nowrap" }}
             >
               Excel
             </Button>

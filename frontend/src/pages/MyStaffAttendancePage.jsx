@@ -125,10 +125,13 @@ export default function MyStaffAttendancePage() {
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={1.5}
-            alignItems={{ xs: "stretch", sm: "flex-start" }}
+            alignItems={{ xs: "stretch", sm: "center" }}
+            flexWrap="wrap"
+            useFlexGap
             sx={{ mb: 3 }}
           >
             <EmployeeSearchField
+              size="small"
               fetcher={staffFetcher}
               value={
                 selected
@@ -141,7 +144,7 @@ export default function MyStaffAttendancePage() {
               }
               onChange={(opt) => setSelected(opt ? opt.employee : null)}
               label="پرسنل"
-              sx={{ flex: 1, minWidth: 260 }}
+              sx={{ flexGrow: 1, minWidth: 260 }}
             />
             <JalaliMonthYearFilter
               year={period.year}

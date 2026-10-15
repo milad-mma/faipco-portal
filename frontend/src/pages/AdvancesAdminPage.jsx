@@ -252,7 +252,9 @@ function RequestsTab({ site, reloadKey, onToast }) {
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
-        alignItems={{ sm: "flex-end" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexWrap="wrap"
+        useFlexGap
       >
         <TextField
           select
@@ -290,7 +292,7 @@ function RequestsTab({ site, reloadKey, onToast }) {
             setQ(e.target.value);
             setPage(0);
           }}
-          sx={{ flex: 1 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
       </Stack>
       {site.can_finance && (

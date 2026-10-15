@@ -235,21 +235,25 @@ function DevicesTab({ labels }) {
       </Grid>
 
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
-        alignItems={{ md: "center" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexWrap="wrap"
+        useFlexGap
       >
         <SiteFilterSelect
           value={siteId}
           onChange={setSiteId}
           permission="mobile.devices"
+          size="small"
         />
         <SearchField
           placeholder="جست‌وجوی نام، کد پرسنلی یا مدل…"
           value={searchInput}
           onChange={setSearchInput}
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 260 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
         <TextField
           select
@@ -272,7 +276,11 @@ function DevicesTab({ labels }) {
           }
           label="باطل‌شده‌ها هم"
         />
-        <Button startIcon={<RefreshIcon />} onClick={load}>
+        <Button
+          startIcon={<RefreshIcon />}
+          onClick={load}
+          sx={{ height: 40, whiteSpace: "nowrap" }}
+        >
           به‌روزرسانی
         </Button>
       </Stack>
@@ -455,14 +463,17 @@ function EventsTab({ labels }) {
   return (
     <Stack spacing={2}>
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
-        alignItems={{ md: "center" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexWrap="wrap"
+        useFlexGap
       >
         <SiteFilterSelect
           value={siteId}
           onChange={(v) => (setSiteId(v), setPage(0))}
           permission="mobile.devices"
+          size="small"
         />
         <TextField
           select
@@ -482,10 +493,15 @@ function EventsTab({ labels }) {
         <SearchField
           value={searchInput}
           onChange={(text) => (setSearchInput(text), setPage(0))}
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 260 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
-        <Button startIcon={<RefreshIcon />} onClick={load}>
+        <Button
+          startIcon={<RefreshIcon />}
+          onClick={load}
+          sx={{ height: 40, whiteSpace: "nowrap" }}
+        >
           به‌روزرسانی
         </Button>
       </Stack>

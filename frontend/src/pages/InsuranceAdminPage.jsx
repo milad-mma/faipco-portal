@@ -463,26 +463,28 @@ function RegistrationsTab({ canManage }) {
 
   return (
     <Box>
-      {/* هم‌ترازی پایین: فیلدها برچسب بالای خود دارند و دکمه‌ها با خط ورودی‌ها هم‌سطح می‌شوند */}
+      {/* نوار فیلتر: همه‌ی فیلدها small (۴۰px) و دکمه هم‌قد آن‌ها؛ هم‌ترازی وسط */}
       <Stack
-        direction="row"
+        direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
         useFlexGap
-        alignItems="flex-end"
         sx={{ mb: 2 }}
       >
         <SearchField
           placeholder="جست‌وجوی نام، کد پرسنلی یا کد ملی…"
           value={search}
           onChange={(text) => (setSearch(text), setPage(0))}
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 260 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
         <SiteFilterSelect
           value={siteId}
           permission="insurance.view"
           onChange={(v) => (setSiteId(v), setPage(0))}
+          size="small"
         />
         <TextField
           select
@@ -511,6 +513,7 @@ function RegistrationsTab({ canManage }) {
           }
           onClick={handleExport}
           disabled={exporting}
+          sx={{ height: 40, whiteSpace: "nowrap" }}
         >
           خروجی Excel
         </Button>

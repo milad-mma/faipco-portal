@@ -646,14 +646,16 @@ export default function LeaveRequestsAdminListPage() {
 
       {/* نوار فیلتر: سایت، جست‌وجو، وضعیت، نوع، واحد و دکمه‌ی خروجی Excel */}
       <Stack
-        direction="row"
-        spacing={2}
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
         useFlexGap
         sx={{ mb: 2 }}
       >
         <TextField
           select
+          size="small"
           label="سایت"
           value={siteId}
           onChange={(e) => setSiteId(e.target.value)}
@@ -669,12 +671,13 @@ export default function LeaveRequestsAdminListPage() {
           value={search}
           onChange={setSearch}
           placeholder="جست‌وجوی نام، کد پرسنلی، نوع یا توضیح…"
-          size="medium"
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 300 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
         <TextField
           select
+          size="small"
           label="وضعیت"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -689,6 +692,7 @@ export default function LeaveRequestsAdminListPage() {
         </TextField>
         <TextField
           select
+          size="small"
           label="نوع درخواست"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -703,6 +707,7 @@ export default function LeaveRequestsAdminListPage() {
         </TextField>
         <TextField
           select
+          size="small"
           label="واحد"
           value={departmentFilter}
           onChange={(e) => setDepartmentFilter(e.target.value)}
@@ -721,6 +726,7 @@ export default function LeaveRequestsAdminListPage() {
             startIcon={<FileDownloadOutlinedIcon />}
             onClick={handleExport}
             disabled={isExporting || !siteId}
+            sx={{ height: 40, whiteSpace: "nowrap" }}
           >
             {isExporting ? "در حال آماده‌سازی..." : "خروجی Excel"}
           </Button>
@@ -1023,11 +1029,11 @@ export default function LeaveRequestsAdminListPage() {
             />
             {(dateFrom || dateTo) && (
               <Button
-                size="small"
                 onClick={() => {
                   setDateFrom(null);
                   setDateTo(null);
                 }}
+                sx={{ height: 40, whiteSpace: "nowrap" }}
               >
                 حذف فیلتر تاریخ
               </Button>

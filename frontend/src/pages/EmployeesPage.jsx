@@ -423,21 +423,21 @@ export default function EmployeesPage() {
       </Stack>
 
       {/* نوار ابزار: جستجو، فیلتر سایت، نمایش غیرفعال‌ها و دکمه‌ی پاک‌سازی */}
-      <Box
-        sx={{
-          display: "flex",
-          gap: 2,
-          mb: 2,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mb: 2 }}
       >
         <SearchField
           placeholder="جست‌وجوی نام، کد پرسنلی یا کد ملی…"
           value={search}
           onChange={setSearch}
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 280, flexGrow: 1 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
         <TextField
           select
@@ -469,16 +469,16 @@ export default function EmployeesPage() {
         />
         <Tooltip title="بررسی و پاک‌سازی پرسنل غیرفعالی که هیچ سابقه‌ای در پرتال ندارند — داده تاریخی از قبل از رفع باگ Sync">
           <Button
-            size="small"
             variant="outlined"
             color="warning"
             startIcon={<CleaningServicesOutlinedIcon />}
             onClick={handleOpenCleanupDialog}
+            sx={{ height: 40, whiteSpace: "nowrap" }}
           >
             پاک‌سازی پرسنل بدون سابقه
           </Button>
         </Tooltip>
-      </Box>
+      </Stack>
 
       {/* جدول پرسنل با صفحه‌بندی سمت سرور */}
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>

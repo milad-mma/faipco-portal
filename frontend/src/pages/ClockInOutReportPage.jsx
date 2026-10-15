@@ -474,12 +474,12 @@ export default function ClockInOutReportPage() {
 
       {/* فیلترها: سایت، پرسنل و ماه/سال؛ هر تغییر صفحه را به ۱ برمی‌گرداند */}
       <Stack
-        direction="row"
-        spacing={2}
-        sx={{ mb: 3 }}
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
-        rowGap={2}
-        alignItems="flex-end"
+        useFlexGap
+        sx={{ mb: 3 }}
       >
         <SiteFilterSelect
           value={selectedSiteId}
@@ -488,10 +488,12 @@ export default function ClockInOutReportPage() {
             setSelectedSiteId(value);
             setPage(1);
           }}
+          size="small"
         />
         {/* فیلتر پرسنل با انتخابگر مشترک؛ فقط .id گزینه برای درخواست لاگ‌ها لازم است */}
         <EmployeeSearchField
-          sx={{ minWidth: 260 }}
+          size="small"
+          sx={{ minWidth: 260, flexGrow: 1 }}
           value={selectedEmployee}
           onChange={(value) => {
             setSelectedEmployee(value);

@@ -21,7 +21,6 @@ import {
   MenuItem,
   Stack,
   Switch,
-  Tab,
   Table,
   TableBody,
   TableCell,
@@ -29,7 +28,6 @@ import {
   TableHead,
   TablePagination,
   TableRow,
-  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -368,6 +366,7 @@ function FeedbackMessagesList({ canDelete }) {
               value={dateFrom}
               onChange={setDateFrom}
               disableFuture
+              size="small"
             />
           </Box>
           <Box sx={{ width: 200 }}>
@@ -376,6 +375,7 @@ function FeedbackMessagesList({ canDelete }) {
               value={dateTo}
               onChange={setDateTo}
               disableFuture
+              size="small"
             />
           </Box>
         </Stack>

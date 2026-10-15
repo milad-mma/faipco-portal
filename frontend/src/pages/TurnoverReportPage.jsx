@@ -263,13 +263,13 @@ function ReportTab({ onGoCategories }) {
   return (
     <Box sx={{ opacity: loading ? 0.6 : 1, transition: "opacity .2s" }}>
       {/* فیلترها در یک ردیف بالای نمودارها */}
-      {/* هم‌ترازی پایین: دکمه‌ها با خط ورودیِ فیلدهای برچسب‌دار هم‌سطح می‌شوند */}
+      {/* همه‌ی فیلدها small (۴۰px) و دکمه‌ها هم‌قد آن‌ها؛ هم‌ترازی وسط */}
       <Stack
-        direction="row"
+        direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
         useFlexGap
-        alignItems="flex-end"
         sx={{ mb: 2 }}
       >
         {report.sites.length > 1 && (
@@ -348,7 +348,6 @@ function ReportTab({ onGoCategories }) {
         <Tooltip title="داده برای ۵ دقیقه نگه داشته می‌شود؛ این دکمه همین حالا از دیتابیس منبع می‌خواند">
           <span>
             <Button
-              size="small"
               startIcon={
                 loading ? (
                   <CircularProgress size={14} />
@@ -358,13 +357,13 @@ function ReportTab({ onGoCategories }) {
               }
               onClick={() => load(true)}
               disabled={loading}
+              sx={{ height: 40, whiteSpace: "nowrap" }}
             >
               به‌روزرسانی
             </Button>
           </span>
         </Tooltip>
         <Button
-          size="small"
           variant="outlined"
           startIcon={
             exporting ? (
@@ -375,6 +374,7 @@ function ReportTab({ onGoCategories }) {
           }
           onClick={handleExport}
           disabled={exporting}
+          sx={{ height: 40, whiteSpace: "nowrap" }}
         >
           خروجی Excel
         </Button>

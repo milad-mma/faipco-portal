@@ -655,14 +655,18 @@ export default function ErrorLogsPage() {
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexWrap="wrap"
+        useFlexGap
         sx={{ mb: 2 }}
       >
         <SearchField
           value={q}
           onChange={setQ}
           placeholder="جست‌وجوی متن، کاربر، مسیر یا کد پیگیری…"
+          size="small"
           fullWidth={false}
-          sx={{ minWidth: 280 }}
+          sx={{ minWidth: 260, flexGrow: 1 }}
         />
         <TextField
           select
@@ -708,6 +712,7 @@ export default function ErrorLogsPage() {
             disabled={busy}
             startIcon={<CheckCircleOutlineIcon />}
             color="success"
+            sx={{ height: 40, whiteSpace: "nowrap" }}
           >
             حل شدن همه‌ی موارد این فیلتر
           </Button>

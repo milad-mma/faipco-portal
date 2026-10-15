@@ -229,24 +229,27 @@ export default function VehiclesReportPage() {
       </Typography>
 
       <Stack
-        direction="row"
-        spacing={2}
-        sx={{ mb: 2 }}
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
         flexWrap="wrap"
-        rowGap={2}
+        useFlexGap
+        sx={{ mb: 2 }}
       >
         <SearchField
           value={search}
           onChange={setSearch}
           placeholder="جست‌وجوی نام، کد پرسنلی، واحد، خودرو، رنگ یا پلاک…"
+          size="small"
           fullWidth={false}
-          sx={{ flex: 1, minWidth: 240, maxWidth: 480 }}
+          sx={{ flexGrow: 1, minWidth: 260, maxWidth: 480 }}
         />
         {/* فیلتر سایت بر اساس سایت‌های مجاز کاربر برای vehicles.view_all */}
         <SiteFilterSelect
           value={selectedSiteId}
           permission="vehicles.view_all"
           onChange={setSelectedSiteId}
+          size="small"
         />
       </Stack>
 

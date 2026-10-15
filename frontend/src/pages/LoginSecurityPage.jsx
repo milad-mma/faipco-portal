@@ -350,8 +350,10 @@ function ReportTab() {
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1.5}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          flexWrap="wrap"
+          useFlexGap
           sx={{ p: 2 }}
-          alignItems={{ sm: "center" }}
         >
           <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>
             رویدادها
@@ -375,8 +377,9 @@ function ReportTab() {
             value={searchInput}
             onChange={setSearchInput}
             placeholder="جست‌وجوی IP یا شناسه…"
+            size="small"
             fullWidth={false}
-            sx={{ minWidth: 240 }}
+            sx={{ minWidth: 260 }}
           />
         </Stack>
         {events === null ? (
