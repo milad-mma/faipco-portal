@@ -170,3 +170,15 @@ export async function resolveNoticeEmployeeCodes(codes) {
   const { data } = await apiClient.post("/notices/resolve-employee-codes", { codes });
   return data;
 }
+
+// GET /notices/me/receipt-unread؛ شمارنده‌ی کارت‌های فیش حقوقی/کارکرد: { payroll, attendance_card }
+export async function fetchMyReceiptUnread() {
+  const { data } = await apiClient.get("/notices/me/receipt-unread");
+  return data;
+}
+
+// GET /notices/attendance-card/sample؛ فایل نمونه‌ی فیش کارکرد (فقط با مجوز ارسال فیش کارکرد)
+export async function downloadAttendanceCardSample() {
+  const { data } = await apiClient.get("/notices/attendance-card/sample", { responseType: "blob" });
+  return data;
+}

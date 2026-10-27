@@ -76,6 +76,18 @@ class NoticePermissionError(Exception):
     """کاربر اجازه هدف قرار دادن یکی از Target های درخواستی را ندارد (یا اجازه حذف این اطلاعیه را ندارد)."""
 
 
+# فیش حقوقی و فیش کارکرد در «اطلاعیه‌ها» نمی‌آیند؛ هرکدام صفحه‌ی کارت خودش را در داشبورد پرسنل دارد
+RECEIPT_NOTICE_TYPES = (NoticeType.payroll, NoticeType.attendance_card)
+
+
+def notice_push_url(notice_type) -> str:
+    """مقصد کلیک روی اعلان: فیش حقوقی/کارکرد ← صفحه‌ی کارت خودش؛ بقیه ← اطلاعیه‌ها."""
+    value = getattr(notice_type, "value", notice_type)
+    if value in ("payroll", "attendance_card"):
+        return f"/notices?type={value}"
+    return "/notices"
+
+
 async def send_publish_notifications(notice_id: int) -> None:
     """
     ارسال Push به همه مخاطبان اطلاعیه notice_id — طراحی‌شده برای اجرا در Background
@@ -95,7 +107,7 @@ async def send_publish_notifications(notice_id: int) -> None:
             audience = await service._resolve_audience_user_ids(notice)
             await PushService(db).notify_users(
                 audience,
-                url="/notices",
+                url=notice_push_url(notice.notice_type),
                 priority=notice.priority.value,
                 notice_type=notice.notice_type.value,
             )
@@ -402,6 +414,9 @@ class NoticeService:
         # فیلتر نوع (فقط فیش حقوقی / فقط فیش کارکرد) — برای صفحه اختصاصی هرکدام
         if notice_type is not None:
             base_filters = (*base_filters, Notice.notice_type == notice_type)
+        else:
+            # فهرست عمومی اطلاعیه‌ها (و شمارنده‌ی خوانده‌نشده‌اش) بدون فیش حقوقی/کارکرد؛ آن‌ها فقط در کارت خودشان
+            base_filters = (*base_filters, Notice.notice_type.not_in(RECEIPT_NOTICE_TYPES))
 
         # فیلتر آرشیو — سه حالت، به‌جای bool ساده (چون bool|None توی Query
         # String واقعی HTTP مبهم/دردسرساز است — "null" به‌عنوان رشته باید
@@ -1417,7 +1432,7 @@ class NoticeService:
         # ارسال در پس‌زمینه با Session جدا؛ پاسخ HTTP منتظر Push نمی‌ماند و تعداد گیرندگان فوراً برمی‌گردد
         schedule_push(
             unread_user_ids,
-            url="/notices",
+            url=notice_push_url(notice.notice_type),
             priority=notice.priority.value,
             notice_type=notice.notice_type.value,
         )

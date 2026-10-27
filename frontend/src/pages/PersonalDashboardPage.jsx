@@ -35,7 +35,7 @@ import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fetchMyNotices } from "../api/notices";
+import { fetchMyNotices, fetchMyReceiptUnread } from "../api/notices";
 import { fetchMonthlyAttendanceReport } from "../api/monthlyAttendance";
 import { gregorianToJalali } from "../utils/jalaliDate";
 import {
@@ -165,6 +165,7 @@ export default function PersonalDashboardPage() {
     pendingLoanCount +
     pendingAdvanceCount; // تعداد درخواست‌های مرخصی/ماموریت منتظر تصمیم این کاربر
   const [feedbackUnread, setFeedbackUnread] = useState(0); // پیام‌های انتقادات و پیشنهادات کاربر با پاسخ دیده‌نشده
+  const [receiptUnread, setReceiptUnread] = useState({ payroll: 0, attendance_card: 0 }); // فیش‌های دیده‌نشده (شمارنده‌ی کارت‌ها)
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up("md")); // برای تعیین تعداد اطلاعیه‌های اخیر
 
   // متولدین امروز را (با رعایت تنظیم حریم خصوصی) بارگذاری می‌کند؛ جدا تعریف شده تا پس از
@@ -208,6 +209,10 @@ export default function PersonalDashboardPage() {
     // پاسخ‌های دیده‌نشده‌ی بازبین به پیام‌های انتقادات و پیشنهادات این کاربر
     swr("dashboard:feedbackUnread", fetchMyFeedbackUnreadCount, (count) =>
       setFeedbackUnread(count || 0),
+    ).catch(() => {});
+    // فیش حقوقی/کارکرد دیگر در «اطلاعیه‌ها» نیستند؛ شمارنده‌ی کارت خودشان نشان می‌دهد فیش تازه آمده
+    swr("dashboard:receiptUnread", fetchMyReceiptUnread, (data) =>
+      setReceiptUnread({ payroll: data?.payroll || 0, attendance_card: data?.attendance_card || 0 }),
     ).catch(() => {});
   }, []);
 
@@ -685,11 +690,13 @@ export default function PersonalDashboardPage() {
         <ToolCard
           icon={<DescriptionOutlinedIcon />}
           label="فیش حقوقی"
+          badge={receiptUnread.payroll}
           onClick={() => navigate("/notices?type=payroll")}
         />
         <ToolCard
           icon={<AssignmentOutlinedIcon />}
           label="فیش کارکرد"
+          badge={receiptUnread.attendance_card}
           onClick={() => navigate("/notices?type=attendance_card")}
         />
         <PerformanceEvaluationToolCard

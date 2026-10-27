@@ -24,8 +24,8 @@ registerRoute(({ url }) => url.pathname.startsWith("/api/"), new NetworkOnly());
 
 // درخواست‌های ناوبری (باز کردن مستقیم یا Refresh یک مسیر مثل /notices) با index.html پیش‌کش‌شده پاسخ داده می‌شوند
 const navigationHandler = createHandlerBoundToURL("/index.html");
-// فایل‌های واقعی (نمونه‌ی اکسل، assetlinks) نباید با index.html جواب داده شوند
-registerRoute(new NavigationRoute(navigationHandler, { denylist: [/^\/samples\//, /^\/\.well-known\//] }));
+// فایل‌های واقعی (assetlinks) نباید با index.html جواب داده شوند
+registerRoute(new NavigationRoute(navigationHandler, { denylist: [/^\/\.well-known\//] }));
 
 // آیکون‌های اعلان: Chrome تصویر icon/badge را هنگام نمایش اعلان از شبکه می‌گیرد؛ اگر گوشی در آن لحظه در خواب
 // (Doze) باشد یا اینترنتش ضعیف، گرفتن تصویر شکست می‌خورد و Chrome زنگوله‌ی پیش‌فرض خودش را نشان می‌دهد («گاهی با

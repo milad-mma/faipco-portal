@@ -331,3 +331,11 @@ API: `POST /notices/{id}/attachments` (multipart `file`)، `GET /notices/attachm
 - پیست چند کد پرسنلی (جداشده با خط/فاصله/ویرگول/تب، ارقام فارسی هم) در «ارسال به یک یا چند شخص خاص» همه را مخاطب
   می‌کند: `POST /notices/resolve-employee-codes` (حداکثر ۱۰۰۰ کد) فقط پرسنل فعالِ مجاز برای فرستنده (همان قاعده‌ی
   `_can_target`) را برمی‌گرداند؛ کد خارج از محدوده «پیدا نشد» گزارش می‌شود. فیلد با تعداد اسامی بلند می‌شود.
+
+## فیش حقوقی و فیش کارکرد جدا از «اطلاعیه‌ها»
+- فهرست عمومی اطلاعیه‌ها (`GET /notices/me` بدون `notice_type`) و شمارنده‌ی خوانده‌نشده‌اش فیش حقوقی/کارکرد را ندارند
+  (`RECEIPT_NOTICE_TYPES`)؛ هرکدام فقط در صفحه‌ی کارت خودش در داشبورد (`/notices?type=payroll|attendance_card`).
+- شمارنده‌ی کارت‌ها: `GET /notices/me/receipt-unread` ← `{payroll, attendance_card}` (فیش‌های دیده‌نشده).
+- کلیک روی اعلان Push فیش‌ها مستقیم به صفحه‌ی کارت خودش می‌رود (`notice_push_url`).
+- فایل نمونه‌ی اکسل فیش کارکرد: `GET /notices/attendance-card/sample` (فقط مجوز `notices.attendance_card`؛ فایل در
+  `backend/app/assets/samples/`، نه پوشه‌ی عمومی فرانت). فقط شیت قالب، بدون اطلاعات پرسنل.

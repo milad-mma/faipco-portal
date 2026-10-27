@@ -34,6 +34,7 @@ import {
   deleteNotice,
   fetchAvailableTargets,
   resolveNoticeEmployeeCodes,
+  downloadAttendanceCardSample,
   publishNotice,
   uploadNoticeAttachment,
 } from "../api/notices";
@@ -964,9 +965,20 @@ export default function NewNoticePage() {
                 </Button>
                 {/* نمونه‌ی ساختار فایل فیش کارکرد (فقط شیت قالب، بدون اطلاعات پرسنل) */}
                 <Button
-                  component="a"
-                  href="/samples/attendance-card-sample.xlsx"
-                  download="نمونه-فیش-کارکرد.xlsx"
+                  onClick={async () => {
+                    // از API با توکن (فقط دارندگان مجوز ارسال فیش کارکرد)، نه فایل عمومی
+                    try {
+                      const blob = await downloadAttendanceCardSample();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "نمونه-فیش-کارکرد.xlsx";
+                      a.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    } catch {
+                      setError("دانلود فایل نمونه با خطا مواجه شد.");
+                    }
+                  }}
                   size="small"
                   startIcon={<DownloadOutlinedIcon />}
                   sx={{ alignSelf: "flex-start" }}

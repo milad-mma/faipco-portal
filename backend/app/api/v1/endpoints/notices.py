@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import asyncio
 import json
+from pathlib import Path
 
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
@@ -160,6 +161,32 @@ async def my_notices(
         current_user, page=page, page_size=page_size, notice_type=notice_type, archived=archived
     )
     return NoticePageOut(items=items, total=total, unread_total=unread_total)
+
+
+@router.get("/me/receipt-unread")
+async def my_receipt_unread(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """شمارنده‌ی کارت‌های «فیش حقوقی» و «فیش کارکرد» داشبورد: فیش‌های دیده‌نشده‌ی هر نوع برای کاربر جاری."""
+    service = NoticeService(db)
+    out = {}
+    for key, notice_type in (("payroll", NoticeType.payroll), ("attendance_card", NoticeType.attendance_card)):
+        _items, _total, unread = await service.list_for_user(current_user, page=1, page_size=1, notice_type=notice_type)
+        out[key] = unread
+    return out
+
+
+ATTENDANCE_CARD_SAMPLE = Path(__file__).resolve().parents[3] / "assets" / "samples" / "attendance-card-sample.xlsx"
+
+
+@router.get("/attendance-card/sample")
+async def attendance_card_sample(_user: User = Depends(require_permission("notices.attendance_card"))):
+    """فایل نمونه‌ی اکسل فیش کارکرد (فقط شیت قالب، بدون اطلاعات پرسنل). فقط با مجوز notices.attendance_card."""
+    if not ATTENDANCE_CARD_SAMPLE.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="فایل نمونه پیدا نشد")
+    return Response(
+        content=ATTENDANCE_CARD_SAMPLE.read_bytes(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="attendance-card-sample.xlsx"'},
+    )
 
 
 # ---------- پیوست تصویر/PDF اطلاعیه‌ی متنی ----------
