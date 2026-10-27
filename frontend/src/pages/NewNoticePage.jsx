@@ -25,6 +25,7 @@ import {
   Typography,
 } from "@mui/material";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
   createAttendanceCardNotice,
@@ -960,6 +961,17 @@ export default function NewNoticePage() {
                       })
                     }
                   />
+                </Button>
+                {/* نمونه‌ی ساختار فایل فیش کارکرد (فقط شیت قالب، بدون اطلاعات پرسنل) */}
+                <Button
+                  component="a"
+                  href="/samples/attendance-card-sample.xlsx"
+                  download="نمونه-فیش-کارکرد.xlsx"
+                  size="small"
+                  startIcon={<DownloadOutlinedIcon />}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  دانلود فایل نمونه‌ی فیش کارکرد
                 </Button>
 
                 <Box>
