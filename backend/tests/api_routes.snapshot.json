@@ -1,5 +1,5 @@
 {
-  "count": 424,
+  "count": 426,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -115,6 +115,7 @@
     "GET /api/v1/leave-requests/my-requests",
     "GET /api/v1/leave-requests/pending-count",
     "GET /api/v1/leave-requests/pending-for-me",
+    "GET /api/v1/leave-requests/shift-window",
     "GET /api/v1/leave-requests/sites/{site_id}/action-lookup",
     "GET /api/v1/leave-requests/sites/{site_id}/all",
     "GET /api/v1/leave-requests/sites/{site_id}/approvers",
@@ -386,6 +387,7 @@
     "PUT /api/v1/leave-requests/sites/{site_id}/mapping",
     "PUT /api/v1/leave-requests/sites/{site_id}/module-status",
     "PUT /api/v1/leave-requests/sites/{site_id}/notification-templates",
+    "PUT /api/v1/leave-requests/sites/{site_id}/punch-tolerance",
     "PUT /api/v1/leave-requests/sites/{site_id}/requests/{request_id}",
     "PUT /api/v1/leave-requests/types/{type_id}",
     "PUT /api/v1/loans/admin/employees/{employee_id}/service",

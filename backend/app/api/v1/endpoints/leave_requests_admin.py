@@ -43,6 +43,7 @@ from app.schemas.leave_request import (
     SetApproverIn,
     SetHrOfficerIn,
     SetModuleDisabledIn,
+    SetPunchToleranceIn,
 )
 from app.services import notification_templates
 from app.services.kara_schema import ATTENDANCE_SCHEMA_DEFAULTS, LEAVE_SCHEMA_DEFAULTS
@@ -183,7 +184,7 @@ async def add_type(
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
     return await LeaveRequestStructureService(db).add_type(
         site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no,
-        payload.is_forgotten_punch,
+        payload.is_forgotten_punch, payload.is_exit_permit,
     )
 
 
@@ -270,6 +271,21 @@ async def remove_approver(
         return
     await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
     await LeaveRequestStructureService(db).remove_approver(department_id)
+
+
+@router.put("/sites/{site_id}/punch-tolerance", response_model=LeaveRequestModuleStatusOut)
+async def set_punch_tolerance(
+    site_id: int,
+    payload: SetPunchToleranceIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """تلرانس (دقیقه) تطبیق تردد با مرخصی/ماموریت ساعتی این سایت. مجوز: sites.manage."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestStructureService(db).set_punch_tolerance(site_id, payload.minutes)
+    except LeaveRequestStructureError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/sites/{site_id}/module-status", response_model=LeaveRequestModuleStatusOut)

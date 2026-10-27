@@ -38,9 +38,15 @@ from sqlalchemy.orm import selectinload
 from app.services import notification_templates
 from app.core.leave_request_rules import (
     LeaveRequestRulesError,
+    compact_time_to_minutes,
     compute_daily_duration,
     compute_hourly_duration,
+    crosses_midnight,
     jalali_date_to_compact,
+    kara_day_offset,
+    validate_exit_after_shift,
+    validate_hourly_in_shift,
+    window_label,
 )
 from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
@@ -637,6 +643,20 @@ def _run_kara_writeback_sync(conn: SiteConnection, names: KaraNames, fn, *args):
         connection.close()
 
 
+# بازه‌ی بررسی Job اعمال بعدیِ درخواست‌های ساعتی (روز)؛ شامل درخواست‌های قبلیِ مانده روی AcceptCode=8 هم می‌شود
+PENDING_APPLY_LOOKBACK_DAYS = 31
+
+
+def _absolute_minutes(day: date, start_hour: int, end_hour: int) -> tuple[int, int]:
+    """بازه‌ی ساعتی یک روز به دقیقه‌ی مطلق؛ پایانِ کوچک‌تر از شروع (عبور از نیمه‌شب) یعنی روز بعد."""
+    base = day.toordinal() * 1440
+    a = base + compact_time_to_minutes(int(start_hour))
+    b = base + compact_time_to_minutes(int(end_hour))
+    if b < a:
+        b += 1440
+    return a, b
+
+
 def _to_personnel_code_int(employee: Employee) -> int:
     """کد پرسنلی (رشته) پرسنل را به عدد Emp_No کاراوب تبدیل می‌کند؛ اگر عددی نباشد خطای قابل نمایش می‌دهد."""
     try:
@@ -806,6 +826,17 @@ class LeaveRequestService:
         )
         cards = {int(c) for c in result.scalars().all()}
         return cards, await self._get_hr_officer_emp_no(site_id)
+
+    async def _get_exit_permit_cards(self, site_id: int) -> set:
+        """Card_No نوع‌های «مجوز خروج» این سایت."""
+        result = await self.db.execute(
+            select(LeaveRequestType.card_no).where(
+                LeaveRequestType.site_id == site_id,
+                LeaveRequestType.is_exit_permit.is_(True),
+                LeaveRequestType.card_no.is_not(None),
+            )
+        )
+        return {int(c) for c in result.scalars().all()}
 
     @staticmethod
     def _annotate_stage(items: list[dict], hr_emp_no: int | None) -> None:
@@ -985,12 +1016,33 @@ class LeaveRequestService:
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         cur_emp_no = await self._resolve_approver_emp_no(employee, mapping, site_connection)
 
-        # محاسبه مدت: ساعتی (فرمت فشرده HHMM، بدون تاریخ پایان) یا روزانه (تعداد روز)
+        kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
+
+        # محاسبه مدت: ساعتی (فرمت فشرده HHMM، بدون تاریخ پایان) یا روزانه (تعداد روز).
+        # محدودیت شیفت (docs/leave-requests.md): مرخصی ساعتی فقط داخل ساعت کاری همان روز؛ مجوز خروج فقط از پایان
+        # شیفت همان روز به بعد. مأموریت محدود نمی‌شود و اگر شیفت پیدا نشود محدودیتی نیست.
+        # شیفت شب: تاریخ انتخابی «تاریخ شیفت» است؛ درخواستی که بعد از نیمه‌شب شروع می‌شود با تاریخ تقویمی روز بعد
+        # در کاراوب ثبت می‌شود (تاریخ تردد دستگاه هم همان است) و درخواست عبوری از ۰۰:۰۰ یک ردیف با EndHour < StartHour است.
         try:
-            if leave_type.is_hourly:
+            if leave_type.is_exit_permit:
+                if start_hour is None:
+                    raise LeaveRequestRulesError("ساعت خروج الزامی است")
+                end_hour = start_hour  # مثل کاراوب: StartHour = EndHour = ساعت خروج
+                window = await self._shift_window(employee, kara_names, site_connection, start_date)
+                validate_exit_after_shift(window, start_hour)
+                start_date = start_date + timedelta(days=kara_day_offset(window, start_hour))
+                duration = 0
+                effective_end_date = None
+            elif leave_type.is_hourly:
                 if start_hour is None or end_hour is None:
                     raise LeaveRequestRulesError("ساعت شروع و پایان الزامی است")
-                duration = compute_hourly_duration(start_hour, end_hour)
+                overnight = False
+                if not leave_type.is_mission:
+                    window = await self._shift_window(employee, kara_names, site_connection, start_date)
+                    validate_hourly_in_shift(window, start_hour, end_hour)
+                    overnight = crosses_midnight(window, start_hour, end_hour)
+                    start_date = start_date + timedelta(days=kara_day_offset(window, start_hour))
+                duration = compute_hourly_duration(start_hour, end_hour, overnight=overnight)
                 effective_end_date = None
             else:
                 if end_date is None:
@@ -1000,10 +1052,11 @@ class LeaveRequestService:
         except LeaveRequestRulesError as e:
             raise LeaveRequestError(str(e)) from e  # تبدیل به خطای قابل نمایش سرویس
 
-        # نباید با درخواست در بررسی/تأییدشده‌ی قبلی هم‌پوشانی داشته باشد
-        await self._ensure_no_overlap(
-            site_connection, mapping, employee, start_date, effective_end_date, start_hour, end_hour
-        )
+        # نباید با درخواست در بررسی/تأییدشده‌ی قبلی هم‌پوشانی داشته باشد (مجوز خروج بازه ندارد)
+        if not leave_type.is_exit_permit:
+            await self._ensure_no_overlap(
+                site_connection, mapping, employee, start_date, effective_end_date, start_hour, end_hour
+            )
 
         # تاریخ شمسی شروع به فرمت عددی YYYYMMDD
         jalali_start = jdatetime.date.fromgregorian(date=start_date)
@@ -1017,8 +1070,8 @@ class LeaveRequestService:
             "end_date": datetime(effective_end_date.year, effective_end_date.month, effective_end_date.day)
             if effective_end_date
             else None,
-            "start_hour": start_hour if leave_type.is_hourly else None,  # ساعت‌ها فقط برای نوع ساعتی
-            "end_hour": end_hour if leave_type.is_hourly else None,
+            "start_hour": start_hour if leave_type.is_hourly or leave_type.is_exit_permit else None,  # فقط نوع ساعتی
+            "end_hour": end_hour if leave_type.is_hourly or leave_type.is_exit_permit else None,
             "duration": duration,
             "operations_id": leave_type.operation_id if leave_type.operation_id is not None else (3 if leave_type.is_mission else 5),  # پیش‌فرض: ۳ ماموریت، ۵ مرخصی
             "description": description or "",
@@ -1032,7 +1085,6 @@ class LeaveRequestService:
 
         # ستون‌هایی که کاراوب هنگام ثبت پر می‌کند (SubmittedByEmployeeID، Requested_Time،
         # DutyTools/DutyTamin و CurSection) - فقط برای SQL Server
-        kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
         if kara_names is not None:
             try:
                 values["extra_columns"] = await asyncio.to_thread(
@@ -1060,6 +1112,105 @@ class LeaveRequestService:
         await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
 
         return {"request_id": new_request_id}
+
+    async def _shift_window(
+        self, employee: Employee, kara_names: KaraNames | None, site_connection: SiteConnection, day: date
+    ) -> dict | None:
+        """بازه‌ی شیفت پرسنل در یک روز از کاراوب (kara_wb.shift_window_sync)؛ None یعنی نامعلوم = بدون محدودیت."""
+        if kara_names is None or not str(employee.personnel_code or "").isdigit():
+            return None
+        try:
+            return await asyncio.to_thread(
+                _run_kara_writeback_sync,
+                site_connection,
+                kara_names,
+                kara_wb.shift_window_sync,
+                int(employee.personnel_code),
+                day,
+            )
+        except Exception:
+            logger.warning("خواندن شیفت %s برای %s از کاراوب ناموفق بود", employee.personnel_code, day, exc_info=True)
+            return None
+
+    async def shift_window_for(self, employee: Employee, day: date) -> dict:
+        """
+        برای فرم درخواست: بازه‌ی شیفت پرسنل در یک روز و متن راهنما.
+        خروجی: {"found": bool, "off_day": bool, "start": HHMM|None, "end": HHMM|None (شیفت شب: ساعت بامداد روز بعد),
+        "crosses_midnight": bool, "label": str|None}.
+        """
+        window = None
+        try:
+            mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
+            kara_names = await self._get_kara_names(employee.site_id, mapping, site_connection)
+            window = await self._shift_window(employee, kara_names, site_connection, day)
+        except LeaveRequestError:
+            window = None
+        if window is None:
+            return {"found": False, "off_day": False, "start": None, "end": None, "crosses_midnight": False, "label": None}
+        if window.get("off_day"):
+            return {
+                "found": True, "off_day": True, "start": None, "end": None, "crosses_midnight": False,
+                "label": "این روز طبق شیفت شما روز کاری نیست",
+            }
+        return {
+            "found": True,
+            "off_day": False,
+            "start": window["start"],
+            "end": window["end"] % 2400,
+            "crosses_midnight": bool(window.get("crosses_midnight")),
+            "label": window_label(window),
+        }
+
+    async def apply_pending_hourly_all(self, lookback_days: int = PENDING_APPLY_LOOKBACK_DAYS) -> int:
+        """
+        Job زمان‌بندی‌شده (هر ۱۰ دقیقه): مرخصی/ماموریت‌های ساعتیِ تأییدشده‌ای که هنوز به ترددی وصل نشده‌اند (AcceptCode=8)
+        و تاریخشان در lookback_days روز اخیر است، دوباره با تلرانس سایت بررسی و در صورت پیدا شدن تردد اعمال می‌شوند —
+        مثل کاراوب که تأییدِ قبل از خروج را بعد از ثبت تردد اعمال می‌کند. هر درخواست در تراکنش جدا. خروجی: تعداد اعمال‌شده.
+        """
+        mappings = (await self.db.execute(select(LeaveRequestMapping))).scalars().all()
+        since = datetime.combine(date.today() - timedelta(days=lookback_days), datetime.min.time())
+        applied = 0
+        for site_mapping in mappings:
+            site_id = site_mapping.site_id
+            try:
+                mapping, site_connection = await self._get_mapping_and_connection(site_id)
+                kara_names = await self._get_kara_names(site_id, mapping, site_connection)
+                if kara_names is None or not kara_names.can_write_hourly or not kara_names.has("wf_requests", "accept_code"):
+                    continue
+                q = lambda name: _quote(site_connection.db_type, name)  # noqa: E731
+                where = (
+                    f"{q(mapping.is_final_approved_column)} = 1 "
+                    f"AND {q(kara_names.raw('wf_requests', 'accept_code'))} = %(accept)s "
+                    f"AND {q(mapping.start_hour_column)} IS NOT NULL AND {q(mapping.start_date_column)} >= %(since)s"
+                )
+                rows = await asyncio.to_thread(
+                    _select_requests_sync,
+                    site_connection,
+                    mapping,
+                    where,
+                    {"accept": kara_wb.ACCEPT_APPROVED_NOT_APPLIED, "since": since},
+                )
+                forgotten_cards, _ = await self._get_forgotten_context(site_id)
+                exit_cards = await self._get_exit_permit_cards(site_id)
+            except Exception:
+                logger.warning("بررسی درخواست‌های ساعتیِ اعمال‌نشده‌ی سایت %s ناموفق بود", site_id, exc_info=True)
+                continue
+            for row in rows:
+                if row.get("CardNo") in forgotten_cards or row.get("CardNo") in exit_cards:
+                    continue
+                try:
+                    if await asyncio.to_thread(
+                        _run_kara_writeback_sync,
+                        site_connection,
+                        kara_names,
+                        kara_wb.apply_pending_hourly,
+                        row,
+                        mapping.application_id_value,
+                    ):
+                        applied += 1
+                except Exception:
+                    logger.warning("اعمال بعدی درخواست ساعتی %s ناموفق بود", row.get("RequestId"), exc_info=True)
+        return applied
 
     async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int) -> None:
         """ورودی: سایت و کد پرسنلی تأییدکننده. اعلان Push «درخواست در انتظار تصمیم شما» را با لینک به تب کارتابل زمان‌بندی می‌کند."""
@@ -1093,14 +1244,16 @@ class LeaveRequestService:
 
     async def _get_type_lookup(self, site_id: int) -> dict:
         """
-        ورودی: شناسه سایت. دیکشنری {(OperationsID, ActionId, Card_No): (شناسه نوع، عنوان، تردد فراموش‌شده؟)}
+        ورودی: شناسه سایت. دیکشنری {(OperationsID, ActionId, Card_No): (شناسه نوع، عنوان، تردد فراموش‌شده؟، مجوز خروج؟)}
         برای همه نوع‌های این سایت برمی‌گرداند. چون WF_Requests شناسه نوع پورتال را ذخیره
         نمی‌کند، تطبیق این سه ستون تنها راه بازشناسی نوع یک درخواست موجود است.
         """
         # همه نوع‌های درخواست این سایت (فعال و غیرفعال، تا درخواست‌های قدیمی هم بازشناسی شوند)
         result = await self.db.execute(select(LeaveRequestType).where(LeaveRequestType.site_id == site_id))
         types = result.scalars().all()
-        return {(t.operation_id, t.action_id, t.card_no): (t.id, t.title, t.is_forgotten_punch) for t in types}
+        return {
+            (t.operation_id, t.action_id, t.card_no): (t.id, t.title, t.is_forgotten_punch, t.is_exit_permit) for t in types
+        }
 
     async def _get_requester_info(self, site_id: int, emp_nos: list) -> dict:
         """
@@ -1151,6 +1304,9 @@ class LeaveRequestService:
         )
         new_start = start_date
         new_end = end_date or start_date  # ساعتی: همان یک روز
+        new_overnight = start_hour is not None and end_hour is not None and end_hour < start_hour
+        if new_overnight:
+            new_end = start_date + timedelta(days=1)  # عبور از نیمه‌شب: بامداد روز بعد هم جزو بازه است
         forgotten_cards, _ = await self._get_forgotten_context(employee.site_id)
 
         # مقایسه بازه درخواست جدید با هر درخواست فعال قبلی
@@ -1159,6 +1315,8 @@ class LeaveRequestService:
                 continue  # ردشده یا ابطال‌شده - مانع نیست
             if row.get("CardNo") in forgotten_cards:
                 continue  # تردد فراموش‌شده بازه زمانی ندارد - با مرخصی/ماموریت تداخل نمی‌کند
+            if kara_wb.is_exit_permit(row):
+                continue  # مجوز خروج فقط یک ساعت خروج است - با مرخصی/ماموریت تداخل نمی‌کند
             existing_start_raw = row.get("StartDate")
             if not existing_start_raw:
                 continue
@@ -1169,16 +1327,26 @@ class LeaveRequestService:
                 if existing_end_raw
                 else existing_start
             )
+            existing_start_hour = row.get("StartHour")
+            existing_end_hour = row.get("EndHour")
+            if (
+                existing_start_hour is not None
+                and existing_end_hour is not None
+                and not existing_end_raw
+                and existing_end_hour < existing_start_hour
+            ):
+                existing_end = existing_start + timedelta(days=1)  # درخواست قبلیِ عبوری از نیمه‌شب
             if new_end < existing_start or new_start > existing_end:
                 continue  # هیچ روز مشترکی ندارند
 
-            existing_start_hour = row.get("StartHour")
-            # اگر هر دو ساعتی‌اند، فقط وقتی تداخل است که بازه ساعت‌ها هم بریده شوند
+            # اگر هر دو ساعتی‌اند، فقط وقتی تداخل است که بازه ساعت‌ها هم بریده شوند (روی محور دقیقه‌ی مطلق، تا
+            # بازه‌های عبوری از نیمه‌شب و بامداد روز بعد هم درست مقایسه شوند)
             if start_hour is not None and existing_start_hour is not None:
-                existing_end_hour = row.get("EndHour")
                 if existing_end_hour is None or end_hour is None:
                     raise LeaveRequestError("برای همین بازه زمانی از قبل درخواستی ثبت کرده‌اید")
-                if end_hour <= existing_start_hour or start_hour >= existing_end_hour:
+                new_a, new_b = _absolute_minutes(start_date, start_hour, end_hour)
+                old_a, old_b = _absolute_minutes(existing_start, existing_start_hour, existing_end_hour)
+                if new_b <= old_a or new_a >= old_b:
                     continue  # بازه ساعت‌ها جدا هستند
             # روز مشترک دارند و (حداقل یکی روزانه است یا ساعت‌ها هم‌پوشانی دارند)
             raise LeaveRequestError("برای همین بازه زمانی از قبل درخواستی ثبت کرده‌اید")
@@ -1867,6 +2035,14 @@ class LeaveRequestService:
             new_type = await self.db.get(LeaveRequestType, updates["leave_type_id"])
             if new_type is not None:
                 target_card = new_type.card_no
+        exit_cards = await self._get_exit_permit_cards(site_id)
+        if target_card in exit_cards and target_card not in forgotten_cards:
+            # مجوز خروج: فقط یک ساعت (StartHour = EndHour) و مدت ۰
+            updates.pop("end_date", None)
+            if "start_hour" in updates:
+                updates["end_hour"] = updates["start_hour"]
+            else:
+                updates.pop("end_hour", None)
         if target_card in forgotten_cards:
             # تردد فراموش‌شده بازه ندارد: فقط تاریخ و ساعت خودِ تردد (مثل کاراوب)
             updates.pop("end_date", None)
@@ -1890,11 +2066,14 @@ class LeaveRequestService:
 
         # محاسبه خودکار مدت از روی ساعت‌ها (HHMM) یا تاریخ‌ها (تعداد روز)
         try:
-            if target_card in forgotten_cards:
+            if target_card in forgotten_cards or target_card in exit_cards:
                 pass  # مدت همیشه '0'
             elif updates.get("start_hour") is not None and updates.get("end_hour") is not None:
                 column_updates[mapping.duration_column] = str(
-                    compute_hourly_duration(updates["start_hour"], updates["end_hour"])
+                    # ویرایش مدیریتی: پایانِ کوچک‌تر از شروع یعنی عبور از نیمه‌شب (مثل کاراوب)
+                    compute_hourly_duration(
+                        updates["start_hour"], updates["end_hour"], overnight=updates["end_hour"] < updates["start_hour"]
+                    )
                 )
             elif updates.get("start_date") is not None and updates.get("end_date") is not None:
                 start_date_only = updates["start_date"].date() if hasattr(updates["start_date"], "date") else updates["start_date"]  # datetime -> date
@@ -2034,7 +2213,7 @@ def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
     action_id = row.get("ActionId")
     card_no = row.get("CardNo")
     type_key = (operations_id, action_id, card_no)
-    matched_type = (type_lookup or {}).get(type_key)  # (شناسه، عنوان، تردد فراموش‌شده؟) یا None
+    matched_type = (type_lookup or {}).get(type_key)  # (شناسه، عنوان، تردد فراموش‌شده؟، مجوز خروج؟) یا None
 
     return {
         "request_id": row.get("RequestId"),
@@ -2057,4 +2236,6 @@ def _normalize_row(row: dict, type_lookup: dict | None = None) -> dict:
         "type_id": matched_type[0] if matched_type else None,
         "type_title": matched_type[1] if matched_type else None,
         "is_forgotten_punch": bool(matched_type[2]) if matched_type and len(matched_type) > 2 else False,
+        # مجوز خروج: نوع علامت‌خورده یا شکل ردیف (StartHour = EndHour با مدت صفر؛ ثبت‌شده در خودِ کاراوب هم)
+        "is_exit_permit": bool(matched_type[3]) if matched_type and len(matched_type) > 3 else kara_wb.is_exit_permit(row),
     }

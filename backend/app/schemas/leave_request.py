@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.site import identifier_validator, passthrough_validator
 from app.services.kara_schema import LEAVE_SCHEMA_DEFAULTS, validate_schema
@@ -190,6 +190,7 @@ class LeaveRequestTypeIn(BaseModel):
     operation_id: int | None = None
     card_no: int | None = None
     is_forgotten_punch: bool = False
+    is_exit_permit: bool = False
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
@@ -203,6 +204,7 @@ class LeaveRequestTypeUpdateIn(BaseModel):
     operation_id: int | None = None
     card_no: int | None = None
     is_forgotten_punch: bool | None = None
+    is_exit_permit: bool | None = None
 
 
 class LeaveRequestTypeOut(BaseModel):
@@ -218,6 +220,7 @@ class LeaveRequestTypeOut(BaseModel):
     operation_id: int | None
     card_no: int | None
     is_forgotten_punch: bool = False
+    is_exit_permit: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -280,12 +283,19 @@ class LeaveRequestModuleStatusOut(BaseModel):
 
     has_mapping: bool
     is_disabled: bool
+    punch_tolerance_minutes: int = 30  # تلرانس تطبیق تردد با درخواست ساعتی
 
 
 class SetModuleDisabledIn(BaseModel):
     """ورودی PUT /sites/{site_id}/module-status."""
 
     is_disabled: bool
+
+
+class SetPunchToleranceIn(BaseModel):
+    """ورودی PUT /sites/{site_id}/punch-tolerance - تلرانس به دقیقه (۰ تا ۱۸۰)."""
+
+    minutes: int = Field(ge=0, le=180)
 
 
 class LeaveRequestHrOfficerOut(BaseModel):
@@ -359,6 +369,7 @@ class LeaveRequestOut(BaseModel):
     requester_name: str | None = None  # از جدول پرسنل پورتال بر اساس کد پرسنلی
     requester_department: str | None = None
     is_forgotten_punch: bool = False
+    is_exit_permit: bool = False  # مجوز خروج: start_hour = ساعت خروج، بدون مدت
     # تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
     awaiting_hr: bool = False
 

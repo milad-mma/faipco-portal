@@ -14,7 +14,7 @@ Jobهای دوره‌ای (Sync، آمار سرور، بکاپ) با یک تیک
 اگر SYNC_ENABLED=false باشد، Job مربوط به Sync زمان‌بندی نمی‌شود.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -62,6 +62,9 @@ _BIRTHDAY_REACTION_LOCK_KEY = 875312006
 _PRESENCE_CLEANUP_LOCK_KEY = 875312007
 PRESENCE_CLEANUP_JOB_ID = "close_stale_presence_sessions"
 _LOGIN_SECURITY_CLEANUP_LOCK_KEY = 875312008
+# اعمال بعدیِ مرخصی/ماموریت ساعتیِ تأییدشده روی تردد (AcceptCode=8 → ۰)، هر ۱۰ دقیقه
+_LEAVE_PENDING_APPLY_LOCK_KEY = 875312009
+LEAVE_PENDING_APPLY_JOB_ID = "leave_pending_hourly_apply"
 LOGIN_SECURITY_CLEANUP_JOB_ID = "login_security_cleanup"
 # flush شمارنده‌ی در حافظه‌ی «میزان استفاده» هر Worker به دیتابیس؛ بدون Advisory Lock،
 # چون هر Worker فقط شمارش خودش را می‌نویسد و UPSERT تجمعی است.
@@ -222,6 +225,27 @@ async def _close_stale_presence_sessions_job() -> None:
             logger.exception("بستن نشست‌های حضور رهاشده ناموفق بود")
         finally:
             await _advisory_unlock(db, _PRESENCE_CLEANUP_LOCK_KEY)
+
+
+async def _apply_pending_hourly_leaves_job() -> None:
+    """
+    Job هر ۱۰ دقیقه: مرخصی/ماموریت ساعتیِ تأییدشده‌ای که هنوز به ترددی وصل نشده، با تلرانس سایت دوباره بررسی و اگر
+    تردد مطابق ثبت شده باشد در کاراوب اعمال می‌شود (docs/leave-requests.md «تلرانس و اعمال بعدی»).
+    """
+    from app.services.leave_request_service import LeaveRequestService
+
+    async with AsyncSessionLocal() as db:
+        acquired = await _try_advisory_lock(db, _LEAVE_PENDING_APPLY_LOCK_KEY)
+        if not acquired:
+            return
+        try:
+            applied = await LeaveRequestService(db).apply_pending_hourly_all()
+            if applied:
+                logger.info("%s مرخصی/ماموریت ساعتیِ تأییدشده روی تردد اعمال شد", applied)
+        except Exception:  # noqa: BLE001
+            logger.exception("اعمال بعدی مرخصی/ماموریت‌های ساعتی ناموفق بود")
+        finally:
+            await _advisory_unlock(db, _LEAVE_PENDING_APPLY_LOCK_KEY)
 
 
 async def _login_security_cleanup_job() -> None:
@@ -426,6 +450,16 @@ async def start_scheduler() -> None:
         id=PRESENCE_CLEANUP_JOB_ID,
         replace_existing=True,
         next_run_time=datetime.now(timezone.utc),
+    )
+
+    # Job اعمال بعدیِ مرخصی/ماموریت ساعتی روی تردد، هر ۱۰ دقیقه
+    scheduler.add_job(
+        _apply_pending_hourly_leaves_job,
+        trigger="interval",
+        minutes=10,
+        id=LEAVE_PENDING_APPLY_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
 
     # Job پاک‌سازی مدارک موقت بیمه، هر ۶ ساعت

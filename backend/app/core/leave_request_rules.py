@@ -35,13 +35,16 @@ def minutes_to_compact_time(total_minutes: int) -> int:
     return hour * 100 + minute
 
 
-def compute_hourly_duration(start_hour_compact: int, end_hour_compact: int) -> int:
+def compute_hourly_duration(start_hour_compact: int, end_hour_compact: int, overnight: bool = False) -> int:
     """
     ورودی: ساعت شروع و پایان به فرمت فشرده (HHMM).
     اختلاف آن‌ها را به همان فرمت فشرده برمی‌گرداند - مثلاً StartHour=1000،
-    EndHour=1200 -> Duration=200 (یعنی ۲ ساعت و ۰۰ دقیقه). پایان قبل یا برابر شروع خطا می‌دهد.
+    EndHour=1200 -> Duration=200 (یعنی ۲ ساعت و ۰۰ دقیقه). پایان قبل یا برابر شروع خطا می‌دهد،
+    مگر overnight=True (شیفت شب، مثل کاراوب: ۲۳۰۰ تا ۱۰۰ -> ۲۰۰).
     """
     diff_minutes = compact_time_to_minutes(end_hour_compact) - compact_time_to_minutes(start_hour_compact)
+    if overnight and diff_minutes < 0:
+        diff_minutes += 24 * 60
     # بازه صفر یا منفی معتبر نیست
     if diff_minutes <= 0:
         raise LeaveRequestRulesError("ساعت پایان باید بعد از ساعت شروع باشد")
@@ -59,3 +62,96 @@ def compute_daily_duration(start_date: date, end_date: date) -> int:
 def jalali_date_to_compact(jalali_year: int, jalali_month: int, jalali_day: int) -> int:
     """سال/ماه/روز شمسی را به عدد فشرده YYYYMMDD تبدیل می‌کند: ۱۴۰۵، ۶، ۲۲ -> ۱۴۰۵۰۶۲۲ (فرمت ستون PersianStartDate)."""
     return jalali_year * 10000 + jalali_month * 100 + jalali_day
+
+
+# ---------- بازه‌ی شیفت روز (محدودیت مرخصی ساعتی و مجوز خروج؛ docs/leave-requests.md) ----------
+
+MIN_WORKING_SHIFT_MINUTES = 30  # شیفتی که کوتاه‌تر باشد (مثل پنجشنبه‌ی دفتر مرکزی: ۷:۳۰ تا ۷:۳۱) روز کاری نیست
+
+
+def shift_window(start: int | None, end: int | None, added_day, kasr: int | None = None) -> dict | None:
+    """
+    ساعت شروع/پایان شیفت یک روز (HHMM، مثل ستون‌های Shifts کاراوب) را به بازه‌ی قابل مقایسه تبدیل می‌کند.
+    خروجی: {"start": ..., "end": ..., "crosses_midnight": bool, "off_day": False} که end برای شیفت شب (AddedDay)
+    به‌صورت +۲۴۰۰ است (مثل کاراوب)؛ اگر کسر شیفت صفر یا بازه کمتر از ۳۰ دقیقه باشد {"off_day": True}؛
+    اگر ساعت‌ها خالی باشند None (بدون محدودیت).
+    """
+    if kasr is not None and int(kasr) == 0:
+        return {"off_day": True}
+    if start is None or end is None:
+        return None
+    start, end = int(start), int(end)
+    crosses = bool(added_day) or end < start
+    end_ext = end + 2400 if crosses else end
+    if compact_time_to_minutes(end_ext) - compact_time_to_minutes(start) < MIN_WORKING_SHIFT_MINUTES:
+        return {"off_day": True}
+    return {"start": start, "end": end_ext, "crosses_midnight": crosses, "off_day": False}
+
+
+def _fmt(compact: int) -> str:
+    compact = compact % 2400
+    return f"{compact // 100:02d}:{compact % 100:02d}"
+
+
+def window_label(window: dict) -> str:
+    """متن «ساعت کاری شما در این روز: ۰۶:۳۰ تا ۱۴:۳۰» (شیفت شب: «… تا ۰۲:۳۰ بامداد روز بعد»)."""
+    tail = " بامداد روز بعد" if window.get("crosses_midnight") else ""
+    return f"ساعت کاری شما در این روز: {_fmt(window['start'])} تا {_fmt(window['end'])}{tail}"
+
+
+def _on_shift_axis(window: dict, compact: int) -> int:
+    """ساعت وارد‌شده (۰ تا ۲۳۵۹) را روی محور شیفت می‌برد: در شیفت شب، ساعت‌های قبل از شروع شیفت (بامداد) +۲۴۰۰ می‌شوند."""
+    if window.get("crosses_midnight") and compact < window["start"]:
+        return compact + 2400
+    return compact
+
+
+def crosses_midnight(window: dict | None, start_hour: int, end_hour: int) -> bool:
+    """آیا این بازه‌ی ساعتی در شیفت شبِ این روز از ۰۰:۰۰ عبور می‌کند (مثل ۲۳:۰۰ تا ۰۱:۰۰)؟"""
+    return bool(window and window.get("crosses_midnight")) and end_hour < start_hour
+
+
+def kara_day_offset(window: dict | None, start_hour: int) -> int:
+    """
+    روز تقویمی ثبت در کاراوب نسبت به تاریخ شیفت: درخواست/خروجی که از بعد از نیمه‌شبِ شیفت شب شروع می‌شود (مثلاً ۰۱:۰۰ یا
+    مجوز خروج ۰۳:۰۰) با تاریخ روز بعد ثبت می‌شود، چون تردد دستگاه هم همان تاریخ را دارد. خروجی ۰ یا ۱.
+    """
+    if not window or not window.get("crosses_midnight"):
+        return 0
+    return 1 if start_hour < window["start"] else 0
+
+
+def validate_hourly_in_shift(window: dict | None, start_hour: int, end_hour: int) -> None:
+    """
+    مرخصی ساعتی فقط داخل ساعت رسمی شیفت همان روز. window=None یعنی شیفتی پیدا نشد (بدون محدودیت).
+    شیفت شب: ساعت‌های بعد از نیمه‌شب تا پایان شیفت هم مجازند و یک درخواست می‌تواند از ۰۰:۰۰ عبور کند (مثل کاراوب:
+    یک ردیف ۲۳۰۰ تا ۱۰۰ با مدت ۲۰۰). بعد از پایان رسمی شیفت باید «مجوز خروج» ثبت شود.
+    """
+    if window is None:
+        return
+    if window.get("off_day"):
+        raise LeaveRequestRulesError("این روز طبق شیفت شما روز کاری نیست")
+    if end_hour == start_hour or (end_hour < start_hour and not window.get("crosses_midnight")):
+        raise LeaveRequestRulesError("ساعت پایان باید بعد از ساعت شروع باشد")
+    s, e = _on_shift_axis(window, start_hour), _on_shift_axis(window, end_hour)
+    if e <= s or s < window["start"] or e > window["end"]:
+        tail = " برای بعد از پایان شیفت «مجوز خروج» ثبت کنید." if e > window["end"] else ""
+        raise LeaveRequestRulesError(f"ساعت مرخصی باید داخل ساعت کاری همان روز باشد. {window_label(window)}.{tail}")
+
+
+def validate_exit_after_shift(window: dict | None, exit_hour: int) -> None:
+    """
+    مجوز خروج: ساعت خروج باید از پایان شیفت همان روز به بعد باشد (روز غیرکاری یا شیفت نامعلوم: بدون محدودیت).
+    شیفت شب: پایان در بامداد روز بعد است، پس خروج مجاز از پایان شیفت تا قبل از شروع شیفت بعدی است.
+    """
+    if window is None or window.get("off_day"):
+        return
+    end = window["end"]
+    if window.get("crosses_midnight"):
+        ok = (end - 2400) <= exit_hour < window["start"]
+    else:
+        ok = exit_hour >= end
+    if not ok:
+        raise LeaveRequestRulesError(
+            f"ساعت خروج باید از پایان شیفت همان روز ({_fmt(end)}) به بعد باشد. {window_label(window)}"
+        )

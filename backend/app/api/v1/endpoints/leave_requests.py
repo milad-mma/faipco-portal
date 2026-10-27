@@ -1,11 +1,13 @@
 """
 Endpoint های سمت پرسنل و تأییدکننده برای «درخواست مرخصی/ماموریت» (پیشوند /leave-requests).
 
-    - پرسنل: فهرست نوع‌های فعال، ثبت درخواست، فهرست درخواست‌های خودم، حذف درخواست تصمیم‌گیری‌نشده
+    - پرسنل: فهرست نوع‌های فعال، ساعت شیفت یک روز، ثبت درخواست، فهرست درخواست‌های خودم، حذف درخواست تصمیم‌گیری‌نشده
     - تأییدکننده: فهرست در انتظار من، سوابق تصمیم‌های من، شمارنده داشبورد، تأیید/رد
 همه‌ی این مسیرها به حساب متصل به پرسنل نیاز دارند (به‌جز pending-count که صفر برمی‌گرداند).
 خطاهای منطقی LeaveRequestService به 400 تبدیل می‌شوند.
 """
+from datetime import date as date_type
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,6 +66,20 @@ async def get_active_types(
         )
     )
     return list(result.scalars().all())
+
+
+@router.get("/shift-window")
+async def get_shift_window(
+    date: date_type,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ساعت شیفت کاربر در یک تاریخ (برای فرم مرخصی ساعتی و مجوز خروج): {found, off_day, start, end,
+    crosses_midnight, label}. found=false یعنی شیفت پیدا نشد و محدودیتی اعمال نمی‌شود.
+    """
+    employee = await _require_employee(db, current_user)
+    return await LeaveRequestService(db).shift_window_for(employee, date)
 
 
 @router.post("/submit", response_model=SubmitLeaveRequestOut)

@@ -64,6 +64,8 @@ def _format_duration(item: dict) -> str:
     # درخواست ساعتی: اختلاف دقیقه‌ای ساعت شروع و پایان
     if start_hour is not None and end_hour is not None:
         diff = (end_hour // 100 * 60 + end_hour % 100) - (start_hour // 100 * 60 + start_hour % 100)
+        if diff < 0:
+            diff += 24 * 60  # عبور از نیمه‌شب (شیفت شب): ۲۳:۰۰ تا ۰۱:۰۰ = ۲ ساعت
         if diff <= 0:
             return ""
         hours, minutes = divmod(diff, 60)
@@ -115,8 +117,9 @@ def build_leave_requests_xlsx(items: list[dict], site_name: str = "") -> bytes:
                 _to_jalali(item.get("start_date")),
                 _to_jalali(item.get("end_date")),
                 _format_compact_time(item.get("start_hour")),
-                "" if item.get("is_forgotten_punch") else _format_compact_time(item.get("end_hour")),  # تردد فراموش‌شده ساعت پایان ندارد
-                "" if item.get("is_forgotten_punch") else _format_duration(item),
+                # تردد فراموش‌شده و مجوز خروج فقط یک ساعت دارند (بدون پایان و مدت)
+                "" if item.get("is_forgotten_punch") or item.get("is_exit_permit") else _format_compact_time(item.get("end_hour")),
+                "" if item.get("is_forgotten_punch") or item.get("is_exit_permit") else _format_duration(item),
                 "در انتظار منابع انسانی"  # وضعیت ویژه تردد فراموش‌شده بعد از تأیید سرپرست
                 if item.get("awaiting_hr")
                 else _STATUS_LABELS.get(item.get("status"), item.get("status") or ""),

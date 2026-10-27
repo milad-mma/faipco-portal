@@ -85,6 +85,15 @@ export async function setLeaveRequestModuleDisabled(siteId, isDisabled) {
   return data;
 }
 
+// تلرانس (دقیقه) تطبیق تردد با مرخصی/ماموریت ساعتی این سایت؛ خروجی: وضعیت ماژول
+export async function setLeavePunchTolerance(siteId, minutes) {
+  const { data } = await apiClient.put(
+    `/leave-requests/sites/${siteId}/punch-tolerance`,
+    { minutes },
+  );
+  return data;
+}
+
 export async function fetchLeaveRequestHrOfficer(siteId) {
   const { data } = await apiClient.get(
     `/leave-requests/sites/${siteId}/hr-officer`,

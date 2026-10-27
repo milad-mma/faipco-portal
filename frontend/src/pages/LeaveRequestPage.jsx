@@ -45,6 +45,7 @@ import {
   fetchActiveLeaveRequestTypes,
   fetchMyLeaveRequests,
   fetchPendingLeaveRequestsForMe,
+  fetchShiftWindow,
   submitLeaveRequest,
 } from "../api/leaveRequests";
 
@@ -68,6 +69,7 @@ function formatCompactTime(compact) {
 // متن مدت یک درخواست: ساعت تردد (تردد فراموش‌شده)، بازه‌ی ساعتی (مرخصی ساعتی) یا تعداد روز
 function formatDuration(item) {
   if (item.is_forgotten_punch) return `تردد ساعت ${formatCompactTime(item.start_hour)}`;
+  if (item.is_exit_permit) return `خروج ساعت ${formatCompactTime(item.start_hour)}`;
   return item.start_hour != null
     ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
     : `${item.duration} روز`;
@@ -80,8 +82,34 @@ function timeStringToCompact(timeStr) {
   return h * 100 + m;
 }
 
+// تاریخ (Date) را به رشته‌ی YYYY-MM-DD به وقت محلی تبدیل می‌کند
+function toDateOnly(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// بازه‌ی ساعت‌های صحیح بین دو ساعت فشرده (شامل هر دو سر)، مثلاً 630 تا 1430 -> [6..14]
+function hourRange(fromHour, toHour) {
+  const out = [];
+  for (let h = fromHour; h <= toHour; h += 1) out.push(h);
+  return out;
+}
+
+// ساعت‌های مجاز Dropdown بر اساس شیفت روز: مرخصی ساعتی داخل شیفت، مجوز خروج از پایان شیفت به بعد
+function allowedHoursFor(shift, isExit) {
+  if (!shift?.found || shift.off_day) return null;
+  const sh = Math.floor(shift.start / 100);
+  const eh = Math.floor(shift.end / 100);
+  if (isExit) return shift.crosses_midnight ? hourRange(eh, sh) : hourRange(eh, 23);
+  return shift.crosses_midnight ? [...hourRange(sh, 23), ...hourRange(0, eh)] : hourRange(sh, eh);
+}
+
+// ساعت فشرده -> «HH:MM»
+function compactToTimeString(compact) {
+  return `${String(Math.floor(compact / 100)).padStart(2, "0")}:${String(compact % 100).padStart(2, "0")}`;
+}
+
 /**
- * فرم ثبت درخواست جدید مرخصی/ماموریت/تردد فراموش‌شده.
+ * فرم ثبت درخواست جدید مرخصی/ماموریت/تردد فراموش‌شده/مجوز خروج.
  * ورودی: onSubmitted(isForgottenPunch) که بعد از ثبت موفق صدا زده می‌شود.
  * فیلدها بسته به نوع انتخابی (روزانه/ساعتی/ماموریت/تردد فراموش‌شده) تغییر می‌کنند.
  */
@@ -98,6 +126,8 @@ function SubmitRequestForm({ onSubmitted }) {
   // تردد فراموش‌شده: هر درخواست فقط یک تردد (تاریخ + ساعت)
   const [punchDate, setPunchDate] = useState(new Date());
   const [punchTime, setPunchTime] = useState("07:00");
+  const [exitTime, setExitTime] = useState("14:30"); // مجوز خروج: فقط ساعت خروج
+  const [shift, setShift] = useState(null); // شیفت روز انتخابی (برای مرخصی ساعتی و مجوز خروج)
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -107,6 +137,40 @@ function SubmitRequestForm({ onSubmitted }) {
   }, []);
 
   const selectedType = types?.find((t) => t.id === Number(typeId)); // شیء نوع انتخابی
+  const isExit = Boolean(selectedType?.is_exit_permit);
+  // مرخصی ساعتی (نه مأموریت) و مجوز خروج به ساعت شیفت همان روز محدودند
+  const shiftLimited =
+    Boolean(selectedType) &&
+    !selectedType.is_forgotten_punch &&
+    (isExit || (selectedType.is_hourly && !selectedType.is_mission));
+  const shiftKey = shiftLimited ? `${isExit ? "exit" : "hourly"}|${toDateOnly(startDate)}` : "";
+
+  // با تغییر نوع یا تاریخ، شیفت آن روز خوانده و ساعت‌های پیش‌فرض روی بازه‌ی شیفت گذاشته می‌شوند
+  useEffect(() => {
+    if (!shiftKey) return undefined;
+    let alive = true;
+    const [kind, day] = shiftKey.split("|");
+    fetchShiftWindow(day)
+      .then((data) => {
+        if (!alive) return;
+        setShift(data);
+        if (data?.found && !data.off_day) {
+          if (kind === "exit") setExitTime(compactToTimeString(data.end));
+          else {
+            setStartTimeStr(compactToTimeString(data.start));
+            setEndTimeStr(compactToTimeString(data.end));
+          }
+        }
+      })
+      .catch(() => alive && setShift(null));
+    return () => {
+      alive = false;
+    };
+  }, [shiftKey]);
+
+  const activeShift = shiftKey ? shift : null;
+  const allowedHours = activeShift ? allowedHoursFor(activeShift, isExit) : null;
+  const offDayBlocked = Boolean(!isExit && shiftLimited && activeShift?.found && activeShift.off_day);
 
   // اعتبارسنجی و ارسال درخواست: برای تردد فراموش‌شده payload با punches، در غیر این صورت با بازه‌ی تاریخ/ساعت
   async function handleSubmit() {
@@ -115,9 +179,6 @@ function SubmitRequestForm({ onSubmitted }) {
       setError("لطفاً نوع درخواست را انتخاب کنید");
       return;
     }
-    // تبدیل Date به رشته‌ی YYYY-MM-DD به وقت محلی
-    const toDateOnly = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     // مسیر تردد فراموش‌شده
     if (selectedType.is_forgotten_punch) {
       const punches = [{ punch_date: toDateOnly(punchDate), time: timeStringToCompact(punchTime) }];
@@ -138,15 +199,23 @@ function SubmitRequestForm({ onSubmitted }) {
       }
       return;
     }
-    // مسیر مرخصی/ماموریت: فیلدهای ساعتی و ماموریت فقط در صورت نیاز پر می‌شوند
+    if (offDayBlocked) {
+      setError("این روز طبق شیفت شما روز کاری نیست");
+      return;
+    }
+    // مسیر مرخصی/ماموریت/مجوز خروج: فیلدهای ساعتی و ماموریت فقط در صورت نیاز پر می‌شوند
     setIsSubmitting(true);
     try {
       await submitLeaveRequest({
         leave_type_id: selectedType.id,
         start_date: toDateOnly(startDate),
-        end_date: selectedType.is_hourly ? null : toDateOnly(endDate),
-        start_hour: selectedType.is_hourly ? timeStringToCompact(startTimeStr) : null,
-        end_hour: selectedType.is_hourly ? timeStringToCompact(endTimeStr) : null,
+        end_date: selectedType.is_hourly || isExit ? null : toDateOnly(endDate),
+        start_hour: isExit
+          ? timeStringToCompact(exitTime)
+          : selectedType.is_hourly
+            ? timeStringToCompact(startTimeStr)
+            : null,
+        end_hour: !isExit && selectedType.is_hourly ? timeStringToCompact(endTimeStr) : null,
         description,
         source: selectedType.is_mission ? source : null,
         destination: selectedType.is_mission ? destination : null,
@@ -224,14 +293,61 @@ function SubmitRequestForm({ onSubmitted }) {
         {/* فرم مرخصی/ماموریت: تاریخ شروع، بازه‌ی ساعتی یا تاریخ پایان، مبدأ/مقصد برای ماموریت، توضیحات و دکمه‌ی ثبت */}
         {selectedType && !selectedType.is_forgotten_punch && (
           <>
-            <JalaliDateTimePicker value={startDate} onChange={setStartDate} label="تاریخ مرخصی/ماموریت" showTime={false} />
-            {selectedType.is_hourly ? (
+            <JalaliDateTimePicker
+              value={startDate}
+              onChange={setStartDate}
+              label={isExit ? "تاریخ" : "تاریخ مرخصی/ماموریت"}
+              showTime={false}
+            />
+            {isExit ? (
+              <TimeSelect24
+                label="ساعت خروج"
+                value={exitTime}
+                onChange={setExitTime}
+                allowedHours={allowedHours}
+                align="center"
+              />
+            ) : selectedType.is_hourly ? (
               <Stack direction="row" spacing={1.5}>
-                <TimeSelect24 label="ساعت شروع" value={startTimeStr} onChange={setStartTimeStr} sx={{ flex: 1 }} />
-                <TimeSelect24 label="ساعت پایان" value={endTimeStr} onChange={setEndTimeStr} sx={{ flex: 1 }} />
+                <TimeSelect24
+                  label="ساعت شروع"
+                  value={startTimeStr}
+                  onChange={setStartTimeStr}
+                  allowedHours={allowedHours}
+                  sx={{ flex: 1 }}
+                />
+                <TimeSelect24
+                  label="ساعت پایان"
+                  value={endTimeStr}
+                  onChange={setEndTimeStr}
+                  allowedHours={allowedHours}
+                  sx={{ flex: 1 }}
+                />
               </Stack>
             ) : (
               <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
+            )}
+
+            {shiftLimited && activeShift?.found && (
+              <Alert severity={offDayBlocked ? "warning" : "info"} sx={{ py: 0 }}>
+                {activeShift.off_day && isExit ? "این روز طبق شیفت شما روز کاری نیست." : activeShift.label}
+                {isExit && !activeShift.off_day && " — ساعت خروج باید از پایان شیفت به بعد باشد."}
+                {!isExit &&
+                  !activeShift.off_day &&
+                  activeShift.crosses_midnight &&
+                  " — می‌توانید از نیمه‌شب عبور کنید (مثلاً ۲۳:۰۰ تا ۰۱:۰۰). برای بعد از پایان شیفت «مجوز خروج» ثبت کنید."}
+                {!activeShift.off_day && activeShift.crosses_midnight && (
+                  <Box component="span" sx={{ display: "block", fontSize: 12, mt: 0.5 }}>
+                    تاریخ بالا تاریخ شروع شیفت است؛ درخواستی که بعد از ۰۰:۰۰ شروع شود خودکار با تاریخ روز بعد ثبت می‌شود.
+                  </Box>
+                )}
+              </Alert>
+            )}
+            {isExit && (
+              <Typography variant="caption" color="text.secondary">
+                مجوز خروج فقط برای خروج بعد از پایان شیفت است و مرخصی یا ماموریت ثبت نمی‌کند؛ با تأیید سرپرست نهایی
+                می‌شود.
+              </Typography>
             )}
 
             {selectedType.is_mission && (
@@ -257,7 +373,7 @@ function SubmitRequestForm({ onSubmitted }) {
             <Button
               variant="contained"
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || offDayBlocked}
               startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
             >
               {isSubmitting ? "در حال ثبت..." : "ثبت درخواست"}
@@ -348,7 +464,7 @@ function MyRequestsTable({ items, onDeleted }) {
               </Typography>
             )}
             <Typography variant="caption" color="text.secondary" display="block">
-              {item.is_forgotten_punch ? "" : "مدت: "}
+              {item.is_forgotten_punch || item.is_exit_permit ? "" : "مدت: "}
               {formatDuration(item)}
             </Typography>
             {item.manager_idea && (

@@ -107,13 +107,14 @@ function toDateOnly(date) {
 
 // متن «مدت» که همیشه از شروع/پایان محاسبه می‌شود: ساعتی به ساعت و دقیقه، روزانه به تعداد روز؛ تردد فراموش‌شده مدت ندارد
 function formatDuration(item) {
-  if (item.is_forgotten_punch) return "—";
+  if (item.is_forgotten_punch || item.is_exit_permit) return "—";
   if (item.start_hour != null && item.end_hour != null) {
     const startMinutes =
       Math.floor(item.start_hour / 100) * 60 + (item.start_hour % 100);
     const endMinutes =
       Math.floor(item.end_hour / 100) * 60 + (item.end_hour % 100);
-    const diff = endMinutes - startMinutes;
+    let diff = endMinutes - startMinutes;
+    if (diff < 0) diff += 24 * 60; // عبور از نیمه‌شب (شیفت شب): ۲۳:۰۰ تا ۰۱:۰۰ = ۲ ساعت
     if (diff <= 0) return "—";
     const h = Math.floor(diff / 60);
     const m = diff % 60;
@@ -250,6 +251,8 @@ function rangeLabel(item) {
   const fa = (d) => (d ? new Date(d).toLocaleDateString("fa-IR") : "—");
   if (item.is_forgotten_punch)
     return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
+  if (item.is_exit_permit)
+    return `${fa(item.start_date)} — خروج ساعت ${formatCompactTime(item.start_hour)}`;
   return item.start_hour != null
     ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
     : `${fa(item.start_date)} تا ${fa(item.end_date)}`;
@@ -269,7 +272,9 @@ function statusChipLabel(item) {
  */
 function EditableTimeRange({ item, onSave }) {
   const isHourly = item.start_hour != null; // درخواست ساعتی
-  const isPunch = Boolean(item.is_forgotten_punch); // تردد فراموش‌شده
+  // تردد فراموش‌شده یا مجوز خروج: فقط تاریخ + یک ساعت
+  const isPunch = Boolean(item.is_forgotten_punch || item.is_exit_permit);
+  const timeLabel = item.is_exit_permit ? "ساعت خروج" : "ساعت تردد";
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [startDate, setStartDate] = useState(
@@ -332,11 +337,11 @@ function EditableTimeRange({ item, onSave }) {
           <JalaliDateTimePicker
             value={startDate}
             onChange={setStartDate}
-            label="تاریخ تردد"
+            label={item.is_exit_permit ? "تاریخ" : "تاریخ تردد"}
             showTime={false}
           />
           <TimeSelect24
-            label="ساعت تردد"
+            label={timeLabel}
             value={startTimeStr}
             onChange={setStartTimeStr}
           />

@@ -65,6 +65,9 @@ class LeaveRequestMapping(Base, TimestampMixin):
     # غیرفعال‌سازی موقت ماژول برای سایت از صفحه تنظیمات (جدا از فرم نگاشت؛ upsert_mapping
     # آن را تغییر نمی‌دهد). تا True است، فرم درخواست پرسنل بسته و کارت داشبورد «غیرفعال» است.
     is_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # تلرانس (دقیقه) تطبیق تردد با مرخصی/ماموریت ساعتی: ترددی که تا این مقدار قبل از شروع یا بعد از پایان درخواست
+    # زده شود هم به آن وصل می‌شود (مثل WF_TL کاراوب). تنظیمات مرخصی/ماموریت هر سایت.
+    punch_tolerance_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
     # ستون ActionId در WF_Requests؛ مقدار آن از LeaveRequestType.action_id می‌آید.
     # اگر خالی باشد، این ستون اصلاً نوشته نمی‌شود.
     action_id_column: Mapped[str | None] = mapped_column(String(128), nullable=True, default="ActionId")
@@ -177,6 +180,9 @@ class LeaveRequestType(Base, TimestampMixin):
     # نوع «تردد فراموش‌شده»: به‌جای بازه زمانی، یک یا دو تردد (ورود/خروج با تاریخ جداگانه) ثبت می‌شود؛
     # اول سرپرست و بعد مسئول نیروی انسانی تأیید می‌کند و در پایان تردد در کاراوب درج می‌شود.
     is_forgotten_punch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # نوع «مجوز خروج» (برگه‌ی خروج حراست): فقط ساعت خروج، از پایان شیفت همان روز به بعد؛ مرخصی/مأموریت ثبت نمی‌شود،
+    # فقط سرپرست تأیید می‌کند و در کاراوب StartHour=EndHour، مدت ۰ و با تأیید AcceptCode=0 (بدون اثر روی تردد/کارکرد).
+    is_exit_permit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     site: Mapped["Site"] = relationship()  # noqa: F821
 

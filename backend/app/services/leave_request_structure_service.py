@@ -43,12 +43,14 @@ def permission_code_for_type_title(title: str) -> str:
 # نوع‌های پایه‌ای که هنگام ساخت اولین نگاشت هر سایت به‌صورت خودکار ایجاد می‌شوند
 # (مقادیر واقعی کاراوب مشترک همه سایت‌ها)؛ ادمین می‌تواند بعداً آن‌ها را ویرایش/حذف کند.
 DEFAULT_LEAVE_REQUEST_TYPES = [
-    # title, is_mission, is_hourly, action_id, operation_id, card_no, is_forgotten_punch
+    # title, is_mission, is_hourly, action_id, operation_id, card_no, is_forgotten_punch[, is_exit_permit]
     ("مرخصی روزانه استحقاقی", False, False, 1, 5, 57, False),
     ("مرخصی ساعتی استحقاقی", False, True, 3, 5, 17, False),
     ("ماموریت ساعتی", True, True, 9, 3, 9, False),
     # مقادیر کاراوب برای «ورود و خروج فراموش شده» (WF_Action = ۸)
     ("تردد فراموش شده", False, True, 8, 2, 305, True),
+    # برگه‌ی خروج حراست کاراوب (WF_Action = ۱۴، کارت ۳۰۷): فقط ساعت خروج بعد از پایان شیفت
+    ("مجوز خروج", False, True, 14, 2, 307, False, True),
 ]
 
 
@@ -94,7 +96,20 @@ class LeaveRequestStructureService:
     async def get_module_status(self, site_id: int) -> dict:
         """وضعیت ماژول برای سایت: has_mapping (نگاشت دارد) و is_disabled (از پنل غیرفعال شده)."""
         mapping = await self.get_mapping(site_id)
-        return {"has_mapping": mapping is not None, "is_disabled": bool(mapping and mapping.is_disabled)}
+        return {
+            "has_mapping": mapping is not None,
+            "is_disabled": bool(mapping and mapping.is_disabled),
+            "punch_tolerance_minutes": mapping.punch_tolerance_minutes if mapping is not None else 30,
+        }
+
+    async def set_punch_tolerance(self, site_id: int, minutes: int) -> dict:
+        """تلرانس (دقیقه) تطبیق تردد با درخواست ساعتی این سایت را ذخیره می‌کند؛ بدون نگاشت خطا می‌دهد."""
+        mapping = await self.get_mapping(site_id)
+        if mapping is None:
+            raise LeaveRequestStructureError("برای این سایت هنوز نگاشت مرخصی/ماموریت تنظیم نشده است")
+        mapping.punch_tolerance_minutes = minutes
+        await self.db.commit()
+        return await self.get_module_status(site_id)
 
     async def set_module_disabled(self, site_id: int, is_disabled: bool) -> dict:
         """پرچم is_disabled نگاشت سایت را تنظیم می‌کند و وضعیت جدید را برمی‌گرداند؛ بدون نگاشت خطا می‌دهد."""
@@ -112,8 +127,10 @@ class LeaveRequestStructureService:
         existing_types = await self.list_types(site_id)
         if existing_types:
             return
-        for title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten in DEFAULT_LEAVE_REQUEST_TYPES:
-            await self.add_type(site_id, title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten)
+        for title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten, *rest in DEFAULT_LEAVE_REQUEST_TYPES:
+            await self.add_type(
+                site_id, title, is_mission, is_hourly, action_id, operation_id, card_no, forgotten, bool(rest and rest[0])
+            )
 
     async def delete_mapping(self, site_id: int) -> None:
         """نگاشت سایت را حذف می‌کند (ماژول برای سایت غیرفعال می‌شود)؛ اگر نبود، کاری نمی‌کند."""
@@ -141,6 +158,7 @@ class LeaveRequestStructureService:
         operation_id: int | None = None,
         card_no: int | None = None,
         is_forgotten_punch: bool = False,
+        is_exit_permit: bool = False,
     ) -> LeaveRequestType:
         """
         یک نوع درخواست جدید برای سایت می‌سازد و مطمئن می‌شود مجوز مشاهده‌ی عنوان آن وجود دارد.
@@ -148,6 +166,7 @@ class LeaveRequestStructureService:
         """
         leave_type = LeaveRequestType(
             is_forgotten_punch=is_forgotten_punch,
+            is_exit_permit=is_exit_permit,
             site_id=site_id,
             title=title,
             is_mission=is_mission,

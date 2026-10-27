@@ -43,6 +43,7 @@ import {
   fetchLeaveRequestApprovers,
   fetchLeaveRequestHrOfficer,
   fetchLeaveRequestModuleStatus,
+  setLeavePunchTolerance,
   fetchLeaveRequestTypes,
   removeLeaveRequestApprover,
   removeLeaveRequestHrOfficer,
@@ -64,6 +65,7 @@ function TypesSection({ siteId, onError }) {
   const [isMission, setIsMission] = useState(false); // ماموریت (خاموش = مرخصی)
   const [isHourly, setIsHourly] = useState(false); // ساعتی (خاموش = روزانه)
   const [isForgottenPunch, setIsForgottenPunch] = useState(false); // نوع «تردد فراموش‌شده»
+  const [isExitPermit, setIsExitPermit] = useState(false); // نوع «مجوز خروج» (فقط ساعت خروج بعد از پایان شیفت)
   const [actionId, setActionId] = useState("1"); // ActionId کاراوب (رشته‌ای؛ خالی = null)
   const [actionIdTouched, setActionIdTouched] = useState(false); // کاربر ActionId را دستی/از فهرست تعیین کرده؛ پیشنهاد خودکار متوقف می‌شود
   const [actionLookup, setActionLookup] = useState([]); // فهرست رسمی WF_Action سایت
@@ -124,9 +126,11 @@ function TypesSection({ siteId, onError }) {
         operation_id: operationId === "" ? null : Number(operationId),
         card_no: cardNo === "" ? null : Number(cardNo),
         is_forgotten_punch: isForgottenPunch,
+        is_exit_permit: isExitPermit,
       });
       setTitle("");
       setIsForgottenPunch(false);
+      setIsExitPermit(false);
       setIsMission(false);
       setIsHourly(false);
       setActionId("1");
@@ -189,12 +193,14 @@ function TypesSection({ siteId, onError }) {
                 <TableCell>
                   {t.is_forgotten_punch
                     ? "تردد فراموش‌شده"
-                    : t.is_mission
+                    : t.is_exit_permit
+                      ? "مجوز خروج"
+                      : t.is_mission
                       ? "ماموریت"
                       : "مرخصی"}
                 </TableCell>
                 <TableCell>
-                  {t.is_forgotten_punch
+                  {t.is_forgotten_punch || t.is_exit_permit
                     ? "—"
                     : t.is_hourly
                       ? "ساعتی"
@@ -370,6 +376,7 @@ function TypesSection({ siteId, onError }) {
               onChange={(e) => {
                 setIsForgottenPunch(e.target.checked);
                 if (e.target.checked) {
+                  setIsExitPermit(false);
                   setIsMission(false);
                   setIsHourly(true);
                 }
@@ -378,7 +385,23 @@ function TypesSection({ siteId, onError }) {
           }
           label="تردد فراموش‌شده"
         />
-        {!isForgottenPunch && (
+        <FormControlLabel
+          control={
+            <Switch
+              checked={isExitPermit}
+              onChange={(e) => {
+                setIsExitPermit(e.target.checked);
+                if (e.target.checked) {
+                  setIsForgottenPunch(false);
+                  setIsMission(false);
+                  setIsHourly(true);
+                }
+              }}
+            />
+          }
+          label="مجوز خروج (فقط ساعت خروج)"
+        />
+        {!isForgottenPunch && !isExitPermit && (
           <>
             <FormControlLabel
               control={
@@ -586,14 +609,38 @@ function HrOfficerSection({ siteId, onError }) {
 function ModuleStatusSection({ siteId, onError }) {
   const [moduleStatus, setModuleStatus] = useState(null); // { has_mapping, is_disabled }؛ null = هنوز بارگذاری نشده
   const [saving, setSaving] = useState(false); // در حال ذخیره‌ی تغییر سوئیچ
+  const [tolerance, setTolerance] = useState(""); // تلرانس تطبیق تردد (دقیقه) در فرم
+  const [savingTolerance, setSavingTolerance] = useState(false);
 
   // بارگذاری وضعیت ماژول با هر تغییر سایت
   useEffect(() => {
     setModuleStatus(null);
     fetchLeaveRequestModuleStatus(siteId)
-      .then(setModuleStatus)
+      .then((data) => {
+        setModuleStatus(data);
+        setTolerance(String(data?.punch_tolerance_minutes ?? 30));
+      })
       .catch(() => setModuleStatus(null));
   }, [siteId]);
+
+  // ذخیره‌ی تلرانس (۰ تا ۱۸۰ دقیقه)
+  async function handleSaveTolerance() {
+    const minutes = Number(tolerance);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 180) {
+      onError("تلرانس باید عددی بین ۰ تا ۱۸۰ دقیقه باشد.");
+      return;
+    }
+    setSavingTolerance(true);
+    try {
+      const data = await setLeavePunchTolerance(siteId, minutes);
+      setModuleStatus(data);
+      setTolerance(String(data.punch_tolerance_minutes));
+    } catch (err) {
+      onError(err.response?.data?.detail || "ذخیره‌ی تلرانس با خطا مواجه شد.");
+    } finally {
+      setSavingTolerance(false);
+    }
+  }
 
   // تغییر سوئیچ: سوئیچ روشن = فعال، پس مقدار disabled معکوس آن ارسال می‌شود
   async function handleToggle(event) {
@@ -650,6 +697,35 @@ function ModuleStatusSection({ siteId, onError }) {
         {enabled
           ? "با غیرفعال‌کردن، صفحه درخواست برای پرسنل این سایت بسته می‌شود و کارت داشبورد «غیرفعال» نشان می‌دهد. تنظیمات حفظ می‌شوند."
           : "پرسنل این سایت نمی‌توانند درخواست ثبت کنند و سرپرستان هم از پرتال نمی‌توانند درخواست‌ها را تأیید/رد کنند. مشاهده و ویرایش مدیریتی همچنان در دسترس است."}
+      </Typography>
+      {/* تلرانس تطبیق تردد با مرخصی/ماموریت ساعتی (مثل WF_TL کاراوب) */}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1}
+        alignItems={{ xs: "stretch", sm: "flex-end" }}
+        sx={{ mt: 2 }}
+      >
+        <TextField
+          size="small"
+          type="number"
+          label="تلرانس تطبیق تردد (دقیقه)"
+          value={tolerance}
+          onChange={(e) => setTolerance(e.target.value)}
+          inputProps={{ min: 0, max: 180 }}
+          sx={{ width: { sm: 220 } }}
+        />
+        <Button
+          variant="outlined"
+          onClick={handleSaveTolerance}
+          disabled={savingTolerance || tolerance === String(moduleStatus.punch_tolerance_minutes)}
+          sx={{ height: 40 }}
+        >
+          ذخیره
+        </Button>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+        ترددی که تا این مقدار قبل از شروع یا بعد از پایان مرخصی/ماموریت ساعتیِ تأییدشده زده شود، به‌عنوان همان
+        مرخصی/ماموریت در کاراوب ثبت می‌شود (حتی اگر تأیید قبل از تردد بوده باشد).
       </Typography>
     </Box>
   );

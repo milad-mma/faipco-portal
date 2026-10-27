@@ -41,6 +41,8 @@ LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     "wf_requests.cur_section": "CurSection",
     "wf_requests.duty_tools": "DutyTools",
     "wf_requests.duty_tamin": "DutyTamin",
+    "wf_requests.io_time": "IOTime",  # ساعت ترددی که درخواست ساعتی به آن وصل شد
+    "wf_requests.tolerance": "Tolerance",  # تلرانس استفاده‌شده در همان تطبیق
     # ستون‌های جدول‌های وابسته (نام جدول‌ها در بخش WF_Reviews همین تب است)
     "wf_reviews.id": "Id",
     "wf_attachment.request_id": "RequestId",

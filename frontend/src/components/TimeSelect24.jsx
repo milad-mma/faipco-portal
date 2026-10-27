@@ -7,10 +7,15 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * ورودی ساعت همیشه ۲۴ ساعته با دو Dropdown مستقل (ساعت و دقیقه)، مستقل از زبان/سیستم‌عامل کاربر
  * (برخلاف <input type="time"> که ممکن است ۱۲ ساعته نمایش داده شود).
  * ورودی: value و onChange با رشته‌ی "HH:MM" (همان قالبی که timeStringToCompact انتظار دارد)، label، size، sx
- * و align ("center" برای وسط‌چین).
+ * و align ("center" برای وسط‌چین). allowedHours (اختیاری): آرایه‌ی ساعت‌های مجاز (عدد ۰ تا ۲۳) — مثلاً ساعت‌های شیفت.
  */
-export default function TimeSelect24({ value, onChange, label, size = "small", sx, align }) {
+export default function TimeSelect24({ value, onChange, label, size = "small", sx, align, allowedHours }) {
   const [hourStr, minuteStr] = (value || "00:00").split(":");  // مقدار خالی معادل 00:00
+  // فقط ساعت‌های مجاز؛ ساعت فعلی اگر بیرون باشد هم نگه داشته می‌شود تا Select مقدار نامعتبر نداشته باشد
+  const hours =
+    allowedHours && allowedHours.length
+      ? HOURS.filter((h) => allowedHours.includes(Number(h)) || h === hourStr)
+      : HOURS;
 
   // تغییر ساعت با حفظ دقیقه‌ی فعلی
   function handleHourChange(newHour) {
@@ -60,7 +65,7 @@ export default function TimeSelect24({ value, onChange, label, size = "small", s
           onChange={(e) => handleHourChange(e.target.value)}
           sx={{ flex: 1, minWidth: 72 }}
         >
-          {HOURS.map((h) => (
+          {hours.map((h) => (
             <MenuItem key={h} value={h}>
               {h}
             </MenuItem>

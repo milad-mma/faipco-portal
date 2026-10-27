@@ -62,6 +62,7 @@ def kara_now() -> datetime:
 ACCEPT_APPLIED = 0  # تأیید و اعمال‌شده
 ACCEPT_APPROVED_NOT_APPLIED = 8  # تأییدشده ولی روی ترددی اعمال نشده
 ACCEPT_CANCELLED = 22
+MISSION_OPERATION_ID = 3  # OperationsID مأموریت (WF_OperationTypes)؛ مرخصی ۵
 
 # کارت‌هایی که از مانده‌ی مرخصی (ساعتی) کسر می‌شوند (مرخصی استحقاقی)
 ENTITLEMENT_CARDS = {57}
@@ -248,6 +249,69 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
     return 240 if thursday else 480  # پیش‌فرض: پنجشنبه ۴ ساعت، بقیه ۸ ساعت
 
 
+def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
+    """
+    بازه‌ی شیفت یک روزِ پرسنل برای محدودیت مرخصی ساعتی و مجوز خروج (docs/leave-requests.md).
+    منابع به همان ترتیب کسر مرخصی: کارکرد روزانه‌ی همان تاریخ، وگرنه تقویم شیفت گروهی (EmpGrps → GrpShift).
+    ردیفی که شماره‌ی شیفتش در جدول شیفت‌ها نیست (مثل ۵۰۱ = استراحت/جمعه) روز غیرکاری است.
+    خروجی: خروجی shift_window (+ shift_no) یا None اگر از هیچ منبعی پیدا نشد یا ستون‌های ساعت نگاشت نشده‌اند.
+    """
+    from app.core.leave_request_rules import shift_window
+
+    roles = ("start_time", "start_time5", "end_time", "end_time5", "added_day", "added_day5")
+    if not n.has("shifts") or not all(n.has("shifts", r) for r in roles):
+        return None
+    thursday = day.weekday() == _THURSDAY
+    jalali = _jalali_int(day)
+    S = lambda role: n.c("shifts", role)  # noqa: E731
+    sh_no = S("shift_no")
+    sfx = "5" if thursday else ""
+    cols = (
+        f"s.{sh_no} AS Found, s.{S('start_time' + sfx)} AS StartT, s.{S('end_time' + sfx)} AS EndT, "
+        f"s.{S('added_day' + sfx)} AS Added"
+    )
+    kasr_role = "kasr_gh5" if thursday else "kasr_gh"
+    cols += f", s.{S(kasr_role)} AS Kasr" if n.has("shifts", kasr_role) else ", NULL AS Kasr"
+
+    def _from_row(row):
+        if not row or row.get("ShiftNo") is None:
+            return None
+        if row.get("Found") is None:
+            return {"off_day": True, "shift_no": int(row["ShiftNo"])}
+        w = shift_window(row.get("StartT"), row.get("EndT"), row.get("Added"), row.get("Kasr"))
+        if w is not None:
+            w["shift_no"] = int(row["ShiftNo"])
+        return w
+
+    if n.has("daily_work"):
+        W = lambda role: n.c("daily_work", role)  # noqa: E731
+        cur.execute(
+            f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {cols} "
+            f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
+            f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
+            {"e": emp_no, "d": jalali},
+        )
+        row = cur.fetchone()
+        if row and row.get("ShiftNo") is not None:
+            return _from_row(row)
+
+    if n.has("grp_shift") and n.has("emp_grps"):
+        j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
+        day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
+        G = lambda role: n.c("grp_shift", role)  # noqa: E731
+        E = lambda role: n.c("emp_grps", role)  # noqa: E731
+        cur.execute(
+            f"SELECT TOP 1 g.{day_col} AS ShiftNo, {cols} "
+            f"FROM {n.t('grp_shift')} g LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = g.{day_col} "
+            f"WHERE g.{G('year')} = %(y)s AND g.{G('month')} = %(m)s AND g.{G('grp_no')} = ("
+            f"SELECT TOP 1 e.{E('new_grp_no')} FROM {n.t('emp_grps')} e "
+            f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC)",
+            {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
+        )
+        return _from_row(cur.fetchone())
+    return None
+
+
 def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
     """
     مقادیر (Requested, StandardRequested, Inc_Type) ردیف Mor_Mam را مثل کاراوب حساب می‌کند.
@@ -282,12 +346,25 @@ def _set_accept_code(cur, n: KaraNames, request_id: int, accept: int | None, cur
     cur.execute(f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s", params)
 
 
+def is_exit_permit(request: dict) -> bool:
+    """
+    «مجوز خروج» (برگه‌ی خروج حراست، کارت ۳۰۷/ActionId ۱۴ کاراوب): یک ساعت (StartHour = EndHour) با مدت صفر.
+    مرخصی ساعتی هرگز مدت صفر ندارد. این درخواست فقط ساعت خروج است و روی تردد، Mor_Mam و کارکرد اثری ندارد؛
+    کاراوب هم با تأیید فقط AcceptCode=0 می‌نویسد.
+    """
+    start, end = request.get("StartHour"), request.get("EndHour")
+    return start is not None and start == end and str(request.get("Duration") or "0").strip() in ("0", "")
+
+
 def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, app_id: int, branch_code: int) -> int:
     """
     اثر تأیید نهایی یک درخواست مرخصی/ماموریت را مثل کاراوب اعمال می‌کند.
     ورودی: ردیف خام درخواست (از _select_requests_sync)، کد پرسنلی تأییدکننده، شناسه‌ی برنامه و کد شعبه.
     خروجی: AcceptCode نهایی (۰ اعمال‌شده، ۸ تأییدشده بدون تردد) یا None اگر جدول‌های لازم نگاشت نشده باشند.
     """
+    if is_exit_permit(request):  # مجوز خروج: مثل کاراوب فقط AcceptCode=0، بدون نوشتن در تردد/کارکرد
+        _set_accept_code(cur, n, request["RequestId"], ACCEPT_APPLIED, get_sec_no(cur, n, approver_emp_no))
+        return ACCEPT_APPLIED
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
     hourly = request.get("StartHour") is not None  # درخواست ساعتی StartHour دارد
@@ -312,37 +389,179 @@ def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, ap
     return accept
 
 
-def _punch_select(n: KaraNames) -> str:
-    """SELECT پایه‌ی یک تردد (با پارامترهای e/d/s/t: پرسنل، تاریخ، بازه‌ی ساعت) بدون ORDER BY."""
-    return (
-        f"SELECT TOP 1 {n.c('datafile', 'id')} AS Id, {n.df_time} AS Time, "
+def punch_tolerance(n: KaraNames) -> int:
+    """تلرانس (دقیقه) تطبیق تردد با درخواست ساعتی از تنظیمات مرخصی/ماموریت سایت در پرتال (مثل WF_TL کاراوب)."""
+    try:
+        return max(0, int(getattr(n.leave, "punch_tolerance_minutes", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _find_hourly_punch(cur, n: KaraNames, emp_no: int, day: date, start: int, end: int, extra: str = "", params=None):
+    """
+    تردد مطابق یک درخواست ساعتی، مثل کاراوب (درخواست‌های ۱۷۱ و ۱۸۳): ترددهای بازه‌ی [شروع − تلرانس، پایان + تلرانس]
+    و از بین آن‌ها اولین تردد. بازه‌ی عبوری از نیمه‌شب (EndHour < StartHour) و
+    تلرانسی که به روز قبل/بعد برسد هم پوشش داده می‌شود (تردد بامداد با تاریخ تقویمی روز بعد در DataFile است).
+    extra: شرط اضافه روی تردد (مثلاً Status = ۰ یا Status = کارت) با پارامترهایش در params.
+    خروجی: (تردد یا None، تاریخ میلادی همان تردد).
+    """
+    tol = punch_tolerance(n)
+    s_min = _hhmm_to_minutes(start)
+    e_min = _hhmm_to_minutes(end)
+    if e_min < s_min:
+        e_min += 1440
+    lo, hi = s_min - tol, e_min + tol
+    days = [day + timedelta(days=k) for k in (-1, 0, 1) if lo < 0 or k >= 0]
+    days = [d for d in days if (d - day).days * 1440 <= hi and (d - day).days * 1440 + 1439 >= lo]
+    date_ints = [_jalali_int(d) for d in days]
+    placeholders = ", ".join(f"%(d{i})s" for i in range(len(date_ints)))
+    params = {**dict(params or {}), "e": emp_no, **{f"d{i}": v for i, v in enumerate(date_ints)}}
+    cur.execute(
+        f"SELECT {n.c('datafile', 'id')} AS Id, {n.df_date} AS DateInt, {n.df_time} AS Time, "
         f"{n.c('datafile', 'status')} AS Status, {n.c('datafile', 'duration')} AS Duration, "
         f"{n.c('datafile', 'prev_day')} AS PrevDay, {n.c('datafile', 'application_id')} AS ApplicationId, "
         f"{n.c('datafile', 'branch_code')} AS BranchCode FROM {n.df_table} "
-        f"WHERE {n.df_emp_no} = %(e)s AND {n.df_date} = %(d)s "
-        f"AND {n.df_time} BETWEEN %(s)s AND %(t)s "
+        f"WHERE {n.df_emp_no} = %(e)s AND {n.df_date} IN ({placeholders}) {extra}",
+        params,
     )
+    by_int = dict(zip(date_ints, days, strict=True))
+    best = None
+    for row in cur.fetchall():
+        d = by_int.get(int(row["DateInt"]))
+        if d is None:
+            continue
+        t = (d - day).days * 1440 + _hhmm_to_minutes(int(row["Time"]))
+        if not lo <= t <= hi:
+            continue
+        if best is None or t < best[0]:  # اولین تردد بازه (کاراوب در ۱۷۱ خروج ۰۹:۱۲ را گرفت، نه بازگشت ۱۰:۰۵)
+            best = (t, row, d)
+    if best is None:
+        return None, day
+    return best[1], best[2]
+
+
+def _hhmm_to_minutes(hhmm: int) -> int:
+    hour, minute = divmod(int(hhmm), 100)
+    return hour * 60 + minute
+
+
+def _set_io_time(cur, n: KaraNames, request_id: int, io_time: int | None, tolerance: int | None) -> None:
+    """IOTime (ساعت تردد مطابق) و Tolerance درخواست را مثل کاراوب می‌نویسد؛ None هر دو را پاک می‌کند."""
+    sets, params = [], {"r": request_id}
+    if n.has("wf_requests", "io_time"):
+        sets.append(f"{n.c('wf_requests', 'io_time')} = %(io)s")
+        params["io"] = io_time
+    if n.has("wf_requests", "tolerance"):
+        sets.append(f"{n.c('wf_requests', 'tolerance')} = %(tl)s")
+        params["tl"] = tolerance
+    if sets:
+        cur.execute(f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s", params)
+
+
+def _shift_ref(cur, n: KaraNames, emp_no: int, day: date, s_min: int, e_min: int):
+    """
+    شیفت مرجع یک درخواست ساعتی روی محور دقیقه نسبت به ۰۰:۰۰ همان روز: شیفت همان روز یا شیفت شبِ روز قبل (برای ردیف
+    بامدادی با تاریخ روز بعد)، هرکدام بیشترین هم‌پوشانی را دارد (وگرنه نزدیک‌ترین).
+    خروجی: (ws, we) یا "off" (روز غیرکاری) یا None (شیفت نامعلوم).
+    """
+    found, candidates = False, []
+    for offset in (0, -1):
+        window = shift_window_sync(cur, n, emp_no, day + timedelta(days=offset))
+        if window is None:
+            continue
+        found = True
+        if window.get("off_day"):
+            if offset == 0:
+                candidates.append(("off", 0, 10**6))
+            continue
+        ws = offset * 1440 + _hhmm_to_minutes(window["start"])
+        we = offset * 1440 + _hhmm_to_minutes(window["end"] % 2400) + (1440 if window["end"] >= 2400 else 0)
+        overlap = min(e_min, we) - max(s_min, ws)
+        distance = 0 if overlap > 0 else max(ws - e_min, s_min - we)
+        candidates.append(((ws, we), overlap, distance))
+    if not found:
+        return None
+    if not candidates:
+        return "off"
+    with_overlap = [c for c in candidates if c[0] != "off" and c[1] > 0]
+    if with_overlap:
+        return max(with_overlap, key=lambda c: c[1])[0]
+    return min(candidates, key=lambda c: c[2])[0]
+
+
+def _match_hourly_punch(cur, n: KaraNames, emp_no: int, day: date, s_min: int, e_min: int, ref):
+    """
+    تردد مطابق درخواست ساعتی، مطابق قاعده‌ی تلرانس کاراوب (ورود و خروج تا «تلرانس» دقیقه قبل/بعد از ساعت درخواست):
+    - خروجِ نزدیک ساعت شروع (|t − شروع| ≤ تلرانس)، مثل ۱۷۱ (خروج ۰۹:۱۲ برای ۰۹:۰۰) و ۱۸۳ (خروج ۱۱:۵۳ برای ۱۲:۰۰)؛
+    - وگرنه ورودِ نزدیک ساعت پایان (مرخصی اول وقت: ورود ۱۲:۰۱ برای ۰۶:۳۰–۱۲:۰۰).
+    ورودی که نزدیک شروع است یعنی شخص سر کار آمده (درخواست ۱۰۲: ورود ۰۶:۲۳ برای مرخصی ۰۶:۳۰) و علامت نمی‌خورد.
+    ورود/خروج بودن هر تردد از ترتیبش در بازه‌ی شیفت (شیفت −۳ ساعت تا +۶ ساعت؛ شیفت نامعلوم: همان روز) تعیین می‌شود:
+    اولی ورود، دومی خروج، ... خروجی: (تردد یا None، تاریخ میلادی تردد).
+    """
+    tol = punch_tolerance(n)
+    lo, hi = (ref[0] - 180, ref[1] + 360) if isinstance(ref, tuple) else (0, 1439)
+    days = [day + timedelta(days=k) for k in (-1, 0, 1)]
+    days = [d for d in days if (d - day).days * 1440 <= hi and (d - day).days * 1440 + 1439 >= lo]
+    date_ints = [_jalali_int(d) for d in days]
+    placeholders = ", ".join(f"%(d{i})s" for i in range(len(date_ints)))
+    cur.execute(
+        f"SELECT {n.c('datafile', 'id')} AS Id, {n.df_date} AS DateInt, {n.df_time} AS Time, "
+        f"{n.c('datafile', 'status')} AS Status, {n.c('datafile', 'duration')} AS Duration, "
+        f"{n.c('datafile', 'prev_day')} AS PrevDay, {n.c('datafile', 'application_id')} AS ApplicationId, "
+        f"{n.c('datafile', 'branch_code')} AS BranchCode FROM {n.df_table} "
+        f"WHERE {n.df_emp_no} = %(e)s AND {n.df_date} IN ({placeholders})",
+        {"e": emp_no, **{f"d{i}": v for i, v in enumerate(date_ints)}},
+    )
+    by_int = dict(zip(date_ints, days, strict=True))
+    punches = []
+    for row in cur.fetchall():
+        d = by_int.get(int(row["DateInt"]))
+        if d is None:
+            continue
+        t = (d - day).days * 1440 + _hhmm_to_minutes(int(row["Time"]))
+        if lo <= t <= hi:
+            punches.append((t, row, d))
+    punches.sort(key=lambda x: x[0])
+    exits = [(abs(t - s_min), t, row, d) for i, (t, row, d) in enumerate(punches) if i % 2 == 1 and abs(t - s_min) <= tol]
+    entries = [(abs(t - e_min), t, row, d) for i, (t, row, d) in enumerate(punches) if i % 2 == 0 and abs(t - e_min) <= tol]
+    for group in (exits, entries):
+        if group:
+            best = min(group, key=lambda x: (x[0], x[1]))
+            return best[2], best[3]
+    return None, day
 
 
 def _apply_hourly(cur, n, request, emp_no, card_no, day, user_id, username, app_id, today_j, now_hhmm) -> int:
     """
-    اثر درخواست ساعتی: اولین تردد روز در بازه‌ی StartHour..EndHour علامت کارت می‌گیرد.
-    خروجی: ACCEPT_APPLIED اگر ترددی پیدا شد، وگرنه ACCEPT_APPROVED_NOT_APPLIED.
+    اثر درخواست ساعتی: ترددِ مطابق (_match_hourly_punch) علامت کارت و مدت درخواست را می‌گیرد.
+    مرخصی (نه مأموریت): فقط بخشِ داخل ساعت رسمی شیفت حساب می‌شود (دستور کاربر) — کاملاً خارج از شیفت یا روز غیرکاری
+    علامت نمی‌خورد؛ بخشی خارج: مدت به بخش داخل شیفت کوتاه و تطبیق با همان بخش انجام می‌شود. شیفت نامعلوم: بدون محدودیت.
+    اگر تردد مطابق از قبل علامت دارد (کارت روی دستگاه یا درخواست دیگر)، کاراوب حسابش کرده و چیزی تغییر نمی‌کند.
+    خروجی: ACCEPT_APPLIED اگر اعمال شد، وگرنه ACCEPT_APPROVED_NOT_APPLIED.
     """
-    # اولین تردد در بازه‌ی درخواست
-    cur.execute(
-        _punch_select(n) + f"ORDER BY {n.df_time}",
-        {"e": emp_no, "d": _jalali_int(day), "s": int(request["StartHour"]), "t": int(request["EndHour"])},
-    )
-    punch = cur.fetchone()
-    if not punch:
-        return ACCEPT_APPROVED_NOT_APPLIED
-    # مدت درخواست رشته است؛ مقدار نامعتبر = ۰
-    try:
+    s_min = _hhmm_to_minutes(int(request["StartHour"]))
+    e_min = _hhmm_to_minutes(int(request["EndHour"]))
+    if e_min < s_min:
+        e_min += 1440  # عبور از نیمه‌شب
+    try:  # مدت درخواست رشته است؛ مقدار نامعتبر = ۰
         new_duration = int(request.get("Duration") or 0)
     except (TypeError, ValueError):
         new_duration = 0
+    ref = _shift_ref(cur, n, emp_no, day, s_min, e_min)
+    if request.get("OperationsID") != MISSION_OPERATION_ID and ref is not None:
+        if ref == "off":
+            return ACCEPT_APPROVED_NOT_APPLIED  # روز غیرکاری
+        a, b = max(s_min, ref[0]), min(e_min, ref[1])
+        if b <= a:
+            return ACCEPT_APPROVED_NOT_APPLIED  # مرخصی کاملاً خارج از شیفت
+        if (a, b) != (s_min, e_min):
+            s_min, e_min = a, b
+            new_duration = ((b - a) // 60) * 100 + (b - a) % 60
+    punch, day = _match_hourly_punch(cur, n, emp_no, day, s_min, e_min, ref)
+    if not punch or int(punch.get("Status") or 0) != 0:
+        return ACCEPT_APPROVED_NOT_APPLIED
     _update_punch(cur, n, punch, emp_no, day, card_no, new_duration, user_id, username, app_id, today_j, now_hhmm)
+    _set_io_time(cur, n, request["RequestId"], int(punch["Time"]), punch_tolerance(n))
     return ACCEPT_APPLIED
 
 
@@ -448,12 +667,44 @@ def _log_mor_mam(cur, n: KaraNames, row: dict, ref_number, change_type: int, use
 # ---------- لغو اثر ----------
 
 
+def apply_pending_hourly(cur, n: KaraNames, request: dict, app_id: int) -> bool:
+    """
+    اعمالِ بعدیِ یک درخواست ساعتیِ تأییدشده که هنوز به ترددی وصل نشده (AcceptCode = ۸)، مثل کاراوب (درخواست ۱۷۱: تأیید
+    قبل از خروج، اعمال بعد از ثبت تردد). Job زمان‌بندی‌شده‌ی پرتال صدا می‌زند. خروجی: True اگر اعمال شد.
+    """
+    if is_exit_permit(request) or request.get("StartHour") is None or not n.can_write_hourly:
+        return False
+    if n.has("wf_requests", "accept_code"):  # شاید در این فاصله در کاراوب یا پرتال تغییر کرده باشد
+        cur.execute(
+            f"SELECT {n.c('wf_requests', 'accept_code')} AS AcceptCode FROM {n.requests_table} "
+            f"WHERE {n.requests_id} = %(r)s",
+            {"r": request["RequestId"]},
+        )
+        state = cur.fetchone()
+        if not state or state.get("AcceptCode") != ACCEPT_APPROVED_NOT_APPLIED:
+            return False
+    emp_no = int(request["EmpNo"])
+    approver = request.get("ApprovalByManagerEmpNo") or request.get("CurEmpNo")
+    user_id, username = _resolve_kara_user(cur, n, [approver, emp_no])
+    _, today_j, now_hhmm = _now_parts()
+    accept = _apply_hourly(
+        cur, n, request, emp_no, int(request["CardNo"]), _to_date(request["StartDate"]),
+        user_id, username, app_id, today_j, now_hhmm,
+    )
+    if accept != ACCEPT_APPLIED:
+        return False
+    _set_accept_code(cur, n, request["RequestId"], ACCEPT_APPLIED)
+    return True
+
+
 def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, app_id: int) -> None:
     """
     اثر یک درخواستِ تأییدشده را از کارکرد کاراوب برمی‌دارد (هنگام رد، حذف یا ویرایش مدیریتی).
     ساعتی: Status تردد به مقدار قبل از اعمال برمی‌گردد + لاگ؛ روزانه: ردیف Mor_Mam حذف + لاگ (ChangeType=3).
     اگر اثری ثبت نشده بود یا جدول‌ها نگاشت نشده باشند، کاری نمی‌کند.
     """
+    if is_exit_permit(request):  # مجوز خروج اثری روی تردد/کارکرد نگذاشته بود
+        return
     emp_no = int(request["EmpNo"])
     card_no = int(request["CardNo"])
     start = _to_date(request["StartDate"])
@@ -475,17 +726,10 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
             if not state or state.get("AcceptCode") != ACCEPT_APPLIED:
                 return  # روی ترددی اعمال نشده بود
         # ترددی در بازه‌ی درخواست که علامت همین کارت را دارد
-        cur.execute(
-            _punch_select(n) + f"AND {n.c('datafile', 'status')} = %(c)s ORDER BY {n.df_time}",
-            {
-                "e": emp_no,
-                "d": _jalali_int(start),
-                "s": int(request["StartHour"]),
-                "t": int(request["EndHour"]),
-                "c": card_no,
-            },
+        punch, punch_day = _find_hourly_punch(
+            cur, n, emp_no, start, int(request["StartHour"]), int(request["EndHour"]),
+            f"AND {n.c('datafile', 'status')} = %(c)s ", {"c": card_no},
         )
-        punch = cur.fetchone()
         if punch:
             # وضعیت/مدتِ قبل از اعمال از آخرین لاگ همین پرتال (پرچم گردش کار) خوانده می‌شود؛
             # اگر تردد از اول با کارت مرخصی/ماموریت از خودِ دستگاه زده شده بود، آن علامت واقعی پاک نمی‌شود
@@ -499,7 +743,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
                     f"AND ({L('application_id')} & %(flag)s) <> 0 ORDER BY {L('id')} DESC",
                     {
                         "e": emp_no,
-                        "d": _jalali_int(start),
+                        "d": _jalali_int(punch_day),
                         "t": punch["Time"],
                         "c": card_no,
                         "flag": app_id << _EDITOR_SHIFT,
@@ -507,9 +751,10 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
                 )
                 before = cur.fetchone() or {}
             _update_punch(
-                cur, n, punch, emp_no, start, before.get("OldStatus") or 0, before.get("OldDuration") or 0,
+                cur, n, punch, emp_no, punch_day, before.get("OldStatus") or 0, before.get("OldDuration") or 0,
                 user_id, username, app_id, today_j, now_hhmm, restore=True,
             )
+            _set_io_time(cur, n, request["RequestId"], None, None)
         return
 
     # روزانه: ردیف Mor_Mam همین درخواست (همان پرسنل، بازه و کارت؛ ردیف با همان توضیح مقدم است)
@@ -560,6 +805,7 @@ def clear_accept_code(cur, n: KaraNames, request_id: int) -> None:
         return
     accept_col = n.c("wf_requests", "accept_code")
     cur.execute(f"UPDATE {n.requests_table} SET {accept_col} = NULL WHERE {n.requests_id} = %(r)s", {"r": request_id})
+    _set_io_time(cur, n, request_id, None, None)
 
 
 def delete_request_state_rows(cur, n: KaraNames, request_id: int) -> None:

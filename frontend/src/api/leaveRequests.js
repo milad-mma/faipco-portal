@@ -11,6 +11,12 @@ export async function fetchActiveLeaveRequestTypes() {
   return data;
 }
 
+// ساعت شیفت کاربر در یک تاریخ (YYYY-MM-DD): {found, off_day, start, end, crosses_midnight, label}
+export async function fetchShiftWindow(dateStr) {
+  const { data } = await apiClient.get("/leave-requests/shift-window", { params: { date: dateStr } });
+  return data;
+}
+
 // یک درخواست مرخصی جدید ثبت می‌کند؛ ورودی: payload شامل نوع، بازه و توضیحات؛ خروجی: درخواست ثبت‌شده
 export async function submitLeaveRequest(payload) {
   const { data } = await apiClient.post("/leave-requests/submit", payload);
