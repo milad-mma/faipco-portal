@@ -18,9 +18,11 @@ export function useAccessGateStatus() {
   const location = useLocation();
 
   // وضعیت را از سرور می‌گیرد و در state می‌گذارد؛ خروجی: داده‌ی وضعیت یا null در صورت خطا
-  const refresh = useCallback(async () => {
+  // background: تازه‌سازی خودکار هنگام برگشت به تب/بیدار شدن گوشی؛ در آن لحظه اینترنت موبایل اغلب هنوز وصل نشده و
+  // خطایش (که وضعیت قبلی را دست نمی‌زند) نباید «قطعی شبکه» در گزارش خطاها ثبت کند
+  const refresh = useCallback(async (background = false) => {
     try {
-      const data = await fetchMyAccessGateStatus();
+      const data = await fetchMyAccessGateStatus({ background: background === true });
       setStatus(data);
       return data;
     } catch {
@@ -37,10 +39,10 @@ export function useAccessGateStatus() {
   // تازه‌سازی با برگشت فوکوس به پنجره یا visible شدن تب؛ listenerها هنگام unmount حذف می‌شوند
   useEffect(() => {
     function onFocus() {
-      refresh();
+      refresh(true);
     }
     function onVisible() {
-      if (document.visibilityState === "visible") refresh();
+      if (document.visibilityState === "visible") refresh(true);
     }
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);

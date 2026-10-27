@@ -153,6 +153,7 @@ class PushService:
                         # تحویل داده می‌شود
                         ttl=60 * 60 * 24,
                         headers={"Urgency": "high"},
+                        timeout=15,  # سرور Push کند/در دسترس نیست → بقیه‌ی گیرندگان معطل نمانند
                     )
                     sent_count += 1
                 except WebPushException as e:
@@ -165,6 +166,19 @@ class PushService:
                         logger.warning(
                             "ارسال Push به کاربر %s ناموفق بود (status=%s): %s", sub.user_id, status_code, e
                         )
+                except Exception as e:  # noqa: BLE001
+                    # خطای شبکه (DNS، قطع اتصال، Timeout) برای یک دستگاه: فقط همان دستگاه ناموفق شمرده می‌شود.
+                    # قبلاً این خطا کل ارسال را با «خطای سرور» متوقف می‌کرد و پاک‌سازی اشتراک‌های منقضی و لاگ خلاصه
+                    # اجرا نمی‌شد. اشتراک حذف نمی‌شود چون مشکل از شبکه‌ی سرور است، نه از دستگاه.
+                    failed_count += 1
+                    host = sub.endpoint.split("/")[2] if sub.endpoint.count("/") >= 2 else "?"
+                    logger.warning(
+                        "ارسال Push به کاربر %s (%s) به‌خاطر خطای شبکه ناموفق بود: %s: %s",
+                        sub.user_id,
+                        host,
+                        type(e).__name__,
+                        str(e)[:200],
+                    )
 
         await asyncio.gather(*(send_one(sub) for sub in subscriptions))
 

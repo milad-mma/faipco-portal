@@ -4,9 +4,10 @@
  */
 import { apiClient } from "./client";
 
-// GET /access-gate/my-status؛ خروجی: وضعیت باز/بسته بودن قابلیت‌ها برای کاربر جاری
-export async function fetchMyAccessGateStatus() {
-  const { data } = await apiClient.get("/access-gate/my-status");
+// GET /access-gate/my-status؛ خروجی: وضعیت باز/بسته بودن قابلیت‌ها برای کاربر جاری.
+// background=true: تازه‌سازی خودکار (برگشت به تب/بیدار شدن گوشی)؛ قطعی شبکه‌اش در «گزارش خطاها» ثبت نمی‌شود
+export async function fetchMyAccessGateStatus({ background = false } = {}) {
+  const { data } = await apiClient.get("/access-gate/my-status", { background });
   return data;
 }
 

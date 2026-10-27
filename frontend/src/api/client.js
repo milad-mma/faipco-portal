@@ -83,10 +83,16 @@ const BACKGROUND_PATHS = [
   "/auth/captcha-status",
   "/announcement/current",
   "/feedback/mine/unread-count",
+  // شمارنده‌های نشانگر داشبورد/کارتابل: در نبودشان فقط عدد روی کارت نمایش داده نمی‌شود
+  "/loans/inbox/count",
+  "/advances/inbox/count",
+  "/leave-requests/pending-count",
   "/mobile/app/latest",
   "/mobile/me",
 ];
 function isBackgroundRequest(config) {
+  // درخواستی که فراخواننده صریحاً پس‌زمینه علامت زده (مثلاً تازه‌سازی خودکار هنگام برگشت به تب)
+  if (config?.background === true) return true;
   // فقط خواندن (GET)؛ ذخیره‌ی مدیر روی همین مسیرها (مثلاً PUT /system/branding/...) کار کاربر است و گزارش می‌شود
   if (String(config?.method || "get").toLowerCase() !== "get") return false;
   const path = String(config?.url || "").split("?")[0];
