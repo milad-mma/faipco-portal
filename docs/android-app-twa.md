@@ -43,7 +43,7 @@ bubblewrap init --manifest https://portal.faipco.ir/manifest.json
 
 - **Package name**: پیشنهاد پیش‌فرض معمولاً چیزی شبیه `ir.faipco.portal`
   است — همین را قبول کنید، چون دقیقاً همین مقدار از قبل در
-  `frontend/public/.well-known/assetlinks.json` نوشته شده. اگر اسم دیگری
+  `frontend/dist/.well-known/assetlinks.json` (توسط بک‌اند از «تنظیمات اپ اندروید») نوشته می‌شود. اگر اسم دیگری
   انتخاب کردید، حتماً آن فایل را هم به همان مقدار به‌روز کنید.
 - مقادیری که از `frontend/public/manifest.json` خوانده می‌شوند: نام
   `FAIPCO Portal` / `FAIPCO`، `start_url: /`، `display: standalone`،
