@@ -246,15 +246,21 @@ function EditableSelect({ value, options, onSave, renderValue }) {
   );
 }
 
-// متن بازه‌ی یک درخواست: ساعتی «شروع تا پایان»، روزانه «تاریخ تا تاریخ»؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد)
+// متن بازه‌ی یک درخواست: ساعتی «تاریخ — شروع تا پایان»، روزانه «تاریخ تا تاریخ»؛ تردد فراموش‌شده فقط یک لحظه (تاریخ + ساعت تردد)
 function rangeLabel(item) {
   const fa = (d) => (d ? new Date(d).toLocaleDateString("fa-IR") : "—");
+  // عبور از نیمه‌شب (شیفت شب): پایانِ کوچک‌تر از شروع یعنی بامداد روز بعد
+  const nextDay =
+    item.start_hour != null && item.end_hour != null && item.end_hour < item.start_hour ? " (بامداد روز بعد)" : "";
   if (item.is_forgotten_punch)
     return `${fa(item.start_date)} — تردد ساعت ${formatCompactTime(item.start_hour)}`;
   if (item.is_exit_permit)
     return `${fa(item.start_date)} — خروج ساعت ${formatCompactTime(item.start_hour)}`;
-  return item.start_hour != null
-    ? `${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}`
+  if (item.start_hour != null)
+    return `${fa(item.start_date)} — ${formatCompactTime(item.start_hour)} تا ${formatCompactTime(item.end_hour)}${nextDay}`;
+  // روزانه‌ی یک‌روزه (بدون تاریخ پایان) فقط یک تاریخ
+  return !item.end_date || fa(item.end_date) === fa(item.start_date)
+    ? fa(item.start_date)
     : `${fa(item.start_date)} تا ${fa(item.end_date)}`;
 }
 
