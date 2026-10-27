@@ -150,6 +150,25 @@ def _resolve_kara_user(cur, n: KaraNames, emp_nos: list[int | None]) -> tuple[st
     return str(row["UserId"]), row["Username"]
 
 
+def _log_user(cur, n: KaraNames, requester_emp_no: int, others: list[int | None]) -> tuple[str, str]:
+    """
+    کاربر ردیف‌های لاگ (LogDataFile / LogMorMam) تغییراتی که پرتال برای یک درخواست می‌نویسد، مثل کاراوب: حساب کاراوبِ
+    خودِ درخواست‌دهنده (۱۷۱ → Eskandarlou = ۲۳۵۵۰۸، ۱۸۳ → it = ۲۲۵۷۳۵). اگر درخواست‌دهنده حساب کاراوب ندارد، Username
+    کد پرسنلی اوست و UserId (اجباری، بدون کلید خارجی) از حساب تأییدکننده/عامل، وگرنه قدیمی‌ترین کاربر فعال (دستور کاربر).
+    """
+    cur.execute(
+        f"SELECT TOP 1 {n.c('users', 'user_id')} AS UserId, {n.c('users', 'username')} AS Username "
+        f"FROM {n.t('users')} WHERE {n.c('users', 'emp_no')} = %(e)s "
+        f"ORDER BY {n.c('users', 'is_active')} DESC, {n.c('users', 'creation_date')}",
+        {"e": requester_emp_no},
+    )
+    row = cur.fetchone()
+    if row:
+        return str(row["UserId"]), row["Username"]
+    user_id, _ = _resolve_kara_user(cur, n, others)
+    return user_id, str(requester_emp_no)
+
+
 # ---------- ثبت درخواست ----------
 
 
@@ -371,7 +390,7 @@ def apply_on_approval(cur, n: KaraNames, request: dict, approver_emp_no: int, ap
     # اگر جدول‌های لازم برای این نوع درخواست نگاشت نشده باشند، هیچ اثری نوشته نمی‌شود
     if (hourly and not n.can_write_hourly) or (not hourly and not n.can_write_daily):
         return None
-    user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
+    user_id, username = _log_user(cur, n, emp_no, [approver_emp_no])
     now, today_j, now_hhmm = _now_parts()
     start = _to_date(request["StartDate"])
 
@@ -685,7 +704,7 @@ def apply_pending_hourly(cur, n: KaraNames, request: dict, app_id: int) -> bool:
             return False
     emp_no = int(request["EmpNo"])
     approver = request.get("ApprovalByManagerEmpNo") or request.get("CurEmpNo")
-    user_id, username = _resolve_kara_user(cur, n, [approver, emp_no])
+    user_id, username = _log_user(cur, n, emp_no, [approver])
     _, today_j, now_hhmm = _now_parts()
     accept = _apply_hourly(
         cur, n, request, emp_no, int(request["CardNo"]), _to_date(request["StartDate"]),
@@ -711,7 +730,7 @@ def revert_effects(cur, n: KaraNames, request: dict, actor_emp_no: int | None, a
     hourly = request.get("StartHour") is not None
     if (hourly and not n.can_write_hourly) or (not hourly and not n.can_write_daily):
         return
-    user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
+    user_id, username = _log_user(cur, n, emp_no, [actor_emp_no, request.get("ApprovalByManagerEmpNo")])
     now, today_j, now_hhmm = _now_parts()
 
     if hourly:
@@ -857,7 +876,7 @@ def apply_forgotten_punch(cur, n: KaraNames, request: dict, approver_emp_no: int
     day = _to_date(request["StartDate"])
     date_int = _jalali_int(day)
     time_int = int(request["StartHour"])
-    user_id, username = _resolve_kara_user(cur, n, [approver_emp_no, emp_no])
+    user_id, username = _log_user(cur, n, emp_no, [approver_emp_no])
     _, today_j, now_hhmm = _now_parts()
 
     # درج تردد فقط اگر تکراری نباشد
@@ -911,7 +930,7 @@ def revert_forgotten_punch(cur, n: KaraNames, request: dict, actor_emp_no: int |
     punch = cur.fetchone()
     if not punch:
         return
-    user_id, username = _resolve_kara_user(cur, n, [actor_emp_no, request.get("ApprovalByManagerEmpNo"), emp_no])
+    user_id, username = _log_user(cur, n, emp_no, [actor_emp_no, request.get("ApprovalByManagerEmpNo")])
     _, today_j, now_hhmm = _now_parts()
     cur.execute(f"DELETE FROM {n.df_table} WHERE {D('id')} = %(id)s", {"id": punch["Id"]})
     log_app_id = (app_id << _EDITOR_SHIFT) | (int(punch["ApplicationId"]) & 0xFFFF)  # پرچم ویرایشگر | منبع تردد
