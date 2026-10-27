@@ -31,6 +31,7 @@ import {
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BackLink from "../components/BackLink";
+import { compactTableSx, faDateTime, hideXs, onlyXs } from "../utils/dateTimeFa";
 import { useAuth } from "../context/AuthContext";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import TimeSelect24 from "../components/TimeSelect24";
@@ -318,9 +319,12 @@ function MyRequestsTable({ items, onDeleted }) {
                 <Typography variant="body2" fontWeight={700} noWrap>
                   {item.type_title || "—"}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  ثبت: {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"} — شروع:{" "}
-                  {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}
+                <Typography variant="caption" color="text.secondary" display="block">
+                  ثبت: {faDateTime(item.submitted_at)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  شروع: {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}
+                  {item.approved_at && item.status !== "pending" ? ` — تصمیم: ${faDateTime(item.approved_at)}` : ""}
                 </Typography>
               </Box>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
@@ -363,12 +367,7 @@ function MyRequestsTable({ items, onDeleted }) {
     <Stack spacing={1.5}>
       {error && <Alert severity="error">{error}</Alert>}
       <TableContainer component={Card} variant="outlined">
-        <Table
-        size="small"
-        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
-        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
-        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
-      >
+        <Table size="small" sx={compactTableSx}>
           <TableHead>
             <TableRow>
               <TableCell>نوع درخواست</TableCell>
@@ -385,16 +384,19 @@ function MyRequestsTable({ items, onDeleted }) {
             {sortedItems.map((item) => (
               <TableRow key={item.request_id}>
                 <TableCell>{item.type_title || "—"}</TableCell>
-                <TableCell className="wrap">{item.description || "—"}</TableCell>
-                <TableCell>
-                  {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
-                </TableCell>
+                <TableCell>{item.description || "—"}</TableCell>
+                <TableCell sx={{ whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
                 <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
                 <TableCell>{formatDuration(item)}</TableCell>
                 <TableCell>
                   <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
+                  {item.approved_at && item.status !== "pending" && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, whiteSpace: "nowrap" }}>
+                      {faDateTime(item.approved_at)}
+                    </Typography>
+                  )}
                 </TableCell>
-                <TableCell className="wrap">{item.manager_idea || "—"}</TableCell>
+                <TableCell>{item.manager_idea || "—"}</TableCell>
                 <TableCell>
                   {item.status === "pending" && (
                     <IconButton
@@ -447,6 +449,9 @@ function DecideDialog({ item, onClose, onDecided }) {
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         <Typography variant="body2" fontWeight={700}>
           {item.type_title || "—"}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {item.requester_name ? `${item.requester_name} — ` : ""}ثبت: {faDateTime(item.submitted_at)}
         </Typography>
         {item.description && <Typography variant="body2">{item.description}</Typography>}
         {item.is_forgotten_punch && (
@@ -515,36 +520,43 @@ function PendingApprovalTable({ items, onDecide }) {
 
   return (
     <TableContainer component={Card} variant="outlined">
-      <Table
-        size="small"
-        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
-        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
-        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
-      >
+      <Table size="small" sx={compactTableSx}>
         <TableHead>
           <TableRow>
             <TableCell>نام و نام خانوادگی</TableCell>
-            <TableCell>واحد</TableCell>
+            <TableCell sx={hideXs}>واحد</TableCell>
             <TableCell>نوع درخواست</TableCell>
-            <TableCell>توضیحات</TableCell>
-            <TableCell>تاریخ ثبت</TableCell>
-            <TableCell>تاریخ مرخصی/ماموریت</TableCell>
-            <TableCell>مدت</TableCell>
+            <TableCell sx={hideXs}>توضیحات</TableCell>
+            <TableCell sx={hideXs}>تاریخ و ساعت ثبت</TableCell>
+            <TableCell sx={hideXs}>تاریخ مرخصی/ماموریت</TableCell>
+            <TableCell sx={hideXs}>مدت</TableCell>
             <TableCell>عملیات</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {sorted.map((item) => (
             <TableRow key={item.request_id}>
-              <TableCell>{item.requester_name || item.emp_no}</TableCell>
-              <TableCell>{item.requester_department || "—"}</TableCell>
-              <TableCell>{item.type_title || "—"}</TableCell>
-              <TableCell className="wrap">{item.description || "—"}</TableCell>
+              {/* موبایل: واحد و زمان ثبت زیر نام؛ تاریخ، مدت و توضیحات زیر نوع (بدون اسکرول افقی) */}
               <TableCell>
-                {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
+                {item.requester_name || item.emp_no}
+                <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                  {item.requester_department || "—"}
+                  <br />
+                  ثبت: {faDateTime(item.submitted_at)}
+                </Typography>
               </TableCell>
-              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>{formatDuration(item)}</TableCell>
+              <TableCell sx={hideXs}>{item.requester_department || "—"}</TableCell>
+              <TableCell>
+                {item.type_title || "—"}
+                <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                  {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} — {formatDuration(item)}
+                  {item.description ? <><br />{item.description}</> : null}
+                </Typography>
+              </TableCell>
+              <TableCell sx={hideXs}>{item.description || "—"}</TableCell>
+              <TableCell sx={{ ...hideXs, whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
+              <TableCell sx={hideXs}>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+              <TableCell sx={hideXs}>{formatDuration(item)}</TableCell>
               <TableCell>
                 <Button size="small" variant="outlined" onClick={() => onDecide(item)}>
                   بررسی
@@ -590,37 +602,50 @@ function DecidedHistoryTable({ reloadKey }) {
 
   return (
     <TableContainer component={Card} variant="outlined">
-      <Table
-        size="small"
-        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
-        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
-        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
-      >
+      <Table size="small" sx={compactTableSx}>
         <TableHead>
           <TableRow>
             <TableCell>نام و نام خانوادگی</TableCell>
-            <TableCell>واحد</TableCell>
+            <TableCell sx={hideXs}>واحد</TableCell>
             <TableCell>نوع درخواست</TableCell>
-            <TableCell>تاریخ مرخصی/ماموریت</TableCell>
-            <TableCell>مدت</TableCell>
+            <TableCell sx={hideXs}>تاریخ مرخصی/ماموریت</TableCell>
+            <TableCell sx={hideXs}>مدت</TableCell>
             <TableCell>وضعیت</TableCell>
-            <TableCell>تاریخ تصمیم</TableCell>
-            <TableCell>نظر شما</TableCell>
+            <TableCell sx={hideXs}>تاریخ و ساعت ثبت</TableCell>
+            <TableCell sx={hideXs}>تاریخ و ساعت تصمیم</TableCell>
+            <TableCell sx={hideXs}>نظر شما</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {data.items.map((item) => (
             <TableRow key={item.request_id}>
-              <TableCell>{item.requester_name || item.emp_no}</TableCell>
-              <TableCell>{item.requester_department || "—"}</TableCell>
-              <TableCell>{item.type_title || "—"}</TableCell>
-              <TableCell>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>{formatDuration(item)}</TableCell>
+              <TableCell>
+                {item.requester_name || item.emp_no}
+                <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                  {item.requester_department || "—"}
+                  <br />
+                  ثبت: {faDateTime(item.submitted_at)}
+                </Typography>
+              </TableCell>
+              <TableCell sx={hideXs}>{item.requester_department || "—"}</TableCell>
+              <TableCell>
+                {item.type_title || "—"}
+                <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                  {item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"} — {formatDuration(item)}
+                  {item.manager_idea ? <><br />نظر شما: {item.manager_idea}</> : null}
+                </Typography>
+              </TableCell>
+              <TableCell sx={hideXs}>{item.start_date ? new Date(item.start_date).toLocaleDateString("fa-IR") : "—"}</TableCell>
+              <TableCell sx={hideXs}>{formatDuration(item)}</TableCell>
               <TableCell>
                 <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
+                <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                  {faDateTime(item.approved_at)}
+                </Typography>
               </TableCell>
-              <TableCell>{item.approved_at ? new Date(item.approved_at).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell className="wrap">{item.manager_idea || "—"}</TableCell>
+              <TableCell sx={{ ...hideXs, whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
+              <TableCell sx={{ ...hideXs, whiteSpace: "nowrap" }}>{faDateTime(item.approved_at)}</TableCell>
+              <TableCell sx={hideXs}>{item.manager_idea || "—"}</TableCell>
             </TableRow>
           ))}
         </TableBody>

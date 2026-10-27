@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { compactTableSx, faDateTime, hideXs, onlyXs } from "../utils/dateTimeFa";
 import {
   Alert,
   Box,
@@ -70,13 +71,11 @@ function isRequestActiveToday(item) {
     !item.start_date
   )
     return false;
+  // هم‌پوشانی [شروع، پایان] با امروز — همان قاعده‌ی سرور. قبلاً برای درخواست ساعت‌دار فقط «شروع = امروز» حساب
+  // می‌شد و ماموریت/مرخصی ساعت‌داری که از دیروز شروع شده و تا امروز ادامه دارد در کارت «امروز» نمی‌آمد
+  // (در حالی که در فهرست کامل بود)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  if (item.start_hour != null) {
-    const start = new Date(item.start_date);
-    start.setHours(0, 0, 0, 0);
-    return start.getTime() === today.getTime();
-  }
   const start = new Date(item.start_date);
   start.setHours(0, 0, 0, 0);
   const end = item.end_date ? new Date(item.end_date) : start;
@@ -756,14 +755,17 @@ export default function LeaveRequestsAdminListPage() {
             </Typography>
           ) : (
             <TableContainer>
-              <Table size="small">
+              {/* موبایل بدون اسکرول افقی: واحد و زمان ثبت زیر نام، بازه زیر نوع، زمان تأیید/رد زیر وضعیت */}
+              <Table size="small" sx={compactTableSx}>
                 <TableHead>
                   <TableRow>
                     <TableCell>نام و نام خانوادگی</TableCell>
-                    <TableCell>واحد</TableCell>
+                    <TableCell sx={hideXs}>واحد</TableCell>
                     <TableCell>نوع درخواست</TableCell>
-                    <TableCell>بازه زمانی</TableCell>
+                    <TableCell sx={hideXs}>بازه زمانی</TableCell>
+                    <TableCell sx={hideXs}>زمان ثبت</TableCell>
                     <TableCell>وضعیت</TableCell>
+                    <TableCell sx={hideXs}>زمان تأیید/رد</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -771,16 +773,35 @@ export default function LeaveRequestsAdminListPage() {
                     <TableRow key={item.request_id}>
                       <TableCell>
                         {item.requester_name || item.emp_no}
+                        <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                          {item.requester_department || "—"}
+                          <br />
+                          ثبت: {faDateTime(item.submitted_at)}
+                        </Typography>
                       </TableCell>
-                      <TableCell>{item.requester_department || "—"}</TableCell>
-                      <TableCell>{item.type_title || "—"}</TableCell>
-                      <TableCell>{rangeLabel(item)}</TableCell>
+                      <TableCell sx={hideXs}>{item.requester_department || "—"}</TableCell>
+                      <TableCell>
+                        {item.type_title || "—"}
+                        <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                          {rangeLabel(item)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={hideXs}>{rangeLabel(item)}</TableCell>
+                      <TableCell sx={{ ...hideXs, whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
                       <TableCell>
                         <Chip
                           size="small"
                           color={STATUS_COLORS[item.status]}
                           label={statusChipLabel(item)}
                         />
+                        {item.status !== "pending" && item.approved_at && (
+                          <Typography variant="caption" color="text.secondary" sx={onlyXs}>
+                            {faDateTime(item.approved_at)}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ ...hideXs, whiteSpace: "nowrap" }}>
+                        {item.status !== "pending" ? faDateTime(item.approved_at) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -801,7 +822,7 @@ export default function LeaveRequestsAdminListPage() {
       {/* جدول اصلی با سرستون‌های قابل مرتب‌سازی، سلول‌های قابل ویرایش درجا (با مجوز) و صفحه‌بندی */}
       {requests !== null && requests.length > 0 && (
         <TableContainer component={Card} variant="outlined">
-          <Table size="small">
+          <Table size="small" sx={compactTableSx}>
             <TableHead>
               <TableRow>
                 <TableCell>
@@ -830,7 +851,7 @@ export default function LeaveRequestsAdminListPage() {
                     direction={sortField === "submitted_at" ? sortDir : "asc"}
                     onClick={() => handleSort("submitted_at")}
                   >
-                    تاریخ ثبت
+                    تاریخ و ساعت ثبت
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>
@@ -895,13 +916,7 @@ export default function LeaveRequestsAdminListPage() {
                         item.description || "—"
                       )}
                     </TableCell>
-                    <TableCell>
-                      {item.submitted_at
-                        ? new Date(item.submitted_at).toLocaleDateString(
-                            "fa-IR",
-                          )
-                        : "—"}
-                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
                     <TableCell>
                       {canEdit ? (
                         <EditableTimeRange
@@ -945,6 +960,12 @@ export default function LeaveRequestsAdminListPage() {
                           color={STATUS_COLORS[item.status]}
                           label={statusChipLabel(item)}
                         />
+                      )}
+                      {/* تاریخ و ساعت تأیید/رد زیر وضعیت */}
+                      {item.status !== "pending" && item.approved_at && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, whiteSpace: "nowrap" }}>
+                          {faDateTime(item.approved_at)}
+                        </Typography>
                       )}
                     </TableCell>
                     <TableCell>
