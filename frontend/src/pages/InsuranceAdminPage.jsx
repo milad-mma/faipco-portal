@@ -279,9 +279,9 @@ function RegistrationDialog({ id, onClose, canManage, onDeleted, onChanged }) {
                         <TableCell>{MARITAL_LABEL[m.marital_status]}</TableCell>
                         <TableCell>
                           {m.kafala_status === "yes"
-                            ? "بله"
+                            ? "تحت کفالت"
                             : m.kafala_status === "no"
-                              ? "خیر"
+                              ? "غیر تحت کفالت"
                               : "—"}
                         </TableCell>
                         {/* مدرک: دانلود و (با insurance.manage) رد؛ مدرک ردشده‌ای که هنوز جایگزین نشده با تراشه */}

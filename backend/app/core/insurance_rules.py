@@ -144,9 +144,56 @@ def format_jalali_compact(value: str | None) -> str:
     return text
 
 
+PARENT_MEMBER_TYPES = ("father", "mother")
+DEPENDENCY_DEPENDENT = 1  # کد تکفل «تحت کفالت»
+DEPENDENCY_NON_DEPENDENT = 2  # کد تکفل «غیر تحت کفالت»
+
+
+def member_dependency_code(member_type: str, kafala_status: str | None) -> int:
+    """
+    کد تکفل بیمه‌گر برای یک عضو. پدر و مادر: فقط از پاسخ تکفل همین ثبت محاسبه می‌شود («yes» → ۱، «no» → ۲) و
+    پاسخ خالی/نامعتبر خطاست (خودکار «خیر» در نظر گرفته نمی‌شود). سایر اعضا: کد ثابت نوع عضو (بدون تغییر).
+    """
+    if member_type in PARENT_MEMBER_TYPES:
+        if kafala_status == "yes":
+            return DEPENDENCY_DEPENDENT
+        if kafala_status == "no":
+            return DEPENDENCY_NON_DEPENDENT
+        raise InsuranceRuleError(f"وضعیت تکفل {MEMBER_TYPES[member_type]['title']} را مشخص کنید.")
+    return MEMBER_TYPES[member_type]["dependency_code"]
+
+
+def apply_document_rejection(member, rejected_at) -> None:
+    """
+    اثر «رد مدرک توسط ادمین» روی عضو (شیء با member_type/kafala_status/dependency_code/document_rejected_at):
+    زمان رد ثبت می‌شود و پدر/مادر بدون مدرک معتبر «غیر تحت کفالت» (کد ۲) می‌شود. سایر اعضا فقط علامت رد می‌گیرند.
+    حذف فایل و اطلاعیه در سرویس و در همان تراکنش انجام می‌شود.
+    """
+    member.document_rejected_at = rejected_at
+    if member.member_type in PARENT_MEMBER_TYPES:
+        member.kafala_status = "no"
+        member.dependency_code = member_dependency_code(member.member_type, "no")
+
+
+def carried_rejection_mark(previous, new_member_type: str, new_kafala: str | None):
+    """
+    هنگام ویرایش ثبت‌نام (اعضا از نو ساخته می‌شوند): علامت رد مدرک پدر/مادری که هنوز «غیر تحت کفالت» مانده حفظ
+    می‌شود تا هشدار رد دیده شود؛ با «تحت کفالت» + مدرک جدید (یا عضو دیگر) None برمی‌گردد یعنی علامت پاک می‌شود.
+    previous: عضو قبلی متناظر (یا None).
+    """
+    if (
+        previous is not None
+        and previous.member_type == new_member_type
+        and new_member_type in PARENT_MEMBER_TYPES
+        and new_kafala == "no"
+    ):
+        return previous.document_rejected_at
+    return None
+
+
 def needs_kafala(employee_gender: int, member_type: str) -> bool:
     """آیا برای این عضو باید وضعیت تکفل پرسیده شود؟ پرسنل زن: همه اعضا؛ پرسنل مرد: فقط پدر و مادر."""
-    return employee_gender == GENDER_FEMALE or member_type in ("father", "mother")
+    return employee_gender == GENDER_FEMALE or member_type in PARENT_MEMBER_TYPES
 
 
 def validate_main(data: dict, employee_national_id: str) -> dict:
@@ -299,7 +346,8 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
             {
                 "member_type": mtype,
                 "relation_code": cfg["relation_code"],
-                "dependency_code": cfg["dependency_code"],
+                # پدر/مادر: از پاسخ تکفل همین فرم (نه کد کلاینت یا مقدار قبلی)؛ بقیه: کد ثابت نوع عضو
+                "dependency_code": member_dependency_code(mtype, kafala),
                 "first_name": first_name[:100],
                 "last_name": last_name[:100],
                 "father_name": father_name[:100],

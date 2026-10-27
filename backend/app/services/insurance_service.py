@@ -396,11 +396,16 @@ class InsuranceService:
             if doc_id not in own_docs:
                 raise InsuranceError("مدرک ارجاع‌شده یافت نشد یا متعلق به شما نیست.")
 
-        # عضوی که کفالتش «بله» است باید مدرک داشته باشد
+        # عضوی که کفالتش «بله» است باید مدرک معتبر خودش را داشته باشد؛ یک مدرک برای دو عضو پذیرفته نمی‌شود
+        used_doc_ids: set[int] = set()
         for spec, m_in in zip(members, payload.members):
-            if spec["kafala_status"] == "yes" and not m_in.document_id:
+            if spec["kafala_status"] == "yes":
                 cfg = rules.MEMBER_TYPES[spec["member_type"]]
-                raise InsuranceError(f"آپلود مدرک کفالت یا حضانت برای {cfg['title']} اجباری است.")
+                if not m_in.document_id:
+                    raise InsuranceError(f"آپلود مدرک کفالت یا حضانت برای {cfg['title']} اجباری است.")
+                if m_in.document_id in used_doc_ids:
+                    raise InsuranceError(f"برای {cfg['title']} مدرک جداگانه آپلود کنید؛ یک مدرک برای دو نفر پذیرفته نمی‌شود.")
+                used_doc_ids.add(m_in.document_id)
 
         # فیلدهای هویتی شخص اصلی همیشه از رکورد پرسنل (نه از فرم) نوشته می‌شوند
         registration.personnel_code = employee.personnel_code
@@ -419,6 +424,12 @@ class InsuranceService:
         for spec, m_in in zip(members, payload.members):
             spec.pop("client_key", None)  # شناسه‌ی سمت کلاینت؛ ستون دیتابیس نیست
             member = InsuranceMember(registration_id=registration.id, **spec)
+            # پدر/مادری که مدرکش رد شده و هنوز «غیر تحت کفالت» مانده: علامت رد حفظ می‌شود تا هشدار بماند؛
+            # با «تحت کفالت» + مدرک جدید، عضو بدون علامت رد ساخته می‌شود (علامت پاک می‌شود)
+            previous = existing_members.get(m_in.id) if m_in.id else None
+            member.document_rejected_at = rules.carried_rejection_mark(
+                previous, spec["member_type"], spec["kafala_status"]
+            )
             self.db.add(member)
             await self.db.flush()  # برای گرفتن member.id
             if m_in.document_id and spec["kafala_status"] == "yes":
@@ -614,7 +625,8 @@ class InsuranceService:
         if len(notice_title) > REJECT_TITLE_MAX or len(notice_body) > REJECT_BODY_MAX:
             raise InsuranceError("عنوان یا متن اطلاعیه بیش از حد طولانی است.")
         await self.db.delete(member.document)
-        member.document_rejected_at = datetime.now(timezone.utc)
+        # زمان رد + (برای پدر/مادر) kafala_status="no" و dependency_code=2؛ همه با حذف مدرک و اطلاعیه در یک commit
+        rules.apply_document_rejection(member, datetime.now(timezone.utc))
 
         # اطلاعیه‌ی شخصی برای ثبت‌نام‌کننده (مثل پیام تبریک تولد: هدف فقط همان پرسنل)
         notice = Notice(

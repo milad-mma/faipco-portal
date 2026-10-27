@@ -102,3 +102,110 @@ def test_normalize_mobile_formats_from_kara():
         assert r.is_valid_mobile(r.normalize_mobile(raw)), raw
     two_numbers = "09121234567-09351234567"
     assert not r.is_valid_mobile(r.normalize_mobile(two_numbers))
+
+
+# ---------- کد تکفل پدر و مادر ----------
+# داده‌های دیتابیس قبلاً دستی اصلاح شده‌اند؛ این تست‌ها فقط منطق عملیات آینده (ثبت/ویرایش/رد مدرک) را می‌سنجند.
+
+from types import SimpleNamespace  # noqa: E402
+
+PARENTS = (("father", 3), ("mother", 4))
+
+
+def _parent(mtype, kafala, **over):
+    return _member(member_type=mtype, last_name="x", father_name="y", marital_status=3, kafala_status=kafala, **over)
+
+
+def _save(members_in, gender=r.GENDER_MALE):
+    """شبیه‌سازی ذخیره: خروجی validate_members همان چیزی است که در ستون‌ها نوشته و بعداً خوانده/اکسل می‌شود."""
+    return r.validate_members(members_in, _emp(gender), r.MARITAL_MARRIED, "09121234567")
+
+
+@pytest.mark.parametrize("gender", [r.GENDER_MALE, r.GENDER_FEMALE])
+@pytest.mark.parametrize("mtype,relation", PARENTS)
+def test_parent_dependency_code_from_kafala(mtype, relation, gender):
+    no = _save([_parent(mtype, "no")], gender)[0]
+    assert (no["kafala_status"], no["dependency_code"], no["relation_code"]) == ("no", 2, relation)
+    yes = _save([_parent(mtype, "yes")], gender)[0]
+    assert (yes["kafala_status"], yes["dependency_code"], yes["relation_code"]) == ("yes", 1, relation)
+
+
+@pytest.mark.parametrize("mtype,_relation", PARENTS)
+@pytest.mark.parametrize("bad", [None, "", "  ", "maybe", "YES", "1", 2])
+def test_parent_empty_or_invalid_kafala_rejected(mtype, _relation, bad):
+    """پاسخ خالی/نامعتبر رد می‌شود و خودکار «خیر» در نظر گرفته نمی‌شود."""
+    with pytest.raises(r.InsuranceRuleError, match="تکفل"):
+        _save([_parent(mtype, bad)])
+    with pytest.raises(r.InsuranceRuleError, match="تکفل"):
+        r.member_dependency_code(mtype, bad)
+
+
+@pytest.mark.parametrize("mtype,_relation", PARENTS)
+def test_parent_code_ignores_client_supplied_code(mtype, _relation):
+    """کد ارسالی کلاینت (یا مقدار قبلی) نادیده گرفته می‌شود؛ فقط پاسخ تکفل تعیین‌کننده است."""
+    out = _save([_parent(mtype, "no", dependency_code=1)])[0]
+    assert out["dependency_code"] == 2
+    out = _save([_parent(mtype, "yes", dependency_code=2)])[0]
+    assert out["dependency_code"] == 1
+
+
+@pytest.mark.parametrize("mtype,_relation", PARENTS)
+def test_parent_status_change_both_directions(mtype, _relation):
+    first = _save([_parent(mtype, "no")])[0]
+    assert first["dependency_code"] == 2
+    to_yes = _save([_parent(mtype, "yes")])[0]  # no → yes
+    assert (to_yes["kafala_status"], to_yes["dependency_code"]) == ("yes", 1)
+    back = _save([_parent(mtype, "no")])[0]  # yes → no
+    assert (back["kafala_status"], back["dependency_code"]) == ("no", 2)
+
+
+def _stored(spec, rejected_at=None):
+    """یک «عضو ذخیره‌شده» (شبیه ردیف دیتابیس) از خروجی اعتبارسنجی."""
+    return SimpleNamespace(
+        member_type=spec["member_type"], kafala_status=spec["kafala_status"],
+        dependency_code=spec["dependency_code"], relation_code=spec["relation_code"], document_rejected_at=rejected_at,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("mtype,relation", PARENTS)
+def test_admin_reject_then_resubmit_with_new_document(mtype, relation):
+    stored = _stored(_save([_parent(mtype, "yes")])[0])
+    assert (stored.kafala_status, stored.dependency_code) == ("yes", 1)
+
+    # رد مدرک توسط ادمین: زمان رد + غیر تحت کفالت + کد ۲ (کد نسبت دست نمی‌خورد)
+    r.apply_document_rejection(stored, "2026-10-27T10:00")
+    assert stored.document_rejected_at == "2026-10-27T10:00"
+    assert (stored.kafala_status, stored.dependency_code, stored.relation_code) == ("no", 2, relation)
+
+    # ویرایش بدون تغییر وضعیت (هنوز «خیر»): علامت رد حفظ می‌شود تا هشدار بماند
+    kept = _save([_parent(mtype, "no")])[0]
+    assert r.carried_rejection_mark(stored, mtype, kept["kafala_status"]) == "2026-10-27T10:00"
+    assert kept["dependency_code"] == 2
+
+    # انتخاب مجدد «تحت کفالت» + مدرک جدید (وجود مدرک در سرویس بررسی می‌شود): yes/۱ و علامت رد پاک
+    again = _save([_parent(mtype, "yes")])[0]
+    assert (again["kafala_status"], again["dependency_code"]) == ("yes", 1)
+    assert r.carried_rejection_mark(stored, mtype, again["kafala_status"]) is None
+
+
+def test_rejection_does_not_change_other_members():
+    """رد مدرک همسر/فرزند (پرسنل زن) فقط علامت رد می‌گذارد؛ وضعیت و کدهایشان مثل قبل می‌ماند."""
+    for mtype, relation in (("spouse", 2), ("son", 7), ("daughter", 8)):
+        spec = _save([_member(member_type=mtype, last_name="x", father_name="y", kafala_status="yes")], r.GENDER_FEMALE)[0]
+        stored = _stored(spec)
+        r.apply_document_rejection(stored, "t")
+        assert (stored.kafala_status, stored.dependency_code, stored.relation_code) == ("yes", 1, relation)
+        assert r.carried_rejection_mark(stored, mtype, "no") is None
+
+
+def test_other_members_codes_unchanged():
+    """کد نسبت/تکفل همسر و فرزندان (حتی متأهل، حتی «غیر تحت کفالت» برای پرسنل زن) مثل قبل است."""
+    for gender in (r.GENDER_MALE, r.GENDER_FEMALE):
+        kafala = "no" if gender == r.GENDER_FEMALE else None
+        members = [
+            _member(member_type="spouse", last_name="x", father_name="y", kafala_status=kafala),
+            _member(member_type="son", last_name="x", father_name="y", marital_status=3, kafala_status=kafala),
+            _member(member_type="daughter", last_name="x", father_name="y", kafala_status=kafala),
+        ]
+        out = _save(members, gender)
+        assert [(m["relation_code"], m["dependency_code"]) for m in out] == [(2, 1), (7, 1), (8, 1)]

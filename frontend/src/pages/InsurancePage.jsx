@@ -472,7 +472,9 @@ function MemberCard({
               {err.kafala}
             </Typography>
           )}
-          {member.kafala_status === "yes" && isDocRejected(member) && (
+          {/* هشدار رد مدرک مستقل از وضعیت فعلی: بعد از رد، پدر/مادر سمت سرور «غیر تحت کفالت» می‌شود
+              و هشدار باید همچنان دیده شود تا با «تحت کفالت» + مدرک جدید دوباره ثبت شود */}
+          {isDocRejected(member) && (
             <Alert severity="warning" sx={{ mt: 1.5 }}>
               {REJECTED_DOC_TEXT}
             </Alert>
