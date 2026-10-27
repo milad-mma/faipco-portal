@@ -84,11 +84,27 @@ const STATUS_COLOR = {
 
 export function LoanStatusChip({ item }) {
   return (
-    <Chip
-      size="small"
-      color={STATUS_COLOR[item.status] || "default"}
-      label={item.status_label}
-    />
+    <>
+      <Chip
+        size="small"
+        color={STATUS_COLOR[item.status] || "default"}
+        label={item.status_label}
+      />
+      {/* ترک کار درخواست‌دهنده: وام در حال بازپرداخت باید از تسویه‌حساب نهایی تسویه شود */}
+      {item.employee_left && (
+        <Chip
+          size="small"
+          color="error"
+          variant="outlined"
+          sx={{ ml: 0.5 }}
+          label={
+            item.status === "active" && item.remaining
+              ? `ترک کار — مانده ${Number(item.remaining).toLocaleString("fa-IR")} ریال`
+              : "ترک کار"
+          }
+        />
+      )}
+    </>
   );
 }
 
@@ -151,8 +167,8 @@ export function GuarantorChips({ item, renderAction }) {
           <Chip
             size="small"
             variant="outlined"
-            color={GUARANTOR_COLOR[g.status]}
-            label={`ضامن: ${g.name} — ${GUARANTOR_LABEL[g.status]}`}
+            color={g.left ? "error" : GUARANTOR_COLOR[g.status]}
+            label={`ضامن: ${g.name} — ${GUARANTOR_LABEL[g.status]}${g.left ? " (ترک کار)" : ""}`}
           />
           {renderAction?.(g)}
         </Stack>
@@ -250,6 +266,8 @@ const EVENT_LABELS = {
   installment_unpaid: "لغو پرداخت قسط",
   settled: "تسویه",
   manual: "ثبت دستی واحد مالی",
+  approver_changed: "تغییر تأییدکننده",
+  guarantor_left: "ترک کار ضامن",
 };
 
 export function LoanHistory({ item }) {

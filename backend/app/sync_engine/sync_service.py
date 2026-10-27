@@ -45,6 +45,8 @@ from app.models.user import User
 from app.sync_engine.adapter_factory import get_adapter
 
 logger = logging.getLogger("faipco.sync")
+# بیش از این تعداد غیرفعال‌شدن در یک اجرا = احتمال خطای تنظیم؛ درخواست‌های وام/مساعده‌شان خودکار لغو نمی‌شود
+MAX_AUTO_CANCEL_DEACTIVATIONS = 20
 
 # مقادیری که در ستون is_active منبع به معنای «غیرفعال» تلقی می‌شوند
 _FALSY_ACTIVE_VALUES = {"0", "false", "no", "n", "inactive", "f", "غیرفعال"}
@@ -61,6 +63,7 @@ class SyncService:
         """ورودی: AsyncSession دیتابیس پرتال."""
         self.db = db
         self._insurance_pushes: list[tuple[set[int], str]] = []  # Push هشدار ترک کار بیمه، بعد از commit
+        self._approver_services: list = []  # سرویس‌های وام/مساعده با اعلان تأییدکننده‌ی جدید، بعد از commit
 
     # ---------- عمومی ----------
 
@@ -192,6 +195,13 @@ class SyncService:
             conn.last_sync_at = datetime.now(timezone.utc)
             await self.db.commit()
             # Push هشدار ترک کار بیمه تکمیلی فقط بعد از commit (اطلاعیه‌ها و نشانه‌ها ذخیره شده‌اند)
+            # اعلان تأییدکننده‌های جدید وام/مساعده (commit دوباره‌ی خود سرویس بی‌اثر است و فقط اعلان‌ها را می‌فرستد)
+            for service in self._approver_services:
+                try:
+                    await service._commit()
+                except Exception:
+                    logger.exception("ارسال اعلان تأییدکننده‌ی جدید ناموفق بود")
+            self._approver_services = []
             if self._insurance_pushes:
                 from app.services.insurance_service import schedule_left_pushes
 
@@ -1008,6 +1018,8 @@ class SyncService:
         insurance.view/manage سایت اطلاعیه ساخته می‌شود (Push بعد از commit در run_sync). بازگشت به کار نشانه را پاک می‌کند.
         Savepoint: خطای این بخش (مثلاً پیش از اجرای Migration 116) Sync را خراب نمی‌کند.
         """
+        if deactivated_ids:
+            await self._reassign_loan_approvers(deactivated_ids)
         if not deactivated_ids and not reactivated_ids:
             return
         from app.services.insurance_service import InsuranceService
@@ -1021,6 +1033,35 @@ class SyncService:
                     self._insurance_pushes.extend(await service.create_left_notices(items))
         except Exception:  # هشدار بیمه نباید Sync پرسنل را ناموفق کند
             logger.exception("ثبت هشدار ترک کار بیمه تکمیلی در Sync ناموفق بود")
+
+    async def _reassign_loan_approvers(self, deactivated_ids: list[int]) -> None:
+        """
+        وام و مساعده: درخواست‌های «در حال تأیید» که پرسنلِ ترک‌کار تأییدکننده‌ی مرحله‌ای از آن‌هاست (مدیر واحد، منابع
+        انسانی، مدیر سایت) به تأییدکننده‌ی امروز منتقل می‌شوند (تنظیمات سایت / زنجیره‌ی مرخصی) — بدون ثبت مجدد.
+        اعلان تأییدکننده‌ی جدید بعد از commit. Savepoint: خطای این بخش Sync را خراب نمی‌کند.
+        """
+        from app.services.advance_service import AdvanceService
+        from app.services.loan_service import LoanService
+
+        for service_cls in (LoanService, AdvanceService):
+            try:
+                async with self.db.begin_nested():
+                    service = service_cls(self.db)
+                    # درخواست‌های پرداخت‌نشده‌ی خود ترک‌کرده لغو؛ ضامنِ ترک‌کرده ← اعلان به درخواست‌دهنده.
+                    # احتیاط: غیرفعال شدن یک‌باره‌ی تعداد زیاد معمولاً خطای تنظیم Sync است، نه ترک کار واقعی؛ لغو (که
+                    # نوبت وام را آزاد می‌کند) آن‌وقت انجام نمی‌شود. انتقال تأییدکننده (بی‌خطر) همیشه انجام می‌شود.
+                    if len(deactivated_ids) <= MAX_AUTO_CANCEL_DEACTIVATIONS:
+                        await service.on_employees_left(deactivated_ids)
+                    else:
+                        logger.warning(
+                            "%s پرسنل یک‌جا غیرفعال شدند؛ لغو خودکار درخواست‌های وام/مساعده‌ی آن‌ها انجام نشد",
+                            len(deactivated_ids),
+                        )
+                    await service.reassign_approvers(approver_ids=deactivated_ids, reason="ترک کار تأییدکننده")
+                    if service._pushes:
+                        self._approver_services.append(service)
+            except Exception:  # انتقال تأییدکننده نباید Sync پرسنل را ناموفق کند
+                logger.exception("انتقال تأییدکننده‌های %s پس از ترک کار ناموفق بود", service_cls.__name__)
 
     async def _reactivate_linked_users(self, employee_ids: list[int]) -> None:
         """

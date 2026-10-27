@@ -197,10 +197,22 @@ async def update_site(
 ):
     await _require(db, current_user, site_id, "advances.policy")
     try:
-        await AdvanceService(db).update_settings(site_id, payload.model_dump())
+        result = await AdvanceService(db).update_settings(site_id, payload.model_dump())
     except AdvanceError as e:
         raise _err(e) from e
-    return {"ok": True}
+    return {"ok": True, "reassigned": result["changed"], "unresolved": result["unresolved"]}
+
+
+@router.post("/admin/sites/{site_id}/reassign-approvers")
+async def reassign_approvers(site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """مثل وام: درخواست‌های در حال تأیید مساعده به مدیر واحد (زنجیره‌ی مرخصی) و مدیر سایت امروز منتقل می‌شوند."""
+    await _require(db, current_user, site_id, "advances.policy")
+    service = AdvanceService(db)
+    result = await service.reassign_approvers(
+        site_id=site_id, refresh_unit_manager=True, reason="به‌روزرسانی تأییدکننده‌ها توسط مدیر"
+    )
+    await service._commit()
+    return result
 
 
 @router.get("/admin/sites/{site_id}/employees")

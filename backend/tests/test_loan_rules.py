@@ -174,3 +174,19 @@ def test_match_payslip_row_uses_remaining():
     assert R.match_payslip_row([{"name": "x", "amount": 5, "remaining": None}], set(), 5, 0) == 0
     # ردیف مصرف‌شده دوباره استفاده نمی‌شود
     assert R.match_payslip_row(rows, {1}, 10_000_000, 90_000_000) is None
+
+
+def test_plan_reassignment_moves_only_remaining_person_steps():
+    from app.core.loan_rules import plan_reassignment
+
+    steps = ["guarantors", "unit_manager", "hr", "site_manager", "finance"]
+    stored = {"unit_manager": 5, "hr": 6, "site_manager": 7}
+    # مرحله‌ی جاری مدیر واحد (۱): مدیر واحد و مدیر سایت عوض می‌شوند، منابع انسانی همان است
+    assert plan_reassignment(steps, 1, stored, {"unit_manager": 8, "hr": 6, "site_manager": 9}, 1) == {
+        "unit_manager": 8,
+        "site_manager": 9,
+    }
+    # مراحل گذشته دست نمی‌خورند (مرحله‌ی جاری منابع انسانی)
+    assert plan_reassignment(steps, 2, stored, {"unit_manager": 8, "site_manager": 9}, 1) == {"site_manager": 9}
+    # تأییدکننده‌ی پیدانشده یا خودِ درخواست‌دهنده جایگزین نمی‌شود
+    assert plan_reassignment(steps, 1, stored, {"unit_manager": None, "site_manager": 1}, 1) == {}

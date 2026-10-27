@@ -58,6 +58,7 @@ import {
   saveAdvanceNotificationTemplates,
   searchAdvanceSiteEmployees,
   updateAdvanceSite,
+  reassignAdvanceApprovers,
 } from "../api/advances";
 
 const fa = (n) => Number(n || 0).toLocaleString("fa-IR");
@@ -466,6 +467,50 @@ const GROUPS = [
   { key: "manager", label: "مدیران" },
 ];
 
+
+// هشدار درخواست‌های معطل تأییدکننده‌ی ترک‌کار/غیرفعال + دکمه‌ی انتقال (فقط با مجوز مقررات)
+function StuckApproversAlert({ site, onReassign }) {
+  const [busy, setBusy] = useState(false);
+  if (!site?.stuck_count) return null;
+  return (
+    <Alert
+      severity="warning"
+      sx={{ mb: 2 }}
+      action={
+        site.can_policy ? (
+          <Button
+            color="inherit"
+            size="small"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onReassign();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            انتقال به تأییدکننده‌های فعلی
+          </Button>
+        ) : null
+      }
+    >
+      {site.stuck_count.toLocaleString("fa-IR")} درخواست پیش تأییدکننده‌ای مانده که دیگر فعال نیست (ترک کار). با
+      انتقال، به مدیر سایت/منابع انسانی تنظیمات و مدیر واحد فعلی (زنجیره‌ی تأیید مرخصی) می‌روند؛ سابقه حفظ می‌شود.
+    </Alert>
+  );
+}
+
+// متن نتیجه‌ی انتقال برای Toast
+const reassignText = (r, prefix) =>
+  r?.changed || r?.reassigned
+    ? `${prefix}${(r.changed ?? r.reassigned).toLocaleString("fa-IR")} درخواست باز به تأییدکننده‌ی جدید منتقل شد` +
+      (r.unresolved ? ` — ${r.unresolved.toLocaleString("fa-IR")} درخواست هنوز تأییدکننده‌ی فعال ندارد` : "")
+    : r?.unresolved
+      ? `${prefix}${r.unresolved.toLocaleString("fa-IR")} درخواست تأییدکننده‌ی فعال ندارد؛ تنظیمات یا زنجیره‌ی مرخصی را بررسی کنید`
+      : prefix.replace(/ — $/, "");
+
 function SettingsTab({ site, onSaved }) {
   const [form, setForm] = useState(null);
   const [memberPick, setMemberPick] = useState(null); // پرسنل انتخاب‌شده برای افزودن به مدیران/سرپرستان
@@ -501,7 +546,7 @@ function SettingsTab({ site, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      await updateAdvanceSite(site.site_id, {
+      const res = await updateAdvanceSite(site.site_id, {
         is_enabled: form.is_enabled,
         site_manager_employee_id: form.manager?.id ?? null,
         window_from_day: Number(form.window_from_day),
@@ -528,7 +573,7 @@ function SettingsTab({ site, onSaved }) {
           group: m.group,
         })),
       });
-      onSaved();
+      onSaved(res);
     } catch (e) {
       setError(
         e?.response
@@ -872,6 +917,18 @@ export default function AdvancesAdminPage() {
               </Alert>
             )}
           <PillTabs tabs={tabs} value={activeTab} onChange={setTab} />
+          <StuckApproversAlert
+            site={site}
+            onReassign={async () => {
+              try {
+                toast(reassignText(await reassignAdvanceApprovers(site.site_id), ""));
+              } catch (e) {
+                toast(errText(e, "انتقال ناموفق بود"), "error");
+              }
+              loadSites();
+              setReloadKey((k) => k + 1);
+            }}
+          />
           {activeTab === "requests" && (
             <RequestsTab
               key={site.site_id}
@@ -883,8 +940,8 @@ export default function AdvancesAdminPage() {
           {activeTab === "settings" && (
             <SettingsTab
               site={site}
-              onSaved={() => {
-                toast("تنظیمات ذخیره شد");
+              onSaved={(res) => {
+                toast(reassignText(res, "تنظیمات ذخیره شد — "));
                 loadSites();
                 setReloadKey((k) => k + 1);
               }}

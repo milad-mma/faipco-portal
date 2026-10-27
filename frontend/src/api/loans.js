@@ -58,8 +58,16 @@ export async function fetchLoanAdminSites() {
   return data; // [{ site_id, site_name, is_enabled, site_manager_employee_id, site_manager, can_policy, can_finance, can_view }]
 }
 
+// خروجی: { ok, reassigned, unresolved } — reassigned: درخواست‌های باز منتقل‌شده به تأییدکننده‌ی جدید
 export async function updateLoanSite(siteId, payload) {
-  await apiClient.put(`/loans/admin/sites/${siteId}`, payload);
+  const { data } = await apiClient.put(`/loans/admin/sites/${siteId}`, payload);
+  return data;
+}
+
+// انتقال درخواست‌های در حال تأیید به تأییدکننده‌های امروز (مدیر واحد از زنجیره‌ی مرخصی)؛ خروجی { changed, unresolved }
+export async function reassignLoanApprovers(siteId) {
+  const { data } = await apiClient.post(`/loans/admin/sites/${siteId}/reassign-approvers`);
+  return data;
 }
 
 export async function searchLoanSiteEmployees(siteId, q) {

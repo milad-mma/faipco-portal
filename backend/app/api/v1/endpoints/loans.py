@@ -304,7 +304,7 @@ async def update_site(
     await _require(db, current_user, site_id, "loans.policy")
     service = LoanService(db)
     try:
-        await service.update_site_settings(
+        result = await service.update_site_settings(
             site_id,
             payload.is_enabled,
             payload.site_manager_employee_id,
@@ -313,7 +313,23 @@ async def update_site(
         )
     except LoanError as e:
         raise _err(e) from e
-    return {"ok": True}
+    # reassigned: درخواست‌های بازی که به مدیر سایت / منابع انسانی جدید منتقل شدند
+    return {"ok": True, "reassigned": result["changed"], "unresolved": result["unresolved"]}
+
+
+@router.post("/admin/sites/{site_id}/reassign-approvers")
+async def reassign_approvers(site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    درخواست‌های «در حال تأیید» سایت به تأییدکننده‌های امروز منتقل می‌شوند: مدیر سایت/منابع انسانی از تنظیمات، مدیر واحد
+    دوباره از زنجیره‌ی تأیید مرخصی (سرپرست‌های جدید). سابقه و نوبت حفظ می‌شود. مجوز: loans.policy همان سایت.
+    """
+    await _require(db, current_user, site_id, "loans.policy")
+    service = LoanService(db)
+    result = await service.reassign_approvers(
+        site_id=site_id, refresh_unit_manager=True, reason="به‌روزرسانی تأییدکننده‌ها توسط مدیر"
+    )
+    await service._commit()
+    return result
 
 
 class TemplatesIn(BaseModel):

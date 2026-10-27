@@ -349,3 +349,27 @@ def match_payslip_row(rows: list[dict], taken: set[int], amount: int, remaining_
         if row["remaining"] == remaining_after:
             return idx
     return fallback
+
+
+# ---------- انتقال تأییدکننده‌ها (ترک کار / تغییر تنظیمات) ----------
+
+
+def plan_reassignment(
+    steps: list[str] | None, step_index: int, stored: dict[str, int | None], fresh: dict[str, int | None], requester_id: int
+) -> dict[str, int]:
+    """
+    تأییدکننده‌ی جدید مراحل شخصی باقی‌مانده‌ی یک درخواست باز (مرحله‌ی جاری و بعدی‌ها؛ مراحل گذشته دست نمی‌خورند).
+    ورودی: stored = تأییدکننده‌ی ذخیره‌شده‌ی هر مرحله روی درخواست، fresh = تأییدکننده‌ی امروز (از تنظیمات سایت یا
+    زنجیره‌ی مرخصی؛ None = پیدا نشد). خروجی: {مرحله: شناسه‌ی جدید} فقط برای مراحلی که عوض می‌شوند.
+    تأییدکننده‌ی پیدانشده یا خودِ درخواست‌دهنده جایگزین نمی‌شود (همان قبلی می‌ماند و مدیر هشدار می‌بیند).
+    مشترک وام و مساعده (کلید مراحل یکسان است).
+    """
+    changes: dict[str, int] = {}
+    for i, key in enumerate(steps or []):
+        if i < step_index or key not in fresh:
+            continue
+        new = fresh.get(key)
+        if new is None or new == requester_id or new == stored.get(key):
+            continue
+        changes[key] = new
+    return changes

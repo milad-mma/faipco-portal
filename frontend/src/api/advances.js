@@ -47,7 +47,14 @@ export async function fetchAdvanceAdminSites() {
 }
 
 export async function updateAdvanceSite(siteId, payload) {
-  await apiClient.put(`/advances/admin/sites/${siteId}`, payload);
+  const { data } = await apiClient.put(`/advances/admin/sites/${siteId}`, payload);
+  return data;
+}
+
+// انتقال درخواست‌های در حال تأیید مساعده به تأییدکننده‌های امروز؛ خروجی { changed, unresolved }
+export async function reassignAdvanceApprovers(siteId) {
+  const { data } = await apiClient.post(`/advances/admin/sites/${siteId}/reassign-approvers`);
+  return data;
 }
 
 export async function searchAdvanceSiteEmployees(siteId, q) {

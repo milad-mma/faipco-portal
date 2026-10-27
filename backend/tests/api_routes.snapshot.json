@@ -1,5 +1,5 @@
 {
-  "count": 419,
+  "count": 421,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -238,6 +238,7 @@
     "POST /api/v1/advances",
     "POST /api/v1/advances/admin/sites/{site_id}/decide",
     "POST /api/v1/advances/admin/sites/{site_id}/pay",
+    "POST /api/v1/advances/admin/sites/{site_id}/reassign-approvers",
     "POST /api/v1/advances/inbox/decide",
     "POST /api/v1/advances/{request_id}/cancel",
     "POST /api/v1/announcement/dismiss",
@@ -292,6 +293,7 @@
     "POST /api/v1/loans/admin/requests/{request_id}/settle",
     "POST /api/v1/loans/admin/sites/{site_id}/manual",
     "POST /api/v1/loans/admin/sites/{site_id}/policies",
+    "POST /api/v1/loans/admin/sites/{site_id}/reassign-approvers",
     "POST /api/v1/loans/{request_id}/cancel",
     "POST /api/v1/loans/{request_id}/decide",
     "POST /api/v1/loans/{request_id}/guarantee",

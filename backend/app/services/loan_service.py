@@ -286,6 +286,7 @@ class LoanService:
             R.STEP_HR: req.hr_employee_id,
             R.STEP_SITE_MANAGER: req.site_manager_employee_id,
         }.get(step)
+        approver = await self._usable_approver(req, step, approver)
         req.current_approver_employee_id = approver
         self._push([approver], "/loans?tab=inbox", req.site_id, "loan.approver_pending")
 
@@ -456,6 +457,7 @@ class LoanService:
                     "employee_id": g.employee_id,
                     "name": label(people.get(g.employee_id)),
                     "status": g.status,
+                    "left": bool(people.get(g.employee_id) and not people[g.employee_id].is_active),
                     "note": g.note,
                 }
                 for g in req.guarantors
@@ -478,6 +480,8 @@ class LoanService:
             "remaining": max(total - paid_total, 0) if total else None,
             "finance_note": req.finance_note,
             "is_manual": req.is_manual,
+            # ترک کار درخواست‌دهنده (برای پنل مالی: تسویه‌ی مانده‌ی اقساط از تسویه‌حساب نهایی)
+            "employee_left": bool(people.get(req.employee_id) and not people[req.employee_id].is_active),
             "created_at": req.created_at,
             "paid_at": req.paid_at,
             "settled_at": req.settled_at,
@@ -1074,6 +1078,8 @@ class LoanService:
                     "hr_employee_id": hid,
                     "hr": employee_label(managers.get(hid)),
                     "payslip_loan_title": st.payslip_loan_title if st else None,
+                    # درخواست‌های معطلِ تأییدکننده‌ی ترک‌کار/غیرفعال (هشدار + دکمه‌ی انتقال در پنل)
+                    "stuck_count": await self.stuck_count(site.id),
                 }
             )
         return out
@@ -1098,7 +1104,7 @@ class LoanService:
         site_manager_employee_id: int | None,
         payslip_loan_title: str | None = None,
         hr_employee_id: int | None = None,
-    ) -> None:
+    ) -> dict:
         if (await self.db.get(Site, site_id)) is None:
             raise LoanError("سایت پیدا نشد", 404)
         await self._check_site_approver(site_id, site_manager_employee_id, "مدیر سایت")
@@ -1108,7 +1114,143 @@ class LoanService:
         settings.site_manager_employee_id = site_manager_employee_id
         settings.hr_employee_id = hr_employee_id
         settings.payslip_loan_title = _clean(payslip_loan_title, 200)
-        await self.db.commit()
+        await self.db.flush()
+        # درخواست‌های باز این سایت به مدیر سایت / منابع انسانی جدید منتقل می‌شوند (بدون ثبت مجدد)
+        result = await self.reassign_approvers(site_id=site_id, reason="تغییر تأییدکننده در تنظیمات وام")
+        await self._commit()
+        return result
+
+    # ---------- انتقال تأییدکننده‌ها (ترک کار / تغییر تنظیمات؛ services/approver_reassign.py) ----------
+
+    async def on_employees_left(self, employee_ids: list[int]) -> dict:
+        """
+        ترک کار (Sync): ۱) درخواست‌های پرداخت‌نشده‌ی خود این پرسنل خودکار لغو می‌شوند (سابقه می‌ماند، نوبت آزاد می‌شود)؛
+        ۲) اگر ضامنِ هنوز تصمیم‌نگرفته‌ی درخواست کسی بوده، به درخواست‌دهنده اعلان «ضامن دیگری انتخاب کنید» می‌رود.
+        وام در حال بازپرداخت و ضمانت‌های پذیرفته‌شده دست نمی‌خورند (در پنل مالی برچسب «ترک کار» دارند). بدون commit.
+        """
+        if not employee_ids:
+            return {"cancelled": 0, "guarantor_notices": 0}
+        own = (
+            await self.db.execute(
+                self._requests_query().where(
+                    LoanRequest.employee_id.in_(employee_ids), LoanRequest.status.in_(R.OPEN_STATUSES)
+                )
+            )
+        ).scalars().all()
+        for req in own:
+            req.status = R.STATUS_CANCELLED
+            req.current_approver_employee_id = None
+            self._event(req, "cancelled", "سامانه", None, "لغو خودکار — ترک کار درخواست‌دهنده")
+        pending = (
+            await self.db.execute(
+                self._requests_query()
+                .join(LoanRequestGuarantor, LoanRequestGuarantor.request_id == LoanRequest.id)
+                .where(
+                    LoanRequestGuarantor.employee_id.in_(employee_ids),
+                    LoanRequestGuarantor.status == "pending",
+                    LoanRequest.status == R.STATUS_IN_REVIEW,
+                    LoanRequest.employee_id.not_in(employee_ids),
+                )
+            )
+        ).scalars().unique().all()
+        people = await self._names(employee_ids)
+        notices = 0
+        for req in pending:
+            for g in req.guarantors:
+                if g.employee_id in employee_ids and g.status == "pending":
+                    name = employee_label(people.get(g.employee_id), code=False)
+                    self._event(req, "guarantor_left", "سامانه", None, f"ضامن ترک کار کرد: {name}")
+                    self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.guarantor_left", guarantor=name)
+                    notices += 1
+        await self.db.flush()
+        return {"cancelled": len(own), "guarantor_notices": notices}
+
+    async def _usable_approver(self, req: LoanRequest, step: str, approver: int | None) -> int | None:
+        """
+        رسیدن به یک مرحله: اگر تأییدکننده‌ی ذخیره‌شده دیگر نمی‌تواند تأیید کند (ترک کار) یا مدیر سایت/منابع انسانی در
+        تنظیمات عوض شده، همان لحظه به تأییدکننده‌ی امروز منتقل می‌شود (اعلان را خود _enter_step می‌فرستد).
+        """
+        from app.services.approver_reassign import ApproverChecker, reassign_requests
+
+        field = {R.STEP_UNIT_MANAGER: "unit_manager_employee_id", R.STEP_HR: "hr_employee_id",
+                 R.STEP_SITE_MANAGER: "site_manager_employee_id"}[step]  # fmt: skip
+        changed_setting = False
+        if step in (R.STEP_HR, R.STEP_SITE_MANAGER):
+            current = (await self._site_approvers(req.site_id)).get("hr" if step == R.STEP_HR else "site_manager")
+            changed_setting = current not in (None, approver)
+        if not changed_setting and await ApproverChecker(self.db).ok(approver):
+            return approver
+        await reassign_requests(
+            self.db,
+            [req],
+            site_approvers=self._site_approvers,
+            resolve_unit_manager=self.resolve_unit_manager,
+            refresh_unit_manager=False,
+            current_step=lambda _r: None,
+            event=self._event,
+            push=lambda *a, **k: None,
+            push_url="/loans?tab=inbox",
+            push_key="loan.approver_pending",
+            reason="تأییدکننده‌ی قبلی در دسترس نبود",
+        )
+        return getattr(req, field)
+
+    async def _site_approvers(self, site_id: int) -> dict:
+        st = await self.site_settings(site_id)
+        return {"hr": st.hr_employee_id if st else None, "site_manager": st.site_manager_employee_id if st else None}
+
+    async def reassign_approvers(
+        self,
+        *,
+        site_id: int | None = None,
+        approver_ids: list[int] | None = None,
+        refresh_unit_manager: bool = False,
+        reason: str,
+    ) -> dict:
+        """
+        مراحل باقی‌مانده‌ی درخواست‌های «در حال تأیید» (یک سایت، یا درخواست‌هایی که approver_ids در مسیرشان است) به
+        تأییدکننده‌ی امروز منتقل می‌شوند. بدون commit (فراخوان commit می‌کند). خروجی: {changed, unresolved}.
+        """
+        from app.services.approver_reassign import reassign_requests
+
+        q = self._requests_query().where(LoanRequest.status == R.STATUS_IN_REVIEW)
+        if site_id is not None:
+            q = q.where(LoanRequest.site_id == site_id)
+        if approver_ids:
+            q = q.where(
+                or_(
+                    LoanRequest.unit_manager_employee_id.in_(approver_ids),
+                    LoanRequest.hr_employee_id.in_(approver_ids),
+                    LoanRequest.site_manager_employee_id.in_(approver_ids),
+                )
+            )
+        requests = list((await self.db.execute(q)).scalars().all())
+        if not requests:
+            return {"changed": 0, "unresolved": 0}
+        return await reassign_requests(
+            self.db,
+            requests,
+            site_approvers=self._site_approvers,
+            resolve_unit_manager=self.resolve_unit_manager,
+            refresh_unit_manager=refresh_unit_manager,
+            current_step=self.current_step,
+            event=self._event,
+            push=self._push,
+            push_url="/loans?tab=inbox",
+            push_key="loan.approver_pending",
+            reason=reason,
+        )
+
+    async def stuck_count(self, site_id: int) -> int:
+        """درخواست‌های در حال تأیید این سایت که تأییدکننده‌ی مرحله‌ی جاری‌شان دیگر نمی‌تواند تأیید کند."""
+        from app.services.approver_reassign import stuck_count
+
+        rows = (
+            await self.db.execute(
+                select(LoanRequest).where(LoanRequest.site_id == site_id, LoanRequest.status == R.STATUS_IN_REVIEW)
+            )
+        ).scalars().all()
+        return await stuck_count(self.db, list(rows), self.current_step)
 
     async def list_policies(self, site_id: int) -> list[dict]:
         rows = (

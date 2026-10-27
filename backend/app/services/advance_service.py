@@ -136,7 +136,7 @@ class AdvanceService:
         steps = req.steps or [R.STEP_FINANCE]
         return steps[min(req.step_index, len(steps) - 1)]
 
-    def _enter_step(self, req: AdvanceRequest) -> None:
+    async def _enter_step(self, req: AdvanceRequest) -> None:
         """درخواست را در مرحله‌ی step_index قرار می‌دهد و اعلان مرحله را صف می‌کند."""
         step = (req.steps or [R.STEP_FINANCE])[min(req.step_index, len(req.steps or [1]) - 1)]
         if step == R.STEP_FINANCE:
@@ -146,6 +146,7 @@ class AdvanceService:
             return
         req.status = R.STATUS_IN_REVIEW
         approver = req.unit_manager_employee_id if step == R.STEP_UNIT_MANAGER else req.site_manager_employee_id
+        approver = await self._usable_approver(req, step, approver)
         req.current_approver_employee_id = approver
         self._push([approver], INBOX_URL, req.site_id, "advance.approver_pending")
 
@@ -334,7 +335,7 @@ class AdvanceService:
         self.db.add(req)
         self._event(req, "submitted", employee_label(employee), user.id)
         await self.db.flush()
-        self._enter_step(req)
+        await self._enter_step(req)
         await self._commit()
         return await self.serialize(await self._load(req.id), public=True)
 
@@ -399,7 +400,7 @@ class AdvanceService:
                 if approve:
                     self._event(req, "approved", label, user.id, note)
                     req.step_index += 1
-                    self._enter_step(req)
+                    await self._enter_step(req)
                 else:
                     self._event(req, "rejected", label, user.id, note)
                     req.status = R.STATUS_REJECTED
@@ -438,11 +439,115 @@ class AdvanceService:
                     "rules_text": st.rules_text if st else None,
                     "tiers": await self.tiers(site.id),
                     "members": await self.members(site.id),
+                    "stuck_count": await self.stuck_count(site.id),
                 }
             )
         return out
 
-    async def update_settings(self, site_id: int, data: dict) -> None:
+    # ---------- انتقال تأییدکننده‌ها (ترک کار / تغییر تنظیمات؛ services/approver_reassign.py) ----------
+
+    async def on_employees_left(self, employee_ids: list[int]) -> int:
+        """ترک کار (Sync): مساعده‌های پرداخت‌نشده‌ی خود این پرسنل خودکار لغو می‌شوند (سابقه می‌ماند). بدون commit."""
+        if not employee_ids:
+            return 0
+        rows = (
+            await self.db.execute(
+                select(AdvanceRequest)
+                .options(selectinload(AdvanceRequest.events))
+                .where(AdvanceRequest.employee_id.in_(employee_ids), AdvanceRequest.status.in_(R.OPEN_STATUSES))
+            )
+        ).scalars().all()
+        for req in rows:
+            req.status = R.STATUS_CANCELLED
+            req.current_approver_employee_id = None
+            self._event(req, "cancelled", "سامانه", None, "لغو خودکار — ترک کار درخواست‌دهنده")
+        await self.db.flush()
+        return len(rows)
+
+    async def _usable_approver(self, req: AdvanceRequest, step: str, approver: int | None) -> int | None:
+        """
+        رسیدن به یک مرحله: اگر تأییدکننده‌ی ذخیره‌شده دیگر نمی‌تواند تأیید کند (ترک کار) یا مدیر سایت در تنظیمات عوض شده،
+        همان لحظه به تأییدکننده‌ی امروز منتقل می‌شود (اعلان را خود _enter_step می‌فرستد).
+        """
+        from app.services.approver_reassign import ApproverChecker, reassign_requests
+
+        changed_setting = step == R.STEP_SITE_MANAGER and (await self._site_approvers(req.site_id)).get(
+            "site_manager"
+        ) not in (None, approver)
+        if not changed_setting and await ApproverChecker(self.db).ok(approver):
+            return approver
+        await reassign_requests(
+            self.db,
+            [req],
+            site_approvers=self._site_approvers,
+            resolve_unit_manager=self._loans.resolve_unit_manager,
+            refresh_unit_manager=False,
+            current_step=lambda _r: None,
+            event=self._event,
+            push=lambda *a, **k: None,
+            push_url=INBOX_URL,
+            push_key="advance.approver_pending",
+            reason="تأییدکننده‌ی قبلی در دسترس نبود",
+        )
+        return req.unit_manager_employee_id if step == R.STEP_UNIT_MANAGER else req.site_manager_employee_id
+
+    async def _site_approvers(self, site_id: int) -> dict:
+        st = await self.settings(site_id)
+        return {"site_manager": st.site_manager_employee_id if st else None}
+
+    async def reassign_approvers(
+        self,
+        *,
+        site_id: int | None = None,
+        approver_ids: list[int] | None = None,
+        refresh_unit_manager: bool = False,
+        reason: str,
+    ) -> dict:
+        """مثل LoanService.reassign_approvers برای مساعده (مدیر واحد و مدیر سایت). بدون commit."""
+        from app.services.approver_reassign import reassign_requests
+
+        q = (
+            select(AdvanceRequest)
+            .options(selectinload(AdvanceRequest.events))
+            .where(AdvanceRequest.status == R.STATUS_IN_REVIEW)
+        )
+        if site_id is not None:
+            q = q.where(AdvanceRequest.site_id == site_id)
+        if approver_ids:
+            q = q.where(
+                AdvanceRequest.unit_manager_employee_id.in_(approver_ids)
+                | AdvanceRequest.site_manager_employee_id.in_(approver_ids)
+            )
+        requests = list((await self.db.execute(q)).scalars().all())
+        if not requests:
+            return {"changed": 0, "unresolved": 0}
+        return await reassign_requests(
+            self.db,
+            requests,
+            site_approvers=self._site_approvers,
+            resolve_unit_manager=self._loans.resolve_unit_manager,
+            refresh_unit_manager=refresh_unit_manager,
+            current_step=self.current_step,
+            event=self._event,
+            push=self._push,
+            push_url=INBOX_URL,
+            push_key="advance.approver_pending",
+            reason=reason,
+        )
+
+    async def stuck_count(self, site_id: int) -> int:
+        from app.services.approver_reassign import stuck_count
+
+        rows = (
+            await self.db.execute(
+                select(AdvanceRequest).where(
+                    AdvanceRequest.site_id == site_id, AdvanceRequest.status == R.STATUS_IN_REVIEW
+                )
+            )
+        ).scalars().all()
+        return await stuck_count(self.db, list(rows), self.current_step)
+
+    async def update_settings(self, site_id: int, data: dict) -> dict:
         if (await self.db.get(Site, site_id)) is None:
             raise AdvanceError("سایت پیدا نشد", 404)
         manager_id = data.get("site_manager_employee_id")
@@ -498,7 +603,11 @@ class AdvanceService:
         await self.db.flush()
         for emp_id, group in members.items():
             self.db.add(AdvanceGroupMember(site_id=site_id, employee_id=emp_id, group=group))
-        await self.db.commit()
+        await self.db.flush()
+        # درخواست‌های باز این سایت به مدیر سایت جدید منتقل می‌شوند (بدون ثبت مجدد)
+        result = await self.reassign_approvers(site_id=site_id, reason="تغییر مدیر سایت در تنظیمات مساعده")
+        await self._commit()
+        return result
 
     async def list_requests(
         self, site_id: int, status: str | None, month: str | None, q: str | None, page: int, page_size: int

@@ -326,16 +326,22 @@ function MyLoanCard({ item, onCancel, onReplace }) {
         {item.status !== "cancelled" && (
           <LoanSteps item={item} vertical={vertical} />
         )}
+        {/* تا ضامن نپذیرفته (منتظر یا نپذیرفته)، درخواست‌دهنده می‌تواند او را عوض کند */}
         <GuarantorChips
           item={item}
           renderAction={(g) =>
             atGuarantors && g.status !== "accepted" ? (
-              <Button size="small" onClick={() => onReplace(item, g)}>
-                تغییر
+              <Button size="small" variant="outlined" onClick={() => onReplace(item, g)}>
+                تغییر ضامن
               </Button>
             ) : null
           }
         />
+        {atGuarantors && item.guarantors?.some((g) => g.status === "pending") && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+            اگر ضامنی هنوز پاسخ نداده، می‌توانید با «تغییر ضامن» همکار دیگری را جایگزینش کنید.
+          </Typography>
+        )}
         {item.extra_requirement &&
           ["waiting_finance", "in_review"].includes(item.status) && (
             <Alert severity="info" sx={{ mt: 1 }}>

@@ -79,6 +79,13 @@ TEMPLATES: dict[str, dict[str, dict]] = {
             "default": "{guarantor} ضمانت وام شما را نپذیرفت؛ ضامن دیگری انتخاب کنید." + _VIEW,
             "vars": {"guarantor": "نام ضامن"},
         },
+        "loan.guarantor_left": {
+            "label": "ضامن ترک کار کرد",
+            "recipient": "درخواست‌دهنده",
+            "when": "ضامنی که هنوز تأیید نکرده بود ترک کار کرد",
+            "default": "{guarantor} که ضامن وام شما بود ترک کار کرده است؛ ضامن دیگری انتخاب کنید." + _VIEW,
+            "vars": {"guarantor": "نام ضامن"},
+        },
         "loan.approver_pending": {
             "label": "در انتظار تأیید مدیر",
             "recipient": "مدیر واحد / منابع انسانی / مدیر سایت",
