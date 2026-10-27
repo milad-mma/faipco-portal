@@ -32,6 +32,7 @@ import {
   createPayrollNotice,
   deleteNotice,
   fetchAvailableTargets,
+  resolveNoticeEmployeeCodes,
   publishNotice,
   uploadNoticeAttachment,
 } from "../api/notices";
@@ -40,7 +41,8 @@ import { useAuth } from "../context/AuthContext";
 import NoticeAttachmentPicker from "../components/NoticeAttachmentPicker";
 import { fetchSites } from "../api/sites";
 import { fetchDepartments } from "../api/departments";
-import EmployeeSearchField from "../components/EmployeeSearchField";
+import EmployeeSearchField, { employeeToOption } from "../components/EmployeeSearchField";
+import { toEn } from "../utils/family";
 import PillTabs from "../components/PillTabs";
 import { searchFilterOptions } from "../utils/searchText";
 
@@ -82,6 +84,99 @@ const EMPTY_ATTENDANCE_CARD_FORM = {
 };
 
 // کامپوننت صفحه؛ مجوزهای ارسال را بارگذاری و فرم متناسب با حالت انتخاب‌شده را رندر می‌کند
+/**
+ * فهرست تیک‌دار مخاطبان (واحدها یا مدیران واحد) با «انتخاب همه». اگر موارد از بیش از یک سایت باشند، زیر عنوان هر سایت
+ * گروه‌بندی می‌شوند و هر سایت تیک «همه» دارد. ورودی: title، selectAllLabel، items [{id, label, siteId}]،
+ * selected (شناسه‌ها)، onChange(ids)، siteNames {siteId: name}، disabled. بدون مورد چیزی نمایش داده نمی‌شود.
+ */
+function GroupedCheckboxes({ title, selectAllLabel, items, selected, onChange, siteNames, disabled }) {
+  if (!items.length) return null;
+  const selectedSet = new Set(selected);
+  const allSelected = items.every((i) => selectedSet.has(i.id));
+  const someSelected = items.some((i) => selectedSet.has(i.id));
+  const toggle = (id) => onChange(selectedSet.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const setMany = (ids, on) => {
+    const next = new Set(selected);
+    ids.forEach((id) => (on ? next.add(id) : next.delete(id)));
+    onChange([...next]);
+  };
+  // گروه‌بندی به تفکیک سایت (به ترتیب اولین ظهور)
+  const groups = [];
+  const bySite = new Map();
+  items.forEach((i) => {
+    const key = i.siteId ?? "none";
+    if (!bySite.has(key)) {
+      bySite.set(key, []);
+      groups.push(key);
+    }
+    bySite.get(key).push(i);
+  });
+  const renderItems = (list) => (
+    <FormGroup row>
+      {list.map((i) => (
+        <FormControlLabel
+          key={i.id}
+          sx={{ minWidth: 0 }}
+          control={<Checkbox checked={selectedSet.has(i.id)} onChange={() => toggle(i.id)} disabled={disabled} />}
+          label={i.label}
+        />
+      ))}
+    </FormGroup>
+  );
+  return (
+    <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 1.5 }}>
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+        {title}
+      </Typography>
+      {items.length > 1 && (
+        <>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected && !allSelected}
+                onChange={() => setMany(items.map((i) => i.id), !allSelected)}
+                disabled={disabled}
+              />
+            }
+            label={<Typography fontWeight={600}>{selectAllLabel}</Typography>}
+          />
+          <Divider sx={{ my: 0.5 }} />
+        </>
+      )}
+      {groups.length <= 1
+        ? renderItems(items)
+        : groups.map((key) => {
+            const list = bySite.get(key);
+            const ids = list.map((i) => i.id);
+            const all = ids.every((id) => selectedSet.has(id));
+            const some = ids.some((id) => selectedSet.has(id));
+            return (
+              <Box key={key} sx={{ mt: 1 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={all}
+                      indeterminate={some && !all}
+                      onChange={() => setMany(ids, !all)}
+                      disabled={disabled}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" fontWeight={700} color="primary">
+                      {siteNames[key] || (key === "none" ? "بدون سایت" : `سایت ${key}`)} — همه
+                    </Typography>
+                  }
+                />
+                <Box sx={{ pr: 3 }}>{renderItems(list)}</Box>
+              </Box>
+            );
+          })}
+    </Box>
+  );
+}
+
 export default function NewNoticePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -157,53 +252,38 @@ export default function NewNoticePage() {
       allowedDepartments.length > 0 ||
       availableTargets.can_target_employee);
 
-  const allDepartmentsSelected = // همه واحدهای مجاز انتخاب شده‌اند
-    allowedDepartments.length > 0 &&
-    form.departmentIds.length === allowedDepartments.length;
+  const supervisorOptions = availableTargets?.supervisor_employees || []; // مدیران واحدی که کاربر می‌تواند به آن‌ها ارسال کند
+  // نام سایت‌ها برای عنوان گروه‌ها (سایتی که در فهرست نیست: «سایت N»)
+  const siteNames = useMemo(() => Object.fromEntries(sites.map((s) => [s.id, s.name])), [sites]);
 
-  // افزودن/حذف یک واحد از مخاطبان
-  function toggleDepartment(deptId) {
-    setForm((prev) => ({
-      ...prev,
-      departmentIds: prev.departmentIds.includes(deptId)
-        ? prev.departmentIds.filter((id) => id !== deptId)
-        : [...prev.departmentIds, deptId],
-    }));
-  }
-
-  // انتخاب همه واحدهای مجاز یا پاک کردن همه
-  function toggleSelectAllDepartments() {
-    setForm((prev) => ({
-      ...prev,
-      departmentIds: allDepartmentsSelected
-        ? []
-        : allowedDepartments.map((d) => d.id),
-    }));
-  }
-
-  const supervisorOptions = availableTargets?.supervisor_employees || []; // سرپرستانی که کاربر می‌تواند به آن‌ها ارسال کند
-  const allSupervisorsSelected =
-    supervisorOptions.length > 0 &&
-    form.supervisors.length === supervisorOptions.length;
-
-  // افزودن/حذف یک سرپرست از مخاطبان
-  function toggleSupervisor(employeeId) {
-    setForm((prev) => ({
-      ...prev,
-      supervisors: prev.supervisors.includes(employeeId)
-        ? prev.supervisors.filter((id) => id !== employeeId)
-        : [...prev.supervisors, employeeId],
-    }));
-  }
-
-  // انتخاب همه سرپرستان یا پاک کردن همه
-  function toggleSelectAllSupervisors() {
-    setForm((prev) => ({
-      ...prev,
-      supervisors: allSupervisorsSelected
-        ? []
-        : supervisorOptions.map((e) => e.id),
-    }));
+  // «پیست چند کد پرسنلی» در فیلد اشخاص خاص: چند کد (جداشده با خط جدید/فاصله/ویرگول/تب، ارقام فارسی هم) همه با هم
+  // مخاطب می‌شوند. فقط وقتی متن پیست‌شده چند کد عددی است عمل می‌کند؛ پیست یک اسم یا یک کد همان جست‌وجوی عادی است.
+  const [pasteResult, setPasteResult] = useState(null); // { busy, added, notFound: [], error }
+  function handleEmployeePaste(text) {
+    const codes = toEn(text)
+      .split(/[\s,،;؛]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (codes.length < 2 || !codes.every((c) => /^\d+$/.test(c))) return false;
+    setPasteResult({ busy: true, added: 0, notFound: [] });
+    resolveNoticeEmployeeCodes(codes)
+      .then((res) => {
+        const have = new Set(form.employees.map((e) => e.id));
+        const extra = [];
+        (res.employees || []).forEach((e) => {
+          if (!have.has(e.id)) {
+            have.add(e.id);
+            extra.push(employeeToOption(e));
+          }
+        });
+        setForm((prev) => {
+          const ids = new Set(prev.employees.map((e) => e.id));
+          return { ...prev, employees: [...prev.employees, ...extra.filter((o) => !ids.has(o.id))] };
+        });
+        setPasteResult({ busy: false, added: extra.length, notFound: res.not_found || [] });
+      })
+      .catch(() => setPasteResult({ busy: false, added: 0, notFound: [], error: true }));
+    return true;
   }
 
   // در فیلدهای تک‌خطی (عنوان/زیرعنوان کارت) رفتار پیش‌فرض Enter را غیرفعال می‌کند؛ صفحه <form>
@@ -534,7 +614,8 @@ export default function NewNoticePage() {
                   onKeyDown={handleBodyKeyDown}
                   required
                   multiline
-                  rows={3}
+                  minRows={8}
+                  maxRows={20}
                   fullWidth
                   disabled={isSubmitting}
                 />
@@ -612,127 +693,33 @@ export default function NewNoticePage() {
                   />
                 )}
 
-                {/* انتخاب واحدها با گزینه «انتخاب همه» */}
-                {allowedDepartments.length > 0 && (
-                  <Box
-                    sx={{
-                      border: "1px solid",
-                      borderColor: "divider",
-                      borderRadius: 2,
-                      p: 1.5,
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ mb: 0.5 }}
-                    >
-                      ارسال به یک یا چند واحد سازمانی
-                    </Typography>
-                    {allowedDepartments.length > 1 && (
-                      <>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={allDepartmentsSelected}
-                              indeterminate={
-                                form.departmentIds.length > 0 &&
-                                !allDepartmentsSelected
-                              }
-                              onChange={toggleSelectAllDepartments}
-                              disabled={isSubmitting}
-                            />
-                          }
-                          label={
-                            <Typography fontWeight={600}>
-                              انتخاب همه واحدها
-                            </Typography>
-                          }
-                        />
-                        <Divider sx={{ my: 0.5 }} />
-                      </>
-                    )}
-                    <FormGroup row>
-                      {allowedDepartments.map((dept) => (
-                        <FormControlLabel
-                          key={dept.id}
-                          sx={{ minWidth: 0 }}
-                          control={
-                            <Checkbox
-                              checked={form.departmentIds.includes(dept.id)}
-                              onChange={() => toggleDepartment(dept.id)}
-                              disabled={isSubmitting}
-                            />
-                          }
-                          label={dept.name}
-                        />
-                      ))}
-                    </FormGroup>
-                  </Box>
-                )}
+                {/* انتخاب واحدها با «انتخاب همه»؛ با دسترسی چند سایت، به تفکیک سایت */}
+                <GroupedCheckboxes
+                  title="ارسال به یک یا چند واحد سازمانی"
+                  selectAllLabel="انتخاب همه واحدها"
+                  items={allowedDepartments.map((d) => ({ id: d.id, label: d.name, siteId: d.site_id }))}
+                  selected={form.departmentIds}
+                  onChange={(ids) => setForm((prev) => ({ ...prev, departmentIds: ids }))}
+                  siteNames={siteNames}
+                  disabled={isSubmitting}
+                />
 
-                {/* انتخاب سرپرستان واحد با گزینه «انتخاب همه» */}
-                {supervisorOptions.length > 0 && (
-                  <Box
-                    sx={{
-                      border: "1px solid",
-                      borderColor: "divider",
-                      borderRadius: 2,
-                      p: 1.5,
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ mb: 0.5 }}
-                    >
-                      ارسال به یک یا چند سرپرست واحد
-                    </Typography>
-                    {supervisorOptions.length > 1 && (
-                      <>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={allSupervisorsSelected}
-                              indeterminate={
-                                form.supervisors.length > 0 &&
-                                !allSupervisorsSelected
-                              }
-                              onChange={toggleSelectAllSupervisors}
-                              disabled={isSubmitting}
-                            />
-                          }
-                          label={
-                            <Typography fontWeight={600}>
-                              انتخاب همه سرپرستان
-                            </Typography>
-                          }
-                        />
-                        <Divider sx={{ my: 0.5 }} />
-                      </>
-                    )}
-                    <FormGroup row>
-                      {supervisorOptions.map((emp) => (
-                        <FormControlLabel
-                          key={emp.id}
-                          sx={{ minWidth: 0 }}
-                          control={
-                            <Checkbox
-                              checked={form.supervisors.includes(emp.id)}
-                              onChange={() => toggleSupervisor(emp.id)}
-                              disabled={isSubmitting}
-                            />
-                          }
-                          label={
-                            emp.personnel_code
-                              ? `${emp.first_name} ${emp.last_name} (${emp.personnel_code})`
-                              : `${emp.first_name} ${emp.last_name}`
-                          }
-                        />
-                      ))}
-                    </FormGroup>
-                  </Box>
-                )}
+                {/* انتخاب مدیران واحد با «انتخاب همه»؛ با دسترسی چند سایت، به تفکیک سایت */}
+                <GroupedCheckboxes
+                  title="ارسال به یک یا چند مدیر واحد"
+                  selectAllLabel="انتخاب همه مدیران"
+                  items={supervisorOptions.map((emp) => ({
+                    id: emp.id,
+                    siteId: emp.site_id,
+                    label: emp.personnel_code
+                      ? `${emp.first_name} ${emp.last_name} (${emp.personnel_code})`
+                      : `${emp.first_name} ${emp.last_name}`,
+                  }))}
+                  selected={form.supervisors}
+                  onChange={(ids) => setForm((prev) => ({ ...prev, supervisors: ids }))}
+                  siteNames={siteNames}
+                  disabled={isSubmitting}
+                />
 
                 {/* انتخاب اشخاص خاص با انتخابگر مشترک پرسنل (جست‌وجوی سمت سرور؛ در حالت سرپرست محدود به واحدهای خودش) */}
                 {availableTargets?.can_target_employee && (
@@ -745,12 +732,29 @@ export default function NewNoticePage() {
                     onChange={(selected) =>
                       setForm({ ...form, employees: selected || [] })
                     }
+                    onPasteText={handleEmployeePaste}
+                    helperText="می‌توانید چند کد پرسنلی را یک‌جا کپی و این‌جا پیست کنید"
                     label={
                       employeeScopeDepartmentIds
                         ? "ارسال به یک یا چند نفر از پرسنل واحد خودم (جستجو کنید)"
                         : "ارسال به یک یا چند شخص خاص (جستجو کنید)"
                     }
                   />
+                )}
+                {pasteResult && (
+                  <Alert
+                    severity={pasteResult.error ? "error" : pasteResult.notFound.length ? "warning" : "success"}
+                    onClose={pasteResult.busy ? undefined : () => setPasteResult(null)}
+                  >
+                    {pasteResult.busy
+                      ? "در حال افزودن کدهای پرسنلی…"
+                      : pasteResult.error
+                        ? "افزودن کدهای پرسنلی با خطا مواجه شد."
+                        : `${pasteResult.added.toLocaleString("fa-IR")} نفر به مخاطبان اضافه شد` +
+                          (pasteResult.notFound.length
+                            ? ` — ${pasteResult.notFound.length.toLocaleString("fa-IR")} کد پیدا نشد: ${pasteResult.notFound.join("، ")}`
+                            : "")}
+                  </Alert>
                 )}
 
                 <Box>

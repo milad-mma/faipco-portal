@@ -48,6 +48,9 @@ export default function UpdatePrompt() {
             )
           }
           onClick={handleReloadClick}
+          // حالت غیرفعالِ پیش‌فرض MUI رنگ خاکستری تیره می‌دهد که روی زمینه‌ی تیره‌ی Snackbar دیده نمی‌شد؛
+          // «در حال بارگذاری...» با همان رنگ متن پیام (کمی کم‌رنگ‌تر) نمایش داده می‌شود
+          sx={{ "&.Mui-disabled": { color: "inherit", opacity: 0.8 } }}
         >
           {isApplying ? "در حال بارگذاری..." : "بارگذاری"}
         </Button>

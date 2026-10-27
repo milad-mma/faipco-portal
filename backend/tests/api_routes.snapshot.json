@@ -1,5 +1,5 @@
 {
-  "count": 421,
+  "count": 422,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -313,6 +313,7 @@
     "POST /api/v1/notices",
     "POST /api/v1/notices/attendance-card",
     "POST /api/v1/notices/payroll",
+    "POST /api/v1/notices/resolve-employee-codes",
     "POST /api/v1/notices/{notice_id}/archive",
     "POST /api/v1/notices/{notice_id}/attachments",
     "POST /api/v1/notices/{notice_id}/publish",

@@ -619,12 +619,15 @@ class NoticeService:
             }
             if supervisor_user_ids:
                 result = await self.db.execute(
-                    select(Employee.id, Employee.first_name, Employee.last_name, Employee.personnel_code)
+                    select(
+                        Employee.id, Employee.first_name, Employee.last_name, Employee.personnel_code, Employee.site_id
+                    )
                     .join(User, User.employee_id == Employee.id)
                     .where(User.id.in_(supervisor_user_ids))
                 )
+                # site_id: گروه‌بندی «مدیران واحد» به تفکیک سایت در فرم اطلاعیه
                 supervisor_employees = [
-                    {"id": r[0], "first_name": r[1], "last_name": r[2], "personnel_code": r[3]}
+                    {"id": r[0], "first_name": r[1], "last_name": r[2], "personnel_code": r[3], "site_id": r[4]}
                     for r in result.all()
                 ]
 
@@ -638,6 +641,54 @@ class NoticeService:
             "department_ids": sorted(allowed_department_ids),
             "supervisor_employees": supervisor_employees,
         }
+
+    async def resolve_employee_codes(self, user: User, codes: list[str]) -> dict:
+        """
+        «پیست چند کد پرسنلی» در فرم اطلاعیه: کدها ← پرسنل فعال که این کاربر اجازه‌ی ارسال اطلاعیه به آن‌ها را دارد
+        (همان قاعده‌ی _can_target: notices.target.employee سایت پرسنل، یا سرپرست واحد او). کد خارج از محدوده مثل
+        «پیدا نشد» برمی‌گردد تا مالک کد لو نرود. خروجی: {employees: [...], not_found: [...]}.
+        """
+        from app.core.family_rules import to_english_digits
+
+        wanted: list[str] = []
+        for raw in codes[:1000]:
+            code = to_english_digits(str(raw)).strip()
+            if code and code not in wanted:
+                wanted.append(code)
+        if not wanted:
+            return {"employees": [], "not_found": []}
+        rows = (
+            await self.db.execute(
+                select(Employee).where(
+                    Employee.personnel_code.in_(wanted),
+                    Employee.is_active.is_(True),
+                    Employee.is_enabled.is_(True),
+                )
+            )
+        ).scalars().all()
+        allowed_sites = None if user.is_superuser else await get_sites_with_permission(
+            self.db, user, "notices.target.employee"
+        )
+        supervised = set(
+            (await self.db.execute(select(Department.id).where(Department.supervisor_user_id == user.id))).scalars().all()
+        )
+        found_codes: set[str] = set()
+        employees = []
+        for emp in sorted(rows, key=lambda e: wanted.index(e.personnel_code)):
+            if not (
+                allowed_sites is None or emp.site_id in allowed_sites or (emp.department_id in supervised)
+            ):
+                continue
+            found_codes.add(emp.personnel_code)
+            employees.append(
+                {
+                    "id": emp.id,
+                    "first_name": emp.first_name,
+                    "last_name": emp.last_name,
+                    "personnel_code": emp.personnel_code,
+                }
+            )
+        return {"employees": employees, "not_found": [c for c in wanted if c not in found_codes]}
 
     # ---------- حذف اطلاعیه ----------
 

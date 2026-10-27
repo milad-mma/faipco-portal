@@ -164,3 +164,9 @@ export async function fetchNoticeAttachmentBlob(attachmentId) {
   });
   return data;
 }
+
+// POST /notices/resolve-employee-codes؛ «پیست چند کد پرسنلی»: { employees: [...], not_found: [...] }
+export async function resolveNoticeEmployeeCodes(codes) {
+  const { data } = await apiClient.post("/notices/resolve-employee-codes", { codes });
+  return data;
+}

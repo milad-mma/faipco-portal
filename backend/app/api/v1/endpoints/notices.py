@@ -27,6 +27,7 @@ Endpoint های سیستم اطلاعیه سازمانی.
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.core.rate_limit import MESSAGE_RATE_LIMIT_SECONDS, check_message_rate_limit, record_message_sent
 from sqlalchemy import select
@@ -482,6 +483,23 @@ async def available_targets(
 ):
     """Target هایی (سایت/دپارتمان/نقش/پرسنل/همه) که کاربر جاری مجاز به ارسال اطلاعیه به آن‌هاست؛ برای فرم «اطلاعیه جدید»."""
     return await NoticeService(db).get_available_targets(current_user)
+
+
+class ResolveCodesIn(BaseModel):
+    codes: list[str] = Field(default_factory=list, max_length=1000)
+
+
+@router.post("/resolve-employee-codes")
+async def resolve_employee_codes(
+    payload: ResolveCodesIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    «پیست چند کد پرسنلی» در فیلد «ارسال به یک یا چند شخص خاص»: پرسنل فعالِ منطبق که کاربر اجازه‌ی ارسال اطلاعیه به
+    آن‌ها را دارد + کدهای پیدانشده (خارج از محدوده هم «پیدا نشد»). حداکثر ۱۰۰۰ کد.
+    """
+    return await NoticeService(db).resolve_employee_codes(current_user, payload.codes)
 
 
 # ---------- اطلاعیه فیش حقوقی (Payroll Notice) ----------

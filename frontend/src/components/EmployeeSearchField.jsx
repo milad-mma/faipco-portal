@@ -15,6 +15,7 @@ import { EMPLOYEE_SEARCH_PLACEHOLDER } from "./SearchField";
  * - clearOnSelect: بعد از انتخاب فیلد خالی شود (برای «افزودن به فهرست»)؛ در این حالت value لازم نیست
  * - minChars: حداقل حرف برای جست‌وجو (پیش‌فرض ۰ = با فیلد خالی هم ۲۰ نفر اول می‌آید)
  * - fetcherKey: هر مقداری که با تغییرش باید دوباره جست‌وجو شود (مثلاً وقتی فهرست پشت fetcher عوض می‌شود)
+ * - onPasteText(text) → boolean: پیست متن؛ true = فراخوان متن را مصرف کرد (مثلاً افزودن یک‌جای چند کد پرسنلی)
  * سرور همیشه مرجع است؛ نتایج در کلاینت دوباره فیلتر نمی‌شوند (تا جست‌وجو با کد ملی که در برچسب نیست، گم نشود).
  */
 export function employeeToOption(e) {
@@ -47,6 +48,7 @@ export default function EmployeeSearchField({
   minChars = 0,
   limit = 20,
   fetcherKey,
+  onPasteText,
 }) {
   const [options, setOptions] = useState([]);
   const [input, setInput] = useState("");
@@ -164,6 +166,15 @@ export default function EmployeeSearchField({
           placeholder={placeholder}
           helperText={helperText}
           autoFocus={autoFocus}
+          inputProps={{
+            ...params.inputProps,
+            // onPasteText(text) → true یعنی فراخوان خودش متن را مصرف کرده (مثلاً چند کد پرسنلی) و در فیلد نوشته نشود
+            onPaste: (e) => {
+              if (!onPasteText) return;
+              const text = e.clipboardData?.getData("text") || "";
+              if (onPasteText(text)) e.preventDefault();
+            },
+          }}
         />
       )}
     />

@@ -37,7 +37,7 @@ export default function PublicAppDownloadPage() {
           <CircularProgress />
         </Box>
       )}
-      {release === null && <Alert severity="info">اپ اندروید فعلاً در دسترس نیست. بعداً دوباره سر بزنید یا با واحد منابع انسانی تماس بگیرید.</Alert>}
+      {release === null && <Alert severity="info">اپ اندروید فعلاً در دسترس نیست.</Alert>}
       {release && (
         <Stack spacing={2}>
           {isIos() && <Alert severity="info">اپ فقط برای گوشی‌های اندروید است. روی آیفون، پرتال را مثل قبل در مرورگر استفاده کنید.</Alert>}
