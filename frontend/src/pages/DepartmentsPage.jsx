@@ -7,7 +7,9 @@ import {
   Button,
   Card,
   Chip,
+  MenuItem,
   Snackbar,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -15,6 +17,7 @@ import {
   TableHead,
   TableRow,
   TableSortLabel,
+  TextField,
   Typography,
 } from "@mui/material";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
@@ -116,6 +119,7 @@ export default function DepartmentsPage() {
   const [order, setOrder] = useState("asc");
   const [orderBy, setOrderBy] = useState(null); // کلید ستون مرتب‌سازی؛ null = بدون مرتب‌سازی
   const [snackbar, setSnackbar] = useState(""); // متن پیام Snackbar؛ خالی = بسته
+  const [siteFilter, setSiteFilter] = useState(""); // فیلتر سایت؛ "" = همه‌ی سایت‌ها
 
   useEffect(() => {
     // بارگذاری اولیه‌ی سایت‌ها و واحدها
@@ -156,10 +160,12 @@ export default function DepartmentsPage() {
   );
 
   // افزودن نام سایت به هر ردیف و مرتب‌سازی ردیف‌ها
-  const rows = departments.map((dept) => ({
-    ...dept,
-    site_name: siteNameById[dept.site_id] || null,
-  }));
+  const rows = departments
+    .filter((dept) => siteFilter === "" || dept.site_id === siteFilter)
+    .map((dept) => ({
+      ...dept,
+      site_name: siteNameById[dept.site_id] || null,
+    }));
   const sortedRows = sortRows(rows, order, orderBy);
 
   return (
@@ -174,6 +180,30 @@ export default function DepartmentsPage() {
           سرپرست فعلی نیز کافی است شخص جدید را انتخاب و ذخیره کنید.
         </Typography>
       </Box>
+
+      {/* فیلتر سایت (فقط وقتی بیش از یک سایت هست) */}
+      {sites.length > 1 && (
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "flex-end" }} sx={{ mb: 2 }}>
+          <TextField
+            select
+            size="small"
+            label="سایت"
+            value={siteFilter}
+            onChange={(e) => setSiteFilter(e.target.value === "" ? "" : Number(e.target.value))}
+            sx={{ minWidth: 220 }}
+          >
+            <MenuItem value="">همه‌ی سایت‌ها</MenuItem>
+            {sites.map((site) => (
+              <MenuItem key={site.id} value={site.id}>
+                {site.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="body2" color="text.secondary" sx={{ pb: { sm: 1 } }}>
+            {rows.length.toLocaleString("fa-IR")} واحد
+          </Typography>
+        </Stack>
+      )}
 
       {/* جدول واحدها */}
       <Card variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>

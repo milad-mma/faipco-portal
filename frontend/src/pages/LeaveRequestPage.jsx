@@ -363,7 +363,12 @@ function MyRequestsTable({ items, onDeleted }) {
     <Stack spacing={1.5}>
       {error && <Alert severity="error">{error}</Alert>}
       <TableContainer component={Card} variant="outlined">
-        <Table size="small">
+        <Table
+        size="small"
+        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
+        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
+        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
+      >
           <TableHead>
             <TableRow>
               <TableCell>نوع درخواست</TableCell>
@@ -380,7 +385,7 @@ function MyRequestsTable({ items, onDeleted }) {
             {sortedItems.map((item) => (
               <TableRow key={item.request_id}>
                 <TableCell>{item.type_title || "—"}</TableCell>
-                <TableCell>{item.description || "—"}</TableCell>
+                <TableCell className="wrap">{item.description || "—"}</TableCell>
                 <TableCell>
                   {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
                 </TableCell>
@@ -389,7 +394,7 @@ function MyRequestsTable({ items, onDeleted }) {
                 <TableCell>
                   <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
                 </TableCell>
-                <TableCell>{item.manager_idea || "—"}</TableCell>
+                <TableCell className="wrap">{item.manager_idea || "—"}</TableCell>
                 <TableCell>
                   {item.status === "pending" && (
                     <IconButton
@@ -510,7 +515,12 @@ function PendingApprovalTable({ items, onDecide }) {
 
   return (
     <TableContainer component={Card} variant="outlined">
-      <Table size="small">
+      <Table
+        size="small"
+        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
+        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
+        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
+      >
         <TableHead>
           <TableRow>
             <TableCell>نام و نام خانوادگی</TableCell>
@@ -529,7 +539,7 @@ function PendingApprovalTable({ items, onDecide }) {
               <TableCell>{item.requester_name || item.emp_no}</TableCell>
               <TableCell>{item.requester_department || "—"}</TableCell>
               <TableCell>{item.type_title || "—"}</TableCell>
-              <TableCell>{item.description || "—"}</TableCell>
+              <TableCell className="wrap">{item.description || "—"}</TableCell>
               <TableCell>
                 {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("fa-IR") : "—"}
               </TableCell>
@@ -580,7 +590,12 @@ function DecidedHistoryTable({ reloadKey }) {
 
   return (
     <TableContainer component={Card} variant="outlined">
-      <Table size="small">
+      <Table
+        size="small"
+        // موبایل: جدول عرض حداقلی دارد و افقی اسکرول می‌خورد؛ قبلاً ستون‌ها فشرده می‌شدند و توضیحات کلمه‌به‌کلمه
+        // زیر هم می‌افتاد. بقیه‌ی ستون‌ها یک‌خطی، توضیحات/نظر با عرض مناسب چندخطی (className="wrap")
+        sx={{ minWidth: 820, "& td, & th": { whiteSpace: "nowrap" }, "& td.wrap": { whiteSpace: "normal", minWidth: 220, maxWidth: 360, wordBreak: "break-word" } }}
+      >
         <TableHead>
           <TableRow>
             <TableCell>نام و نام خانوادگی</TableCell>
@@ -605,7 +620,7 @@ function DecidedHistoryTable({ reloadKey }) {
                 <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
               </TableCell>
               <TableCell>{item.approved_at ? new Date(item.approved_at).toLocaleDateString("fa-IR") : "—"}</TableCell>
-              <TableCell>{item.manager_idea || "—"}</TableCell>
+              <TableCell className="wrap">{item.manager_idea || "—"}</TableCell>
             </TableRow>
           ))}
         </TableBody>
