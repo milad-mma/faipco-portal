@@ -365,10 +365,19 @@ export default function Layout() {
                 height: "100dvh",
               },
               overflow: "hidden",
+              // ناحیه‌ی امن ناچ / Dynamic Island روی خودِ پوسته (نه داخل ناحیه‌ی اسکرول): محتوای اسکرول‌شده هرگز زیر
+              // ناچ نمی‌رود؛ در حالت افقی گوشه‌های ناچ‌دار هم کنار گذاشته می‌شوند
+              pt: "env(safe-area-inset-top, 0px)",
+              pl: "env(safe-area-inset-left, 0px)",
+              pr: "env(safe-area-inset-right, 0px)",
+              boxSizing: "border-box",
+              bgcolor: "background.default",
             }
           : {
-              // ادمین: حداقل ارتفاع به اندازه‌ی Viewport؛ اسکرول عادی صفحه
+              // ادمین: حداقل ارتفاع به اندازه‌ی Viewport؛ اسکرول عادی صفحه (گوشه‌های ناچ در حالت افقی کنار گذاشته می‌شوند)
               minHeight: "100vh",
+              pl: "env(safe-area-inset-left, 0px)",
+              pr: "env(safe-area-inset-right, 0px)",
             }),
       }}
     >
@@ -531,15 +540,14 @@ export default function Layout() {
                 overflowY: "auto",
                 overflowX: "hidden",
                 mt: 0,
-                // چون index.html با viewport-fit=cover تعریف شده و پوسته‌ی پرسنل AppBar ندارد،
-                // فاصله‌ی ناحیه‌ی امن بالا (ناچ / Dynamic Island) به padding بالا اضافه می‌شود تا
-                // اولین عنصر هر صفحه قابل لمس باشد.
-                pt: "calc(16px + env(safe-area-inset-top, 0px))",
+                // فاصله‌ی ناچ روی پوسته‌ی بیرونی اعمال شده؛ این‌جا فقط فاصله‌ی عادی بالای محتوا
+                pt: 2,
               }
             : {
-                // ادمین: فاصله‌ی بالا به اندازه‌ی AppBar ثابت
+                // ادمین: فاصله‌ی بالا به اندازه‌ی AppBar ثابت + ناحیه‌ی امن ناچ (که AppBar هم همین‌قدر بلندتر شده)؛
+                // قبلاً فقط ۶۴px بود و بالای هر صفحه به اندازه‌ی ناچ زیر AppBar می‌رفت
                 flexGrow: 1,
-                mt: 8,
+                mt: "calc(64px + env(safe-area-inset-top, 0px))",
                 overflowX: "hidden",
               }),
         }}

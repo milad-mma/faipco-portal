@@ -4,7 +4,27 @@
  * و ThemeProvider و CssBaseline متریال را با تم متناظر رندر می‌کند.
  */
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { CssBaseline, ThemeProvider } from "@mui/material";
+import { CssBaseline, GlobalStyles, ThemeProvider } from "@mui/material";
+
+// ناحیه‌ی امن ناچ / Dynamic Island (آیفون با viewport-fit=cover و نوار وضعیت شفاف): پنجره‌ها و منوهای تمام‌ارتفاع و
+// پیام‌های بالای صفحه زیر ناچ نروند. در دستگاه بدون ناچ env(...) صفر است و هیچ تغییری دیده نمی‌شود.
+const SAFE_AREA_STYLES = {
+  ".MuiDrawer-paperAnchorLeft, .MuiDrawer-paperAnchorRight, .MuiDrawer-paperAnchorTop": {
+    paddingTop: "env(safe-area-inset-top, 0px)",
+  },
+  ".MuiDrawer-paperAnchorBottom": { paddingBottom: "env(safe-area-inset-bottom, 0px)" },
+  ".MuiSnackbar-anchorOriginTopCenter, .MuiSnackbar-anchorOriginTopLeft, .MuiSnackbar-anchorOriginTopRight": {
+    top: "calc(8px + env(safe-area-inset-top, 0px)) !important",
+  },
+  // پنجره‌ها (معمولی و تمام‌صفحه) داخل ناحیه‌ی امن: از ناچ، نوار خانه و گوشه‌های افقی فاصله می‌گیرند
+  ".MuiDialog-container": {
+    paddingTop: "env(safe-area-inset-top, 0px)",
+    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    paddingLeft: "env(safe-area-inset-left, 0px)",
+    paddingRight: "env(safe-area-inset-right, 0px)",
+    boxSizing: "border-box",
+  },
+};
 import { darkTheme, lightTheme } from "../theme";
 
 const STORAGE_KEY = "faipco_theme_mode"; // کلید localStorage برای انتخاب دستی: "light" | "dark"
@@ -77,6 +97,7 @@ export function ThemeModeProvider({ children }) {
     <ThemeModeContext.Provider value={value}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
+        <GlobalStyles styles={SAFE_AREA_STYLES} />
         {children}
       </ThemeProvider>
     </ThemeModeContext.Provider>
