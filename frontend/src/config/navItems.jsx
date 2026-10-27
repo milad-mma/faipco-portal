@@ -62,6 +62,8 @@ import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlin
  *   groupOnly (اختیاری، فقط برای آیتم‌های دارای children): عنوان گروه صفحه
  *     مستقل ندارد؛ در Layout.jsx کلیک روی آن همیشه به اولین زیرمنوی
  *     در‌دسترس همین کاربر می‌رود (مسیر path فقط کلید باز/بسته‌بودن گروه است).
+ *   badge (اختیاری): (user) => number — شمارنده‌ی هشدار کنار عنوان (صفر = پنهان)؛ عنوان گروه جمع فرزندانش را
+ *     نشان می‌دهد تا با گروه بسته هم دیده شود (مثلاً ترک کار پرسنل دارای بیمه تکمیلی)
  *   children (اختیاری): آرایه‌ای از همین شکل (بدون children تودرتوی بیشتر)
  */
 export const NAV_ITEMS = [
@@ -108,6 +110,8 @@ export const NAV_ITEMS = [
         path: "/insurance/admin",
         icon: <HealthAndSafetyOutlinedIcon />,
         check: (u) => u?.can_view_insurance,
+        // ترک کار پرسنل دارای ثبت‌نام که هنوز «بررسی شد» نخورده
+        badge: (u) => u?.insurance_left_alerts || 0,
       },
       {
         label: "وام پرسنل",
@@ -342,4 +346,12 @@ export function isItemVisible(item, user) {
   if (item.children?.length)
     return item.children.some((child) => isItemVisible(child, user));
   return true;
+}
+
+/** شمارنده‌ی هشدار یک آیتم منو؛ گروه = جمع فرزندان قابل‌مشاهده. */
+export function itemBadge(item, user) {
+  if (item.children?.length) {
+    return item.children.reduce((sum, child) => sum + (child.badge ? Number(child.badge(user)) || 0 : 0), 0);
+  }
+  return item.badge ? Number(item.badge(user)) || 0 : 0;
 }

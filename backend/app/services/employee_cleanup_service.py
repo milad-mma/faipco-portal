@@ -2,7 +2,7 @@
 پاک‌سازی پرسنل غیرفعالِ «بدون سابقه»: کسانی که is_active=False هستند و
 هیچ ردی از استفاده واقعی از پرتال ندارند (نه فیش حقوقی، نه فیش کارکرد، نه
 ورود/خروج GPS، نه Session آنلاین، نه حساب کاربری با رمز اختصاصی، نه خواندن
-هیچ اطلاعیه‌ای).
+هیچ اطلاعیه‌ای، نه ثبت‌نام بیمه تکمیلی).
 
 پرسنلی که حتی یک نشانه از فعالیت واقعی داشته باشد (مثلاً یک فیش حقوقی
 قدیمی)، هرگز توسط این ابزار حذف نمی‌شود؛ سوابق کسی که یک‌بار فعال بوده
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attendance_card_receipt import AttendanceCardReceipt
 from app.models.employee import Employee
 from app.models.gps_activity_log import GpsActivityLog
+from app.models.insurance import InsuranceRegistration
 from app.models.notice_read import NoticeRead
 from app.models.payroll_receipt import PayrollReceipt
 from app.models.presence_session import PresenceSession
@@ -49,6 +50,11 @@ def _orphaned_inactive_query():
         .exists()
     )
 
+    # ثبت‌نام بیمه تکمیلی: پرسنل ترک‌کار با ثبت‌نام هرگز حذف نمی‌شود (حذف پرسنل، ثبت‌نامش را cascade پاک می‌کرد)
+    has_insurance = (
+        select(InsuranceRegistration.id).where(InsuranceRegistration.employee_id == Employee.id).exists()
+    )
+
     # غیرفعال و بدون هیچ‌کدام از سوابق بالا
     return select(Employee).where(
         Employee.is_active.is_(False),
@@ -58,6 +64,7 @@ def _orphaned_inactive_query():
         ~has_presence,
         ~has_custom_password_user,
         ~has_read_notice,
+        ~has_insurance,
     )
 
 

@@ -14,7 +14,11 @@ Endpoint های ماژول «بیمه تکمیلی» (پیشوند /insurance).
   GET    /insurance/registrations         فهرست (جستجو/صفحه‌بندی، محدود به سایت‌های مجاز)
   GET    /insurance/registrations/{id}    جزئیات + اعضا + مدارک
   DELETE /insurance/registrations/{id}    حذف ثبت‌نام
-  GET    /insurance/export                خروجی Excel
+  GET    /insurance/export                خروجی Excel (+ مبلغ حق بیمه هر نفر و جمع خانواده)
+  POST   /insurance/registrations/{id}/review-left   «بررسی شد» هشدار ترک کار (insurance.view)
+  GET    /insurance/grants                ثبت‌نام اختصاصی افراد خاص (insurance.manage)
+  POST   /insurance/grants                افزودن بازه‌ی ثبت‌نام اختصاصی برای یک پرسنل
+  DELETE /insurance/grants/{id}           حذف/پایان بازه
 
 منطق اصلی در services/insurance_service.py است؛ اینجا فقط احراز هویت، تعیین
 سایت‌های مجاز و تبدیل خطاهای سرویس به کد HTTP انجام می‌شود.
@@ -33,6 +37,8 @@ from app.models.site import Site
 from app.models.user import User
 from app.schemas.insurance import (
     InsuranceDocumentOut,
+    InsuranceGrantIn,
+    InsuranceGrantOut,
     InsuranceListOut,
     InsuranceMyStatusOut,
     InsuranceRegistrationIn,
@@ -353,3 +359,68 @@ async def export_registrations(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------- ترک کار (Migration 116) ----------
+
+
+@router.post("/registrations/{registration_id}/review-left", status_code=status.HTTP_204_NO_CONTENT)
+async def review_left(
+    registration_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """
+    هشدار ترک کار یک ثبت‌نام را «بررسی شد» می‌کند (شمارنده‌ی منوی بیمه کم می‌شود؛ ثبت‌نام حذف نمی‌شود).
+    دسترسی: insurance.view یا insurance.manage برای سایت آن پرسنل؛ خارج از سایت‌ها → 404.
+    """
+    sites = await _accessible_sites(db, current_user)
+    if not await InsuranceService(db).review_left(registration_id, sites, current_user):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ثبت‌نام یافت نشد")
+
+
+# ---------- ثبت‌نام اختصاصی افراد خاص (Migration 116) ----------
+
+
+@router.get("/grants", response_model=list[InsuranceGrantOut])
+async def list_grants(
+    include_past: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("insurance.manage")),
+):
+    """بازه‌های ثبت‌نام اختصاصی جاری و آینده (include_past → قبلی‌ها هم) در سایت‌هایی که insurance.manage دارد."""
+    sites = await get_sites_with_permission(db, current_user, "insurance.manage")
+    return await InsuranceService(db).list_grants(sites, include_past)
+
+
+@router.post("/grants", response_model=InsuranceGrantOut, status_code=status.HTTP_201_CREATED)
+async def add_grant(
+    payload: InsuranceGrantIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("insurance.manage")),
+):
+    """
+    ثبت‌نام/ویرایش را برای یک پرسنل در یک بازه باز می‌کند، حتی اگر ثبت‌نام سایتش بسته باشد.
+    مجوز: insurance.manage برای سایت آن پرسنل. خطا: 404 پرسنل، 400 بازه‌ی نامعتبر.
+    """
+    employee = await db.get(Employee, payload.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرسنل یافت نشد")
+    await require_site_permission(db, current_user, employee.site_id, "insurance.manage")
+    service = InsuranceService(db)
+    try:
+        grant = await service.add_grant(employee, payload.starts_at, payload.ends_at, payload.note, current_user)
+    except InsuranceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    items = await service.list_grants({employee.site_id}, include_past=True)
+    return next(i for i in items if i["id"] == grant.id)
+
+
+@router.delete("/grants/{grant_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_grant(
+    grant_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("insurance.manage")),
+):
+    """حذف یک بازه‌ی ثبت‌نام اختصاصی (ثبت‌نام انجام‌شده دست نمی‌خورد)؛ خارج از سایت‌ها → 404."""
+    sites = await get_sites_with_permission(db, current_user, "insurance.manage")
+    if not await InsuranceService(db).delete_grant(grant_id, sites):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="بازه یافت نشد")

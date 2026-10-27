@@ -209,3 +209,62 @@ def test_other_members_codes_unchanged():
         ]
         out = _save(members, gender)
         assert [(m["relation_code"], m["dependency_code"]) for m in out] == [(2, 1), (7, 1), (8, 1)]
+
+
+# ---------- مبلغ حق بیمه (ستون‌های Excel) ----------
+
+
+def test_parse_age_range_from_labels_and_explicit_numbers():
+    assert r.parse_age_range({"age_label": "۱ تا ۶۰ سال"}) == (1, 60)
+    assert r.parse_age_range({"age_label": "۶۱ تا ۷۰ سال"}) == (61, 70)
+    assert r.parse_age_range({"age_label": "بالاتر از ۷۱ سال"}) == (71, None)
+    assert r.parse_age_range({"age_label": "۷۱ سال به بالا"}) == (71, None)
+    assert r.parse_age_range({"age_label": "تا ۶۰ سال"}) == (None, 60)
+    # عدد صریح بر برچسب مقدم است
+    assert r.parse_age_range({"age_label": "۱ تا ۶۰", "age_from": 0, "age_to": 65}) == (0, 65)
+    assert r.parse_age_range({"age_label": "گروه سالمند", "age_from": "۶۶"}) == (66, None)
+
+
+def test_age_in_years():
+    assert r.age_in_years("1370/05/21", (1405, 5, 21)) == 35
+    assert r.age_in_years("1370/05/21", (1405, 5, 20)) == 34
+    assert r.age_in_years("13700521", (1405, 8, 1)) == 35
+    assert r.age_in_years("1405/03/01", (1405, 8, 1)) == 0  # نوزاد
+    assert r.age_in_years("", (1405, 8, 1)) is None
+    assert r.age_in_years("bad", (1405, 8, 1)) is None
+
+
+def test_premium_amount_by_age_and_dependency():
+    t = r.DEFAULT_RATE_TABLE
+    assert r.premium_amount(35, True, t) == 690000
+    assert r.premium_amount(35, False, t) == 1380000
+    assert r.premium_amount(61, True, t) == 1035000
+    assert r.premium_amount(70, False, t) == 2070000
+    assert r.premium_amount(71, True, t) == 1380000
+    assert r.premium_amount(95, False, t) == 2760000
+    assert r.premium_amount(0, True, t) == 690000  # کمتر از سطر اول → سطر اول
+    assert r.premium_amount(None, True, t) is None
+    assert r.premium_amount(30, True, {"rows": []}) is None
+
+
+def test_member_is_dependent():
+    assert r.member_is_dependent("self", None, 3)
+    assert r.member_is_dependent("spouse", None, 1)  # پرسنل مرد: همسر تحت تکفل
+    assert not r.member_is_dependent("spouse", "no", 1)  # پرسنل زن بدون مدرک: غیر تحت تکفل
+    assert r.member_is_dependent("son", "yes", 1)
+    assert not r.member_is_dependent("father", "no", 2)
+    assert r.member_is_dependent("mother", "yes", 1)
+
+
+def test_family_premiums_and_total():
+    t = r.DEFAULT_RATE_TABLE
+    people = [
+        {"member_type": "self", "birth_date": "1365/01/01"},  # 40 → تحت تکفل 690000
+        {"member_type": "spouse", "kafala_status": None, "dependency_code": 1, "birth_date": "1368/01/01"},  # 690000
+        {"member_type": "father", "kafala_status": "no", "dependency_code": 2, "birth_date": "1340/01/01"},  # 65 → 2070000
+        {"member_type": "mother", "kafala_status": "yes", "dependency_code": 1, "birth_date": "1330/01/01"},  # 75 → 1380000
+        {"member_type": "son", "kafala_status": None, "dependency_code": 1, "birth_date": ""},  # نامعلوم
+    ]
+    amounts, total = r.family_premiums(people, t, (1405, 8, 1))
+    assert amounts == [690000, 690000, 2070000, 1380000, None]
+    assert total == 690000 + 690000 + 2070000 + 1380000

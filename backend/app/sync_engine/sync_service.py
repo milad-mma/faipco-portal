@@ -60,6 +60,7 @@ class SyncService:
     def __init__(self, db: AsyncSession):
         """ورودی: AsyncSession دیتابیس پرتال."""
         self.db = db
+        self._insurance_pushes: list[tuple[set[int], str]] = []  # Push هشدار ترک کار بیمه، بعد از commit
 
     # ---------- عمومی ----------
 
@@ -190,6 +191,12 @@ class SyncService:
             log.finished_at = datetime.now(timezone.utc)
             conn.last_sync_at = datetime.now(timezone.utc)
             await self.db.commit()
+            # Push هشدار ترک کار بیمه تکمیلی فقط بعد از commit (اطلاعیه‌ها و نشانه‌ها ذخیره شده‌اند)
+            if self._insurance_pushes:
+                from app.services.insurance_service import schedule_left_pushes
+
+                schedule_left_pushes(self._insurance_pushes)
+                self._insurance_pushes = []
 
         return log
 
@@ -992,7 +999,28 @@ class SyncService:
         await self.db.flush()
         await self._deactivate_linked_users(deactivated_employee_ids, now)
         await self._reactivate_linked_users(reactivated_employee_ids)
+        await self._insurance_on_status_change(deactivated_employee_ids, reactivated_employee_ids)
         return inserted, updated, skipped_inactive, seen_codes, transferred
+
+    async def _insurance_on_status_change(self, deactivated_ids: list[int], reactivated_ids: list[int]) -> None:
+        """
+        بیمه تکمیلی (Migration 116): ثبت‌نام پرسنلِ ترک‌کار حذف نمی‌شود؛ نشانه‌ی ترک کار ثبت و برای دارندگان
+        insurance.view/manage سایت اطلاعیه ساخته می‌شود (Push بعد از commit در run_sync). بازگشت به کار نشانه را پاک می‌کند.
+        Savepoint: خطای این بخش (مثلاً پیش از اجرای Migration 116) Sync را خراب نمی‌کند.
+        """
+        if not deactivated_ids and not reactivated_ids:
+            return
+        from app.services.insurance_service import InsuranceService
+
+        try:
+            async with self.db.begin_nested():
+                service = InsuranceService(self.db)
+                await service.mark_employees_returned(reactivated_ids)
+                items = await service.mark_employees_left(deactivated_ids)
+                if items:
+                    self._insurance_pushes.extend(await service.create_left_notices(items))
+        except Exception:  # هشدار بیمه نباید Sync پرسنل را ناموفق کند
+            logger.exception("ثبت هشدار ترک کار بیمه تکمیلی در Sync ناموفق بود")
 
     async def _reactivate_linked_users(self, employee_ids: list[int]) -> None:
         """
@@ -1130,4 +1158,5 @@ class SyncService:
         await self.db.flush()
         # حساب کاربری پرسنل حذف‌شده از منبع هم غیرفعال می‌شود (نشست‌های باز باطل)
         await self._deactivate_linked_users(deactivated_employee_ids, datetime.now(timezone.utc))
+        await self._insurance_on_status_change(deactivated_employee_ids, [])
         return count

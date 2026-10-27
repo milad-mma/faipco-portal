@@ -98,6 +98,8 @@ class InsuranceRegistrationOut(BaseModel):
     account_owner_national_id: str
     created_at: datetime
     updated_at: datetime
+    employee_left_at: datetime | None = None  # زمان ثبت ترک کار توسط Sync (Migration 116)
+    left_reviewed_at: datetime | None = None  # «بررسی شد» هشدار ترک کار توسط مسئول بیمه
     members: list[InsuranceMemberOut] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -121,6 +123,7 @@ class InsuranceMyStatusOut(BaseModel):
     """همه چیزی که صفحه ثبت‌نام پرسنل لازم دارد: وضعیت ماژول، پرسنل، ثبت‌نام قبلی، نرخ‌ها، فهرست‌ها."""
 
     enabled: bool
+    grant_ends_at: datetime | None = None  # ثبت‌نام سایت بسته، ولی برای این پرسنل تا این زمان باز است (Migration 116)
     employee: InsuranceEmployeeOut | None
     registration: InsuranceRegistrationOut | None
     rate_table: dict
@@ -177,6 +180,9 @@ class InsuranceListItemOut(BaseModel):
     documents_count: int
     non_dependent_count: int = 0  # اعضایی که «تحت کفالت اینجانب نمی‌باشد» زده شده‌اند
     rejected_documents_count: int = 0  # اعضایی که مدرکشان رد شده و هنوز دوباره ثبت نشده‌اند
+    employee_active: bool = True  # False = پرسنل ترک کار کرده (غیرفعال در Sync)؛ ثبت‌نام حذف نمی‌شود
+    employee_left_at: datetime | None = None
+    left_reviewed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -202,6 +208,7 @@ class InsuranceListOut(BaseModel):
     total: int
     registered: int
     eligible: int
+    left_alert_count: int = 0  # ثبت‌نام‌های پرسنل ترک‌کارِ بررسی‌نشده (در سایت‌های مجاز)
 
 
 class InsuranceSiteStatusOut(BaseModel):
@@ -216,3 +223,25 @@ class InsuranceSiteStatusIn(BaseModel):
     """بدنه‌ی PUT /insurance/sites/{site_id}."""
 
     enabled: bool
+
+
+class InsuranceGrantIn(BaseModel):
+    """بازه‌ی ثبت‌نام اختصاصی برای یک پرسنل (حتی وقتی ثبت‌نام سایتش بسته است)."""
+
+    employee_id: int
+    starts_at: datetime
+    ends_at: datetime
+    note: str | None = Field(default=None, max_length=300)
+
+
+class InsuranceGrantOut(BaseModel):
+    id: int
+    employee_id: int
+    personnel_code: str
+    first_name: str
+    last_name: str
+    site_name: str | None = None
+    starts_at: datetime
+    ends_at: datetime
+    note: str | None = None
+    is_current: bool = False

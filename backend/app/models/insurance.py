@@ -42,6 +42,13 @@ class InsuranceRegistration(Base, TimestampMixin):
     account_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     account_owner: Mapped[str] = mapped_column(String(200), nullable=False)
     account_owner_national_id: Mapped[str] = mapped_column(String(10), nullable=False)
+    # ترک کار (Migration 116): ثبت‌نام حذف نمی‌شود؛ هشدار برای مسئول بیمه = پرسنل غیرفعال و left_reviewed_at خالی.
+    # employee_left_at زمانی است که Sync پرسنل را غیرفعال کرد (برای ترک‌کرده‌های قبل از این نسخه خالی است).
+    employee_left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    left_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    left_reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     employee = relationship("Employee")
     members: Mapped[list["InsuranceMember"]] = relationship(
@@ -110,3 +117,21 @@ class InsuranceSiteSetting(Base, TimestampMixin):
 
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), primary_key=True)
     is_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class InsuranceRegistrationGrant(Base, TimestampMixin):
+    """
+    ثبت‌نام اختصاصی (Migration 116): ثبت‌نام/ویرایش برای این پرسنل از starts_at تا ends_at باز است، حتی اگر ثبت‌نام
+    سایتش بسته باشد. هر پرسنل می‌تواند چند بازه داشته باشد؛ بازه‌ای که «الان» داخلش باشد ملاک است.
+    """
+
+    __tablename__ = "insurance_registration_grants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    employee = relationship("Employee")

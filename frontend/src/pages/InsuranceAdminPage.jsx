@@ -31,7 +31,10 @@ import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
+import { useSearchParams } from "react-router-dom";
 import BackLink from "../components/BackLink";
+import EmployeeSearchField from "../components/EmployeeSearchField";
+import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import PillTabs from "../components/PillTabs";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import InsuranceRateInfo from "../components/InsuranceRateInfo";
@@ -48,6 +51,10 @@ import {
   fetchInsuranceSettings,
   fetchInsuranceSiteStatuses,
   rejectInsuranceDocument,
+  reviewInsuranceLeft,
+  fetchInsuranceGrants,
+  addInsuranceGrant,
+  deleteInsuranceGrant,
   setInsuranceSiteEnabled,
   updateInsuranceSettings,
 } from "../api/insurance";
@@ -410,6 +417,8 @@ const MEMBER_FILTERS = [
   { value: "non_dependent", label: "دارای عضو غیر تحت کفالت" },
   { value: "with_documents", label: "دارای مدرک کفالت" },
   { value: "rejected", label: "دارای مدرک ردشده" },
+  { value: "left_unreviewed", label: "ترک کار — بررسی‌نشده" },
+  { value: "left", label: "ترک کار — همه" },
 ];
 
 /**
@@ -417,8 +426,14 @@ const MEMBER_FILTERS = [
  * جدول صفحه‌بندی‌شده و دکمه‌ی خروجی Excel. کلیک روی هر سطر پنجره‌ی جزئیات را باز می‌کند.
  */
 function RegistrationsTab({ canManage }) {
+  const { refetchUser } = useAuth();
+  const [searchParams] = useSearchParams();
   const [siteId, setSiteId] = useState(null);
-  const [memberFilter, setMemberFilter] = useState(""); // فیلتر وضعیت اعضا (MEMBER_FILTERS)
+  // فیلتر وضعیت (MEMBER_FILTERS)؛ لینک اعلان ترک کار (?filter=left) مستقیم «ترک کار — بررسی‌نشده» را باز می‌کند
+  const [memberFilter, setMemberFilter] = useState(() =>
+    searchParams.get("filter") === "left" ? "left_unreviewed" : "",
+  );
+  const [reviewingId, setReviewingId] = useState(null); // ثبت‌نامی که «بررسی شد» آن در حال ارسال است
   const [search, setSearch] = useState(""); // متن داخل فیلد جستجو
   // عبارتی که واقعاً به سرور فرستاده می‌شود: متن جست‌وجو با تأخیر ۳۰۰ میلی‌ثانیه (جست‌وجوی زنده)
   const query = useDebounced(search.trim(), 300);
@@ -444,6 +459,20 @@ function RegistrationsTab({ canManage }) {
       );
   }
   useEffect(load, [query, siteId, memberFilter, page, pageSize]);
+
+  // «بررسی شد» هشدار ترک کار: فهرست و شمارنده‌ی منو (اطلاعات کاربر) بدون رفرش صفحه تازه می‌شوند
+  async function handleReviewLeft(registrationId) {
+    setReviewingId(registrationId);
+    try {
+      await reviewInsuranceLeft(registrationId);
+      load();
+      refetchUser().catch(() => {});
+    } catch (e) {
+      setError(e.response?.data?.detail || "ثبت بررسی با خطا مواجه شد.");
+    } finally {
+      setReviewingId(null);
+    }
+  }
 
   // دانلود Excel ثبت‌نام‌های سایت انتخاب‌شده (یا همه‌ی سایت‌های مجاز)
   async function handleExport() {
@@ -489,7 +518,7 @@ function RegistrationsTab({ canManage }) {
         <TextField
           select
           size="small"
-          label="وضعیت اعضا"
+          label="وضعیت"
           value={memberFilter}
           onChange={(e) => (setMemberFilter(e.target.value), setPage(0))}
           sx={{ minWidth: 200 }}
@@ -518,6 +547,25 @@ function RegistrationsTab({ canManage }) {
           خروجی Excel
         </Button>
       </Stack>
+      {/* هشدار ترک کار: پرسنل ترک‌کارِ دارای ثبت‌نام که هنوز بررسی نشده‌اند (ثبت‌نامشان حذف نمی‌شود) */}
+      {data?.left_alert_count > 0 && memberFilter !== "left_unreviewed" && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 1.5 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => (setMemberFilter("left_unreviewed"), setPage(0))}
+            >
+              نمایش
+            </Button>
+          }
+        >
+          ترک کار {data.left_alert_count.toLocaleString("fa-IR")} نفر از پرسنل دارای بیمه تکمیلی ثبت شده و هنوز بررسی
+          نشده است. ثبت‌نام آن‌ها حذف نشده و در خروجی Excel هم هست.
+        </Alert>
+      )}
       {/* آمار کلی (مستقل از جستجو) */}
       {data && (
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
@@ -624,6 +672,30 @@ function RegistrationsTab({ canManage }) {
                           label={`مدرک ردشده: ${r.rejected_documents_count.toLocaleString("fa-IR")}`}
                         />
                       )}
+                      {/* ترک کار: برچسب قرمز؛ تا «بررسی شد» نخورده در شمارنده‌ی منو حساب می‌شود */}
+                      {!r.employee_active && (
+                        <Chip
+                          size="small"
+                          color="error"
+                          label={
+                            r.employee_left_at
+                              ? `ترک کار (${faDate(r.employee_left_at)})`
+                              : "ترک کار"
+                          }
+                        />
+                      )}
+                      {!r.employee_active && !r.left_reviewed_at && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          onClick={() => handleReviewLeft(r.id)}
+                          disabled={reviewingId === r.id}
+                          sx={{ py: 0, minHeight: 24 }}
+                        >
+                          بررسی شد
+                        </Button>
+                      )}
                     </Stack>
                   </TableCell>
                   <TableCell>{faDate(r.created_at)}</TableCell>
@@ -671,6 +743,185 @@ function RegistrationsTab({ canManage }) {
         />
       )}
     </Box>
+  );
+}
+
+// تاریخ و ساعت شمسی کوتاه برای فهرست بازه‌ها
+const faDateTime = (iso) =>
+  iso
+    ? new Date(iso).toLocaleString("fa-IR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
+/**
+ * تب «ثبت‌نام اختصاصی»: باز کردن ثبت‌نام/ویرایش برای افراد خاص در یک بازه‌ی زمانی، حتی وقتی ثبت‌نام سایتشان بسته
+ * است (insurance.manage برای سایت آن پرسنل). فهرست بازه‌های جاری و آینده با حذف.
+ */
+function GrantsTab() {
+  const [items, setItems] = useState(null);
+  const [showPast, setShowPast] = useState(false);
+  const [employee, setEmployee] = useState(null);
+  const [startsAt, setStartsAt] = useState(() => new Date());
+  const [endsAt, setEndsAt] = useState(() => new Date(Date.now() + 7 * 24 * 3600 * 1000));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [formKey, setFormKey] = useState(0); // با هر ثبت موفق فرم از نو ساخته می‌شود
+
+  function load() {
+    fetchInsuranceGrants(showPast)
+      .then(setItems)
+      .catch((e) => setError(e.response?.data?.detail || "دریافت فهرست با خطا مواجه شد."));
+  }
+  useEffect(load, [showPast]);
+
+  async function handleAdd() {
+    setError("");
+    setSuccess("");
+    setBusy(true);
+    try {
+      await addInsuranceGrant({
+        employee_id: employee.id,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        note: note.trim() || null,
+      });
+      setSuccess(`ثبت‌نام برای ${employee.label} در بازه‌ی انتخاب‌شده باز شد.`);
+      setEmployee(null);
+      setNote("");
+      setStartsAt(new Date());
+      setEndsAt(new Date(Date.now() + 7 * 24 * 3600 * 1000));
+      setFormKey((k) => k + 1);
+      load();
+    } catch (e) {
+      setError(e.response?.data?.detail || "ثبت بازه با خطا مواجه شد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    setError("");
+    try {
+      await deleteInsuranceGrant(id);
+      load();
+    } catch (e) {
+      setError(e.response?.data?.detail || "حذف بازه با خطا مواجه شد.");
+    }
+  }
+
+  return (
+    <Stack spacing={2}>
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+        <Typography fontWeight={700} sx={{ mb: 0.5 }}>
+          باز کردن ثبت‌نام برای یک پرسنل
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          در این بازه، پرسنل انتخاب‌شده می‌تواند ثبت‌نام کند یا ثبت‌نام قبلی‌اش را ویرایش کند (عضو اضافه/حذف، مدرک)،
+          حتی اگر ثبت‌نام سایتش بسته باشد. بعد از پایان بازه دوباره فقط اطلاعاتش را می‌بیند.
+        </Typography>
+        <Stack spacing={2} key={formKey}>
+          <EmployeeSearchField
+            label="پرسنل"
+            value={employee}
+            onChange={setEmployee}
+            sx={{ maxWidth: 420 }}
+          />
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+            <JalaliDateTimePicker label="از" value={startsAt} onChange={setStartsAt} />
+            <JalaliDateTimePicker label="تا" value={endsAt} onChange={setEndsAt} />
+          </Stack>
+          <TextField
+            size="small"
+            label="توضیح (اختیاری)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            inputProps={{ maxLength: 300 }}
+            sx={{ maxWidth: 420 }}
+          />
+          {error && <Alert severity="error">{error}</Alert>}
+          {success && <Alert severity="success">{success}</Alert>}
+          <Box>
+            <Button
+              variant="contained"
+              startIcon={<AddOutlinedIcon />}
+              onClick={handleAdd}
+              disabled={busy || !employee}
+              sx={{ height: 40 }}
+            >
+              باز کردن ثبت‌نام
+            </Button>
+          </Box>
+        </Stack>
+      </Card>
+
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+          <Typography fontWeight={700}>بازه‌های ثبت‌نام اختصاصی</Typography>
+          <FormControlLabel
+            control={<Switch size="small" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} />}
+            label="نمایش بازه‌های گذشته"
+          />
+        </Stack>
+        {!items ? (
+          <CircularProgress size={24} />
+        ) : items.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            بازه‌ای ثبت نشده است.
+          </Typography>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>پرسنل</TableCell>
+                  <TableCell>سایت</TableCell>
+                  <TableCell>از</TableCell>
+                  <TableCell>تا</TableCell>
+                  <TableCell>وضعیت</TableCell>
+                  <TableCell>توضیح</TableCell>
+                  <TableCell align="center">حذف</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {items.map((g) => {
+                  const past = new Date(g.ends_at) <= new Date();
+                  return (
+                    <TableRow key={g.id}>
+                      <TableCell>
+                        {g.first_name} {g.last_name} ({g.personnel_code})
+                      </TableCell>
+                      <TableCell>{g.site_name || "—"}</TableCell>
+                      <TableCell>{faDateTime(g.starts_at)}</TableCell>
+                      <TableCell>{faDateTime(g.ends_at)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          color={g.is_current ? "success" : past ? "default" : "info"}
+                          label={g.is_current ? "باز" : past ? "پایان‌یافته" : "آینده"}
+                        />
+                      </TableCell>
+                      <TableCell>{g.note || "—"}</TableCell>
+                      <TableCell align="center">
+                        <IconButton size="small" color="error" onClick={() => handleDelete(g.id)} aria-label="حذف">
+                          <DeleteOutlineOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Card>
+    </Stack>
   );
 }
 
@@ -848,6 +1099,11 @@ function SettingsTab() {
               همان‌طور که در بخش ۴ فرم ثبت‌نام به پرسنل نمایش داده می‌شود. مبالغ
               عدد بدون جداکننده.
             </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              ستون «مبلغ حق بیمه» خروجی Excel از همین جدول و سن هر نفر (در روز گرفتن خروجی) محاسبه می‌شود: شخص اصلی و
+              اعضای تحت تکفل با نرخ «تحت تکفل»، اعضای غیر تحت تکفل با نرخ «غیر تحت تکفل». «سن از / تا» (سال کامل) را
+              اگر خالی بگذارید از متن بازه حدس زده می‌شود (مثلاً «۱ تا ۶۰ سال» یا «بالاتر از ۷۱ سال»).
+            </Alert>
             <Grid container spacing={1.5} sx={{ mb: 2 }}>
               <Grid item xs={6} md={3}>
                 <TextField
@@ -909,6 +1165,26 @@ function SettingsTab() {
                     value={row.age_label}
                     onChange={(e) => setRow(i, "age_label", e.target.value)}
                     sx={{ minWidth: 180 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="سن از"
+                    type="number"
+                    value={row.age_from ?? ""}
+                    onChange={(e) => setRow(i, "age_from", e.target.value)}
+                    inputProps={{ dir: "ltr", min: 0 }}
+                    placeholder="خودکار"
+                    sx={{ width: 90 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="سن تا"
+                    type="number"
+                    value={row.age_to ?? ""}
+                    onChange={(e) => setRow(i, "age_to", e.target.value)}
+                    inputProps={{ dir: "ltr", min: 0 }}
+                    placeholder="بی‌انتها"
+                    sx={{ width: 90 }}
                   />
                   <TextField
                     size="small"
@@ -1214,6 +1490,7 @@ export default function InsuranceAdminPage() {
   const canManage = Boolean(user?.can_manage_insurance);
   const [tab, setTab] = useState("list");
   const tabs = [{ key: "list", label: "ثبت‌نام‌ها" }];
+  if (canManage) tabs.push({ key: "grants", label: "ثبت‌نام اختصاصی" });
   if (canManage) tabs.push({ key: "settings", label: "تنظیمات" });
 
   return (
@@ -1229,6 +1506,8 @@ export default function InsuranceAdminPage() {
       <PillTabs value={tab} onChange={setTab} tabs={tabs} sx={{ mb: 2 }} />
       {tab === "list" ? (
         <RegistrationsTab canManage={canManage} />
+      ) : tab === "grants" ? (
+        <GrantsTab />
       ) : (
         <SettingsTab />
       )}

@@ -454,10 +454,26 @@ class AuthService:
         try:
             from app.services.insurance_service import InsuranceService
 
-            employee_site_id = row[0].site_id if row is not None else None
-            base.insurance_disabled = not await InsuranceService(self.db).is_site_enabled(employee_site_id)
+            # باز = ثبت‌نام سایت باز، یا بازه‌ی ثبت‌نام اختصاصی همین پرسنل (Migration 116؛ Savepoint تا پیش از
+            # اجرای Migration ورود خراب نشود)
+            async with self.db.begin_nested():
+                base.insurance_disabled = not await InsuranceService(self.db).can_register(
+                    row[0] if row is not None else None
+                )
         except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
             base.insurance_disabled = False
+        # شمارنده‌ی هشدار ترک کار در منوی «بیمه تکمیلی» (پرسنل ترک‌کارِ دارای ثبت‌نام که هنوز بررسی نشده)
+        if base.can_view_insurance:
+            try:
+                from app.services.insurance_service import InsuranceService
+
+                view_sites = await get_sites_with_permission(self.db, user, "insurance.view")
+                manage_sites = await get_sites_with_permission(self.db, user, "insurance.manage")
+                sites = None if view_sites is None or manage_sites is None else (view_sites | manage_sites)
+                async with self.db.begin_nested():
+                    base.insurance_left_alerts = await InsuranceService(self.db).left_alert_count(sites)
+            except Exception:  # noqa: BLE001
+                base.insurance_left_alerts = 0
         # ماژول وام به‌ازای سایتِ پرسنل (Migration 107)
         try:
             from app.services.loan_service import LoanService

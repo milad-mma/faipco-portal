@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Chip,
   Collapse,
   Dialog,
   DialogActions,
@@ -55,7 +56,7 @@ import { updateMyBirthdayVisibility } from "../api/employees";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import EditContactInfoDialog from "../components/EditContactInfoDialog";
 import MyDevicesDialog from "../components/MyDevicesDialog";
-import { NAV_ITEMS } from "../config/navItems";
+import { NAV_ITEMS, itemBadge } from "../config/navItems";
 
 /**
  * «دسترسی‌های ویژه» این صفحه: مقصدهایی که کاربر غیر-Admin (که فقط نوار پایین را می‌بیند،
@@ -234,6 +235,9 @@ export default function ProfilePage() {
                   <ListItemButton onClick={() => toggleGroup(group.label)}>
                     <ListItemIcon>{group.icon}</ListItemIcon>
                     <ListItemText primary={group.label} />
+                    {itemBadge(group, user) > 0 && (
+                      <Chip size="small" color="error" label={itemBadge(group, user).toLocaleString("fa-IR")} sx={{ mx: 1 }} />
+                    )}
                     {expandedGroups[group.label] ? (
                       <ExpandLessIcon />
                     ) : (
@@ -254,6 +258,9 @@ export default function ProfilePage() {
                         >
                           <ListItemIcon>{child.icon}</ListItemIcon>
                           <ListItemText primary={child.label} />
+                          {itemBadge(child, user) > 0 && (
+                            <Chip size="small" color="error" label={itemBadge(child, user).toLocaleString("fa-IR")} />
+                          )}
                         </ListItemButton>
                       ))}
                     </List>

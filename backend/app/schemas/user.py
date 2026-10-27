@@ -78,6 +78,7 @@ class UserOut(BaseModel):
     can_admin_advances: bool = False  # advances.policy / advances.finance / advances.view — پنل مدیریت مساعده
     advances_disabled: bool = True  # ماژول مساعده برای سایت پرسنل فعال نیست
     insurance_disabled: bool = False  # ماژول بیمه تکمیلی از پنل غیرفعال شده (کاشی «غیرفعال»)
+    insurance_left_alerts: int = 0  # ثبت‌نام‌های پرسنل ترک‌کارِ بررسی‌نشده (شمارنده‌ی منوی «بیمه تکمیلی»)
     can_view_sync: bool = False  # sync.view — مشاهده وضعیت همگام‌سازی (فقط‌خواندنی)
     can_run_sync: bool = False  # sync.run — اجرای همگام‌سازی یک سایت
     can_bust_cache: bool = False  # system.cache_bust — پاک‌سازی Cache سرور

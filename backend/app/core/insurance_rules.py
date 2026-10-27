@@ -363,3 +363,96 @@ def validate_members(members: list[dict], employee: dict, main_marital: int, mai
             }
         )
     return result
+
+
+# ---------- مبلغ حق بیمه (ستون‌های خروجی Excel) ----------
+# جدول نرخ تنظیمات: هر سطر {age_label, age_from?, age_to?, non_dependent, dependent}. age_from/age_to (سال کامل،
+# شامل دو سر) اختیاری‌اند؛ اگر خالی باشند از متن برچسب حدس زده می‌شوند: «۱ تا ۶۰ سال» → ۱..۶۰،
+# «بالاتر از ۷۱ سال» / «۷۱ سال به بالا» → ۷۱ به بالا، «تا ۶۰ سال» → ۰..۶۰.
+
+
+def parse_age_range(row: dict) -> tuple[int | None, int | None]:
+    """بازه‌ی سنی یک سطر جدول نرخ: (از، تا)؛ None = بی‌کران. مقدار عددی صریح بر برچسب مقدم است."""
+
+    def as_int(v):
+        try:
+            return int(to_english_digits(str(v)).strip()) if str(v if v is not None else "").strip() != "" else None
+        except (TypeError, ValueError):
+            return None
+
+    lo, hi = as_int(row.get("age_from")), as_int(row.get("age_to"))
+    if lo is not None or hi is not None:
+        return lo, hi
+    label = to_english_digits(str(row.get("age_label") or ""))
+    nums = [int(n) for n in re.findall(r"\d+", label)]
+    if len(nums) >= 2:
+        return min(nums[0], nums[1]), max(nums[0], nums[1])
+    if len(nums) == 1:
+        n = nums[0]
+        if any(w in label for w in ("بالاتر", "بیشتر", "به بالا", "بالای", "+")):
+            return n, None
+        if any(w in label for w in ("کمتر", "زیر")):
+            return None, max(n - 1, 0)
+        if "تا" in label:
+            return None, n
+        return n, n
+    return None, None
+
+
+def age_in_years(birth_date: str | None, today: tuple[int, int, int]) -> int | None:
+    """سن کامل (سال) از تاریخ تولد شمسی («1370/05/21» یا «13700521») تا امروز شمسی؛ تاریخ نامعتبر → None."""
+    text = format_jalali_compact(birth_date or "")
+    m = re.fullmatch(r"(\d{4})/(\d{1,2})/(\d{1,2})", text)
+    if not m:
+        return None
+    y, mo, d = (int(x) for x in m.groups())
+    ty, tm, td = today
+    age = ty - y - (1 if (tm, td) < (mo, d) else 0)
+    return max(age, 0)
+
+
+def premium_amount(age: int | None, dependent: bool, rate_table: dict) -> int | None:
+    """
+    مبلغ حق بیمه‌ی یک نفر از جدول نرخ: سطری که سن داخل بازه‌اش است (ستون «تحت تکفل» یا «غیر تحت تکفل»).
+    سن کمتر از همه‌ی سطرها (مثلاً نوزاد زیر ۱ سال) → سطر اول؛ بیشتر از همه → سطر آخر. سن نامعلوم یا جدول خالی → None.
+    """
+    rows = (rate_table or {}).get("rows") or []
+    if age is None or not rows:
+        return None
+    column = "dependent" if dependent else "non_dependent"
+    ranged = []
+    for row in rows:
+        lo, hi = parse_age_range(row)
+        ranged.append((lo, hi, row))
+        if (lo is None or age >= lo) and (hi is None or age <= hi):
+            return int(row.get(column) or 0)
+    lows = [lo for lo, _hi, _r in ranged if lo is not None]
+    if lows and age < min(lows):
+        return int(min((r for r in ranged if r[0] is not None), key=lambda r: r[0])[2].get(column) or 0)
+    highs = [hi for _lo, hi, _r in ranged if hi is not None]
+    if highs and age > max(highs):
+        return int(max((r for r in ranged if r[1] is not None), key=lambda r: r[1])[2].get(column) or 0)
+    return None
+
+
+def member_is_dependent(member_type: str, kafala_status: str | None, dependency_code: int | None) -> bool:
+    """
+    نرخ «تحت تکفل» یا «غیر تحت تکفل» برای یک عضو: «غیر تحت کفالت» (kafala_status=no، مثل خانواده‌ی پرسنل زن بدون
+    مدرک) یا کد تکفل ۲ → غیر تحت تکفل؛ بقیه تحت تکفل. شخص اصلی همیشه نرخ «تحت تکفل» را دارد (سهم ۵۰٪ شرکت).
+    """
+    if member_type == "self":
+        return True
+    return not (kafala_status == "no" or dependency_code == DEPENDENCY_NON_DEPENDENT)
+
+
+def family_premiums(people: list[dict], rate_table: dict, today: tuple[int, int, int]) -> tuple[list[int | None], int]:
+    """
+    مبلغ حق بیمه‌ی هر نفرِ یک ثبت‌نام و جمع کل خانواده. people: به ترتیب سطرهای Excel (اول شخص اصلی با
+    member_type="self")، هر کدام {member_type, kafala_status, dependency_code, birth_date}. مبلغ نامعلوم (تاریخ تولد
+    نامعتبر) None است و در جمع حساب نمی‌شود.
+    """
+    amounts: list[int | None] = []
+    for p in people:
+        dependent = member_is_dependent(p.get("member_type") or "", p.get("kafala_status"), p.get("dependency_code"))
+        amounts.append(premium_amount(age_in_years(p.get("birth_date"), today), dependent, rate_table))
+    return amounts, sum(a for a in amounts if a is not None)

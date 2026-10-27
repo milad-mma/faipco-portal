@@ -49,7 +49,34 @@ import MobileAppGate from "./MobileAppGate";
 import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
-import { NAV_ITEMS, isItemVisible } from "../config/navItems";
+import { NAV_ITEMS, isItemVisible, itemBadge } from "../config/navItems";
+
+// شمارنده‌ی هشدار کنار عنوان منو (مثلاً ترک کار پرسنل دارای بیمه تکمیلی)؛ صفر = چیزی نمایش داده نمی‌شود
+function MenuCount({ value }) {
+  if (!value) return null;
+  return (
+    <Box
+      component="span"
+      sx={{
+        minWidth: 20,
+        height: 20,
+        px: 0.75,
+        borderRadius: 10,
+        bgcolor: "error.main",
+        color: "#fff",
+        fontSize: 12,
+        fontWeight: 700,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        marginInlineStart: 0.5,
+      }}
+    >
+      {value.toLocaleString("fa-IR")}
+    </Box>
+  );
+}
 
 const DRAWER_WIDTH = 260;  // عرض منوی کناری (px)؛ عرض AppBar و main هم بر اساس آن محاسبه می‌شود
 
@@ -241,6 +268,7 @@ export default function Layout() {
                     primary={item.label}
                     primaryTypographyProps={{ fontWeight: groupActive ? 700 : 600, fontSize: 14.5 }}
                   />
+                  <MenuCount value={itemBadge(item, user)} />
                   <ExpandMoreIcon
                     fontSize="small"
                     sx={{
@@ -260,6 +288,7 @@ export default function Layout() {
                 >
                   <ListItemIcon sx={{ color: isActive ? SB.accent : SB.muted, minWidth: 36 }}>{item.icon}</ListItemIcon>
                   <ListItemText primary={item.label} primaryTypographyProps={{ fontWeight: isActive ? 700 : 600, fontSize: 14.5 }} />
+                  <MenuCount value={itemBadge(item, user)} />
                 </ListItemButton>
               )}
 
@@ -304,6 +333,7 @@ export default function Layout() {
                             primary={child.label}
                             primaryTypographyProps={{ fontSize: 13.5, fontWeight: isChildActive ? 700 : 500, noWrap: true }}
                           />
+                          <MenuCount value={itemBadge(child, user)} />
                         </ListItemButton>
                       );
                     })}

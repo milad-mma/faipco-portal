@@ -15,9 +15,9 @@ import asyncio
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
@@ -26,7 +26,13 @@ from app.core import insurance_rules as rules
 from app.core.document_sanitizer import DocumentRejected, sanitize_document, sanitize_file_name
 from app.core.document_sanitizer import sniff_content_type as _sniff_content_type
 from app.models.employee import Department, Employee
-from app.models.insurance import InsuranceDocument, InsuranceMember, InsuranceRegistration, InsuranceSiteSetting
+from app.models.insurance import (
+    InsuranceDocument,
+    InsuranceMember,
+    InsuranceRegistration,
+    InsuranceRegistrationGrant,
+    InsuranceSiteSetting,
+)
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.site import Site
 from app.models.system_setting import SystemSetting
@@ -155,7 +161,17 @@ class InsuranceService:
             except (TypeError, ValueError):
                 continue  # مبلغ غیرعددی → این سطر نادیده گرفته می‌شود
             if label:
-                rows.append({"age_label": label, "non_dependent": max(0, non_dep), "dependent": max(0, dep)})
+                row = {"age_label": label, "non_dependent": max(0, non_dep), "dependent": max(0, dep)}
+                # بازه‌ی سنی عددی (اختیاری؛ برای مبلغ حق بیمه در خروجی Excel). خالی = حدس از متن برچسب
+                for key in ("age_from", "age_to"):
+                    raw = r.get(key)
+                    if raw is None or str(raw).strip() == "":
+                        continue
+                    try:
+                        row[key] = max(0, min(150, int(rules.to_english_digits(str(raw)).strip())))
+                    except (TypeError, ValueError):
+                        continue
+                rows.append(row)
         if not rows:
             return None
         # عنوان ستون‌ها و واحد پول با مقدار پیش‌فرض در صورت خالی بودن
@@ -229,8 +245,12 @@ class InsuranceService:
         """
         settings = await self.get_settings()
         registration = await self.get_registration(employee.id) if employee else None
+        site_enabled = await self.is_site_enabled(employee.site_id) if employee else False
+        # ثبت‌نام سایت بسته ولی بازه‌ی اختصاصی برای همین پرسنل باز است (Migration 116)
+        grant = None if site_enabled or employee is None else await self.active_grant(employee.id)
         return {
-            "enabled": await self.is_site_enabled(employee.site_id) if employee else False,
+            "enabled": site_enabled or grant is not None,
+            "grant_ends_at": grant.ends_at if grant else None,
             "employee": self.employee_view(employee) if employee else None,
             "registration": registration,
             "rate_table": settings["rate_table"],
@@ -252,8 +272,10 @@ class InsuranceService:
         فایل به یک عضو موقت (pending) در ثبت‌نام همین پرسنل وصل می‌شود تا هنگام
         ثبت نهایی فرم به عضو واقعی منتقل شود.
         """
-        if not await self.is_site_enabled(employee.site_id):
-            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی برای سایت شما در حال حاضر غیرفعال است.")
+        if not await self.can_register(employee):
+            raise InsuranceDisabledError(
+                "ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است. برای تغییرات به واحد منابع انسانی مراجعه نمائید."
+            )
         if len(content) > rules.DOCUMENT_MAX_BYTES:
             raise InsuranceError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد.")
         # نوع فایل از امضای بایت‌های ابتدایی تشخیص داده می‌شود، نه از پسوند یا Content-Type
@@ -366,8 +388,10 @@ class InsuranceService:
         قبلی با اعضای فرم جدید جایگزین می‌شوند. مدارکی که در فرم جدید ارجاع
         داده شده‌اند به عضو جدید منتقل می‌شوند؛ بقیه همراه عضو قبلی حذف می‌شوند.
         """
-        if not await self.is_site_enabled(employee.site_id):
-            raise InsuranceDisabledError("ثبت‌نام بیمه تکمیلی برای سایت شما در حال حاضر غیرفعال است.")
+        if not await self.can_register(employee):
+            raise InsuranceDisabledError(
+                "ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است. برای تغییرات به واحد منابع انسانی مراجعه نمائید."
+            )
         view = self.employee_view(employee)
         if view.missing:
             raise InsuranceError(
@@ -562,20 +586,34 @@ class InsuranceService:
                 documents_count=docs_count.get(reg.id, 0),
                 non_dependent_count=non_dependent_count.get(reg.id, 0),
                 rejected_documents_count=rejected_count.get(reg.id, 0),
+                employee_active=bool(emp.is_active),
+                employee_left_at=reg.employee_left_at,
+                left_reviewed_at=reg.left_reviewed_at,
                 created_at=reg.created_at,
                 updated_at=reg.updated_at,
             )
             for reg, emp, site_id, site_name, department_name in rows
         ]
-        return InsuranceListOut(items=items, total=total, registered=registered, eligible=eligible)
+        return InsuranceListOut(
+            items=items,
+            total=total,
+            registered=registered,
+            eligible=eligible,
+            left_alert_count=await self.left_alert_count(site_ids),
+        )
 
     @staticmethod
     def _member_filter_condition(member_filter: str | None):
         """
         شرط SQL فیلتر فهرست ثبت‌نام‌ها بر اساس اعضا؛ مقدار ناشناخته یا خالی → None (بدون فیلتر).
         non_dependent: حداقل یک عضو «غیر تحت کفالت»؛ with_documents: حداقل یک عضو دارای مدرک؛
-        rejected: حداقل یک عضو که مدرکش رد شده است.
+        rejected: حداقل یک عضو که مدرکش رد شده است. left: پرسنل ترک کار کرده (غیرفعال)؛
+        left_unreviewed: ترک‌کرده‌هایی که هشدارشان هنوز «بررسی شد» نخورده (همان شمارنده‌ی منو).
         """
+        if member_filter == "left":
+            return Employee.is_active.is_(False)
+        if member_filter == "left_unreviewed":
+            return (Employee.is_active.is_(False)) & (InsuranceRegistration.left_reviewed_at.is_(None))
         member_exists = (
             select(InsuranceMember.id)
             .where(
@@ -670,10 +708,16 @@ class InsuranceService:
     async def export_xlsx(self, site_ids: set[int] | None) -> bytes:
         """
         خروجی Excel ثبت‌نام‌ها را می‌سازد و بایت‌های فایل xlsx را برمی‌گرداند.
-        هر شخص (بیمه‌شده‌ی اصلی و هر عضو خانواده) یک سطر ۲۹ ستونی است:
-        ۷ ستون کد ثابت + ۱۲ ستون مشخصات فرد + ۱۰ ستون حساب/ارجاع به شخص اصلی.
+        هر شخص (بیمه‌شده‌ی اصلی و هر عضو خانواده) یک سطر ۳۱ ستونی است:
+        ۷ ستون کد ثابت + ۱۲ ستون مشخصات فرد + ۱۰ ستون حساب/ارجاع به شخص اصلی
+        + «مبلغ حق بیمه» (از جدول نرخ تنظیمات، سن امروز و تحت تکفل بودن) + «جمع حق بیمه خانواده» (فقط در سطر شخص اصلی).
         """
         from openpyxl import Workbook
+
+        from app.core.persian_date import get_current_jalali_date
+
+        rate_table = (await self.get_settings())["rate_table"]
+        today = get_current_jalali_date()
 
         q = (
             select(InsuranceRegistration)
@@ -714,6 +758,8 @@ class InsuranceService:
                 "کد نسبت", "کد تکفل", "تاریخ استخدام", "شماره بیمه", "کد بانک", "شماره حساب",
                 "شماره شبا", "نوع حساب", "نام صاحب حساب", "کد ملی صاحب حساب",
                 "کد پرسنلی اصلی", "کد ملی اصلی",
+                f"مبلغ حق بیمه ({rate_table.get('unit') or 'تومان'})",
+                f"جمع حق بیمه پرسنل و اعضا ({rate_table.get('unit') or 'تومان'})",
             ]  # fmt: skip
             ws.append(headers)
 
@@ -724,15 +770,22 @@ class InsuranceService:
                      reg.marital_status, reg.national_id, reg.birth_certificate_no, reg.mobile_number,
                      rules.RELATION_SELF, rules.DEPENDENCY_SELF)
                 ]  # fmt: skip
+                # ورودی محاسبه‌ی حق بیمه به همان ترتیب سطرها (شخص اصلی اول)
+                premium_input = [{"member_type": "self", "birth_date": reg.birth_date}]
                 for m in reg.members:
                     if m.member_type == "pending":
                         continue
+                    premium_input.append(
+                        {"member_type": m.member_type, "kafala_status": m.kafala_status,
+                         "dependency_code": m.dependency_code, "birth_date": m.birth_date}
+                    )  # fmt: skip
                     people.append(
                         (reg.personnel_code, m.first_name, m.last_name, m.father_name, m.birth_date, m.gender,
                          m.marital_status, m.national_id, m.birth_certificate_no, m.mobile_number,
                          m.relation_code, m.dependency_code)
                     )  # fmt: skip
-                for p in people:
+                amounts, family_total = rules.family_premiums(premium_input, rate_table, today)
+                for index, p in enumerate(people):
                     (code, fn, ln, father, bdate, gender, marital, nid, cert, mobile, rel, dep) = p
                     row = shared(reg) + [
                         code, fn, ln, father, bdate,
@@ -740,7 +793,12 @@ class InsuranceService:
                         "مجرد" if marital == rules.MARITAL_SINGLE else "متاهل",
                         nid, cert, mobile, str(rel), str(dep),
                     ] + tail(reg)  # fmt: skip
-                    ws.append([str(v) for v in row])  # همه‌ی مقادیر رشته تا صفر ابتدایی کدها حفظ شود
+                    # همه‌ی مقادیر رشته تا صفر ابتدایی کدها حفظ شود؛ مبالغ عدد تا در Excel قابل جمع باشند
+                    # (مبلغ نامعلوم به‌خاطر تاریخ تولد نامعتبر = خالی). جمع خانواده فقط در سطر شخص اصلی
+                    ws.append(
+                        [str(v) for v in row]
+                        + [amounts[index] if amounts[index] is not None else "", family_total if index == 0 else ""]
+                    )
             for col in ws.columns:
                 ws.column_dimensions[col[0].column_letter].width = 16
             out = io.BytesIO()
@@ -749,6 +807,255 @@ class InsuranceService:
 
         # ساخت Excel در Thread جدا تا حلقه‌ی async معطل نشود
         return await asyncio.to_thread(_build)
+
+    # ---------- ثبت‌نام اختصاصی افراد خاص (Migration 116) ----------
+
+    async def active_grant(self, employee_id: int | None) -> InsuranceRegistrationGrant | None:
+        """بازه‌ی ثبت‌نام اختصاصی که «الان» داخلش است (اگر چند تا، دیرترین پایان)؛ نبود → None."""
+        if employee_id is None:
+            return None
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(InsuranceRegistrationGrant)
+            .where(
+                InsuranceRegistrationGrant.employee_id == employee_id,
+                InsuranceRegistrationGrant.starts_at <= now,
+                InsuranceRegistrationGrant.ends_at > now,
+            )
+            .order_by(InsuranceRegistrationGrant.ends_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def can_register(self, employee: Employee | None) -> bool:
+        """ثبت‌نام/ویرایش برای این پرسنل باز است؟ ثبت‌نام سایتش باز، یا یک بازه‌ی اختصاصی فعال دارد."""
+        if employee is None:
+            return False
+        if await self.is_site_enabled(employee.site_id):
+            return True
+        return await self.active_grant(employee.id) is not None
+
+    async def list_grants(self, site_ids: set[int] | None, include_past: bool = False) -> list[dict]:
+        """بازه‌های ثبت‌نام اختصاصی (جاری و آینده؛ include_past → همه) در سایت‌های مجاز، جدیدترین اول."""
+        now = datetime.now(timezone.utc)
+        q = (
+            select(InsuranceRegistrationGrant, Employee, Site.name)
+            .join(Employee, Employee.id == InsuranceRegistrationGrant.employee_id)
+            .outerjoin(Site, Site.id == Employee.site_id)
+            .order_by(InsuranceRegistrationGrant.starts_at.desc())
+            .limit(500)
+        )
+        if site_ids is not None:
+            q = q.where(Employee.site_id.in_(site_ids))
+        if not include_past:
+            q = q.where(InsuranceRegistrationGrant.ends_at > now)
+        rows = (await self.db.execute(q)).all()
+        return [
+            {
+                "id": g.id,
+                "employee_id": emp.id,
+                "personnel_code": emp.personnel_code,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "site_name": site_name,
+                "starts_at": g.starts_at,
+                "ends_at": g.ends_at,
+                "note": g.note,
+                "is_current": g.starts_at <= now < g.ends_at,
+            }
+            for g, emp, site_name in rows
+        ]
+
+    async def add_grant(
+        self, employee: Employee, starts_at: datetime, ends_at: datetime, note: str | None, user: User
+    ) -> InsuranceRegistrationGrant:
+        """بازه‌ی ثبت‌نام اختصاصی برای یک پرسنل؛ پایان باید بعد از شروع و در آینده باشد (حداکثر یک سال)."""
+        if starts_at.tzinfo is None:
+            starts_at = starts_at.replace(tzinfo=timezone.utc)
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+        if ends_at <= starts_at:
+            raise InsuranceError("زمان پایان باید بعد از زمان شروع باشد.")
+        if ends_at <= datetime.now(timezone.utc):
+            raise InsuranceError("زمان پایان گذشته است.")
+        if ends_at - starts_at > timedelta(days=366):
+            raise InsuranceError("بازه‌ی ثبت‌نام اختصاصی حداکثر یک سال است.")
+        grant = InsuranceRegistrationGrant(
+            employee_id=employee.id,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            note=(note or "").strip()[:300] or None,
+            created_by_user_id=user.id,
+        )
+        self.db.add(grant)
+        await self.db.commit()
+        await self.db.refresh(grant)
+        return grant
+
+    async def delete_grant(self, grant_id: int, site_ids: set[int] | None) -> bool:
+        """حذف (یا پایان زودهنگام) یک بازه؛ خارج از سایت‌های مجاز یا ناموجود → False."""
+        row = (
+            await self.db.execute(
+                select(InsuranceRegistrationGrant, Employee.site_id)
+                .join(Employee, Employee.id == InsuranceRegistrationGrant.employee_id)
+                .where(InsuranceRegistrationGrant.id == grant_id)
+            )
+        ).first()
+        if row is None or (site_ids is not None and row[1] not in site_ids):
+            return False
+        await self.db.delete(row[0])
+        await self.db.commit()
+        return True
+
+    # ---------- ترک کار پرسنل دارای ثبت‌نام (Migration 116) ----------
+    # ثبت‌نام با ترک کار حذف نمی‌شود. Sync پرسنل (غیرفعال شدن) mark_employees_left را صدا می‌زند: زمان ترک ثبت و
+    # بررسی قبلی پاک می‌شود و برای دارندگان insurance.view / insurance.manage همان سایت اطلاعیه و Push ساخته می‌شود.
+    # هشدار منو = پرسنل غیرفعالِ دارای ثبت‌نام که مسئول بیمه هنوز «بررسی شد» را نزده است.
+
+    LEFT_URL = "/insurance/admin?filter=left"
+
+    def _left_alert_condition(self):
+        return (Employee.is_active.is_(False)) & (InsuranceRegistration.left_reviewed_at.is_(None))
+
+    async def left_alert_count(self, site_ids: set[int] | None) -> int:
+        """تعداد ثبت‌نام‌های پرسنل ترک‌کار بررسی‌نشده (شمارنده‌ی منوی «بیمه تکمیلی»)."""
+        q = (
+            select(func.count())
+            .select_from(InsuranceRegistration)
+            .join(Employee, Employee.id == InsuranceRegistration.employee_id)
+            .where(self._left_alert_condition())
+        )
+        if site_ids is not None:
+            q = q.where(Employee.site_id.in_(site_ids))
+        return int((await self.db.execute(q)).scalar_one() or 0)
+
+    async def mark_employees_left(self, employee_ids: list[int]) -> list[dict]:
+        """
+        Sync این پرسنل را غیرفعال کرد: روی ثبت‌نامشان (اگر دارند) زمان ترک ثبت و بررسی قبلی پاک می‌شود (بدون commit؛
+        در تراکنش Sync). خروجی: [{site_id, label}] برای اطلاعیه.
+        """
+        if not employee_ids:
+            return []
+        rows = (
+            await self.db.execute(
+                select(InsuranceRegistration, Employee)
+                .join(Employee, Employee.id == InsuranceRegistration.employee_id)
+                .where(InsuranceRegistration.employee_id.in_(employee_ids))
+            )
+        ).all()
+        now = datetime.now(timezone.utc)
+        out = []
+        for reg, emp in rows:
+            reg.employee_left_at = now
+            reg.left_reviewed_at = None
+            reg.left_reviewed_by_user_id = None
+            out.append({"site_id": emp.site_id, "label": f"{emp.first_name} {emp.last_name} ({emp.personnel_code})"})
+        await self.db.flush()
+        return out
+
+    async def mark_employees_returned(self, employee_ids: list[int]) -> None:
+        """بازگشت به کار (دوباره فعال در Sync): نشانه‌ی ترک کار پاک می‌شود تا ترک بعدی از نو هشدار بدهد. بدون commit."""
+        if not employee_ids:
+            return
+        regs = (
+            await self.db.execute(
+                select(InsuranceRegistration).where(
+                    InsuranceRegistration.employee_id.in_(employee_ids),
+                    or_(
+                        InsuranceRegistration.employee_left_at.is_not(None),
+                        InsuranceRegistration.left_reviewed_at.is_not(None),
+                    ),
+                )
+            )
+        ).scalars().all()
+        for reg in regs:
+            reg.employee_left_at = None
+            reg.left_reviewed_at = None
+            reg.left_reviewed_by_user_id = None
+        await self.db.flush()
+
+    async def _left_recipients(self, site_id: int | None) -> set[int]:
+        """کاربران فعالی که insurance.view یا insurance.manage را برای این سایت (یا سراسری) دارند."""
+        from app.core.permission_grants import grants_subquery
+
+        g = grants_subquery()
+        site_cond = g.c.site_id.is_(None) if site_id is None else or_(g.c.site_id.is_(None), g.c.site_id == site_id)
+        result = await self.db.execute(
+            select(g.c.user_id)
+            .join(User, User.id == g.c.user_id)
+            .where(g.c.code.in_(("insurance.view", "insurance.manage")), site_cond, User.is_active.is_(True))
+            .distinct()
+        )
+        return {row[0] for row in result.all()}
+
+    async def create_left_notices(self, items: list[dict]) -> list[tuple[set[int], str]]:
+        """
+        برای هر سایت یک اطلاعیه‌ی شخصی (منتشرشده) به دارندگان مجوز بیمه‌ی همان سایت می‌سازد (بدون commit). خروجی:
+        [(user_ids, متن Push)] برای ارسال بعد از commit. کاربر بدون پرسنل (مثل admin) فقط Push و شمارنده‌ی منو را دارد.
+        """
+        by_site: dict[int | None, list[str]] = {}
+        for item in items:
+            by_site.setdefault(item["site_id"], []).append(item["label"])
+        pushes: list[tuple[set[int], str]] = []
+        for site_id, labels in by_site.items():
+            user_ids = await self._left_recipients(site_id)
+            if not user_ids:
+                continue
+            title = "ترک کار پرسنل دارای بیمه تکمیلی"
+            body = (
+                "ترک کار پرسنل زیر ثبت شد. ثبت‌نام بیمه تکمیلی آن‌ها حذف نشده و همچنان در فهرست و خروجی Excel است؛ "
+                "لطفاً در «پرسنل و سازمان ← بیمه تکمیلی» (فیلتر «ترک کار») بررسی کنید:\n"
+                + "\n".join(f"• {label}" for label in labels[:100])
+                + (f"\n… و {len(labels) - 100} نفر دیگر" if len(labels) > 100 else "")
+            )
+            employee_ids = set(
+                (
+                    await self.db.execute(
+                        select(User.employee_id).where(User.id.in_(user_ids), User.employee_id.is_not(None))
+                    )
+                ).scalars().all()
+            )
+            # فرستنده‌ی اطلاعیه‌ی سیستمی: ادمین اصلی (مثل پیام تبریک تولد)؛ نبود ادمین → یکی از گیرندگان
+            sender_id = (
+                await self.db.execute(
+                    select(User.id).where(User.is_superuser.is_(True)).order_by(User.id).limit(1)
+                )
+            ).scalar_one_or_none() or min(user_ids)
+            if employee_ids:
+                notice = Notice(
+                    sender_id=sender_id,
+                    title=title,
+                    body=body,
+                    priority=NoticePriority.high,
+                    status=NoticeStatus.published,
+                    notice_type=NoticeType.normal,
+                    publish_at=datetime.now(timezone.utc),
+                )
+                self.db.add(notice)
+                await self.db.flush()
+                for emp_id in employee_ids:
+                    self.db.add(
+                        NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=emp_id)
+                    )
+            count = len(labels)
+            push_body = (
+                f"ترک کار {labels[0]} ثبت شد؛ ثبت‌نام بیمه تکمیلی او را بررسی کنید."
+                if count == 1
+                else f"ترک کار {count} نفر از پرسنل دارای بیمه تکمیلی ثبت شد؛ بررسی کنید."
+            )
+            pushes.append((user_ids, push_body))
+        await self.db.flush()
+        return pushes
+
+    async def review_left(self, registration_id: int, site_ids: set[int] | None, user: User) -> bool:
+        """«بررسی شد» برای هشدار ترک کار یک ثبت‌نام (شمارنده‌ی منو کم می‌شود). خارج از سایت‌ها/ناموجود → False."""
+        registration = await self.get_registration_by_id(registration_id, site_ids)
+        if registration is None:
+            return False
+        registration.left_reviewed_at = datetime.now(timezone.utc)
+        registration.left_reviewed_by_user_id = user.id
+        await self.db.commit()
+        return True
 
     # ---------- کمکی ----------
 
@@ -848,3 +1155,33 @@ class InsuranceService:
         if removed:
             await self.db.commit()
         return removed
+
+
+_left_push_tasks: set = set()
+
+
+def schedule_left_pushes(pushes: list[tuple[set[int], str]]) -> None:
+    """Push هشدار ترک کار بعد از commit تراکنش Sync؛ در پس‌زمینه با نشست جدا (خطا فقط لاگ می‌شود)."""
+    if not pushes:
+        return
+
+    async def _send() -> None:
+        from app.db.session import AsyncSessionLocal
+        from app.services.push_service import PushService
+
+        try:
+            async with AsyncSessionLocal() as db:
+                for user_ids, body in pushes:
+                    await asyncio.wait_for(
+                        PushService(db).notify_users(user_ids, url=InsuranceService.LEFT_URL, priority="high", body=body),
+                        timeout=60,
+                    )
+        except Exception:
+            logger.exception("ارسال Push هشدار ترک کار بیمه تکمیلی ناموفق بود")
+
+    try:
+        task = asyncio.get_running_loop().create_task(_send())
+    except RuntimeError:
+        return
+    _left_push_tasks.add(task)
+    task.add_done_callback(_left_push_tasks.discard)

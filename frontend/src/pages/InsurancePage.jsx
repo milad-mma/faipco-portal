@@ -687,8 +687,8 @@ export default function InsurancePage() {
   const employee = data?.employee;
   const typeInfo = data?.member_types || {};
   const isEdit = Boolean(data?.registration?.insurance_no); // ثبت‌نام کامل قبلی وجود دارد
-  // غیرفعال: یا برای این کاربر خاص، یا کل ماژول از پنل
-  const disabled = Boolean(user?.insurance_disabled) || data?.enabled === false;
+  // غیرفعال: ثبت‌نام سایت بسته و بازه‌ی ثبت‌نام اختصاصی هم ندارد (سرور مرجع است؛ فلگ کاربر ممکن است قدیمی باشد)
+  const disabled = data ? data.enabled === false : Boolean(user?.insurance_disabled);
 
   // تعداد اعضای هر نوع، برای غیرفعال کردن دکمه‌ی افزودن وقتی به سقف رسید
   const memberCounts = useMemo(() => {
@@ -889,15 +889,32 @@ export default function InsurancePage() {
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }} ref={topRef}>
         فرم ثبت‌نام بیمه تکمیلی
       </Typography>
+      {/* ثبت‌نام سایت بسته ولی برای این پرسنل یک بازه‌ی اختصاصی باز است */}
+      {data.grant_ends_at && (
+        <Alert severity="info" sx={{ my: 1.5 }}>
+          ثبت‌نام و ویرایش بیمه تکمیلی برای شما تا{" "}
+          {new Date(data.grant_ends_at).toLocaleString("fa-IR", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}{" "}
+          باز است.
+        </Alert>
+      )}
     </>
   );
 
-  if (disabled) {
+  // ثبت‌نام غیرفعال و ثبت‌نام قبلی ندارد: فقط پیام. اگر قبلاً ثبت‌نام کرده، پایین‌تر همان نمای فقط‌خواندنی
+  // (بدون دکمه‌ی ویرایش) با پیام «قبلاً ثبت‌نام نموده‌اید» نمایش داده می‌شود
+  if (disabled && !isEdit) {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
         {header}
         <Alert severity="warning" sx={{ mt: 2 }}>
-          ثبت‌نام بیمه تکمیلی در حال حاضر غیرفعال است.
+          ثبت نام بیمه تکمیلی در حال حاضر غیر فعال است. در صورتی که تمایل به ثبت نام دارید به واحد منابع انسانی
+          مراجعه نمائید.
         </Alert>
       </Box>
     );
@@ -912,7 +929,7 @@ export default function InsurancePage() {
       </Box>
     );
   }
-  if (employee.missing?.length) {
+  if (employee.missing?.length && !disabled) {
     return (
       <Box sx={{ maxWidth: 1100, mx: "auto" }}>
         {header}
@@ -962,8 +979,8 @@ export default function InsurancePage() {
       ? employee.last_name
       : m.last_name;
 
-  // حالت نمایش: خلاصه‌ی فقط‌خواندنی ثبت‌نام با دکمه‌ی «ویرایش ثبت نام»
-  if (mode === "view") {
+  // حالت نمایش: خلاصه‌ی فقط‌خواندنی ثبت‌نام با دکمه‌ی «ویرایش ثبت نام» (ثبت‌نام غیرفعال: بدون دکمه و همیشه همین حالت)
+  if (mode === "view" || disabled) {
     const reg = data.registration;
     const rejected = members.filter(isDocRejected);
     return (
@@ -976,21 +993,30 @@ export default function InsurancePage() {
           justifyContent="space-between"
           sx={{ mb: 2 }}
         >
-          <Alert
-            severity="success"
-            icon={<CheckCircleOutlineIcon />}
-            sx={{ flex: 1 }}
-          >
-            ثبت‌نام شما انجام شده است. اطلاعات ثبت‌شده در ادامه آمده است.
-          </Alert>
-          <Button
-            variant="contained"
-            startIcon={<EditOutlinedIcon />}
-            onClick={() => setMode("edit")}
-            sx={{ flexShrink: 0 }}
-          >
-            ویرایش ثبت نام
-          </Button>
+          {disabled ? (
+            <Alert severity="info" sx={{ flex: 1 }}>
+              شما قبلاً ثبت نام نموده‌اید و اطلاعات شما به شرح زیر می‌باشد. در صورت نیاز به تغییرات یا ثبت نام عضو جدید
+              به واحد منابع انسانی مراجعه نمائید.
+            </Alert>
+          ) : (
+            <>
+              <Alert
+                severity="success"
+                icon={<CheckCircleOutlineIcon />}
+                sx={{ flex: 1 }}
+              >
+                ثبت‌نام شما انجام شده است. اطلاعات ثبت‌شده در ادامه آمده است.
+              </Alert>
+              <Button
+                variant="contained"
+                startIcon={<EditOutlinedIcon />}
+                onClick={() => setMode("edit")}
+                sx={{ flexShrink: 0 }}
+              >
+                ویرایش ثبت نام
+              </Button>
+            </>
+          )}
         </Stack>
         {rejected.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
@@ -999,7 +1025,8 @@ export default function InsurancePage() {
               .map((m) => `${m.first_name} ${memberLastName(m)}`)
               .join("، ")}{" "}
             مورد تأیید نیست. لطفاً جهت پیگیری علت رد مدارک به واحد منابع انسانی
-            مراجعه نمائید؛ مدرک جدید را با «ویرایش ثبت نام» آپلود کنید.
+            مراجعه نمائید
+            {disabled ? "." : "؛ مدرک جدید را با «ویرایش ثبت نام» آپلود کنید."}
           </Alert>
         )}
 

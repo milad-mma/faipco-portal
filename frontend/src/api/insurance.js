@@ -110,3 +110,25 @@ export async function fetchInsuranceInvoiceGuide() {
   const { data } = await apiClient.get("/insurance/invoice-guide");
   return data;
 }
+
+// POST /insurance/registrations/{id}/review-left؛ هشدار ترک کار یک ثبت‌نام «بررسی شد» (ثبت‌نام حذف نمی‌شود)
+export async function reviewInsuranceLeft(registrationId) {
+  await apiClient.post(`/insurance/registrations/${registrationId}/review-left`);
+}
+
+// GET /insurance/grants؛ بازه‌های ثبت‌نام اختصاصی افراد خاص (includePast → قبلی‌ها هم)
+export async function fetchInsuranceGrants(includePast = false) {
+  const { data } = await apiClient.get("/insurance/grants", { params: { include_past: includePast || undefined } });
+  return data;
+}
+
+// POST /insurance/grants؛ باز کردن ثبت‌نام برای یک پرسنل در یک بازه‌ی زمانی
+export async function addInsuranceGrant(payload) {
+  const { data } = await apiClient.post("/insurance/grants", payload);
+  return data;
+}
+
+// DELETE /insurance/grants/{id}
+export async function deleteInsuranceGrant(id) {
+  await apiClient.delete(`/insurance/grants/${id}`);
+}
