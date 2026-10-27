@@ -811,7 +811,12 @@ class LoanService:
         await self._commit()
         return await self.serialize(req, detail=True, public=True)
 
-    async def inbox(self, employee: Employee) -> dict:
+    async def inbox(self, employee: Employee, user: User | None = None) -> dict:
+        """
+        کارتابل پرسنل: ضمانت‌ها و تأییدهای منتظر او + دو پرچم نمایش زیرتب‌ها:
+        show_decisions — «تأییدها و ردهای من» فقط برای کسی که در مسیر تأیید وامی بوده (مدیر واحد، منابع انسانی،
+        مدیر سایت) یا قبلاً تصمیمی گرفته؛ show_guarantees — «ضمانت‌های من» فقط برای کسی که ضامن کسی بوده.
+        """
         guarantee_rows = (
             await self.db.execute(
                 self._requests_query()
@@ -839,9 +844,37 @@ class LoanService:
         ).scalars().all()
         guarantee_items = await self._serialize_many(list(guarantee), public=True)
         await self._attach_guarantee_terms(guarantee_items)
+        was_approver = (
+            await self.db.execute(
+                select(LoanRequest.id)
+                .where(
+                    or_(
+                        LoanRequest.unit_manager_employee_id == employee.id,
+                        LoanRequest.hr_employee_id == employee.id,
+                        LoanRequest.site_manager_employee_id == employee.id,
+                    )
+                )
+                .limit(1)
+            )
+        ).first() is not None
+        if not was_approver and user is not None:
+            was_approver = (
+                await self.db.execute(
+                    select(LoanRequestEvent.id)
+                    .where(LoanRequestEvent.actor_user_id == user.id, LoanRequestEvent.action.in_(("approved", "rejected")))
+                    .limit(1)
+                )
+            ).first() is not None
+        was_guarantor = (
+            await self.db.execute(
+                select(LoanRequestGuarantor.id).where(LoanRequestGuarantor.employee_id == employee.id).limit(1)
+            )
+        ).first() is not None
         return {
             "guarantee": guarantee_items,
             "approvals": await self._serialize_many(list(approvals), public=True),
+            "show_decisions": was_approver or bool(approvals),
+            "show_guarantees": was_guarantor,
         }
 
     async def _attach_guarantee_terms(self, items: list[dict]) -> None:
@@ -905,6 +938,11 @@ class LoanService:
         items = await self._serialize_many(ordered, public=True)
         for item, req in zip(items, ordered):
             if kind == "guarantees":
+                # ضامن نوبت و جایگاه درخواست‌دهنده در صف پرداخت را نمی‌بیند (فقط «در صف پرداخت»)
+                if item.get("queue_position") or item.get("queue_seq"):
+                    item["queue_position"] = None
+                    item["queue_seq"] = None
+                    item["status_label"] = R.status_label(req.status, item.get("current_step"), None, req.out_of_queue)
                 g = next((g for g in req.guarantors if g.employee_id == employee.id), None)
                 item["my_decision"] = {
                     "action": "guarantee_accepted" if g and g.status == "accepted" else "guarantee_rejected",

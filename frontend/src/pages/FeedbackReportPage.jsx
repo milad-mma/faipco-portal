@@ -34,6 +34,7 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import PillTabs from "../components/PillTabs";
+import AnonymousName from "../components/AnonymousName";
 import FeedbackThread, {
   FEEDBACK_STATUS_COLORS,
   FEEDBACK_STATUS_LABELS,
@@ -234,8 +235,9 @@ function FeedbackMessagesList({ canDelete }) {
   const senderOptions = useMemo(() => {
     if (!allMessages) return [];
     const map = new Map();
+    // فرستنده‌ای که پیامش را ناشناس فرستاده در این فهرست نمی‌آید تا نامش بی‌کلیک دیده نشود
     for (const m of allMessages) {
-      if (m.sender_id) map.set(m.sender_id, m.sender_name);
+      if (m.sender_id && !m.is_anonymous_requested) map.set(m.sender_id, m.sender_name);
     }
     return Array.from(map.entries());
   }, [allMessages]);
@@ -438,19 +440,12 @@ function FeedbackMessagesList({ canDelete }) {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {m.sender_name || "ناشناس"}
-                    {/* وقتی نام واقعی نمایش داده می‌شود (Admin، یا پیام حاوی الفاظ نامناسب)
-                      ولی فرستنده درخواست ناشناس ماندن داشته، برچسب «(ناشناس)» این را نشان می‌دهد. */}
-                    {m.sender_name && m.is_anonymous_requested && (
-                      <Typography
-                        component="span"
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ mr: 0.5 }}
-                      >
-                        {" "}
-                        (ناشناس)
-                      </Typography>
+                    {/* نام واقعیِ فرستنده‌ای که درخواست ناشناس داشته (برای Admin، یا پیام حاوی الفاظ نامناسب) درجا
+                      نمایش داده نمی‌شود: «ناشناس» و فقط با کلیک عمدی آشکار می‌شود */}
+                    {m.sender_name && m.is_anonymous_requested ? (
+                      <AnonymousName name={m.sender_name} />
+                    ) : (
+                      m.sender_name || "ناشناس"
                     )}
                   </Typography>
                   <Typography
@@ -668,10 +663,11 @@ function FeedbackThreadDialog({ id, onClose, onUpdated }) {
                   sx={{ mb: 0.5 }}
                 >
                   <Typography variant="caption" fontWeight={700}>
-                    {m.sender_name || "ناشناس"}
-                    {m.sender_name && m.is_anonymous_requested
-                      ? " (ناشناس)"
-                      : ""}
+                    {m.sender_name && m.is_anonymous_requested ? (
+                      <AnonymousName name={m.sender_name} />
+                    ) : (
+                      m.sender_name || "ناشناس"
+                    )}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {new Date(m.created_at).toLocaleString("fa-IR")}
@@ -698,6 +694,7 @@ function FeedbackThreadDialog({ id, onClose, onUpdated }) {
                 </Typography>
               )}
               <FeedbackThread
+                hideSenderName={Boolean(m.is_anonymous_requested)}
                 replies={thread.replies}
                 canReply={m.can_reply}
                 closed={closed}

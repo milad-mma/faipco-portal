@@ -196,9 +196,9 @@ async def submit_loan(
 @router.get("/inbox")
 async def inbox(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     if current_user.employee_id is None:
-        return {"guarantee": [], "approvals": []}
+        return {"guarantee": [], "approvals": [], "show_decisions": False, "show_guarantees": False}
     employee = await _require_employee(db, current_user)
-    return await LoanService(db).inbox(employee)
+    return await LoanService(db).inbox(employee, current_user)
 
 
 @router.get("/inbox/history")

@@ -758,9 +758,11 @@ export default function LoanRequestPage() {
                   ? `در انتظار شما (${inboxCount.toLocaleString("fa-IR")})`
                   : "در انتظار شما",
               },
-              { key: "decisions", label: "تأییدها و ردهای من" },
-              { key: "guarantees", label: "ضمانت‌های من" },
-            ]}
+              // «تأییدها و ردهای من» فقط برای کسی که در مسیر تأیید وام بوده (مدیر واحد، منابع انسانی، مدیر سایت)؛
+              // «ضمانت‌های من» فقط برای کسی که ضامن کسی بوده (پرچم‌های سرور)
+              inbox.show_decisions && { key: "decisions", label: "تأییدها و ردهای من" },
+              inbox.show_guarantees && { key: "guarantees", label: "ضمانت‌های من" },
+            ].filter(Boolean)}
             value={inboxView}
             onChange={setInboxView}
             sx={{ mb: 0 }}
@@ -790,8 +792,8 @@ export default function LoanRequestPage() {
               ))}
             </>
           )}
-          {inboxView === "decisions" && <InboxHistory kind="decisions" />}
-          {inboxView === "guarantees" && <InboxHistory kind="guarantees" />}
+          {inboxView === "decisions" && inbox.show_decisions && <InboxHistory kind="decisions" />}
+          {inboxView === "guarantees" && inbox.show_guarantees && <InboxHistory kind="guarantees" />}
         </Stack>
       )}
 

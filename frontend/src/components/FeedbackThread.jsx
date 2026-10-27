@@ -5,11 +5,13 @@
  * «فرستنده» نمایش داده می‌شود؛ پاسخ بازبین همیشه با نام خودش. هیچ «خوانده شد»ی به بازبین نشان داده نمی‌شود.
  *
  * ورودی: replies (فهرست پاسخ‌ها)، canReply، onSend(body) → Promise، closed (گفتگو بسته است)،
- * senderNote (تذکر ناشناس بودن برای فرستنده)، emptyText.
+ * senderNote (تذکر ناشناس بودن برای فرستنده)، emptyText، hideSenderName (فرستنده درخواست ناشناس داشته: نام پاسخ‌های او
+ * — که فقط Admin می‌گیرد — پشت «ناشناس» و با کلیک).
  */
 import { useState } from "react";
 import { Alert, Box, Button, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
+import AnonymousName from "./AnonymousName";
 
 export const FEEDBACK_STATUS_LABELS = {
   new: "جدید",
@@ -19,7 +21,7 @@ export const FEEDBACK_STATUS_LABELS = {
 };
 export const FEEDBACK_STATUS_COLORS = { new: "warning", in_review: "info", answered: "success", closed: "default" };
 
-export default function FeedbackThread({ replies, canReply, onSend, closed, senderNote, emptyText }) {
+export default function FeedbackThread({ replies, canReply, onSend, closed, senderNote, emptyText, hideSenderName = false }) {
   const [body, setBody] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
@@ -62,7 +64,14 @@ export default function FeedbackThread({ replies, canReply, onSend, closed, send
             >
               <Stack direction="row" justifyContent="space-between" spacing={1.5} sx={{ mb: 0.25 }}>
                 <Typography variant="caption" fontWeight={700}>
-                  {r.is_mine ? "شما" : r.author_name || (r.is_from_sender ? "فرستنده" : "بازبین")}
+                  {r.is_mine ? (
+                    "شما"
+                  ) : r.is_from_sender && hideSenderName && r.author_name ? (
+                    // فرستنده‌ی ناشناس: نام (که فقط Admin دارد) با کلیک آشکار می‌شود
+                    <AnonymousName name={r.author_name} />
+                  ) : (
+                    r.author_name || (r.is_from_sender ? "فرستنده" : "بازبین")
+                  )}
                 </Typography>
                 <Typography variant="caption" sx={{ opacity: 0.75, whiteSpace: "nowrap" }}>
                   {new Date(r.created_at).toLocaleString("fa-IR")}
