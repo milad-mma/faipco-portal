@@ -143,3 +143,17 @@ def test_overnight_duration_and_kara_day():
     assert kara_day_offset(night, 300) == 1  # مجوز خروج بعد از ۰۲:۳۰
     assert kara_day_offset(day, 100) == 0
     assert kara_day_offset(None, 100) == 0
+
+
+def test_forgotten_punch_not_before_shift_start():
+    from app.core.leave_request_rules import validate_forgotten_punch_time as v
+
+    day, night = shift_window(630, 1430, 0), shift_window(1830, 230, 1)
+    v(day, day, 630)
+    v(day, day, 1830)  # بعد از پایان شیفت (اضافه‌کار) مجاز
+    assert "06:30" in _raises(v, day, day, 615)
+    assert "18:30" in _raises(v, night, day, 1800)
+    v(night, night, 630)  # خروج بامداد بعد از شبکاری روز قبل
+    v(day, night, 600)  # بعد از شبکاری، امروز روزکار
+    v({"off_day": True}, day, 900)
+    v(None, None, 300)

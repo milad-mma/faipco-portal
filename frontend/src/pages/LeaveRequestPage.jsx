@@ -168,6 +168,21 @@ function SubmitRequestForm({ onSubmitted }) {
     };
   }, [shiftKey]);
 
+  // تردد فراموش‌شده: شروع شیفت روز تردد (تردد قبل از آن ثبت نمی‌شود؛ پایان مهم نیست)
+  const punchKey = selectedType?.is_forgotten_punch ? toDateOnly(punchDate) : "";
+  const [punchShift, setPunchShift] = useState(null);
+  useEffect(() => {
+    if (!punchKey) return undefined;
+    let alive = true;
+    fetchShiftWindow(punchKey)
+      .then((data) => alive && setPunchShift(data))
+      .catch(() => alive && setPunchShift(null));
+    return () => {
+      alive = false;
+    };
+  }, [punchKey]);
+  const activePunchShift = punchKey ? punchShift : null;
+
   const activeShift = shiftKey ? shift : null;
   const allowedHours = activeShift ? allowedHoursFor(activeShift, isExit) : null;
   const offDayBlocked = Boolean(!isExit && shiftLimited && activeShift?.found && activeShift.off_day);
@@ -268,6 +283,12 @@ function SubmitRequestForm({ onSubmitted }) {
               />
               <TimeSelect24 label="ساعت تردد" value={punchTime} onChange={setPunchTime} align="center" />
             </Stack>
+            {activePunchShift?.found && !activePunchShift.off_day && (
+              <Alert severity="info" sx={{ py: 0 }}>
+                شروع شیفت شما در این روز: {compactToTimeString(activePunchShift.start)} — تردد قبل از آن قابل ثبت نیست
+                {activePunchShift.crosses_midnight ? " (به‌جز خروج بامداد بعد از شبکاری روز قبل)." : "."}
+              </Alert>
+            )}
             <Typography variant="caption" color="text.secondary" textAlign="center">
               برای هر تردد فراموش شده باید یک درخواست جداگانه ثبت شود. درخواست ابتدا توسط سرپرست و سپس مسئول نیروی
               انسانی تأیید و بعد در سیستم حضور و غیاب ثبت می‌شود.

@@ -155,3 +155,19 @@ def validate_exit_after_shift(window: dict | None, exit_hour: int) -> None:
         raise LeaveRequestRulesError(
             f"ساعت خروج باید از پایان شیفت همان روز ({_fmt(end)}) به بعد باشد. {window_label(window)}"
         )
+
+
+def validate_forgotten_punch_time(window: dict | None, prev_window: dict | None, punch_hour: int) -> None:
+    """
+    تردد فراموش‌شده نباید قبل از شروع شیفت همان روز باشد؛ پایان شیفت مهم نیست (ممکن است اضافه‌کار مانده باشد) — دستور کاربر.
+    بدون محدودیت: شیفت نامعلوم، روز غیرکاری (کار در روز تعطیل)، و ساعت‌های بامدادِ ادامه‌ی شیفت شبِ روز قبل (قبل از شروع
+    شیفت امروز، مثلاً خروج ۰۶:۳۰ بعد از شبکاری).
+    """
+    if window is None or window.get("off_day"):
+        return
+    if prev_window and prev_window.get("crosses_midnight") and punch_hour < window["start"]:
+        return
+    if punch_hour < window["start"]:
+        raise LeaveRequestRulesError(
+            f"ساعت تردد نمی‌تواند قبل از شروع شیفت شما در این روز ({_fmt(window['start'])}) باشد"
+        )

@@ -45,6 +45,7 @@ from app.core.leave_request_rules import (
     jalali_date_to_compact,
     kara_day_offset,
     validate_exit_after_shift,
+    validate_forgotten_punch_time,
     validate_hourly_in_shift,
     window_label,
 )
@@ -897,6 +898,15 @@ class LeaveRequestService:
                 raise LeaveRequestError(
                     f"ثبت تردد فراموش‌شده فقط تا {FORGOTTEN_PUNCH_MAX_PAST_DAYS} روز گذشته امکان‌پذیر است"
                 )
+            # نه قبل از شروع شیفت همان روز (پایان مهم نیست - اضافه‌کار)
+            try:
+                validate_forgotten_punch_time(
+                    await self._shift_window(employee, kara_names, site_connection, p.punch_date),
+                    await self._shift_window(employee, kara_names, site_connection, p.punch_date - timedelta(days=1)),
+                    int(p.time),
+                )
+            except LeaveRequestRulesError as e:
+                raise LeaveRequestError(str(e)) from e
             parsed.append((p, moment, label))
         # اگر هم ورود و هم خروج داده شده، ترتیب و فاصله‌شان بررسی می‌شود
         by_kind = {p.kind: moment for p, moment, _ in parsed if p.kind}
