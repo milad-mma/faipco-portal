@@ -3,7 +3,7 @@
  * شامل مدیران (با فهرست صریح ارزیابی‌شوندگان)، سرپرست هر واحد، سرشیفت‌های واحد و تخصیص پرسنل به سرشیفت‌ها.
  * این انتساب‌ها مستقل از نقش‌ها و مجوزهای عمومی سیستم هستند.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Accordion,
   AccordionDetails,
@@ -65,7 +65,7 @@ function PersonChip({ employee, onRemove }) {
  * کارت Accordion یک مدیر: عنوان قابل‌ویرایش، تعداد و فهرست افراد تحت ارزیابی، افزودن/حذف فرد و حذف مدیر.
  * ورودی: siteId، manager، onChanged (بارگذاری مجدد ساختار) و onError.
  */
-function ManagerCard({ siteId, manager, onChanged, onError }) {
+function ManagerCard({ siteId, manager, onChanged, onError, refreshKey }) {
   const targetEmployeeIds = manager.assignments.map((a) => a.target_employee.id);  // شناسه‌ی افراد فعلی تحت ارزیابی، برای حذف از گزینه‌های انتخابگر
 
   // عنوان مدیر را ذخیره می‌کند
@@ -158,6 +158,7 @@ function ManagerCard({ siteId, manager, onChanged, onError }) {
           managerEmployeeId={manager.employee.id}
           excludeIds={targetEmployeeIds}
           onSelect={handleAddTarget}
+          refreshKey={refreshKey}
         />
       </AccordionDetails>
     </Accordion>
@@ -212,20 +213,27 @@ function AddManagerForm({ siteId, onAdded, onError }) {
  * جدول تخصیص پرسنل یک واحد به سرشیفت‌ها (سرشیفت‌ها و سرپرست از فهرست کنار گذاشته می‌شوند).
  * ورودی: siteId، department و onAssign(employeeId, shiftLeadId)؛ مقدار خالی یعنی حذف تخصیص.
  */
-function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
+function DepartmentShiftAssignmentTable({ siteId, department, onAssign, managerOf, refreshKey }) {
   const [employees, setEmployees] = useState(null);  // پرسنل قابل تخصیص؛ null = در حال بارگذاری
   const shiftLeadEmployeeIds = department.shift_leads.map((sl) => sl.employee.id);
   const supervisorId = department.supervisor?.id;
 
-  // دریافت پرسنل واحد (حداکثر ۲۰۰ نفر) و حذف سرشیفت‌ها و سرپرست از فهرست
+  // دریافت پرسنل واحد (حداکثر ۲۰۰ نفر) و حذف سرشیفت‌ها و سرپرست از فهرست؛ با هر تغییر ساختار (refreshKey) تازه می‌شود
   useEffect(() => {
-    fetchEmployees({ siteId, departmentIds: [department.id], pageSize: 200 }).then((data) =>
-      setEmployees(
-        (data.items || []).filter((e) => !shiftLeadEmployeeIds.includes(e.id) && e.id !== supervisorId)
-      )
-    );
+    let cancelled = false;
+    fetchEmployees({ siteId, departmentIds: [department.id], pageSize: 200 })
+      .then((data) => {
+        if (cancelled) return;
+        setEmployees(
+          (data.items || []).filter((e) => !shiftLeadEmployeeIds.includes(e.id) && e.id !== supervisorId)
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, department.id]);
+  }, [siteId, department.id, refreshKey]);
 
   // شناسه‌ی سرشیفت فعلی پرسنل را برمی‌گرداند؛ رشته‌ی خالی = تخصیص‌نیافته
   function currentShiftLeadFor(employeeId) {
@@ -251,6 +259,10 @@ function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
                 {employee.first_name} {employee.last_name} ({employee.personnel_code})
               </TableCell>
               <TableCell>
+                {/* فردی که زیر نظر یک مدیر است، توسط سرشیفت ارزیابی نمی‌شود */}
+                {managerOf[employee.id] ? (
+                  <Chip size="small" color="secondary" variant="outlined" label={`زیر نظر ${managerOf[employee.id]}`} />
+                ) : (
                 <TextField
                   select
                   size="small"
@@ -265,6 +277,7 @@ function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
                     </MenuItem>
                   ))}
                 </TextField>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -278,7 +291,7 @@ function DepartmentShiftAssignmentTable({ siteId, department, onAssign }) {
  * کارت Accordion یک واحد سازمانی: تعیین/حذف سرپرست، مدیریت سرشیفت‌ها و تخصیص پرسنل به سرشیفت‌ها.
  * ورودی: siteId، department، onChanged و onError.
  */
-function DepartmentCard({ siteId, department, onChanged, onError }) {
+function DepartmentCard({ siteId, department, onChanged, onError, managerOf, movedToManagers, refreshKey }) {
   const hasShiftLeads = department.shift_leads.length > 0;  // با وجود سرشیفت، بخش تخصیص پرسنل نمایش داده می‌شود
   const assignedEmployeeIds = department.shift_leads.map((sl) => sl.employee.id);  // شناسه‌ی سرشیفت‌های فعلی، برای حذف از انتخابگر
 
@@ -374,6 +387,28 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
             />
           </Box>
 
+          {/* پرسنل این واحد که به فهرست یک مدیر اضافه شده‌اند: از ارزیابی سرپرست/سرشیفت خارج‌اند */}
+          {movedToManagers.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                زیر نظر مدیر (خارج از ارزیابی سرپرست این واحد)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                این افراد را فقط مدیرشان ارزیابی می‌کند؛ برای برگرداندن به سرپرست، از فهرست همان مدیر حذفشان کنید.
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.5}>
+                {movedToManagers.map(({ employee, managerName }) => (
+                  <Chip
+                    key={employee.id}
+                    size="small"
+                    variant="outlined"
+                    label={`${employee.first_name} ${employee.last_name} ← ${managerName}`}
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
+
           {/* بخش سرشیفت‌ها: فهرست و افزودن از پرسنل همین واحد */}
           <Box>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
@@ -407,7 +442,13 @@ function DepartmentCard({ siteId, department, onChanged, onError }) {
                 هر پرسنل باید زیرمجموعه دقیقاً یک سرشیفت باشد - پرسنلی که به هیچ سرشیفتی تخصیص داده
                 نشود، توسط کسی ارزیابی نمی‌شود.
               </Typography>
-              <DepartmentShiftAssignmentTable siteId={siteId} department={department} onAssign={handleAssignShift} />
+              <DepartmentShiftAssignmentTable
+                siteId={siteId}
+                department={department}
+                onAssign={handleAssignShift}
+                managerOf={managerOf}
+                refreshKey={refreshKey}
+              />
             </Box>
           )}
         </Stack>
@@ -424,6 +465,7 @@ export default function EvaluationStructurePage() {
   const [siteId, setSiteId] = useState("");
   const [structure, setStructure] = useState(null);  // ساختار ارزیابی سایت: { managers, departments }
   const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);  // با هر بارگذاری ساختار عوض می‌شود تا انتخابگرها/جدول‌ها هم تازه شوند
 
   // دریافت سایت‌ها و انتخاب اولین سایت به‌صورت پیش‌فرض
   useEffect(() => {
@@ -433,17 +475,47 @@ export default function EvaluationStructurePage() {
     });
   }, []);
 
-  // ساختار ارزیابی سایت انتخاب‌شده را از سرور می‌گیرد
+  // ساختار ارزیابی سایت انتخاب‌شده را از سرور می‌گیرد (Ajax؛ بعد از هر افزودن/حذف هم صدا زده می‌شود و
+  // کارت‌ها، شمارنده‌ها، انتخابگرها و جدول سرشیفت‌ها بدون رفرش صفحه به‌روز می‌شوند؛ Accordionهای باز بسته نمی‌شوند)
   function loadStructure() {
     if (!siteId) return;
     setError("");
     fetchEvaluationSiteStructure(siteId)
-      .then(setStructure)
+      .then((data) => {
+        setStructure(data);
+        setRefreshKey((k) => k + 1);
+      })
       .catch((err) => setError(err.response?.data?.detail || "دریافت ساختار ارزیابی با خطا مواجه شد."));
   }
 
   // بارگذاری مجدد ساختار با تغییر سایت
   useEffect(loadStructure, [siteId]);
+
+  // نگاشت «پرسنل ← نام مدیرش» از روی فهرست مدیران؛ برای نمایش «زیر نظر مدیر» در کارت واحدها
+  const managerOf = useMemo(() => {
+    const map = {};
+    (structure?.managers || []).forEach((m) => {
+      const name = m.title || `${m.employee.first_name} ${m.employee.last_name}`;
+      m.assignments.forEach((a) => {
+        map[a.target_employee.id] = name;
+      });
+    });
+    return map;
+  }, [structure]);
+
+  // افراد هر واحد که زیر نظر یک مدیرند: { departmentId: [{ employee, managerName }] }
+  const movedByDepartment = useMemo(() => {
+    const map = {};
+    (structure?.managers || []).forEach((m) => {
+      const managerName = m.title || `${m.employee.first_name} ${m.employee.last_name}`;
+      m.assignments.forEach((a) => {
+        const depId = a.target_employee.department_id;
+        if (depId == null) return;
+        (map[depId] ||= []).push({ employee: a.target_employee, managerName });
+      });
+    });
+    return map;
+  }, [structure]);
 
   return (
     <Box>
@@ -555,6 +627,7 @@ export default function EvaluationStructurePage() {
                   manager={manager}
                   onChanged={loadStructure}
                   onError={setError}
+                  refreshKey={refreshKey}
                 />
               ))}
             </Stack>
@@ -574,6 +647,11 @@ export default function EvaluationStructurePage() {
                   department={department}
                   onChanged={loadStructure}
                   onError={setError}
+                  managerOf={managerOf}
+                  movedToManagers={(movedByDepartment[department.id] || []).filter(
+                    (m) => m.employee.id !== department.supervisor?.id,
+                  )}
+                  refreshKey={refreshKey}
                 />
               ))}
             </Stack>

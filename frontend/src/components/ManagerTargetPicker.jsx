@@ -11,19 +11,29 @@ import EmployeeSearchField from "./EmployeeSearchField";
  * خروجی: چیپ‌های «سرپرستان بدون مدیر» برای افزودن سریع + انتخابگر مشترک پرسنل (EmployeeSearchField) که
  * فهرست نامزدهای از قبل بارگذاری‌شده را در کلاینت فیلتر می‌کند؛ ظاهر و رفتار همان بقیه‌ی انتخابگرهاست.
  * فردی که از قبل تحت ارزیابی مدیر دیگری است، در جست‌وجو غیرفعال و با برچسب «تحت ارزیابی [نام مدیر]» نمایش داده می‌شود.
+ * refreshKey: با هر تغییر ساختار (افزودن/حذف فرد، سرپرست، مدیر) عوض می‌شود تا وضعیت نامزدها بدون رفرش صفحه تازه شود.
  */
 export default function ManagerTargetPicker({
   siteId,
   managerEmployeeId,
   excludeIds = [],
   onSelect,
+  refreshKey = 0,
 }) {
   const [candidates, setCandidates] = useState(null); // فهرست نامزدها از سرور؛ null = هنوز بارگذاری نشده
 
-  // با تغییر سایت، فهرست نامزدها دوباره دریافت می‌شود
+  // با تغییر سایت یا ساختار، فهرست نامزدها دوباره دریافت می‌شود (فهرست قبلی تا رسیدن پاسخ نمایش داده می‌ماند)
   useEffect(() => {
-    fetchManagerCandidates(siteId).then(setCandidates);
-  }, [siteId]);
+    let cancelled = false;
+    fetchManagerCandidates(siteId)
+      .then((data) => {
+        if (!cancelled) setCandidates(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId, refreshKey]);
 
   // نامزدها بدون خودِ مدیر و بدون افراد از قبل افزوده‌شده
   const availableCandidates = useMemo(() => {

@@ -71,30 +71,46 @@ const STATUS_COLORS = {
 
 const EMPTY_FORM = { site_id: "", title: "", description: "", start_date: null, end_date: null };  // مقادیر اولیه‌ی فرم دیالوگ دوره
 
+// مقدار اولیه‌ی فرم: داده‌ی دوره‌ی در حال ویرایش یا مقادیر پیش‌فرض (تاریخ امروز)
+function initialPeriodForm(editingPeriod) {
+  if (!editingPeriod) return { ...EMPTY_FORM, start_date: new Date(), end_date: new Date() };
+  return {
+    site_id: editingPeriod.site_id ?? "",
+    title: editingPeriod.title,
+    description: editingPeriod.description || "",
+    start_date: new Date(editingPeriod.start_date),
+    end_date: new Date(editingPeriod.end_date),
+  };
+}
+
 /**
  * دیالوگ ساخت یا ویرایش دوره (سایت، عنوان، توضیحات، تاریخ شروع و پایان).
  * ورودی: open، onClose، onSaved، فهرست سایت‌ها و editingPeriod (null = دوره‌ی جدید).
+ * فرم با هر باز شدن (و برای هر دوره) از نو mount می‌شود تا مقدار اولیه همان لحظه‌ی اول درست باشد؛ قبلاً فرم
+ * یک رندر با داده‌ی قبلی mount می‌شد و انتخابگر تاریخ همان داده‌ی کهنه را برمی‌گرداند (باگ «بار اول خالی»).
  */
 function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      {open && (
+        <PeriodDialogBody
+          key={editingPeriod?.id ?? "new"}
+          onClose={onClose}
+          onSaved={onSaved}
+          sites={sites}
+          editingPeriod={editingPeriod}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+function PeriodDialogBody({ onClose, onSaved, sites, editingPeriod }) {
+  const [form, setForm] = useState(() => initialPeriodForm(editingPeriod));
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-
-  // با هر باز شدن دیالوگ، فرم را با داده‌ی دوره‌ی در حال ویرایش یا مقادیر پیش‌فرض (تاریخ امروز) پر می‌کند
-  useEffect(() => {
-    if (editingPeriod) {
-      setForm({
-        site_id: editingPeriod.site_id ?? "",
-        title: editingPeriod.title,
-        description: editingPeriod.description || "",
-        start_date: new Date(editingPeriod.start_date),
-        end_date: new Date(editingPeriod.end_date),
-      });
-    } else {
-      setForm({ ...EMPTY_FORM, start_date: new Date(), end_date: new Date() });
-    }
-    setError("");
-  }, [editingPeriod, open]);
+  // به‌روزرسانی یک فیلد با شکل تابعی (بدون وابستگی به form کهنه در closure)
+  const setField = (name, value) => setForm((prev) => ({ ...prev, [name]: value }));
 
   // payload دوره را می‌سازد (site_id خالی → null، تاریخ‌ها به ISO) و دوره را ایجاد یا ویرایش می‌کند
   async function handleSave() {
@@ -123,14 +139,14 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <>
       <DialogTitle>{editingPeriod ? "ویرایش دوره ارزیابی" : "دوره ارزیابی جدید"}</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         <TextField
           select
           label="سایت (اختیاری - خالی یعنی همه سایت‌ها)"
           value={form.site_id}
-          onChange={(e) => setForm({ ...form, site_id: e.target.value })}
+          onChange={(e) => setField("site_id", e.target.value)}
         >
           <MenuItem value="">همه سایت‌ها</MenuItem>
           {sites.map((site) => (
@@ -142,13 +158,13 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
         <TextField
           label="عنوان دوره"
           value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
+          onChange={(e) => setField("title", e.target.value)}
           placeholder="مثلاً ارزیابی عملکرد نیمه اول ۱۴۰۵"
         />
         <TextField
           label="توضیحات (اختیاری)"
           value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          onChange={(e) => setField("description", e.target.value)}
           multiline
           minRows={2}
         />
@@ -156,14 +172,14 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
           <JalaliDateTimePicker
             label="تاریخ و ساعت شروع"
             value={form.start_date}
-            onChange={(d) => setForm({ ...form, start_date: d })}
+            onChange={(d) => setField("start_date", d)}
           />
         )}
         {form.end_date && (
           <JalaliDateTimePicker
             label="تاریخ و ساعت پایان"
             value={form.end_date}
-            onChange={(d) => setForm({ ...form, end_date: d })}
+            onChange={(d) => setField("end_date", d)}
           />
         )}
         {error && <Alert severity="error">{error}</Alert>}
@@ -176,7 +192,7 @@ function PeriodDialog({ open, onClose, onSaved, sites, editingPeriod }) {
           {isSaving ? "در حال ذخیره..." : "ذخیره"}
         </Button>
       </DialogActions>
-    </Dialog>
+    </>
   );
 }
 
