@@ -29,31 +29,36 @@ def resolve_evaluation_target_ids(
     all_employees_by_department: dict,
     shift_assignments_by_shift_lead: dict,
     unassigned_employees_by_department: dict | None = None,
+    manager_assigned_employee_ids: set | None = None,
 ) -> set:
     """
     ورودی: شناسه ارزیاب و نگاشت‌های خام نقش‌ها (مدیر/سرپرست/سرشیفت) که از دیتابیس خوانده شده‌اند.
     خروجی: مجموعه شناسه‌های پرسنلی که ارزیاب مجاز است ارزیابی کند؛ اجتماع اهداف همه نقش‌هایش، بدون خودش.
     اهداف مدیر فقط از تخصیص دستی (manager_targets_by_manager_id) می‌آیند؛ پرسنل بدون سرشیفت زیر نظر سرپرست می‌مانند.
+
+    manager_assigned_employee_ids: همه‌ی پرسنلی که (در کل سیستم) به فهرست یک مدیر اضافه شده‌اند. چنین فردی فقط زیر
+    همان مدیر است و از فهرست سرپرست واحد و سرشیفتش خارج می‌شود («هر فرد هم‌زمان فقط زیر یک ارزیاب»).
     """
     target_ids: set = set()
+    taken = manager_assigned_employee_ids or set()
 
-    # نقش مدیر: اهداف تخصیص‌داده‌شده‌ی دستی
-    for manager_id in manager_ids_of_evaluator:
-        target_ids.update(manager_targets_by_manager_id.get(manager_id, []))
-
-    # نقش سرپرست واحد: سرشیفت‌ها (+ پرسنل بدون تخصیص) یا در نبود سرشیفت، همه پرسنل واحد
+    # نقش سرپرست واحد: سرشیفت‌ها (+ پرسنل بدون تخصیص) یا در نبود سرشیفت، همه پرسنل واحد — به‌جز افرادی که زیر مدیرند
     for department_id in department_supervisor_of_departments:
         shift_lead_employee_ids = shift_lead_employees_by_department.get(department_id, [])
         if shift_lead_employee_ids:
-            target_ids.update(shift_lead_employee_ids)
+            target_ids.update(e for e in shift_lead_employee_ids if e not in taken)
             if unassigned_employees_by_department:
-                target_ids.update(unassigned_employees_by_department.get(department_id, []))
+                target_ids.update(e for e in unassigned_employees_by_department.get(department_id, []) if e not in taken)
         else:
-            target_ids.update(all_employees_by_department.get(department_id, []))
+            target_ids.update(e for e in all_employees_by_department.get(department_id, []) if e not in taken)
 
-    # نقش سرشیفت: فقط پرسنل تخصیص‌داده‌شده به همان سرشیفت
+    # نقش سرشیفت: فقط پرسنل تخصیص‌داده‌شده به همان سرشیفت — به‌جز افرادی که زیر مدیرند
     for shift_lead_id in shift_lead_of_shift_lead_ids:
-        target_ids.update(shift_assignments_by_shift_lead.get(shift_lead_id, []))
+        target_ids.update(e for e in shift_assignments_by_shift_lead.get(shift_lead_id, []) if e not in taken)
+
+    # نقش مدیر: اهداف تخصیص‌داده‌شده‌ی دستی (همیشه، حتی اگر ارزیاب سرپرست واحد همان فرد هم باشد)
+    for manager_id in manager_ids_of_evaluator:
+        target_ids.update(manager_targets_by_manager_id.get(manager_id, []))
 
     target_ids.discard(evaluator_employee_id)  # هرگز خودش را ارزیابی نکند
     return target_ids

@@ -545,8 +545,16 @@ class EvaluationStructureService:
             )
             shift_assignments_by_shift_lead[shift_lead_id] = [row[0] for row in assignments_result.all()]
 
+        # همه‌ی پرسنلی که زیر یک مدیرند؛ از فهرست سرپرست/سرشیفت خارج می‌شوند (هر فرد فقط زیر یک ارزیاب)
+        manager_assigned_employee_ids: set[int] = set()
+        if department_ids_as_supervisor or shift_lead_ids:
+            manager_assigned_employee_ids = set(
+                (await self.db.execute(select(EvaluationManagerAssignment.target_employee_id))).scalars().all()
+            )
+
         target_ids = resolve_evaluation_target_ids(
             evaluator_employee_id=evaluator_employee_id,
+            manager_assigned_employee_ids=manager_assigned_employee_ids,
             manager_ids_of_evaluator=manager_ids,
             manager_targets_by_manager_id=manager_targets_by_manager_id,
             department_supervisor_of_departments=department_ids_as_supervisor,

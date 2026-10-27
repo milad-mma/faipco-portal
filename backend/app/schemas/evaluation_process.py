@@ -17,6 +17,7 @@ class GenerateAssignmentsIn(BaseModel):
 class GenerateAssignmentsOut(BaseModel):
     """نتیجه تولید انتساب‌ها: تعداد جدیدها و کل انتساب‌های دوره."""
     created_count: int
+    removed_count: int = 0  # انتساب‌های شروع‌نشده‌ای که دیگر با ساختار نمی‌خواندند و حذف شدند
     total_assignments: int
 
 

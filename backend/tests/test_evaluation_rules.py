@@ -380,3 +380,66 @@ def test_weighted_average_single_item_full_weight():
     """یک آیتم با وزن ۱۰۰ همان امتیاز خودش را می‌دهد."""
     result = calculate_weighted_average([{"weight": 100, "score": 75}])
     assert result == 75.0
+
+
+def _resolve(evaluator, **kw):
+    base = dict(
+        evaluator_employee_id=evaluator,
+        manager_ids_of_evaluator=[],
+        manager_targets_by_manager_id={},
+        department_supervisor_of_departments=[],
+        shift_lead_of_shift_lead_ids=[],
+        shift_lead_employees_by_department={},
+        all_employees_by_department={},
+        shift_assignments_by_shift_lead={},
+    )
+    base.update(kw)
+    return resolve_evaluation_target_ids(**base)
+
+
+def test_person_moved_to_manager_leaves_supervisor_without_shift_leads():
+    """فردی که به فهرست یک مدیر اضافه شده، دیگر در فهرست سرپرست واحدش نیست؛ فقط مدیر او را ارزیابی می‌کند."""
+    supervisor = _resolve(
+        50,
+        department_supervisor_of_departments=[7],
+        all_employees_by_department={7: [50, 201, 202, 203]},
+        manager_assigned_employee_ids={202},
+    )
+    assert 202 not in supervisor and supervisor == {201, 203}
+
+    manager = _resolve(
+        90,
+        manager_ids_of_evaluator=[1],
+        manager_targets_by_manager_id={1: [202]},
+        manager_assigned_employee_ids={202},
+    )
+    assert manager == {202}
+
+
+def test_person_moved_to_manager_leaves_supervisor_and_shift_lead_with_shift_leads():
+    """واحد سرشیفت‌دار: سرشیفت/پرسنل بدون سرشیفتِ منتقل‌شده به مدیر، از سرپرست و سرشیفت هر دو خارج می‌شوند."""
+    common = dict(
+        shift_lead_employees_by_department={7: [301, 302]},
+        all_employees_by_department={7: [50, 301, 302, 401, 402, 403]},
+        shift_assignments_by_shift_lead={11: [401, 402]},
+        unassigned_employees_by_department={7: [403]},
+        manager_assigned_employee_ids={302, 402, 403},
+    )
+    supervisor = _resolve(50, department_supervisor_of_departments=[7], **common)
+    assert supervisor == {301}
+
+    shift_lead = _resolve(301, shift_lead_of_shift_lead_ids=[11], **common)
+    assert shift_lead == {401}
+
+
+def test_supervisor_who_is_also_the_manager_keeps_target():
+    """اگر سرپرست واحد خودش همان مدیری باشد که فرد را گرفته، فرد در فهرستش می‌ماند (از نقش مدیر)."""
+    targets = _resolve(
+        50,
+        manager_ids_of_evaluator=[1],
+        manager_targets_by_manager_id={1: [202]},
+        department_supervisor_of_departments=[7],
+        all_employees_by_department={7: [201, 202]},
+        manager_assigned_employee_ids={202},
+    )
+    assert targets == {201, 202}

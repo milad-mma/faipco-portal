@@ -7,6 +7,7 @@ Endpoint های «ساختار ارزیابی عملکرد»: مدیریت سر�
 می‌شود و سپس دسترسی دقیقاً برای همان سایت با _require_site_permission بررسی می‌شود
 (require_permission با site_scoped=True فقط site_id مستقیم در Path/Query را می‌بیند).
 """
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,7 +19,11 @@ from app.core.deps import get_current_user
 from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Department, Employee
-from app.models.evaluation import EvaluationManager, EvaluationShiftAssignment, EvaluationShiftLead
+from app.models.evaluation import (
+    EvaluationManager,
+    EvaluationShiftAssignment,
+    EvaluationShiftLead,
+)
 from app.models.user import User
 from app.schemas.evaluation import (
     AddManagerIn,
@@ -35,7 +40,26 @@ from app.schemas.evaluation import (
     UpdateManagerTitleIn,
 )
 from app.services import evaluation_exemption_service as exemption_service
-from app.services.evaluation_structure_service import EvaluationStructureError, EvaluationStructureService
+from app.services.evaluation_structure_service import (
+    EvaluationStructureError,
+    EvaluationStructureService,
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def _reconcile(db: AsyncSession, employee_id: int) -> None:
+    """
+    بعد از جابه‌جایی یک نفر در ساختار، انتساب‌های دوره‌های باز او را با ساختار جدید هم‌خوان می‌کند (ارزیاب قبلی دیگر او
+    را در کارتابل نمی‌بیند، ارزیاب جدید می‌بیند؛ ارزیابی شروع‌شده حذف نمی‌شود). خطای آن عملیات اصلی را خراب نمی‌کند.
+    """
+    from app.services.evaluation_assignment_service import EvaluationAssignmentService
+
+    try:
+        await EvaluationAssignmentService(db).reconcile_target(employee_id)
+    except Exception:
+        logger.exception("هم‌خوان‌سازی انتساب‌های ارزیابی پرسنل %s ناموفق بود", employee_id)
+        await db.rollback()
 
 router = APIRouter()
 
@@ -177,9 +201,12 @@ async def add_manager_target(
     if target is not None and target.site_id != manager.site_id:
         await _require_site_permission(db, current_user, target.site_id)
     try:
-        return await EvaluationStructureService(db).add_manager_target(manager_id, payload.target_employee_id)
+        result = await EvaluationStructureService(db).add_manager_target(manager_id, payload.target_employee_id)
     except EvaluationStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # فرد از کارتابل سرپرست/سرشیفت قبلی‌اش خارج و به کارتابل مدیر اضافه می‌شود (دوره‌های باز)
+    await _reconcile(db, payload.target_employee_id)
+    return result
 
 
 @router.delete("/managers/{manager_id}/targets/{target_employee_id}", response_model=ManagerOut)
@@ -194,7 +221,9 @@ async def remove_manager_target(
     if manager is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مدیر موردنظر یافت نشد")
     await _require_site_permission(db, current_user, manager.site_id)
-    return await EvaluationStructureService(db).remove_manager_target(manager_id, target_employee_id)
+    result = await EvaluationStructureService(db).remove_manager_target(manager_id, target_employee_id)
+    await _reconcile(db, target_employee_id)  # فرد به سرپرست/سرشیفت واحدش برمی‌گردد
+    return result
 
 
 @router.post("/departments/{department_id}/shift-leads", response_model=ShiftLeadOut)
@@ -245,11 +274,11 @@ async def set_shift_assignment(
     department = await db.get(Department, shift_lead.department_id)
     await _require_site_permission(db, current_user, department.site_id)
     try:
-        return await EvaluationStructureService(db).set_shift_assignment(
-            payload.employee_id, payload.shift_lead_id
-        )
+        result = await EvaluationStructureService(db).set_shift_assignment(payload.employee_id, payload.shift_lead_id)
     except EvaluationStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    await _reconcile(db, payload.employee_id)
+    return result
 
 
 @router.delete("/shift-assignments/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -271,6 +300,7 @@ async def remove_shift_assignment(
     department = await db.get(Department, shift_lead.department_id)
     await _require_site_permission(db, current_user, department.site_id)
     await EvaluationStructureService(db).remove_shift_assignment(employee_id)
+    await _reconcile(db, employee_id)
 
 
 # ---------- معاف از ارزیابی (Migration 110) ----------
