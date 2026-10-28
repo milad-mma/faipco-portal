@@ -55,7 +55,7 @@ import {
   updateBank,
 } from "../api/bankAccounts";
 import { BANK_FIELDS, MODE_LABELS, formatBankValue } from "../utils/bank";
-import { compactTableSx, hideXs } from "../utils/dateTimeFa";
+import { compactTableSx, faDateTime, hideXs } from "../utils/dateTimeFa";
 import { BankHistoryList } from "./BankInfoPage";
 
 function saveBlob(blob, name) {
@@ -234,6 +234,11 @@ function ReportTab({ canManage }) {
                           color={item.missing_required ? "warning" : "success"}
                           label={item.missing_required ? "تکمیل نشده" : "تکمیل"}
                         />
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                          {item.terms_accepted_at
+                            ? `تعهد: ${faDateTime(item.terms_accepted_at)}`
+                            : "تعهد پذیرفته نشده"}
+                        </Typography>
                       </TableCell>
                       <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
                         <Tooltip title="سابقه‌ی تغییرات">

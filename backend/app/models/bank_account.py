@@ -3,6 +3,7 @@
 - BankDefinition: بانک‌هایی که پرسنل هر سایت باید/می‌توانند اطلاعاتشان را وارد کنند (از پنل ادمین)، با حالت هر فیلد
 - EmployeeBankAccount: اطلاعات هر پرسنل برای هر بانک (یک ردیف به ازای پرسنل × بانک)
 - EmployeeBankAccountHistory: سابقه‌ی هر ثبت/تغییر (مقادیر قدیم و جدید، چه کسی، چه زمانی)
+- EmployeeBankTerms: پذیرش تعهد «حساب به نام خودِ پرسنل» قبل از اولین ثبت
 """
 from __future__ import annotations
 
@@ -74,3 +75,17 @@ class EmployeeBankAccountHistory(Base):
     changed_by_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # تغییر توسط مسئول، نه خودِ پرسنل
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EmployeeBankTerms(Base):
+    """پذیرش تعهد «حساب به نام خودِ پرسنل» قبل از اولین ثبت اطلاعات بانکی (یک بار برای هر پرسنل)."""
+
+    __tablename__ = "employee_bank_terms"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    accepted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    terms_text: Mapped[str] = mapped_column(String(1000), nullable=False)  # عین متن پذیرفته‌شده

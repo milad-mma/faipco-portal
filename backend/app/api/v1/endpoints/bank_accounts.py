@@ -43,6 +43,7 @@ class AccountIn(BaseModel):
     account_number: str | None = Field(default=None, max_length=40)
     sheba: str | None = Field(default=None, max_length=40)
     card_number: str | None = Field(default=None, max_length=40)
+    accept_terms: bool = False  # پذیرش تعهد مالکیت حساب (فقط اولین ثبت خودِ پرسنل)
 
 
 class BankIn(BaseModel):
@@ -106,7 +107,9 @@ async def save_my_account(
 ):
     employee = await _require_employee(db, current_user)
     try:
-        return await BankAccountService(db).save_account(employee, bank_id, payload.model_dump(), current_user)
+        return await BankAccountService(db).save_account(
+            employee, bank_id, payload.model_dump(), current_user, accept_terms=payload.accept_terms
+        )
     except BankAccountError as e:
         _bad(e)
 

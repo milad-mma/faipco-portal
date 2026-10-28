@@ -1,6 +1,7 @@
 /**
  * فرم اطلاعات یک بانک (شماره حساب، شبا، شماره کارت بر اساس حالت هر فیلد در تنظیمات همان بانک).
- * ورودی: bank (تعریف بانک با *_mode و account فعلی)، onSave(payload) که Promise برمی‌گرداند، disabled.
+ * ورودی: bank (تعریف بانک با *_mode و account فعلی)، onSave(payload) که Promise برمی‌گرداند، disabled، saveDisabled
+ * (فقط دکمه‌ی ذخیره؛ مثلاً تا تیک تعهد زده نشده).
  * در صفحه‌ی «اطلاعات بانکی» پرسنل و دیالوگ اصلاح منابع انسانی استفاده می‌شود.
  */
 import { useState } from "react";
@@ -15,7 +16,7 @@ function initialValues(bank) {
   return Object.fromEntries(BANK_FIELDS.map((f) => [f.key, f.key === "sheba" ? shebaDigits(acc.sheba) : acc[f.key] || ""]));
 }
 
-export default function BankAccountForm({ bank, onSave, disabled }) {
+export default function BankAccountForm({ bank, onSave, disabled, saveDisabled }) {
   const [values, setValues] = useState(() => initialValues(bank));
   const [touched, setTouched] = useState({});
   const [saving, setSaving] = useState(false);
@@ -95,7 +96,7 @@ export default function BankAccountForm({ bank, onSave, disabled }) {
       <Button
         variant="contained"
         onClick={handleSave}
-        disabled={disabled || saving || !dirty}
+        disabled={disabled || saveDisabled || saving || !dirty}
         startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}
         sx={{ alignSelf: "flex-start", height: 40 }}
       >

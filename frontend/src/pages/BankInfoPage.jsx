@@ -8,9 +8,11 @@ import {
   Alert,
   Box,
   Card,
+  Checkbox,
   Chip,
   CircularProgress,
   Collapse,
+  FormControlLabel,
   Link,
   Stack,
   Typography,
@@ -28,6 +30,7 @@ export default function BankInfoPage() {
   const [error, setError] = useState("");
   const [history, setHistory] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [termsChecked, setTermsChecked] = useState(false); // تیک «می‌پذیرم» (فقط تا اولین ثبت)
 
   useEffect(() => {
     fetchMyBankInfo()
@@ -36,7 +39,7 @@ export default function BankInfoPage() {
   }, []);
 
   async function handleSave(bankId, payload) {
-    const next = await saveMyBankAccount(bankId, payload);
+    const next = await saveMyBankAccount(bankId, { ...payload, accept_terms: termsChecked });
     setInfo(next);
     setHistory(null);
     refetchUser?.()?.catch?.(() => {});
@@ -72,6 +75,26 @@ export default function BankInfoPage() {
         </Alert>
       )}
 
+      {/* تذکر مالکیت حساب — همیشه (وقتی بانکی تعریف شده)؛ تا پذیرفته نشده، ذخیره‌ی اطلاعات ممکن نیست */}
+      {info?.banks.length > 0 && (
+        <Alert severity="info" icon={false} sx={{ mb: 2, fontSize: 13, lineHeight: 1.9 }}>
+          <b>توجه:</b> {info.terms_text}
+          {info.terms_accepted_at ? (
+            <Typography variant="caption" color="success.main" sx={{ display: "block", mt: 0.5 }}>
+              ✓ پذیرفته شده در {faDateTime(info.terms_accepted_at)}
+            </Typography>
+          ) : (
+            <FormControlLabel
+              sx={{ display: "flex", mt: 0.5 }}
+              control={
+                <Checkbox size="small" checked={termsChecked} onChange={(e) => setTermsChecked(e.target.checked)} />
+              }
+              label={<Typography variant="body2" fontWeight={700}>متن بالا را خواندم و می‌پذیرم</Typography>}
+            />
+          )}
+        </Alert>
+      )}
+
       <Stack spacing={2}>
         {info?.banks.map((bank) => (
           <Card key={bank.id} variant="outlined" sx={{ borderRadius: 2, p: 2.5 }}>
@@ -95,6 +118,7 @@ export default function BankInfoPage() {
               key={bank.id}
               bank={bank}
               onSave={(payload) => handleSave(bank.id, payload)}
+              saveDisabled={!info.terms_accepted_at && !termsChecked}
             />
             {bank.updated_at && (
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>

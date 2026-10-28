@@ -20,10 +20,22 @@ from app.models.bank_account import (
     BankDefinition,
     EmployeeBankAccount,
     EmployeeBankAccountHistory,
+    EmployeeBankTerms,
 )
 from app.models.employee import Department, Employee
 from app.models.site import Site
 from app.models.user import User
+
+
+def _jalali(value) -> str:
+    """زمان → «YYYY/MM/DD HH:MM» شمسی به وقت تهران (برای خروجی Excel)."""
+    if not value:
+        return ""
+    from zoneinfo import ZoneInfo
+
+    import jdatetime
+
+    return jdatetime.datetime.fromgregorian(datetime=value.astimezone(ZoneInfo("Asia/Tehran"))).strftime("%Y/%m/%d %H:%M")
 
 
 class BankAccountError(Exception):
@@ -156,7 +168,18 @@ class BankAccountService:
                 "complete": rules.is_complete(bank.modes, values),
             })  # fmt: skip
         missing = [i["name"] for i in items if i["is_required"] and not i["complete"]]
-        return {"banks": items, "missing_required": bool(missing), "missing_banks": missing}
+        terms = await self._terms_of(employee.id)
+        return {
+            "banks": items,
+            "missing_required": bool(missing),
+            "missing_banks": missing,
+            "terms_text": rules.TERMS_TEXT,
+            "terms_accepted_at": terms.accepted_at if terms else None,
+        }
+
+    async def _terms_of(self, employee_id: int) -> EmployeeBankTerms | None:
+        res = await self.db.execute(select(EmployeeBankTerms).where(EmployeeBankTerms.employee_id == employee_id))
+        return res.scalar_one_or_none()
 
     async def is_missing_required(self, employee_id: int, site_id: int) -> bool:
         banks = [b for b in await self.list_banks(site_id, active_only=True) if b.is_required]
@@ -166,9 +189,17 @@ class BankAccountService:
         return any(not rules.is_complete(b.modes, _account_values(accounts.get(b.id))) for b in banks)
 
     async def save_account(
-        self, employee: Employee, bank_id: int, data: dict, actor: User, by_admin: bool = False
+        self, employee: Employee, bank_id: int, data: dict, actor: User, by_admin: bool = False, accept_terms: bool = False
     ) -> dict:
-        """ثبت/تغییر اطلاعات یک بانک برای یک پرسنل؛ تغییرات در سابقه ثبت می‌شود. خروجی: employee_info به‌روز."""
+        """
+        ثبت/تغییر اطلاعات یک بانک برای یک پرسنل؛ تغییرات در سابقه ثبت می‌شود. خروجی: employee_info به‌روز.
+        خودِ پرسنل باید یک بار تعهد «حساب به نام خودم» را بپذیرد (accept_terms در اولین ثبت)؛ اصلاح منابع انسانی نیازی ندارد.
+        """
+        if not by_admin and await self._terms_of(employee.id) is None:
+            if not accept_terms:
+                raise BankAccountError("برای ثبت اطلاعات بانکی ابتدا متن تعهد را بخوانید و تیک «می‌پذیرم» را بزنید")
+            self.db.add(EmployeeBankTerms(employee_id=employee.id, accepted_by_user_id=actor.id, terms_text=rules.TERMS_TEXT))
+            await self.db.flush()
         bank = await self.get_bank(bank_id)
         if bank.site_id != employee.site_id:
             raise BankAccountError("این بانک برای سایت این پرسنل تعریف نشده است")
@@ -190,6 +221,7 @@ class BankAccountService:
             acc = EmployeeBankAccount(employee_id=employee.id, bank_id=bank.id)
             self.db.add(acc)
         elif not changes:
+            await self.db.commit()  # پذیرش تعهد (اگر همین الان ثبت شد) ذخیره شود
             return await self.employee_info(employee)
         acc.account_number = values["account_number"]
         acc.sheba = values["sheba"]
@@ -276,10 +308,17 @@ class BankAccountService:
             banks_by_site[sid] = await self.list_banks(sid, active_only=True)
         emp_ids = [emp.id for emp, _, _ in rows]
         accounts: dict[int, dict[int, EmployeeBankAccount]] = {}
+        terms_at: dict[int, object] = {}
         if emp_ids:
             res = await self.db.execute(select(EmployeeBankAccount).where(EmployeeBankAccount.employee_id.in_(emp_ids)))
             for a in res.scalars().all():
                 accounts.setdefault(a.employee_id, {})[a.bank_id] = a
+            res = await self.db.execute(
+                select(EmployeeBankTerms.employee_id, EmployeeBankTerms.accepted_at).where(
+                    EmployeeBankTerms.employee_id.in_(emp_ids)
+                )
+            )
+            terms_at = dict(res.all())
 
         key = normalize_search_text(search or "").strip()
         items, counts = [], {"total": 0, "complete": 0, "missing": 0}
@@ -303,6 +342,7 @@ class BankAccountService:
                 "site_name": site_name,
                 "accounts": per_bank,
                 "missing_required": missing,
+                "terms_accepted_at": terms_at.get(emp.id),
             }
             if key:
                 haystack = " ".join(
@@ -339,7 +379,7 @@ class BankAccountService:
         ws = wb.active
         ws.title = "اطلاعات بانکی"
         ws.sheet_view.rightToLeft = True
-        header = ["کد پرسنلی", "نام", "نام خانوادگی", "سایت", "واحد", "وضعیت"]
+        header = ["کد پرسنلی", "نام", "نام خانوادگی", "سایت", "واحد", "وضعیت", "پذیرش تعهد مالکیت حساب"]
         cols: list[tuple[int, str]] = []
         for bank in data["banks"]:
             for field, label in rules.FIELDS.items():
@@ -352,11 +392,12 @@ class BankAccountService:
             row = [
                 item["personnel_code"], item["first_name"], item["last_name"], item["site_name"] or "",
                 item["department_name"] or "", "تکمیل نشده" if item["missing_required"] else "تکمیل",
+                _jalali(item["terms_accepted_at"]),
             ]  # fmt: skip
             row += [by_bank.get(bank_id, {}).get(field) or "" for bank_id, field in cols]
             ws.append(row)
         # شماره‌ها متن بمانند (صفرهای ابتدای شماره حساب و نمایش علمی اکسل)
-        for column in ws.iter_cols(min_row=2, min_col=7):
+        for column in ws.iter_cols(min_row=2, min_col=8):
             for cell in column:
                 cell.number_format = "@"
         buffer = io.BytesIO()
