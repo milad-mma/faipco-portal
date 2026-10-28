@@ -72,6 +72,7 @@ class UserOut(BaseModel):
     can_view_bank_accounts: bool = False  # bank_accounts.view یا manage — اطلاعات بانکی پرسنل
     can_manage_bank_accounts: bool = False  # bank_accounts.manage — تعریف بانک‌ها و اصلاح اطلاعات پرسنل
     bank_info_missing: bool = False  # اطلاعات یکی از بانک‌های اجباری سایت کامل نیست (یادآوری)
+    bank_info_missing_count: int = 0  # تعداد بانک‌های اجباری تکمیل‌نشده (شمارنده‌ی قرمز «پنل کاربری»)
     family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده
     can_view_turnover_report: bool = False  # reports.turnover — گزارش جذب و ترک کار
     can_manage_turnover_categories: bool = False  # reports.turnover_categories — دسته‌بندی علت ترک کار

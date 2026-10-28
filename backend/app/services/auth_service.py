@@ -407,17 +407,20 @@ class AuthService:
         base.can_manage_bank_accounts = user.is_superuser or "bank_accounts.manage" in permission_codes
         # یادآوری «اطلاعات بانکی تکمیل نشده» (فقط پرسنل؛ بانک‌های فعالِ اجباری سایت)
         base.bank_info_missing = False
+        base.bank_info_missing_count = 0
         if user.employee_id is not None:
             try:
                 from app.services.bank_account_service import BankAccountService
 
                 emp_site = await self.db.scalar(select(Employee.site_id).where(Employee.id == user.employee_id))
                 if emp_site is not None:
-                    base.bank_info_missing = await BankAccountService(self.db).is_missing_required(
+                    base.bank_info_missing_count = await BankAccountService(self.db).missing_required_count(
                         user.employee_id, emp_site
                     )
+                    base.bank_info_missing = base.bank_info_missing_count > 0
             except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
                 base.bank_info_missing = False
+                base.bank_info_missing_count = 0
         try:
             from app.services.family_service import FamilyService
 

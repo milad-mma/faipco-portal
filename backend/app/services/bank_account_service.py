@@ -181,12 +181,16 @@ class BankAccountService:
         res = await self.db.execute(select(EmployeeBankTerms).where(EmployeeBankTerms.employee_id == employee_id))
         return res.scalar_one_or_none()
 
-    async def is_missing_required(self, employee_id: int, site_id: int) -> bool:
+    async def missing_required_count(self, employee_id: int, site_id: int) -> int:
+        """تعداد بانک‌های فعالِ اجباری سایت که اطلاعاتشان برای این پرسنل کامل نیست (شمارنده‌ی «پنل کاربری»)."""
         banks = [b for b in await self.list_banks(site_id, active_only=True) if b.is_required]
         if not banks:
-            return False
+            return 0
         accounts = await self._accounts_of(employee_id)
-        return any(not rules.is_complete(b.modes, _account_values(accounts.get(b.id))) for b in banks)
+        return sum(1 for b in banks if not rules.is_complete(b.modes, _account_values(accounts.get(b.id))))
+
+    async def is_missing_required(self, employee_id: int, site_id: int) -> bool:
+        return await self.missing_required_count(employee_id, site_id) > 0
 
     async def save_account(
         self, employee: Employee, bank_id: int, data: dict, actor: User, by_admin: bool = False, accept_terms: bool = False

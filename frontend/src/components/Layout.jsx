@@ -9,6 +9,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
+  Badge,
   BottomNavigation,
   BottomNavigationAction,
   Box,
@@ -596,7 +597,16 @@ export default function Layout() {
         >
           <BottomNavigationAction label="داشبورد" value="/my-dashboard" icon={<DashboardOutlinedIcon />} />
           <BottomNavigationAction label="اطلاعیه‌ها" value="/notices" icon={<CampaignOutlinedIcon />} />
-          <BottomNavigationAction label="پنل کاربری" value="/profile" icon={<AccountCircleOutlinedIcon />} />
+          <BottomNavigationAction
+            label="پنل کاربری"
+            value="/profile"
+            icon={
+              // شمارنده‌ی قرمز: بانک‌های اجباریِ تکمیل‌نشده در «اطلاعات بانکی»
+              <Badge color="error" badgeContent={user?.bank_info_missing_count || 0} invisible={!user?.bank_info_missing_count}>
+                <AccountCircleOutlinedIcon />
+              </Badge>
+            }
+          />
         </BottomNavigation>
       )}
 
