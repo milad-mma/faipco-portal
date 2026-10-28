@@ -45,6 +45,8 @@ const InsuranceInvoiceGuidePage = lazyPage(
 );
 const InsuranceAdminPage = lazyPage(() => import("./pages/InsuranceAdminPage"));
 const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
+const BankInfoPage = lazyPage(() => import("./pages/BankInfoPage"));
+const BankAccountsAdminPage = lazyPage(() => import("./pages/BankAccountsAdminPage"));
 const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
 const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
@@ -388,6 +390,15 @@ export default function App() {
               element={<InsuranceInvoiceGuidePage />}
             />
             <Route path="/family" element={<FamilyPage />} />
+            <Route path="/bank-info" element={<BankInfoPage />} />
+            <Route
+              path="/bank-accounts/admin"
+              element={
+                <PermissionRoute check={(u) => u?.can_view_bank_accounts}>
+                  <BankAccountsAdminPage />
+                </PermissionRoute>
+              }
+            />
             <Route
               path="/family/admin"
               element={

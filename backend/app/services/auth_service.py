@@ -403,6 +403,21 @@ class AuthService:
         base.can_manage_insurance = user.is_superuser or "insurance.manage" in permission_codes
         base.can_view_family = user.is_superuser or "family.view" in permission_codes or "family.manage" in permission_codes
         base.can_manage_family = user.is_superuser or "family.manage" in permission_codes
+        base.can_view_bank_accounts = user.is_superuser or bool({"bank_accounts.view", "bank_accounts.manage"} & set(permission_codes))
+        base.can_manage_bank_accounts = user.is_superuser or "bank_accounts.manage" in permission_codes
+        # یادآوری «اطلاعات بانکی تکمیل نشده» (فقط پرسنل؛ بانک‌های فعالِ اجباری سایت)
+        base.bank_info_missing = False
+        if user.employee_id is not None:
+            try:
+                from app.services.bank_account_service import BankAccountService
+
+                emp_site = await self.db.scalar(select(Employee.site_id).where(Employee.id == user.employee_id))
+                if emp_site is not None:
+                    base.bank_info_missing = await BankAccountService(self.db).is_missing_required(
+                        user.employee_id, emp_site
+                    )
+            except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
+                base.bank_info_missing = False
         try:
             from app.services.family_service import FamilyService
 

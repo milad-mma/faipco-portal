@@ -1,3 +1,4 @@
+import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
@@ -130,6 +131,12 @@ export const NAV_ITEMS = [
         path: "/family/admin",
         icon: <FamilyRestroomOutlinedIcon />,
         check: (u) => u?.can_view_family,
+      },
+      {
+        label: "اطلاعات بانکی پرسنل",
+        path: "/bank-accounts/admin",
+        icon: <AccountBalanceWalletOutlinedIcon />,
+        check: (u) => u?.can_view_bank_accounts,
       },
       {
         label: "گزارش جذب و ترک کار",

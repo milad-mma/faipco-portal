@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     evaluation_process,
     evaluation_reports,
     evaluation_structure,
+    bank_accounts,
     family,
     feedback,
     hr,
@@ -71,6 +72,7 @@ api_router.include_router(hr.router, prefix="/hr", tags=["hr"])
 api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 api_router.include_router(insurance.router, prefix="/insurance", tags=["insurance"])
 api_router.include_router(family.router, prefix="/family", tags=["family"])
+api_router.include_router(bank_accounts.router, prefix="/bank-accounts", tags=["bank-accounts"])
 api_router.include_router(turnover_report.router, prefix="/reports/turnover", tags=["reports"])
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
 api_router.include_router(mapping_suggestions.router, prefix="/mapping-suggestions", tags=["mapping-suggestions"])

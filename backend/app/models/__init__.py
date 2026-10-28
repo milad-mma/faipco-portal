@@ -91,6 +91,7 @@ from app.models.insurance import (  # noqa: F401
     InsuranceSiteSetting,
 )
 from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, FamilyProfile  # noqa: F401
+from app.models.bank_account import BankDefinition, EmployeeBankAccount, EmployeeBankAccountHistory  # noqa: F401
 from app.models.site_transfer import SiteTransfer  # noqa: F401
 from app.models.termination_reason import TerminationReasonAlias, TerminationReasonCategory  # noqa: F401
 from app.models.error_log import ErrorLog, ErrorLogOccurrence  # noqa: F401

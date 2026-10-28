@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Avatar,
   Badge,
   Box,
@@ -341,6 +342,16 @@ export default function PersonalDashboardPage() {
             {!photoUrl && <DefaultPersonAvatar />}
           </Avatar>
         </Box>
+        {/* یادآوری «اطلاعات بانکی» (بانک‌های اجباری سایت کامل نشده) — فقط یادآوری، بدون مسدودسازی */}
+        {user?.bank_info_missing && (
+          <Alert
+            severity="warning"
+            sx={{ borderRadius: 0, py: 0.25, cursor: "pointer" }}
+            onClick={() => navigate("/bank-info")}
+          >
+            اطلاعات بانکی شما کامل نیست — برای تکمیل بزنید.
+          </Alert>
+        )}
         <Stack sx={{ px: 1.75, py: 1 }}>
           {/* ردیف‌های سایت/واحد/سمت؛ ردیف‌های بدون مقدار حذف می‌شوند */}
           {[

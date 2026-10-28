@@ -34,6 +34,7 @@ import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import FamilyRestroomOutlinedIcon from "@mui/icons-material/FamilyRestroomOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
@@ -398,6 +399,18 @@ export default function ProfilePage() {
               <ListItemText
                 primary="مشخصات خانوادگی"
                 secondary={user?.family_disabled ? "غیرفعال" : undefined}
+              />
+            </ListItemButton>
+          )}
+          {user?.employee_id && (
+            <ListItemButton onClick={() => navigate("/bank-info")}>
+              <ListItemIcon>
+                <AccountBalanceOutlinedIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="اطلاعات بانکی"
+                secondary={user?.bank_info_missing ? "تکمیل نشده" : undefined}
+                secondaryTypographyProps={{ color: "warning.main" }}
               />
             </ListItemButton>
           )}

@@ -69,6 +69,9 @@ class UserOut(BaseModel):
     can_manage_insurance: bool = False  # insurance.manage — تنظیمات بیمه تکمیلی
     can_view_family: bool = False  # family.view یا family.manage — مشخصات خانوادگی پرسنل (حق تاهل/اولاد)
     can_manage_family: bool = False  # family.manage — تأیید/رد، سابقه بیمه و تنظیم قواعد
+    can_view_bank_accounts: bool = False  # bank_accounts.view یا manage — اطلاعات بانکی پرسنل
+    can_manage_bank_accounts: bool = False  # bank_accounts.manage — تعریف بانک‌ها و اصلاح اطلاعات پرسنل
+    bank_info_missing: bool = False  # اطلاعات یکی از بانک‌های اجباری سایت کامل نیست (یادآوری)
     family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده
     can_view_turnover_report: bool = False  # reports.turnover — گزارش جذب و ترک کار
     can_manage_turnover_categories: bool = False  # reports.turnover_categories — دسته‌بندی علت ترک کار
