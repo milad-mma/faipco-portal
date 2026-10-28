@@ -33,6 +33,7 @@ import {
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import PillTabs from "../components/PillTabs";
 import ResultDialog from "../components/ResultDialog";
 import NoteDialog from "../components/NoteDialog";
@@ -53,6 +54,7 @@ import {
   fetchAdvanceAdminSites,
   fetchAdvanceNotificationTemplates,
   fetchAdvanceRequests,
+  exportAdvanceRequests,
   financeDecideAdvances,
   payAdvances,
   saveAdvanceNotificationTemplates,
@@ -196,6 +198,7 @@ function RequestsTab({ site, reloadKey, onToast }) {
   const [payIds, setPayIds] = useState(null);
   const [detail, setDetail] = useState(null);
   const [tick, setTick] = useState(0);
+  const [exporting, setExporting] = useState(false);
   // با تغییر فیلتر/صفحه انتخاب‌ها پاک می‌شوند تا شناسه‌های صفحه‌ی قبلی باقی نمانند
   useEffect(() => {
     setSelected([]);
@@ -295,6 +298,34 @@ function RequestsTab({ site, reloadKey, onToast }) {
           }}
           sx={{ minWidth: 260, flexGrow: 1 }}
         />
+        <Button
+          variant="outlined"
+          startIcon={exporting ? <CircularProgress size={16} /> : <FileDownloadOutlinedIcon />}
+          disabled={exporting}
+          onClick={async () => {
+            setExporting(true);
+            try {
+              const blob = await exportAdvanceRequests(site.site_id, {
+                status,
+                month: month.trim() || undefined,
+                q: q.trim() || undefined,
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `advances_${site.site_id}.xlsx`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 2000);
+            } catch (e) {
+              setError(errText(e, "دریافت خروجی Excel ناموفق بود"));
+            } finally {
+              setExporting(false);
+            }
+          }}
+          sx={{ height: 40, whiteSpace: "nowrap" }}
+        >
+          خروجی Excel
+        </Button>
       </Stack>
       {site.can_finance && (
         <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>
@@ -527,10 +558,13 @@ function SettingsTab({ site, onSaved }) {
       window_to_day: site.window_to_day,
       max_per_month: site.max_per_month,
       rules_text: site.rules_text || "",
+      amount_mode: site.amount_mode || "fixed",
+      amount_step: site.amount_step ?? "",
       tiers: (site.tiers || []).map((t) => ({
         group: t.group || "staff",
         min_months: t.min_months,
         amount: t.amount,
+        min_amount: t.min_amount ?? "",
       })),
       members: (site.members || []).map((m) => ({ ...m })),
     });
@@ -553,6 +587,8 @@ function SettingsTab({ site, onSaved }) {
         window_to_day: Number(form.window_to_day),
         max_per_month: Number(form.max_per_month),
         rules_text: form.rules_text.trim() || null,
+        amount_mode: form.amount_mode,
+        amount_step: form.amount_step === "" ? null : Number(form.amount_step),
         // ردیف‌های کاملاً خالی نادیده گرفته می‌شوند؛ ردیف ناقص خطای فارسی می‌دهد
         tiers: form.tiers
           .filter((t) => String(t.min_months).trim() !== "" || t.amount !== "")
@@ -566,6 +602,7 @@ function SettingsTab({ site, onSaved }) {
               group: t.group || "staff",
               min_months: Number(t.min_months),
               amount: Number(t.amount),
+              min_amount: t.min_amount === "" ? null : Number(t.min_amount),
             };
           }),
         members: form.members.map((m) => ({
@@ -644,8 +681,37 @@ function SettingsTab({ site, onSaved }) {
         درخواست باز دارد.
       </Typography>
 
-      <Typography fontWeight={700}>
-        مبلغ بر اساس سابقه (پله‌ای، مبلغ ثابت) — جدا برای هر گروه
+      <Typography fontWeight={700}>مبلغ بر اساس سابقه (پله‌ای) — جدا برای هر گروه</Typography>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "flex-start" }}
+      >
+        <TextField
+          select
+          size="small"
+          label="نوع مبلغ"
+          value={form.amount_mode}
+          onChange={(e) => set("amount_mode", e.target.value)}
+          sx={{ minWidth: 240 }}
+        >
+          <MenuItem value="fixed">مبلغ ثابت پله</MenuItem>
+          <MenuItem value="range">مبلغ دلخواه پرسنل در محدوده‌ی پله</MenuItem>
+        </TextField>
+        {form.amount_mode === "range" && (
+          <AmountField
+            label="مضرب مبلغ (ریال، اختیاری)"
+            size="small"
+            value={form.amount_step}
+            onChange={(v) => set("amount_step", v)}
+            sx={{ minWidth: 220 }}
+          />
+        )}
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        {form.amount_mode === "range"
+          ? "پرسنل مبلغ را خودش وارد می‌کند: بین «حداقل» و «حداکثر» پله‌ی سابقه‌اش و مضرب عدد بالا (اگر تعیین شده باشد). حداقل خالی = مضرب یا ۱ ریال."
+          : "پرسنل مبلغ ثابت بالاترین پله‌ای را می‌گیرد که سابقه‌اش به آن رسیده."}
       </Typography>
       {GROUPS.map((g) => {
         const rows = form.tiers
@@ -691,8 +757,17 @@ function SettingsTab({ site, onSaved }) {
                     inputProps={{ inputMode: "numeric", dir: "ltr" }}
                     sx={{ width: 150 }}
                   />
+                  {form.amount_mode === "range" && (
+                    <AmountField
+                      label="حداقل (ریال)"
+                      size="small"
+                      value={t.min_amount}
+                      onChange={(v) => setTier(t.i, "min_amount", v)}
+                      sx={{ flex: 1 }}
+                    />
+                  )}
                   <AmountField
-                    label="مبلغ مساعده (ریال)"
+                    label={form.amount_mode === "range" ? "حداکثر (ریال)" : "مبلغ مساعده (ریال)"}
                     size="small"
                     value={t.amount}
                     onChange={(v) => setTier(t.i, "amount", v)}
@@ -718,7 +793,7 @@ function SettingsTab({ site, onSaved }) {
                 onClick={() =>
                   set("tiers", [
                     ...form.tiers,
-                    { group: g.key, min_months: "", amount: "" },
+                    { group: g.key, min_months: "", amount: "", min_amount: "" },
                   ])
                 }
                 sx={{ alignSelf: "flex-start" }}

@@ -30,6 +30,7 @@ import PillTabs from "../components/PillTabs";
 import ResultDialog from "../components/ResultDialog";
 import NoteDialog from "../components/NoteDialog";
 import {
+  AmountField,
   LoanHistory,
   LoanStatusChip,
   LoanSteps,
@@ -58,13 +59,26 @@ function bulkResultText(res, okLabel) {
   return parts.join("\n") || "موردی انجام نشد";
 }
 
-function SubmitDialog({ open, amount, onClose, onConfirm }) {
+function SubmitDialog({ open, data, onClose, onConfirm }) {
   const [reason, setReason] = useState("");
+  const [custom, setCustom] = useState(""); // مبلغ دلخواه (حالت «محدوده»)
+  const amount = data?.amount;
+  const isRange = data?.amount_mode === "range";
+  const min = data?.amount_min;
+  const max = data?.amount_max;
+  const step = data?.amount_step;
+  // خطای مبلغ دلخواه (هم‌سو با advance_rules.validate_requested_amount)
+  let amountError = "";
+  if (isRange && custom !== "") {
+    if (custom < min || custom > max) amountError = `بین ${formatRial(min)} و ${formatRial(max)}`;
+    else if (step && custom % step) amountError = `مضرب ${formatRial(step)} باشد`;
+  }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (open) {
       setReason("");
+      setCustom("");
       setError("");
     }
   }, [open]);
@@ -72,7 +86,7 @@ function SubmitDialog({ open, amount, onClose, onConfirm }) {
     setSaving(true);
     setError("");
     try {
-      await onConfirm(reason);
+      await onConfirm(reason, isRange ? custom : null);
     } catch (e) {
       setError(errText(e, "ثبت درخواست ناموفق بود"));
     } finally {
@@ -88,10 +102,29 @@ function SubmitDialog({ open, amount, onClose, onConfirm }) {
     >
       <DialogTitle>ثبت درخواست مساعده</DialogTitle>
       <DialogContent>
-        <Alert severity="info" sx={{ mb: 2 }}>
-          مبلغ مساعده‌ی شما طبق سابقه: <b>{formatRial(amount)}</b> (
-          {rialWords(amount)})
-        </Alert>
+        {isRange ? (
+          <>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              مبلغ دلخواه خود را بین <b>{formatRial(min)}</b> و <b>{formatRial(max)}</b> وارد کنید
+              {step ? ` (مضرب ${formatRial(step)})` : ""}.
+            </Alert>
+            <AmountField
+              label="مبلغ درخواستی (ریال)"
+              value={custom}
+              onChange={setCustom}
+              fullWidth
+              error={Boolean(amountError)}
+              helperText={amountError || (custom ? rialWords(custom) : " ")}
+              sx={{ mb: 1 }}
+              autoFocus
+            />
+          </>
+        ) : (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            مبلغ مساعده‌ی شما طبق سابقه: <b>{formatRial(amount)}</b> (
+            {rialWords(amount)})
+          </Alert>
+        )}
         <TextField
           label="توضیح (اختیاری)"
           value={reason}
@@ -111,7 +144,11 @@ function SubmitDialog({ open, amount, onClose, onConfirm }) {
         <Button onClick={onClose} disabled={saving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={confirm} disabled={saving}>
+        <Button
+          variant="contained"
+          onClick={confirm}
+          disabled={saving || (isRange && (custom === "" || Boolean(amountError)))}
+        >
           ثبت درخواست
         </Button>
       </DialogActions>
@@ -274,9 +311,11 @@ export default function AdvanceRequestPage() {
                   {data.group_label}
                 </Typography>
                 <Typography variant="body1" fontWeight={700} sx={{ mt: 1 }}>
-                  {data.amount != null
-                    ? `مبلغ مساعده‌ی شما: ${formatRial(data.amount)} (${rialWords(data.amount)})`
-                    : "با سابقه‌ی فعلی شما مبلغی برای مساعده تعریف نشده است."}
+                  {data.amount == null
+                    ? "با سابقه‌ی فعلی شما مبلغی برای مساعده تعریف نشده است."
+                    : data.amount_mode === "range" && data.amount_min != null
+                      ? `مبلغ قابل درخواست: از ${formatRial(data.amount_min)} تا ${formatRial(data.amount_max)}`
+                      : `مبلغ مساعده‌ی شما: ${formatRial(data.amount)} (${rialWords(data.amount)})`}
                 </Typography>
                 {data.block_reasons?.length > 0 && (
                   <Alert severity="info" sx={{ mt: 1.5 }}>
@@ -404,10 +443,10 @@ export default function AdvanceRequestPage() {
 
       <SubmitDialog
         open={newOpen}
-        amount={data?.amount}
+        data={data}
         onClose={() => setNewOpen(false)}
-        onConfirm={async (reason) => {
-          const item = await submitAdvance(reason);
+        onConfirm={async (reason, amount) => {
+          const item = await submitAdvance(reason, amount);
           finish(`درخواست مساعده ثبت شد — ${item.status_label}`);
         }}
       />

@@ -1,5 +1,5 @@
 {
-  "count": 437,
+  "count": 438,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -53,6 +53,7 @@
     "GET /api/v1/access-gate/settings",
     "GET /api/v1/advances/admin/sites",
     "GET /api/v1/advances/admin/sites/{site_id}/employees",
+    "GET /api/v1/advances/admin/sites/{site_id}/export",
     "GET /api/v1/advances/admin/sites/{site_id}/notification-templates",
     "GET /api/v1/advances/admin/sites/{site_id}/requests",
     "GET /api/v1/advances/inbox",

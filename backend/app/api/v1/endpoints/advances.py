@@ -12,13 +12,16 @@ API ماژول «درخواست مساعده» (پیشوند /advances؛ docs/ad
   PUT  /advances/admin/sites/{site_id}            تنظیمات (policy)
   GET  /advances/admin/sites/{site_id}/employees  جست‌وجوی پرسنل سایت برای مدیر سایت (policy)
   GET  /advances/admin/sites/{site_id}/requests   فهرست درخواست‌ها (view یا finance)
+  GET  /advances/admin/sites/{site_id}/export     خروجی Excel درخواست‌ها + اطلاعات بانکی پرسنل (view یا finance)
   POST /advances/admin/sites/{site_id}/decide     تأیید/رد گروهی واحد مالی (finance)
   POST /advances/admin/sites/{site_id}/pay        ثبت پرداخت گروهی (finance)
   GET/PUT /advances/admin/sites/{site_id}/notification-templates   متن اعلان‌ها (policy)
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +43,7 @@ CODES = ("advances.policy", "advances.finance", "advances.view")
 
 class SubmitIn(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
+    amount: int | None = Field(default=None, gt=0)  # فقط حالت «مبلغ دلخواه» (ریال)
 
 
 class BulkDecisionIn(BaseModel):
@@ -57,7 +61,8 @@ class BulkPayIn(BaseModel):
 class TierIn(BaseModel):
     group: str = Field(default="staff", max_length=20)  # staff | supervisor | manager
     min_months: int = Field(ge=0)
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0)  # مبلغ ثابت؛ در حالت دلخواه = سقف پله
+    min_amount: int | None = Field(default=None, gt=0)  # حداقل مبلغ دلخواه پله
 
 
 class MemberIn(BaseModel):
@@ -72,6 +77,8 @@ class SettingsIn(BaseModel):
     window_to_day: int = Field(ge=1, le=31)
     max_per_month: int = Field(ge=1, le=31)
     rules_text: str | None = Field(default=None, max_length=4000)
+    amount_mode: str = Field(default="fixed", pattern="^(fixed|range)$")
+    amount_step: int | None = Field(default=None, ge=0)
     tiers: list[TierIn] = Field(default_factory=list, max_length=90)
     members: list[MemberIn] = Field(default_factory=list, max_length=500)  # تعیین دستی مدیر/سرپرست
 
@@ -123,7 +130,7 @@ async def me(db: AsyncSession = Depends(get_db), current_user: User = Depends(ge
 async def submit(payload: SubmitIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     employee = await _require_employee(db, current_user)
     try:
-        return await AdvanceService(db).submit(employee, current_user, payload.reason)
+        return await AdvanceService(db).submit(employee, current_user, payload.reason, payload.amount)
     except AdvanceError as e:
         raise _err(e) from e
 
@@ -251,6 +258,26 @@ async def site_requests(
     await _require(db, current_user, site_id, "advances.view", "advances.finance")
     return await AdvanceService(db).list_requests(
         site_id, status_filter, month, normalize_search_text(q or "") or None, page, page_size
+    )
+
+
+@router.get("/admin/sites/{site_id}/export")
+async def export_site_requests(
+    site_id: int,
+    status_filter: str | None = Query(default=None, alias="status", max_length=20),
+    month: str | None = Query(default=None, max_length=7),
+    q: str | None = Query(default=None, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """خروجی Excel درخواست‌ها (همان فیلترهای فهرست) همراه با اطلاعات بانکی پرسنل. مجوز: advances.view یا finance."""
+    await _require(db, current_user, site_id, "advances.view", "advances.finance")
+    content = await AdvanceService(db).export_xlsx(site_id, status_filter, month, normalize_search_text(q or "") or None)
+    filename = f"advances_{site_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"  # noqa: DTZ005
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

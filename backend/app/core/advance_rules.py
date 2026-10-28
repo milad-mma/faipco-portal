@@ -1,8 +1,10 @@
 """
 قواعد خالص (بدون دیتابیس) ماژول «درخواست مساعده» — docs/advances.md.
 
-- مبلغ: پلکانی با مبلغ ثابت؛ پرسنل مبلغ بالاترین پله‌ای را می‌گیرد که سابقه‌اش (ماه کامل) به min_months آن می‌رسد.
-  اگر به هیچ پله‌ای نرسد، نمی‌تواند درخواست بدهد.
+- مبلغ: پلکانی؛ پله = بالاترین پله‌ای که سابقه‌ی پرسنل (ماه کامل) به min_months آن می‌رسد (به هیچ پله‌ای نرسد =
+  درخواست ممکن نیست). نوع مبلغ در تنظیمات هر سایت: «ثابت» (همان مبلغ پله) یا «دلخواه در محدوده» (پرسنل مبلغ را بین
+  min_amount و amount همان پله وارد می‌کند، مضرب amount_step اگر تعیین شده باشد).
+- شروع به کار: کسی که تاریخ استخدامش در ماه جاری (یا بعد از آن) است، از ابتدای ماه بعد می‌تواند درخواست بدهد.
 - گروه: پرسنل (staff) / سرپرستان (supervisor) / مدیران (manager)؛ هر گروه پله‌های خودش را دارد و گروه بدون پله از
   پله‌های «پرسنل» استفاده می‌کند. سرپرست = تأییدکننده‌ی مرخصی (خودکار) یا تعیین دستی؛ مدیر فقط با تعیین دستی.
 - بازه‌ی ثبت: روزهای مجاز هر ماه شمسی [from, to] شامل دو سر؛ from > to یعنی بازه از آخر ماه به اول ماه بعد می‌چرخد
@@ -45,27 +47,103 @@ GROUP_LABELS = {GROUP_STAFF: "پرسنل", GROUP_SUPERVISOR: "سرپرستان",
 
 MAX_AMOUNT = 10**15
 
+AMOUNT_FIXED = "fixed"  # مبلغ ثابت پله
+AMOUNT_RANGE = "range"  # مبلغ دلخواه بین حداقل و حداکثر پله
+AMOUNT_MODES = (AMOUNT_FIXED, AMOUNT_RANGE)
+JALALI_MONTHS = (
+    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+)  # fmt: skip
+
 
 class AdvanceRuleError(ValueError):
     """خطای قابل نمایش به کاربر (متن فارسی)."""
 
 
-def tier_amount(months: int | None, tiers: list[dict]) -> int | None:
+def tier_for(months: int | None, tiers: list[dict]) -> dict | None:
     """
-    مبلغ ثابت مساعده برای این سابقه: بالاترین پله‌ای که min_months آن ≤ months است.
-    tiers: [{"min_months": int, "amount": int}, ...] با هر ترتیبی. سابقه‌ی نامشخص یا بدون پله‌ی مناسب → None.
+    پله‌ی این سابقه: بالاترین پله‌ای که min_months آن ≤ months است.
+    tiers: [{"min_months": int, "amount": int, "min_amount": int|None}, ...] با هر ترتیبی. سابقه‌ی نامشخص یا بدون پله → None.
     """
     if months is None:
         return None
     best = None
     for tier in tiers:
         try:
-            need, amount = int(tier["min_months"]), int(tier["amount"])
+            need = int(tier["min_months"])
+            int(tier["amount"])
         except (KeyError, TypeError, ValueError):
             continue
-        if need <= months and (best is None or need > best[0]):
-            best = (need, amount)
-    return best[1] if best else None
+        if need <= months and (best is None or need > int(best["min_months"])):
+            best = tier
+    return best
+
+
+def tier_amount(months: int | None, tiers: list[dict]) -> int | None:
+    """مبلغ (ثابت یا سقف) پله‌ی این سابقه؛ بدون پله → None."""
+    tier = tier_for(months, tiers)
+    return int(tier["amount"]) if tier else None
+
+
+def amount_range(tier: dict, step: int | None) -> tuple[int, int] | None:
+    """
+    محدوده‌ی مبلغ دلخواه یک پله: (حداقل، حداکثر) گردشده به مضرب step (حداقل رو به بالا، حداکثر رو به پایین).
+    حداقل پله اگر تعیین نشده باشد = step (یا ۱). اگر محدوده‌ی معتبری نماند → None.
+    """
+    high = int(tier["amount"])
+    low = int(tier.get("min_amount") or step or 1)
+    if step:
+        low = -(-low // step) * step
+        high = (high // step) * step
+    if low <= 0 or low > high:
+        return None
+    return low, high
+
+
+def validate_requested_amount(amount, tier: dict, step: int | None) -> int:
+    """مبلغ دلخواه پرسنل: عدد صحیح، داخل محدوده‌ی پله و مضرب step."""
+    try:
+        value = int(amount)
+    except (TypeError, ValueError) as e:
+        raise AdvanceRuleError("مبلغ درخواستی را وارد کنید") from e
+    bounds = amount_range(tier, step)
+    if bounds is None:
+        raise AdvanceRuleError("محدوده‌ی مبلغ برای سابقه‌ی شما درست تعریف نشده است؛ با واحد مالی هماهنگ کنید")
+    low, high = bounds
+    if value < low or value > high:
+        raise AdvanceRuleError(f"مبلغ درخواستی باید بین {low:,} و {high:,} ریال باشد")
+    if step and value % step:
+        raise AdvanceRuleError(f"مبلغ درخواستی باید مضرب {step:,} ریال باشد")
+    return value
+
+
+def validate_amount_settings(mode, step) -> tuple[str, int | None]:
+    """نوع مبلغ (ثابت/دلخواه) و مضرب (اختیاری، > ۰)."""
+    mode = str(mode or AMOUNT_FIXED)
+    if mode not in AMOUNT_MODES:
+        raise AdvanceRuleError("نوع مبلغ نامعتبر است")
+    if step in (None, "", 0, "0"):
+        return mode, None
+    try:
+        step = int(step)
+    except (TypeError, ValueError) as e:
+        raise AdvanceRuleError("مضرب مبلغ باید عدد باشد") from e
+    if step <= 0 or step > MAX_AMOUNT:
+        raise AdvanceRuleError("مضرب مبلغ باید بزرگ‌تر از صفر باشد")
+    return mode, step
+
+
+def hire_month_block(hire_date, today: tuple) -> str | None:
+    """
+    قاعده‌ی شروع به کار: اگر ماه شمسی تاریخ استخدام همین ماه (یا بعد از آن) باشد، درخواست ممکن نیست و از ابتدای ماه بعدِ
+    استخدام می‌شود درخواست داد. hire_date: رشته‌ی شمسی (یا None = بدون محدودیت). خروجی: پیام فارسی یا None.
+    """
+    hired = parse_jalali(hire_date) if hire_date else None
+    if not hired:
+        return None
+    if (hired[0], hired[1]) < (today[0], today[1]):
+        return None
+    y, m = (hired[0] + 1, 1) if hired[1] == 12 else (hired[0], hired[1] + 1)
+    return f"درخواست مساعده از ابتدای ماه بعد از شروع به کار ممکن است (از ۱ {JALALI_MONTHS[m - 1]} {y})."
 
 
 def group_tiers(tiers: list[dict], group: str) -> list[dict]:
@@ -80,12 +158,14 @@ def validate_tiers(tiers) -> list[dict]:
     """پله‌ها را تمیز می‌کند: گروه معتبر، ماه ≥ ۰، مبلغ > ۰، بدون ماه تکراری در هر گروه، مرتب بر اساس گروه و ماه."""
     if not isinstance(tiers, (list, tuple)):
         raise AdvanceRuleError("فهرست پله‌ها نامعتبر است")
-    out: dict[tuple[str, int], int] = {}
+    out: dict[tuple[str, int], tuple[int, int | None]] = {}
     for tier in tiers:
         try:
             group = str(tier.get("group") or GROUP_STAFF)
             months = int(tier.get("min_months"))
             amount = int(tier.get("amount"))
+            min_amount = tier.get("min_amount")
+            min_amount = int(min_amount) if min_amount not in (None, "", 0) else None
         except (AttributeError, TypeError, ValueError) as e:
             raise AdvanceRuleError("هر پله باید «حداقل سابقه (ماه)» و «مبلغ» عددی داشته باشد") from e
         if group not in GROUPS:
@@ -94,13 +174,15 @@ def validate_tiers(tiers) -> list[dict]:
             raise AdvanceRuleError("حداقل سابقه نمی‌تواند منفی باشد")
         if amount <= 0 or amount > MAX_AMOUNT:
             raise AdvanceRuleError("مبلغ پله باید بزرگ‌تر از صفر باشد")
+        if min_amount is not None and not (0 < min_amount <= amount):
+            raise AdvanceRuleError("حداقل مبلغ پله باید بزرگ‌تر از صفر و حداکثر برابر با مبلغ (سقف) پله باشد")
         if (group, months) in out:
             raise AdvanceRuleError(f"پله‌ی «{months} ماه» در گروه «{GROUP_LABELS[group]}» دو بار تعریف شده است")
-        out[(group, months)] = amount
+        out[(group, months)] = (amount, min_amount)
     order = {g: i for i, g in enumerate(GROUPS)}
     return [
-        {"group": g, "min_months": m, "amount": a}
-        for (g, m), a in sorted(out.items(), key=lambda kv: (order[kv[0][0]], kv[0][1]))
+        {"group": g, "min_months": m, "amount": a, "min_amount": mn}
+        for (g, m), (a, mn) in sorted(out.items(), key=lambda kv: (order[kv[0][0]], kv[0][1]))
     ]
 
 

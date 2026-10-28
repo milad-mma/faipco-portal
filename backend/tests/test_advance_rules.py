@@ -17,8 +17,8 @@ def test_tier_amount_picks_highest_reached_tier():
 
 def test_validate_tiers_sorts_and_rejects_bad_rows():
     assert R.validate_tiers([{"min_months": "12", "amount": "500"}, {"min_months": 0, "amount": 100}]) == [
-        {"group": "staff", "min_months": 0, "amount": 100},
-        {"group": "staff", "min_months": 12, "amount": 500},
+        {"group": "staff", "min_months": 0, "amount": 100, "min_amount": None},
+        {"group": "staff", "min_months": 12, "amount": 500, "min_amount": None},
     ]
     with pytest.raises(R.AdvanceRuleError):
         R.validate_tiers([{"min_months": 1, "amount": 0}])
@@ -79,8 +79,42 @@ def test_group_tiers_fallback_and_validation():
     assert R.tier_amount(3, R.group_tiers(tiers, "supervisor")) == 10  # بدون پله‌ی سرپرست → پله‌های پرسنل
     assert R.tier_amount(3, R.group_tiers(tiers, "staff")) == 10
     cleaned = R.validate_tiers([{"group": "manager", "min_months": 6, "amount": 9}, {"min_months": 0, "amount": 1}])
-    assert cleaned == [{"group": "staff", "min_months": 0, "amount": 1}, {"group": "manager", "min_months": 6, "amount": 9}]
+    assert cleaned == [
+        {"group": "staff", "min_months": 0, "amount": 1, "min_amount": None},
+        {"group": "manager", "min_months": 6, "amount": 9, "min_amount": None},
+    ]
     with pytest.raises(R.AdvanceRuleError):
         R.validate_tiers([{"group": "boss", "min_months": 0, "amount": 1}])
     # تکرار ماه فقط داخل یک گروه خطاست
     R.validate_tiers([{"group": "staff", "min_months": 0, "amount": 1}, {"group": "manager", "min_months": 0, "amount": 2}])
+
+
+def test_range_mode_amounts():
+    tier = {"min_months": 0, "amount": 50_000_000, "min_amount": 5_000_000}
+    assert R.amount_range(tier, 1_000_000) == (5_000_000, 50_000_000)
+    assert R.amount_range({"amount": 10_500_000}, 1_000_000) == (1_000_000, 10_000_000)  # سقف رو به پایین
+    assert R.validate_requested_amount("12000000", tier, 1_000_000) == 12_000_000
+    with pytest.raises(R.AdvanceRuleError):
+        R.validate_requested_amount(12_500_000, tier, 1_000_000)  # مضرب نیست
+    with pytest.raises(R.AdvanceRuleError):
+        R.validate_requested_amount(60_000_000, tier, 1_000_000)
+    with pytest.raises(R.AdvanceRuleError):
+        R.validate_requested_amount(None, tier, None)
+    assert R.validate_requested_amount(7, {"amount": 10}, None) == 7
+    assert R.tier_for(7, [{"min_months": 0, "amount": 1}, {"min_months": 6, "amount": 2}])["amount"] == 2
+    assert R.validate_tiers([{"min_months": 0, "amount": 10, "min_amount": 2}])[0]["min_amount"] == 2
+    with pytest.raises(R.AdvanceRuleError):
+        R.validate_tiers([{"min_months": 0, "amount": 10, "min_amount": 20}])
+    assert R.validate_amount_settings("range", "1000000") == ("range", 1_000_000)
+    assert R.validate_amount_settings(None, 0) == ("fixed", None)
+    with pytest.raises(R.AdvanceRuleError):
+        R.validate_amount_settings("other", None)
+
+
+def test_hire_month_block():
+    assert R.hire_month_block("1405/08/03", (1405, 8, 20)) == (
+        "درخواست مساعده از ابتدای ماه بعد از شروع به کار ممکن است (از ۱ آذر 1405)."
+    )
+    assert R.hire_month_block("1405/07/30", (1405, 8, 1)) is None
+    assert "فروردین 1406" in R.hire_month_block("1405/12/10", (1405, 12, 15))
+    assert R.hire_month_block(None, (1405, 8, 1)) is None

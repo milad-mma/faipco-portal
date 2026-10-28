@@ -85,7 +85,10 @@ class AdvanceService:
                 select(AdvanceTier).where(AdvanceTier.site_id == site_id).order_by(AdvanceTier.group, AdvanceTier.min_months)
             )
         ).scalars().all()
-        return [{"id": t.id, "group": t.group, "min_months": t.min_months, "amount": t.amount} for t in rows]
+        return [
+            {"id": t.id, "group": t.group, "min_months": t.min_months, "amount": t.amount, "min_amount": t.min_amount}
+            for t in rows
+        ]
 
     async def members(self, site_id: int) -> list[dict]:
         """تعیین‌های دستی گروه (مدیر / سرپرست) این سایت با نام پرسنل."""
@@ -248,7 +251,11 @@ class AdvanceService:
         service = await self._loans.service_info(employee)
         group = await self.employee_group(employee) if enabled else R.GROUP_STAFF
         tiers = R.group_tiers(await self.tiers(employee.site_id), group) if enabled else []
-        amount = R.tier_amount(service["months"], tiers)
+        tier = R.tier_for(service["months"], tiers)
+        amount = int(tier["amount"]) if tier else None
+        amount_mode = st.amount_mode if st and st.amount_mode in R.AMOUNT_MODES else R.AMOUNT_FIXED
+        amount_step = st.amount_step if st else None
+        bounds = R.amount_range(tier, amount_step) if tier and amount_mode == R.AMOUNT_RANGE else None
         y, m, d = get_current_jalali_date()
         month = R.request_month((y, m, d), st.window_from_day, st.window_to_day) if st else R.month_key((y, m, d))
         reasons: list[str] = []
@@ -259,6 +266,12 @@ class AdvanceService:
                 reasons.append(f"ثبت درخواست فقط {R.window_label(st.window_from_day, st.window_to_day)} ممکن است.")
             if amount is None:
                 reasons.append("با سابقه‌ی فعلی شما هنوز مبلغی برای مساعده تعریف نشده است.")
+            elif amount_mode == R.AMOUNT_RANGE and bounds is None:
+                reasons.append("محدوده‌ی مبلغ برای سابقه‌ی شما درست تعریف نشده است؛ با واحد مالی هماهنگ کنید.")
+            # شروع به کار در همین ماه: از ابتدای ماه بعد (تاریخ استخدام دوره‌ی فعلی، نه سابقه‌ی اصلاح‌شده)
+            hire_block = R.hire_month_block(employee.hire_date_jalali, (y, m, d))
+            if hire_block:
+                reasons.append(hire_block)
             used = await self._month_count(employee.id, month)
             if used >= st.max_per_month:
                 reasons.append(
@@ -293,6 +306,10 @@ class AdvanceService:
             "group": group,
             "group_label": R.GROUP_LABELS[group],
             "amount": amount,
+            "amount_mode": amount_mode,
+            "amount_min": bounds[0] if bounds else None,
+            "amount_max": bounds[1] if bounds else None,
+            "amount_step": amount_step,
             "tiers": tiers,
             "current_month": month,
             "can_submit": enabled and not reasons,
@@ -300,7 +317,7 @@ class AdvanceService:
             "requests": await self.serialize_many(list(mine), public=True),
         }
 
-    async def submit(self, employee: Employee, user: User, reason: str | None) -> dict:
+    async def submit(self, employee: Employee, user: User, reason: str | None, amount: int | None = None) -> dict:
         if not (employee.is_active and employee.is_enabled):
             raise AdvanceError("حساب پرسنلی شما فعال نیست", 403)
         # قفل ردیف پرسنل تا دو ثبت هم‌زمان (دو کلیک/دو تب) هر دو از بررسی «درخواست باز/دفعات ماه» رد نشوند
@@ -309,6 +326,13 @@ class AdvanceService:
         if not overview["can_submit"]:
             raise AdvanceError(" ".join(overview["block_reasons"]) or "ثبت درخواست ممکن نیست")
         st = await self.settings(employee.site_id)
+        final_amount = overview["amount"]
+        if overview["amount_mode"] == R.AMOUNT_RANGE:
+            tier = R.tier_for(overview["service"]["months"], overview["tiers"])
+            try:
+                final_amount = R.validate_requested_amount(amount, tier, overview["amount_step"])
+            except R.AdvanceRuleError as e:
+                raise AdvanceError(str(e)) from e
         unit_manager_id = await self._loans.resolve_unit_manager(employee)
         if unit_manager_id is None:
             raise AdvanceError("مدیر واحد شما پیدا نشد (همان تأییدکننده‌ی مرخصی)؛ با منابع انسانی هماهنگ کنید")
@@ -318,7 +342,7 @@ class AdvanceService:
         req = AdvanceRequest(
             site_id=employee.site_id,
             employee_id=employee.id,
-            amount=overview["amount"],
+            amount=final_amount,
             employee_group=overview["group"],
             service_months=overview["service"]["months"],
             reason=_clean(reason),
@@ -437,6 +461,8 @@ class AdvanceService:
                     "window_to_day": st.window_to_day if st else 31,
                     "max_per_month": st.max_per_month if st else 1,
                     "rules_text": st.rules_text if st else None,
+                    "amount_mode": st.amount_mode if st else R.AMOUNT_FIXED,
+                    "amount_step": st.amount_step if st else None,
                     "tiers": await self.tiers(site.id),
                     "members": await self.members(site.id),
                     "stuck_count": await self.stuck_count(site.id),
@@ -563,6 +589,7 @@ class AdvanceService:
         try:
             f, t, n = R.validate_window(data.get("window_from_day"), data.get("window_to_day"), data.get("max_per_month"))
             tiers = R.validate_tiers(data.get("tiers") or [])
+            amount_mode, amount_step = R.validate_amount_settings(data.get("amount_mode"), data.get("amount_step"))
         except R.AdvanceRuleError as e:
             raise AdvanceError(str(e)) from e
         st = await self.settings(site_id, create=True)
@@ -570,13 +597,21 @@ class AdvanceService:
         st.site_manager_employee_id = manager_id
         st.window_from_day, st.window_to_day, st.max_per_month = f, t, n
         st.rules_text = _clean(data.get("rules_text"), 4000)
+        st.amount_mode, st.amount_step = amount_mode, amount_step
         # پله‌ها: جایگزینی کامل (فهرست کوچک است)
         for row in (await self.db.execute(select(AdvanceTier).where(AdvanceTier.site_id == site_id))).scalars().all():
             await self.db.delete(row)
         await self.db.flush()
         for tier in tiers:
             self.db.add(
-                AdvanceTier(site_id=site_id, group=tier["group"], min_months=tier["min_months"], amount=tier["amount"])
+                AdvanceTier(
+                    site_id=site_id,
+                    group=tier["group"],
+                    min_months=tier["min_months"],
+                    amount=tier["amount"],
+                    # حداقل فقط در حالت دلخواه معنی دارد؛ در حالت ثابت هم نگه داشته می‌شود تا با برگشتن به دلخواه گم نشود
+                    min_amount=tier.get("min_amount"),
+                )
             )
         # تعیین دستی گروه‌ها: جایگزینی کامل؛ هر پرسنل فقط یک گروه، فقط پرسنل همین سایت
         members: dict[int, str] = {}
@@ -612,6 +647,15 @@ class AdvanceService:
     async def list_requests(
         self, site_id: int, status: str | None, month: str | None, q: str | None, page: int, page_size: int
     ) -> dict:
+        stmt = self._requests_stmt(site_id, status, month, q)
+        total = (await self.db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
+        rows = (
+            await self.db.execute(stmt.order_by(AdvanceRequest.id.desc()).offset((page - 1) * page_size).limit(page_size))
+        ).scalars().all()
+        return {"items": await self.serialize_many(list(rows), public=False), "total": total}
+
+    def _requests_stmt(self, site_id: int, status: str | None, month: str | None, q: str | None):
+        """فیلترهای مشترک فهرست درخواست‌های پنل و خروجی Excel."""
         stmt = select(AdvanceRequest).options(selectinload(AdvanceRequest.events)).where(AdvanceRequest.site_id == site_id)
         if status == "open":
             stmt = stmt.where(AdvanceRequest.status.in_(R.OPEN_STATUSES))
@@ -624,11 +668,84 @@ class AdvanceService:
             stmt = stmt.join(Employee, Employee.id == AdvanceRequest.employee_id).where(
                 (Employee.first_name.ilike(like)) | (Employee.last_name.ilike(like)) | (Employee.personnel_code.ilike(like))
             )
-        total = (await self.db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
+        return stmt
+
+    async def export_xlsx(self, site_id: int, status: str | None, month: str | None, q: str | None) -> bytes:
+        """
+        خروجی Excel درخواست‌های مساعده با همان فیلترهای فهرست پنل؛ برای هر بانک فعال سایت ستون‌های اطلاعات بانکی پرسنل
+        (شماره حساب/شبا/کارت، فیلدهای مخفی حذف) — برای پرداخت توسط واحد مالی (docs/advances.md).
+        """
+        import io
+        from zoneinfo import ZoneInfo
+
+        import jdatetime
+        from openpyxl import Workbook
+
+        from app.core.bank_rules import FIELDS as BANK_FIELDS
+        from app.models.bank_account import EmployeeBankAccount
+        from app.models.employee import Department
+        from app.services.bank_account_service import BankAccountService
+
         rows = (
-            await self.db.execute(stmt.order_by(AdvanceRequest.id.desc()).offset((page - 1) * page_size).limit(page_size))
+            await self.db.execute(self._requests_stmt(site_id, status, month, q).order_by(AdvanceRequest.id.desc()))
         ).scalars().all()
-        return {"items": await self.serialize_many(list(rows), public=False), "total": total}
+        emp_ids = list({r.employee_id for r in rows})
+        emps: dict[int, tuple] = {}
+        if emp_ids:
+            res = await self.db.execute(
+                select(Employee, Department.name)
+                .outerjoin(Department, Department.id == Employee.department_id)
+                .where(Employee.id.in_(emp_ids))
+            )
+            emps = {e.id: (e, dept) for e, dept in res.all()}
+        banks = await BankAccountService(self.db).list_banks(site_id, active_only=True)
+        accounts: dict[tuple[int, int], EmployeeBankAccount] = {}
+        if emp_ids and banks:
+            res = await self.db.execute(select(EmployeeBankAccount).where(EmployeeBankAccount.employee_id.in_(emp_ids)))
+            accounts = {(a.employee_id, a.bank_id): a for a in res.scalars().all()}
+        bank_cols = [
+            (bank.id, field, f"{bank.name} - {label}")
+            for bank in banks
+            for field, label in BANK_FIELDS.items()
+            if bank.modes[field] != "hidden"
+        ]
+        tehran = ZoneInfo("Asia/Tehran")
+
+        def jalali_dt(value) -> str:
+            if not value:
+                return ""
+            return jdatetime.datetime.fromgregorian(datetime=value.astimezone(tehran)).strftime("%Y/%m/%d %H:%M")
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "مساعده"
+        ws.sheet_view.rightToLeft = True
+        header = [
+            "شماره", "کد پرسنلی", "نام", "نام خانوادگی", "واحد", "گروه", "سابقه (ماه)", "ماه درخواست", "مبلغ (ریال)",
+            "وضعیت", "زمان ثبت", "تاریخ پرداخت", "توضیح پرسنل", "توضیح پرداخت",
+        ]  # fmt: skip
+        ws.append(header + [c[2] for c in bank_cols])
+        for req in rows:
+            emp, dept = emps.get(req.employee_id, (None, None))
+            row = [
+                req.id, emp.personnel_code if emp else "", emp.first_name if emp else "", emp.last_name if emp else "",
+                dept or "", R.GROUP_LABELS.get(req.employee_group, req.employee_group or ""), req.service_months,
+                req.request_month, req.amount, R.status_label(req.status, self.current_step(req)),
+                jalali_dt(req.created_at), req.paid_date or "", req.reason or "", req.paid_note or "",
+            ]  # fmt: skip
+            for bank_id, field, _ in bank_cols:
+                acc = accounts.get((req.employee_id, bank_id))
+                row.append(getattr(acc, field, None) or "" if acc else "")
+            ws.append(row)
+        # مبلغ با جداکننده‌ی هزارگان؛ شماره‌های بانکی متن (صفرهای ابتدا و نمایش علمی)
+        first_bank_col = len(header) + 1
+        for row_cells in ws.iter_rows(min_row=2):
+            row_cells[8].number_format = "#,##0"
+            for cell in row_cells[first_bank_col - 1 :]:
+                cell.number_format = "@"
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
 
     async def finance_decide(self, site_id: int, user: User, request_ids: list[int], approve: bool, note) -> dict:
         """تأیید/رد گروهی واحد مالی روی درخواست‌های «در انتظار تأیید واحد مالی» همین سایت."""

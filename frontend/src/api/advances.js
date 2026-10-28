@@ -8,9 +8,11 @@ export async function fetchMyAdvances() {
   return data;
 }
 
-export async function submitAdvance(reason) {
+// amount فقط در حالت «مبلغ دلخواه در محدوده» (ریال)
+export async function submitAdvance(reason, amount = null) {
   const { data } = await apiClient.post("/advances", {
     reason: reason || null,
+    amount: amount || null,
   });
   return data;
 }
@@ -81,6 +83,15 @@ export async function fetchAdvanceRequests(
       },
     },
   );
+  return data;
+}
+
+/** خروجی Excel درخواست‌ها (همان فیلترهای فهرست) همراه با اطلاعات بانکی پرسنل */
+export async function exportAdvanceRequests(siteId, { status, month, q } = {}) {
+  const { data } = await apiClient.get(`/advances/admin/sites/${siteId}/export`, {
+    params: { status: status || undefined, month: month || undefined, q: q || undefined },
+    responseType: "blob",
+  });
   return data;
 }
 

@@ -32,6 +32,9 @@ class AdvanceSettings(Base, TimestampMixin):
     window_to_day: Mapped[int] = mapped_column(Integer, nullable=False, default=31)
     max_per_month: Mapped[int] = mapped_column(Integer, nullable=False, default=1)  # حداکثر درخواست (غیر از رد/لغو) در ماه
     rules_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # متن قوانین که بالای فرم به پرسنل نشان داده می‌شود
+    # نوع مبلغ: fixed = مبلغ ثابت پله؛ range = مبلغ دلخواه پرسنل بین حداقل و سقف پله (Migration 119)
+    amount_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="fixed", server_default="fixed")
+    amount_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # مضرب مبلغ دلخواه (ریال)؛ خالی = آزاد
 
 
 class AdvanceTier(Base):
@@ -42,7 +45,8 @@ class AdvanceTier(Base):
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
     group: Mapped[str] = mapped_column(String(20), nullable=False, default="staff")  # staff | supervisor | manager
     min_months: Mapped[int] = mapped_column(Integer, nullable=False)  # از این سابقه (ماه کامل) به بالا
-    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # مبلغ ثابت مساعده (ریال)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # مبلغ ثابت مساعده (ریال)؛ در حالت دلخواه = سقف
+    min_amount: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # حداقل مبلغ دلخواه (فقط حالت range)
 
 
 class AdvanceGroupMember(Base):
