@@ -23,8 +23,9 @@ from app.models.user import User
 
 # مجوزهایی که فقط به کار خودِ شخص مربوط‌اند و دسترسی به داده‌ی دیگران نمی‌دهند؛
 # نقشی که فقط این‌ها را دارد در تعیین سایت‌های قابل‌مشاهده حساب نمی‌شود. فعلاً خالی است
-# (attendance.clock_in_out در Migration 104 حذف شد)؛ سازوکار برای مجوزهای شخصی آینده نگه داشته شده است.
-SELF_ONLY_PERMISSIONS: frozenset[str] = frozenset()
+# (attendance.clock_in_out در Migration 104 حذف شد). birthdays.view هم این‌جاست: فقط کارت «متولدین امروز» را برای
+# سایت‌های دیگر باز می‌کند و نباید دسترسی کلی (جست‌وجوی پرسنل، اطلاعیه و ...) را به آن سایت‌ها گسترش دهد.
+SELF_ONLY_PERMISSIONS: frozenset[str] = frozenset({"birthdays.view"})
 
 
 async def all_site_ids(db: AsyncSession) -> set[int]:
@@ -170,3 +171,29 @@ async def get_sites_with_permission_prefix(db: AsyncSession, user: User, code_pr
             if covers_all_sites(mapping[code], every_site):
                 mapping[code] = None
     return mapping
+
+
+BIRTHDAYS_VIEW = "birthdays.view"  # مشاهده‌ی متولدین سایت‌های دیگر (به تفکیک سایت؛ سراسری = همه‌ی سایت‌ها)
+
+
+async def get_birthday_site_ids(db: AsyncSession, user: User, include_hr: bool = False) -> set[int] | None:
+    """
+    سایت‌هایی که کاربر متولدینشان را در کارت «متولدین امروز» می‌بیند — **مستقل از بقیه‌ی نقش‌ها و مجوزها**:
+    هر کس متولدین سایت خودش را می‌بیند، به‌علاوه‌ی سایت‌هایی که مجوز birthdays.view را برایشان دارد (اعطای سراسری =
+    همه‌ی سایت‌ها → None). نقش‌های سراسری دیگر (مثلاً مدیر منابع انسانی سراسری) دیگر متولدین سایت‌های دیگر را نشان
+    نمی‌دهند. include_hr: ابزار پیام تبریک (hr.birthday_messages) هم سایت‌های همان مجوز را می‌بیند. Admin واقعی: همه.
+    """
+    sites = await get_sites_with_permission(db, user, BIRTHDAYS_VIEW)
+    if sites is None:
+        return None
+    result = set(sites)
+    if include_hr:
+        hr_sites = await get_sites_with_permission(db, user, "hr.birthday_messages")
+        if hr_sites is None:
+            return None
+        result |= hr_sites
+    if user.employee_id is not None:
+        own_site = (await db.execute(select(Employee.site_id).where(Employee.id == user.employee_id))).scalar_one_or_none()
+        if own_site is not None:
+            result.add(own_site)
+    return result

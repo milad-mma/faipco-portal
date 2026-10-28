@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import notification_templates
 from app.core.persian_date import get_current_jalali_date
-from app.core.site_access import get_accessible_site_ids
+from app.core.site_access import get_birthday_site_ids
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
 from app.models.employee import Department, Employee
 from app.models.user import User
@@ -74,7 +74,7 @@ class BirthdayReactionService:
             raise BirthdayReactionError("نمی‌توانید به تولد خودتان واکنش ثبت کنید")
 
         # فقط به تولد پرسنل سایت‌هایی که کاربر به آن‌ها دسترسی دارد (همان محدودیت لیست تولد داشبورد)
-        accessible_site_ids = await get_accessible_site_ids(self.db, current_user)
+        accessible_site_ids = await get_birthday_site_ids(self.db, current_user)
         if accessible_site_ids is not None and employee.site_id not in accessible_site_ids:
             raise BirthdayReactionError("امکان ثبت واکنش برای این فرد وجود ندارد")
 

@@ -20,6 +20,7 @@ from app.core.deps import get_current_user, require_permission
 from app.core.text_normalize import normalize_search_text
 from app.core.site_access import (
     get_accessible_site_ids,
+    get_birthday_site_ids,
     get_sites_with_permission,
     get_sites_with_permission_prefix,
 )
@@ -377,10 +378,11 @@ async def list_birthdays_today(
     (BirthdayMessagesPage) بدون تغییر همه پرسنل را ببینند — فقط داشبورد
     شخصی پرسنل (PersonalDashboardPage) این پارامتر را true می‌فرستد.
 
-    دسترسی: هر کاربر لاگین‌شده؛ چون نام/واحد/سایت پرسنل برگردانده می‌شود، ایزوله‌سازی
-    چندسایتی مثل GET /employees اعمال می‌شود. خروجی: لیست BirthdayEmployeeOut همراه ری‌اکشن‌ها.
+    دسترسی: هر کاربر لاگین‌شده؛ سایت‌ها فقط با get_birthday_site_ids (سایت خود + مجوز birthdays.view، مستقل از بقیه‌ی
+    نقش‌ها؛ پنل ادمین/ابزار تبریک با respect_privacy=false سایت‌های hr.birthday_messages را هم می‌بیند).
+    خروجی: لیست BirthdayEmployeeOut همراه ری‌اکشن‌ها.
     """
-    accessible_site_ids = await get_accessible_site_ids(db, current_user)
+    accessible_site_ids = await get_birthday_site_ids(db, current_user, include_hr=not respect_privacy)
 
     today_year, today_month, today_day = get_current_jalali_date()
 
@@ -502,7 +504,7 @@ async def get_birthday_related_photo_thumbnail(
     employee = await db.get(Employee, employee_id, options=[undefer(Employee.photo_thumbnail)])
     if employee is None or not employee.photo_thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
-    accessible_site_ids = await get_accessible_site_ids(db, current_user)  # None = همه‌ی سایت‌ها
+    accessible_site_ids = await get_birthday_site_ids(db, current_user, include_hr=True)  # None = همه‌ی سایت‌ها
 
     # متولد امروز فقط اگر در سایت‌های در دسترس بیننده باشد
     is_birthday_person = (
