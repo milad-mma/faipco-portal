@@ -292,3 +292,14 @@ localStorage پاک می‌کردند. نتیجه: کاربری که وسط اس
 تازه‌وارد باید همان روز اول نصب کنند)، نگاه کنید
 [`docs/android-app-twa.md`](android-app-twa.md) — بسته‌بندی همین PWA
 به‌عنوان یک اپلیکیشن اندروید واقعی (APK)، کاملاً مستقل از این محدودیت.
+
+## نمایش سریع «نسخه جدید پرتال آماده است»
+قبلاً صفحه‌ی باز فقط هر ۵ دقیقه Service Worker را بررسی می‌کرد و پیام بعد از دانلود کامل همه‌ی فایل‌های Precache نسخه‌ی
+جدید می‌آمد. حالا:
+- هر Build شناسه دارد: `__APP_BUILD__` (define در `vite.config.js`) و فایل `dist/version.json` (`{"build": "..."}`).
+- `utils/serviceWorker.js` همان لحظه‌ی باز شدن، هر ۳۰ ثانیه، با برگشت به برنامه (visibilitychange/focus) و با وصل شدن
+  اینترنت `version.json?t=` را با `cache: "no-store"` می‌خواند؛ اگر شناسه فرق داشت پیام فوراً نمایش داده می‌شود و دانلود
+  Service Worker جدید هم‌زمان شروع می‌شود. بررسی Service Worker هم هر ۱ دقیقه (به‌جای ۵).
+- دکمه‌ی «بارگذاری»: اگر نسخه‌ی جدید در waiting است → SKIP_WAITING؛ وگرنه تا ۲۰ ثانیه منتظر نصب می‌ماند؛ اگر نصب نشد،
+  Cache و Service Worker را پاک و صفحه را از شبکه بارگذاری می‌کند. localStorage (ورود) دست نمی‌خورد.
+- version.json در Precache نیست (الگوی Precache فقط js/css/html/svg/فونت) و Service Worker آن را از Cache جواب نمی‌دهد.

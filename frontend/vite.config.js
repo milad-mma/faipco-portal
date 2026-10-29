@@ -6,10 +6,28 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+// شناسه‌ی هر Build (زمان ساخت): داخل کد (__APP_BUILD__) و در dist/version.json؛ صفحه‌ی باز هر ۳۰ ثانیه version.json
+// را می‌خواند و اگر عوض شده بود فوراً پیام «نسخه جدید پرتال آماده است» را نشان می‌دهد (src/utils/serviceWorker.js)
+const APP_BUILD = String(Date.now());
+
+function versionFile() {
+  return {
+    name: "faipco-version-file",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: APP_BUILD }) });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_BUILD__: JSON.stringify(APP_BUILD),
+  },
   plugins: [
     react(),
+    versionFile(),
     VitePWA({
       // injectManifest: Service Worker دستی src/sw.js (با کد Push/Notification) استفاده می‌شود
       // و Workbox فقط فهرست Precache (که نام فایل‌هایش با هر Build تغییر می‌کند) را داخل آن تزریق می‌کند
