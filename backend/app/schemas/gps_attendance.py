@@ -86,6 +86,8 @@ class PresenceSessionAdminOut(BaseModel):
     # portal = پرتال باز (زمان‌ها دقیق)؛ background = اپ اندروید بسته (پایان تقریبی، حداکثر ~۱۵ دقیقه خطا)
     source: str = "portal"
     time_uncertain: bool = False
+    current_page: str | None = None  # صفحه‌ی فعلی پرتال (نشست «اپ»؛ Migration 129)
+    page_seen_at: datetime | None = None
 
 
 class PresenceSessionPageOut(BaseModel):

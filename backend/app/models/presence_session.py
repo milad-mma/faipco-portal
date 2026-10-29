@@ -42,6 +42,9 @@ class PresenceSession(Base):
     # تا وقتی NULL است یعنی همین الان آنلاین است
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # هنگام قطع اتصال محاسبه می‌شود
+    # صفحه‌ی فعلی پرتال (Migration 129؛ فقط نشست «اپ»): مسیر بدون پارامتر و از کی در آن صفحه است
+    current_page: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    page_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # آخرین موقعیت گزارش‌شده در طول Session و نتیجه بررسی محدوده
     last_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -42,7 +42,7 @@ import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
-import { usePresenceMonitor } from "../utils/presenceSocket";
+import { setPresencePage, usePresenceMonitor } from "../utils/presenceSocket";
 import { isAndroidApp } from "../utils/androidApp";
 import AnnouncementDialog from "./AnnouncementDialog";
 import MobileAppPrompt from "./MobileAppPrompt";
@@ -128,6 +128,10 @@ export default function Layout() {
   // و سرور لحظه‌ی قطع اتصال و مدت‌زمان حضور را محاسبه می‌کند.
   // «آنلاین در پرتال» برای همه‌ی پرسنل؛ پایش GPS («آنلاین در محیط کار») فقط داخل اپ اندروید
   usePresenceMonitor(Boolean(user?.employee_id), isAndroidApp() && Boolean(user?.mobile_app_enabled));
+  // صفحه‌ی فعلی برای گزارش «پرسنل آنلاین» (فقط مسیر)
+  useEffect(() => {
+    setPresencePage(location.pathname);
+  }, [location.pathname]);
 
   // وضعیت باز/بسته‌ی زیرمنوها (کلید: مسیر والد)؛ گروهی که خودش یا یکی از فرزندانش فعال است، پیش‌فرض باز است
   const [openMenus, setOpenMenus] = useState(() => {

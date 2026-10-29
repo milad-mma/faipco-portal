@@ -46,6 +46,20 @@ export function lastGpsFixAt() {
   return lastFixAt;
 }
 
+// صفحه‌ی فعلی پرتال برای گزارش «پرسنل آنلاین» (فقط مسیر، بدون پارامترها؛ Migration 129)
+let currentPage = typeof window !== "undefined" ? window.location.pathname : "";
+let activeSocket = null; // اتصال باز فعلی برای اعلام فوری تغییر صفحه
+
+/** با هر جابه‌جایی بین صفحه‌ها (Layout) صدا زده می‌شود و اگر اتصال باز است همان لحظه به سرور اعلام می‌کند. */
+export function setPresencePage(path) {
+  const clean = String(path || "").split("?")[0];
+  if (!clean || clean === currentPage) return;
+  currentPage = clean;
+  if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+    activeSocket.send(JSON.stringify({ type: "page", page: currentPage }));
+  }
+}
+
 export function usePresenceMonitor(enabled, gpsEnabled = false) {
   const socketRef = useRef(null); // اتصال WebSocket فعلی
   const heartbeatIntervalRef = useRef(null); // شناسه‌ی setInterval ارسال Heartbeat
@@ -76,9 +90,9 @@ export function usePresenceMonitor(enabled, gpsEnabled = false) {
         console.warn(`${LOG_PREFIX} تلاش برای ارسال Heartbeat ولی اتصال باز نیست.`);
         return;
       }
-      // بدون پایش GPS: فقط اعلام «اپ باز است»
+      // بدون پایش GPS: فقط اعلام «اپ باز است» (+ صفحه‌ی فعلی)
       if (!useGps) {
-        socket.send(JSON.stringify({}));
+        socket.send(JSON.stringify({ page: currentPage }));
         return;
       }
       // enableHighAccuracy برای استفاده از GPS واقعی لازم است چون محدوده‌ی مجاز سایت‌ها ۱۰۰ تا ۳۰۰ متر است
@@ -98,6 +112,7 @@ export function usePresenceMonitor(enabled, gpsEnabled = false) {
                 latitude: position.latitude,
                 longitude: position.longitude,
                 accuracy_meters: position.accuracyMeters,
+                page: currentPage,
               })
             );
             console.info(`${LOG_PREFIX} Heartbeat ارسال شد.`);
@@ -106,7 +121,7 @@ export function usePresenceMonitor(enabled, gpsEnabled = false) {
         .catch((err) => {
           console.error(`${LOG_PREFIX} گرفتن موقعیت GPS ناموفق بود — Heartbeat خالی ارسال می‌شود:`, err.message);
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({}));
+            socket.send(JSON.stringify({ page: currentPage }));
           }
         });
     }
@@ -124,6 +139,7 @@ export function usePresenceMonitor(enabled, gpsEnabled = false) {
       console.info(`${LOG_PREFIX} در حال اتصال به`, url.replace(/token=[^&]+/, "token=***"));
       const socket = new WebSocket(url);
       socketRef.current = socket;
+      activeSocket = socket;
 
       // پس از اتصال: ارسال فوری یک Heartbeat و شروع ارسال دوره‌ای
       socket.onopen = () => {

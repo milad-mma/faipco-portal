@@ -29,6 +29,7 @@ import { fetchPresenceSessions } from "../api/attendance";
 import EmployeeSearchField from "../components/EmployeeSearchField";
 import SiteFilterSelect from "../components/SiteFilterSelect";
 import { monoFontSx } from "../theme";
+import { pageTitle } from "../utils/pageTitle";
 
 const PAGE_SIZE = 50; // تعداد ردیف در هر صفحه
 
@@ -162,6 +163,7 @@ export default function PresenceReportPage() {
                   <TableCell>پرسنل</TableCell>
                   <TableCell>وضعیت</TableCell>
                   <TableCell>{kind === "app" ? "دستگاه" : "سایت"}</TableCell>
+                  {kind === "app" && <TableCell>صفحه</TableCell>}
                   {kind === "gps" && <TableCell>منبع</TableCell>}
                   <TableCell>شروع</TableCell>
                   <TableCell>پایان</TableCell>
@@ -199,6 +201,25 @@ export default function PresenceReportPage() {
                     <TableCell>
                       {(kind === "app" ? s.client : s.matched_site_name) || "—"}
                     </TableCell>
+                    {kind === "app" && (
+                      <TableCell>
+                        {s.current_page ? (
+                          <>
+                            <Typography variant="body2">
+                              {s.is_online_now ? "" : "آخرین: "}
+                              {pageTitle(s.current_page)}
+                            </Typography>
+                            {s.page_seen_at && (
+                              <Typography variant="caption" color="text.secondary" sx={monoFontSx}>
+                                از {new Date(s.page_seen_at).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })}
+                              </Typography>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    )}
                     {kind === "gps" && (
                       <TableCell>
                         <Stack

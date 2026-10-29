@@ -1,5 +1,5 @@
 {
-  "count": 438,
+  "count": 440,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -134,6 +134,7 @@
     "GET /api/v1/leave-requests/sites/{site_id}/module-status",
     "GET /api/v1/leave-requests/sites/{site_id}/notification-templates",
     "GET /api/v1/leave-requests/sites/{site_id}/operation-lookup",
+    "GET /api/v1/leave-requests/sites/{site_id}/stuck-approvers",
     "GET /api/v1/leave-requests/sites/{site_id}/types",
     "GET /api/v1/leave-requests/types",
     "GET /api/v1/loans/admin/employees/{employee_id}/service",
@@ -294,6 +295,7 @@
     "POST /api/v1/insurance/me/documents",
     "POST /api/v1/insurance/registrations/{registration_id}/members/{member_id}/reject-document",
     "POST /api/v1/insurance/registrations/{registration_id}/review-left",
+    "POST /api/v1/leave-requests/sites/{site_id}/reassign-approvers",
     "POST /api/v1/leave-requests/sites/{site_id}/types",
     "POST /api/v1/leave-requests/submit",
     "POST /api/v1/leave-requests/{request_id}/decide",

@@ -316,6 +316,16 @@ def _client_label(user_agent: str | None) -> str | None:
     return f"{device} · {browser}" if browser else device
 
 
+def _clean_page(value) -> str | None:
+    """مسیر صفحه از کلاینت: فقط pathname (بدون ?query و #)، با «/» شروع، حداکثر ۲۰۰ نویسه."""
+    if not isinstance(value, str):
+        return None
+    path = value.split("?", 1)[0].split("#", 1)[0].strip()
+    if not path.startswith("/") or len(path) > 200:
+        return None
+    return path
+
+
 @router.websocket("/presence-ws")
 async def presence_websocket(websocket: WebSocket, token: str = Query(...), app: str | None = Query(default=None)):
     """
@@ -384,6 +394,16 @@ async def presence_websocket(websocket: WebSocket, token: str = Query(...), app:
                 app_session.last_seen_at = seen
                 if session is not None:
                     session.last_seen_at = seen  # نشست GPS باز هم با هر Heartbeat زنده می‌ماند
+
+                # صفحه‌ی فعلی پرتال (هر Heartbeat و هر جابه‌جایی بین صفحه‌ها)؛ فقط مسیر، بدون پارامتر
+                page = _clean_page(data.get("page"))
+                if page and page != app_session.current_page:
+                    app_session.current_page = page
+                    app_session.page_seen_at = seen
+                if data.get("type") == "page":
+                    # پیام تغییر صفحه، Heartbeat موقعیت نیست؛ روی منطق GPS اثری ندارد
+                    await db.commit()
+                    continue
 
                 if not gps_enabled:
                     await db.commit()
@@ -558,6 +578,8 @@ async def list_presence_sessions(
                 matched_site_name=matched_site.name if matched_site else None,
                 last_distance_meters=s.last_distance_meters,
                 is_within_geofence=s.is_within_geofence,
+                current_page=s.current_page if s.kind == "app" else None,
+                page_seen_at=s.page_seen_at if s.kind == "app" else None,
                 source=s.source or "portal",
                 time_uncertain=bool(s.time_uncertain),
             )
