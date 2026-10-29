@@ -1,7 +1,7 @@
 // صفحه‌ی مدیریت نقش‌ها و مجوزها.
 // فهرست نقش‌ها را نشان می‌دهد و امکان ساخت، ویرایش و حذف نقش با انتخاب از مجوزهای موجود
 // (درخت مجوزها گروه‌بندی‌شده بر اساس پیشوند) را فراهم می‌کند.
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -10,15 +10,20 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
-  FormGroup,
   IconButton,
   Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Tooltip,
   Typography,
@@ -38,6 +43,7 @@ import {
   updateRole,
 } from "../api/users";
 import { useAuth } from "../context/AuthContext";
+import SearchField from "../components/SearchField";
 
 const EMPTY_FORM = { name: "", description: "", permissionIds: [] };  // مقدار اولیه‌ی فرم نقش
 
@@ -76,6 +82,8 @@ export default function RoleManagementPage() {
   const [error, setError] = useState("");
   const [roleToDelete, setRoleToDelete] = useState(null);  // نقشی که دیالوگ تأیید حذفش باز است
   const [expandedGroups, setExpandedGroups] = useState({});  // وضعیت باز/بسته‌ی هر گروه مجوز؛ پیش‌فرض باز
+  const [query, setQuery] = useState("");  // جست‌وجوی مجوز در جدول
+  const [onlySelected, setOnlySelected] = useState(false);  // فقط مجوزهای انتخاب‌شده
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -103,8 +111,25 @@ export default function RoleManagementPage() {
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [permissions]);
 
+  // گروه‌های قابل نمایش بعد از جست‌وجو و فیلتر «فقط انتخاب‌شده‌ها» (تیک گروه فقط روی ردیف‌های نمایش‌داده‌شده اثر دارد)
+  const visibleGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return groupedPermissions
+      .map(([group, items]) => [
+        group,
+        items.filter(
+          (p) =>
+            (!onlySelected || form.permissionIds.includes(p.id)) &&
+            (!q || p.code.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q)),
+        ),
+      ])
+      .filter(([, items]) => items.length > 0);
+  }, [groupedPermissions, query, onlySelected, form.permissionIds]);
+
   // دیالوگ را برای ساخت نقش جدید با فرم خالی باز می‌کند
   async function openCreateDialog() {
+    setQuery("");
+    setOnlySelected(false);
     setEditingRoleId(null);
     setForm(EMPTY_FORM);
     setError("");
@@ -113,6 +138,8 @@ export default function RoleManagementPage() {
 
   // دیالوگ ویرایش نقش را باز می‌کند و جزئیات نقش (شامل مجوزها) را از سرور در فرم می‌گذارد
   async function openEditDialog(role) {
+    setQuery("");
+    setOnlySelected(false);
     setEditingRoleId(role.id);
     setError("");
     setDialogOpen(true);
@@ -272,7 +299,7 @@ export default function RoleManagementPage() {
       )}
 
       {/* Dialog ساخت/ویرایش نقش */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editingRoleId ? "ویرایش نقش" : "نقش جدید"}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -304,91 +331,127 @@ export default function RoleManagementPage() {
               {permissions === null ? (
                 <CircularProgress size={20} />
               ) : (
-                <Stack spacing={0.5} sx={{ maxHeight: 380, overflowY: "auto", pr: 1 }}>
-                  {groupedPermissions.map(([group, items]) => {
-                    const selectedCount = items.filter((p) => form.permissionIds.includes(p.id)).length;
-                    const allSelected = selectedCount === items.length;
-                    const isExpanded = expandedGroups[group] !== false;
-                    return (
-                      <Box key={group} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
-                        {/* گره والد — یک شاخه از درخت مجوزها (مثلاً «vehicles») */}
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          spacing={0.5}
-                          sx={{ px: 1, py: 0.5, cursor: "pointer" }}
-                          onClick={() => toggleGroupExpanded(group)}
-                        >
-                          <IconButton size="small" sx={{ p: 0.25 }}>
-                            {isExpanded ? <ExpandMoreOutlinedIcon fontSize="small" /> : <ChevronLeftOutlinedIcon fontSize="small" />}
-                          </IconButton>
-                          <Checkbox
-                            size="small"
-                            checked={allSelected}
-                            indeterminate={selectedCount > 0 && !allSelected}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={() => toggleGroup(items)}
-                          />
-                          <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
-                            {group}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {selectedCount}/{items.length}
-                          </Typography>
-                        </Stack>
-                        {/* گره‌های فرزند — تک‌تک مجوزهای همین شاخه */}
-                        <Collapse in={isExpanded}>
-                          <FormGroup sx={{ pb: 0.5 }}>
-                            {items.map((p) => (
-                              <FormControlLabel
-                                key={p.id}
-                                sx={{ mr: 0, pr: 4.5 }}
-                                control={
-                                  <Checkbox
-                                    size="small"
-                                    checked={form.permissionIds.includes(p.id)}
-                                    onChange={() => togglePermission(p.id)}
-                                  />
-                                }
-                                label={
-                                  <Box>
-                                    <Stack direction="row" spacing={0.75} alignItems="center">
-                                      <Typography variant="body2">{p.code}</Typography>
-                                      {SYSTEM_WIDE_PERMISSIONS[p.code] && (
-                                        <Tooltip title={SYSTEM_WIDE_PERMISSIONS[p.code]} arrow>
-                                          <Chip
-                                            size="small"
-                                            color="error"
-                                            label="کل سیستم — فقط افراد مورد اعتماد"
-                                            sx={{ height: 18, fontSize: 10 }}
-                                          />
-                                        </Tooltip>
-                                      )}
-                                      {isAdminLevelPermission(p.code) && (
-                                        <Chip
-                                          size="small"
-                                          color="warning"
-                                          variant="outlined"
-                                          label="دسترسی ادمین"
-                                          sx={{ height: 18, fontSize: 10 }}
-                                        />
-                                      )}
-                                    </Stack>
-                                    {p.description && (
-                                      <Typography variant="caption" color="text.secondary">
-                                        {p.description}
+                <>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                    <SearchField
+                      value={query}
+                      onChange={setQuery}
+                      placeholder="جست‌وجوی مجوز…"
+                      fullWidth={false}
+                      sx={{ flex: 1, minWidth: 160 }}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch size="small" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} />
+                      }
+                      label={<Typography variant="body2">فقط انتخاب‌شده‌ها ({form.permissionIds.length})</Typography>}
+                    />
+                  </Stack>
+                  {/* جدول درختی مجوزها (مثل تب «مجوزهای مستقیم» پرسنل): ردیف گروه با تیک کل گروه و باز/بسته، زیرش مجوزها.
+                      مجوز نقش سایت ندارد (سایت موقع دادن نقش به هر نفر انتخاب می‌شود) پس فقط یک ستون تیک دارد. */}
+                  {visibleGroups.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                      {onlySelected ? "هنوز مجوزی انتخاب نشده." : "مجوزی پیدا نشد."}
+                    </Typography>
+                  ) : (
+                    <TableContainer sx={{ maxHeight: 420, border: 1, borderColor: "divider", borderRadius: 1.5 }}>
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 700 }}>مجوز</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700, width: 90 }}>
+                              دسترسی
+                            </TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {visibleGroups.map(([group, items]) => {
+                            const selectedCount = items.filter((p) => form.permissionIds.includes(p.id)).length;
+                            const allSelected = selectedCount === items.length;
+                            const isExpanded = expandedGroups[group] !== false;
+                            return (
+                              <Fragment key={group}>
+                                {/* ردیف گروه — یک شاخه از درخت مجوزها (مثلاً «vehicles») */}
+                                <TableRow sx={{ bgcolor: "action.selected" }}>
+                                  <TableCell sx={{ cursor: "pointer" }} onClick={() => toggleGroupExpanded(group)}>
+                                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                                      <IconButton size="small" sx={{ p: 0.25 }}>
+                                        {isExpanded ? (
+                                          <ExpandMoreOutlinedIcon fontSize="small" />
+                                        ) : (
+                                          <ChevronLeftOutlinedIcon fontSize="small" />
+                                        )}
+                                      </IconButton>
+                                      <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
+                                        {group}
                                       </Typography>
-                                    )}
-                                  </Box>
-                                }
-                              />
-                            ))}
-                          </FormGroup>
-                        </Collapse>
-                      </Box>
-                    );
-                  })}
-                </Stack>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {selectedCount}/{items.length}
+                                      </Typography>
+                                    </Stack>
+                                  </TableCell>
+                                  <TableCell align="center" sx={{ py: 0 }}>
+                                    <Tooltip title={`همه‌ی مجوزهای گروه ${group}`} arrow>
+                                      <Checkbox
+                                        size="small"
+                                        checked={allSelected}
+                                        indeterminate={selectedCount > 0 && !allSelected}
+                                        onChange={() => toggleGroup(items)}
+                                      />
+                                    </Tooltip>
+                                  </TableCell>
+                                </TableRow>
+                                {/* ردیف‌های فرزند — تک‌تک مجوزهای همین شاخه */}
+                                {isExpanded &&
+                                  items.map((p) => (
+                                    <TableRow key={p.id} hover>
+                                      <TableCell sx={{ pl: 4 }}>
+                                        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                                          <Typography variant="body2">{p.code}</Typography>
+                                          {SYSTEM_WIDE_PERMISSIONS[p.code] && (
+                                            <Tooltip title={SYSTEM_WIDE_PERMISSIONS[p.code]} arrow>
+                                              <Chip
+                                                size="small"
+                                                color="error"
+                                                label="کل سیستم — فقط افراد مورد اعتماد"
+                                                sx={{ height: 18, fontSize: 10 }}
+                                              />
+                                            </Tooltip>
+                                          )}
+                                          {isAdminLevelPermission(p.code) && (
+                                            <Chip
+                                              size="small"
+                                              color="warning"
+                                              variant="outlined"
+                                              label="دسترسی ادمین"
+                                              sx={{ height: 18, fontSize: 10 }}
+                                            />
+                                          )}
+                                        </Stack>
+                                        {p.description && (
+                                          <Typography variant="caption" color="text.secondary" display="block">
+                                            {p.description}
+                                          </Typography>
+                                        )}
+                                      </TableCell>
+                                      <TableCell align="center" sx={{ py: 0 }}>
+                                        <Checkbox
+                                          size="small"
+                                          checked={form.permissionIds.includes(p.id)}
+                                          onChange={() => togglePermission(p.id)}
+                                          inputProps={{ "aria-label": p.code }}
+                                        />
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                              </Fragment>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </>
               )}
             </Box>
             {error && <Alert severity="error">{error}</Alert>}
