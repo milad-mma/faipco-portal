@@ -265,6 +265,9 @@ class LeaveRequestApproverOut(BaseModel):
     id: int
     department_id: int
     approver_employee: EmployeeBrief
+    # فقط در پاسخ ذخیره: درخواست‌های بدون تصمیمی که از تأییدکننده‌ی قبلی منتقل شدند / جایگزین پیدا نکردند
+    reassigned: int = 0
+    unresolved_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -304,6 +307,9 @@ class LeaveRequestHrOfficerOut(BaseModel):
     id: int
     site_id: int
     employee: EmployeeBrief
+    # فقط در پاسخ ذخیره: درخواست‌های بدون تصمیمی که از تأییدکننده‌ی قبلی منتقل شدند / جایگزین پیدا نکردند
+    reassigned: int = 0
+    unresolved_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -339,6 +345,7 @@ class SubmitLeaveRequestOut(BaseModel):
 
     request_id: int
     request_ids: list[int] = []  # تردد فراموش‌شده با دو تردد، دو ردیف می‌سازد
+    approver_name: str | None = None  # درخواست برای چه کسی ارسال شد (فقط نام)
 
 
 # ---------- نمایش یک درخواست (نرمالایز‌شده) ----------
@@ -372,6 +379,11 @@ class LeaveRequestOut(BaseModel):
     is_exit_permit: bool = False  # مجوز خروج: start_hour = ساعت خروج، بدون مدت
     # تردد فراموش‌شده‌ای که سرپرست تأیید کرده و منتظر مسئول نیروی انسانی است
     awaiting_hr: bool = False
+    # فقط نام (بدون کد پرسنلی): در انتظار چه کسی / تصمیم توسط چه کسی
+    current_approver_name: str | None = None
+    approved_by_name: str | None = None
+    current_approver_substitute_name: str | None = None  # جانشین فعال تأییدکننده‌ی فعلی در کاراوب
+    as_substitute_for_name: str | None = None  # کارتابل: این درخواست را به جانشینی از چه کسی می‌بینید
 
 
 class DecidedLeaveRequestsPage(BaseModel):

@@ -30,6 +30,8 @@ class LoanSiteSettings(Base, TimestampMixin):
     )
     # تأییدکننده‌ی مرحله‌ی «منابع انسانی» (Migration 113)؛ مثل مدیر سایت یک پرسنل فعال همین سایت با حساب پرتال
     hr_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    # جانشین فعال مدیر در کاراوب (WF_Substitute) هم بتواند مراحل تأیید را انجام دهد (Migration 124)
+    allow_kara_substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # بخشی از «نام وام» در فیش حقوقی (اختیاری؛ Migration 108) برای تیک خودکار اقساط از روی فیش
     payslip_loan_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # آخرین شماره‌ی نوبت داده‌شده در این سایت (با قفل ردیف افزایش می‌یابد تا دو Worker شماره‌ی تکراری ندهند)

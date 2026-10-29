@@ -58,6 +58,21 @@ function statusLabel(item) {
   return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
 }
 
+// درخواست الان دست چه کسی است / چه کسی تصمیم گرفت (فقط نام؛ docs/leave-requests.md)
+function approverLine(item) {
+  if (item.status === "pending") {
+    const who = item.current_approver_name || (item.awaiting_hr ? "منابع انسانی" : "");
+    if (!who) return "";
+    const sub = item.current_approver_substitute_name ? ` (یا جانشین: ${item.current_approver_substitute_name})` : "";
+    return `در انتظار تأیید: ${who}${sub}`;
+  }
+  if (item.status === "approved" || item.status === "rejected") {
+    const name = item.approved_by_name || item.current_approver_name;
+    return name ? `${item.status === "approved" ? "تأیید" : "رد"} توسط: ${name}` : "";
+  }
+  return "";
+}
+
 // ساعت فشرده‌ی عددی (مثلاً 830) را به رشته‌ی «08:30» تبدیل می‌کند؛ null -> خط تیره
 function formatCompactTime(compact) {
   if (compact == null) return "—";
@@ -110,7 +125,7 @@ function compactToTimeString(compact) {
 
 /**
  * فرم ثبت درخواست جدید مرخصی/ماموریت/تردد فراموش‌شده/مجوز خروج.
- * ورودی: onSubmitted(isForgottenPunch) که بعد از ثبت موفق صدا زده می‌شود.
+ * ورودی: onSubmitted(isForgottenPunch, approverName) که بعد از ثبت موفق صدا زده می‌شود.
  * فیلدها بسته به نوع انتخابی (روزانه/ساعتی/ماموریت/تردد فراموش‌شده) تغییر می‌کنند.
  */
 function SubmitRequestForm({ onSubmitted }) {
@@ -199,14 +214,14 @@ function SubmitRequestForm({ onSubmitted }) {
       const punches = [{ punch_date: toDateOnly(punchDate), time: timeStringToCompact(punchTime) }];
       setIsSubmitting(true);
       try {
-        await submitLeaveRequest({
+        const res = await submitLeaveRequest({
           leave_type_id: selectedType.id,
           start_date: punches[0].punch_date,
           description,
           punches,
         });
         setDescription("");
-        onSubmitted(true);
+        onSubmitted(true, res?.approver_name);
       } catch (err) {
         setError(err.response?.data?.detail || "ثبت درخواست با خطا مواجه شد.");
       } finally {
@@ -221,7 +236,7 @@ function SubmitRequestForm({ onSubmitted }) {
     // مسیر مرخصی/ماموریت/مجوز خروج: فیلدهای ساعتی و ماموریت فقط در صورت نیاز پر می‌شوند
     setIsSubmitting(true);
     try {
-      await submitLeaveRequest({
+      const res = await submitLeaveRequest({
         leave_type_id: selectedType.id,
         start_date: toDateOnly(startDate),
         end_date: selectedType.is_hourly || isExit ? null : toDateOnly(endDate),
@@ -238,7 +253,7 @@ function SubmitRequestForm({ onSubmitted }) {
       setDescription("");
       setSource("");
       setDestination("");
-      onSubmitted();
+      onSubmitted(false, res?.approver_name);
     } catch (err) {
       setError(err.response?.data?.detail || "ثبت درخواست با خطا مواجه شد.");
     } finally {
@@ -488,6 +503,17 @@ function MyRequestsTable({ items, onDeleted }) {
               {item.is_forgotten_punch || item.is_exit_permit ? "" : "مدت: "}
               {formatDuration(item)}
             </Typography>
+            {approverLine(item) && (
+              <Typography
+                variant="caption"
+                color={item.status === "pending" ? "warning.main" : "text.secondary"}
+                fontWeight={700}
+                display="block"
+                sx={{ mt: 0.5 }}
+              >
+                {approverLine(item)}
+              </Typography>
+            )}
             {item.manager_idea && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
                 نظر تأییدکننده: {item.manager_idea}
@@ -527,6 +553,11 @@ function MyRequestsTable({ items, onDeleted }) {
                 <TableCell>{formatDuration(item)}</TableCell>
                 <TableCell>
                   <Chip size="small" color={STATUS_COLORS[item.status]} label={statusLabel(item)} />
+                  {approverLine(item) && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, whiteSpace: "nowrap" }}>
+                      {approverLine(item)}
+                    </Typography>
+                  )}
                   {item.approved_at && item.status !== "pending" && (
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, whiteSpace: "nowrap" }}>
                       {faDateTime(item.approved_at)}
@@ -676,6 +707,11 @@ function PendingApprovalTable({ items, onDecide }) {
               {/* موبایل: واحد و زمان ثبت زیر نام؛ تاریخ، مدت و توضیحات زیر نوع (بدون اسکرول افقی) */}
               <TableCell>
                 {item.requester_name || item.emp_no}
+                {item.as_substitute_for_name && (
+                  <Typography variant="caption" color="info.main" fontWeight={700} display="block">
+                    به جانشینی از {item.as_substitute_for_name}
+                  </Typography>
+                )}
                 <Typography variant="caption" color="text.secondary" sx={onlyXs}>
                   {item.requester_department || "—"}
                   <br />
@@ -920,11 +956,12 @@ function LeaveRequestPageContent() {
       {/* تب ثبت درخواست: بعد از ثبت، پیام موفقیت و انتقال به تب «درخواست‌های من» */}
       {tab === 0 && (
         <SubmitRequestForm
-          onSubmitted={(isForgottenPunch) => {
+          onSubmitted={(isForgottenPunch, approverName) => {
+            const kind = isForgottenPunch ? "درخواست تردد فراموش‌شده" : "درخواست شما";
             setToast(
-              isForgottenPunch
-                ? "درخواست تردد فراموش‌شده ثبت شد و برای سرپرست ارسال شد."
-                : "درخواست شما ثبت شد و برای تأییدکننده ارسال شد."
+              approverName
+                ? `${kind} ثبت شد و برای «${approverName}» ارسال شد.`
+                : `${kind} ثبت شد و برای ${isForgottenPunch ? "سرپرست" : "تأییدکننده"} ارسال شد.`
             );
             handleTabChange(1);
             loadMyRequests();

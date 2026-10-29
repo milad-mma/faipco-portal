@@ -5,7 +5,7 @@ Endpoint های منابع انسانی برای پیام تبریک تولد:
 /hr/birthday-enabled        (GET/PUT)         فعال/غیرفعال کلی قابلیت
 /hr/birthday-send-now       (POST)            ارسال فوری پیام‌های امروز
 /hr/birthdays/export        (GET)             خروجی Excel متولدین به تفکیک ماه (سایت‌محور)
-همه با مجوز hr.birthday_messages؛ Admin و hr-manager هر دو روی همان داده مشترک کار می‌کنند.
+همه با مجوز birthdays.messages؛ Admin و hr-manager هر دو روی همان داده مشترک کار می‌کنند.
 چون این تنظیمات و ارسال فوری روی پرسنل همه‌ی سایت‌ها اثر دارند، تغییر آن‌ها (POST/PUT/DELETE)
 فقط با انتصاب سراسری این مجوز (یا superuser) مجاز است؛ خواندن با انتصاب سایتی هم ممکن است.
 """
@@ -40,13 +40,13 @@ router = APIRouter()
 
 async def require_org_wide_birthday_manager(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("hr.birthday_messages")),
+    user: User = Depends(require_permission("birthdays.messages")),
 ) -> User:
     """
-    Dependency: کاربر باید hr.birthday_messages را به‌صورت سراسری (یا superuser) داشته باشد؛
+    Dependency: کاربر باید birthdays.messages را به‌صورت سراسری (یا superuser) داشته باشد؛
     انتصاب سایتی کافی نیست چون متن‌ها، ساعت ارسال و ارسال فوری برای همه‌ی سایت‌ها مشترک‌اند. در غیر این صورت 403.
     """
-    if await get_sites_with_permission(db, user, "hr.birthday_messages") is not None:
+    if await get_sites_with_permission(db, user, "birthdays.messages") is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="تنظیمات پیام تبریک تولد برای همه‌ی سایت‌ها مشترک است و فقط با مجوز برای همه‌ی سایت‌ها قابل تغییر است",
@@ -57,9 +57,9 @@ async def require_org_wide_birthday_manager(
 @router.get("/birthday-templates", response_model=list[BirthdayTemplateOut])
 async def list_birthday_templates(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("hr.birthday_messages")),
+    _user=Depends(require_permission("birthdays.messages")),
 ):
-    """فهرست همه متن‌های تبریک تولد را برمی‌گرداند. مجوز: hr.birthday_messages."""
+    """فهرست همه متن‌های تبریک تولد را برمی‌گرداند. مجوز: birthdays.messages."""
     return await BirthdayGreetingsService(db).list_templates()
 
 
@@ -69,7 +69,7 @@ async def add_birthday_template(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_org_wide_birthday_manager),
 ):
-    """یک متن تبریک جدید اضافه می‌کند و آن را برمی‌گرداند. مجوز: hr.birthday_messages؛ خطای 400 برای متن نامعتبر."""
+    """یک متن تبریک جدید اضافه می‌کند و آن را برمی‌گرداند. مجوز: birthdays.messages؛ خطای 400 برای متن نامعتبر."""
     try:
         return await BirthdayGreetingsService(db).add_template(payload.text)
     except ValueError as e:
@@ -82,7 +82,7 @@ async def delete_birthday_template(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_org_wide_birthday_manager),
 ):
-    """یک متن تبریک را حذف می‌کند. مجوز: hr.birthday_messages؛ خطای 404 اگر پیدا نشود."""
+    """یک متن تبریک را حذف می‌کند. مجوز: birthdays.messages؛ خطای 404 اگر پیدا نشود."""
     deleted = await BirthdayGreetingsService(db).delete_template(template_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پیام یافت نشد")
@@ -91,9 +91,9 @@ async def delete_birthday_template(
 @router.get("/birthday-send-time", response_model=BirthdaySendTimeOut)
 async def get_birthday_send_time(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("hr.birthday_messages")),
+    _user=Depends(require_permission("birthdays.messages")),
 ):
-    """ساعت و دقیقه ارسال روزانه پیام تبریک را برمی‌گرداند. مجوز: hr.birthday_messages."""
+    """ساعت و دقیقه ارسال روزانه پیام تبریک را برمی‌گرداند. مجوز: birthdays.messages."""
     hour, minute = await BirthdayGreetingsService(db).get_send_time()
     return BirthdaySendTimeOut(hour=hour, minute=minute)
 
@@ -106,7 +106,7 @@ async def update_birthday_send_time(
 ):
     """
     ساعت ارسال روزانه را ذخیره و زمان‌بند را فوراً به‌روز می‌کند.
-    مجوز: hr.birthday_messages؛ خطای 400 برای ساعت/دقیقه نامعتبر.
+    مجوز: birthdays.messages؛ خطای 400 برای ساعت/دقیقه نامعتبر.
     """
     from app.core.scheduler import reschedule_birthday_send_time
 
@@ -122,9 +122,9 @@ async def update_birthday_send_time(
 @router.get("/birthday-enabled", response_model=BirthdayEnabledOut)
 async def get_birthday_enabled(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission("hr.birthday_messages")),
+    _user=Depends(require_permission("birthdays.messages")),
 ):
-    """وضعیت فعال/غیرفعال بودن ارسال خودکار تبریک تولد را برمی‌گرداند. مجوز: hr.birthday_messages."""
+    """وضعیت فعال/غیرفعال بودن ارسال خودکار تبریک تولد را برمی‌گرداند. مجوز: birthdays.messages."""
     enabled = await BirthdayGreetingsService(db).get_enabled()
     return BirthdayEnabledOut(enabled=enabled)
 
@@ -135,7 +135,7 @@ async def update_birthday_enabled(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_org_wide_birthday_manager),
 ):
-    """ارسال خودکار تبریک تولد را فعال/غیرفعال می‌کند و وضعیت جدید را برمی‌گرداند. مجوز: hr.birthday_messages."""
+    """ارسال خودکار تبریک تولد را فعال/غیرفعال می‌کند و وضعیت جدید را برمی‌گرداند. مجوز: birthdays.messages."""
     enabled = await BirthdayGreetingsService(db).set_enabled(payload.enabled)
     return BirthdayEnabledOut(enabled=enabled)
 
@@ -147,7 +147,7 @@ async def send_birthday_greetings_now(
 ):
     """
     پیام‌های تبریک تولد امروز را فوراً و بدون صبر تا ساعت زمان‌بندی‌شده ارسال می‌کند (مثلاً برای تست).
-    مجوز: hr.birthday_messages. خروجی: تعداد پیام‌های ارسال‌شده + پیام متنی برای نمایش.
+    مجوز: birthdays.messages. خروجی: تعداد پیام‌های ارسال‌شده + پیام متنی برای نمایش.
     """
     sent_count = await BirthdayGreetingsService(db).send_todays_birthday_greetings()
     return {
@@ -209,14 +209,14 @@ async def export_birthdays(
     month: int | None = Query(default=None, ge=1, le=12),
     site_id: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("hr.birthday_messages")),
+    user: User = Depends(require_permission("birthdays.messages")),
 ):
     """
     خروجی Excel متولدین به تفکیک ماه شمسی: برگه‌ی «خلاصه» و یک برگه برای هر ماه (یا فقط ماه month) با
     نام و نام خانوادگی، کد پرسنلی، واحد و تاریخ تولد؛ مرتب بر اساس روز. فقط پرسنل فعال سایت‌هایی که کاربر
-    برایشان hr.birthday_messages دارد؛ با site_id فقط همان سایت (سایت غیرمجاز → 403). (این گزارش داخلی است و تنظیم «نمایش تولد در داشبورد» پرسنل را در نظر نمی‌گیرد).
+    برایشان birthdays.messages دارد؛ با site_id فقط همان سایت (سایت غیرمجاز → 403). (این گزارش داخلی است و تنظیم «نمایش تولد در داشبورد» پرسنل را در نظر نمی‌گیرد).
     """
-    sites = await get_sites_with_permission(db, user, "hr.birthday_messages")  # None = همه‌ی سایت‌ها
+    sites = await get_sites_with_permission(db, user, "birthdays.messages")  # None = همه‌ی سایت‌ها
     stmt = (
         select(Employee, Site.name)
         .join(Site, Site.id == Employee.site_id)

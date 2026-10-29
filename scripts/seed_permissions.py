@@ -68,7 +68,7 @@ DEFAULT_PERMISSIONS = [
         "به superadmin و نقش hr-manager داده می‌شود (سایت‌محور)",
     ),
     (
-        "hr.birthday_messages",
+        "birthdays.messages",
         "مدیریت پیام‌های تبریک تولد (متن‌ها + ساعت ارسال) — به superadmin و نقش hr-manager داده می‌شود",
     ),
 ]
@@ -111,7 +111,7 @@ ADDITIONAL_ROLES = {
             "notices.attendance_card",
             "notices.view",  # برای دیدن گزارش «ارسالی من»
             "attendance.manage_clock_records",  # گزارش ورود/خروج، آنلاین در محیط کار و ویرایش دستی رکوردها
-            "hr.birthday_messages",  # مدیریت پیام‌های تبریک تولد
+            "birthdays.messages",  # مدیریت پیام‌های تبریک تولد
         ],
     },
 }

@@ -285,7 +285,7 @@ def _setting_key(module: str, site_id: int | None) -> str:
 GLOBAL_MODULES = {
     "notices": "system.settings",
     "evaluation": "performance.periods.manage",
-    "birthday": "hr.birthday_messages",
+    "birthday": "birthdays.messages",
     "feedback": "feedback.reply",
     "login_security": "system.login_security",
     "family": "family.manage",

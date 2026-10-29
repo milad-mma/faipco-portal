@@ -321,7 +321,7 @@ export default function BirthdayMessagesPage() {
           <SiteFilterSelect
             value={exportSiteId}
             onChange={setExportSiteId}
-            permission="hr.birthday_messages"
+            permission="birthdays.messages"
             size="small"
           />
           <TextField

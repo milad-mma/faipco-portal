@@ -194,7 +194,7 @@ Seed آن را (بی‌اثر) برمی‌گرداند. توضیحات «فقط 
 | `system.logs` | 105 | `can_view_error_logs` | «گزارش خطاها»: دیدن، حل‌شده کردن، تنظیم هشدار ایمیلی — [`error-logs.md`](error-logs.md) |
 | `system.settings` | 034 | `can_manage_system_settings` | «تنظیمات سامانه»: پس‌زمینه ورود، برندینگ/لوگو، SMTP، پیامک |
 | `attendance.manage_clock_records` | Seed | `can_manage_clock_records` | «گزارش ورود و خروج»، «پرسنل آنلاین / آنلاین در محیط کار» و افزودن/ویرایش/حذف دستی رکورد — سایت‌محور. Migration 104: `attendance.view_logs` و `attendance.view_clock_records` در این ادغام و `attendance.clock_in_out` حذف شد |
-| `hr.birthday_messages` | Seed | `can_manage_birthday_messages` | «پیام‌های تبریک تولد» (`/hr/birthday-*`) |
+| `birthdays.messages` | Seed | `can_manage_birthday_messages` | «پیام‌های تبریک تولد» (`/hr/birthday-*`) |
 | `vehicles.view_all` | 032 | `can_view_vehicles_report` | «خودروهای پرسنل» — سایت‌محور |
 | `vehicles.manage` | 032 | `can_manage_vehicles` | ویرایش/حذف خودروی هر پرسنل |
 | `feedback.view` | 040 | `can_view_feedback` | «انتقادات و پیشنهادات» سایت(های) انتصاب |

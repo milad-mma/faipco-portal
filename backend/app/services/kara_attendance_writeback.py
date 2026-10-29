@@ -1024,3 +1024,46 @@ def request_ids_moved_by(cur, n: KaraNames, from_emp_no: int) -> list[int]:
         {"e": from_emp_no},
     )
     return [int(r["RequestId"]) for r in cur.fetchall()]
+
+
+def reassign_current_approver(cur, n: KaraNames, request_id: int, from_emp_no: int, to_emp_no: int) -> bool:
+    """
+    انتقال درخواستِ بدون تصمیم از تأییدکننده‌ی فعلی (ترک‌کار / تغییر تنظیمات) به تأییدکننده‌ی جدید
+    (docs/leave-requests.md «انتقال تأییدکننده»): فقط CurEmpNo و CurSection عوض می‌شود. عمداً ردیف WF_MoveUp ثبت
+    نمی‌شود، چون آن ردیف یعنی «تأییدکننده‌ی قبلی تأیید کرد و ارجاع داد» و در «سوابق من» او دیده می‌شود.
+    شرط WHERE (هنوز بدون تصمیم و هنوز پیش همان شخص) جلوی بازنویسی تصمیمی را که هم‌زمان گرفته شده می‌گیرد.
+    خروجی: True اگر ردیف عوض شد.
+    """
+    cur_col = getattr(n.leave, "cur_emp_no_column", None)
+    final_col = getattr(n.leave, "is_final_approved_column", None)
+    if not cur_col or not final_col:
+        raise RuntimeError("ستون تأییدکننده فعلی/تصمیم نهایی در نگاشت درخواست تنظیم نشده است")
+    sets = [f"{quote_mssql(cur_col)} = %(to)s"]
+    params = {"to": to_emp_no, "from": from_emp_no, "r": request_id}
+    to_sec = get_sec_no(cur, n, to_emp_no)
+    if n.has("wf_requests", "cur_section") and to_sec is not None:
+        sets.append(f"{n.c('wf_requests', 'cur_section')} = %(sec)s")
+        params["sec"] = to_sec
+    cur.execute(
+        f"UPDATE {n.requests_table} SET {', '.join(sets)} WHERE {n.requests_id} = %(r)s "
+        f"AND {quote_mssql(cur_col)} = %(from)s AND {quote_mssql(final_col)} IS NULL",
+        params,
+    )
+    return (cur.rowcount or 0) > 0
+
+
+def moved_up_request_ids(cur, n: KaraNames, request_ids: list[int]) -> set[int]:
+    """از میان این درخواست‌ها، آن‌هایی که ارجاع (WF_MoveUp) دارند = از مرحله‌ی سرپرست گذشته‌اند؛ بدون جدول ارجاع، خالی."""
+    if not n.can_write_moveup or not request_ids:
+        return set()
+    found: set[int] = set()
+    for i in range(0, len(request_ids), 500):
+        chunk = request_ids[i : i + 500]
+        placeholders = ", ".join(f"%(i{j})s" for j in range(len(chunk)))
+        cur.execute(
+            f"SELECT DISTINCT {n.c('wf_moveup', 'request_id')} AS RequestId FROM {quote_mssql(n.leave.wf_moveup_table_name)} "
+            f"WHERE {n.c('wf_moveup', 'request_id')} IN ({placeholders})",
+            {f"i{j}": rid for j, rid in enumerate(chunk)},
+        )
+        found |= {int(r["RequestId"]) for r in cur.fetchall()}
+    return found

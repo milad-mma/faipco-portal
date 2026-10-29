@@ -27,6 +27,8 @@ class AdvanceSettings(Base, TimestampMixin):
     site_manager_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
+    # جانشین فعال مدیر در کاراوب (WF_Substitute) هم بتواند مراحل تأیید را انجام دهد (Migration 124)
+    allow_kara_substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # بازه‌ی روزهای مجاز ثبت در هر ماه شمسی (شامل هر دو سر)؛ اگر from > to باشد بازه از آخر ماه به اول ماه بعد می‌چرخد
     window_from_day: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     window_to_day: Mapped[int] = mapped_column(Integer, nullable=False, default=31)

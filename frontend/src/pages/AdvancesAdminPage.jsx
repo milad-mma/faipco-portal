@@ -49,6 +49,7 @@ import {
   errText,
   formatRial,
   formatService,
+  SubstituteSwitch,
 } from "../components/loans/LoanShared";
 import {
   fetchAdvanceAdminSites,
@@ -560,6 +561,7 @@ function SettingsTab({ site, onSaved }) {
       rules_text: site.rules_text || "",
       amount_mode: site.amount_mode || "fixed",
       amount_step: site.amount_step ?? "",
+      allow_kara_substitute: !!site.allow_kara_substitute,
       tiers: (site.tiers || []).map((t) => ({
         group: t.group || "staff",
         min_months: t.min_months,
@@ -589,6 +591,7 @@ function SettingsTab({ site, onSaved }) {
         rules_text: form.rules_text.trim() || null,
         amount_mode: form.amount_mode,
         amount_step: form.amount_step === "" ? null : Number(form.amount_step),
+        allow_kara_substitute: form.allow_kara_substitute,
         // ردیف‌های کاملاً خالی نادیده گرفته می‌شوند؛ ردیف ناقص خطای فارسی می‌دهد
         tiers: form.tiers
           .filter((t) => String(t.min_months).trim() !== "" || t.amount !== "")
@@ -652,6 +655,10 @@ function SettingsTab({ site, onSaved }) {
         مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست. «واحد مالی» = دارندگان
         مجوز advances.finance این سایت.
       </Typography>
+      <SubstituteSwitch
+        checked={form.allow_kara_substitute}
+        onChange={(v) => set("allow_kara_substitute", v)}
+      />
 
       <Typography fontWeight={700}>بازه‌ی ثبت درخواست</Typography>
       <Stack

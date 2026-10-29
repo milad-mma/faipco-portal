@@ -379,7 +379,7 @@ async def list_birthdays_today(
     شخصی پرسنل (PersonalDashboardPage) این پارامتر را true می‌فرستد.
 
     دسترسی: هر کاربر لاگین‌شده؛ سایت‌ها فقط با get_birthday_site_ids (سایت خود + مجوز birthdays.view، مستقل از بقیه‌ی
-    نقش‌ها؛ پنل ادمین/ابزار تبریک با respect_privacy=false سایت‌های hr.birthday_messages را هم می‌بیند).
+    نقش‌ها؛ پنل ادمین/ابزار تبریک با respect_privacy=false سایت‌های birthdays.messages را هم می‌بیند).
     خروجی: لیست BirthdayEmployeeOut همراه ری‌اکشن‌ها.
     """
     accessible_site_ids = await get_birthday_site_ids(db, current_user, include_hr=not respect_privacy)

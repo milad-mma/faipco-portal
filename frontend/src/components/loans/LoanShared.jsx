@@ -6,6 +6,8 @@ import EmployeeSearchField from "../EmployeeSearchField";
 import {
   Box,
   Chip,
+  FormControlLabel,
+  Switch,
   Stack,
   Step,
   StepLabel,
@@ -282,5 +284,22 @@ export function LoanHistory({ item }) {
         </Typography>
       ))}
     </Stack>
+  );
+}
+
+// جانشین فعال مدیر در کاراوب (WF_Substitute) هم بتواند مراحل تأیید را انجام دهد — مشترک با مساعده
+export function SubstituteSwitch({ checked, onChange }) {
+  return (
+    <Box>
+      <FormControlLabel
+        control={<Switch checked={checked} onChange={(e) => onChange(e.target.checked)} />}
+        label="جانشین مدیران (تعریف‌شده در کاراوب) هم بتواند تأیید کند"
+      />
+      <Typography variant="caption" color="text.secondary" display="block">
+        وقتی برای تأییدکننده‌ی یک مرحله (مدیر واحد، منابع انسانی یا مدیر سایت) در کاراوب جانشینِ فعال تعریف شده باشد،
+        درخواست در کارتابل جانشین هم دیده می‌شود و هر کدام زودتر تصمیم بگیرند کافی است. در تاریخچه «جانشین …» ثبت می‌شود.
+        جانشین درخواست خودش را تأیید نمی‌کند.
+      </Typography>
+    </Box>
   );
 }

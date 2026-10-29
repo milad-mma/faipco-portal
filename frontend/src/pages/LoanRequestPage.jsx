@@ -482,6 +482,11 @@ function InboxCard({ item, onAct }) {
     <Card variant="outlined" sx={{ borderRadius: 3 }}>
       <CardContent>
         <Typography fontWeight={800}>{item.employee}</Typography>
+        {item.as_substitute_for && (
+          <Typography variant="caption" color="info.main" fontWeight={700} display="block">
+            به جانشینی از {item.as_substitute_for}
+          </Typography>
+        )}
         <Typography variant="body2">
           {item.type_title} — {formatRial(item.amount_requested)}
         </Typography>

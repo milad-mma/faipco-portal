@@ -35,6 +35,7 @@ from app.models.loan import (
 from app.models.site import Site
 from app.models.user import User
 from app.services import notification_templates
+from app.services import kara_substitute
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +289,25 @@ class LoanService:
         }.get(step)
         approver = await self._usable_approver(req, step, approver)
         req.current_approver_employee_id = approver
-        self._push([approver], "/loans?tab=inbox", req.site_id, "loan.approver_pending")
+        # جانشین فعال او در کاراوب هم (اگر برای سایت روشن است)
+        substitute = await kara_substitute.substitute_of(self.db, LoanSiteSettings, req.site_id, approver)
+        targets = [approver] + ([substitute] if substitute and substitute != req.employee_id else [])
+        self._push(targets, "/loans?tab=inbox", req.site_id, "loan.approver_pending")
+
+    async def _approval_condition(self, employee: Employee):
+        """
+        شرط «درخواست در انتظار تصمیم این پرسنل»: تأییدکننده‌ی فعلی خودش، یا (در سایت‌هایی که جانشینی کاراوب روشن است)
+        مدیری که این پرسنل جانشین فعال اوست — به‌جز درخواست خودِ جانشین. خروجی: (شرط SQL، {سایت: مدیران}).
+        """
+        scope = await kara_substitute.substitute_scope(self.db, LoanSiteSettings, employee.id)
+        conditions = [LoanRequest.current_approver_employee_id == employee.id]
+        for site_id, managers in scope.items():
+            conditions.append(
+                (LoanRequest.site_id == site_id)
+                & LoanRequest.current_approver_employee_id.in_(managers)
+                & (LoanRequest.employee_id != employee.id)
+            )
+        return or_(*conditions), scope
 
     async def _advance(self, req: LoanRequest) -> None:
         req.step_index += 1
@@ -305,7 +324,11 @@ class LoanService:
         # ۱) زنجیره‌ی بخش کاراوب؛ کد پرسنلی فقط در همین سایت و سایت‌های هم‌منبع (همان کاراوب) معنی دارد
         try:
             mapping, conn = await leave._get_mapping_and_connection(employee.site_id)
-            emp_no = await asyncio.to_thread(_resolve_manager_emp_no_sync, conn, mapping, int(employee.personnel_code))
+            # مدیرِ ترک‌کار در زنجیره رد می‌شود (صعود به بخش بالاتر) تا کاراوب به‌روز شود
+            inactive = await leave._inactive_emp_nos(employee.site_id)
+            emp_no = await asyncio.to_thread(
+                _resolve_manager_emp_no_sync, conn, mapping, int(employee.personnel_code), inactive
+            )
             if emp_no is not None:
                 site_ids = await leave._same_source_site_ids(employee.site_id)
                 found = (
@@ -836,13 +859,11 @@ class LoanService:
         guarantee = [
             r for r in guarantee_rows if self.current_step(r) == R.STEP_GUARANTORS
         ]
+        approval_condition, substitute_scope = await self._approval_condition(employee)
         approvals = (
             await self.db.execute(
                 self._requests_query()
-                .where(
-                    LoanRequest.current_approver_employee_id == employee.id,
-                    LoanRequest.status == R.STATUS_IN_REVIEW,
-                )
+                .where(approval_condition, LoanRequest.status == R.STATUS_IN_REVIEW)
                 .order_by(LoanRequest.created_at)
             )
         ).scalars().all()
@@ -876,10 +897,22 @@ class LoanService:
         ).first() is not None
         return {
             "guarantee": guarantee_items,
-            "approvals": await self._serialize_many(list(approvals), public=True),
+            "approvals": await self._mark_substitute(
+                list(approvals), await self._serialize_many(list(approvals), public=True), employee, substitute_scope
+            ),
             "show_decisions": was_approver or bool(approvals),
             "show_guarantees": was_guarantor,
         }
+
+    async def _mark_substitute(self, reqs: list, items: list[dict], employee: Employee, scope: dict) -> list[dict]:
+        """کارت‌هایی که پرسنل به جانشینی از مدیرش می‌بیند: as_substitute_for = نام مدیر (بدون کد)."""
+        if not scope:
+            return items
+        people = await self._names({r.current_approver_employee_id for r in reqs})
+        for req, item in zip(reqs, items):
+            if req.current_approver_employee_id != employee.id:
+                item["as_substitute_for"] = employee_label(people.get(req.current_approver_employee_id), code=False)
+        return items
 
     async def _attach_guarantee_terms(self, items: list[dict]) -> None:
         """متن قوانین ضمانت و متن تیک پذیرشِ مقررات همان درخواست (برای نمایش در کارت ضمانت)."""
@@ -981,12 +1014,10 @@ class LoanService:
         guarantee = sum(
             1 for steps, idx in rows if 0 <= idx < len(steps or []) and steps[idx] == R.STEP_GUARANTORS
         )
+        approval_condition, _ = await self._approval_condition(employee)
         approvals = (
             await self.db.execute(
-                select(func.count(LoanRequest.id)).where(
-                    LoanRequest.current_approver_employee_id == employee.id,
-                    LoanRequest.status == R.STATUS_IN_REVIEW,
-                )
+                select(func.count(LoanRequest.id)).where(approval_condition, LoanRequest.status == R.STATUS_IN_REVIEW)
             )
         ).scalar_one()
         return guarantee + int(approvals)
@@ -1033,11 +1064,23 @@ class LoanService:
             raise LoanError("حساب پرسنلی شما فعال نیست", 403)
         req = await self._load_request(request_id, lock=True)
         step = self.current_step(req)
-        if step not in R.PERSON_STEPS or req.current_approver_employee_id != employee.id:
+        as_substitute = (
+            step in R.PERSON_STEPS
+            and req.current_approver_employee_id != employee.id
+            and req.employee_id != employee.id
+            and await kara_substitute.substitute_of(
+                self.db, LoanSiteSettings, req.site_id, req.current_approver_employee_id
+            )
+            == employee.id
+        )
+        if step not in R.PERSON_STEPS or (req.current_approver_employee_id != employee.id and not as_substitute):
             raise LoanError("این درخواست در انتظار تصمیم شما نیست", 403)
         if not approve and not _clean(note):
             raise LoanError("دلیل رد را بنویسید")
         label = f"{employee_label(employee)} — {R.STEP_LABELS[step]}"
+        if as_substitute:
+            manager = (await self._names([req.current_approver_employee_id])).get(req.current_approver_employee_id)
+            label += f" (جانشین {employee_label(manager)})"
         if approve:
             self._event(req, "approved", label, user.id, note)
             await self._advance(req)
@@ -1078,6 +1121,7 @@ class LoanService:
                     "hr_employee_id": hid,
                     "hr": employee_label(managers.get(hid)),
                     "payslip_loan_title": st.payslip_loan_title if st else None,
+                    "allow_kara_substitute": bool(st and st.allow_kara_substitute),
                     # درخواست‌های معطلِ تأییدکننده‌ی ترک‌کار/غیرفعال (هشدار + دکمه‌ی انتقال در پنل)
                     "stuck_count": await self.stuck_count(site.id),
                 }
@@ -1104,6 +1148,7 @@ class LoanService:
         site_manager_employee_id: int | None,
         payslip_loan_title: str | None = None,
         hr_employee_id: int | None = None,
+        allow_kara_substitute: bool | None = None,
     ) -> dict:
         if (await self.db.get(Site, site_id)) is None:
             raise LoanError("سایت پیدا نشد", 404)
@@ -1114,6 +1159,8 @@ class LoanService:
         settings.site_manager_employee_id = site_manager_employee_id
         settings.hr_employee_id = hr_employee_id
         settings.payslip_loan_title = _clean(payslip_loan_title, 200)
+        if allow_kara_substitute is not None:
+            settings.allow_kara_substitute = bool(allow_kara_substitute)
         await self.db.flush()
         # درخواست‌های باز این سایت به مدیر سایت / منابع انسانی جدید منتقل می‌شوند (بدون ثبت مجدد)
         result = await self.reassign_approvers(site_id=site_id, reason="تغییر تأییدکننده در تنظیمات وام")

@@ -42,6 +42,8 @@ import {
   fetchCardLookup,
   fetchLeaveRequestApprovers,
   fetchLeaveRequestHrOfficer,
+  fetchLeaveStuckRequests,
+  reassignLeaveApprovers,
   fetchLeaveRequestModuleStatus,
   setLeavePunchTolerance,
   fetchLeaveRequestTypes,
@@ -441,7 +443,80 @@ function TypesSection({ siteId, onError }) {
  * بخش تعیین تأییدکننده‌ی هر واحد سازمانی سایت.
  * ورودی: siteId و onError. برای هر واحد، تأییدکننده‌ی فعلی (قابل حذف) و انتخاب‌گر پرسنل نمایش داده می‌شود.
  */
-function ApproversSection({ siteId, onError }) {
+// پیام نتیجه‌ی انتقال درخواست‌ها بعد از تغییر تأییدکننده (پاسخ ذخیره: reassigned / unresolved_count)
+function reassignNotice(res) {
+  if (!res?.reassigned && !res?.unresolved_count) return "";
+  let text = res.reassigned ? `${res.reassigned} درخواست بدون تصمیم به تأییدکننده‌ی جدید منتقل شد.` : "";
+  if (res.unresolved_count) text += ` برای ${res.unresolved_count} درخواست تأییدکننده‌ی جایگزین پیدا نشد.`;
+  return text.trim();
+}
+
+/**
+ * هشدار درخواست‌های مانده پیش تأییدکننده‌ی ترک‌کار + دکمه‌ی «انتقال به تأییدکننده‌های فعلی» (مثل وام و مساعده).
+ * Sync هنگام ترک کار خودکار منتقل می‌کند؛ این بخش برای مواردی است که جایگزین پیدا نشده یا قبلاً مانده‌اند.
+ */
+function StuckRequestsSection({ siteId, refreshKey, onError, onNotice }) {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    fetchLeaveStuckRequests(siteId)
+      .then(setItems)
+      .catch(() => setItems([]));
+  }, [siteId]);
+
+  useEffect(load, [load, refreshKey]);
+
+  async function handleReassign() {
+    setBusy(true);
+    try {
+      const res = await reassignLeaveApprovers(siteId);
+      onNotice(
+        reassignNotice({ reassigned: res.reassigned, unresolved_count: res.unresolved }) ||
+          "درخواستی برای انتقال پیدا نشد.",
+      );
+      load();
+    } catch (err) {
+      onError(err.response?.data?.detail || "انتقال درخواست‌ها با خطا مواجه شد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <Alert
+      severity="warning"
+      sx={{ mb: 2 }}
+      action={
+        <Button color="inherit" size="small" disabled={busy} onClick={handleReassign} sx={{ whiteSpace: "nowrap" }}>
+          انتقال به تأییدکننده‌های فعلی
+        </Button>
+      }
+    >
+      <Typography variant="body2" fontWeight={700}>
+        {items.length} درخواست بدون تصمیم پیش تأییدکننده‌ی ترک‌کار مانده است.
+      </Typography>
+      <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
+        انتقال: سرپرست امروز (زنجیره‌ی سازمانی کاراوب، بعد تأییدکننده‌ی دستی واحد) یا مسئول نیروی انسانی فعلی. اگر
+        جایگزینی پیدا نشود، تأییدکننده‌ی دستی واحد یا مسئول نیروی انسانی را تعیین کنید.
+      </Typography>
+      {items.slice(0, 10).map((item) => (
+        <Typography key={item.request_id} variant="caption" display="block">
+          • {item.requester_name || "—"} — {item.type_title || "درخواست"} — پیش {item.current_approver_name || "—"}
+        </Typography>
+      ))}
+      {items.length > 10 && (
+        <Typography variant="caption" display="block">
+          و {items.length - 10} مورد دیگر…
+        </Typography>
+      )}
+    </Alert>
+  );
+}
+
+function ApproversSection({ siteId, onError, onNotice }) {
   const [departments, setDepartments] = useState(null); // واحدهای سازمانی سایت
   const [approvers, setApprovers] = useState(null); // تأییدکننده‌های تعیین‌شده به ازای واحد
 
@@ -456,7 +531,8 @@ function ApproversSection({ siteId, onError }) {
   // تعیین/تغییر تأییدکننده‌ی یک واحد
   async function handleSetApprover(departmentId, employee) {
     try {
-      await setLeaveRequestApprover(departmentId, employee.id);
+      const res = await setLeaveRequestApprover(departmentId, employee.id);
+      onNotice(reassignNotice(res));
       load();
     } catch (err) {
       onError(
@@ -535,7 +611,7 @@ function ApproversSection({ siteId, onError }) {
  * بخش تعیین مسئول نیروی انسانی سایت.
  * ورودی: siteId و onError. «تردد فراموش‌شده» بعد از تأیید سرپرست، توسط این فرد تأیید نهایی می‌شود.
  */
-function HrOfficerSection({ siteId, onError }) {
+function HrOfficerSection({ siteId, onError, onNotice }) {
   const [officer, setOfficer] = useState(undefined); // undefined = هنوز بارگذاری نشده، null = تعیین نشده
 
   // بارگذاری مسئول فعلی
@@ -550,7 +626,8 @@ function HrOfficerSection({ siteId, onError }) {
   // تعیین/تغییر مسئول نیروی انسانی
   async function handleSet(employee) {
     try {
-      await setLeaveRequestHrOfficer(siteId, employee.id);
+      const res = await setLeaveRequestHrOfficer(siteId, employee.id);
+      onNotice(reassignNotice(res));
       load();
     } catch (err) {
       onError(
@@ -754,6 +831,12 @@ export default function LeaveRequestStructurePage() {
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState(""); // سایت انتخابی
   const [error, setError] = useState(""); // خطای مشترک همه‌ی بخش‌ها
+  const [notice, setNotice] = useState(""); // نتیجه‌ی انتقال درخواست‌ها به تأییدکننده‌ی جدید
+  const [stuckKey, setStuckKey] = useState(0); // تازه‌سازی هشدار درخواست‌های مانده بعد از تغییر تأییدکننده
+  const handleNotice = useCallback((text) => {
+    setNotice(text);
+    setStuckKey((k) => k + 1);
+  }, []);
 
   // بارگذاری سایت‌ها و انتخاب سایت اولیه
   useEffect(() => {
@@ -803,8 +886,19 @@ export default function LeaveRequestStructurePage() {
         </Alert>
       )}
 
+      {notice && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice("")}>
+          {notice}
+        </Alert>
+      )}
+
       {/* وضعیت ماژول برای سایت انتخابی */}
       {siteId && <ModuleStatusSection siteId={siteId} onError={setError} />}
+
+      {/* درخواست‌های مانده پیش تأییدکننده‌ی ترک‌کار */}
+      {siteId && (
+        <StuckRequestsSection siteId={siteId} refreshKey={stuckKey} onError={setError} onNotice={handleNotice} />
+      )}
 
       {/* سه بخش تنظیمات در آکاردئون */}
       {siteId && (
@@ -825,7 +919,7 @@ export default function LeaveRequestStructurePage() {
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <ApproversSection siteId={siteId} onError={setError} />
+              <ApproversSection siteId={siteId} onError={setError} onNotice={handleNotice} />
             </AccordionDetails>
           </Accordion>
 
@@ -836,7 +930,7 @@ export default function LeaveRequestStructurePage() {
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <HrOfficerSection siteId={siteId} onError={setError} />
+              <HrOfficerSection siteId={siteId} onError={setError} onNotice={handleNotice} />
             </AccordionDetails>
           </Accordion>
 

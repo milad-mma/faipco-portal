@@ -181,14 +181,14 @@ async def get_birthday_site_ids(db: AsyncSession, user: User, include_hr: bool =
     سایت‌هایی که کاربر متولدینشان را در کارت «متولدین امروز» می‌بیند — **مستقل از بقیه‌ی نقش‌ها و مجوزها**:
     هر کس متولدین سایت خودش را می‌بیند، به‌علاوه‌ی سایت‌هایی که مجوز birthdays.view را برایشان دارد (اعطای سراسری =
     همه‌ی سایت‌ها → None). نقش‌های سراسری دیگر (مثلاً مدیر منابع انسانی سراسری) دیگر متولدین سایت‌های دیگر را نشان
-    نمی‌دهند. include_hr: ابزار پیام تبریک (hr.birthday_messages) هم سایت‌های همان مجوز را می‌بیند. Admin واقعی: همه.
+    نمی‌دهند. include_hr: ابزار پیام تبریک (birthdays.messages) هم سایت‌های همان مجوز را می‌بیند. Admin واقعی: همه.
     """
     sites = await get_sites_with_permission(db, user, BIRTHDAYS_VIEW)
     if sites is None:
         return None
     result = set(sites)
     if include_hr:
-        hr_sites = await get_sites_with_permission(db, user, "hr.birthday_messages")
+        hr_sites = await get_sites_with_permission(db, user, "birthdays.messages")
         if hr_sites is None:
             return None
         result |= hr_sites

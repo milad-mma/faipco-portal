@@ -171,3 +171,61 @@ def validate_forgotten_punch_time(window: dict | None, prev_window: dict | None,
         raise LeaveRequestRulesError(
             f"ساعت تردد نمی‌تواند قبل از شروع شیفت شما در این روز ({_fmt(window['start'])}) باشد"
         )
+
+
+# ---------- انتقال تأییدکننده (ترک کار / تغییر تنظیمات؛ docs/leave-requests.md) ----------
+
+ACCEPT_CODE_CANCELLED = 22  # ابطال‌شده در کاراوب
+
+
+def needs_reassign(row: dict, *, inactive: set[int], only_from: set[int] | None = None) -> bool:
+    """
+    درخواست کاراوب باید به تأییدکننده‌ی دیگری منتقل شود؟ فقط درخواستِ بدون تصمیم و ابطال‌نشده که تأییدکننده‌ی فعلی‌اش
+    در only_from است (تغییر تنظیمات / ترک کار مشخص) یا — بدون only_from — ترک کار کرده است.
+    """
+    if row.get("IsFinalApproved") is not None or row.get("AcceptCode") == ACCEPT_CODE_CANCELLED:
+        return False
+    cur = row.get("CurEmpNo")
+    if cur is None:
+        return False
+    cur = int(cur)
+    return cur in only_from if only_from is not None else cur in inactive
+
+
+def reassign_stage(row: dict, *, forgotten_cards: set, moved_ids: set[int] | None, hr_codes: set[int]) -> str:
+    """
+    مرحله‌ی درخواست: "hr" (تردد فراموش‌شده‌ای که سرپرست تأیید و به منابع انسانی ارجاع داده) یا "supervisor".
+    با جدول ارجاع (moved_ids) از روی ردیف WF_MoveUp؛ بدون آن، تأییدکننده‌ی فعلی = مسئول منابع انسانی (فعلی/قبلی).
+    """
+    if row.get("CardNo") not in forgotten_cards:
+        return "supervisor"
+    if moved_ids is not None:
+        return "hr" if row.get("RequestId") in moved_ids else "supervisor"
+    return "hr" if row.get("CurEmpNo") in hr_codes else "supervisor"
+
+
+def valid_target(current: int, target: int | None, requester: int | None, inactive: set[int]) -> int | None:
+    """تأییدکننده‌ی جدید معتبر است اگر پیدا شده، فعال، غیر از فعلی و غیر از خودِ درخواست‌دهنده باشد؛ وگرنه None."""
+    if target is None or target == current or target == requester or target in inactive:
+        return None
+    return target
+
+
+# ---------- جانشین مدیران کاراوب (WF_Substitute؛ docs/leave-requests.md «جانشین») ----------
+
+
+def can_act_on(approver: int, current: int | None, requester: int | None, substitutes: dict[int, int]) -> bool:
+    """
+    آیا approver می‌تواند روی درخواستی که پیش current است تصمیم بگیرد؟ خودِ current، یا جانشین فعالِ او
+    (substitutes: مدیر → جانشین). هیچ‌کس — حتی به‌عنوان جانشین — درخواست خودش را تأیید نمی‌کند (مثل کاراوب، ۳۰۶).
+    """
+    if current is None:
+        return False
+    if approver == current:
+        return True
+    return substitutes.get(current) == approver and requester != approver
+
+
+def managers_of_substitute(substitute: int, substitutes: dict[int, int]) -> set[int]:
+    """مدیرانی که این فرد الان جانشین فعالشان است."""
+    return {manager for manager, sub in substitutes.items() if sub == substitute and manager != substitute}

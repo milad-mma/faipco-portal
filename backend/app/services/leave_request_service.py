@@ -43,7 +43,12 @@ from app.core.leave_request_rules import (
     compute_hourly_duration,
     crosses_midnight,
     jalali_date_to_compact,
+    can_act_on,
     kara_day_offset,
+    managers_of_substitute,
+    needs_reassign,
+    reassign_stage,
+    valid_target,
     validate_exit_after_shift,
     validate_forgotten_punch_time,
     validate_hourly_in_shift,
@@ -56,12 +61,14 @@ from app.models.leave_request import (
     LeaveRequestApprover,
     LeaveRequestHrOfficer,
     LeaveRequestMapping,
+    LeaveRequestReassignment,
     LeaveRequestType,
 )
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 from app.models.user import User
 from app.services import kara_attendance_writeback as kara_wb
 from app.services import site_branch
+from app.services.kara_substitute import active_substitute_codes
 from app.services.kara_schema import KaraNames
 from app.services.push_service import PushService
 
@@ -169,7 +176,9 @@ def _branch_filter_sql(q, mapping: LeaveRequestMapping) -> tuple[str, dict]:
     return "", {}
 
 
-def _resolve_manager_emp_no_sync(conn: SiteConnection, mapping: LeaveRequestMapping, emp_no: int) -> int | None:
+def _resolve_manager_emp_no_sync(
+    conn: SiteConnection, mapping: LeaveRequestMapping, emp_no: int, skip_emp_nos: set[int] | None = None
+) -> int | None:
     """
     ورودی: اتصال، نگاشت و کد پرسنلی درخواست‌دهنده. کد پرسنلی مدیرِ او را از
     زنجیره سازمانی کاراوب پیدا می‌کند: Employee.Sec_No -> Sections.Sec_No ->
@@ -178,6 +187,7 @@ def _resolve_manager_emp_no_sync(conn: SiteConnection, mapping: LeaveRequestMapp
     اگر مدیرِ به‌دست‌آمده خودِ همان درخواست‌دهنده باشد (فرد، مدیر بخش خودش
     است)، از طریق ستون section_parent_column به بخش بالادستی صعود می‌کند و
     دوباره بررسی می‌کند، تا مدیرِ متفاوتی پیدا شود یا به ریشه سلسله‌مراتب برسد.
+    مدیری که کدش در skip_emp_nos است (ترک کار کرده؛ کاراوب هنوز به‌روز نشده) هم همین‌طور رد می‌شود.
 
     خروجی None یعنی: جدول‌های زنجیره تنظیم نشده‌اند، پرسنل/بخش پیدا نشد، یا تا
     ریشه هم مدیرِ متفاوتی پیدا نشد - تا سرویس به تخصیص دستی (LeaveRequestApprover) برگردد.
@@ -217,8 +227,8 @@ def _resolve_manager_emp_no_sync(conn: SiteConnection, mapping: LeaveRequestMapp
                 if not section_row or section_row.get("ManagerEmpNo") is None:
                     return None
                 manager_emp_no = int(section_row["ManagerEmpNo"])
-                # هیچ‌کس تأییدکننده خودش نیست؛ مدیر متفاوت یعنی جواب پیدا شد
-                if manager_emp_no != emp_no:
+                # هیچ‌کس تأییدکننده خودش نیست؛ مدیر متفاوت (و فعال) یعنی جواب پیدا شد
+                if manager_emp_no != emp_no and manager_emp_no not in (skip_emp_nos or ()):
                     return manager_emp_no
                 parent_sec_no = section_row.get("ParentSecNo")
                 if parent_sec_no is None:
@@ -783,26 +793,242 @@ class LeaveRequestService:
         اگر جواب نداد (جدول‌ها تنظیم نشده، پرسنل/بخش پیدا نشد یا خطای دیتابیس)،
         از تخصیص دستی LeaveRequestApprover. اگر هیچ‌کدام نبود خطا می‌دهد.
         """
-        # روش اول: زنجیره سازمانی کاراوب؛ هر خطایی به Fallback می‌رسد
-        try:
-            cur_emp_no = await asyncio.to_thread(
-                _resolve_manager_emp_no_sync, site_connection, mapping, _to_personnel_code_int(employee)
-            )
-        except Exception:
-            cur_emp_no = None
-        if cur_emp_no is not None:
-            return cur_emp_no
-        # روش دوم: تأییدکننده دستی واحد پرسنل
-        approver_employee_id = await self._get_approver_employee_id(employee.department_id)
-        if approver_employee_id is None:
+        cur_emp_no = await self._find_supervisor_emp_no(
+            employee.site_id, employee.department_id, _to_personnel_code_int(employee), mapping, site_connection
+        )
+        if cur_emp_no is None:
             raise LeaveRequestError(
-                "نتوانستیم تأییدکننده این پرسنل را (نه از زنجیره سازمانی، نه از تخصیص دستی) پیدا کنیم - "
+                "نتوانستیم تأییدکننده‌ی فعال این پرسنل را (نه از زنجیره سازمانی، نه از تخصیص دستی) پیدا کنیم - "
                 "لطفاً با منابع انسانی هماهنگ کنید"
             )
+        return cur_emp_no
+
+    async def _inactive_emp_nos(self, site_id: int) -> set[int]:
+        """
+        کدهای پرسنلیِ ترک‌کار (is_active=False) در این سایت و سایت‌های هم‌منبع — به‌جز کدی که رکورد فعالی هم دارد
+        (انتقال بین سایت‌ها: رکورد سایت قبلی غیرفعال، سایت جدید فعال). docs/leave-requests.md «انتقال تأییدکننده».
+        """
+        site_ids = await self._same_source_site_ids(site_id)
+        result = await self.db.execute(
+            select(Employee.personnel_code, Employee.is_active).where(Employee.site_id.in_(site_ids))
+        )
+        inactive: set[int] = set()
+        active: set[int] = set()
+        for code, is_active in result.all():
+            if code and str(code).isdigit():
+                (active if is_active else inactive).add(int(code))
+        return inactive - active
+
+    async def _find_supervisor_emp_no(
+        self,
+        site_id: int,
+        department_id: int | None,
+        requester_emp_no: int | None,
+        mapping,
+        site_connection,
+        inactive: set[int] | None = None,
+    ) -> int | None:
+        """
+        تأییدکننده‌ی اول (سرپرست) فعال: ۱) زنجیره‌ی سازمانی کاراوب با رد کردن مدیرِ ترک‌کار (صعود به بخش بالاتر)،
+        ۲) تأییدکننده‌ی دستی واحد اگر فعال باشد. None یعنی پیدا نشد.
+        """
+        if inactive is None:
+            inactive = await self._inactive_emp_nos(site_id)
+        if requester_emp_no is not None:
+            try:
+                cur_emp_no = await asyncio.to_thread(
+                    _resolve_manager_emp_no_sync, site_connection, mapping, requester_emp_no, inactive
+                )
+            except Exception:
+                cur_emp_no = None  # هر خطایی به Fallback می‌رسد
+            if cur_emp_no is not None:
+                return cur_emp_no
+        approver_employee_id = await self._get_approver_employee_id(department_id)
+        if approver_employee_id is None:
+            return None
         approver = await self.db.get(Employee, approver_employee_id)
-        if approver is None:
-            raise LeaveRequestError("تأییدکننده این واحد یافت نشد")
-        return _to_personnel_code_int(approver)
+        if approver is None or not approver.is_active or not str(approver.personnel_code or "").isdigit():
+            return None
+        code = int(approver.personnel_code)
+        return None if code == requester_emp_no else code
+
+    # ---------- انتقال تأییدکننده (ترک کار / تغییر تنظیمات) — مثل وام و مساعده ----------
+
+    async def _pending_rows_for_reassign(
+        self, site_id: int, mapping, site_connection, from_emp_nos: set[int] | None
+    ) -> list[dict]:
+        """درخواست‌های بدون تصمیمِ پرسنل همین سایت (اختیاری: فقط پیش این تأییدکننده‌ها)."""
+        q = lambda name: _quote(site_connection.db_type, name)  # noqa: E731
+        where = f"{q(mapping.is_final_approved_column)} IS NULL AND {q(mapping.cur_emp_no_column)} IS NOT NULL"
+        params: dict = {}
+        if from_emp_nos is not None:
+            codes = sorted(from_emp_nos)
+            if not codes:
+                return []
+            where += f" AND {q(mapping.cur_emp_no_column)} IN ({', '.join(f'%(f{i})s' for i in range(len(codes)))})"
+            params = {f"f{i}": c for i, c in enumerate(codes)}
+        rows = await asyncio.to_thread(_select_requests_sync, site_connection, mapping, where, params)
+        own, _ = await self._site_emp_scope(site_id)
+        return [r for r in rows if r.get("EmpNo") in own]
+
+    async def reassign_approvers(
+        self,
+        site_id: int,
+        *,
+        reason: str,
+        from_emp_nos: set[int] | None = None,
+        requester_codes: set[int] | None = None,
+        old_hr_emp_no: int | None = None,
+        hr_only: bool = False,
+        by_user_id: int | None = None,
+    ) -> dict:
+        """
+        درخواست‌های بدون تصمیمِ پرسنل این سایت را که پیش تأییدکننده‌ی ترک‌کار (یا from_emp_nos) مانده‌اند به تأییدکننده‌ی
+        امروز منتقل می‌کند — بدون ثبت مجدد (docs/leave-requests.md «انتقال تأییدکننده»):
+          - مرحله‌ی سرپرست → دوباره از زنجیره‌ی سازمانی کاراوب (مدیر ترک‌کار رد می‌شود) و بعد تأییدکننده‌ی دستی واحد؛
+          - تردد فراموش‌شده در مرحله‌ی منابع انسانی → مسئول نیروی انسانی فعلی سایت.
+        فقط CurEmpNo/CurSection در کاراوب عوض می‌شود؛ سابقه در leave_request_reassignments و اعلان به تأییدکننده‌ی جدید.
+        بدون commit (Caller). خروجی: {"changed": تعداد، "unresolved": [درخواست‌هایی که جایگزین پیدا نشد]}.
+        """
+        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        kara_names = await self._get_kara_names(site_id, mapping, site_connection)
+        if kara_names is None:
+            raise LeaveRequestError("نگاشت جدول‌های کاراوب برای این سایت کامل نیست - انتقال تأییدکننده ممکن نیست")
+        inactive = await self._inactive_emp_nos(site_id)
+        rows = [
+            r
+            for r in await self._pending_rows_for_reassign(site_id, mapping, site_connection, from_emp_nos)
+            if needs_reassign(r, inactive=inactive, only_from=from_emp_nos)
+            and (requester_codes is None or r.get("EmpNo") in requester_codes)
+        ]
+        if not rows:
+            return {"changed": 0, "unresolved": []}
+
+        forgotten_cards, hr_emp_no = await self._get_forgotten_context(site_id)
+        moved_ids = None
+        forgotten_ids = [r["RequestId"] for r in rows if r.get("CardNo") in forgotten_cards]
+        if forgotten_ids and kara_names.can_write_moveup:
+            moved_ids = await asyncio.to_thread(
+                _run_kara_writeback_sync, site_connection, kara_names, kara_wb.moved_up_request_ids, forgotten_ids
+            )
+        hr_codes = {c for c in (hr_emp_no, old_hr_emp_no) if c is not None}
+
+        # واحد درخواست‌دهنده‌ها (برای تأییدکننده‌ی دستی)؛ رکورد فعال مقدم است
+        result = await self.db.execute(
+            select(Employee.personnel_code, Employee.department_id, Employee.is_active).where(
+                Employee.site_id == site_id,
+                Employee.personnel_code.in_([str(r["EmpNo"]) for r in rows]),
+            )
+        )
+        departments: dict[int, int | None] = {}
+        for code, dept_id, is_active in sorted(result.all(), key=lambda x: bool(x[2])):
+            if code and str(code).isdigit():
+                departments[int(code)] = dept_id
+
+        type_lookup = await self._get_type_lookup(site_id)
+        supervisor_cache: dict[int, int | None] = {}
+        changed = 0
+        unresolved: list[dict] = []
+        for row in rows:
+            current = int(row["CurEmpNo"])
+            requester = row.get("EmpNo")
+            stage = reassign_stage(row, forgotten_cards=forgotten_cards, moved_ids=moved_ids, hr_codes=hr_codes)
+            if hr_only and stage != "hr":
+                continue
+            if stage == "hr":
+                target = hr_emp_no
+            else:
+                if requester not in supervisor_cache:
+                    supervisor_cache[requester] = await self._find_supervisor_emp_no(
+                        site_id, departments.get(requester), requester, mapping, site_connection, inactive
+                    )
+                target = supervisor_cache[requester]
+            target = valid_target(current, target, requester, inactive)
+            if target is None:
+                unresolved.append(_normalize_row(row, type_lookup))
+                continue
+            try:
+                moved = await asyncio.to_thread(
+                    _run_kara_writeback_sync,
+                    site_connection,
+                    kara_names,
+                    kara_wb.reassign_current_approver,
+                    row["RequestId"],
+                    current,
+                    target,
+                )
+            except Exception:
+                logger.exception("انتقال تأییدکننده‌ی درخواست %s در کاراوب ناموفق بود", row["RequestId"])
+                unresolved.append(_normalize_row(row, type_lookup))
+                continue
+            if not moved:
+                continue  # هم‌زمان تصمیم گرفته یا منتقل شده
+            changed += 1
+            self.db.add(
+                LeaveRequestReassignment(
+                    site_id=site_id,
+                    request_id=row["RequestId"],
+                    from_emp_no=current,
+                    to_emp_no=target,
+                    reason=reason[:200],
+                    by_user_id=by_user_id,
+                )
+            )
+            if stage == "hr":
+                hr_body = await notification_templates.render(self.db, site_id, "leave.hr_forgotten_pending")
+                for emp_no in await self._with_substitute(site_id, target):
+                    _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", hr_body)
+            else:
+                await self._notify_approver_of_new_request(site_id, target)
+        await self.db.flush()
+        if unresolved:
+            await self._attach_requester_and_approver(site_id, unresolved)
+        return {"changed": changed, "unresolved": unresolved}
+
+    async def _attach_requester_and_approver(self, site_id: int, items: list[dict]) -> None:
+        info = await self._get_requester_info(site_id, [i.get("emp_no") for i in items])
+        for item in items:
+            requester = info.get(item.get("emp_no")) or {}
+            item["requester_name"] = requester.get("name")
+            item["requester_department"] = requester.get("department")
+        await self._attach_approver_names(site_id, items)
+
+    async def stuck_requests(self, site_id: int) -> list[dict]:
+        """درخواست‌های بدون تصمیمِ پرسنل این سایت که پیش تأییدکننده‌ی ترک‌کار مانده‌اند (برای هشدار پنل مدیریت)."""
+        mapping, site_connection = await self._get_mapping_and_connection(site_id)
+        inactive = await self._inactive_emp_nos(site_id)
+        if not inactive:
+            return []
+        rows = await self._pending_rows_for_reassign(site_id, mapping, site_connection, None)
+        rows = [r for r in rows if needs_reassign(r, inactive=inactive)]
+        type_lookup = await self._get_type_lookup(site_id)
+        items = [_normalize_row(r, type_lookup) for r in rows]
+        await self._attach_requester_and_approver(site_id, items)
+        return items
+
+    async def on_employees_left(self, employee_ids: list[int]) -> int:
+        """
+        Sync: پرسنلی که ترک کار کردند اگر تأییدکننده‌ی درخواست بدون تصمیمی هستند، درخواست به تأییدکننده‌ی امروز منتقل
+        می‌شود (همه‌ی سایت‌هایی که ماژول مرخصی دارند؛ هر سایت در Savepoint جدا). خروجی: تعداد منتقل‌شده.
+        """
+        if not employee_ids:
+            return 0
+        result = await self.db.execute(select(Employee.personnel_code).where(Employee.id.in_(employee_ids)))
+        codes = {int(c) for c in result.scalars().all() if c and str(c).isdigit()}
+        if not codes:
+            return 0
+        total = 0
+        for site_id in (await self.db.execute(select(LeaveRequestMapping.site_id))).scalars().all():
+            try:
+                async with self.db.begin_nested():
+                    left = codes & await self._inactive_emp_nos(site_id)  # انتقال بین سایت‌ها ترک کار نیست
+                    if left:
+                        total += (
+                            await self.reassign_approvers(site_id, reason="ترک کار تأییدکننده", from_emp_nos=left)
+                        )["changed"]
+            except Exception:
+                logger.exception("انتقال تأییدکننده‌ی مرخصی/ماموریت سایت %s پس از ترک کار ناموفق بود", site_id)
+        return total
 
     async def _get_hr_officer_emp_no(self, site_id: int) -> int | None:
         """ورودی: شناسه سایت. کد پرسنلی (عددی) مسئول نیروی انسانی سایت (LeaveRequestHrOfficer) را برمی‌گرداند؛ اگر تعیین نشده یا عددی نیست None."""
@@ -985,7 +1211,11 @@ class LeaveRequestService:
 
         # یک اعلان به سرپرست برای همه ترددهای این درخواست
         await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
-        return {"request_id": request_ids[0], "request_ids": request_ids}
+        return {
+            "request_id": request_ids[0],
+            "request_ids": request_ids,
+            "approver_name": (await self._get_approver_names(employee.site_id, [cur_emp_no])).get(cur_emp_no),
+        }
 
     async def submit_request(
         self,
@@ -1121,7 +1351,10 @@ class LeaveRequestService:
         # اطلاع‌رسانی به تأییدکننده در پس‌زمینه - خطای Push هرگز ثبت درخواست را متوقف نمی‌کند
         await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
 
-        return {"request_id": new_request_id}
+        return {
+            "request_id": new_request_id,
+            "approver_name": (await self._get_approver_names(employee.site_id, [cur_emp_no])).get(cur_emp_no),
+        }
 
     async def _shift_window(
         self, employee: Employee, kara_names: KaraNames | None, site_connection: SiteConnection, day: date
@@ -1223,13 +1456,17 @@ class LeaveRequestService:
         return applied
 
     async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int) -> None:
-        """ورودی: سایت و کد پرسنلی تأییدکننده. اعلان Push «درخواست در انتظار تصمیم شما» را با لینک به تب کارتابل زمان‌بندی می‌کند."""
-        _schedule_push(
-            site_id,
-            cur_emp_no,
-            "/leave-requests?tab=pending",
-            await notification_templates.render(self.db, site_id, "leave.approver_new"),
-        )
+        """ورودی: سایت و کد پرسنلی تأییدکننده. اعلان Push «درخواست در انتظار تصمیم شما» (به جانشین فعالش هم) با لینک به کارتابل."""
+        body = await notification_templates.render(self.db, site_id, "leave.approver_new")
+        for emp_no in await self._with_substitute(site_id, cur_emp_no):
+            _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body)
+
+    async def _with_substitute(self, site_id: int, emp_no: int | None) -> list[int]:
+        """تأییدکننده و (اگر دارد) جانشین فعالش در کاراوب — برای اعلان."""
+        if emp_no is None:
+            return []
+        substitute = (await active_substitute_codes(self.db, site_id)).get(emp_no)
+        return [emp_no] + ([substitute] if substitute is not None and substitute != emp_no else [])
 
     async def _notify_requester_of_forgotten_punch(self, site_id: int, emp_no: int, stage: str) -> None:
         """ورودی: سایت، کد پرسنلی درخواست‌دهنده و مرحله (supervisor / approved / rejected). اعلان Push مرحله‌ی تردد فراموش‌شده را با لینک به تب «درخواست‌های من» زمان‌بندی می‌کند."""
@@ -1288,6 +1525,43 @@ class LeaveRequestService:
             for e in employees
             if e.personnel_code.isdigit()  # کد غیرعددی با Emp_No کاراوب تطبیق ندارد
         }
+
+    async def _get_approver_names(self, site_id: int, emp_nos: list) -> dict:
+        """
+        ورودی: سایت درخواست‌دهنده و کدهای پرسنلی تأییدکننده‌ها. {کد پرسنلی: نام کامل} برمی‌گرداند (فقط نام؛ کد پرسنلی
+        به پرسنل نمایش داده نمی‌شود). اول پرسنل همان سایت، سپس سایر سایت‌ها (تأییدکننده‌ی بین‌سایتی).
+        """
+        codes = {int(e) for e in emp_nos if e is not None and str(e).isdigit() and int(e) > 0}
+        if not codes:
+            return {}
+        result = await self.db.execute(
+            select(Employee).where(Employee.personnel_code.in_([str(c) for c in codes]))
+        )
+        names: dict[int, str] = {}
+        # پرسنل همان سایت مقدم است (کد تکراری در سایت دیگر جایگزینش نمی‌شود)
+        for e in sorted(result.scalars().all(), key=lambda e: e.site_id != site_id):
+            if e.personnel_code.isdigit():
+                names.setdefault(int(e.personnel_code), f"{e.first_name} {e.last_name}".strip())
+        return names
+
+    async def _attach_approver_names(self, site_id: int, items: list[dict]) -> None:
+        """نام تأییدکننده‌ی فعلی و تصمیم‌گیرنده را (درجا) روی درخواست‌ها می‌گذارد."""
+        names = await self._get_approver_names(
+            site_id,
+            [i.get("current_approver_emp_no") for i in items] + [i.get("approved_by_emp_no") for i in items],
+        )
+        substitutes = await active_substitute_codes(self.db, site_id)
+        pending_subs = [
+            substitutes.get(i.get("current_approver_emp_no")) for i in items if i.get("status") == "pending"
+        ]
+        if any(pending_subs):
+            names.update(await self._get_approver_names(site_id, [c for c in pending_subs if c]))
+        for item in items:
+            item["current_approver_name"] = names.get(item.get("current_approver_emp_no"))
+            item["approved_by_name"] = names.get(item.get("approved_by_emp_no"))
+            sub = substitutes.get(item.get("current_approver_emp_no")) if item.get("status") == "pending" else None
+            # درخواست خودِ جانشین را جانشین تأیید نمی‌کند، پس برای او نام جانشین نمایش داده نمی‌شود
+            item["current_approver_substitute_name"] = names.get(sub) if sub and sub != item.get("emp_no") else None
 
     async def _ensure_no_overlap(
         self,
@@ -1460,6 +1734,7 @@ class LeaveRequestService:
         normalized = [_normalize_row(row, type_lookup) for row in rows]
         await self._apply_real_reviews(site_connection, mapping, normalized)
         self._annotate_stage(normalized, await self._get_hr_officer_emp_no(employee.site_id))
+        await self._attach_approver_names(employee.site_id, normalized)
         return normalized
 
     async def _apply_real_reviews(self, site_connection, mapping, normalized: list[dict]) -> None:
@@ -1486,13 +1761,25 @@ class LeaveRequestService:
         cur_emp_no = _to_personnel_code_int(approver_employee)
         cur_col = _quote(site_connection.db_type, mapping.cur_emp_no_column)
         approved_col = _quote(site_connection.db_type, mapping.is_final_approved_column)
-        where_sql = f"{cur_col} = %(cur_emp_no)s AND {approved_col} IS NULL"
+        # جانشین فعال: درخواست‌های مدیرانی که این فرد جانشینشان است هم در کارتابلش می‌آید (مثل کاراوب)
+        substitutes = await active_substitute_codes(self.db, approver_employee.site_id)
+        acting_for = sorted(managers_of_substitute(cur_emp_no, substitutes))
+        codes = [cur_emp_no] + acting_for
+        placeholders = ", ".join(f"%(c{i})s" for i in range(len(codes)))
+        where_sql = f"{cur_col} IN ({placeholders}) AND {approved_col} IS NULL"
         rows = await asyncio.to_thread(
-            _select_requests_sync, site_connection, mapping, where_sql, {"cur_emp_no": cur_emp_no}
+            _select_requests_sync, site_connection, mapping, where_sql, {f"c{i}": c for i, c in enumerate(codes)}
         )
+        # درخواست خودِ جانشین پیش مدیرش در کارتابل خودش نمی‌آید
+        rows = [r for r in rows if can_act_on(cur_emp_no, r.get("CurEmpNo"), r.get("EmpNo"), substitutes)]
         # نرمال‌سازی با نام/واحد/نوع از سایت خودِ درخواست‌دهنده (ممکن است سایت دیگری هم‌منبع باشد)
         normalized = await self._normalize_for_approver(approver_employee, rows)
         await self._annotate_stage_by_requester_site(normalized, approver_employee.site_id)
+        if acting_for:
+            names = await self._get_approver_names(approver_employee.site_id, acting_for)
+            for item in normalized:
+                if item.get("current_approver_emp_no") != cur_emp_no:
+                    item["as_substitute_for_name"] = names.get(item.get("current_approver_emp_no")) or "مدیر"
         return normalized
 
     async def _same_source_site_ids(self, site_id: int) -> list[int]:
@@ -1885,9 +2172,15 @@ class LeaveRequestService:
             raise LeaveRequestError("درخواست موردنظر یافت نشد")
         request_row = rows[0]
 
-        # فقط تأییدکننده فعلی و فقط روی درخواست بدون تصمیم
+        # فقط تأییدکننده فعلی (یا جانشین فعالش در کاراوب) و فقط روی درخواست بدون تصمیم
         approver_emp_no = _to_personnel_code_int(approver_employee)
-        if request_row.get("CurEmpNo") != approver_emp_no:
+        acting_for = request_row.get("CurEmpNo")  # درخواست پیش همین شخص می‌ماند؛ تصمیم‌گیرنده در ApprovalBy ثبت می‌شود
+        if acting_for != approver_emp_no and not can_act_on(
+            approver_emp_no,
+            acting_for,
+            request_row.get("EmpNo"),
+            await active_substitute_codes(self.db, approver_employee.site_id),
+        ):
             raise LeaveRequestError("شما مجاز به تصمیم‌گیری روی این درخواست نیستید")
         if request_row.get("IsFinalApproved") is not None:
             raise LeaveRequestError("این درخواست قبلاً تصمیم‌گیری شده است")
@@ -1904,10 +2197,16 @@ class LeaveRequestService:
         if is_forgotten and approved:
             if hr_emp_no is None:
                 raise LeaveRequestError("مسئول نیروی انسانی این سایت تعیین نشده - تأیید تردد فراموش‌شده ممکن نیست")
+            if hr_emp_no in await self._inactive_emp_nos(requester_site_id):
+                raise LeaveRequestError(
+                    "مسئول نیروی انسانیِ تعیین‌شده برای این سایت ترک کار کرده است - "
+                    "لطفاً منابع انسانی مسئول جدید را در تنظیمات مرخصی/ماموریت تعیین کند"
+                )
             if kara_names is None or not kara_names.can_write_punch:
                 raise LeaveRequestError("ستون‌های لازم جدول تردد برای ثبت تردد فراموش‌شده در تنظیمات سایت نگاشت نشده‌اند")
-            # اگر تأییدکننده خودِ مسئول HR است یا مسئول HR خودش درخواست‌دهنده است، تأیید فعلی نهایی است
-            if approver_emp_no != hr_emp_no and request_row.get("EmpNo") != hr_emp_no:
+            # اگر تأییدکننده (یا کسی که جانشینش تصمیم می‌گیرد) خودِ مسئول HR است یا مسئول HR خودش درخواست‌دهنده است،
+            # تأیید فعلی نهایی است
+            if approver_emp_no != hr_emp_no and acting_for != hr_emp_no and request_row.get("EmpNo") != hr_emp_no:
                 # ارجاع به مسئول نیروی انسانی (CurEmpNo عوض می‌شود و ردیف WF_MoveUp ثبت می‌شود)
                 try:
                     await asyncio.to_thread(
@@ -1938,12 +2237,9 @@ class LeaveRequestService:
                     await self._notify_requester_of_forgotten_punch(
                         requester_site_id, request_row["EmpNo"], "supervisor"
                     )
-                _schedule_push(
-                    requester_site_id,
-                    hr_emp_no,
-                    "/leave-requests?tab=pending",
-                    await notification_templates.render(self.db, requester_site_id, "leave.hr_forgotten_pending"),
-                )
+                hr_body = await notification_templates.render(self.db, requester_site_id, "leave.hr_forgotten_pending")
+                for emp_no in await self._with_substitute(requester_site_id, hr_emp_no):
+                    _schedule_push(requester_site_id, emp_no, "/leave-requests?tab=pending", hr_body)
                 return  # تصمیم نهایی هنوز ثبت نمی‌شود
 
         # ثبت تصمیم نهایی روی WF_Requests. ManagerIdea عمداً خالی نوشته می‌شود (مثل

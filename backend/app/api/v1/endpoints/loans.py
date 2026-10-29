@@ -65,6 +65,7 @@ class SiteSettingsIn(BaseModel):
     site_manager_employee_id: int | None = None
     hr_employee_id: int | None = None  # تأییدکننده‌ی مرحله‌ی «منابع انسانی»
     payslip_loan_title: str | None = Field(default=None, max_length=200)
+    allow_kara_substitute: bool | None = None  # جانشین فعال مدیر در کاراوب هم تأیید کند؛ None = بدون تغییر
 
 
 class LoanTypeIn(BaseModel):
@@ -310,6 +311,7 @@ async def update_site(
             payload.site_manager_employee_id,
             payload.payslip_loan_title,
             hr_employee_id=payload.hr_employee_id,
+            allow_kara_substitute=payload.allow_kara_substitute,
         )
     except LoanError as e:
         raise _err(e) from e

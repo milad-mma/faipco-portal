@@ -222,3 +222,20 @@ class LeaveRequestApprover(Base, TimestampMixin):
     department: Mapped["Department"] = relationship()  # noqa: F821
     approver_employee: Mapped["Employee"] = relationship()  # noqa: F821
 
+
+
+class LeaveRequestReassignment(Base, TimestampMixin):
+    """
+    سابقه‌ی انتقال یک درخواست کاراوب (WF_Requests) از تأییدکننده‌ی ترک‌کار / تغییرکرده به تأییدکننده‌ی جدید
+    (Migration 123؛ docs/leave-requests.md «انتقال تأییدکننده»). خودِ کاراوب برای این انتقال ردیف تاریخچه ندارد.
+    """
+
+    __tablename__ = "leave_request_reassignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    request_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)  # RequestId در کاراوب
+    from_emp_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    to_emp_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

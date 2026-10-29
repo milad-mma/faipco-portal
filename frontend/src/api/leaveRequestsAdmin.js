@@ -190,3 +190,15 @@ export async function saveLeaveNotificationTemplates(siteId, texts) {
   );
   return data;
 }
+
+// درخواست‌های بدون تصمیمی که پیش تأییدکننده‌ی ترک‌کار مانده‌اند (docs/leave-requests.md «انتقال تأییدکننده»)
+export async function fetchLeaveStuckRequests(siteId) {
+  const { data } = await apiClient.get(`/leave-requests/sites/${siteId}/stuck-approvers`);
+  return data;
+}
+
+// «انتقال به تأییدکننده‌های فعلی»؛ خروجی: { reassigned, unresolved }
+export async function reassignLeaveApprovers(siteId) {
+  const { data } = await apiClient.post(`/leave-requests/sites/${siteId}/reassign-approvers`);
+  return data;
+}

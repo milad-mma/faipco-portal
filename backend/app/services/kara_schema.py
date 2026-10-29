@@ -64,6 +64,13 @@ LEAVE_SCHEMA_DEFAULTS: dict[str, str] = {
     "users.emp_no": "Emp_No",
     "users.is_active": "IsActive",
     "users.creation_date": "CreationDate",
+    # جانشین مدیران (کاراوب: مدیر، جانشین، بازه و فعال بودن) — کارتابل و تأیید جانشین
+    "wf_substitute.table": "WF_Substitute",
+    "wf_substitute.manager_emp_no": "ManagerEmp_No",
+    "wf_substitute.substitute_emp_no": "SubstituteEmp_No",
+    "wf_substitute.start_date": "StartDate",
+    "wf_substitute.end_date": "EndDate",
+    "wf_substitute.is_active": "IsActive",
     # مرخصی/ماموریت روزانه
     "mor_mam.table": "Mor_Mam",
     "mor_mam.ref_number": "RefNumber",

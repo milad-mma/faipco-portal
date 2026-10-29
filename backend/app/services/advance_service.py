@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +22,7 @@ from app.models.advance import AdvanceGroupMember, AdvanceRequest, AdvanceReques
 from app.models.employee import Employee
 from app.models.site import Site
 from app.models.user import User
-from app.services import notification_templates
+from app.services import kara_substitute, notification_templates
 from app.services.loan_service import (
     LoanService,
     _clean,
@@ -151,7 +151,22 @@ class AdvanceService:
         approver = req.unit_manager_employee_id if step == R.STEP_UNIT_MANAGER else req.site_manager_employee_id
         approver = await self._usable_approver(req, step, approver)
         req.current_approver_employee_id = approver
-        self._push([approver], INBOX_URL, req.site_id, "advance.approver_pending")
+        # جانشین فعال او در کاراوب هم (اگر برای سایت روشن است)
+        substitute = await kara_substitute.substitute_of(self.db, AdvanceSettings, req.site_id, approver)
+        targets = [approver] + ([substitute] if substitute and substitute != req.employee_id else [])
+        self._push(targets, INBOX_URL, req.site_id, "advance.approver_pending")
+
+    async def _approval_condition(self, employee: Employee):
+        """مثل LoanService._approval_condition: خودش یا مدیری که جانشین فعال اوست (سایت‌های روشن)، به‌جز درخواست خودش."""
+        scope = await kara_substitute.substitute_scope(self.db, AdvanceSettings, employee.id)
+        conditions = [AdvanceRequest.current_approver_employee_id == employee.id]
+        for site_id, managers in scope.items():
+            conditions.append(
+                (AdvanceRequest.site_id == site_id)
+                & AdvanceRequest.current_approver_employee_id.in_(managers)
+                & (AdvanceRequest.employee_id != employee.id)
+            )
+        return or_(*conditions), scope
 
     # ---------- نمایش ----------
 
@@ -379,26 +394,30 @@ class AdvanceService:
     # ---------- کارتابل مدیر واحد / مدیر سایت ----------
 
     async def inbox(self, employee: Employee) -> list[dict]:
-        rows = (
-            await self.db.execute(
-                select(AdvanceRequest)
-                .options(selectinload(AdvanceRequest.events))
-                .where(
-                    AdvanceRequest.current_approver_employee_id == employee.id,
-                    AdvanceRequest.status == R.STATUS_IN_REVIEW,
+        condition, scope = await self._approval_condition(employee)
+        rows = list(
+            (
+                await self.db.execute(
+                    select(AdvanceRequest)
+                    .options(selectinload(AdvanceRequest.events))
+                    .where(condition, AdvanceRequest.status == R.STATUS_IN_REVIEW)
+                    .order_by(AdvanceRequest.id)
                 )
-                .order_by(AdvanceRequest.id)
-            )
-        ).scalars().all()
-        return await self.serialize_many(list(rows), public=True)
+            ).scalars().all()
+        )
+        items = await self.serialize_many(rows, public=True)
+        if scope:
+            people = await self._names({r.current_approver_employee_id for r in rows})
+            for req, item in zip(rows, items):
+                if req.current_approver_employee_id != employee.id:
+                    item["as_substitute_for"] = employee_label(people.get(req.current_approver_employee_id), code=False)
+        return items
 
     async def inbox_count(self, employee: Employee) -> int:
+        condition, _ = await self._approval_condition(employee)
         return (
             await self.db.execute(
-                select(func.count(AdvanceRequest.id)).where(
-                    AdvanceRequest.current_approver_employee_id == employee.id,
-                    AdvanceRequest.status == R.STATUS_IN_REVIEW,
-                )
+                select(func.count(AdvanceRequest.id)).where(condition, AdvanceRequest.status == R.STATUS_IN_REVIEW)
             )
         ).scalar_one()
 
@@ -418,9 +437,22 @@ class AdvanceService:
             try:
                 req = await self._load(rid, lock=True)
                 step = self.current_step(req)
-                if step not in (R.STEP_UNIT_MANAGER, R.STEP_SITE_MANAGER) or req.current_approver_employee_id != employee.id:
+                person_step = step in (R.STEP_UNIT_MANAGER, R.STEP_SITE_MANAGER)
+                as_substitute = (
+                    person_step
+                    and req.current_approver_employee_id != employee.id
+                    and req.employee_id != employee.id
+                    and await kara_substitute.substitute_of(
+                        self.db, AdvanceSettings, req.site_id, req.current_approver_employee_id
+                    )
+                    == employee.id
+                )
+                if not person_step or (req.current_approver_employee_id != employee.id and not as_substitute):
                     raise AdvanceError("این درخواست در انتظار تصمیم شما نیست", 403)
                 label = f"{employee_label(employee)} — {R.STEP_LABELS[step]}"
+                if as_substitute:
+                    manager = (await self._names([req.current_approver_employee_id])).get(req.current_approver_employee_id)
+                    label += f" (جانشین {employee_label(manager)})"
                 if approve:
                     self._event(req, "approved", label, user.id, note)
                     req.step_index += 1
@@ -463,6 +495,7 @@ class AdvanceService:
                     "rules_text": st.rules_text if st else None,
                     "amount_mode": st.amount_mode if st else R.AMOUNT_FIXED,
                     "amount_step": st.amount_step if st else None,
+                    "allow_kara_substitute": bool(st and st.allow_kara_substitute),
                     "tiers": await self.tiers(site.id),
                     "members": await self.members(site.id),
                     "stuck_count": await self.stuck_count(site.id),
@@ -598,6 +631,8 @@ class AdvanceService:
         st.window_from_day, st.window_to_day, st.max_per_month = f, t, n
         st.rules_text = _clean(data.get("rules_text"), 4000)
         st.amount_mode, st.amount_step = amount_mode, amount_step
+        if data.get("allow_kara_substitute") is not None:
+            st.allow_kara_substitute = bool(data["allow_kara_substitute"])
         # پله‌ها: جایگزینی کامل (فهرست کوچک است)
         for row in (await self.db.execute(select(AdvanceTier).where(AdvanceTier.site_id == site_id))).scalars().all():
             await self.db.delete(row)

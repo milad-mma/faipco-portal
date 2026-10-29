@@ -1020,6 +1020,7 @@ class SyncService:
         """
         if deactivated_ids:
             await self._reassign_loan_approvers(deactivated_ids)
+            await self._reassign_leave_approvers(deactivated_ids)
         if not deactivated_ids and not reactivated_ids:
             return
         from app.services.insurance_service import InsuranceService
@@ -1033,6 +1034,20 @@ class SyncService:
                     self._insurance_pushes.extend(await service.create_left_notices(items))
         except Exception:  # هشدار بیمه نباید Sync پرسنل را ناموفق کند
             logger.exception("ثبت هشدار ترک کار بیمه تکمیلی در Sync ناموفق بود")
+
+    async def _reassign_leave_approvers(self, deactivated_ids: list[int]) -> None:
+        """
+        مرخصی/ماموریت/تردد فراموش‌شده: درخواست‌های بدون تصمیمی که پرسنلِ ترک‌کار تأییدکننده‌ی فعلی‌شان است، در کاراوب به
+        تأییدکننده‌ی امروز منتقل می‌شوند (LeaveRequestService.on_employees_left؛ هر سایت در Savepoint جدا).
+        """
+        from app.services.leave_request_service import LeaveRequestService
+
+        try:
+            moved = await LeaveRequestService(self.db).on_employees_left(deactivated_ids)
+            if moved:
+                logger.info("%s درخواست مرخصی/ماموریت از تأییدکننده‌ی ترک‌کار منتقل شد", moved)
+        except Exception:  # انتقال تأییدکننده نباید Sync پرسنل را ناموفق کند
+            logger.exception("انتقال تأییدکننده‌های مرخصی/ماموریت پس از ترک کار ناموفق بود")
 
     async def _reassign_loan_approvers(self, deactivated_ids: list[int]) -> None:
         """

@@ -59,6 +59,7 @@ import {
   formatRial,
   formatService,
   LoanHistory,
+  SubstituteSwitch,
 } from "../components/loans/LoanShared";
 import {
   createLoanPolicy,
@@ -1074,11 +1075,13 @@ function SettingsTab({ site, onSaved }) {
   const [payslipTitle, setPayslipTitle] = useState(
     site.payslip_loan_title || "",
   );
+  const [allowSubstitute, setAllowSubstitute] = useState(!!site.allow_kara_substitute);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setEnabled(site.is_enabled);
     setPayslipTitle(site.payslip_loan_title || "");
+    setAllowSubstitute(!!site.allow_kara_substitute);
     setManager(
       site.site_manager_employee_id
         ? { id: site.site_manager_employee_id, label: site.site_manager }
@@ -1097,6 +1100,7 @@ function SettingsTab({ site, onSaved }) {
         site_manager_employee_id: manager?.id ?? null,
         hr_employee_id: hr?.id ?? null,
         payslip_loan_title: payslipTitle.trim() || null,
+        allow_kara_substitute: allowSubstitute,
       });
       onSaved(res);
     } catch (e) {
@@ -1134,6 +1138,7 @@ function SettingsTab({ site, onSaved }) {
             مدیر واحد هر پرسنل همان تأییدکننده‌ی مرخصی اوست و جدا تعریف نمی‌شود.
             «واحد مالی» = دارندگان مجوز loans.finance این سایت.
           </Typography>
+          <SubstituteSwitch checked={allowSubstitute} onChange={setAllowSubstitute} />
           <TextField
             label="نام وام در فیش حقوقی (اختیاری)"
             value={payslipTitle}

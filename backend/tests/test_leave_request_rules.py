@@ -157,3 +157,48 @@ def test_forgotten_punch_not_before_shift_start():
     v(day, night, 600)  # بعد از شبکاری، امروز روزکار
     v({"off_day": True}, day, 900)
     v(None, None, 300)
+
+
+def test_needs_reassign():
+    from app.core.leave_request_rules import needs_reassign
+
+    pending = {"IsFinalApproved": None, "CurEmpNo": 100}
+    assert needs_reassign(pending, inactive={100})
+    assert not needs_reassign(pending, inactive={200})
+    assert needs_reassign(pending, inactive=set(), only_from={100})  # تغییر تنظیمات: قبلی هنوز فعال است
+    assert not needs_reassign({**pending, "IsFinalApproved": True}, inactive={100})  # تصمیم‌گرفته
+    assert not needs_reassign({**pending, "IsFinalApproved": False}, inactive={100})
+    assert not needs_reassign({**pending, "AcceptCode": 22}, inactive={100})  # ابطال‌شده
+    assert not needs_reassign({**pending, "CurEmpNo": None}, inactive={100})
+
+
+def test_reassign_stage_and_target():
+    from app.core.leave_request_rules import reassign_stage, valid_target
+
+    leave = {"RequestId": 1, "CardNo": 101, "CurEmpNo": 5}
+    punch = {"RequestId": 2, "CardNo": 900, "CurEmpNo": 5}
+    kw = {"forgotten_cards": {900}, "hr_codes": {5}}
+    assert reassign_stage(leave, moved_ids={1}, **kw) == "supervisor"  # فقط تردد فراموش‌شده مرحله‌ی HR دارد
+    assert reassign_stage(punch, moved_ids={2}, **kw) == "hr"
+    assert reassign_stage(punch, moved_ids=set(), **kw) == "supervisor"  # هنوز سرپرست تأیید نکرده
+    assert reassign_stage(punch, moved_ids=None, **kw) == "hr"  # بدون جدول ارجاع: از روی مسئول HR
+    assert valid_target(5, 7, 9, set()) == 7
+    assert valid_target(5, None, 9, set()) is None
+    assert valid_target(5, 5, 9, set()) is None  # همان قبلی
+    assert valid_target(5, 9, 9, set()) is None  # خودِ درخواست‌دهنده
+    assert valid_target(5, 7, 9, {7}) is None  # جدید هم ترک کار کرده
+
+
+def test_substitute_can_act():
+    # داده‌ی واقعی کاراوب ۱۴۰۵/۰۸/۰۷: جانشین 222088 = 226206 و جانشین 226206 = 225735؛ درخواست ۳۰۶ را 226206 تأیید کرد
+    from app.core.leave_request_rules import can_act_on, managers_of_substitute
+
+    subs = {222088: 226206, 226206: 225735}
+    assert can_act_on(222088, 222088, 225735, subs)  # خودِ مدیر
+    assert can_act_on(226206, 222088, 225735, subs)  # جانشین فعال (۳۰۶)
+    assert not can_act_on(215437, 222088, 225735, subs)  # جانشین قبلی (غیرفعال)
+    assert not can_act_on(225735, 226206, 225735, subs)  # جانشین، درخواست خودش را تأیید نمی‌کند
+    assert can_act_on(225735, 226206, 220001, subs)
+    assert not can_act_on(226206, None, 225735, subs)
+    assert managers_of_substitute(226206, subs) == {222088}
+    assert managers_of_substitute(999, subs) == set()

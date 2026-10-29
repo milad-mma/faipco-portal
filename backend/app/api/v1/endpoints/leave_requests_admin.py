@@ -253,10 +253,26 @@ async def set_approver(
     approver = await db.get(Employee, payload.approver_employee_id)
     if approver is not None and approver.site_id != department.site_id:
         await require_site_permission(db, current_user, approver.site_id, SITES_MANAGE)
+    structure = LeaveRequestStructureService(db)
+    old_code = await _manual_approver_code(db, department_id)
     try:
-        return await LeaveRequestStructureService(db).set_approver(department_id, payload.approver_employee_id)
+        record = await structure.set_approver(department_id, payload.approver_employee_id)
     except LeaveRequestStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    out = LeaveRequestApproverOut.model_validate(record)
+    # درخواست‌های بدون تصمیمِ پرسنل این واحد که پیش تأییدکننده‌ی دستی قبلی‌اند به تأییدکننده‌ی امروز منتقل می‌شوند
+    if old_code is not None and old_code != _emp_code(record.approver_employee):
+        codes = await _department_codes(db, department_id)
+        result = await _safe_reassign(
+            db,
+            department.site_id,
+            reason="تغییر تأییدکننده‌ی دستی واحد",
+            from_emp_nos={old_code},
+            requester_codes=codes,
+            by_user_id=current_user.id,
+        )
+        out.reassigned, out.unresolved_count = result["changed"], len(result["unresolved"])
+    return out
 
 
 @router.delete("/departments/{department_id}/approver", status_code=status.HTTP_204_NO_CONTENT)
@@ -334,10 +350,98 @@ async def set_hr_officer(
 ):
     """تعیین/جایگزینی مسئول نیروی انسانی سایت. مجوز: sites.manage. 400 اگر پرسنل از این سایت نباشد یا کد پرسنلی عددی نداشته باشد."""
     await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    structure = LeaveRequestStructureService(db)
+    previous = await structure.get_hr_officer(site_id)
+    old_code = _emp_code(previous.employee) if previous is not None else None
     try:
-        return await LeaveRequestStructureService(db).set_hr_officer(site_id, payload.employee_id)
+        record = await structure.set_hr_officer(site_id, payload.employee_id)
     except LeaveRequestStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    out = LeaveRequestHrOfficerOut.model_validate(record)
+    # ترددهای فراموش‌شده‌ای که در مرحله‌ی منابع انسانی پیش مسئول قبلی‌اند به مسئول جدید منتقل می‌شوند
+    if old_code is not None and old_code != _emp_code(record.employee):
+        result = await _safe_reassign(
+            db,
+            site_id,
+            reason="تغییر مسئول نیروی انسانی",
+            from_emp_nos={old_code},
+            old_hr_emp_no=old_code,
+            hr_only=True,
+            by_user_id=current_user.id,
+        )
+        out.reassigned, out.unresolved_count = result["changed"], len(result["unresolved"])
+    return out
+
+
+def _emp_code(employee: Employee | None) -> int | None:
+    code = str(getattr(employee, "personnel_code", "") or "")
+    return int(code) if code.isdigit() else None
+
+
+async def _manual_approver_code(db: AsyncSession, department_id: int) -> int | None:
+    from app.models.leave_request import LeaveRequestApprover
+
+    approver_id = (
+        await db.execute(
+            select(LeaveRequestApprover.approver_employee_id).where(LeaveRequestApprover.department_id == department_id)
+        )
+    ).scalar_one_or_none()
+    return _emp_code(await db.get(Employee, approver_id)) if approver_id is not None else None
+
+
+async def _department_codes(db: AsyncSession, department_id: int) -> set[int]:
+    codes = (await db.execute(select(Employee.personnel_code).where(Employee.department_id == department_id))).scalars()
+    return {int(c) for c in codes if c and str(c).isdigit()}
+
+
+async def _safe_reassign(db: AsyncSession, site_id: int, **kwargs) -> dict:
+    """انتقال تأییدکننده بعد از ذخیره‌ی تنظیمات؛ خطای کاراوب ذخیره‌ی تنظیمات را خراب نمی‌کند (فقط لاگ)."""
+    try:
+        result = await LeaveRequestService(db).reassign_approvers(site_id, **kwargs)
+        await db.commit()
+        return result
+    except Exception:
+        await db.rollback()
+        logger.exception("انتقال درخواست‌های مرخصی/ماموریت بعد از تغییر تنظیمات سایت %s ناموفق بود", site_id)
+        return {"changed": 0, "unresolved": []}
+
+
+# ---------- درخواست‌های مانده پیش تأییدکننده‌ی ترک‌کار ----------
+
+
+@router.get("/sites/{site_id}/stuck-approvers", response_model=list[LeaveRequestOut])
+async def list_stuck_requests(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """درخواست‌های بدون تصمیمی که پیش تأییدکننده‌ی ترک‌کار مانده‌اند. مجوز: sites.manage."""
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        return await LeaveRequestService(db).stuck_requests(site_id)
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/sites/{site_id}/reassign-approvers")
+async def reassign_stuck_requests(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    «انتقال به تأییدکننده‌های فعلی»: درخواست‌های مانده پیش تأییدکننده‌ی ترک‌کار به سرپرست امروز (زنجیره‌ی کاراوب /
+    تأییدکننده‌ی دستی) یا مسئول نیروی انسانی فعلی منتقل می‌شوند. مجوز: sites.manage.
+    """
+    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    try:
+        result = await LeaveRequestService(db).reassign_approvers(
+            site_id, reason="انتقال دستی از پنل تنظیمات", by_user_id=current_user.id
+        )
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    await db.commit()
+    return {"reassigned": result["changed"], "unresolved": len(result["unresolved"])}
 
 
 @router.delete("/sites/{site_id}/hr-officer", status_code=status.HTTP_204_NO_CONTENT)

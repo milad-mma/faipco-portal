@@ -405,6 +405,11 @@ export default function AdvanceRequestPage() {
                 />
                 <Box sx={{ flex: 1 }}>
                   <Typography fontWeight={800}>{item.employee}</Typography>
+                  {item.as_substitute_for && (
+                    <Typography variant="caption" color="info.main" fontWeight={700} display="block">
+                      به جانشینی از {item.as_substitute_for}
+                    </Typography>
+                  )}
                   <Typography variant="body2">
                     {formatRial(item.amount)} — ماه {item.request_month}
                     {item.department ? ` — ${item.department}` : ""}
