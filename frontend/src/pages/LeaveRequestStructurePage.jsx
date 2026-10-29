@@ -22,6 +22,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
@@ -61,6 +62,12 @@ import { searchFilterOptions } from "../utils/searchText";
  * ورودی: siteId و onError برای نمایش خطا در والد.
  * جدول نوع‌های موجود (با سوئیچ فعال/غیرفعال و حذف) و فرم افزودن نوع جدید با کدهای ActionId/OperationId/Card_No کاراوب.
  */
+// توضیح هاور فیلدهای مهلت ثبت
+const PAST_HELP =
+  "تا چند روز بعد از تاریخ درخواست، پرسنل می‌تواند آن را ثبت کند. مثال: ۳ یعنی مرخصی روز شنبه تا سه‌شنبه قابل ثبت است. ۰ = فقط امروز و آینده (روزهای گذشته ممنوع). خالی = بدون محدودیت. برای تردد فراموش‌شده روی تاریخ تردد سنجیده می‌شود و خالی یعنی ۳۱ روز.";
+const FUTURE_HELP =
+  "حداکثر چند روز جلوتر از امروز می‌شود این نوع را ثبت کرد. مثال: ۷ یعنی تا یک هفته‌ی آینده. ۰ = روزهای آینده ممنوع (فقط امروز و گذشته). خالی = بدون محدودیت.";
+
 // مقدار فیلد مهلت → عدد یا null (خالی = بدون محدودیت)
 function dayLimit(value) {
   const text = String(value ?? "").replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).trim();
@@ -82,23 +89,25 @@ function SubmitWindowCell({ type, onSave }) {
     const next = dayLimit(value);
     if (next !== (type[key] ?? null)) onSave(type, { [key]: next });
   }
-  const field = (label, value, setValue, key, hidden) =>
+  const field = (label, value, setValue, key, help, hidden) =>
     hidden ? null : (
-      <TextField
-        size="small"
-        label={label}
-        value={value}
-        placeholder="آزاد"
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => save(key, value)}
-        inputProps={{ inputMode: "numeric", dir: "ltr" }}
-        sx={{ width: 96 }}
-      />
+      <Tooltip title={help} arrow placement="top">
+        <TextField
+          size="small"
+          label={label}
+          value={value}
+          placeholder="آزاد"
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => save(key, value)}
+          inputProps={{ inputMode: "numeric", dir: "ltr" }}
+          sx={{ width: 96 }}
+        />
+      </Tooltip>
     );
   return (
     <Stack direction="row" spacing={1}>
-      {field("گذشته (روز)", past, setPast, "max_past_days", false)}
-      {field("آینده (روز)", future, setFuture, "max_future_days", type.is_forgotten_punch)}
+      {field("گذشته (روز)", past, setPast, "max_past_days", PAST_HELP, false)}
+      {field("آینده (روز)", future, setFuture, "max_future_days", FUTURE_HELP, type.is_forgotten_punch)}
     </Stack>
   );
 }
@@ -430,27 +439,31 @@ function TypesSection({ siteId, onError }) {
           />
         </Grid>
         <Grid item xs={6} md={2}>
-          <TextField
-            size="small"
-            fullWidth
-            label="مهلت گذشته (روز)"
-            placeholder="آزاد"
-            value={maxPast}
-            onChange={(e) => setMaxPast(e.target.value)}
-            inputProps={{ inputMode: "numeric", dir: "ltr" }}
-          />
-        </Grid>
-        {!isForgottenPunch && (
-          <Grid item xs={6} md={2}>
+          <Tooltip title={PAST_HELP} arrow placement="top">
             <TextField
               size="small"
               fullWidth
-              label="مهلت آینده (روز)"
+              label="مهلت گذشته (روز)"
               placeholder="آزاد"
-              value={maxFuture}
-              onChange={(e) => setMaxFuture(e.target.value)}
+              value={maxPast}
+              onChange={(e) => setMaxPast(e.target.value)}
               inputProps={{ inputMode: "numeric", dir: "ltr" }}
             />
+          </Tooltip>
+        </Grid>
+        {!isForgottenPunch && (
+          <Grid item xs={6} md={2}>
+            <Tooltip title={FUTURE_HELP} arrow placement="top">
+              <TextField
+                size="small"
+                fullWidth
+                label="مهلت آینده (روز)"
+                placeholder="آزاد"
+                value={maxFuture}
+                onChange={(e) => setMaxFuture(e.target.value)}
+                inputProps={{ inputMode: "numeric", dir: "ltr" }}
+              />
+            </Tooltip>
           </Grid>
         )}
       </Grid>
