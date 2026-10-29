@@ -309,15 +309,14 @@ function SubmitRequestForm({ onSubmitted }) {
         {/* فرم تردد فراموش‌شده: تاریخ و ساعت یک تردد، توضیحات و دکمه‌ی ثبت */}
         {selectedType?.is_forgotten_punch && (
           <>
-            <Stack spacing={2} alignItems="center" sx={{ width: "100%" }}>
+            <Stack spacing={2}>
               <JalaliDateTimePicker
                 value={punchDate}
                 onChange={setPunchDate}
                 label="تاریخ تردد"
                 showTime={false}
-                align="center"
               />
-              <TimeSelect24 label="ساعت تردد" value={punchTime} onChange={setPunchTime} align="center" />
+              <TimeSelect24 label="ساعت تردد" value={punchTime} onChange={setPunchTime} />
             </Stack>
             {activePunchShift?.found && !activePunchShift.off_day && (
               <Alert severity="info" sx={{ py: 0 }}>
@@ -362,7 +361,6 @@ function SubmitRequestForm({ onSubmitted }) {
                 value={exitTime}
                 onChange={setExitTime}
                 allowedHours={allowedHours}
-                align="center"
               />
             ) : selectedType.is_hourly ? (
               <Stack direction="row" spacing={1.5}>
