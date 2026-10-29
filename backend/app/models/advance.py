@@ -27,6 +27,8 @@ class AdvanceSettings(Base, TimestampMixin):
     site_manager_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
+    # قانون شروع به کار: در ماه استخدام درخواست ممکن نیست (از ابتدای ماه بعد)؛ قابل خاموش کردن (Migration 125)
+    block_hire_month: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     # جانشین فعال مدیر در کاراوب (WF_Substitute) هم بتواند مراحل تأیید را انجام دهد (Migration 124)
     allow_kara_substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # بازه‌ی روزهای مجاز ثبت در هر ماه شمسی (شامل هر دو سر)؛ اگر from > to باشد بازه از آخر ماه به اول ماه بعد می‌چرخد

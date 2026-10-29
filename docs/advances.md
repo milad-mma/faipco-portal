@@ -30,6 +30,8 @@
 - **شروع به کار**: کسی که ماه شمسی تاریخ استخدامش (دوره‌ی فعلی، `employees.hire_date_jalali`؛ نه سابقه‌ی اصلاح‌شده‌ی مالی)
   همین ماه یا بعد از آن است نمی‌تواند درخواست بدهد؛ از ابتدای ماه بعد ممکن است (`advance_rules.hire_month_block`، ماه
   تقویمی روز ثبت). تاریخ استخدام نامشخص = بدون محدودیت.
+  قابل خاموش کردن برای هر سایت: سوئیچ «در ماه شروع به کار درخواست ممکن نباشد» در تنظیمات مساعده
+  (`advance_settings.block_hire_month`، Migration 125، پیش‌فرض روشن).
 - **گروه‌ها (پرسنل / سرپرستان / مدیران)**: هر گروه جدول پله‌های خودش را دارد (`advance_tiers.group`)؛ گروهی که پله
   ندارد از پله‌های «پرسنل» استفاده می‌کند. گروه هر نفر (`AdvanceService.employee_group`):
   1. تعیین دستی در تب تنظیمات (`advance_group_members`: مدیر یا سرپرست) — مقدم بر همه؛
@@ -76,3 +78,7 @@ docs/bank-accounts.md) — به درخواست کاربر، پس دارنده‌
 `core/advance_rules.py` (قواعد خالص، `tests/test_advance_rules.py`)، `models/advance.py`، `services/advance_service.py`،
 `api/v1/endpoints/advances.py`؛ فرانت: `pages/AdvanceRequestPage.jsx`، `pages/AdvancesAdminPage.jsx`، `api/advances.js`،
 `components/NoteDialog.jsx` (مشترک با وام). اجزای نمایش (مراحل، تاریخچه، چیپ وضعیت، جست‌وجوی پرسنل) از `components/loans/LoanShared.jsx`.
+
+## جانشین مدیران کاراوب
+سوئیچ «جانشین مدیران (تعریف‌شده در کاراوب) هم بتواند تأیید کند» (`allow_kara_substitute`، Migration 124) — جزئیات در
+`docs/leave-requests.md` «جانشین مدیران کاراوب».

@@ -284,7 +284,7 @@ class AdvanceService:
             elif amount_mode == R.AMOUNT_RANGE and bounds is None:
                 reasons.append("محدوده‌ی مبلغ برای سابقه‌ی شما درست تعریف نشده است؛ با واحد مالی هماهنگ کنید.")
             # شروع به کار در همین ماه: از ابتدای ماه بعد (تاریخ استخدام دوره‌ی فعلی، نه سابقه‌ی اصلاح‌شده)
-            hire_block = R.hire_month_block(employee.hire_date_jalali, (y, m, d))
+            hire_block = R.hire_month_block(employee.hire_date_jalali, (y, m, d)) if st.block_hire_month else None
             if hire_block:
                 reasons.append(hire_block)
             used = await self._month_count(employee.id, month)
@@ -496,6 +496,7 @@ class AdvanceService:
                     "amount_mode": st.amount_mode if st else R.AMOUNT_FIXED,
                     "amount_step": st.amount_step if st else None,
                     "allow_kara_substitute": bool(st and st.allow_kara_substitute),
+                    "block_hire_month": st.block_hire_month if st else True,
                     "tiers": await self.tiers(site.id),
                     "members": await self.members(site.id),
                     "stuck_count": await self.stuck_count(site.id),
@@ -631,6 +632,8 @@ class AdvanceService:
         st.window_from_day, st.window_to_day, st.max_per_month = f, t, n
         st.rules_text = _clean(data.get("rules_text"), 4000)
         st.amount_mode, st.amount_step = amount_mode, amount_step
+        if data.get("block_hire_month") is not None:
+            st.block_hire_month = bool(data["block_hire_month"])
         if data.get("allow_kara_substitute") is not None:
             st.allow_kara_substitute = bool(data["allow_kara_substitute"])
         # پله‌ها: جایگزینی کامل (فهرست کوچک است)

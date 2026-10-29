@@ -79,6 +79,7 @@ class SettingsIn(BaseModel):
     rules_text: str | None = Field(default=None, max_length=4000)
     amount_mode: str = Field(default="fixed", pattern="^(fixed|range)$")
     amount_step: int | None = Field(default=None, ge=0)
+    block_hire_month: bool | None = None  # قانون ماه شروع به کار؛ None = بدون تغییر
     allow_kara_substitute: bool | None = None  # جانشین فعال مدیر در کاراوب هم تأیید کند؛ None = بدون تغییر
     tiers: list[TierIn] = Field(default_factory=list, max_length=90)
     members: list[MemberIn] = Field(default_factory=list, max_length=500)  # تعیین دستی مدیر/سرپرست

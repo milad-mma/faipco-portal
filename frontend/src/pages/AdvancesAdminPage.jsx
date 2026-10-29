@@ -562,6 +562,7 @@ function SettingsTab({ site, onSaved }) {
       amount_mode: site.amount_mode || "fixed",
       amount_step: site.amount_step ?? "",
       allow_kara_substitute: !!site.allow_kara_substitute,
+      block_hire_month: site.block_hire_month !== false,
       tiers: (site.tiers || []).map((t) => ({
         group: t.group || "staff",
         min_months: t.min_months,
@@ -592,6 +593,7 @@ function SettingsTab({ site, onSaved }) {
         amount_mode: form.amount_mode,
         amount_step: form.amount_step === "" ? null : Number(form.amount_step),
         allow_kara_substitute: form.allow_kara_substitute,
+        block_hire_month: form.block_hire_month,
         // ردیف‌های کاملاً خالی نادیده گرفته می‌شوند؛ ردیف ناقص خطای فارسی می‌دهد
         tiers: form.tiers
           .filter((t) => String(t.min_months).trim() !== "" || t.amount !== "")
@@ -687,6 +689,21 @@ function SettingsTab({ site, onSaved }) {
         روزها. رد/لغوشده‌ها در «دفعات» شمرده نمی‌شوند و هر پرسنل هم‌زمان فقط یک
         درخواست باز دارد.
       </Typography>
+      <Box>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.block_hire_month}
+              onChange={(e) => set("block_hire_month", e.target.checked)}
+            />
+          }
+          label="در ماه شروع به کار درخواست ممکن نباشد"
+        />
+        <Typography variant="caption" color="text.secondary" display="block">
+          روشن: کسی که در همین ماه شمسی استخدام شده (تاریخ استخدام دوره‌ی فعلی) از ابتدای ماه بعد می‌تواند درخواست
+          بدهد. خاموش: فقط پله‌های سابقه و بقیه‌ی شرط‌ها بررسی می‌شوند.
+        </Typography>
+      </Box>
 
       <Typography fontWeight={700}>مبلغ بر اساس سابقه (پله‌ای) — جدا برای هر گروه</Typography>
       <Stack
