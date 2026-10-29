@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
+from app.models.system_setting import SystemSetting
 from app.models.user import Permission, Role, RolePermission
 
 DEFAULT_PERMISSIONS = [
@@ -117,25 +118,33 @@ ADDITIONAL_ROLES = {
 }
 
 
-async def _get_or_create_role(db, key: str, description: str) -> Role:
+DONE_KEY = "seed.default_roles_done"  # نقش‌های پیش‌فرضی که قبلاً یک بار ساخته شده‌اند (Migration 128)
+
+
+async def _get_or_create_role(db, key: str, description: str, done: set[str], always: bool = False) -> Role | None:
     """
     نقش پیش‌فرض را با کلید ثابت (roles.system_key) پیدا می‌کند — نه با نام، چون ادمین ممکن است نامش را عوض کرده باشد
-    (Migration 127). اگر کلید روی هیچ نقشی نیست، نقش سیستمیِ هم‌نام (نصب‌های قدیمی) کلید می‌گیرد؛ وگرنه ساخته می‌شود.
-    نام و توضیح نقش موجود هرگز تغییر داده نمی‌شود.
+    (Migration 127). نقشی که قبلاً یک بار ساخته شده (در done) و الان کلیدش روی هیچ نقشی نیست — ادمین تغییرش داده یا
+    حذفش کرده — دوباره ساخته نمی‌شود (None). وگرنه نقش سیستمیِ هم‌نام کلید می‌گیرد یا نقش ساخته می‌شود.
+    always: superadmin که برای ورود ادمین لازم است همیشه تضمین می‌شود. نام و توضیح نقش موجود هرگز تغییر نمی‌کند.
     """
     role = (await db.execute(select(Role).where(Role.system_key == key))).scalar_one_or_none()
     if role is not None:
+        done.add(key)
         return role
+    if key in done and not always:
+        return None
     role = (
         await db.execute(select(Role).where(Role.name == key, Role.system_key.is_(None)))
     ).scalar_one_or_none()
     if role is not None:
         role.system_key = key
         await db.flush()
-        return role
-    role = Role(name=key, description=description, is_system=True, system_key=key)
-    db.add(role)
-    await db.flush()
+    if role is None:
+        role = Role(name=key, description=description, is_system=True, system_key=key)
+        db.add(role)
+        await db.flush()
+    done.add(key)
     return role
 
 
@@ -153,7 +162,11 @@ async def seed() -> None:
             code_to_permission[code] = perm
 
         # 2. نقش سیستمی superadmin با همه Permission ها (فقط کاربر admin این نقش را دارد)
-        superadmin_role = await _get_or_create_role(db, "superadmin", "دسترسی کامل — غیرقابل انتصاب از UI")
+        setting = await db.get(SystemSetting, DONE_KEY)
+        done = {k for k in (setting.value if setting else "").split(",") if k}
+        superadmin_role = await _get_or_create_role(
+            db, "superadmin", "دسترسی کامل — غیرقابل انتصاب از UI", done, always=True
+        )
 
         for perm in code_to_permission.values():
             result = await db.execute(
@@ -167,7 +180,9 @@ async def seed() -> None:
 
         # 3. نقش‌های سازمانی سلسله‌مراتب اطلاعیه (site_manager / middle_manager)
         for role_name, config in ADDITIONAL_ROLES.items():
-            role = await _get_or_create_role(db, role_name, config["description"])
+            role = await _get_or_create_role(db, role_name, config["description"], done)
+            if role is None:
+                continue  # ادمین این نقش پیش‌فرض را تغییر داده یا حذف کرده؛ دست نمی‌خورد
 
             for code in config["permissions"]:
                 perm = code_to_permission[code]
@@ -194,6 +209,12 @@ async def seed() -> None:
                 )
                 await db.delete(old_role)
 
+        # فهرست نقش‌های پیش‌فرضِ ساخته‌شده (تا بعد از تغییر نام/حذف دوباره ساخته نشوند)
+        value = ",".join(sorted(done))
+        if setting is None:
+            db.add(SystemSetting(key=DONE_KEY, value=value))
+        else:
+            setting.value = value
         await db.commit()
         print(
             f"Seed کامل شد: {len(code_to_permission)} Permission، "
