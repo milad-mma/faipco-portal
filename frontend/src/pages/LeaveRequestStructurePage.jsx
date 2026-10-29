@@ -61,6 +61,48 @@ import { searchFilterOptions } from "../utils/searchText";
  * ورودی: siteId و onError برای نمایش خطا در والد.
  * جدول نوع‌های موجود (با سوئیچ فعال/غیرفعال و حذف) و فرم افزودن نوع جدید با کدهای ActionId/OperationId/Card_No کاراوب.
  */
+// مقدار فیلد مهلت → عدد یا null (خالی = بدون محدودیت)
+function dayLimit(value) {
+  const text = String(value ?? "").replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).trim();
+  return text === "" ? null : Math.max(0, Math.min(365, Number(text) || 0));
+}
+
+/**
+ * مهلت ثبت یک نوع (Migration 126): «گذشته» = تا چند روز بعد از تاریخ درخواست، «آینده» = تا چند روز جلوتر.
+ * خالی = بدون محدودیت، ۰ = ممنوع. با خروج از فیلد ذخیره می‌شود.
+ */
+function SubmitWindowCell({ type, onSave }) {
+  const [past, setPast] = useState(type.max_past_days ?? "");
+  const [future, setFuture] = useState(type.max_future_days ?? "");
+  useEffect(() => {
+    setPast(type.max_past_days ?? "");
+    setFuture(type.max_future_days ?? "");
+  }, [type.max_past_days, type.max_future_days]);
+  function save(key, value) {
+    const next = dayLimit(value);
+    if (next !== (type[key] ?? null)) onSave(type, { [key]: next });
+  }
+  const field = (label, value, setValue, key, hidden) =>
+    hidden ? null : (
+      <TextField
+        size="small"
+        label={label}
+        value={value}
+        placeholder="آزاد"
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => save(key, value)}
+        inputProps={{ inputMode: "numeric", dir: "ltr" }}
+        sx={{ width: 96 }}
+      />
+    );
+  return (
+    <Stack direction="row" spacing={1}>
+      {field("گذشته (روز)", past, setPast, "max_past_days", false)}
+      {field("آینده (روز)", future, setFuture, "max_future_days", type.is_forgotten_punch)}
+    </Stack>
+  );
+}
+
 function TypesSection({ siteId, onError }) {
   const [types, setTypes] = useState(null); // نوع‌های تعریف‌شده‌ی سایت؛ null = هنوز بارگذاری نشده
   const [title, setTitle] = useState(""); // عنوان نوع جدید
@@ -75,6 +117,8 @@ function TypesSection({ siteId, onError }) {
   const [operationLookup, setOperationLookup] = useState([]); // فهرست رسمی WF_OperationTypes سایت
   const [cardNo, setCardNo] = useState(""); // Card_No کاراوب
   const [cardLookup, setCardLookup] = useState([]); // فهرست رسمی Cards سایت
+  const [maxPast, setMaxPast] = useState(""); // مهلت ثبت گذشته (روز؛ خالی = آزاد)
+  const [maxFuture, setMaxFuture] = useState(""); // مهلت ثبت آینده (روز؛ خالی = آزاد)
 
   // بارگذاری سه فهرست مرجع کاراوب؛ در خطا فهرست خالی (Autocomplete مربوطه نمایش داده نمی‌شود)
   useEffect(() => {
@@ -129,8 +173,12 @@ function TypesSection({ siteId, onError }) {
         card_no: cardNo === "" ? null : Number(cardNo),
         is_forgotten_punch: isForgottenPunch,
         is_exit_permit: isExitPermit,
+        max_past_days: dayLimit(maxPast),
+        max_future_days: isForgottenPunch ? null : dayLimit(maxFuture),
       });
       setTitle("");
+      setMaxPast("");
+      setMaxFuture("");
       setIsForgottenPunch(false);
       setIsExitPermit(false);
       setIsMission(false);
@@ -159,6 +207,16 @@ function TypesSection({ siteId, onError }) {
     }
   }
 
+  // ذخیره‌ی مهلت ثبت یک نوع
+  async function handleSaveWindow(type, data) {
+    try {
+      await updateLeaveRequestType(type.id, data);
+      load();
+    } catch (err) {
+      onError(err.response?.data?.detail || "ذخیره‌ی مهلت ثبت با خطا مواجه شد.");
+    }
+  }
+
   // حذف یک نوع
   async function handleDelete(type) {
     try {
@@ -184,6 +242,7 @@ function TypesSection({ siteId, onError }) {
               <TableCell>ActionId</TableCell>
               <TableCell>OperationId</TableCell>
               <TableCell>Card_No</TableCell>
+              <TableCell>مهلت ثبت</TableCell>
               <TableCell>فعال</TableCell>
               <TableCell>حذف</TableCell>
             </TableRow>
@@ -212,6 +271,9 @@ function TypesSection({ siteId, onError }) {
                 <TableCell>{t.operation_id ?? "—"}</TableCell>
                 <TableCell>{t.card_no ?? "—"}</TableCell>
                 <TableCell>
+                  <SubmitWindowCell type={t} onSave={handleSaveWindow} />
+                </TableCell>
+                <TableCell>
                   <Switch
                     checked={t.is_active}
                     onChange={() => handleToggleActive(t)}
@@ -228,6 +290,11 @@ function TypesSection({ siteId, onError }) {
           </TableBody>
         </Table>
       </TableContainer>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+        مهلت ثبت (روز تقویمی نسبت به امروز): «گذشته» = تا چند روز بعد از تاریخ مرخصی/ماموریت/تردد می‌شود ثبت کرد،
+        «آینده» = تا چند روز جلوتر. خالی = بدون محدودیت، ۰ = ممنوع (مثلاً گذشته ۰ یعنی فقط امروز و آینده). تردد
+        فراموش‌شده همیشه فقط گذشته است و اگر خالی بماند ۳۱ روز. با خروج از فیلد ذخیره می‌شود.
+      </Typography>
 
       {/* فرم افزودن نوع جدید: سه فهرست مرجع کاراوب در یک ردیف، فیلدهای کد در ردیف دوم، سوئیچ‌ها و دکمه در ردیف سوم */}
       <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 1 }}>
@@ -362,6 +429,30 @@ function TypesSection({ siteId, onError }) {
             onChange={(e) => setCardNo(e.target.value)}
           />
         </Grid>
+        <Grid item xs={6} md={2}>
+          <TextField
+            size="small"
+            fullWidth
+            label="مهلت گذشته (روز)"
+            placeholder="آزاد"
+            value={maxPast}
+            onChange={(e) => setMaxPast(e.target.value)}
+            inputProps={{ inputMode: "numeric", dir: "ltr" }}
+          />
+        </Grid>
+        {!isForgottenPunch && (
+          <Grid item xs={6} md={2}>
+            <TextField
+              size="small"
+              fullWidth
+              label="مهلت آینده (روز)"
+              placeholder="آزاد"
+              value={maxFuture}
+              onChange={(e) => setMaxFuture(e.target.value)}
+              inputProps={{ inputMode: "numeric", dir: "ltr" }}
+            />
+          </Grid>
+        )}
       </Grid>
       {/* سوئیچ‌ها (تردد فراموش‌شده، ماموریت و ساعتی را قفل می‌کند) و دکمه‌ی افزودن در یک ردیف هم‌تراز */}
       <Stack

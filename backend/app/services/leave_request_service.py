@@ -52,6 +52,7 @@ from app.core.leave_request_rules import (
     validate_exit_after_shift,
     validate_forgotten_punch_time,
     validate_hourly_in_shift,
+    validate_submit_window,
     window_label,
 )
 from app.core.kara_pool import connection_key, pooled_connect
@@ -1120,7 +1121,13 @@ class LeaveRequestService:
             label = _PUNCH_LABELS.get(p.kind or "", "تردد")
             if moment > now:
                 raise LeaveRequestError(f"زمان {label} نمی‌تواند در آینده باشد")
-            if (now.date() - p.punch_date).days > FORGOTTEN_PUNCH_MAX_PAST_DAYS:
+            # مهلت ثبت: تنظیم همین نوع، وگرنه سقف پیش‌فرض
+            if leave_type.max_past_days is not None:
+                try:
+                    validate_submit_window(p.punch_date, now.date(), leave_type.max_past_days, None)
+                except LeaveRequestRulesError as e:
+                    raise LeaveRequestError(str(e)) from e
+            elif (now.date() - p.punch_date).days > FORGOTTEN_PUNCH_MAX_PAST_DAYS:
                 raise LeaveRequestError(
                     f"ثبت تردد فراموش‌شده فقط تا {FORGOTTEN_PUNCH_MAX_PAST_DAYS} روز گذشته امکان‌پذیر است"
                 )
@@ -1249,9 +1256,17 @@ class LeaveRequestService:
                 "درخواست مرخصی/ماموریت، یک کارت از فهرست رسمی Cards برای این نوع انتخاب کنید"
             )
 
-        # تردد فراموش‌شده گردش کار جداگانه دارد
+        # تردد فراموش‌شده گردش کار جداگانه دارد (مهلت ثبت روی تاریخ هر تردد بررسی می‌شود)
         if leave_type.is_forgotten_punch:
             return await self._submit_forgotten_punches(employee, leave_type, punches or [], description)
+
+        # مهلت ثبت این نوع (تاریخ فرم = تاریخ شیفت، پیش از جابه‌جایی بامداد شیفت شب)
+        try:
+            validate_submit_window(
+                start_date, kara_wb.kara_now().date(), leave_type.max_past_days, leave_type.max_future_days
+            )
+        except LeaveRequestRulesError as e:
+            raise LeaveRequestError(str(e)) from e
 
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         cur_emp_no = await self._resolve_approver_emp_no(employee, mapping, site_connection)

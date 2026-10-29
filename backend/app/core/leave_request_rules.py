@@ -229,3 +229,23 @@ def can_act_on(approver: int, current: int | None, requester: int | None, substi
 def managers_of_substitute(substitute: int, substitutes: dict[int, int]) -> set[int]:
     """مدیرانی که این فرد الان جانشین فعالشان است."""
     return {manager for manager, sub in substitutes.items() if sub == substitute and manager != substitute}
+
+
+# ---------- مهلت ثبت هر نوع درخواست (Migration 126) ----------
+
+
+def validate_submit_window(day: date, today: date, max_past_days: int | None, max_future_days: int | None) -> None:
+    """
+    مهلت ثبت نوع درخواست نسبت به امروز (روز تقویمی، وقت ایران). max_past_days: تا چند روز بعد از تاریخ درخواست
+    (۰ = روزهای گذشته ممنوع)؛ max_future_days: تا چند روز جلوتر (۰ = آینده ممنوع)؛ None = بدون محدودیت.
+    خطا: LeaveRequestRulesError با پیام فارسی.
+    """
+    diff = (today - day).days
+    if max_past_days is not None and diff > max_past_days:
+        if max_past_days == 0:
+            raise LeaveRequestRulesError("این نوع درخواست برای روزهای گذشته قابل ثبت نیست")
+        raise LeaveRequestRulesError(f"این نوع درخواست را حداکثر تا {max_past_days} روز بعد از تاریخ آن می‌توان ثبت کرد")
+    if max_future_days is not None and -diff > max_future_days:
+        if max_future_days == 0:
+            raise LeaveRequestRulesError("این نوع درخواست برای روزهای آینده قابل ثبت نیست")
+        raise LeaveRequestRulesError(f"این نوع درخواست را حداکثر {max_future_days} روز جلوتر می‌توان ثبت کرد")

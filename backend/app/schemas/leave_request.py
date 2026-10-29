@@ -191,6 +191,8 @@ class LeaveRequestTypeIn(BaseModel):
     card_no: int | None = None
     is_forgotten_punch: bool = False
     is_exit_permit: bool = False
+    max_past_days: int | None = Field(default=None, ge=0, le=365)  # خالی = بدون محدودیت
+    max_future_days: int | None = Field(default=None, ge=0, le=365)
 
 
 class LeaveRequestTypeUpdateIn(BaseModel):
@@ -205,6 +207,9 @@ class LeaveRequestTypeUpdateIn(BaseModel):
     card_no: int | None = None
     is_forgotten_punch: bool | None = None
     is_exit_permit: bool | None = None
+    # مهلت ثبت: اگر فرستاده شود (حتی null = بدون محدودیت) اعمال می‌شود
+    max_past_days: int | None = Field(default=None, ge=0, le=365)
+    max_future_days: int | None = Field(default=None, ge=0, le=365)
 
 
 class LeaveRequestTypeOut(BaseModel):
@@ -221,6 +226,8 @@ class LeaveRequestTypeOut(BaseModel):
     card_no: int | None
     is_forgotten_punch: bool = False
     is_exit_permit: bool = False
+    max_past_days: int | None = None
+    max_future_days: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

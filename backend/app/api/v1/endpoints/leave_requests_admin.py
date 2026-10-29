@@ -185,6 +185,7 @@ async def add_type(
     return await LeaveRequestStructureService(db).add_type(
         site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no,
         payload.is_forgotten_punch, payload.is_exit_permit,
+        max_past_days=payload.max_past_days, max_future_days=payload.max_future_days,
     )
 
 
@@ -202,9 +203,12 @@ async def update_type(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع درخواست موردنظر یافت نشد")
     await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
     try:
-        return await LeaveRequestStructureService(db).update_type(
-            type_id, {k: v for k, v in payload.model_dump().items() if v is not None}  # فیلدهای خالی اعمال نمی‌شوند
-        )
+        data = {k: v for k, v in payload.model_dump().items() if v is not None}  # فیلدهای خالی اعمال نمی‌شوند
+        # مهلت ثبت: null فرستاده‌شده یعنی «بدون محدودیت»
+        for key in ("max_past_days", "max_future_days"):
+            if key in payload.model_fields_set:
+                data[key] = getattr(payload, key)
+        return await LeaveRequestStructureService(db).update_type(type_id, data)
     except LeaveRequestStructureError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

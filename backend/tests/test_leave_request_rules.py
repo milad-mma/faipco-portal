@@ -202,3 +202,17 @@ def test_substitute_can_act():
     assert not can_act_on(226206, None, 225735, subs)
     assert managers_of_substitute(226206, subs) == {222088}
     assert managers_of_substitute(999, subs) == set()
+
+
+def test_submit_window():
+    from app.core.leave_request_rules import validate_submit_window as v
+
+    today = date(2026, 10, 29)
+    v(today, today, 0, 0)  # امروز همیشه مجاز
+    v(date(2026, 10, 26), today, 3, None)
+    assert "3 روز بعد" in _raises(v, date(2026, 10, 25), today, 3, None)
+    assert "گذشته" in _raises(v, date(2026, 10, 28), today, 0, None)
+    v(date(2026, 11, 5), today, None, 7)
+    assert "آینده" in _raises(v, date(2026, 10, 30), today, None, 0)
+    _raises(v, date(2026, 11, 6), today, None, 7)
+    v(date(2025, 1, 1), today, None, None)  # بدون محدودیت

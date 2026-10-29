@@ -183,6 +183,11 @@ class LeaveRequestType(Base, TimestampMixin):
     # نوع «مجوز خروج» (برگه‌ی خروج حراست): فقط ساعت خروج، از پایان شیفت همان روز به بعد؛ مرخصی/مأموریت ثبت نمی‌شود،
     # فقط سرپرست تأیید می‌کند و در کاراوب StartHour=EndHour، مدت ۰ و با تأیید AcceptCode=0 (بدون اثر روی تردد/کارکرد).
     is_exit_permit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # مهلت ثبت (Migration 126؛ روز تقویمی نسبت به امروز به وقت ایران؛ خالی = بدون محدودیت):
+    # max_past_days = تا چند روز بعد از تاریخ درخواست می‌شود ثبت کرد (۰ = گذشته ممنوع)،
+    # max_future_days = تا چند روز جلوتر از امروز (۰ = آینده ممنوع)
+    max_past_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_future_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821
 

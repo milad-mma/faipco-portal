@@ -58,6 +58,20 @@ function statusLabel(item) {
   return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
 }
 
+// متن مهلت ثبت نوع: «تا ۳ روز بعد از تاریخ / حداکثر ۷ روز جلوتر»؛ بدون محدودیت → ""
+function submitWindowText(type) {
+  if (!type) return "";
+  const fa = (n) => Number(n).toLocaleString("fa-IR");
+  const parts = [];
+  const past = type.max_past_days;
+  const future = type.is_forgotten_punch ? null : type.max_future_days;
+  if (past === 0) parts.push("برای روزهای گذشته قابل ثبت نیست");
+  else if (past != null) parts.push(`حداکثر تا ${fa(past)} روز بعد از تاریخ آن`);
+  if (future === 0) parts.push("برای روزهای آینده قابل ثبت نیست");
+  else if (future != null) parts.push(`حداکثر ${fa(future)} روز جلوتر`);
+  return parts.length ? `مهلت ثبت این نوع: ${parts.join("؛ ")}` : "";
+}
+
 // درخواست الان دست چه کسی است / چه کسی تصمیم گرفت (فقط نام؛ docs/leave-requests.md)
 function approverLine(item) {
   if (item.status === "pending") {
@@ -284,6 +298,13 @@ function SubmitRequestForm({ onSubmitted }) {
             </MenuItem>
           ))}
         </TextField>
+
+        {/* مهلت ثبت این نوع (تنظیمات مرخصی/ماموریت؛ اعتبارسنجی اصلی در سرور) */}
+        {submitWindowText(selectedType) && (
+          <Typography variant="caption" color="text.secondary">
+            {submitWindowText(selectedType)}
+          </Typography>
+        )}
 
         {/* فرم تردد فراموش‌شده: تاریخ و ساعت یک تردد، توضیحات و دکمه‌ی ثبت */}
         {selectedType?.is_forgotten_punch && (

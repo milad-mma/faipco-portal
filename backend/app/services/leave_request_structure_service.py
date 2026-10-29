@@ -159,6 +159,8 @@ class LeaveRequestStructureService:
         card_no: int | None = None,
         is_forgotten_punch: bool = False,
         is_exit_permit: bool = False,
+        max_past_days: int | None = None,
+        max_future_days: int | None = None,
     ) -> LeaveRequestType:
         """
         یک نوع درخواست جدید برای سایت می‌سازد و مطمئن می‌شود مجوز مشاهده‌ی عنوان آن وجود دارد.
@@ -174,6 +176,8 @@ class LeaveRequestStructureService:
             action_id=action_id,
             operation_id=operation_id,
             card_no=card_no,
+            max_past_days=max_past_days,
+            max_future_days=max_future_days,
         )
         self.db.add(leave_type)
         await self.db.commit()
