@@ -54,12 +54,16 @@ import {
   returnFamilyProfile,
   updateFamilyHrFields,
   updateFamilySettings,
+  fetchFamilyHrRecipients,
+  searchFamilySiteEmployees,
+  setFamilyHrRecipient,
 } from "../api/family";
 import FamilySummary from "../components/FamilySummary";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 import { MEMBER_LABEL, STATUS_COLOR, saveBlob, toEn } from "../utils/family";
 import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 import SearchField from "../components/SearchField";
+import EmployeeSearchField from "../components/EmployeeSearchField";
 import useDebounced from "../hooks/useDebounced";
 
 /**
@@ -1743,6 +1747,64 @@ function SettingsTab({ canManage, editable = true, initial, meta, onSaved }) {
   );
 }
 
+// ---------- نفر منابع انسانیِ اعلان ثبت فرم (هر سایت؛ Migration 130) ----------
+
+function HrRecipientsCard() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+
+  const load = useCallback(() => {
+    fetchFamilyHrRecipients()
+      .then(setRows)
+      .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات اعلان ناموفق بود."));
+  }, []);
+  useEffect(load, [load]);
+
+  async function change(siteId, option) {
+    setError("");
+    setSaved("");
+    try {
+      await setFamilyHrRecipient(siteId, option ? option.id : null);
+      setSaved(option ? "نفر منابع انسانی ذخیره شد." : "اعلان این سایت خاموش شد.");
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || "ذخیره ناموفق بود.");
+    }
+  }
+
+  if (rows === null && !error) return null;
+  return (
+    <Card variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
+      <Typography fontWeight={700}>اعلان ثبت فرم به منابع انسانی</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        وقتی پرسنل یک سایت فرم مشخصات خانوادگی را ثبت یا ویرایش کند، برای نفری که این‌جا تعیین می‌شود اطلاعیه (و اعلان
+        گوشی) فرستاده می‌شود. خالی = اعلانی فرستاده نمی‌شود. متن اطلاعیه پایین همین صفحه قابل تغییر است.
+      </Typography>
+      {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+      {saved && <Alert severity="success" sx={{ mb: 1 }}>{saved}</Alert>}
+      <Stack spacing={1.5}>
+        {(rows || []).map((r) => (
+          <Stack key={r.site_id} direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+            <Typography variant="body2" fontWeight={700} sx={{ minWidth: 160 }}>
+              {r.site_name}
+            </Typography>
+            <EmployeeSearchField
+              size="small"
+              label="نفر منابع انسانی"
+              value={r.employee_id ? { id: r.employee_id, label: r.employee_name } : null}
+              fetcher={(q) => searchFamilySiteEmployees(r.site_id, q)}
+              fetcherKey={r.site_id}
+              onChange={(opt) => change(r.site_id, opt)}
+              sx={{ minWidth: 280, flex: 1 }}
+            />
+          </Stack>
+        ))}
+      </Stack>
+    </Card>
+  );
+}
+
 // ---------- صفحه ----------
 
 export default function FamilyAdminPage() {
@@ -1798,6 +1860,8 @@ export default function FamilyAdminPage() {
           {tab === "list" ? (
             <ListTab canManage={canManage} formSettings={formSettings} />
           ) : (
+            <>
+            {canManage && <HrRecipientsCard />}
             <SettingsTab
               canManage={canManage}
               editable={settingsData.editable !== false}
@@ -1805,6 +1869,7 @@ export default function FamilyAdminPage() {
               meta={settingsData.meta}
               onSaved={setSettingsData}
             />
+            </>
           )}
         </>
       )}

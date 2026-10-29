@@ -28,7 +28,7 @@ from app.core.document_sanitizer import DocumentRejected, sanitize_document, san
 from app.core.persian_date import get_current_jalali_date
 from app.core.text_normalize import normalize_search_text
 from app.models.employee import Department, Employee
-from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, FamilyProfile
+from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, FamilyProfile, FamilySiteSetting
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.site import Site
 from app.models.system_setting import SystemSetting
@@ -100,6 +100,7 @@ def insurance_info(
 class FamilyService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.hr_notice_id: int | None = None  # اطلاعیه‌ی «فرم ثبت شد» برای منابع انسانی سایت (Push در endpoint)
 
     # ---------- تنظیمات ----------
 
@@ -517,6 +518,7 @@ class FamilyService:
 
         profile = await self.get_profile_by_employee(employee.id)
         self._log(profile, "submitted", user, snapshot=self.snapshot(profile))
+        await self._notify_site_hr(employee, user)
         await self.db.commit()
         profile = await self.get_profile_by_employee(employee.id)
         return self.profile_out(profile, settings)
@@ -536,12 +538,87 @@ class FamilyService:
             )
         )
 
-    async def _notify(self, employee_id: int, sender: User, title: str, body: str) -> int:
+    # ---------- اعلان ثبت فرم به منابع انسانی هر سایت (Migration 130) ----------
+
+    async def _notify_site_hr(self, employee: Employee, user: User) -> None:
+        """اگر برای سایت پرسنل نفر منابع انسانی تعیین شده (و خودِ او نیست)، اطلاعیه‌ی «فرم ثبت شد» برایش ساخته می‌شود."""
+        setting = (
+            await self.db.execute(select(FamilySiteSetting).where(FamilySiteSetting.site_id == employee.site_id))
+        ).scalar_one_or_none()
+        hr_id = setting.hr_employee_id if setting else None
+        if hr_id is None or hr_id == employee.id:
+            return
+        name = f"{employee.first_name} {employee.last_name}".strip()
+        self.hr_notice_id = await self._notify(
+            hr_id,
+            user,
+            await notification_templates.render(self.db, None, "family.hr_submitted_title", name=name),
+            await notification_templates.render(self.db, None, "family.hr_submitted_body", name=name),
+            priority=NoticePriority.normal,
+        )
+
+    async def hr_recipients(self, site_ids: set[int] | None) -> list[dict]:
+        """نفر منابع انسانیِ اعلان، برای هر سایتِ در اختیار بیننده."""
+        stmt = select(Site).order_by(Site.id)
+        if site_ids is not None:
+            stmt = stmt.where(Site.id.in_(site_ids or {-1}))
+        sites = (await self.db.execute(stmt)).scalars().all()
+        settings = {s.site_id: s for s in (await self.db.execute(select(FamilySiteSetting))).scalars().all()}
+        ids = {s.hr_employee_id for s in settings.values() if s.hr_employee_id}
+        people = {}
+        if ids:
+            people = {e.id: e for e in (await self.db.execute(select(Employee).where(Employee.id.in_(ids)))).scalars()}
+        out = []
+        for site in sites:
+            emp = people.get(settings[site.id].hr_employee_id) if site.id in settings else None
+            out.append(
+                {
+                    "site_id": site.id,
+                    "site_name": site.name,
+                    "employee_id": emp.id if emp else None,
+                    "employee_name": f"{emp.first_name} {emp.last_name} ({emp.personnel_code})" if emp else None,
+                }
+            )
+        return out
+
+    async def set_hr_recipient(self, site_id: int, employee_id: int | None) -> None:
+        """تعیین/برداشتن نفر منابع انسانی اعلان یک سایت؛ باید پرسنل فعال همان سایت باشد."""
+        if employee_id is not None:
+            emp = await self.db.get(Employee, employee_id)
+            if emp is None or emp.site_id != site_id or not emp.is_active:
+                raise FamilyError("نفر انتخاب‌شده باید پرسنل فعال همین سایت باشد.")
+        setting = (
+            await self.db.execute(select(FamilySiteSetting).where(FamilySiteSetting.site_id == site_id))
+        ).scalar_one_or_none()
+        if setting is None:
+            self.db.add(FamilySiteSetting(site_id=site_id, hr_employee_id=employee_id))
+        else:
+            setting.hr_employee_id = employee_id
+        await self.db.commit()
+
+    async def search_site_employees(self, site_id: int, q: str) -> list[dict]:
+        """جست‌وجوی پرسنل فعال یک سایت (نام یا کد پرسنلی) برای انتخاب نفر منابع انسانی."""
+        stmt = select(Employee).where(Employee.site_id == site_id, Employee.is_active.is_(True))
+        text = normalize_search_text((q or "").strip())
+        rows = (await self.db.execute(stmt.order_by(Employee.last_name, Employee.first_name))).scalars().all()
+        out = []
+        for e in rows:
+            label = f"{e.first_name} {e.last_name} ({e.personnel_code})"
+            if text and text not in normalize_search_text(label):
+                continue
+            out.append({"id": e.id, "label": label})
+            if len(out) >= 20:
+                break
+        return out
+
+    async def _notify(
+        self, employee_id: int, sender: User, title: str, body: str, priority: NoticePriority = NoticePriority.high
+    ) -> int:
         notice = Notice(
             sender_id=sender.id,
             title=title[:255],
             body=body[:4000],
-            priority=NoticePriority.high,
+            priority=priority,
             status=NoticeStatus.published,
             notice_type=NoticeType.normal,
             publish_at=datetime.now(timezone.utc),

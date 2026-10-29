@@ -101,3 +101,19 @@ export async function downloadFamilyExport(params = {}) {
   const { data } = await apiClient.get("/family/export", { params, responseType: "blob" });
   return data;
 }
+
+// نفر منابع انسانی که با ثبت فرم پرسنل هر سایت اعلان می‌گیرد (Migration 130)
+export async function fetchFamilyHrRecipients() {
+  const { data } = await apiClient.get("/family/hr-recipients");
+  return data;
+}
+
+export async function setFamilyHrRecipient(siteId, employeeId) {
+  const { data } = await apiClient.put(`/family/sites/${siteId}/hr-recipient`, { employee_id: employeeId });
+  return data;
+}
+
+export async function searchFamilySiteEmployees(siteId, q) {
+  const { data } = await apiClient.get(`/family/sites/${siteId}/employee-search`, { params: { q } });
+  return data;
+}

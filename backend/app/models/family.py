@@ -146,3 +146,18 @@ class FamilyChangeLog(Base):
     effective_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class FamilySiteSetting(Base, TimestampMixin):
+    """
+    تنظیم هر سایت (Migration 130): نفر منابع انسانی که با ثبت/ویرایش فرم مشخصات خانوادگی توسط پرسنل همان سایت
+    اطلاعیه (و Push) می‌گیرد. خالی = اعلانی فرستاده نمی‌شود.
+    """
+
+    __tablename__ = "family_site_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, unique=True)
+    hr_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )

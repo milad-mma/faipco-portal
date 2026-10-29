@@ -91,7 +91,7 @@ from app.models.insurance import (  # noqa: F401
     InsuranceRegistrationGrant,
     InsuranceSiteSetting,
 )
-from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, FamilyProfile  # noqa: F401
+from app.models.family import FamilyChangeLog, FamilyDocument, FamilyMember, FamilyProfile, FamilySiteSetting  # noqa: F401
 from app.models.bank_account import (  # noqa: F401
     BankDefinition,
     EmployeeBankAccount,

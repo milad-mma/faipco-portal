@@ -1,5 +1,5 @@
 {
-  "count": 440,
+  "count": 443,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -94,10 +94,12 @@
     "GET /api/v1/error-logs/{error_id}",
     "GET /api/v1/family/documents/{document_id}",
     "GET /api/v1/family/export",
+    "GET /api/v1/family/hr-recipients",
     "GET /api/v1/family/me",
     "GET /api/v1/family/profiles",
     "GET /api/v1/family/profiles/{profile_id}",
     "GET /api/v1/family/settings",
+    "GET /api/v1/family/sites/{site_id}/employee-search",
     "GET /api/v1/feedback",
     "GET /api/v1/feedback/mine",
     "GET /api/v1/feedback/mine/unread-count",
@@ -389,6 +391,7 @@
     "PUT /api/v1/family/employees/{employee_id}/hr-fields",
     "PUT /api/v1/family/me",
     "PUT /api/v1/family/settings",
+    "PUT /api/v1/family/sites/{site_id}/hr-recipient",
     "PUT /api/v1/feedback/settings",
     "PUT /api/v1/feedback/{feedback_id}/status",
     "PUT /api/v1/hr/birthday-enabled",

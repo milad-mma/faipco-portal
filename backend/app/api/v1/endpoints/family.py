@@ -23,6 +23,7 @@ from datetime import datetime
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import family_rules as rules
@@ -83,13 +84,21 @@ async def my_family(db: AsyncSession = Depends(get_db), current_user: User = Dep
 
 @router.put("/me", response_model=FamilyProfileOut)
 async def save_my_family(
-    payload: FamilyProfileIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    payload: FamilyProfileIn,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     employee = await _require_employee(db, current_user)
+    service = FamilyService(db)
     try:
-        return await FamilyService(db).save(employee, payload.model_dump(), current_user)
+        result = await service.save(employee, payload.model_dump(), current_user)
     except FamilyError as e:
         _raise(e)
+    # اطلاعیه‌ی «فرم ثبت شد» برای نفر منابع انسانی سایت (اگر تعیین شده) + Push
+    if service.hr_notice_id:
+        background_tasks.add_task(send_publish_notifications, service.hr_notice_id)
+    return result
 
 
 @router.post("/me/documents", response_model=FamilyDocumentOut, status_code=status.HTTP_201_CREATED)
@@ -196,6 +205,44 @@ async def update_settings(
         "meta": service.settings_meta(),
         "editable": True,
     }
+
+
+# ---------- نفر منابع انسانیِ اعلان هر سایت (Migration 130) ----------
+
+
+class _HrRecipientIn(BaseModel):
+    employee_id: int | None = None  # None = برداشتن
+
+
+@router.get("/hr-recipients")
+async def list_hr_recipients(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """نفر منابع انسانی که با ثبت فرم پرسنل هر سایت اعلان می‌گیرد؛ سایت‌های family.manage بیننده."""
+    return await FamilyService(db).hr_recipients(await _manage_sites(db, current_user))
+
+
+def _check_site(sites: set[int] | None, site_id: int) -> None:
+    if sites is not None and site_id not in sites:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="به این سایت دسترسی ندارید")
+
+
+@router.put("/sites/{site_id}/hr-recipient")
+async def set_hr_recipient(
+    site_id: int, payload: _HrRecipientIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    _check_site(await _manage_sites(db, current_user), site_id)
+    try:
+        await FamilyService(db).set_hr_recipient(site_id, payload.employee_id)
+    except FamilyError as e:
+        _raise(e)
+    return {"ok": True}
+
+
+@router.get("/sites/{site_id}/employee-search")
+async def search_site_employees(
+    site_id: int, q: str = "", db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    _check_site(await _manage_sites(db, current_user), site_id)
+    return await FamilyService(db).search_site_employees(site_id, q[:100])
 
 
 @router.get("/profiles", response_model=FamilyListOut)
