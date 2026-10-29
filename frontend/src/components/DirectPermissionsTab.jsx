@@ -1,39 +1,39 @@
 /**
  * تب «مجوزهای مستقیم» دیالوگ دسترسی پرسنل (Migration 106؛ docs/rbac.md).
  *
- * همان درخت مجوزهای صفحه‌ی نقش‌ها (گروه‌بندی با پیشوند کد)، ولی برای یک نفر و با انتخاب سایت کنار هر مجوز:
- * - تیک هر مجوز + چیپ سایت: پیش‌فرض «همه‌ی سایت‌ها»؛ با کلیک، یک یا چند سایت انتخاب می‌شود.
- * - تیک گروه: همه‌ی مجوزهای گروه با سایت انتخابی گروه (پیش‌فرض همه‌ی سایت‌ها).
- * - مجوزهایی که از نقش می‌رسند خاکستری و تیک‌خورده با برچسب «از نقش …» نشان داده می‌شوند؛ از این‌جا قابل برداشتن نیستند
- *   (باید از نقش برداشته شوند) ولی می‌شود مستقیم هم داد (مثلاً برای سایت دیگری).
- * - فیلتر «فقط مجوزهای مستقیم» و جست‌وجو برای فهرست شلوغ.
- * تغییرات تا زدن «ذخیره» فقط در صفحه‌اند (PUT یک‌جا: مجموعه‌ی کامل).
+ * جدول ماتریسی: هر مجوز یک ردیف، هر سایت یک ستون چک‌باکس (+ ستون «همه‌ی سایت‌ها» برای مدیر نامحدود). حالت درختی حفظ
+ * شده: مجوزها با پیشوند کد گروه‌بندی می‌شوند و ردیف گروه (باز/بسته) برای هر ستون یک چک‌باکس «همه‌ی مجوزهای گروه» دارد.
+ * - تیک «همه‌ی سایت‌ها» = مجوز برای همه‌ی سایت‌ها و سایت‌های آینده (همه‌ی ستون‌ها تیک می‌خورند)؛ برداشتن یک سایت از آن،
+ *   مجوز را به بقیه‌ی سایت‌ها محدود می‌کند؛ برداشتن «همه» کل مجوز را برمی‌دارد.
+ * - مجوزی که از نقش می‌رسد در همان خانه خاکستری (تیک‌خورده و غیرفعال) با توضیح «از نقش …» نشان داده می‌شود.
+ * - فیلتر «فقط مجوزهای مستقیم» و جست‌وجو. تغییرات تا زدن «ذخیره» فقط در صفحه‌اند (PUT یک‌جا: مجموعه‌ی کامل).
  *
- * مدیر سایتی (users.manage فقط برای بعضی سایت‌ها): «همه‌ی سایت‌ها» ندارد؛ پیش‌فرض مجوز تازه = سایت‌های خودش؛ ردیف‌های
- * خارج از اختیارش (سایت دیگر یا سراسری از superuser) فقط نمایش داده می‌شوند و سرور دست‌نخورده نگهشان می‌دارد.
- * ورودی: employee، sites (سایت‌های در اختیار بیننده). خروجی: Box محتوای تب.
+ * مدیر سایتی (users.manage فقط برای بعضی سایت‌ها): فقط ستون سایت‌های خودش؛ ستون «همه» ندارد؛ ردیف‌های خارج از اختیارش
+ * (سایت دیگر یا سراسری از superuser) فقط نمایش داده می‌شوند و سرور دست‌نخورده نگهشان می‌دارد.
+ * ورودی: employee، sites (سایت‌های در اختیار بیننده)، allSites. خروجی: Box محتوای تب.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
-  Collapse,
   FormControlLabel,
   IconButton,
-  Menu,
-  MenuItem,
   Stack,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Tooltip,
   Typography,
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
-import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import SearchField from "./SearchField";
 import {
   fetchEmployeePermissions,
@@ -42,80 +42,27 @@ import {
 import { fetchPermissions } from "../api/users";
 import { roleDisplayName } from "../utils/roleLabels";
 
-/**
- * چیپ انتخاب سایت یک مجوز (یا یک گروه). value: null = همه‌ی سایت‌ها، وگرنه آرایه‌ی id سایت‌ها.
- * منو: «همه‌ی سایت‌ها» + یک تیک برای هر سایت. انتخاب همه‌ی سایت‌ها به‌صورت تکی = «همه».
- */
-function SiteScopeChip({
-  value,
-  sites,
-  nameOf,
-  onChange,
-  disabled,
-  allowAll,
-  size = "small",
-}) {
-  const [anchor, setAnchor] = useState(null);
-  const isAll = value === null;
-  const label = isAll
-    ? "همه‌ی سایت‌ها"
-    : value.map((id) => nameOf(id)).join("، ");
+const ALL = "all"; // کلید ستون «همه‌ی سایت‌ها»
 
-  function toggleSite(id) {
-    const current = isAll ? sites.map((s) => s.id) : value;
-    const next = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id];
-    if (next.length === 0) return; // حداقل یک سایت؛ برای برداشتن مجوز، تیک خودش برداشته می‌شود
-    // فقط مدیر نامحدود می‌تواند «همه‌ی سایت‌ها» (شامل سایت‌های آینده) بدهد؛ مدیر سایتی همیشه سایت‌های مشخص
-    onChange(
-      allowAll && sites.length > 0 && sites.every((s) => next.includes(s.id))
-        ? null
-        : next,
-    );
+// آیا مجوز مستقیم (null = همه، آرایه = سایت‌ها، undefined = ندارد) شامل این ستون است؟
+function covers(grant, column) {
+  if (grant === undefined) return false;
+  if (column === ALL) return grant === null;
+  return grant === null || grant.includes(column);
+}
+
+// وضعیت جدید یک مجوز بعد از تیک/برداشتن یک ستون. siteIds = همه‌ی سایت‌های ستون‌دار (برای شکستن «همه»)
+function applyColumn(grant, column, on, siteIds) {
+  if (column === ALL) return on ? null : undefined;
+  if (on) {
+    if (grant === null) return null;
+    const list = [...(grant || [])];
+    if (!list.includes(column)) list.push(column);
+    return list;
   }
-
-  return (
-    <>
-      <Chip
-        size={size}
-        icon={<PlaceOutlinedIcon />}
-        label={label}
-        variant={isAll ? "outlined" : "filled"}
-        color={isAll ? "default" : "primary"}
-        onClick={disabled ? undefined : (e) => setAnchor(e.currentTarget)}
-        disabled={disabled}
-        sx={{
-          maxWidth: 220,
-          "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" },
-        }}
-      />
-      <Menu
-        anchorEl={anchor}
-        open={Boolean(anchor)}
-        onClose={() => setAnchor(null)}
-      >
-        {allowAll && (
-          <MenuItem
-            dense
-            onClick={() => {
-              onChange(null);
-              setAnchor(null);
-            }}
-          >
-            <Checkbox size="small" checked={isAll} />
-            همه‌ی سایت‌ها (و سایت‌های آینده)
-          </MenuItem>
-        )}
-        {sites.map((s) => (
-          <MenuItem dense key={s.id} onClick={() => toggleSite(s.id)}>
-            <Checkbox size="small" checked={isAll || value.includes(s.id)} />
-            {s.name}
-          </MenuItem>
-        ))}
-      </Menu>
-    </>
-  );
+  const base = grant === null ? siteIds : grant || [];
+  const list = base.filter((id) => id !== column);
+  return list.length ? list : undefined;
 }
 
 export default function DirectPermissionsTab({ employee, sites, allSites }) {
@@ -124,7 +71,6 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   const [allowedSiteIds, setAllowedSiteIds] = useState(null); // سایت‌های users.manage بیننده؛ null = نامحدود
   const [grants, setGrants] = useState({}); // وضعیت ویرایش: {permission_id: null | [site_id]}
   const [saved, setSaved] = useState({}); // آخرین وضعیت ذخیره‌شده (برای تشخیص تغییر)
-  const [groupScope, setGroupScope] = useState({}); // سایت انتخابی هر گروه برای «انتخاب همه»
   const [expanded, setExpanded] = useState({});
   const [onlyDirect, setOnlyDirect] = useState(false);
   const [query, setQuery] = useState("");
@@ -186,8 +132,6 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   }, [inherited]);
 
   const unrestricted = allowedSiteIds === null;
-  // پیش‌فرض یک مجوز تازه: نامحدود ← «همه‌ی سایت‌ها»؛ مدیر سایتی ← سایت‌های خودش
-  const defaultScope = () => (unrestricted ? null : sites.map((s) => s.id));
   // ردیفی که بیننده اجازه‌ی تغییرش را ندارد (سراسری یا سایت خارج از اختیار): فقط نمایش
   const isLocked = (scope) =>
     !unrestricted &&
@@ -201,31 +145,42 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   const siteName = (id) =>
     (allSites || sites).find((s) => s.id === id)?.name || "—";
 
-  function setGrant(id, value) {
+  const siteIds = sites.map((s) => s.id);
+  const columns = [...(unrestricted ? [ALL] : []), ...siteIds];
+
+  // خانه‌ی (مجوز، ستون) قابل تغییر است؟ ردیف قفل (خارج از اختیار بیننده) نه
+  const editable = (p) => !(p.id in grants) || !isLocked(grants[p.id]);
+
+  function toggleCell(p, column) {
     setGrants((prev) => {
       const next = { ...prev };
-      if (value === undefined) delete next[id];
-      else next[id] = value;
+      const value = applyColumn(prev[p.id], column, !covers(prev[p.id], column), siteIds);
+      if (value === undefined) delete next[p.id];
+      else next[p.id] = value;
       return next;
     });
   }
 
-  function toggleGroup(items, group) {
-    const scope =
-      groupScope[group] === undefined ? defaultScope() : groupScope[group];
+  // تیک ستون در ردیف گروه: همه‌ی مجوزهای قابل‌تغییر گروه برای این ستون روشن/خاموش
+  function toggleGroupColumn(items, column) {
     setGrants((prev) => {
-      const editable = items.filter(
-        (p) => !(p.id in prev) || !isLocked(prev[p.id]),
-      );
-      const allOn = editable.every((p) => p.id in prev);
+      const targets = items.filter((p) => !(p.id in prev) || !isLocked(prev[p.id]));
+      const allOn = targets.length > 0 && targets.every((p) => covers(prev[p.id], column));
       const next = { ...prev };
-      for (const p of editable) {
-        if (allOn) delete next[p.id];
-        else if (!(p.id in next))
-          next[p.id] = scope === null ? null : [...scope];
+      for (const p of targets) {
+        const value = applyColumn(prev[p.id], column, !allOn, siteIds);
+        if (value === undefined) delete next[p.id];
+        else next[p.id] = value;
       }
       return next;
     });
+  }
+
+  // نقش‌هایی که این مجوز را برای این ستون می‌دهند (نقش سراسری همه‌ی ستون‌ها را پوشش می‌دهد)
+  function rolesFor(code, column) {
+    return (inheritedByCode[code] || []).filter(
+      (r) => r.site_id == null || (column !== ALL && r.site_id === column),
+    );
   }
 
   async function handleSave() {
@@ -261,13 +216,22 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
   }
 
   const directCount = Object.keys(grants).length;
+  const columnLabel = (column) => (column === ALL ? "همه‌ی سایت‌ها" : siteName(column));
+  const stickyCell = {
+    position: "sticky",
+    right: 0,
+    bgcolor: "background.paper",
+    zIndex: 1,
+    minWidth: 220,
+    maxWidth: 320,
+  };
 
   return (
     <Stack spacing={1.5}>
       <Alert severity="info" sx={{ py: 0.5 }}>
-        مجوز مستقیم یک استثنا کنار نقش‌هاست و فقط «اضافه» می‌کند. مجوزهای
-        خاکستری از نقش می‌رسند و از این‌جا برداشته نمی‌شوند. برای هر مجوز
-        می‌توانید سایت را محدود کنید (پیش‌فرض: همه‌ی سایت‌ها).
+        مجوز مستقیم یک استثنا کنار نقش‌هاست و فقط «اضافه» می‌کند. هر ستون یک سایت است؛ تیک «همه‌ی سایت‌ها» شامل
+        سایت‌های آینده هم می‌شود. خانه‌های خاکستری از نقش می‌رسند و از این‌جا برداشته نمی‌شوند. تیک ردیف گروه همه‌ی
+        مجوزهای آن گروه را برای همان ستون می‌دهد یا برمی‌دارد.
       </Alert>
       <Stack
         direction="row"
@@ -302,191 +266,158 @@ export default function DirectPermissionsTab({ employee, sites, allSites }) {
       {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
 
-      <Stack spacing={0.5} sx={{ maxHeight: 400, overflowY: "auto", pr: 0.5 }}>
-        {grouped.length === 0 && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ py: 2, textAlign: "center" }}
-          >
-            {onlyDirect ? "هنوز مجوز مستقیمی داده نشده." : "مجوزی پیدا نشد."}
-          </Typography>
-        )}
-        {grouped.map(([group, items]) => {
-          const selectedCount = items.filter((p) => p.id in grants).length;
-          const allSelected = selectedCount === items.length;
-          const isExpanded = expanded[group] !== false;
-          const scope =
-            groupScope[group] === undefined
-              ? defaultScope()
-              : groupScope[group];
-          return (
-            <Box
-              key={group}
-              sx={{
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1.5,
-              }}
-            >
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={0.5}
-                sx={{ px: 1, py: 0.5, cursor: "pointer" }}
-                onClick={() =>
-                  setExpanded((prev) => ({ ...prev, [group]: !isExpanded }))
-                }
-              >
-                <IconButton size="small" sx={{ p: 0.25 }}>
-                  {isExpanded ? (
-                    <ExpandMoreOutlinedIcon fontSize="small" />
-                  ) : (
-                    <ChevronLeftOutlinedIcon fontSize="small" />
-                  )}
-                </IconButton>
-                <Tooltip
-                  title="انتخاب همه‌ی مجوزهای این گروه (با سایتِ انتخاب‌شده در چیپ گروه؛ مجوزهای تیک‌خورده‌ی قبلی عوض نمی‌شوند)"
-                  arrow
-                >
-                  <Checkbox
-                    size="small"
-                    checked={allSelected}
-                    indeterminate={selectedCount > 0 && !allSelected}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => toggleGroup(items, group)}
-                  />
-                </Tooltip>
-                <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
-                  {group}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {selectedCount}/{items.length}
-                </Typography>
-                <Tooltip
-                  title="سایت پیش‌فرض برای مجوزهایی که با تیک گروه اضافه می‌شوند"
-                  arrow
-                >
-                  <Box onClick={(e) => e.stopPropagation()}>
-                    <SiteScopeChip
-                      value={scope}
-                      sites={sites}
-                      nameOf={siteName}
-                      allowAll={unrestricted}
-                      onChange={(next) =>
-                        setGroupScope((prev) => ({ ...prev, [group]: next }))
-                      }
-                      disabled={!unrestricted && sites.length < 2}
-                    />
-                  </Box>
-                </Tooltip>
-              </Stack>
-              <Collapse in={isExpanded}>
-                <Stack sx={{ pb: 0.5 }}>
-                  {items.map((p) => {
-                    const direct = p.id in grants;
-                    const locked = direct && isLocked(grants[p.id]);
-                    const fromRoles = inheritedByCode[p.code] || [];
-                    return (
-                      <Stack
-                        key={p.id}
-                        direction="row"
-                        alignItems="flex-start"
-                        spacing={0.5}
-                        sx={{
-                          pl: 1,
-                          pr: 1,
-                          py: 0.25,
-                          bgcolor:
-                            !direct && fromRoles.length
-                              ? "action.hover"
-                              : undefined,
-                        }}
+      {grouped.length === 0 ? (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ py: 2, textAlign: "center" }}
+        >
+          {onlyDirect ? "هنوز مجوز مستقیمی داده نشده." : "مجوزی پیدا نشد."}
+        </Typography>
+      ) : (
+        <TableContainer
+          sx={{ maxHeight: 440, border: 1, borderColor: "divider", borderRadius: 1.5 }}
+        >
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ ...stickyCell, zIndex: 3, fontWeight: 700 }}>
+                  مجوز
+                </TableCell>
+                {columns.map((column) => (
+                  <TableCell
+                    key={column}
+                    align="center"
+                    sx={{
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      bgcolor: column === ALL ? "action.hover" : undefined,
+                    }}
+                  >
+                    {columnLabel(column)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {grouped.map(([group, items]) => {
+                const isExpanded = expanded[group] !== false;
+                const selectedCount = items.filter((p) => p.id in grants).length;
+                const targets = items.filter(editable);
+                return (
+                  <Fragment key={group}>
+                    {/* ردیف گروه (درخت): باز/بسته + تیک «همه‌ی مجوزهای گروه» برای هر ستون */}
+                    <TableRow sx={{ bgcolor: "action.selected" }}>
+                      <TableCell
+                        sx={{ ...stickyCell, bgcolor: "action.selected", cursor: "pointer" }}
+                        onClick={() =>
+                          setExpanded((prev) => ({ ...prev, [group]: !isExpanded }))
+                        }
                       >
-                        <Tooltip
-                          title={
-                            locked
-                              ? "این مجوز توسط مدیر ارشد یا برای سایت دیگری داده شده و از این‌جا قابل تغییر نیست"
-                              : ""
-                          }
-                          arrow
-                        >
-                          <span>
-                            <Checkbox
-                              size="small"
-                              checked={direct}
-                              disabled={locked}
-                              onChange={() =>
-                                setGrant(
-                                  p.id,
-                                  direct ? undefined : defaultScope(),
-                                )
-                              }
-                              sx={{ mt: -0.25 }}
-                            />
-                          </span>
-                        </Tooltip>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography
-                            variant="body2"
-                            color={
-                              !direct && fromRoles.length
-                                ? "text.secondary"
-                                : "text.primary"
-                            }
-                          >
-                            {p.code}
+                        <Stack direction="row" alignItems="center" spacing={0.5}>
+                          <IconButton size="small" sx={{ p: 0.25 }}>
+                            {isExpanded ? (
+                              <ExpandMoreOutlinedIcon fontSize="small" />
+                            ) : (
+                              <ChevronLeftOutlinedIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                          <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
+                            {group}
                           </Typography>
-                          {p.description && (
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              display="block"
+                          <Typography variant="caption" color="text.secondary">
+                            {selectedCount}/{items.length}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      {columns.map((column) => {
+                        const on = targets.filter((p) => covers(grants[p.id], column)).length;
+                        return (
+                          <TableCell key={column} align="center" sx={{ py: 0 }}>
+                            <Tooltip
+                              title={`همه‌ی مجوزهای گروه ${group} — ${columnLabel(column)}`}
+                              arrow
                             >
-                              {p.description}
-                            </Typography>
-                          )}
-                          {fromRoles.length > 0 && (
-                            <Stack
-                              direction="row"
-                              spacing={0.5}
-                              flexWrap="wrap"
-                              useFlexGap
-                              sx={{ mt: 0.25 }}
-                            >
-                              {fromRoles.map((r, i) => (
-                                <Chip
-                                  key={i}
+                              <span>
+                                <Checkbox
                                   size="small"
-                                  variant="outlined"
-                                  label={`از نقش ${roleDisplayName(r.role_name)}${r.site_id ? ` — ${siteName(r.site_id)}` : ""}`}
-                                  sx={{ height: 18, fontSize: 10 }}
+                                  disabled={targets.length === 0}
+                                  checked={targets.length > 0 && on === targets.length}
+                                  indeterminate={on > 0 && on < targets.length}
+                                  onChange={() => toggleGroupColumn(items, column)}
                                 />
-                              ))}
-                            </Stack>
-                          )}
-                        </Box>
-                        {direct && (
-                          <SiteScopeChip
-                            value={grants[p.id]}
-                            sites={sites}
-                            nameOf={siteName}
-                            allowAll={unrestricted}
-                            onChange={(next) => setGrant(p.id, next)}
-                            disabled={
-                              locked || (!unrestricted && sites.length < 2)
-                            }
-                          />
-                        )}
-                      </Stack>
-                    );
-                  })}
-                </Stack>
-              </Collapse>
-            </Box>
-          );
-        })}
-      </Stack>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                    {isExpanded &&
+                      items.map((p) => {
+                        const grant = grants[p.id];
+                        const locked = p.id in grants && isLocked(grant);
+                        return (
+                          <TableRow key={p.id} hover>
+                            <TableCell sx={{ ...stickyCell, pl: 4 }}>
+                              <Typography variant="body2">{p.code}</Typography>
+                              {p.description && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  display="block"
+                                >
+                                  {p.description}
+                                </Typography>
+                              )}
+                              {locked && (
+                                <Typography variant="caption" color="warning.main" display="block">
+                                  توسط مدیر ارشد یا برای سایت دیگری داده شده — از این‌جا قابل تغییر نیست
+                                </Typography>
+                              )}
+                            </TableCell>
+                            {columns.map((column) => {
+                              const direct = covers(grant, column);
+                              const roles = direct ? [] : rolesFor(p.code, column);
+                              if (roles.length > 0) {
+                                return (
+                                  <TableCell key={column} align="center" sx={{ py: 0 }}>
+                                    <Tooltip
+                                      title={`از نقش ${roles.map((r) => roleDisplayName(r.role_name)).join("، ")}`}
+                                      arrow
+                                    >
+                                      <span>
+                                        <Checkbox size="small" checked disabled />
+                                      </span>
+                                    </Tooltip>
+                                  </TableCell>
+                                );
+                              }
+                              return (
+                                <TableCell
+                                  key={column}
+                                  align="center"
+                                  sx={{ py: 0, bgcolor: column === ALL ? "action.hover" : undefined }}
+                                >
+                                  <Checkbox
+                                    size="small"
+                                    checked={direct}
+                                    disabled={locked}
+                                    onChange={() => toggleCell(p, column)}
+                                    inputProps={{ "aria-label": `${p.code} — ${columnLabel(column)}` }}
+                                  />
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      })}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       <Stack direction="row" spacing={1} alignItems="center">
         <Button

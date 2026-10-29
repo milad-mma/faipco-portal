@@ -106,7 +106,7 @@ export default function AssignAccessDialog({ employee, sites, allSites, onClose 
   }
 
   return (
-    <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open={Boolean(employee)} onClose={onClose} fullWidth maxWidth={tab === 1 ? "md" : "sm"}>
       {/* عنوان: نام، کد پرسنلی و سایت پرسنل */}
       <DialogTitle>
         دسترسی — {employee.first_name} {employee.last_name}
