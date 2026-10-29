@@ -68,6 +68,8 @@ class Role(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # نقش‌های سیستمی (مثل superadmin) توسط کاربر عادی قابل حذف نیستند
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # کلید ثابت نقش پیش‌فرض (Migration 127): seed نقش را با این کلید پیدا می‌کند، پس تغییر نام نقش آن را دوباره نمی‌سازد
+    system_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
 
     permissions: Mapped[list["RolePermission"]] = relationship(
         back_populates="role", cascade="all, delete-orphan"

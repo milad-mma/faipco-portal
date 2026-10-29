@@ -117,6 +117,28 @@ ADDITIONAL_ROLES = {
 }
 
 
+async def _get_or_create_role(db, key: str, description: str) -> Role:
+    """
+    نقش پیش‌فرض را با کلید ثابت (roles.system_key) پیدا می‌کند — نه با نام، چون ادمین ممکن است نامش را عوض کرده باشد
+    (Migration 127). اگر کلید روی هیچ نقشی نیست، نقش سیستمیِ هم‌نام (نصب‌های قدیمی) کلید می‌گیرد؛ وگرنه ساخته می‌شود.
+    نام و توضیح نقش موجود هرگز تغییر داده نمی‌شود.
+    """
+    role = (await db.execute(select(Role).where(Role.system_key == key))).scalar_one_or_none()
+    if role is not None:
+        return role
+    role = (
+        await db.execute(select(Role).where(Role.name == key, Role.system_key.is_(None)))
+    ).scalar_one_or_none()
+    if role is not None:
+        role.system_key = key
+        await db.flush()
+        return role
+    role = Role(name=key, description=description, is_system=True, system_key=key)
+    db.add(role)
+    await db.flush()
+    return role
+
+
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
         # 1. Permission ها
@@ -131,14 +153,7 @@ async def seed() -> None:
             code_to_permission[code] = perm
 
         # 2. نقش سیستمی superadmin با همه Permission ها (فقط کاربر admin این نقش را دارد)
-        result = await db.execute(select(Role).where(Role.name == "superadmin"))
-        superadmin_role = result.scalar_one_or_none()
-        if superadmin_role is None:
-            superadmin_role = Role(
-                name="superadmin", description="دسترسی کامل — غیرقابل انتصاب از UI", is_system=True
-            )
-            db.add(superadmin_role)
-            await db.flush()
+        superadmin_role = await _get_or_create_role(db, "superadmin", "دسترسی کامل — غیرقابل انتصاب از UI")
 
         for perm in code_to_permission.values():
             result = await db.execute(
@@ -152,12 +167,7 @@ async def seed() -> None:
 
         # 3. نقش‌های سازمانی سلسله‌مراتب اطلاعیه (site_manager / middle_manager)
         for role_name, config in ADDITIONAL_ROLES.items():
-            result = await db.execute(select(Role).where(Role.name == role_name))
-            role = result.scalar_one_or_none()
-            if role is None:
-                role = Role(name=role_name, description=config["description"], is_system=True)
-                db.add(role)
-                await db.flush()
+            role = await _get_or_create_role(db, role_name, config["description"])
 
             for code in config["permissions"]:
                 perm = code_to_permission[code]
@@ -173,7 +183,10 @@ async def seed() -> None:
         # 4. حذف نقش‌های قدیمی که دیگر استفاده نمی‌شوند (ceo / hr_manager)، اگر از قبل ساخته شده بودند
         # (attendance-pilot را Migration 104 فقط اگر بی‌مجوز مانده باشد حذف می‌کند)
         for old_role_name in ("ceo", "hr_manager"):
-            result = await db.execute(select(Role).where(Role.name == old_role_name))
+            # فقط نقش سیستمیِ بدون کلید (نه نقشی که ادمین خودش با این نام ساخته یا نقش پیش‌فرضِ تغییرنام‌داده)
+            result = await db.execute(
+                select(Role).where(Role.name == old_role_name, Role.is_system.is_(True), Role.system_key.is_(None))
+            )
             old_role = result.scalar_one_or_none()
             if old_role is not None:
                 await db.execute(
