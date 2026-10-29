@@ -6,6 +6,8 @@ import { gregorianToJalali, jalaliMonthLength, jalaliToGregorian, JALALI_MONTH_N
  * انتخاب‌گر تاریخ شمسی + ساعت: سه Dropdown برای روز/ماه/سال شمسی و یک فیلد ساعت:دقیقه.
  * value و onChange با شیء Date میلادی کار می‌کنند و فقط نمایش برای کاربر شمسی است.
  * ورودی: value، onChange، label، align ("center" = وسط‌چین)، showTime (فقط حالت عادی) و clearable.
+ * minDate / maxDate (اختیاری، فقط حالت عادی): فقط روزهای داخل بازه در فهرست‌ها می‌آیند و تاریخ انتخاب‌شده‌ی بیرون از
+ * بازه خودکار به نزدیک‌ترین روز مجاز می‌رود (مثلاً مهلت ثبت نوع درخواست مرخصی).
  *
  * clearable: برای فیلترها؛ وقتی value خالی (null) است فیلدها خالی نمایش داده می‌شوند و هیچ تاریخی
  * خودکار انتخاب/ارسال نمی‌شود؛ onChange فقط وقتی روز، ماه و سال هر سه انتخاب شدند صدا زده می‌شود
@@ -130,7 +132,12 @@ function ClearableJalaliDatePicker({ value, onChange, label, align }) {
  * حالت عادی: همیشه یک تاریخ معتبر دارد (مقدار اولیه value یا اکنون) و هر تغییر را فوراً گزارش می‌کند.
  * showTime=false فیلد ساعت را پنهان و ساعت را 00:00 می‌کند. خروجی onChange: Date میلادی.
  */
-function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, align }) {
+// مقایسه‌ی دو تاریخ شمسی {jy, jm, jd}
+function cmpJalali(a, b) {
+  return a.jy - b.jy || a.jm - b.jm || a.jd - b.jd;
+}
+
+function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, align, minDate, maxDate }) {
   // اجزای شمسی مقدار اولیه؛ فقط یک‌بار محاسبه می‌شود و تغییرات بعدی value نادیده گرفته می‌شوند
   const initialJalali = useMemo(() => gregorianToJalali(value || new Date()), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -145,7 +152,35 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
   });
 
   const dayCount = jalaliMonthLength(year, month);
-  const dayOptions = Array.from({ length: dayCount }, (_, i) => i + 1);
+  // بازه‌ی مجاز (شمسی)؛ کلید رشته‌ای برای وابستگی useEffect
+  const minJ = minDate ? gregorianToJalali(minDate) : null;
+  const maxJ = maxDate ? gregorianToJalali(maxDate) : null;
+  const boundsKey = `${minJ ? `${minJ.jy}-${minJ.jm}-${minJ.jd}` : ""}|${maxJ ? `${maxJ.jy}-${maxJ.jm}-${maxJ.jd}` : ""}`;
+  const inRange = (jy, jm, jd) =>
+    (!minJ || cmpJalali({ jy, jm, jd }, minJ) >= 0) && (!maxJ || cmpJalali({ jy, jm, jd }, maxJ) <= 0);
+  const dayOptions = Array.from({ length: dayCount }, (_, i) => i + 1).filter((d) => inRange(year, month, d));
+  // ماهی مجاز است که دست‌کم یک روزش داخل بازه باشد
+  const monthOptions = JALALI_MONTH_NAMES.map((name, i) => ({ name, value: i + 1 })).filter(
+    (m) =>
+      (!minJ || year > minJ.jy || (year === minJ.jy && m.value >= minJ.jm)) &&
+      (!maxJ || year < maxJ.jy || (year === maxJ.jy && m.value <= maxJ.jm)),
+  );
+  const yearOptions = [];
+  for (let y = Math.min(initialJalali.jy - 5, year); y <= Math.max(initialJalali.jy + 5, year); y++) {
+    if ((!minJ || y >= minJ.jy) && (!maxJ || y <= maxJ.jy)) yearOptions.push(y);
+  }
+
+  // تاریخ بیرون از بازه (مثلاً بعد از عوض شدن نوع درخواست) به نزدیک‌ترین روز مجاز می‌رود
+  useEffect(() => {
+    const current = { jy: year, jm: month, jd: Math.min(day, dayCount) };
+    const target = minJ && cmpJalali(current, minJ) < 0 ? minJ : maxJ && cmpJalali(current, maxJ) > 0 ? maxJ : null;
+    if (target) {
+      setYear(target.jy);
+      setMonth(target.jm);
+      setDay(target.jd);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boundsKey, year, month, day, dayCount]);
 
   // اگر روز انتخاب‌شده از تعداد روزهای ماه جدید بیشتر شد (مثلاً از اسفند
   // کبیسه به غیرکبیسه)، به آخرین روز معتبر برمی‌گردد
@@ -194,9 +229,9 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
           onChange={(e) => setMonth(Number(e.target.value))}
           sx={{ flex: "2 1 110px", minWidth: 110 }}
         >
-          {JALALI_MONTH_NAMES.map((name, i) => (
-            <MenuItem key={name} value={i + 1}>
-              {name}
+          {monthOptions.map((m) => (
+            <MenuItem key={m.name} value={m.value}>
+              {m.name}
             </MenuItem>
           ))}
         </TextField>
@@ -208,7 +243,7 @@ function FilledJalaliDateTimePicker({ value, onChange, label, showTime = true, a
           onChange={(e) => setYear(Number(e.target.value))}
           sx={{ flex: "1 1 88px", minWidth: 88 }}
         >
-          {Array.from({ length: 11 }, (_, i) => initialJalali.jy - 5 + i).map((y) => (
+          {yearOptions.map((y) => (
             <MenuItem key={y} value={y}>
               {y}
             </MenuItem>

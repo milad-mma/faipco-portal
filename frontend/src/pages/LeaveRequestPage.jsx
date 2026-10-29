@@ -34,6 +34,7 @@ import BackLink from "../components/BackLink";
 import { compactTableSx, faDateTime, hideXs, onlyXs } from "../utils/dateTimeFa";
 import { useAuth } from "../context/AuthContext";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
+import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import TimeSelect24 from "../components/TimeSelect24";
 import AccessGateDialog from "../components/AccessGateDialog";
 import PillTabs from "../components/PillTabs";
@@ -58,18 +59,51 @@ function statusLabel(item) {
   return item.awaiting_hr ? "در انتظار منابع انسانی" : STATUS_LABELS[item.status];
 }
 
-// متن مهلت ثبت نوع: «تا ۳ روز بعد از تاریخ / حداکثر ۷ روز جلوتر»؛ بدون محدودیت → ""
+// بازه‌ی تاریخ قابل ثبت یک نوع (تنظیمات «مهلت ثبت»؛ اعتبارسنجی اصلی در سرور): {min, max} از Date یا null
+function submitBounds(type) {
+  if (!type) return { min: null, max: null };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const shift = (days) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + days);
+    return d;
+  };
+  const past = type.max_past_days;
+  const future = type.is_forgotten_punch ? 0 : type.max_future_days; // تردد آینده همیشه ممنوع است
+  return { min: past != null ? shift(-past) : null, max: future != null ? shift(future) : null };
+}
+
+// «۴ آبان» (با سال اگر سال جاری نیست)
+function faDay(date) {
+  const { jy, jm, jd } = gregorianToJalali(date);
+  const sameYear = jy === gregorianToJalali(new Date()).jy;
+  const fa = (n) => Number(n).toLocaleString("fa-IR", { useGrouping: false });
+  return `${fa(jd)} ${JALALI_MONTH_NAMES[jm - 1]}${sameYear ? "" : ` ${fa(jy)}`}`;
+}
+
+// «درخواست مرخصی روزانه از امروز به بعد قابل ثبت است.»؛ بدون محدودیت → ""
 function submitWindowText(type) {
   if (!type) return "";
-  const fa = (n) => Number(n).toLocaleString("fa-IR");
-  const parts = [];
-  const past = type.max_past_days;
-  const future = type.is_forgotten_punch ? null : type.max_future_days;
-  if (past === 0) parts.push("برای روزهای گذشته قابل ثبت نیست");
-  else if (past != null) parts.push(`حداکثر تا ${fa(past)} روز بعد از تاریخ آن`);
-  if (future === 0) parts.push("برای روزهای آینده قابل ثبت نیست");
-  else if (future != null) parts.push(`حداکثر ${fa(future)} روز جلوتر`);
-  return parts.length ? `مهلت ثبت این نوع: ${parts.join("؛ ")}` : "";
+  const { min, max } = submitBounds(type);
+  if (!min && !max) return "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const label = (d) => (d.getTime() === today.getTime() ? "امروز" : faDay(d));
+  const title = String(type.title || "").trim();
+  const name = title.startsWith("درخواست") ? title : `درخواست ${title}`;
+  let range;
+  if (min && max) {
+    range =
+      min.getTime() === max.getTime()
+        ? `فقط برای ${label(min)}`
+        : `از ${label(min)} تا ${label(max)}`;
+  } else if (min) {
+    range = `از ${label(min)} به بعد`;
+  } else {
+    range = `تا ${label(max)}`;
+  }
+  return `${name} ${range} قابل ثبت است.`;
 }
 
 // درخواست الان دست چه کسی است / چه کسی تصمیم گرفت (فقط نام؛ docs/leave-requests.md)
@@ -166,6 +200,7 @@ function SubmitRequestForm({ onSubmitted }) {
   }, []);
 
   const selectedType = types?.find((t) => t.id === Number(typeId)); // شیء نوع انتخابی
+  const bounds = submitBounds(selectedType); // بازه‌ی تاریخ قابل ثبت این نوع
   const isExit = Boolean(selectedType?.is_exit_permit);
   // مرخصی ساعتی (نه مأموریت) و مجوز خروج به ساعت شیفت همان روز محدودند
   const shiftLimited =
@@ -315,6 +350,8 @@ function SubmitRequestForm({ onSubmitted }) {
                 onChange={setPunchDate}
                 label="تاریخ تردد"
                 showTime={false}
+                minDate={bounds.min}
+                maxDate={bounds.max}
               />
               <TimeSelect24 label="ساعت تردد" value={punchTime} onChange={setPunchTime} />
             </Stack>
@@ -354,6 +391,8 @@ function SubmitRequestForm({ onSubmitted }) {
               onChange={setStartDate}
               label={isExit ? "تاریخ" : "تاریخ مرخصی/ماموریت"}
               showTime={false}
+              minDate={bounds.min}
+              maxDate={bounds.max}
             />
             {isExit ? (
               <TimeSelect24
@@ -380,7 +419,13 @@ function SubmitRequestForm({ onSubmitted }) {
                 />
               </Stack>
             ) : (
-              <JalaliDateTimePicker value={endDate} onChange={setEndDate} label="تاریخ پایان" showTime={false} />
+              <JalaliDateTimePicker
+                value={endDate}
+                onChange={setEndDate}
+                label="تاریخ پایان"
+                showTime={false}
+                minDate={startDate}
+              />
             )}
 
             {shiftLimited && activeShift?.found && (
