@@ -52,8 +52,11 @@ from app.core.leave_request_rules import (
     validate_exit_after_shift,
     validate_forgotten_punch_time,
     validate_hourly_in_shift,
+    pick_window,
     validate_submit_window,
     window_label,
+    window_options,
+    windows_label,
 )
 from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
@@ -1283,8 +1286,11 @@ class LeaveRequestService:
                 if start_hour is None:
                     raise LeaveRequestRulesError("ساعت خروج الزامی است")
                 end_hour = start_hour  # مثل کاراوب: StartHour = EndHour = ساعت خروج
-                window = await self._shift_window(employee, kara_names, site_connection, start_date)
-                validate_exit_after_shift(window, start_hour)
+                window = pick_window(
+                    await self._shift_window(employee, kara_names, site_connection, start_date),
+                    lambda w: validate_exit_after_shift(w, start_hour),
+                    prefer=lambda w: kara_day_offset(w, start_hour),  # دو شیفت قابل قبول: همان روز
+                )
                 start_date = start_date + timedelta(days=kara_day_offset(window, start_hour))
                 duration = 0
                 effective_end_date = None
@@ -1293,8 +1299,10 @@ class LeaveRequestService:
                     raise LeaveRequestRulesError("ساعت شروع و پایان الزامی است")
                 overnight = False
                 if not leave_type.is_mission:
-                    window = await self._shift_window(employee, kara_names, site_connection, start_date)
-                    validate_hourly_in_shift(window, start_hour, end_hour)
+                    window = pick_window(
+                        await self._shift_window(employee, kara_names, site_connection, start_date),
+                        lambda w: validate_hourly_in_shift(w, start_hour, end_hour),
+                    )
                     overnight = crosses_midnight(window, start_hour, end_hour)
                     start_date = start_date + timedelta(days=kara_day_offset(window, start_hour))
                 duration = compute_hourly_duration(start_hour, end_hour, overnight=overnight)
@@ -1405,18 +1413,26 @@ class LeaveRequestService:
             window = None
         if window is None:
             return {"found": False, "off_day": False, "start": None, "end": None, "crosses_midnight": False, "label": None}
-        if window.get("off_day"):
+        # روز با دو بازه‌ی قابل قبول (کارکرد روزانه‌ی قدیمی + تقویم گروه شیفت جدید): بازه‌ی کاری اول در start/end و
+        # همه‌ی بازه‌ها در windows؛ فرم ساعت‌های مجاز را از اجتماع آن‌ها می‌سازد.
+        options = window_options(window)
+        working = [w for w in options if not w.get("off_day")]
+        windows = [
+            {"start": w["start"], "end": w["end"] % 2400, "crosses_midnight": bool(w.get("crosses_midnight"))}
+            for w in working
+        ]
+        if not working:
             return {
                 "found": True, "off_day": True, "start": None, "end": None, "crosses_midnight": False,
-                "label": "این روز طبق شیفت شما روز کاری نیست",
+                "label": "این روز طبق شیفت شما روز کاری نیست", "windows": [],
             }
+        first = windows[0]
         return {
             "found": True,
             "off_day": False,
-            "start": window["start"],
-            "end": window["end"] % 2400,
-            "crosses_midnight": bool(window.get("crosses_midnight")),
-            "label": window_label(window),
+            **first,
+            "label": windows_label(window) if len(options) > 1 else window_label(working[0]),
+            "windows": windows,
         }
 
     async def apply_pending_hourly_all(self, lookback_days: int = PENDING_APPLY_LOOKBACK_DAYS) -> int:

@@ -216,3 +216,42 @@ def test_submit_window():
     assert "آینده" in _raises(v, date(2026, 10, 30), today, None, 0)
     _raises(v, date(2026, 11, 6), today, None, 7)
     v(date(2025, 1, 1), today, None, None)  # بدون محدودیت
+
+
+def test_stale_daily_work_accepts_new_group_shift():
+    """
+    کارکرد روزانه‌ی کاراوب از قبل ساخته شده (شیفت ۱۹ شب) ولی گروه شیفت پرسنل از همین روز عوض شده (شیفت ۱۴ صبح) —
+    مثل ۲۳۵۵۹۵ در ۱۴۰۵/۰۸/۰۹: هر دو بازه قبول می‌شوند.
+    """
+    from app.core.leave_request_rules import (
+        pick_window,
+        shift_window,
+        validate_forgotten_punch_time,
+        window_options,
+        windows_label,
+    )
+
+    night = {**shift_window(1830, 230, 1), "shift_no": 19}
+    morning = {**shift_window(630, 1430, 0), "shift_no": 14}
+    w = {**night, "alternatives": [morning]}
+    assert len(window_options(w)) == 2 and window_options(None) == [None]
+    assert "06:30 تا 14:30" in windows_label(w) and "18:30 تا 02:30" in windows_label(w)
+
+    chosen = pick_window(w, lambda x: validate_hourly_in_shift(x, 900, 1100))
+    assert chosen["shift_no"] == 14 and not crosses_midnight(chosen, 900, 1100)
+    chosen = pick_window(w, lambda x: validate_hourly_in_shift(x, 2300, 100))
+    assert chosen["shift_no"] == 19 and kara_day_offset(chosen, 100) == 1
+    msg = _raises(pick_window, w, lambda x: validate_hourly_in_shift(x, 1500, 1700))
+    assert "18:30 تا 02:30 بامداد روز بعد یا 06:30 تا 14:30" in msg
+
+    # روز غیرکاری در کارکرد قدیمی ولی کاری در گروه جدید
+    off = {"off_day": True, "shift_no": 501, "alternatives": [morning]}
+    assert pick_window(off, lambda x: validate_hourly_in_shift(x, 900, 1000))["shift_no"] == 14
+
+    # مجوز خروج و تردد فراموش‌شده
+    exit_pick = pick_window(w, lambda x: validate_exit_after_shift(x, 1500), prefer=lambda x: kara_day_offset(x, 1500))
+    assert exit_pick["shift_no"] == 14 and kara_day_offset(exit_pick, 1500) == 0
+    validate_forgotten_punch_time(w, None, 700)  # ورود ۰۷:۰۰ با شیفت صبح جدید
+    assert "06:30" in _raises(validate_forgotten_punch_time, w, None, 600)
+    # بدون جایگزین، رفتار قبلی
+    assert pick_window(night, lambda x: validate_hourly_in_shift(x, 1900, 2000))["shift_no"] == 19

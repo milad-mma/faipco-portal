@@ -99,6 +99,52 @@ def window_label(window: dict) -> str:
     return f"ساعت کاری شما در این روز: {_fmt(window['start'])} تا {_fmt(window['end'])}{tail}"
 
 
+def window_options(window: dict | None) -> list:
+    """
+    بازه‌های قابل قبول یک روز: بازه‌ی اصلی (کارکرد روزانه‌ی کاراوب) و — اگر تقویم گروه شیفت جدید پرسنل چیز دیگری می‌گوید —
+    بازه‌ی جایگزین (window["alternatives"]؛ kara_wb.shift_window_sync). None یعنی شیفت نامعلوم = [None].
+    """
+    if window is None:
+        return [None]
+    base = {k: v for k, v in window.items() if k != "alternatives"}
+    return [base] + [w for w in (window.get("alternatives") or []) if w]
+
+
+def windows_label(window: dict) -> str:
+    """مثل window_label ولی با همه‌ی بازه‌های کاری قابل قبول: «… ۰۶:۳۰ تا ۱۴:۳۰ یا ۱۸:۳۰ تا ۰۲:۳۰ بامداد روز بعد»."""
+    working = [w for w in window_options(window) if w and not w.get("off_day")]
+    if not working:
+        return "این روز طبق شیفت شما روز کاری نیست"
+    parts = [
+        f"{_fmt(w['start'])} تا {_fmt(w['end'] % 2400)}{' بامداد روز بعد' if w.get('crosses_midnight') else ''}"
+        for w in working
+    ]
+    return "ساعت کاری شما در این روز: " + " یا ".join(parts)
+
+
+def pick_window(window: dict | None, check, prefer=None) -> dict | None:
+    """
+    بازه‌ی قابل قبولی (window_options) که check(بازه) برایش خطا نمی‌دهد را برمی‌گرداند تا crosses_midnight و
+    kara_day_offset با همان حساب شوند؛ اگر چند بازه قبول شد، کمترین prefer(بازه) (پیش‌فرض: اولی).
+    اگر هیچ‌کدام قبول نشد، خطای بازه‌ی کاری اول (با متن همه‌ی بازه‌ها) بالا می‌رود.
+    """
+    options = window_options(window)
+    errors, passed = [], []
+    for option in options:
+        try:
+            check(option)
+            passed.append(option)
+        except LeaveRequestRulesError as e:
+            errors.append((option, e))
+    if passed:
+        return min(passed, key=prefer) if prefer else passed[0]
+    working = [(o, e) for o, e in errors if o and not o.get("off_day")]
+    option, err = working[0] if working else errors[0]
+    if len(working) > 1 or (working and len(options) > 1):
+        raise LeaveRequestRulesError(str(err).replace(window_label(option), windows_label(window))) from err
+    raise err
+
+
 def _on_shift_axis(window: dict, compact: int) -> int:
     """ساعت وارد‌شده (۰ تا ۲۳۵۹) را روی محور شیفت می‌برد: در شیفت شب، ساعت‌های قبل از شروع شیفت (بامداد) +۲۴۰۰ می‌شوند."""
     if window.get("crosses_midnight") and compact < window["start"]:
@@ -163,6 +209,18 @@ def validate_forgotten_punch_time(window: dict | None, prev_window: dict | None,
     بدون محدودیت: شیفت نامعلوم، روز غیرکاری (کار در روز تعطیل)، و ساعت‌های بامدادِ ادامه‌ی شیفت شبِ روز قبل (قبل از شروع
     شیفت امروز، مثلاً خروج ۰۶:۳۰ بعد از شبکاری).
     """
+    options, prev_options = window_options(window), window_options(prev_window)
+    if len(options) > 1 or len(prev_options) > 1:
+        # شیفت روز (یا روز قبل) دو بازه‌ی قابل قبول دارد: کافی است با یکی از ترکیب‌ها جور باشد
+        failed = []
+        for w in options:
+            for prev in prev_options:
+                try:
+                    validate_forgotten_punch_time(w, prev, punch_hour)
+                    return
+                except LeaveRequestRulesError as e:
+                    failed.append((w["start"], e))
+        raise min(failed, key=lambda f: f[0])[1]  # خطا با زودترین شروع شیفت
     if window is None or window.get("off_day"):
         return
     if prev_window and prev_window.get("crosses_midnight") and punch_hour < window["start"]:

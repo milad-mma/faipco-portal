@@ -302,19 +302,10 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
             w["shift_no"] = int(row["ShiftNo"])
         return w
 
-    if n.has("daily_work"):
-        W = lambda role: n.c("daily_work", role)  # noqa: E731
-        cur.execute(
-            f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {cols} "
-            f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
-            f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
-            {"e": emp_no, "d": jalali},
-        )
-        row = cur.fetchone()
-        if row and row.get("ShiftNo") is not None:
-            return _from_row(row)
-
-    if n.has("grp_shift") and n.has("emp_grps"):
+    def _calendar():
+        """شیفت همین روز از تقویم گروه شیفتِ فعلی پرسنل (EmpGrps → GrpShift.D{روز})."""
+        if not (n.has("grp_shift") and n.has("emp_grps")):
+            return None
         j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
         day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
         G = lambda role: n.c("grp_shift", role)  # noqa: E731
@@ -328,7 +319,26 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
             {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
         )
         return _from_row(cur.fetchone())
-    return None
+
+    if n.has("daily_work"):
+        W = lambda role: n.c("daily_work", role)  # noqa: E731
+        cur.execute(
+            f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {cols} "
+            f"FROM {n.t('daily_work')} w LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = w.{W('shift_no')} "
+            f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
+            {"e": emp_no, "d": jalali},
+        )
+        row = cur.fetchone()
+        if row and row.get("ShiftNo") is not None:
+            primary = _from_row(row)
+            # کارکرد روزانه‌ی کاراوب برای کل ماه از قبل ساخته می‌شود و با تغییر گروه شیفت (EmpGrps) به‌روز نمی‌شود؛
+            # اگر تقویم گروه جدید شیفت دیگری می‌گوید، آن هم به‌عنوان بازه‌ی جایگزین قبول می‌شود (docs/leave-requests.md).
+            if primary is not None:
+                calendar = _calendar()
+                if calendar is not None and calendar.get("shift_no") != primary.get("shift_no"):
+                    primary["alternatives"] = [calendar]
+            return primary
+    return _calendar()
 
 
 def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
@@ -483,21 +493,25 @@ def _shift_ref(cur, n: KaraNames, emp_no: int, day: date, s_min: int, e_min: int
     بامدادی با تاریخ روز بعد)، هرکدام بیشترین هم‌پوشانی را دارد (وگرنه نزدیک‌ترین).
     خروجی: (ws, we) یا "off" (روز غیرکاری) یا None (شیفت نامعلوم).
     """
+    from app.core.leave_request_rules import window_options
+
     found, candidates = False, []
     for offset in (0, -1):
-        window = shift_window_sync(cur, n, emp_no, day + timedelta(days=offset))
-        if window is None:
+        day_window = shift_window_sync(cur, n, emp_no, day + timedelta(days=offset))
+        if day_window is None:
             continue
         found = True
-        if window.get("off_day"):
-            if offset == 0:
-                candidates.append(("off", 0, 10**6))
-            continue
-        ws = offset * 1440 + _hhmm_to_minutes(window["start"])
-        we = offset * 1440 + _hhmm_to_minutes(window["end"] % 2400) + (1440 if window["end"] >= 2400 else 0)
-        overlap = min(e_min, we) - max(s_min, ws)
-        distance = 0 if overlap > 0 else max(ws - e_min, s_min - we)
-        candidates.append(((ws, we), overlap, distance))
+        # کارکرد روزانه و تقویم گروه شیفت جدید (اگر فرق دارند) هر دو نامزدند
+        for window in window_options(day_window):
+            if window.get("off_day"):
+                if offset == 0:
+                    candidates.append(("off", 0, 10**6))
+                continue
+            ws = offset * 1440 + _hhmm_to_minutes(window["start"])
+            we = offset * 1440 + _hhmm_to_minutes(window["end"] % 2400) + (1440 if window["end"] >= 2400 else 0)
+            overlap = min(e_min, we) - max(s_min, ws)
+            distance = 0 if overlap > 0 else max(ws - e_min, s_min - we)
+            candidates.append(((ws, we), overlap, distance))
     if not found:
         return None
     if not candidates:

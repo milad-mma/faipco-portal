@@ -158,12 +158,24 @@ function hourRange(fromHour, toHour) {
 }
 
 // ساعت‌های مجاز Dropdown بر اساس شیفت روز: مرخصی ساعتی داخل شیفت، مجوز خروج از پایان شیفت به بعد
+// اگر شیفت روز دو بازه‌ی قابل قبول دارد (کارکرد روزانه‌ی کاراوب + تقویم گروه شیفت جدید)، اجتماع ساعت‌ها
+function hoursOfWindow(w, isExit) {
+  const sh = Math.floor(w.start / 100);
+  const eh = Math.floor(w.end / 100);
+  if (isExit) return w.crosses_midnight ? hourRange(eh, sh) : hourRange(eh, 23);
+  return w.crosses_midnight ? [...hourRange(sh, 23), ...hourRange(0, eh)] : hourRange(sh, eh);
+}
+
 function allowedHoursFor(shift, isExit) {
   if (!shift?.found || shift.off_day) return null;
-  const sh = Math.floor(shift.start / 100);
-  const eh = Math.floor(shift.end / 100);
-  if (isExit) return shift.crosses_midnight ? hourRange(eh, sh) : hourRange(eh, 23);
-  return shift.crosses_midnight ? [...hourRange(sh, 23), ...hourRange(0, eh)] : hourRange(sh, eh);
+  const windows = shift.windows?.length ? shift.windows : [shift];
+  return [...new Set(windows.flatMap((w) => hoursOfWindow(w, isExit)))];
+}
+
+// زودترین شروع شیفت روز (برای راهنمای تردد فراموش‌شده)
+function earliestStart(shift) {
+  const windows = shift.windows?.length ? shift.windows : [shift];
+  return Math.min(...windows.map((w) => w.start));
 }
 
 // ساعت فشرده -> «HH:MM»
@@ -357,8 +369,8 @@ function SubmitRequestForm({ onSubmitted }) {
             </Stack>
             {activePunchShift?.found && !activePunchShift.off_day && (
               <Alert severity="info" sx={{ py: 0 }}>
-                شروع شیفت شما در این روز: {compactToTimeString(activePunchShift.start)} — تردد قبل از آن قابل ثبت نیست
-                {activePunchShift.crosses_midnight ? " (به‌جز خروج بامداد بعد از شبکاری روز قبل)." : "."}
+                شروع شیفت شما در این روز: {compactToTimeString(earliestStart(activePunchShift))} — تردد قبل از آن قابل ثبت نیست
+                {activePunchShift.windows?.some((w) => w.crosses_midnight) || activePunchShift.crosses_midnight ? " (به‌جز خروج بامداد بعد از شبکاری روز قبل)." : "."}
               </Alert>
             )}
             <Typography variant="caption" color="text.secondary" textAlign="center">
