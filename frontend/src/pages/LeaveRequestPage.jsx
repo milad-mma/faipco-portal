@@ -336,9 +336,16 @@ function SubmitRequestForm({ onSubmitted }) {
   return (
     <Card variant="outlined" sx={{ p: 2, maxWidth: 480 }}>
       <Stack spacing={2}>
-        {error && <Alert severity="error">{error}</Alert>}
-        {/* انتخاب نوع درخواست */}
-        <TextField select label="نوع درخواست" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+        {/* انتخاب نوع درخواست — با تغییر نوع، خطای نوع قبلی پاک می‌شود */}
+        <TextField
+          select
+          label="نوع درخواست"
+          value={typeId}
+          onChange={(e) => {
+            setTypeId(e.target.value);
+            setError("");
+          }}
+        >
           {types.map((t) => (
             <MenuItem key={t.id} value={t.id}>
               {t.title}
@@ -384,6 +391,7 @@ function SubmitRequestForm({ onSubmitted }) {
               multiline
               minRows={2}
             />
+            {error && <Alert severity="error">{error}</Alert>}
             <Button
               variant="contained"
               onClick={handleSubmit}
@@ -482,6 +490,7 @@ function SubmitRequestForm({ onSubmitted }) {
               minRows={2}
             />
 
+            {error && <Alert severity="error">{error}</Alert>}
             <Button
               variant="contained"
               onClick={handleSubmit}
