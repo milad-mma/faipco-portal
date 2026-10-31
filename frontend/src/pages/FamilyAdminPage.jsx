@@ -1778,8 +1778,9 @@ function HrRecipientsCard() {
     <Card variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
       <Typography fontWeight={700}>اعلان ثبت فرم به منابع انسانی</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        وقتی پرسنل یک سایت فرم مشخصات خانوادگی را ثبت یا ویرایش کند، برای نفری که این‌جا تعیین می‌شود اطلاعیه (و اعلان
-        گوشی) فرستاده می‌شود. خالی = اعلانی فرستاده نمی‌شود. متن اطلاعیه پایین همین صفحه قابل تغییر است.
+        وقتی پرسنل یک سایت فرم مشخصات خانوادگی را ثبت یا ویرایش کند، برای نفری که این‌جا تعیین می‌شود فقط اعلان
+        (گوشی/مرورگر) فرستاده می‌شود و اطلاعیه‌ای ثبت نمی‌شود. خالی = اعلانی فرستاده نمی‌شود. متن اعلان پایین همین صفحه
+        قابل تغییر است.
       </Typography>
       {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
       {saved && <Alert severity="success" sx={{ mb: 1 }}>{saved}</Alert>}

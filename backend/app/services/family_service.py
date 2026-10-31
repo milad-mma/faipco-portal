@@ -97,10 +97,27 @@ def insurance_info(
     }
 
 
+async def send_hr_push(employee_id: int, body: str) -> None:
+    """اعلان Push به همه‌ی دستگاه‌های کاربرِ پرسنل employee_id (پس‌زمینه؛ خطا فقط لاگ می‌شود)."""
+    from app.db.session import AsyncSessionLocal
+    from app.services.push_service import PushService
+
+    try:
+        async with AsyncSessionLocal() as db:
+            user_ids = set((await db.execute(select(User.id).where(User.employee_id == employee_id))).scalars().all())
+            if user_ids:
+                await asyncio.wait_for(
+                    PushService(db).notify_users(user_ids, url="/family/admin", priority="normal", body=body),
+                    timeout=60,
+                )
+    except Exception:  # noqa: BLE001 - اعلان نباید خطای کاربر شود
+        logger.exception("ارسال اعلان ثبت مشخصات خانوادگی به منابع انسانی ناموفق بود")
+
+
 class FamilyService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.hr_notice_id: int | None = None  # اطلاعیه‌ی «فرم ثبت شد» برای منابع انسانی سایت (Push در endpoint)
+        self.hr_push: tuple[int, str] | None = None  # اعلان «فرم ثبت شد» برای منابع انسانی سایت: (employee_id، متن)
 
     # ---------- تنظیمات ----------
 
@@ -541,7 +558,10 @@ class FamilyService:
     # ---------- اعلان ثبت فرم به منابع انسانی هر سایت (Migration 130) ----------
 
     async def _notify_site_hr(self, employee: Employee, user: User) -> None:
-        """اگر برای سایت پرسنل نفر منابع انسانی تعیین شده (و خودِ او نیست)، اطلاعیه‌ی «فرم ثبت شد» برایش ساخته می‌شود."""
+        """
+        اگر برای سایت پرسنل نفر منابع انسانی تعیین شده (و خودِ او نیست)، فقط اعلان (Push) «فرم ثبت شد» برایش آماده
+        می‌شود — اطلاعیه ساخته نمی‌شود (دستور کاربر). ارسال در endpoint بعد از commit (send_hr_push).
+        """
         setting = (
             await self.db.execute(select(FamilySiteSetting).where(FamilySiteSetting.site_id == employee.site_id))
         ).scalar_one_or_none()
@@ -549,13 +569,8 @@ class FamilyService:
         if hr_id is None or hr_id == employee.id:
             return
         name = f"{employee.first_name} {employee.last_name}".strip()
-        self.hr_notice_id = await self._notify(
-            hr_id,
-            user,
-            await notification_templates.render(self.db, None, "family.hr_submitted_title", name=name),
-            await notification_templates.render(self.db, None, "family.hr_submitted_body", name=name),
-            priority=NoticePriority.normal,
-        )
+        body = await notification_templates.render(self.db, employee.site_id, "family.hr_submitted", name=name)
+        self.hr_push = (hr_id, body)
 
     async def hr_recipients(self, site_ids: set[int] | None) -> list[dict]:
         """نفر منابع انسانیِ اعلان، برای هر سایتِ در اختیار بیننده."""

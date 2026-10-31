@@ -44,7 +44,7 @@ from app.schemas.family import (
     FamilyReviewNoteIn,
     FamilySettingsIn,
 )
-from app.services.family_service import FamilyError, FamilyForbiddenError, FamilyService, today_jalali
+from app.services.family_service import FamilyError, FamilyForbiddenError, FamilyService, send_hr_push, today_jalali
 from app.services.notice_service import send_publish_notifications
 
 router = APIRouter()
@@ -95,9 +95,9 @@ async def save_my_family(
         result = await service.save(employee, payload.model_dump(), current_user)
     except FamilyError as e:
         _raise(e)
-    # اطلاعیه‌ی «فرم ثبت شد» برای نفر منابع انسانی سایت (اگر تعیین شده) + Push
-    if service.hr_notice_id:
-        background_tasks.add_task(send_publish_notifications, service.hr_notice_id)
+    # فقط اعلان (Push) «فرم ثبت شد» برای نفر منابع انسانی سایت (اگر تعیین شده) — بدون اطلاعیه
+    if service.hr_push:
+        background_tasks.add_task(send_hr_push, *service.hr_push)
     return result
 
 
