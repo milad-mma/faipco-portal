@@ -56,7 +56,6 @@ from app.core.leave_request_rules import (
     validate_submit_window,
     window_label,
     window_options,
-    windows_label,
 )
 from app.core.kara_pool import connection_key, pooled_connect
 from app.core.security import decrypt_secret
@@ -1431,7 +1430,7 @@ class LeaveRequestService:
             "found": True,
             "off_day": False,
             **first,
-            "label": windows_label(window) if len(options) > 1 else window_label(working[0]),
+            "label": window_label(working[0]),
             "windows": windows,
         }
 

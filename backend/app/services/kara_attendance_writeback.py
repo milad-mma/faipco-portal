@@ -302,20 +302,28 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
             w["shift_no"] = int(row["ShiftNo"])
         return w
 
-    def _calendar():
-        """شیفت همین روز از تقویم گروه شیفتِ فعلی پرسنل (EmpGrps → GrpShift.D{روز})."""
+    def _group_shift(prev: bool):
+        """
+        شیفت همین روز از تقویم گروه شیفت پرسنل (EmpGrps → GrpShift.D{روز}): گروه فعلی، یا با prev=True گروهِ قبل از
+        آخرین تغییر گروه.
+        """
         if not (n.has("grp_shift") and n.has("emp_grps")):
             return None
         j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
         day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
         G = lambda role: n.c("grp_shift", role)  # noqa: E731
         E = lambda role: n.c("emp_grps", role)  # noqa: E731
+        latest = (
+            f"SELECT TOP 1 e.{E('date')} FROM {n.t('emp_grps')} e "
+            f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC"
+        )
+        date_cond = f"e.{E('date')} < ({latest})" if prev else f"e.{E('date')} <= %(d)s"
         cur.execute(
             f"SELECT TOP 1 g.{day_col} AS ShiftNo, {cols} "
             f"FROM {n.t('grp_shift')} g LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = g.{day_col} "
             f"WHERE g.{G('year')} = %(y)s AND g.{G('month')} = %(m)s AND g.{G('grp_no')} = ("
             f"SELECT TOP 1 e.{E('new_grp_no')} FROM {n.t('emp_grps')} e "
-            f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC)",
+            f"WHERE e.{E('emp_no')} = %(e)s AND {date_cond} ORDER BY e.{E('date')} DESC)",
             {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
         )
         return _from_row(cur.fetchone())
@@ -330,15 +338,17 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
         )
         row = cur.fetchone()
         if row and row.get("ShiftNo") is not None:
-            primary = _from_row(row)
-            # کارکرد روزانه‌ی کاراوب برای کل ماه از قبل ساخته می‌شود و با تغییر گروه شیفت (EmpGrps) به‌روز نمی‌شود؛
-            # اگر تقویم گروه جدید شیفت دیگری می‌گوید، آن هم به‌عنوان بازه‌ی جایگزین قبول می‌شود (docs/leave-requests.md).
-            if primary is not None:
-                calendar = _calendar()
-                if calendar is not None and calendar.get("shift_no") != primary.get("shift_no"):
-                    primary["alternatives"] = [calendar]
-            return primary
-    return _calendar()
+            daily = _from_row(row)
+            # آخرین ساعت کاری ثبت‌شده ملاک است (دستور کاربر؛ docs/leave-requests.md): کاراوب کارکرد روزانه را برای کل ماه
+            # از قبل می‌سازد و با تغییر گروه شیفت (EmpGrps) دوباره حساب نمی‌کند. اگر کارکرد روزانه با تقویم گروه فعلی فرق
+            # دارد ولی همان شیفت گروه قبلی است، کهنه است و شیفت گروه جدید ملاک است؛ وگرنه تغییر دستیِ همان روز است.
+            current = _group_shift(prev=False)
+            if current is not None and daily is not None and current.get("shift_no") != daily.get("shift_no"):
+                previous = _group_shift(prev=True)
+                if previous is not None and previous.get("shift_no") == daily.get("shift_no"):
+                    return current
+            return daily
+    return _group_shift(prev=False)
 
 
 def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
