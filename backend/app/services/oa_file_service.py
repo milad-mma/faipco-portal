@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.models.office_automation import OaAttachmentSettings, OaAuditEvent, OaFile
 from app.models.site import Site
 from app.models.user import User
-from app.services import oa_scanner
+from app.services import oa_clamav, oa_scanner
 from app.services.oa_storage import LocalStorage, SizeLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -197,9 +197,14 @@ class OaFileService:
             raise
 
         row.storage_key = self.storage.commit(temp_key)
-        row.status = rules.STATUS_SCANNING
-        await self.db.flush()
-        await self._scan(row)
+        if await oa_clamav.scan_enabled(self.db):
+            row.status = rules.STATUS_SCANNING
+            await self.db.flush()
+            await self._scan(row)
+        else:
+            # اسکن ویروس خاموش (تنظیم سراسری): بعد از بررسی نوع/ساختار «سالم (بدون اسکن ویروس)»؛ scanned_at خالی می‌ماند
+            # تا با روشن شدن اسکن، Job آن را هم اسکن کند.
+            row.status = rules.STATUS_CLEAN
         self.audit("file.upload", user, entity="file", entity_id=row.id, site_id=site_id,
                    details={"name": name, "size": size, "format": fmt.code, "status": row.status}, ip=ip)
         await self.db.commit()
@@ -233,26 +238,50 @@ class OaFileService:
             logger.warning("فایل %s آلوده بود (%s) و قرنطینه شد", row.id, result.signature)
 
     async def retry_pending_scans(self, limit: int = 50) -> int:
-        """Job: فایل‌های scan_pending دوباره اسکن می‌شوند. خروجی: تعداد فایل‌هایی که وضعیتشان مشخص شد."""
+        """
+        Job: فایل‌های scan_pending دوباره اسکن می‌شوند؛ سپس فایل‌های «سالم بدون اسکن» (بارگذاری‌شده وقتی اسکن خاموش بود).
+        اگر اسکن خاموش شده باشد، scan_pending ها «سالم (بدون اسکن ویروس)» می‌شوند. خروجی: تعداد فایل‌هایی که وضعیتشان مشخص شد.
+        """
+        if not await oa_clamav.scan_enabled(self.db):
+            pending = (
+                await self.db.execute(select(OaFile).where(OaFile.status == rules.STATUS_SCAN_PENDING).limit(500))
+            ).scalars().all()
+            for row in pending:
+                row.status, row.scan_result = rules.STATUS_CLEAN, None
+            await self.db.commit()
+            return len(pending)
+        done = await self._scan_batch(OaFile.status == rules.STATUS_SCAN_PENDING, limit)
+        if done >= 0:
+            unscanned = (OaFile.status == rules.STATUS_CLEAN) & OaFile.scanned_at.is_(None) & OaFile.storage_key.isnot(None)
+            done += max(await self._scan_batch(unscanned, limit), 0)
+        return max(done, 0)
+
+    async def _scan_batch(self, condition, limit: int) -> int:
+        """یک دسته فایل را اسکن می‌کند؛ اگر اسکنر در دسترس نباشد متوقف می‌شود و -1 برمی‌گرداند."""
         rows = (
             await self.db.execute(
                 select(OaFile)
-                .where(OaFile.status == rules.STATUS_SCAN_PENDING, OaFile.scan_attempts < SCAN_RETRY_MAX)
+                .where(condition, OaFile.scan_attempts < SCAN_RETRY_MAX)
                 .order_by(OaFile.id)
                 .limit(limit)
             )
         ).scalars().all()
         done = 0
         for row in rows:
+            was_clean = row.status == rules.STATUS_CLEAN  # «سالم بدون اسکن» که حالا اسکن می‌شود
             row.status = rules.STATUS_SCANNING
             await self._scan(row)
-            if row.status != rules.STATUS_SCAN_PENDING:
+            unavailable = row.status == rules.STATUS_SCAN_PENDING
+            if unavailable and was_clean:
+                # اسکنر در دسترس نیست: فایلی که قبلاً قابل دانلود بود قفل نمی‌شود؛ دفعه‌ی بعد دوباره امتحان می‌شود
+                row.status, row.scan_result = rules.STATUS_CLEAN, None
+            elif not unavailable:
                 done += 1
                 self.audit("file.scanned", None, entity="file", entity_id=row.id, site_id=row.site_id,
                            details={"status": row.status})
             await self.db.commit()
-            if row.status == rules.STATUS_SCAN_PENDING:
-                break  # اسکنر هنوز در دسترس نیست؛ بقیه دفعه‌ی بعد
+            if unavailable:
+                return done or -1  # اسکنر هنوز در دسترس نیست؛ بقیه دفعه‌ی بعد
         return done
 
     async def cleanup_temp(self) -> int:
@@ -328,10 +357,20 @@ class OaFileService:
             disk = self.storage.usage()
         except OSError as e:
             disk = {"error": str(e)}
+        scan_on = await oa_clamav.scan_enabled(self.db)
         counts = dict(
             (await self.db.execute(select(OaFile.status, func.count()).group_by(OaFile.status))).all()
         )
+        unscanned = (
+            await self.db.execute(
+                select(func.count()).where(OaFile.status == rules.STATUS_CLEAN, OaFile.scanned_at.is_(None))
+            )
+        ).scalar_one()
         return {
+            "scan_enabled": scan_on,
+            "unscanned_clean": unscanned,
+            "clamav": await asyncio.to_thread(oa_clamav.system_state),
+            "clamav_job": await asyncio.to_thread(oa_clamav.read_log),
             "scanner": scanner,
             "disk": disk,
             "storage_dir": str(self.storage.root),
@@ -348,7 +387,11 @@ def file_out(row: OaFile) -> dict:
         "size": row.size,
         "format": row.detected_format,
         "status": row.status,
-        "status_label": rules.STATUS_LABELS.get(row.status, row.status),
+        "status_label": (
+            "سالم (بدون اسکن ویروس)" if row.status == rules.STATUS_CLEAN and row.scanned_at is None
+            else rules.STATUS_LABELS.get(row.status, row.status)
+        ),
+        "virus_scanned": row.scanned_at is not None,
         "state": row.state,
         "reject_reason": row.reject_reason,
         "scan_result": row.scan_result if row.status == rules.STATUS_INFECTED else None,

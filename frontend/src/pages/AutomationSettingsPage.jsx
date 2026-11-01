@@ -13,6 +13,10 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControlLabel,
   Grid,
@@ -20,6 +24,7 @@ import {
   LinearProgress,
   MenuItem,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -43,9 +48,12 @@ import {
   fetchAttachmentSettings,
   fetchAutomationStatus,
   fetchMyFiles,
+  runClamavAction,
   saveAttachmentSettings,
+  setScanEnabled,
   testUpload,
 } from "../api/automation";
+import { useAuth } from "../context/AuthContext";
 import { saveBlob } from "../utils/family";
 import { toPersianDigits } from "../utils/searchText";
 
@@ -302,6 +310,152 @@ function AttachmentSettingsTab() {
   );
 }
 
+// ---------- کارت اسکن ویروس (اختیاری) و مدیریت ClamAV ----------
+
+const CLAMAV_ACTIONS = [
+  { key: "install", label: "نصب و راه‌اندازی", needs: (c) => !c.installed },
+  { key: "update-db", label: "دریافت/به‌روزرسانی بانک", needs: (c) => c.installed },
+  { key: "start", label: "روشن کردن", needs: (c) => c.installed && c.has_db && c.daemon !== "active" },
+  { key: "stop", label: "خاموش کردن", needs: (c) => c.installed && (c.daemon === "active" || c.freshclam === "active") },
+];
+
+const SERVICE_LABELS = { active: "روشن", inactive: "خاموش", failed: "خطا", activating: "در حال روشن شدن" };
+
+function ClamavCard({ status, onChange }) {
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.is_superuser);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [showLog, setShowLog] = useState(false);
+  const job = status.clamav_job || {};
+  const c = status.clamav || {};
+
+  // تا وقتی عملیات سرور در حال اجراست، هر ۵ ثانیه وضعیت تازه شود
+  useEffect(() => {
+    if (!job.running) return undefined;
+    const t = window.setInterval(onChange, 5000);
+    return () => window.clearInterval(t);
+  }, [job.running, onChange]);
+
+  async function act(action) {
+    setError("");
+    setBusy(action);
+    try {
+      await runClamavAction(action);
+      setTimeout(onChange, 1500);
+    } catch (err) {
+      setError(errorText(err, "اجرای دستور با خطا مواجه شد."));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleScan(enabled) {
+    setError("");
+    setBusy("toggle");
+    try {
+      await setScanEnabled(enabled);
+      onChange();
+    } catch (err) {
+      setError(errorText(err, "تغییر تنظیم با خطا مواجه شد."));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <Card variant="outlined" sx={{ p: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
+        <Typography fontWeight={700}>اسکن ویروس با ClamAV (اختیاری)</Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={Boolean(status.scan_enabled)}
+              onChange={(e) => toggleScan(e.target.checked)}
+              disabled={!isAdmin || busy !== ""}
+            />
+          }
+          label={status.scan_enabled ? "روشن" : "خاموش"}
+        />
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        {status.scan_enabled
+          ? "همه‌ی فایل‌های جدید با آنتی‌ویروس اسکن می‌شوند."
+          : "اسکن ویروس خاموش است: فایل‌ها بعد از بررسی نوع و ساختار (پسوند خطرناک، ماکرو، رمز، PDF فعال، ZIP خطرناک) «سالم (بدون اسکن ویروس)» می‌شوند. بدون اسکن، بدافزار شناخته‌شده‌ی پنهان در فایل ظاهراً سالم تشخیص داده نمی‌شود."}
+        {status.unscanned_clean > 0 &&
+          ` ${toPersianDigits(status.unscanned_clean)} فایل بدون اسکن ثبت شده${
+            status.scan_enabled ? " که در پس‌زمینه اسکن می‌شوند." : "؛ با روشن کردن اسکن، آن‌ها هم اسکن می‌شوند."
+          }`}
+      </Typography>
+
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+        <Chip size="small" variant="outlined" label={c.installed ? "ClamAV نصب است" : "ClamAV نصب نیست"}
+          color={c.installed ? "success" : "default"} />
+        {c.installed && (
+          <>
+            <Chip size="small" variant="outlined" color={c.has_db ? "success" : "warning"}
+              label={c.has_db ? "بانک شناسایی موجود است" : "بانک شناسایی دریافت نشده"} />
+            <Chip size="small" variant="outlined" color={c.daemon === "active" ? "success" : "default"}
+              label={`سرویس اسکن: ${SERVICE_LABELS[c.daemon] || c.daemon}`} />
+            <Chip size="small" variant="outlined"
+              label={`به‌روزرسانی خودکار بانک: ${SERVICE_LABELS[c.freshclam] || c.freshclam}`} />
+          </>
+        )}
+      </Stack>
+
+      {isAdmin ? (
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {CLAMAV_ACTIONS.filter((a) => a.needs(c)).map((a) => (
+            <Button key={a.key} variant={a.key === "stop" ? "outlined" : "contained"}
+              color={a.key === "stop" ? "inherit" : "primary"} onClick={() => act(a.key)}
+              disabled={busy !== "" || job.running} sx={{ height: 40 }}
+              startIcon={busy === a.key ? <CircularProgress size={16} color="inherit" /> : null}>
+              {a.label}
+            </Button>
+          ))}
+          {job.log && (
+            <Button variant="text" onClick={() => setShowLog(true)} sx={{ height: 40 }}>
+              گزارش آخرین عملیات
+            </Button>
+          )}
+        </Stack>
+      ) : (
+        <Typography variant="caption" color="text.secondary">نصب و روشن/خاموش کردن اسکنر فقط با ادمین کل است.</Typography>
+      )}
+
+      {job.running && (
+        <Alert severity="info" icon={<CircularProgress size={18} />} sx={{ mt: 1.5 }}>
+          «{job.action_label}» روی سرور در حال اجراست (دریافت بانک ممکن است چند دقیقه طول بکشد)…
+        </Alert>
+      )}
+      {!job.running && job.result && (
+        <Alert severity={job.result === "ok" ? "success" : "error"} sx={{ mt: 1.5 }}
+          action={<Button size="small" color="inherit" onClick={() => setShowLog(true)}>گزارش</Button>}>
+          {job.result === "ok" ? `«${job.action_label}» با موفقیت انجام شد.` : `«${job.action_label}» ناموفق بود.`}
+        </Alert>
+      )}
+      {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
+
+      <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+        دریافت بانک شناسایی از سرور ClamAV از ایران مسدود است؛ فقط وقتی سرور با VPN به اینترنت وصل است «نصب» یا «دریافت
+        بانک» را بزنید. ClamAV روشن حدود ۱ تا ۱.۵ گیگابایت RAM مصرف می‌کند؛ خاموش، هیچ.
+      </Typography>
+
+      <Dialog open={showLog} onClose={() => setShowLog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>گزارش آخرین عملیات ClamAV</DialogTitle>
+        <DialogContent>
+          <Box component="pre" dir="ltr" sx={{ whiteSpace: "pre-wrap", fontSize: 12, m: 0, maxHeight: 480, overflow: "auto" }}>
+            {job.log || "—"}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowLog(false)}>بستن</Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+}
+
 // ---------- تب اسکنر و آزمایش ----------
 
 function ScannerTab() {
@@ -375,6 +529,7 @@ function ScannerTab() {
   const scanner = status?.scanner;
   return (
     <Stack spacing={2}>
+      {status && <ClamavCard status={status} onChange={loadStatus} />}
       <Card variant="outlined" sx={{ p: 2 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
           <Typography fontWeight={700}>آنتی‌ویروس (ClamAV) و فضای فایل‌ها</Typography>
@@ -392,6 +547,10 @@ function ScannerTab() {
                 {fmtDate(scanner.db_date)}).
                 {scanner.db_stale &&
                   ` بانک شناسایی بیش از ${toPersianDigits(status.db_stale_days)} روز به‌روز نشده است؛ اسکن ادامه دارد ولی بانک قدیمی است (معمولاً به‌خاطر قطع اینترنت سرور).`}
+              </Alert>
+            ) : !status.scan_enabled ? (
+              <Alert severity="info" sx={{ py: 0.5 }}>
+                اسکن ویروس خاموش است.
               </Alert>
             ) : (
               <Alert severity="error" sx={{ py: 0.5 }}>

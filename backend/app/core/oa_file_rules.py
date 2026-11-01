@@ -411,11 +411,14 @@ STATUS_LABELS = {
     STATUS_SCAN_PENDING: "در انتظار اسکن",
 }
 
+# اسکن ویروس اختیاری است (oa.scan_enabled): خاموش → uploading مستقیم به clean («بدون اسکن ویروس»، scanned_at خالی)؛
+# با روشن شدن اسکن، همان فایل‌های بدون اسکن clean → scanning → clean | infected | scan_pending. scan_pending با خاموش
+# شدن اسکن → clean (بدون اسکن).
 _TRANSITIONS = {
-    STATUS_UPLOADING: {STATUS_SCANNING, STATUS_REJECTED},
+    STATUS_UPLOADING: {STATUS_SCANNING, STATUS_REJECTED, STATUS_CLEAN},
     STATUS_SCANNING: {STATUS_CLEAN, STATUS_INFECTED, STATUS_SCAN_PENDING},
-    STATUS_SCAN_PENDING: {STATUS_SCANNING},
-    STATUS_CLEAN: set(),
+    STATUS_SCAN_PENDING: {STATUS_SCANNING, STATUS_CLEAN},
+    STATUS_CLEAN: {STATUS_SCANNING},
     STATUS_INFECTED: set(),
     STATUS_REJECTED: set(),
 }

@@ -43,3 +43,15 @@ export async function downloadFile(fileId) {
 export async function deleteFile(fileId) {
   await apiClient.delete(`/automation/files/${fileId}`);
 }
+
+// روشن/خاموش اسکن ویروس (فقط ادمین کل؛ روشن کردن فقط وقتی ClamAV پاسخ می‌دهد)
+export async function setScanEnabled(enabled) {
+  const { data } = await apiClient.put("/automation/settings/scan", { enabled });
+  return data;
+}
+
+// action: install | update-db | start | stop — اجرا در پس‌زمینه روی سرور؛ پیشرفت در status.clamav_job
+export async function runClamavAction(action) {
+  const { data } = await apiClient.post(`/automation/clamav/${action}`);
+  return data;
+}

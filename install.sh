@@ -157,43 +157,17 @@ install_prerequisites() {
   # به mount/دسترسی root، فقط آپلود مستقیم فایل.
 }
 
-# اتوماسیون اداری (docs/office-automation.md): پوشه‌ی خصوصی فایل‌ها بیرون از پوشه‌ی برنامه + ClamAV محلی برای اسکن.
-# هیچ مرحله‌ای کل نصب را متوقف نمی‌کند: اگر ClamAV نصب/به‌روز نشود، پرتال کار می‌کند و فایل‌ها «در انتظار اسکن» می‌مانند.
+# اتوماسیون اداری (docs/office-automation.md): پوشه‌ی خصوصی فایل‌ها بیرون از پوشه‌ی برنامه.
 OA_STORAGE_DIR_DEFAULT="/var/lib/faipco/oa-files"
 
-_clamd_set() {
-  # _clamd_set <کلید> <مقدار> — تنظیم یک گزینه در clamd.conf (جایگزینی یا افزودن)
-  local conf="/etc/clamav/clamd.conf" key="$1" value="$2"
-  [[ -f "$conf" ]] || return 0
-  if grep -qE "^${key}[[:space:]]" "$conf"; then
-    sed -i -E "s|^${key}[[:space:]].*|${key} ${value}|" "$conf"
-  else
-    echo "${key} ${value}" >> "$conf"
-  fi
-}
-
 setup_office_automation_files() {
-  log "Office automation: private file storage and ClamAV scanner..."
+  log "Office automation: private file storage..."
   mkdir -p "${OA_STORAGE_DIR_DEFAULT}"/{tmp,objects,quarantine}
   chown -R www-data:www-data "$(dirname "${OA_STORAGE_DIR_DEFAULT}")"
   chmod 700 "$(dirname "${OA_STORAGE_DIR_DEFAULT}")" "${OA_STORAGE_DIR_DEFAULT}"
 
-  if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clamav clamav-daemon >/dev/null 2>&1; then
-    warn "ClamAV نصب نشد؛ فایل‌های اتوماسیون تا نصب آن «در انتظار اسکن» می‌مانند."
-    return 0
-  fi
-  # سقف حجم جریان اسکن بیشتر از سقف آپلود؛ هشدار ماکروی فایل‌های قدیمی Office (لایه‌ی دوم بررسی ماکرو)
-  _clamd_set StreamMaxLength 100M
-  _clamd_set AlertOLE2Macros yes
-  _clamd_set LocalSocketMode 666
-  # اولین بانک شناسایی (نیاز به اینترنت؛ اگر نشد، سرویس freshclam بعداً تلاش می‌کند)
-  if [[ ! -f /var/lib/clamav/main.cvd && ! -f /var/lib/clamav/main.cld ]]; then
-    systemctl stop clamav-freshclam >/dev/null 2>&1 || true
-    timeout 600 freshclam --quiet >/dev/null 2>&1 || warn "دریافت بانک ClamAV ناموفق بود؛ بعداً خودکار تلاش می‌شود."
-  fi
-  systemctl enable --now clamav-freshclam >/dev/null 2>&1 || true
-  systemctl enable clamav-daemon >/dev/null 2>&1 || true
-  systemctl restart clamav-daemon >/dev/null 2>&1 || warn "clamd راه‌اندازی نشد (معمولاً تا دریافت بانک شناسایی)."
+  # ClamAV دیگر خودکار نصب نمی‌شود (اسکن اختیاری؛ دانلود بانک از ایران مسدود است): نصب/دریافت بانک/روشن/خاموش از پنل
+  # «اتوماسیون اداری ← تنظیمات ← اسکنر» با scripts/clamav.sh (قانون sudoers پایین‌تر).
 }
 
 install_nodejs() {
@@ -558,6 +532,10 @@ EOF
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-restore --collect /bin/sh /tmp/faipco-restore-run.sh
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-update --collect --setenv=HOME=/root /bin/bash ${INSTALL_DIR}/install.sh
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-check --collect --setenv=HOME=/root /bin/bash ${INSTALL_DIR}/scripts/check.sh --log
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh install
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh update-db
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh start
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh stop
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {

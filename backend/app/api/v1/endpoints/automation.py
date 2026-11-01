@@ -82,6 +82,69 @@ async def files_status(db: AsyncSession = Depends(get_db), current_user: User = 
     return await OaFileService(db).status()
 
 
+def _require_admin(user: User) -> None:
+    if not user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط ادمین کل می‌تواند اسکنر را مدیریت کند")
+
+
+class ScanSettingIn(BaseModel):
+    enabled: bool
+
+
+@router.put("/settings/scan")
+async def set_scan_setting(
+    payload: ScanSettingIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    روشن/خاموش کردن اسکن ویروس با ClamAV (سراسری؛ فقط ادمین کل). روشن کردن فقط وقتی ClamAV در دسترس است، تا فایل‌های
+    جدید «در انتظار اسکن» گیر نکنند.
+    """
+    _require_admin(current_user)
+    import asyncio
+
+    from app.services import oa_clamav, oa_scanner
+
+    if payload.enabled:
+        try:
+            await asyncio.to_thread(oa_scanner.version)
+        except oa_scanner.ScannerUnavailable:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="ClamAV روشن نیست یا پاسخ نمی‌دهد؛ اول آن را نصب و روشن کنید، بعد اسکن را فعال کنید.",
+            ) from None
+    await oa_clamav.set_scan_enabled(db, payload.enabled)
+    OaFileService(db).audit(
+        "settings.scan", current_user, entity="system", details={"enabled": payload.enabled}, ip=get_client_ip(request)
+    )
+    await db.commit()
+    return {"enabled": payload.enabled}
+
+
+@router.post("/clamav/{action}", status_code=status.HTTP_202_ACCEPTED)
+async def clamav_action(
+    action: str, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """
+    اجرای install / update-db / start / stop برای ClamAV روی سرور (پس‌زمینه، فقط ادمین کل). پیشرفت و نتیجه در
+    GET /settings/status ← clamav_job.
+    """
+    _require_admin(current_user)
+    from app.services import oa_clamav
+
+    try:
+        oa_clamav.run_action(action)
+    except oa_clamav.ClamavError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from None
+    OaFileService(db).audit(
+        "clamav." + action, current_user, entity="system", ip=get_client_ip(request)
+    )
+    await db.commit()
+    return {"started": action}
+
+
 @router.post("/files/test-upload", status_code=status.HTTP_201_CREATED)
 async def test_upload(
     request: Request,

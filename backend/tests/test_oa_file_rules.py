@@ -141,6 +141,9 @@ def test_pdf_reuses_sanitizer():
 def test_status_machine_and_download():
     assert r.can_transition("uploading", "scanning") and r.can_transition("scan_pending", "scanning")
     assert not r.can_transition("infected", "clean") and not r.can_transition("rejected", "scanning")
+    # اسکن اختیاری: خاموش → مستقیم clean؛ روشن شدن بعدی → اسکن فایل‌های بدون اسکن؛ خاموش شدن → scan_pending به clean
+    assert r.can_transition("uploading", "clean") and r.can_transition("clean", "scanning")
+    assert r.can_transition("scan_pending", "clean") and not r.can_transition("rejected", "clean")
     for s in ("infected", "scan_pending", "rejected", "scanning", "uploading"):
         assert not r.can_download(s) and not r.can_make_permanent(s)
     assert r.can_download("clean")
