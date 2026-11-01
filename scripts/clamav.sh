@@ -23,7 +23,8 @@ finish() {
 }
 
 has_db() {
-  ls "$DB_DIR"/main.cvd "$DB_DIR"/main.cld >/dev/null 2>&1 && ls "$DB_DIR"/daily.cvd "$DB_DIR"/daily.cld >/dev/null 2>&1
+  # هر کدام از دو قالب (cvd یا cld) کافی است
+  [[ -f "$DB_DIR/main.cvd" || -f "$DB_DIR/main.cld" ]] && [[ -f "$DB_DIR/daily.cvd" || -f "$DB_DIR/daily.cld" ]]
 }
 
 clamd_set() {
