@@ -1,9 +1,8 @@
 """
 سرویس پشتیبان‌گیری و بازیابی — فقط برای همین سرور (نه Clone روی سرور دیگر).
 
-- create_backup_archive: یک Dump کامل (Schema + Data) با pg_dump --format=custom
-  می‌گیرد و همراه manifest.json در یک ZIP برمی‌گرداند.
-- validate_and_stage_archive: عبارت تأیید و فایل ZIP را بررسی و database.dump را
+- ساخت بکاپ: services/backup_archive.py (نسخه‌ی ۴ — جریانی، دیتابیس + فایل‌های اتوماسیون، رمزنگاری age؛ docs/backup.md).
+- validate_and_stage_archive (قالب قدیمی zip): عبارت تأیید و فایل ZIP را بررسی و database.dump را
   در پوشه موقت آماده می‌کند.
 - schedule_restore: یک اسکریپت shell مستقل (با systemd-run به‌عنوان root) اجرا
   می‌کند که سرویس را متوقف، Schema فعلی را کنار گذاشته، pg_restore و
@@ -17,15 +16,12 @@
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -129,63 +125,6 @@ def _find_alembic_binary() -> str:
         return str(candidate)
     found = shutil.which("alembic")
     return found or "alembic"
-
-
-async def create_backup_archive() -> bytes:
-    """
-    یک Dump کامل (Schema + Data) از دیتابیس همین سرور می‌گیرد — نه فقط
-    داده. چون این بکاپ فقط برای بازیابی روی همین سرور طراحی شده (نه Clone
-    به سرور دیگر)، نیازی به کلیدهای رمزنگاری/secrets.json جداگانه نیست.
-    خروجی: بایت‌های فایل ZIP شامل database.dump و manifest.json. خطا: BackupError.
-    """
-    settings = get_settings()
-    # رمز از URL جدا می‌شود و با متغیر محیطی PGPASSWORD داده می‌شود تا در فهرست فرآیندها (ps) دیده نشود
-    libpq_url, _db_user, db_password = _split_db_url(_to_libpq_url(settings.DATABASE_URL))
-    pg_dump_path = _find_pg_binary("pg_dump")
-    env = {**os.environ, "PGPASSWORD": db_password} if db_password else None
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        dump_path = Path(tmp_dir) / "database.dump"
-
-        # اجرای pg_dump با فرمت custom (قابل استفاده با pg_restore)، بدون مالک و مجوزها
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                pg_dump_path,
-                "--format=custom",
-                "--no-owner",
-                "--no-privileges",
-                f"--file={dump_path}",
-                libpq_url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                raise BackupError(f"pg_dump ناموفق بود (کد {proc.returncode}): {stderr.decode(errors='ignore')[:800]}")
-        except FileNotFoundError as e:
-            raise BackupError(
-                f"ابزار pg_dump روی این سرور پیدا نشد (مسیر بررسی‌شده: {pg_dump_path}) — "
-                "بسته postgresql-client باید نصب باشد."
-            ) from e
-        except OSError as e:
-            raise BackupError(f"اجرای pg_dump ناموفق بود: {e}") from e
-
-        # اطلاعات توصیفی بکاپ که کنار dump در ZIP قرار می‌گیرد
-        manifest = {
-            "app_name": settings.APP_NAME,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "format": "faipco-portal-backup-v3-fullsnapshot",
-            "note": "این بکاپ فقط برای بازیابی روی همین سرور (از پنل) طراحی شده — Clone به سرور دیگر پشتیبانی نمی‌شود.",
-        }
-
-        # بسته‌بندی dump و manifest در یک ZIP
-        zip_path = Path(tmp_dir) / "backup.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(dump_path, "database.dump")
-            zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-
-        return zip_path.read_bytes()
 
 
 # مقداری که کاربر باید عیناً تایپ کند تا Restore واقعاً اجرا شود — یک لایه
@@ -308,7 +247,7 @@ def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Pat
 _PRERESTORE_SCHEMA = "public_prerestore"
 
 
-def schedule_restore(dump_path: Path) -> None:
+def schedule_restore(dump_path: Path, files_dir: Path | None = None) -> None:
     """
     ورودی: مسیر database.dump آماده‌شده. یک اسکریپت shell می‌سازد و آن را در یک
     Scope مستقل systemd (systemd-run، به‌عنوان root) اجرا می‌کند که:
@@ -324,6 +263,8 @@ def schedule_restore(dump_path: Path) -> None:
     به‌جای pg_restore --clean از بازسازی کامل Schema استفاده می‌شود، چون --clean
     هنگام Drop تک‌تک Objectها (بدون CASCADE) روی وابستگی‌ها شکست می‌خورد.
     اگر برگشت داده هم شکست بخورد، داده قبلی در public_prerestore باقی می‌ماند و در لاگ ذکر می‌شود.
+    files_dir (بکاپ v4): پوشه‌ی objects استخراج‌شده؛ قبل از pg_restore پوشه‌ی objects فعلی اتوماسیون کنار گذاشته
+    (objects.prerestore) و نسخه‌ی بکاپ جایش می‌نشیند؛ در شکست هر دو (دیتابیس و فایل‌ها) برمی‌گردند. قرنطینه و tmp دست نمی‌خورند.
     خطا: BackupError اگر راه‌اندازی systemd-run ناموفق باشد (دیتابیس دست‌نخورده می‌ماند).
     """
     settings = get_settings()
@@ -336,6 +277,8 @@ def schedule_restore(dump_path: Path) -> None:
     backend_dir = _BACKEND_DIR
 
     staging_dir = _restore_staging_dir()
+    oa_objects = Path(settings.OA_STORAGE_DIR) / "objects"
+    files_src = str(files_dir) if files_dir else ""
     log_path = _restore_log_path()
     pgpass_path = _restore_pgpass_path()
 
@@ -364,9 +307,27 @@ sleep 2
 
 # ⚠️ داده فعلی پاک نمی‌شود - Schema فعلی فقط تغییر نام می‌دهد تا اگر بازیابی
 # یا Migration شکست خورد، دقیقاً همان داده قبلی برگردانده شود.
+files_exit=0
+FILES_SWAPPED=0
+if [ -n "{files_src}" ] && [ -d "{files_src}" ]; then
+  echo "Swapping office-automation files ({oa_objects})..."
+  rm -rf "{oa_objects}.prerestore"
+  if [ -d "{oa_objects}" ]; then mv "{oa_objects}" "{oa_objects}.prerestore" || files_exit=1; fi
+  if [ "$files_exit" -eq 0 ]; then
+    mkdir -p "$(dirname "{oa_objects}")" && mv "{files_src}" "{oa_objects}" && FILES_SWAPPED=1 || files_exit=1
+    chown -R www-data:www-data "{oa_objects}" 2>/dev/null
+    chmod 700 "{oa_objects}" 2>/dev/null
+  fi
+  if [ "$files_exit" -ne 0 ]; then echo "File swap failed — restoring the previous files."; fi
+fi
+
 echo "Moving current data aside (public -> {_PRERESTORE_SCHEMA}) before restoring..."
-{psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA IF EXISTS {_PRERESTORE_SCHEMA} CASCADE; ALTER SCHEMA public RENAME TO {_PRERESTORE_SCHEMA}; CREATE SCHEMA public; ALTER SCHEMA public OWNER TO {db_user}; GRANT ALL ON SCHEMA public TO {db_user};"
-reset_exit=$?
+if [ "$files_exit" -eq 0 ]; then
+  {psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA IF EXISTS {_PRERESTORE_SCHEMA} CASCADE; ALTER SCHEMA public RENAME TO {_PRERESTORE_SCHEMA}; CREATE SCHEMA public; ALTER SCHEMA public OWNER TO {db_user}; GRANT ALL ON SCHEMA public TO {db_user};"
+  reset_exit=$?
+else
+  reset_exit=1
+fi
 
 if [ "$reset_exit" -eq 0 ]; then
   echo "Running pg_restore..."
@@ -393,6 +354,7 @@ if [ "$reset_exit" -eq 0 ]; then
   if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
     echo "Dropping previous data ({_PRERESTORE_SCHEMA})..."
     {psql_path} "{libpq_url}" -c "DROP SCHEMA IF EXISTS {_PRERESTORE_SCHEMA} CASCADE;"
+    rm -rf "{oa_objects}.prerestore"
   else
     echo "Restore failed — putting the previous data back..."
     {psql_path} -v ON_ERROR_STOP=1 "{libpq_url}" -c "DROP SCHEMA public CASCADE; ALTER SCHEMA {_PRERESTORE_SCHEMA} RENAME TO public;"
@@ -405,6 +367,15 @@ systemctl start faipco-backend
 
 rm -rf {staging_dir}
 rm -f {pgpass_path}
+
+# فایل‌ها: در هر شکست (دیتابیس برگشت یا جابه‌جایی فایل ناموفق) نسخه‌ی قبلی برمی‌گردد
+if ! {{ [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; }}; then
+  if [ -d "{oa_objects}.prerestore" ]; then
+    echo "Putting the previous office-automation files back..."
+    if [ "$FILES_SWAPPED" -eq 1 ]; then rm -rf "{oa_objects}"; fi
+    mv "{oa_objects}.prerestore" "{oa_objects}"
+  fi
+fi
 
 if [ "$restore_exit" -eq 0 ] && [ "$migrate_exit" -eq 0 ]; then
   echo "=== Restore finished successfully: $(date -Iseconds) ==="

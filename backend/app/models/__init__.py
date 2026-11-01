@@ -120,3 +120,4 @@ from app.models.advance import (  # noqa: F401
 )
 from app.models.user_session import UserSession  # noqa: F401
 from app.models.office_automation import OaAttachmentSettings, OaAuditEvent, OaFile  # noqa: F401
+from app.models.backup_v4 import BackupKey, BackupRun  # noqa: F401

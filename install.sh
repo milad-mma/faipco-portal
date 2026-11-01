@@ -153,6 +153,9 @@ install_prerequisites() {
     libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
     nginx ufw openssl ca-certificates unzip \
     smbclient
+  # age: رمزنگاری جریانی بکاپ نسخه‌ی ۴ (docs/backup.md). جدا نصب می‌شود تا نبودنش در مخزن، کل نصب را متوقف نکند.
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq age >/dev/null 2>&1 \
+    || warn "بسته‌ی age نصب نشد؛ بکاپ تا نصب آن رمزنگاری نمی‌شود (کلید رمزنگاری قابل ساخت نیست)."
   # smbclient: برای قابلیت «بکاپ خودکار به سرور SMB راه‌دور» — بدون نیاز
   # به mount/دسترسی root، فقط آپلود مستقیم فایل.
 }
@@ -162,9 +165,9 @@ OA_STORAGE_DIR_DEFAULT="/var/lib/faipco/oa-files"
 
 setup_office_automation_files() {
   log "Office automation: private file storage..."
-  mkdir -p "${OA_STORAGE_DIR_DEFAULT}"/{tmp,objects,quarantine}
+  mkdir -p "${OA_STORAGE_DIR_DEFAULT}"/{tmp,objects,quarantine} /var/lib/faipco/backups
   chown -R www-data:www-data "$(dirname "${OA_STORAGE_DIR_DEFAULT}")"
-  chmod 700 "$(dirname "${OA_STORAGE_DIR_DEFAULT}")" "${OA_STORAGE_DIR_DEFAULT}"
+  chmod 700 "$(dirname "${OA_STORAGE_DIR_DEFAULT}")" "${OA_STORAGE_DIR_DEFAULT}" /var/lib/faipco/backups
 
   # ClamAV دیگر خودکار نصب نمی‌شود (اسکن اختیاری؛ دانلود بانک از ایران مسدود است): نصب/دریافت بانک/روشن/خاموش از پنل
   # «اتوماسیون اداری ← تنظیمات ← اسکنر» با scripts/clamav.sh (قانون sudoers پایین‌تر).

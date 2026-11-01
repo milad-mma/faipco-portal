@@ -149,10 +149,14 @@ function AttachmentSettingsTab() {
   useEffect(load, [load]);
 
   const site = useMemo(() => data?.sites.find((s) => s.site_id === Number(siteId)), [data, siteId]);
+  // فرم با داده‌ی تازه‌ی سایت پر می‌شود؛ پیام‌ها فقط با عوض شدن سایت پاک می‌شوند (نه با بارگذاری دوباره بعد از ذخیره)
   useEffect(() => {
     if (site) setForm({ ...site.values, allowed_formats: [...site.values.allowed_formats] });
-    setSaved("");
   }, [site]);
+  useEffect(() => {
+    setSaved("");
+    setError("");
+  }, [siteId]);
 
   if (error && !data) return <Alert severity="error">{error}</Alert>;
   if (!data || !form) return <CircularProgress size={28} />;

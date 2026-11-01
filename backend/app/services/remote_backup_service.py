@@ -11,7 +11,7 @@ FTP_TLS (یعنی FTPS - رمزنگاری‌شده) استفاده می‌شود
 
 Retention: به‌جای تکیه به تاریخ فایل که سرورهای SMB/FTP مختلف آن را با
 فرمت‌های متفاوت گزارش می‌دهند (پردازش غیرقابل‌اعتماد)، از خودِ نام فایل
-(که همیشه faipco-backup-YYYYMMDD-HHMMSS.zip است - همان قالب endpoints/backup.py)
+(faipco-backup-YYYYMMDD-HHMMSS با پسوند zip قدیمی، tar.gz یا tar.gz.age نسخه‌ی ۴ — core/backup_rules.py)
 تاریخ استخراج می‌شود؛ مرتب‌سازی بر همین اساس انجام می‌شود.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # الگوی نام فایل بکاپ؛ گروه ۱ زمان ساخت (UTC) است
-BACKUP_FILENAME_PATTERN = re.compile(r"faipco-backup-(\d{8}-\d{6})\.zip")
+BACKUP_FILENAME_PATTERN = re.compile(r"faipco-backup-(\d{8}-\d{6})\.(?:tar\.gz\.age|tar\.gz|zip)")
 
 
 class RemoteBackupError(Exception):
@@ -174,7 +174,7 @@ def list_smb_backup_filenames(
     auth = _smb_auth_string(username, password, domain)
     cmd = f'cd "{path.strip("/")}"; ls' if path else "ls"
     output = _run_smbclient(target, auth, cmd)
-    return [m.group(0) for m in re.finditer(r"faipco-backup-\d{8}-\d{6}\.zip", output)]  # فقط فایل‌های بکاپ از خروجی ls
+    return [m.group(0) for m in BACKUP_FILENAME_PATTERN.finditer(output)]  # فقط فایل‌های بکاپ از خروجی ls
 
 
 def delete_smb_file(
