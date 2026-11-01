@@ -1,5 +1,5 @@
 {
-  "count": 461,
+  "count": 454,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -74,9 +74,6 @@
     "GET /api/v1/automation/settings/attachments",
     "GET /api/v1/automation/settings/status",
     "GET /api/v1/backup/export",
-    "GET /api/v1/backup/keys",
-    "GET /api/v1/backup/local/{filename}/download",
-    "GET /api/v1/backup/overview",
     "GET /api/v1/backup/restore-status",
     "GET /api/v1/backup/settings",
     "GET /api/v1/bank-accounts/admin/employees/{employee_id}/history",
@@ -277,11 +274,7 @@
     "POST /api/v1/auth/verify-reset-code",
     "POST /api/v1/automation/clamav/{action}",
     "POST /api/v1/automation/files/test-upload",
-    "POST /api/v1/backup/keys",
-    "POST /api/v1/backup/keys/import-package",
-    "POST /api/v1/backup/keys/package",
     "POST /api/v1/backup/restore",
-    "POST /api/v1/backup/restore-local",
     "POST /api/v1/backup/run-now",
     "POST /api/v1/backup/test-ftp",
     "POST /api/v1/backup/test-smb",

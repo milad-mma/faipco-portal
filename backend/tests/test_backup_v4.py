@@ -1,11 +1,9 @@
 """تست بکاپ نسخه‌ی ۴: قواعد، و ساخت/رمزنگاری/استخراج/تطبیق هش واقعی با age (بدون دیتابیس)."""
 
 import hashlib
-import io
 import json
 import os
-import shutil
-import tarfile
+import zipfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,7 +66,7 @@ def test_permissions_migration_rule():
     assert not r.has_backup_permission(set(), "backup.run_view")
 
 
-# ---------- end-to-end با age واقعی ----------
+# ---------- ZIP بکاپ: ساخت، استخراج و تطبیق هش (بدون دیتابیس) ----------
 
 
 def _setup(tmp: Path):
@@ -86,93 +84,73 @@ def _setup(tmp: Path):
                                 state="temp"))
     dump = tmp / "database.dump"
     dump.write_bytes(os.urandom(200_000))
-    meta = {"set_id": "s1", "started_at": datetime.now(timezone.utc), "app_version": "t", "alembic_head": "132",
+    meta = {"set_id": "s1", "started_at": datetime.now(timezone.utc), "app_version": "t", "alembic_head": "133",
             "pg_dump_version": "pg", "key_id": None, "key_mode": None, "consistency_method": "snapshot"}
     return root, rows, dump, meta
 
 
-def test_archive_roundtrip_encrypted_and_tamper():
-    if not shutil.which("age"):
-        return  # روی سرور CI بدون age رد می‌شود
+def test_zip_roundtrip_and_integrity():
     from app.services import backup_archive as A
-    from app.services import backup_keys as K
 
     tmp = Path(tempfile.mkdtemp())
     root, rows, dump, meta = _setup(tmp)
-    identity, public = K.generate_identity()
-    assert public.startswith("age1") and K.public_key_of(identity) == public
-    meta.update(key_id=K.key_id_of(public), key_mode="external")
-    out = tmp / "faipco-backup-20261101-101010.tar.gz.age"
-    res = A.write_archive(out, public, dump, rows, lambda k: root / k, meta)
-    m = res["manifest"]
+    out = tmp / "faipco-backup-20261101-101010.zip"
+    m = A.write_zip(out, None, dump, rows, lambda k: root / k, meta)
     assert m["files"]["count"] == 3 and m["excluded"] == {"infected": 1, "missing_temp": 1}
-    assert out.read_bytes()[:21] == b"age-encryption.org/v1"  # واقعاً رمزنگاری شده
-
-    staging = tmp / "stage"
-    got = A.stage_archive(out, staging, [identity])
-    assert got["set_id"] == "s1"
-    assert (staging / "database.dump").read_bytes() == dump.read_bytes()
+    assert not A.is_encrypted(out)
+    with zipfile.ZipFile(out) as zf:  # ZIP معمولی، قابل باز شدن با هر ابزاری
+        assert zf.namelist()[0] == "database.dump" and zf.namelist()[-1] == "manifest.json"
+    res = A.stage_zip(out, tmp / "st", None)
+    assert not res["legacy"] and res["file_count"] == 3
+    assert res["dump"].read_bytes() == dump.read_bytes()
     for row in rows[:3]:
-        assert (staging / "files" / row.storage_key).read_bytes() == (root / row.storage_key).read_bytes()
+        assert (res["files_dir"] / row.storage_key.split("/", 1)[1]).read_bytes() == (root / row.storage_key).read_bytes()
 
-    other, _ = K.generate_identity()
-    assert "کلید" in _raises(A.ArchiveError, A.stage_archive, out, tmp / "s2", [other])
-    assert not (tmp / "s2").exists()  # استخراج نیمه‌کاره پاک شد
-    assert "کلید خصوصی" in _raises(A.ArchiveError, A.stage_archive, out, tmp / "s3", [])
-    # چند کلید (قدیمی + جدید) با هم
-    A.stage_archive(out, tmp / "s4", [other, identity])
-    # دست‌کاری فایل رمزنگاری‌شده
-    data = bytearray(out.read_bytes())
-    data[len(data) // 2] ^= 0xFF
-    bad = tmp / "faipco-backup-20261101-101011.tar.gz.age"
-    bad.write_bytes(bytes(data))
-    _raises(A.ArchiveError, A.stage_archive, bad, tmp / "s5", [identity])
-
-
-def test_archive_unencrypted_and_integrity():
-    from app.services import backup_archive as A
-
-    tmp = Path(tempfile.mkdtemp())
-    root, rows, dump, meta = _setup(tmp)
-    out = tmp / "faipco-backup-20261101-101010.tar.gz"
-    A.write_archive(out, None, dump, rows, lambda k: root / k, meta)
-    A.stage_archive(out, tmp / "ok", [])
-    # فایل دائم ناموجود → بکاپ ناموفق
+    # فایل دائم ناموجود یا هش ناهم‌خوان → ساخت ناموفق
     (root / rows[0].storage_key).unlink()
-    _raises(A.ArchiveError, A.write_archive, tmp / "x.part", None, dump, rows, lambda k: root / k, meta)
-    # هش ناهم‌خوان با دیتابیس → ناموفق
+    _raises(A.ArchiveError, A.write_zip, tmp / "x.zip", None, dump, rows, lambda k: root / k, meta)
     (root / rows[0].storage_key).write_bytes(b"changed")
-    _raises(A.ArchiveError, A.write_archive, tmp / "y.part", None, dump, rows, lambda k: root / k, meta)
-    # آرشیوی که عضوش با manifest نمی‌خواند (دست‌کاری) → رد
-    raw_manifest = None
-    with tarfile.open(out, "r:gz") as t:
-        raw_manifest = t.extractfile("manifest.json").read()
-    forged = tmp / "faipco-backup-20261101-101012.tar.gz"
-    with tarfile.open(forged, "w:gz") as t:
-        for name, data in (("database.dump", b"forged"), ("manifest.json", raw_manifest)):
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            t.addfile(info, io.BytesIO(data))
-    assert "سالم نیست" in _raises(A.ArchiveError, A.stage_archive, forged, tmp / "f", [])
-    # مسیر خطرناک داخل آرشیو → رد
-    evil = tmp / "faipco-backup-20261101-101013.tar.gz"
-    with tarfile.open(evil, "w:gz") as t:
-        info = tarfile.TarInfo("../../etc/x")
-        info.size = 1
-        t.addfile(info, io.BytesIO(b"x"))
-    _raises(Exception, A.stage_archive, evil, tmp / "e", [])
+    _raises(A.ArchiveError, A.write_zip, tmp / "y.zip", None, dump, rows, lambda k: root / k, meta)
+
+    # عضو دست‌کاری‌شده → «سالم نیست» و هیچ‌چیز در staging نمی‌ماند
+    forged = tmp / "forged.zip"
+    with zipfile.ZipFile(out) as src, zipfile.ZipFile(forged, "w") as dst:
+        for info in src.infolist():
+            dst.writestr(info.filename, b"forged" if info.filename == "database.dump" else src.read(info.filename))
+    assert "سالم نیست" in _raises(A.ArchiveError, A.stage_zip, forged, tmp / "f", None)
+    assert not (tmp / "f").exists()
+
+    # مسیر خطرناک → رد
+    evil = tmp / "evil.zip"
+    with zipfile.ZipFile(evil, "w") as zf:
+        zf.writestr("database.dump", b"x")
+        zf.writestr("../../etc/x", b"x")
+    _raises(A.ArchiveError, A.stage_zip, evil, tmp / "e", None)
     assert not (tmp / "e").exists()
 
+    # بکاپ قدیمی (فقط database.dump + manifest قدیمی) → فقط دیتابیس
+    legacy = tmp / "legacy.zip"
+    with zipfile.ZipFile(legacy, "w") as zf:
+        zf.writestr("database.dump", b"old-dump")
+        zf.writestr("manifest.json", json.dumps({"format": "faipco-portal-backup-v3-fullsnapshot"}))
+    res = A.stage_zip(legacy, tmp / "lg", None)
+    assert res["legacy"] and res["files_dir"] is None and res["dump"].read_bytes() == b"old-dump"
+    _raises(A.ArchiveError, A.stage_zip, tmp / "database.dump", tmp / "bad", None)  # فایل غیر ZIP
 
-def test_key_package_roundtrip():
-    if not shutil.which("age"):
-        return
-    from app.services import backup_keys as K
 
-    identity, public = K.generate_identity()
-    pkg = K.export_package(identity, "a long passphrase!")
-    assert identity not in pkg.decode()
-    assert K.import_package(pkg, "a long passphrase!") == identity
-    assert "اشتباه" in _raises(K.BackupKeyError, K.import_package, pkg, "wrong passphrase!!")
-    assert "۱۲" in _raises(K.BackupKeyError, K.export_package, identity, "short")
-    _raises(K.BackupKeyError, K.public_key_of, "not a key")
+def test_zip_password_roundtrip():
+    try:
+        import pyzipper  # noqa: F401
+    except ImportError:
+        return  # روی سرور با requirements نصب است
+    from app.services import backup_archive as A
+
+    tmp = Path(tempfile.mkdtemp())
+    root, rows, dump, meta = _setup(tmp)
+    out = tmp / "faipco-backup-20261101-101010.zip"
+    A.write_zip(out, "a-strong-pass", dump, rows, lambda k: root / k, meta)
+    assert A.is_encrypted(out)
+    assert "رمز" in _raises(A.PasswordRequired, A.stage_zip, out, tmp / "s1", None)
+    assert "اشتباه" in _raises(A.ArchiveError, A.stage_zip, out, tmp / "s2", "wrong-pass")
+    res = A.stage_zip(out, tmp / "s3", "a-strong-pass")
+    assert res["file_count"] == 3 and res["dump"].read_bytes() == dump.read_bytes()

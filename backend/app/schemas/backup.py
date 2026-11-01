@@ -49,6 +49,10 @@ class BackupSettingsIn(BaseModel):
     schedule_weekday: int | None = Field(default=None, ge=0, le=6)  # فقط برای weekly
     schedule_interval_hours: int | None = Field(default=None, ge=1, le=168)  # فقط برای interval
 
+    # رمز فایل ZIP بکاپ (AES-256)؛ خالی = رمز قبلی حفظ شود؛ archive_password_clear=True یعنی برداشتن رمز
+    archive_password: str | None = Field(default=None, max_length=200)
+    archive_password_clear: bool = False
+
     smb_enabled: bool = False
     smb_host: str | None = None
     smb_share: str | None = None
@@ -129,6 +133,8 @@ class BackupSettingsOut(BaseModel):
 
     email_enabled: bool
     email_recipients: str | None
+
+    has_archive_password: bool = False  # آیا فایل بکاپ رمز دارد
 
     last_run_at: datetime | None
     last_run_success: bool | None

@@ -9,19 +9,21 @@ import { apiClient } from "./client";
 export async function downloadBackupArchive() {
   const { data } = await apiClient.get("/backup/export", {
     responseType: "blob",
-    timeout: 5 * 60 * 1000, // دیتابیس‌های بزرگ ممکن است چند دقیقه طول بکشد
+    timeout: 30 * 60 * 1000, // دیتابیس و فایل‌های آپلودی؛ ممکن است چند دقیقه طول بکشد
   });
   return data; // Blob از نوع application/zip
 }
 
 // POST /backup/restore؛ آپلود فایل پشتیبان همراه عبارت تأیید و شروع بازیابی؛ خروجی: پاسخ سرور
-export async function restoreBackupArchive(file, confirmPhrase) {
+export async function restoreBackupArchive(file, confirmPhrase, password, onProgress) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("confirm", confirmPhrase);
+  if (password) formData.append("password", password);
   const { data } = await apiClient.post("/backup/restore", formData, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 5 * 60 * 1000, // بازیابی دیتابیس‌های بزرگ ممکن است چند دقیقه طول بکشد
+    timeout: 60 * 60 * 1000, // آپلود فایل بزرگ بکاپ
+    onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded * 100) / e.total) : 0),
   });
   return data;
 }
@@ -57,69 +59,8 @@ export async function testFtpConnection(payload) {
   return data;
 }
 
-// POST /backup/run-now؛ ساخت فوری پشتیبان و آپلود به مقصدهای راه‌دور فعال؛ خروجی: نتیجه‌ی اجرا
+// POST /backup/run-now؛ ساخت پشتیبان در پس‌زمینه و ارسال به مقصدهای فعال؛ نتیجه در «آخرین اجرا»
 export async function runBackupNow() {
-  // Timeout پنج دقیقه‌ای چون برای دیتابیس‌های بزرگ چند دقیقه طول می‌کشد
-  const { data } = await apiClient.post("/backup/run-now", null, { timeout: 5 * 60 * 1000 });
-  return data;
-}
-
-// ---------- بکاپ نسخه‌ی ۴ (docs/backup.md) ----------
-
-// { runs, local, active_key, age_available, disk, last_success_at, warnings }
-export async function fetchBackupOverview() {
-  const { data } = await apiClient.get("/backup/overview");
-  return data;
-}
-
-// ساخت بکاپ در پس‌زمینه؛ sendToDestinations=false فقط نسخه‌ی روی سرور
-export async function startBackup(sendToDestinations) {
-  const { data } = await apiClient.post("/backup/run-now", null, { params: { send_to_destinations: sendToDestinations } });
-  return data;
-}
-
-// دانلود یک نسخه‌ی روی سرور (Blob)
-export async function downloadLocalBackup(filename) {
-  const { data } = await apiClient.get(`/backup/local/${encodeURIComponent(filename)}/download`, {
-    responseType: "blob",
-    timeout: 30 * 60 * 1000,
-  });
-  return data;
-}
-
-// بازیابی از نسخه‌ی روی سرور (privateKey برای بکاپ رمزنگاری‌شده با کلید بیرون از سرور)
-export async function restoreLocalBackup(filename, confirm, privateKey) {
-  const { data } = await apiClient.post("/backup/restore-local", {
-    filename,
-    confirm,
-    private_key: privateKey || null,
-  });
-  return data;
-}
-
-export async function fetchBackupKeys() {
-  const { data } = await apiClient.get("/backup/keys");
-  return data;
-}
-
-// mode: external | server_protected؛ privateKey اختیاری (وارد کردن کلید موجود). در حالت external پاسخ private_key_once دارد.
-export async function createBackupKey(mode, privateKey) {
-  const { data } = await apiClient.post("/backup/keys", { mode, private_key: privateKey || null });
-  return data;
-}
-
-export async function exportKeyPackage(passphrase) {
-  const { data } = await apiClient.post("/backup/keys/package", { passphrase }, { responseType: "blob" });
-  return data;
-}
-
-export async function importKeyPackage(file, passphrase, mode) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("passphrase", passphrase);
-  formData.append("mode", mode);
-  const { data } = await apiClient.post("/backup/keys/import-package", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const { data } = await apiClient.post("/backup/run-now");
   return data;
 }

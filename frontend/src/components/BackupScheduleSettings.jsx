@@ -54,7 +54,7 @@ export default function BackupScheduleSettings() {
     fetchBackupSettings()
       .then((data) => {
         setSettings(data);
-        setForm({ ...data, smb_password: "", ftp_password: "" });
+        setForm({ ...data, smb_password: "", ftp_password: "", archive_password: "", archive_password_clear: false });
       })
       .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }
@@ -72,9 +72,10 @@ export default function BackupScheduleSettings() {
       const payload = { ...form };
       if (!payload.smb_password) delete payload.smb_password;
       if (!payload.ftp_password) delete payload.ftp_password;
+      if (!payload.archive_password) delete payload.archive_password;
       const updated = await updateBackupSettings(payload);
       setSettings(updated);
-      setForm({ ...updated, smb_password: "", ftp_password: "" });
+      setForm({ ...updated, smb_password: "", ftp_password: "", archive_password: "", archive_password_clear: false });
       setSaveResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
       setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
@@ -480,6 +481,40 @@ export default function BackupScheduleSettings() {
               (محدودیت رایج پیوست ایمیل).
             </Typography>
           </Stack>
+        )}
+      </Stack>
+
+      {/* رمز فایل ZIP بکاپ (AES-256) — هم دانلود و هم بکاپ زمان‌بندی‌شده؛ بازیابی همین رمز را می‌خواهد */}
+      <Stack spacing={1.5}>
+        <Typography variant="subtitle2" fontWeight={700}>
+          رمز فایل بکاپ
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {settings?.has_archive_password
+            ? "فایل‌های بکاپ رمز دارند. برای تغییر، رمز تازه وارد کنید؛ خالی بگذارید تا رمز فعلی بماند."
+            : "فایل‌های بکاپ رمز ندارند. با تعیین رمز، فایل ZIP با AES-256 رمزدار می‌شود (با 7-Zip یا WinRAR باز می‌شود) و هنگام بازیابی همان رمز لازم است."}{" "}
+          رمز را جای امن نگه دارید؛ بدون آن فایل بکاپ قابل بازیابی نیست.
+        </Typography>
+        <TextField
+          size="small"
+          type="password"
+          label={settings?.has_archive_password ? "رمز تازه (اختیاری)" : "رمز فایل بکاپ (حداقل ۸ نویسه)"}
+          value={form.archive_password || ""}
+          onChange={(e) => updateForm({ archive_password: e.target.value, archive_password_clear: false })}
+          autoComplete="new-password"
+          disabled={form.archive_password_clear}
+          sx={{ maxWidth: 360 }}
+        />
+        {settings?.has_archive_password && (
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={Boolean(form.archive_password_clear)}
+                onChange={(e) => updateForm({ archive_password_clear: e.target.checked, archive_password: "" })}
+              />
+            }
+            label="برداشتن رمز (بکاپ‌های بعدی بدون رمز)"
+          />
         )}
       </Stack>
 

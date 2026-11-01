@@ -433,6 +433,12 @@ async def _send_birthday_reaction_summaries_job() -> None:
 
 async def start_scheduler() -> None:
     """همه Jobها را در Scheduler ثبت و آن را استارت می‌کند؛ در startup هر Worker از main.py صدا زده می‌شود."""
+    try:  # بکاپ‌های نیمه‌کاره‌ی قبل از ری‌استارت
+        from app.services.backup_jobs import close_stale_runs
+
+        await close_stale_runs()
+    except Exception:  # noqa: BLE001
+        logger.warning("بستن بکاپ‌های نیمه‌کاره ناموفق بود", exc_info=True)
     # Job تیک Sync خودکار (فقط اگر SYNC_ENABLED روشن باشد)
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")

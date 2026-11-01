@@ -80,6 +80,9 @@ class BackupSettings(Base):
     # چند آدرس، هرکدام در یک خط - برای پشتیبانی از چند گیرنده هم‌زمان
     email_recipients: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- رمز فایل ZIP بکاپ (AES-256، Migration 133) — رمزنگاری‌شده با encrypt_secret؛ خالی = بدون رمز ---
+    archive_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # --- آخرین اجرا (برای نمایش وضعیت در پنل) ---
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

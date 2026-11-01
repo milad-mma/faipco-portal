@@ -1,29 +1,27 @@
 """
-ساخت و آماده‌سازی بازیابی مجموعه‌ی بکاپ نسخه‌ی ۴ (docs/backup.md؛ سند اتوماسیون بخش ۱۰).
+فایل بکاپ پرتال: یک ZIP (مثل قبل) که حالا فایل‌های آپلودی اتوماسیون را هم دارد و در صورت تعیین «رمز فایل بکاپ» با
+AES-256 (استاندارد WinZip-AES، قابل باز شدن با 7-Zip/WinRAR) رمزگذاری می‌شود — docs/backup.md.
 
-ساخت (build_archive):
-- سازگاری «آنلاین»: یک تراکنش REPEATABLE READ READ ONLY باز، pg_export_snapshot()؛ فهرست فایل‌های اتوماسیون از همان snapshot
-  خوانده و pg_dump --snapshot اجرا می‌شود. پاک‌سازی فایل‌های موقت هم‌زمان با بکاپ اجرا نمی‌شود (همان Advisory Lock بکاپ).
-- tar جریانی + gzip + (اگر کلید فعال است) رمزنگاری جریانی با age؛ هیچ مرحله‌ای کل آرشیو را در RAM نمی‌خواند.
-- هش هر فایل هنگام افزودن محاسبه و با هش دیتابیس مقایسه می‌شود؛ فایل دائم ناموجود یا هش ناهم‌خوان = بکاپ ناموفق.
-- manifest.json آخرین عضو است؛ نام فایل موقت تا پایان «.part» است (نیمه‌کاره هرگز با نام نهایی نمی‌ماند).
+محتوای ZIP:
+- database.dump  (pg_dump --format=custom با snapshot همان تراکنشی که فهرست فایل‌ها از آن خوانده شد)
+- files/objects/...  فایل‌های اتوماسیون که در دیتابیس به آن‌ها ارجاع شده (به‌جز قرنطینه)
+- manifest.json  (آخرین عضو) حجم و SHA-256 dump و هر فایل
+بکاپ‌های قدیمی (فقط database.dump و manifest قدیمی) هم بازیابی می‌شوند.
 
-آماده‌سازی بازیابی (stage_archive): رمزگشایی جریانی، استخراج فقط عضوهای مجاز با سقف حجم/تعداد، تطبیق همه‌ی هش‌ها با
-manifest و سازگاری Migration — قبل از هر تغییری در دیتابیس یا فایل‌ها.
+ساخت روی دیسک انجام می‌شود (نه در RAM) و فایل‌ها تکه‌تکه کپی و هش می‌شوند.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
-import io
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
-import tarfile
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,98 +37,45 @@ class ArchiveError(RuntimeError):
     """خطای قابل نمایش (پیام فارسی)."""
 
 
+class PasswordRequired(ArchiveError):
+    pass
+
+
 def backup_dir() -> Path:
     BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     return BACKUP_DIR
 
 
-def list_local() -> list[dict]:
-    """نسخه‌های محلی بکاپ در پوشه‌ی بکاپ‌ها (جدیدترین اول)."""
-    out = []
+def _zip_module(password: str | None):
+    """zipfile استاندارد، یا pyzipper برای ZIP رمزدار (AES)."""
+    if not password:
+        return zipfile
     try:
-        names = os.listdir(backup_dir())
-    except OSError:
-        return out
-    for name in names:
-        info = rules.parse_filename(name)
-        if not info:
-            continue
-        try:
-            st = os.stat(BACKUP_DIR / name)
-        except OSError:
-            continue
-        out.append({"name": name, "size": st.st_size, "kind": info["kind"], "created_at": info["created_at"]})
-    out.sort(key=lambda x: x["created_at"], reverse=True)
-    return out
+        import pyzipper
+    except ImportError:
+        raise ArchiveError("کتابخانه‌ی pyzipper نصب نیست؛ پرتال را یک بار آپدیت کنید تا فایل بکاپ رمزدار ساخته/باز شود.") from None
+    return pyzipper
 
 
-def prune_local(keep: int) -> list[str]:
-    removed = []
-    for name in rules.local_copies_to_delete([x["name"] for x in list_local()], keep):
-        try:
-            (BACKUP_DIR / name).unlink()
-            removed.append(name)
-        except OSError:
-            logger.warning("حذف نسخه‌ی محلی بکاپ %s ناموفق بود", name)
-    return removed
+def _open_for_write(path: Path, password: str | None):
+    mod = _zip_module(password)
+    if password:
+        zf = mod.AESZipFile(path, "w", compression=mod.ZIP_STORED, encryption=mod.WZ_AES)
+        zf.setpassword(password.encode("utf-8"))
+        zf.setencryption(mod.WZ_AES, nbits=256)
+        return zf
+    return zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED, allowZip64=True)
 
 
-def local_path(name: str) -> Path:
-    if not rules.parse_filename(name) or "/" in name:
-        raise ArchiveError("نام فایل بکاپ نامعتبر است")
-    path = backup_dir() / name
-    if not path.is_file():
-        raise ArchiveError("فایل بکاپ پیدا نشد")
-    return path
-
-
-class _HashingReader(io.RawIOBase):
-    """خواندن فایل و محاسبه‌ی هم‌زمان SHA-256 (برای tarfile.addfile)."""
-
-    def __init__(self, f):
-        self._f = f
-        self.digest = hashlib.sha256()
-        self.size = 0
-
-    def readable(self):
-        return True
-
-    def readinto(self, b):
-        data = self._f.read(len(b))
-        n = len(data)
-        b[:n] = data
-        self.digest.update(data)
-        self.size += n
-        return n
-
-
-def _add_bytes(tar: tarfile.TarFile, name: str, data: bytes) -> None:
-    info = tarfile.TarInfo(name)
-    info.size = len(data)
-    info.mtime = int(datetime.now(timezone.utc).timestamp())
-    info.mode = 0o600
-    tar.addfile(info, io.BytesIO(data))
-
-
-def _add_file(tar: tarfile.TarFile, name: str, path: str, size: int) -> tuple[int, str]:
-    info = tarfile.TarInfo(name)
-    info.size = size
-    info.mtime = int(os.path.getmtime(path))
-    info.mode = 0o600
-    with open(path, "rb") as f:
-        reader = _HashingReader(f)
-        tar.addfile(info, io.BufferedReader(reader, CHUNK))
-    if reader.size != size:
-        raise ArchiveError(f"حجم فایل هنگام بکاپ تغییر کرد: {name}")
-    return reader.size, reader.digest.hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as f:
+def _copy_into(zf, arcname: str, src: Path) -> tuple[int, str]:
+    """کپی تکه‌تکه‌ی فایل داخل ZIP همراه با محاسبه‌ی SHA-256 (بدون خواندن کامل در RAM)."""
+    digest, size = hashlib.sha256(), 0
+    with open(src, "rb") as f, zf.open(arcname, "w", force_zip64=True) as out:
         for block in iter(lambda: f.read(CHUNK), b""):
             digest.update(block)
-    return digest.hexdigest()
+            size += len(block)
+            out.write(block)
+    return size, digest.hexdigest()
 
 
 def _pg_dump_version(pg_dump: str) -> str | None:
@@ -140,98 +85,71 @@ def _pg_dump_version(pg_dump: str) -> str | None:
         return None
 
 
-def write_archive(part: Path, public_key: str | None, dump_path: Path, rows, path_of, meta: dict) -> dict:
+def write_zip(out: Path, password: str | None, dump_path: Path, rows, path_of, meta: dict) -> dict:
     """
-    tar.gz جریانی (و اگر public_key داده شده، رمزنگاری جریانی با age -r) در part: database.dump، فایل‌های rows
-    (هر ردیف: id، storage_key، sha256، size، status، state)، RESTORE.txt و در آخر manifest.json. path_of(key) مسیر فایل را
-    می‌دهد. فایل دائم ناموجود یا هش ناهم‌خوان → ArchiveError؛ فایل موقت ناموجود و فایل آلوده کنار گذاشته و در manifest
-    شمرده می‌شوند. خروجی: {"manifest", "manifest_sha256"}.
+    ZIP بکاپ را در out می‌نویسد: database.dump، فایل‌های rows (هر ردیف: id، storage_key، sha256، status، state) و در آخر
+    manifest.json. path_of(key) مسیر فایل را می‌دهد. فایل دائم ناموجود یا هش ناهم‌خوان → ArchiveError؛ فایل آلوده و فایل
+    موقتِ ناموجود کنار گذاشته و در manifest شمرده می‌شوند. خروجی: manifest.
     """
-    from app.services import backup_keys
-
-    age_proc = None
-    if public_key:
-        age_proc = subprocess.Popen(
-            [backup_keys.age_binary("age"), "-r", public_key, "-o", str(part)],
-            stdin=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        sink = age_proc.stdin
-    else:
-        sink = open(part, "wb")
     files, excluded = [], {"infected": 0, "missing_temp": 0}
-    try:
-        with tarfile.open(fileobj=sink, mode="w|gz", format=tarfile.PAX_FORMAT) as tar:
-            dump_size, dump_sha = _add_file(tar, rules.DUMP_MEMBER, str(dump_path), dump_path.stat().st_size)
-            for r in rows:
-                if r.status == "infected" or str(r.storage_key).startswith("quarantine/"):
-                    excluded["infected"] += 1
+    with _open_for_write(out, password) as zf:
+        dump_size, dump_sha = _copy_into(zf, rules.DUMP_MEMBER, dump_path)
+        for r in rows:
+            if r.status == "infected" or str(r.storage_key).startswith("quarantine/"):
+                excluded["infected"] += 1
+                continue
+            path = path_of(r.storage_key)
+            if not path.is_file():
+                if r.state == "temp":
+                    excluded["missing_temp"] += 1
                     continue
-                path = path_of(r.storage_key)
-                if not path.is_file():
-                    if r.state == "temp":
-                        excluded["missing_temp"] += 1
-                        continue
-                    raise ArchiveError(f"فایل ثبت‌شده‌ی شماره {r.id} در محل نگهداری نیست؛ بکاپ ناقص ساخته نمی‌شود")
-                size, sha = _add_file(tar, rules.file_member(r.storage_key), str(path), path.stat().st_size)
-                if r.sha256 and sha != r.sha256:
-                    raise ArchiveError(f"هش فایل شماره {r.id} با دیتابیس نمی‌خواند (فایل تغییر کرده یا خراب است)")
-                files.append({"key": r.storage_key, "size": size, "sha256": sha})
-            _add_bytes(tar, rules.GUIDE_MEMBER, rules.RESTORE_GUIDE.encode("utf-8"))
-            manifest = rules.build_manifest(
-                **meta, finished_at=datetime.now(timezone.utc), dump_sha256=dump_sha, dump_size=dump_size,
-                files=files, excluded=excluded,
-            )
-            raw = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
-            _add_bytes(tar, rules.MANIFEST_MEMBER, raw)
-    finally:
-        sink.close()
-        if age_proc is not None:
-            err = age_proc.stderr.read().decode(errors="ignore") if age_proc.stderr else ""
-            if age_proc.wait(timeout=600) != 0:
-                raise ArchiveError(f"رمزنگاری با age ناموفق بود: {err[:300]}")
-    return {"manifest": manifest, "manifest_sha256": hashlib.sha256(raw).hexdigest()}
+                raise ArchiveError(f"فایل ثبت‌شده‌ی شماره {r.id} در محل نگهداری نیست؛ بکاپ ناقص ساخته نمی‌شود")
+            size, sha = _copy_into(zf, rules.file_member(r.storage_key), path)
+            if r.sha256 and sha != r.sha256:
+                raise ArchiveError(f"هش فایل شماره {r.id} با دیتابیس نمی‌خواند (فایل تغییر کرده یا خراب است)")
+            files.append({"key": r.storage_key, "size": size, "sha256": sha})
+        manifest = rules.build_manifest(
+            **meta, finished_at=datetime.now(timezone.utc), dump_sha256=dump_sha, dump_size=dump_size,
+            files=files, excluded=excluded,
+        )
+        zf.writestr(rules.MANIFEST_MEMBER, json.dumps(manifest, ensure_ascii=False, indent=2))
+    return manifest
 
 
-async def build_archive(*, trigger: str, user_id: int | None = None) -> dict:
+async def build_archive(*, password: str | None = None) -> dict:
     """
-    یک مجموعه‌ی بکاپ کامل در پوشه‌ی بکاپ‌ها می‌سازد. فراخواننده باید Advisory Lock بکاپ را گرفته باشد.
-    خروجی: {"path", "filename", "set_id", "size", "manifest", "manifest_sha256", "key_id"}. خطا: ArchiveError.
+    یک ZIP بکاپ کامل در پوشه‌ی بکاپ‌ها می‌سازد (فراخواننده Advisory Lock بکاپ را گرفته است).
+    خروجی: {"path", "filename", "size", "manifest"}. خطا: ArchiveError.
     """
+    from sqlalchemy import text
+
     from app.core.config import get_settings
-    from app.db.session import AsyncSessionLocal, engine
-    from app.services import backup_keys
+    from app.db.session import engine
     from app.services.backup_service import _find_pg_binary, _split_db_url, _to_libpq_url
     from app.services.oa_storage import LocalStorage
 
-    from sqlalchemy import text
-
+    _zip_module(password)  # اگر رمز هست و pyzipper نیست، همین اول خطا
     settings = get_settings()
     started = datetime.now(timezone.utc)
     set_id = uuid.uuid4().hex
-    async with AsyncSessionLocal() as db:
-        key = await backup_keys.active_key(db)
-    if key is not None and not backup_keys.age_available():
-        raise ArchiveError("کلید رمزنگاری فعال است ولی ابزار age روی سرور نصب نیست؛ پرتال را یک بار آپدیت کنید.")
-
     out_dir = backup_dir()
     work = out_dir / f".work-{set_id}"
     work.mkdir(mode=0o700)
-    filename = rules.backup_filename(started, encrypted=key is not None)
+    filename = f"faipco-backup-{started:%Y%m%d-%H%M%S}.zip"
     final = out_dir / filename
     part = out_dir / f".{filename}.part"
     storage = LocalStorage()
     try:
-        libpq_url, _user, password = _split_db_url(_to_libpq_url(settings.DATABASE_URL))
+        libpq_url, _user, db_password = _split_db_url(_to_libpq_url(settings.DATABASE_URL))
         pg_dump = _find_pg_binary("pg_dump")
-        env = {**os.environ, "PGPASSWORD": password} if password else dict(os.environ)
+        env = {**os.environ, "PGPASSWORD": db_password} if db_password else dict(os.environ)
         dump_path = work / rules.DUMP_MEMBER
 
-        # --- snapshot مشترک دیتابیس و فهرست فایل‌ها ---
+        # snapshot مشترک: فهرست فایل‌ها و pg_dump از یک لحظه‌ی دیتابیس
         conn = await engine.connect()
+        trans = await conn.begin()
         try:
-            trans = await conn.begin()
-            consistency = "snapshot"
-            snapshot = None
+            consistency, snapshot = "snapshot", None
             try:
                 await conn.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
                 snapshot = (await conn.execute(text("SELECT pg_export_snapshot()"))).scalar_one()
@@ -254,15 +172,12 @@ async def build_archive(*, trigger: str, user_id: int | None = None) -> dict:
                 db_size = (await conn.execute(text("SELECT pg_database_size(current_database())"))).scalar() or 0
             except Exception:  # noqa: BLE001
                 db_size = 0
-
-            files_bytes_est = sum(int(r.size or 0) for r in rows)
             free = shutil.disk_usage(out_dir).free
-            needed = int((db_size * 0.6 + files_bytes_est) * 1.3) + 100 * 1024 * 1024
+            needed = int((db_size * 0.6 + sum(int(r.size or 0) for r in rows)) * 1.3) + 100 * 1024 * 1024
             if free < needed:
                 raise ArchiveError(
                     f"فضای دیسک برای بکاپ کافی نیست (لازم حدود {needed // 2**20} مگابایت، آزاد {free // 2**20} مگابایت)"
                 )
-
             args = [pg_dump, "--format=custom", "--no-owner", "--no-privileges", f"--file={dump_path}"]
             if snapshot:
                 args.append(f"--snapshot={snapshot}")
@@ -279,26 +194,15 @@ async def build_archive(*, trigger: str, user_id: int | None = None) -> dict:
                 pass
             await conn.close()
 
-        # --- tar جریانی (+ age) ---
         meta = {
             "set_id": set_id, "started_at": started, "app_version": getattr(settings, "APP_VERSION", None),
             "alembic_head": alembic_head, "pg_dump_version": _pg_dump_version(pg_dump),
-            "key_id": key.key_id if key else None, "key_mode": key.mode if key else None,
-            "consistency_method": consistency,
+            "key_id": None, "key_mode": "zip-aes256" if password else None, "consistency_method": consistency,
         }
-        result = await asyncio.to_thread(
-            write_archive, part, key.public_key if key else None, dump_path, rows, storage.path_of, meta
-        )
+        manifest = await asyncio.to_thread(write_zip, part, password, dump_path, rows, storage.path_of, meta)
         os.replace(part, final)
         os.chmod(final, 0o600)
-        return {
-            "path": final,
-            "filename": filename,
-            "set_id": set_id,
-            "size": final.stat().st_size,
-            "key_id": key.key_id if key else None,
-            **result,
-        }
+        return {"path": final, "filename": filename, "size": final.stat().st_size, "manifest": manifest}
     except BaseException:
         part.unlink(missing_ok=True)
         raise
@@ -306,11 +210,20 @@ async def build_archive(*, trigger: str, user_id: int | None = None) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def remove_old_local(keep_names: set[str]) -> None:
+    """فایل‌های بکاپ قدیمی در پوشه‌ی بکاپ‌ها (به‌جز keep_names) پاک می‌شوند؛ نسخه‌ی محلی فقط موقت است."""
+    try:
+        for name in os.listdir(backup_dir()):
+            if name not in keep_names and rules.parse_filename(name):
+                (BACKUP_DIR / name).unlink(missing_ok=True)
+    except OSError:
+        logger.warning("پاک‌سازی فایل‌های موقت بکاپ ناموفق بود", exc_info=True)
+
+
 # ---------- آماده‌سازی بازیابی ----------
 
 
 def _code_heads() -> set[str]:
-    """شماره‌ی Migration های موجود در کد (برای رد بکاپی که از نسخه‌ی جدیدتر پرتال است)."""
     versions = Path(__file__).resolve().parents[3] / "database" / "migrations" / "versions"
     heads = set()
     try:
@@ -323,100 +236,102 @@ def _code_heads() -> set[str]:
     return heads
 
 
-def stage_archive(path: Path, staging: Path, identities: list[str]) -> dict:
-    """
-    فایل بکاپ v4 را (در صورت نیاز با کلیدهای خصوصی — ذخیره‌شده روی سرور و/یا ارائه‌شده) رمزگشایی و در staging استخراج می‌کند و همه‌چیز را با manifest تطبیق
-    می‌دهد. خروجی: manifest. خطا: ArchiveError (هیچ تغییری در دیتابیس یا فایل‌های جاری داده نشده است).
-    """
-    from app.services import backup_keys
+def is_encrypted(path: Path) -> bool:
+    try:
+        with zipfile.ZipFile(path) as zf:
+            return any(info.flag_bits & 0x1 for info in zf.infolist())
+    except zipfile.BadZipFile:
+        raise ArchiveError("فایل بکاپ معتبر نیست (فرمت Zip قابل خواندن نیست).") from None
 
-    info = rules.parse_filename(path.name)
-    if not info or info["kind"] == "v3":
-        raise ArchiveError("این تابع فقط قالب v4 را آماده می‌کند")
-    encrypted = info["kind"] == "v4-encrypted"
-    identities = [i.strip() for i in identities if i and i.strip()]
-    if encrypted and not identities:
-        raise ArchiveError("این بکاپ رمزنگاری شده است و کلید خصوصی آن لازم است (کلید بیرون از سرور را وارد کنید)")
+
+def stage_zip(path: Path, staging: Path, password: str | None) -> dict:
+    """
+    ZIP بکاپ را (در صورت رمزدار بودن با رمز) در staging استخراج و بررسی می‌کند — قبل از هر تغییری در دیتابیس یا فایل‌ها.
+    خروجی: {"dump": مسیر database.dump، "files_dir": مسیر files/objects یا None، "file_count": int، "legacy": bool}.
+    خطا: PasswordRequired، ArchiveError.
+    """
+    encrypted = is_encrypted(path)
+    if encrypted and not password:
+        raise PasswordRequired("این فایل بکاپ رمز دارد؛ رمز فایل بکاپ را وارد کنید.")
     free = shutil.disk_usage(staging.parent).free
-    if free < path.stat().st_size * 4:
-        raise ArchiveError("فضای دیسک برای استخراج بکاپ کافی نیست (حدود ۴ برابر حجم فایل لازم است)")
-
-    if staging.exists():
+    if free < path.stat().st_size * 2 + 200 * 1024 * 1024:
+        raise ArchiveError("فضای دیسک برای استخراج بکاپ کافی نیست (حدود ۲ برابر حجم فایل لازم است).")
+    if staging.is_symlink():
+        staging.unlink()
+    elif staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True, mode=0o700)
-
-    def run(source) -> dict:
-        extracted: dict[str, tuple[int, str]] = {}
-        manifest_raw = None
-        total = 0
-        with tarfile.open(fileobj=source, mode="r|gz") as tar:
-            for member in tar:
-                name = rules.check_member_name(member.name)
-                if not member.isfile():
-                    raise ArchiveError(f"عضو غیرعادی در فایل بکاپ: {member.name}")
-                if len(extracted) >= rules.MAX_RESTORE_MEMBERS:
-                    raise ArchiveError("تعداد فایل‌های داخل بکاپ بیش از حد مجاز است")
-                total += member.size
-                if total > rules.MAX_RESTORE_BYTES:
-                    raise ArchiveError("حجم استخراج‌شده‌ی بکاپ بیش از حد مجاز است")
-                f = tar.extractfile(member)
-                digest, size = hashlib.sha256(), 0
-                if name == rules.MANIFEST_MEMBER:
-                    manifest_raw = f.read(16 * 1024 * 1024)
-                    digest.update(manifest_raw)
-                    size = len(manifest_raw)
-                else:
-                    dst = staging / name
-                    dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    with open(dst, "xb") as out:
-                        for block in iter(lambda: f.read(CHUNK), b""):
-                            digest.update(block)
-                            size += len(block)
-                            out.write(block)
-                if size != member.size:
-                    raise ArchiveError(f"عضو ناقص در فایل بکاپ: {member.name}")
-                extracted[name] = (size, digest.hexdigest())
-        if manifest_raw is None:
-            raise ArchiveError("manifest.json در فایل بکاپ نیست (فایل ناقص است)")
-        manifest = rules.parse_manifest(manifest_raw)
-        errors = rules.verify_extracted(manifest, extracted)
-        if errors:
-            raise ArchiveError("فایل بکاپ سالم نیست: " + "؛ ".join(errors[:5]))
-        return manifest
-
+    mod = _zip_module(password if encrypted else None)
     try:
-        if encrypted:
-            with backup_keys.identity_file("\n".join(identities)) as id_path:
-                proc = subprocess.Popen(
-                    [backup_keys.age_binary("age"), "-d", "-i", id_path, str(path)],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        zf = mod.AESZipFile(path) if encrypted else zipfile.ZipFile(path)
+        with zf:
+            if encrypted:
+                zf.setpassword(password.encode("utf-8"))
+            infos = zf.infolist()
+            if len(infos) > rules.MAX_RESTORE_MEMBERS:
+                raise ArchiveError("تعداد فایل‌های داخل بکاپ بیش از حد مجاز است")
+            if sum(i.file_size for i in infos) > rules.MAX_RESTORE_BYTES:
+                raise ArchiveError("حجم استخراج‌شده‌ی بکاپ بیش از حد مجاز است")
+            names = {i.filename for i in infos}
+            for name in names:
+                if not name.endswith("/"):
+                    rules.check_member_name(name)
+            if rules.DUMP_MEMBER not in names:
+                raise ArchiveError("فایل بکاپ نامعتبر است — database.dump داخلش نیست.")
+            manifest = None
+            if rules.MANIFEST_MEMBER in names:
+                raw = zf.read(rules.MANIFEST_MEMBER)
+                try:
+                    data = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise ArchiveError("manifest.json فایل بکاپ خوانا نیست") from None
+                if isinstance(data, dict) and data.get("format") == rules.FORMAT_V4:
+                    manifest = rules.parse_manifest(raw)
+            extracted: dict[str, tuple[int, str]] = {}
+            for info in infos:
+                name = info.filename
+                if name.endswith("/") or name == rules.MANIFEST_MEMBER:
+                    continue
+                if name.startswith(rules.FILES_PREFIX) and manifest is None:
+                    continue  # بکاپ قدیمی: فقط دیتابیس
+                dst = staging / name
+                dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                digest, size = hashlib.sha256(), 0
+                with zf.open(info) as src, open(dst, "xb") as out:
+                    for block in iter(lambda: src.read(CHUNK), b""):
+                        digest.update(block)
+                        size += len(block)
+                        out.write(block)
+                extracted[name] = (size, digest.hexdigest())
+        if manifest is not None:
+            errors = rules.verify_extracted(manifest, {**extracted, rules.MANIFEST_MEMBER: (0, "")})
+            if errors:
+                raise ArchiveError("فایل بکاپ سالم نیست: " + "؛ ".join(errors[:5]))
+            head = str(manifest.get("alembic_head") or "")
+            heads = _code_heads()
+            if head and heads and head not in heads:
+                raise ArchiveError(
+                    f"این بکاپ از نسخه‌ی جدیدتر پرتال است (Migration {head})؛ اول پرتال را به همان نسخه یا بالاتر آپدیت کنید"
                 )
-                try:
-                    manifest = run(proc.stdout)
-                except (tarfile.TarError, EOFError, OSError) as e:
-                    err = proc.stderr.read().decode(errors="ignore") if proc.stderr else ""
-                    proc.kill()
-                    if "no identity matched" in err or "incorrect" in err.lower():
-                        raise ArchiveError("کلید خصوصی با این بکاپ نمی‌خواند") from None
-                    raise ArchiveError(f"رمزگشایی یا خواندن بکاپ ناموفق بود: {err[:200] or e}") from None
-                finally:
-                    proc.stdout.close()
-                if proc.wait(timeout=600) != 0:
-                    err = proc.stderr.read().decode(errors="ignore") if proc.stderr else ""
-                    raise ArchiveError(f"رمزگشایی بکاپ ناموفق بود: {err[:200]}")
-        else:
-            with open(path, "rb") as f:
-                try:
-                    manifest = run(f)
-                except (tarfile.TarError, EOFError) as e:
-                    raise ArchiveError(f"فایل بکاپ خراب است: {e}") from None
-        head = str(manifest.get("alembic_head") or "")
-        heads = _code_heads()
-        if head and heads and head not in heads:
-            raise ArchiveError(
-                f"این بکاپ از نسخه‌ی جدیدتر پرتال است (Migration {head})؛ اول پرتال را به همان نسخه یا بالاتر آپدیت کنید"
-            )
-        return manifest
+        files_dir = staging / "files" / "objects"
+        return {
+            "dump": staging / rules.DUMP_MEMBER,
+            "files_dir": files_dir if manifest is not None and files_dir.is_dir() else None,
+            "file_count": manifest["files"]["count"] if manifest else 0,
+            "legacy": manifest is None,
+        }
+    except RuntimeError as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        if isinstance(e, ArchiveError):
+            raise
+        if "password" in str(e).lower() or "Bad password" in str(e):
+            raise ArchiveError("رمز فایل بکاپ اشتباه است.") from None
+        raise ArchiveError(f"خواندن فایل بکاپ ناموفق بود: {e}") from None
+    except (zipfile.BadZipFile, OSError, ValueError) as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        if isinstance(e, ArchiveError):
+            raise
+        raise ArchiveError(f"فایل بکاپ خراب است: {e}") from None
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise

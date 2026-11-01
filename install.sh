@@ -153,9 +153,6 @@ install_prerequisites() {
     libpq-dev unixodbc unixodbc-dev freetds-dev freetds-bin \
     nginx ufw openssl ca-certificates unzip \
     smbclient
-  # age: رمزنگاری جریانی بکاپ نسخه‌ی ۴ (docs/backup.md). جدا نصب می‌شود تا نبودنش در مخزن، کل نصب را متوقف نکند.
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq age >/dev/null 2>&1 \
-    || warn "بسته‌ی age نصب نشد؛ بکاپ تا نصب آن رمزنگاری نمی‌شود (کلید رمزنگاری قابل ساخت نیست)."
   # smbclient: برای قابلیت «بکاپ خودکار به سرور SMB راه‌دور» — بدون نیاز
   # به mount/دسترسی root، فقط آپلود مستقیم فایل.
 }
@@ -677,6 +674,20 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$connection_upgrade;
         proxy_read_timeout 600s;
+    }
+
+    # بازیابی بکاپ: فایل ZIP بکاپ (دیتابیس + فایل‌های آپلودی) از سقف آپلود عمومی بزرگ‌تر است — فقط همین مسیر بدون سقف
+    # حجم و بدون buffer (مستقیم به بک‌اند که تکه‌تکه روی دیسک می‌نویسد)؛ مجوز backup.restore در بک‌اند چک می‌شود.
+    location = /api/v1/backup/restore {
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/v1/backup/restore;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 
     location = /sw.js {

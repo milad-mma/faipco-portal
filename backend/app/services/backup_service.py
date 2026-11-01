@@ -2,8 +2,7 @@
 سرویس پشتیبان‌گیری و بازیابی — فقط برای همین سرور (نه Clone روی سرور دیگر).
 
 - ساخت بکاپ: services/backup_archive.py (نسخه‌ی ۴ — جریانی، دیتابیس + فایل‌های اتوماسیون، رمزنگاری age؛ docs/backup.md).
-- validate_and_stage_archive (قالب قدیمی zip): عبارت تأیید و فایل ZIP را بررسی و database.dump را
-  در پوشه موقت آماده می‌کند.
+- آماده‌سازی فایل آپلودی (باز کردن ZIP، رمز، تطبیق هش‌ها): backup_archive.stage_zip.
 - schedule_restore: یک اسکریپت shell مستقل (با systemd-run به‌عنوان root) اجرا
   می‌کند که سرویس را متوقف، Schema فعلی را کنار گذاشته، pg_restore و
   alembic upgrade head را اجرا و سرویس را دوباره روشن می‌کند؛ در صورت شکست
@@ -21,8 +20,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import zipfile
-from io import BytesIO
 from pathlib import Path
 from urllib.parse import unquote, urlsplit, urlunsplit
 
@@ -136,21 +133,6 @@ _RESTORE_SCRIPT_PATH = Path("/tmp/faipco-restore-run.sh")
 _MAX_RESTORE_EXTRACT_BYTES = 10 * 1024 ** 3
 
 
-def _check_zip_members(zf: zipfile.ZipFile) -> None:
-    """
-    اعضای Zip بکاپ را قبل از استخراج بررسی می‌کند: مجموع حجم اعلام‌شده (file_size) زیر سقف باشد و
-    هیچ عضوی مسیر مطلق یا «..» نداشته باشد (مسیر غیرعادی = فایل دست‌کاری‌شده). خطا: BackupError.
-    """
-    total = 0
-    for info in zf.infolist():
-        name = info.filename.replace("\\", "/")
-        if name.startswith("/") or ".." in name.split("/"):
-            raise BackupError(f"فایل بکاپ نامعتبر است (مسیر غیرمجاز «{info.filename}» داخل Zip).")
-        total += info.file_size
-        if total > _MAX_RESTORE_EXTRACT_BYTES:
-            raise BackupError("فایل بکاپ بیش‌ازحد بزرگ است (حجم استخراج‌شده بیشتر از ۱۰ گیگابایت).")
-
-
 def _restore_staging_dir() -> Path:
     """محل استخراج فایل بکاپ قبل از بازیابی (داخل پوشه‌ی خصوصی 0700)."""
     return _private_dir() / "staging"
@@ -202,45 +184,6 @@ def get_restore_status() -> dict:
         "is_finished": "Restore finished successfully" in log_content,
         "is_failed": "Restore FAILED" in log_content,
     }
-
-
-def validate_and_stage_archive(archive_bytes: bytes, confirm_phrase: str) -> Path:
-    """
-    فقط اعتبارسنجی + آماده‌سازی — کاری با دیتابیس ندارد، پس همین‌جا (داخل
-    درخواست HTTP فعلی) به‌سرعت قابل‌انجام است و خطاهای واضح (فایل خراب،
-    عبارت تأیید اشتباه) فوراً به کاربر نشان داده می‌شود؛ خودِ Restore واقعی
-    (که نیاز به توقف سرویس دارد) جدا انجام می‌شود — نگاه کنید به
-    schedule_restore().
-    خروجی: مسیر database.dump استخراج‌شده. خطا: BackupError.
-    """
-    if confirm_phrase != RESTORE_CONFIRMATION_PHRASE:
-        raise BackupError(f'برای تأیید، باید دقیقاً عبارت «{RESTORE_CONFIRMATION_PHRASE}» ارسال شود.')
-
-    # پوشه موقت (داخل پوشه‌ی خصوصی 0700) از نو ساخته می‌شود تا فایل‌های تلاش قبلی باقی نمانند
-    staging_dir = _restore_staging_dir()
-    if staging_dir.is_symlink():
-        staging_dir.unlink()
-    elif staging_dir.exists():
-        shutil.rmtree(staging_dir)
-    staging_dir.mkdir(parents=True, mode=0o700)
-
-    try:
-        with zipfile.ZipFile(BytesIO(archive_bytes)) as zf:
-            _check_zip_members(zf)  # سقف حجم و مسیرهای غیرمجاز، قبل از هر استخراج
-            # فقط دو فایل شناخته‌شده استخراج می‌شوند (نه مسیرهای دلخواه داخل Zip)
-            for member in ("database.dump", "manifest.json"):
-                if member in zf.namelist():
-                    zf.extract(member, staging_dir)
-    except zipfile.BadZipFile as e:
-        raise BackupError("فایل بکاپ معتبر نیست (فرمت Zip قابل‌خواندن نیست).") from e
-
-    dump_path = staging_dir / "database.dump"
-    if not dump_path.exists():
-        raise BackupError(
-            "فایل بکاپ نامعتبر است — database.dump داخلش نیست "
-            "(اگر این یک بکاپ خیلی قدیمی‌تر است، دوباره یک بکاپ تازه از همین صفحه بگیرید)."
-        )
-    return dump_path
 
 
 # محل نگهداری موقت داده فعلی حین بازیابی (برای برگشت در صورت شکست)
@@ -344,6 +287,10 @@ if [ "$restore_exit" -eq 0 ]; then
   cd {backend_dir}
   {alembic_path} upgrade head
   migrate_exit=$?
+  # بکاپ از دیتابیسِ «حین ساخت همان بکاپ» گرفته شده؛ ردیف تاریخچه‌ی خودش (و هر بکاپ نیمه‌کاره‌ی دیگر) در آن «running» است
+  if [ "$migrate_exit" -eq 0 ]; then
+    {psql_path} "{libpq_url}" -c "UPDATE backup_runs SET status = 'failed', finished_at = now(), message = 'قطع‌شده: این بکاپ هنگام بازیابی دیتابیس در حال ساخت بود (وضعیت از داخل خود بکاپ آمده است).' WHERE status = 'running';" || true
+  fi
 else
   echo "pg_restore failed with exit code $restore_exit — skipping migrations."
   migrate_exit=1

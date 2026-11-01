@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,31 +80,79 @@ def read_stage_state() -> dict | None:
         return None
 
 
-async def _restore_local(filename: str, identities: list[str]) -> None:
-    from app.services.backup_archive import ArchiveError, local_path, stage_archive
+UPLOAD_CHUNK = 1 << 20
+
+
+async def save_upload(file) -> Path:
+    """فایل بکاپ آپلودی را تکه‌تکه (بدون خواندن کامل در RAM) در پوشه‌ی خصوصی بازیابی ذخیره می‌کند."""
+    from app.services.backup_service import BackupError, _private_dir
+
+    dst = _private_dir() / "upload.zip"
+    try:
+        dst.unlink(missing_ok=True)
+        with open(dst, "xb") as out:
+            while True:
+                block = await file.read(UPLOAD_CHUNK)
+                if not block:
+                    break
+                out.write(block)
+    except OSError as e:
+        dst.unlink(missing_ok=True)
+        raise BackupError(f"ذخیره‌ی فایل بکاپ روی سرور ناموفق بود: {e}") from None
+    os.chmod(dst, 0o600)
+    return dst
+
+
+async def _restore_upload(path: Path, password: str | None) -> None:
+    from app.services.backup_archive import ArchiveError, stage_zip
     from app.services.backup_service import BackupError, _restore_staging_dir, schedule_restore
 
     try:
-        path = local_path(filename)
-        staging = _restore_staging_dir()
-        write_stage_state("staging", "رمزگشایی، استخراج و بررسی هش‌ها…", filename)
-        manifest = await asyncio.to_thread(stage_archive, path, staging, identities)
-        files_dir = staging / "files" / "objects"
+        write_stage_state("staging", "باز کردن فایل و بررسی همه‌ی فایل‌ها…")
+        result = await asyncio.to_thread(stage_zip, path, _restore_staging_dir(), password)
+        path.unlink(missing_ok=True)
         write_stage_state(
             "scheduled",
-            f"بکاپ سالم است ({manifest['files']['count']} فایل اتوماسیون)؛ بازیابی شروع شد.",
-            filename,
+            "بکاپ قدیمی (فقط دیتابیس) — بازیابی شروع شد." if result["legacy"]
+            else f"بکاپ سالم است ({result['file_count']} فایل آپلودی)؛ بازیابی شروع شد.",
         )
-        await asyncio.to_thread(
-            schedule_restore, staging / "database.dump", files_dir if files_dir.is_dir() else None
-        )
+        await asyncio.to_thread(schedule_restore, result["dump"], result["files_dir"])
     except (ArchiveError, BackupError) as e:
-        write_stage_state("failed", str(e), filename)
+        path.unlink(missing_ok=True)
+        write_stage_state("failed", str(e))
     except Exception as e:  # noqa: BLE001
+        path.unlink(missing_ok=True)
         logger.exception("آماده‌سازی بازیابی ناموفق بود")
-        write_stage_state("failed", f"آماده‌سازی بازیابی ناموفق بود: {e}", filename)
+        write_stage_state("failed", f"آماده‌سازی بازیابی ناموفق بود: {e}")
 
 
-def start_restore_local(filename: str, identities: list[str]) -> None:
-    write_stage_state("staging", "در صف…", filename)
-    _spawn(_restore_local(filename, identities))
+def start_restore_upload(path: Path, password: str | None) -> None:
+    write_stage_state("staging", "در صف…")
+    _spawn(_restore_upload(path, password))
+
+
+STALE_RUN_HOURS = 3
+
+
+async def close_stale_runs() -> int:
+    """
+    ردیف‌های «running» قدیمی‌تر از STALE_RUN_HOURS (فرآیند با ری‌استارت/خرابی قطع شده) «ناموفق — قطع‌شده» می‌شوند تا دکمه‌ی
+    ساخت بکاپ برای همیشه قفل نماند. در شروع هر Worker و پیش از هر نمای کلی صدا زده می‌شود.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.backup_v4 import BackupRun
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_RUN_HOURS)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            update(BackupRun)
+            .where(BackupRun.status == "running", BackupRun.started_at < cutoff)
+            .values(status="failed", finished_at=datetime.now(timezone.utc),
+                    message="قطع‌شده: فرآیند ساخت بکاپ کامل نشد (ری‌استارت یا خرابی سرویس).")
+        )
+        await db.commit()
+        return result.rowcount or 0
