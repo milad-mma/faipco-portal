@@ -64,6 +64,7 @@ PRESENCE_CLEANUP_JOB_ID = "close_stale_presence_sessions"
 _LOGIN_SECURITY_CLEANUP_LOCK_KEY = 875312008
 # اعمال بعدیِ مرخصی/ماموریت ساعتیِ تأییدشده روی تردد (AcceptCode=8 → ۰)، هر ۱۰ دقیقه
 _LEAVE_PENDING_APPLY_LOCK_KEY = 875312009
+_OA_SCAN_RETRY_LOCK_KEY = 875312010  # اسکن مجدد فایل‌های اتوماسیون (scan_pending)
 LEAVE_PENDING_APPLY_JOB_ID = "leave_pending_hourly_apply"
 LOGIN_SECURITY_CLEANUP_JOB_ID = "login_security_cleanup"
 # flush شمارنده‌ی در حافظه‌ی «میزان استفاده» هر Worker به دیتابیس؛ بدون Advisory Lock،
@@ -246,6 +247,43 @@ async def _apply_pending_hourly_leaves_job() -> None:
             logger.exception("اعمال بعدی مرخصی/ماموریت‌های ساعتی ناموفق بود")
         finally:
             await _advisory_unlock(db, _LEAVE_PENDING_APPLY_LOCK_KEY)
+
+
+async def _oa_retry_scans_job() -> None:
+    """Job هر ۵ دقیقه: فایل‌های اتوماسیون که اسکنر در دسترس نبود (scan_pending) دوباره اسکن می‌شوند."""
+    from app.services.oa_file_service import OaFileService
+
+    async with AsyncSessionLocal() as db:
+        if not await _try_advisory_lock(db, _OA_SCAN_RETRY_LOCK_KEY):
+            return
+        try:
+            done = await OaFileService(db).retry_pending_scans()
+            if done:
+                logger.info("وضعیت اسکن %s فایل اتوماسیون مشخص شد", done)
+        except Exception:  # noqa: BLE001
+            logger.exception("اسکن مجدد فایل‌های اتوماسیون ناموفق بود")
+        finally:
+            await _advisory_unlock(db, _OA_SCAN_RETRY_LOCK_KEY)
+
+
+async def _oa_cleanup_temp_job() -> None:
+    """
+    Job هر ۶ ساعت: فایل‌های موقت بی‌پیوند اتوماسیون پس از مهلت پاک می‌شوند. همان قفل بکاپ را می‌گیرد تا هم‌زمان با بکاپ
+    اجرا نشود (docs/office-automation-spec.md بخش ۱۰.۲) — اگر بکاپ در جریان است، این نوبت رد می‌شود.
+    """
+    from app.services.oa_file_service import OaFileService
+
+    async with AsyncSessionLocal() as db:
+        if not await _try_advisory_lock(db, _BACKUP_LOCK_KEY):
+            return
+        try:
+            removed = await OaFileService(db).cleanup_temp()
+            if removed:
+                logger.info("%s فایل موقت اتوماسیون پاک شد", removed)
+        except Exception:  # noqa: BLE001
+            logger.exception("پاک‌سازی فایل‌های موقت اتوماسیون ناموفق بود")
+        finally:
+            await _advisory_unlock(db, _BACKUP_LOCK_KEY)
 
 
 async def _login_security_cleanup_job() -> None:
@@ -475,6 +513,22 @@ async def start_scheduler() -> None:
         trigger="interval",
         hours=6,
         id="family_unlinked_cleanup",
+        replace_existing=True,
+    )
+
+    # اتوماسیون اداری: اسکن مجدد فایل‌های scan_pending و پاک‌سازی فایل‌های موقت
+    scheduler.add_job(
+        _oa_retry_scans_job,
+        trigger="interval",
+        minutes=5,
+        id="oa_scan_retry",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _oa_cleanup_temp_job,
+        trigger="interval",
+        hours=6,
+        id="oa_temp_cleanup",
         replace_existing=True,
     )
 

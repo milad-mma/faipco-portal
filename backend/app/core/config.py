@@ -89,6 +89,17 @@ class Settings(BaseSettings):
     # Tahoma فونت مالکیتی مایکروسافت است؛ مسئولیت رعایت لایسنس آن بر عهده سازمان است.
     PERSIAN_FONT_PATH: str = str(_BACKEND_DIR / "app" / "assets" / "fonts" / "Tahoma.ttf")
 
+    # --- اتوماسیون اداری: فایل‌ها (docs/office-automation.md) ---
+    # پوشه‌ی خصوصی فایل‌ها بیرون از پوشه‌ی برنامه (آپدیت پاکش نمی‌کند؛ مالک: کاربر سرویس، دسترسی 0700)
+    OA_STORAGE_DIR: str = "/var/lib/faipco/oa-files"
+    # سوکت clamd (ClamAV محلی)؛ اگر در دسترس نباشد فایل‌ها scan_pending می‌مانند و دوباره امتحان می‌شوند
+    OA_CLAMD_SOCKET: str = "/var/run/clamav/clamd.ctl"
+    # سقف حجم هر فایل که پرتال اجازه‌ی تنظیمش را می‌دهد؛ باید کمتر از client_max_body_size در nginx (25m) باشد
+    # (بخشی از آن سربار multipart است). بالا بردن: هر دو با هم.
+    OA_SERVER_MAX_FILE_MB: int = 24
+    # مهلت نگهداری فایل موقت بی‌پیوند پیش از پاک‌سازی (ساعت) — باید بیشتر از طولانی‌ترین بکاپ باشد
+    OA_TEMP_RETENTION_HOURS: int = 48
+
     # پیکربندی خواندن .env: مسیر مطلق فایل، کدگذاری UTF-8 و حساسیت به حروف بزرگ/کوچک نام متغیرها
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE_PATH,

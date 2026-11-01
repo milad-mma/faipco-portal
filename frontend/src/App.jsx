@@ -48,6 +48,7 @@ const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
 const BankInfoPage = lazyPage(() => import("./pages/BankInfoPage"));
 const BankAccountsAdminPage = lazyPage(() => import("./pages/BankAccountsAdminPage"));
 const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
+const AutomationSettingsPage = lazyPage(() => import("./pages/AutomationSettingsPage"));
 const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
 const LeaveRequestsAdminListPage = lazyPage(
@@ -396,6 +397,14 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_view_bank_accounts}>
                   <BankAccountsAdminPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/settings"
+              element={
+                <PermissionRoute check={(u) => u?.can_manage_automation_settings}>
+                  <AutomationSettingsPage />
                 </PermissionRoute>
               }
             />

@@ -34,6 +34,7 @@ import BugReportOutlinedIcon from "@mui/icons-material/BugReportOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 
 /**
  * منبع واحد همه‌ی مقصدهای منوی برنامه.
@@ -291,6 +292,21 @@ export const NAV_ITEMS = [
         path: "/login-security",
         icon: <GppMaybeOutlinedIcon />,
         check: (u) => u?.can_manage_login_security,
+      },
+    ],
+  },
+  // گروه اتوماسیون اداری (docs/office-automation.md) — فاز ۱: فقط تنظیمات سایت؛ کارتابل و نامه از فاز ۳الف
+  {
+    label: "اتوماسیون اداری",
+    path: "/automation/settings",
+    icon: <EmailOutlinedIcon />,
+    groupOnly: true,
+    children: [
+      {
+        label: "تنظیمات اتوماسیون",
+        path: "/automation/settings",
+        icon: <SettingsOutlinedIcon />,
+        check: (u) => u?.can_manage_automation_settings,
       },
     ],
   },
