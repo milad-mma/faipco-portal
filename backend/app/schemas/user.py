@@ -58,12 +58,7 @@ class UserOut(BaseModel):
     can_view_feedback: bool = False  # feedback.view یا feedback.view_all — مشاهده انتقادات و پیشنهادات
     can_attach_notice_files: bool = False  # notices.attachments — پیوست تصویر/PDF به اطلاعیه‌ی متنی (در هر سایتی)
     can_reply_feedback: bool = False  # feedback.reply — پاسخ به انتقادات و پیشنهادات و تغییر وضعیت (سایت‌محور)
-    can_manage_backup: bool = False  # system.backup یا هر backup.* — منوی «پشتیبان‌گیری»
-    can_backup_run_view: bool = False  # backup.run_view — اجرای بکاپ و تاریخچه
-    can_backup_destinations: bool = False  # backup.destinations — زمان‌بندی، مقصدها، نگهداری
-    can_backup_download: bool = False  # backup.download — دانلود دستی
-    can_backup_restore: bool = False  # backup.restore — بازیابی
-    can_backup_key_manage: bool = False  # backup.key_manage — کلید رمزنگاری
+    can_manage_backup: bool = False  # system.backup — «پشتیبان‌گیری»
     # فلگ‌های مجوزهایی که در بک‌اند با require_permission/get_sites_with_permission چک می‌شوند؛
     # هر فلگ True، منو/مسیر متناظر را در فرانت‌اند باز می‌کند
     can_view_employees: bool = False  # employees.view — «پرسنل»

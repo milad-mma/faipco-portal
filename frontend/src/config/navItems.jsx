@@ -339,7 +339,7 @@ export const NAV_ITEMS = [
         label: "پشتیبان‌گیری",
         path: "/backup",
         icon: <CloudDownloadOutlinedIcon />,
-        check: (u) => u?.can_manage_backup || u?.can_bust_cache,
+        check: (u) => u?.can_manage_backup,
       },
       {
         label: "گزارش خطاها",
@@ -351,7 +351,7 @@ export const NAV_ITEMS = [
         label: "بررسی و اعمال آپدیت",
         path: "/update",
         icon: <SystemUpdateAltOutlinedIcon />,
-        adminOnly: true,
+        check: (u) => u?.is_superuser || u?.can_bust_cache, // کارت پاک‌کردن کش برای دارنده‌ی system.cache_bust
       },
     ],
   },

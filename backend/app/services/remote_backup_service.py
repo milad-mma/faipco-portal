@@ -1,5 +1,6 @@
 """
-سرویس آپلود بکاپ به سرور راه‌دور (SMB/FTP) + اعمال Retention روی همان سرور.
+سرویس آپلود بکاپ به سرور راه‌دور (SMB/FTP) + بررسی سالم رسیدن + اعمال Retention روی همان سرور.
+(SFTP، S3 و پوشه‌ی محلی: services/backup_destinations.py)
 
 SMB: از ابزار خط‌فرمان smbclient (بخش samba-client، باید در install.sh نصب
 شود) استفاده می‌شود - بدون نیاز به mount/دسترسی root، برخلاف mount.cifs که
@@ -11,7 +12,7 @@ FTP_TLS (یعنی FTPS - رمزنگاری‌شده) استفاده می‌شود
 
 Retention: به‌جای تکیه به تاریخ فایل که سرورهای SMB/FTP مختلف آن را با
 فرمت‌های متفاوت گزارش می‌دهند (پردازش غیرقابل‌اعتماد)، از خودِ نام فایل
-(faipco-backup-YYYYMMDD-HHMMSS با پسوند zip قدیمی، tar.gz یا tar.gz.age نسخه‌ی ۴ — core/backup_rules.py)
+(faipco-backup-YYYYMMDD-HHMMSS.zip و پسوندهای قدیمی‌تر)
 تاریخ استخراج می‌شود؛ مرتب‌سازی بر همین اساس انجام می‌شود.
 """
 from __future__ import annotations
@@ -211,6 +212,47 @@ def apply_smb_retention(
     return len(to_delete)
 
 
+def verify_smb_file(
+    remote_filename: str, expected_size: int, expected_sha256: str | None, *, host: str, share: str,
+    path: str | None, username: str, password: str, domain: str | None,
+) -> None:
+    """
+    بررسی سالم رسیدن فایل روی SMB: حجم فایل روی Share باید با فایل اصلی برابر باشد؛ اگر expected_sha256 داده شود فایل دوباره
+    دانلود و هش آن مقایسه می‌شود (بررسی کامل). خطا: RemoteBackupError.
+    """
+    target = f"//{host}/{share}"
+    auth = _smb_auth_string(username, password, domain)
+    prefix = f'cd "{path.strip("/")}"; ' if path else ""
+    output = _run_smbclient(target, auth, f'{prefix}ls "{remote_filename}"')
+    m = re.search(re.escape(remote_filename) + r"\s+[A-Z]*\s+(\d+)\s", output)
+    if not m:
+        raise RemoteBackupError(f"فایل بعد از آپلود روی SMB پیدا نشد: {output.strip()[:300]}")
+    if int(m.group(1)) != expected_size:
+        raise RemoteBackupError(f"حجم فایل روی SMB ({m.group(1)} بایت) با فایل اصلی ({expected_size} بایت) برابر نیست")
+    if expected_sha256:
+        fd, tmp = tempfile.mkstemp(prefix="faipco-verify-", suffix=".zip")
+        os.close(fd)
+        try:
+            _run_smbclient(target, auth, f'{prefix}get "{remote_filename}" "{tmp}"', timeout=1800)
+            if _sha256_path(tmp) != expected_sha256:
+                raise RemoteBackupError("هش فایل دانلودشده از SMB با فایل اصلی نمی‌خواند — فایل سالم نرسیده است")
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def _sha256_path(path: str) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 # ==================== FTP ====================
 
 
@@ -280,6 +322,40 @@ def upload_to_ftp(
             ftp.storbinary(f"STOR {remote_filename}", f)
     except ftplib.all_errors as e:
         raise RemoteBackupError(f"آپلود به FTP ناموفق بود: {e}") from e
+    finally:
+        try:
+            ftp.quit()
+        except Exception:  # noqa: BLE001
+            ftp.close()
+
+
+def verify_ftp_file(
+    remote_filename: str, expected_size: int, expected_sha256: str | None, *, host: str, port: int, username: str,
+    password: str, path: str | None, use_tls: bool,
+) -> None:
+    """بررسی سالم رسیدن فایل روی FTP: حجم (فرمان SIZE) و در بررسی کامل، هش فایل دوباره خوانده‌شده. خطا: RemoteBackupError."""
+    import hashlib
+
+    ftp = _connect_ftp(host, port, username, password, use_tls)
+    try:
+        _ftp_ensure_path(ftp, path)
+        ftp.voidcmd("TYPE I")
+        try:
+            size = ftp.size(remote_filename)
+        except ftplib.error_perm:
+            size = None  # بعضی سرورها SIZE ندارند؛ با فهرست بررسی می‌شود
+        if size is None:
+            if remote_filename not in [Path(n).name for n in ftp.nlst()]:
+                raise RemoteBackupError("فایل بعد از آپلود روی FTP پیدا نشد")
+        elif int(size) != expected_size:
+            raise RemoteBackupError(f"حجم فایل روی FTP ({size} بایت) با فایل اصلی ({expected_size} بایت) برابر نیست")
+        if expected_sha256:
+            h = hashlib.sha256()
+            ftp.retrbinary(f"RETR {remote_filename}", h.update, blocksize=1 << 20)
+            if h.hexdigest() != expected_sha256:
+                raise RemoteBackupError("هش فایل خوانده‌شده از FTP با فایل اصلی نمی‌خواند — فایل سالم نرسیده است")
+    except ftplib.all_errors as e:
+        raise RemoteBackupError(f"بررسی فایل روی FTP ناموفق بود: {e}") from e
     finally:
         try:
             ftp.quit()

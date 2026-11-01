@@ -246,6 +246,12 @@ async def cache_bust(
         new_version = bump_app_cache_version()
     except CacheBustError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except PermissionError:
+        logger.exception("اجازه‌ی نوشتن sw.js نیست")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="سرویس پرتال اجازه‌ی نوشتن در frontend/dist را ندارد — روی سرور: sudo chown -R www-data:www-data /var/www/html/frontend/dist",
+        )
     except Exception:
         logger.exception("پاک‌کردن کش با خطای پیش‌بینی‌نشده مواجه شد")
         raise HTTPException(
@@ -256,8 +262,8 @@ async def cache_bust(
     return {
         "success": True,
         "version": new_version,
-        "message": "با موفقیت انجام شد. هر کاربر دفعه بعدی که سایت را باز کند (یا صفحه را Refresh کند)، "
-        "نسخه کاملاً تازه دریافت می‌کند — انگار اولین‌بار است.",
+        "message": "انجام شد. صفحه‌های باز حداکثر تا یک دقیقه، و بقیه در بازدید بعدی، پیام «نسخه جدید آماده است» را "
+        "می‌بینند؛ با زدن «بارگذاری» کش قبلی پاک و اپ از نو دریافت می‌شود.",
     }
 
 

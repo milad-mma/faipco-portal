@@ -163,9 +163,9 @@ export default function App() {
             <Route
               path="/update"
               element={
-                <AdminRoute>
+                <PermissionRoute check={(u) => u?.is_superuser || u?.can_bust_cache}>
                   <UpdatePage />
-                </AdminRoute>
+                </PermissionRoute>
               }
             />
             <Route
@@ -318,7 +318,7 @@ export default function App() {
               path="/backup"
               element={
                 <PermissionRoute
-                  check={(u) => u?.can_manage_backup || u?.can_bust_cache}
+                  check={(u) => u?.can_manage_backup}
                 >
                   <BackupPage />
                 </PermissionRoute>

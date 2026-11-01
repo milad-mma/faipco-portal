@@ -386,6 +386,13 @@ async def _run_scheduled_backup_check() -> None:
             await _advisory_unlock(db, _BACKUP_LOCK_KEY)
 
 
+async def _backup_retry_job() -> None:
+    """Job هر ۵ دقیقه: ارسال‌های ناموفق بکاپ که موعد تلاش دوباره‌شان رسیده (زیر قفل بکاپ؛ اگر بکاپ در جریان است رد می‌شود)."""
+    from app.services.backup_jobs import run_retry_queue
+
+    await run_retry_queue(force=False)
+
+
 async def _send_evaluation_reminders_job() -> None:
     """
     Job روزانه (cron): یادآوری به ارزیاب‌هایی که ارزیابی محول‌شده را انجام نداده‌اند و مهلت دوره نزدیک است.
@@ -433,12 +440,6 @@ async def _send_birthday_reaction_summaries_job() -> None:
 
 async def start_scheduler() -> None:
     """همه Jobها را در Scheduler ثبت و آن را استارت می‌کند؛ در startup هر Worker از main.py صدا زده می‌شود."""
-    try:  # بکاپ‌های نیمه‌کاره‌ی قبل از ری‌استارت
-        from app.services.backup_jobs import close_stale_runs
-
-        await close_stale_runs()
-    except Exception:  # noqa: BLE001
-        logger.warning("بستن بکاپ‌های نیمه‌کاره ناموفق بود", exc_info=True)
     # Job تیک Sync خودکار (فقط اگر SYNC_ENABLED روشن باشد)
     if not settings.SYNC_ENABLED:
         logger.info("Sync خودکار غیرفعال است (SYNC_ENABLED=false)")
@@ -544,6 +545,13 @@ async def start_scheduler() -> None:
         trigger="interval",
         minutes=BACKUP_CHECK_INTERVAL_MINUTES,
         id=BACKUP_JOB_ID,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _backup_retry_job,
+        trigger="interval",
+        minutes=5,
+        id="backup_retry_queue",
         replace_existing=True,
     )
     logger.info(

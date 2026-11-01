@@ -13,6 +13,8 @@ import {
   Typography,
 } from "@mui/material";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
+import BackupExtraDestinations from "./BackupExtraDestinations";
+import BackupRetryQueue from "./BackupRetryQueue";
 import {
   fetchBackupSettings,
   runBackupNow,
@@ -21,11 +23,26 @@ import {
   updateBackupSettings,
 } from "../api/backup";
 
+// فرم با فیلدهای رمز خالی (رمزها هرگز از سرور برنمی‌گردند)
+function withEmptySecrets(data) {
+  return {
+    ...data,
+    smb_password: "",
+    ftp_password: "",
+    sftp_password: "",
+    s3_secret_key: "",
+    sftp_accept_new_key: false,
+    archive_password: "",
+    archive_password_clear: false,
+    archive_password_current: "",
+  };
+}
+
 // نام روزهای هفته به ترتیب اندیس مورد انتظار Backend
 const WEEKDAY_LABELS = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]; // ۰=دوشنبه...۶=یکشنبه
 
 /**
- * تنظیمات «زمان‌بندی بکاپ خودکار و ارسال به مقصد راه‌دور (SMB / FTP / ایمیل)»؛
+ * تنظیمات «زمان‌بندی بکاپ خودکار و ارسال به مقصدها (پوشه محلی / SMB / FTP / SFTP / S3 / ایمیل)»؛
  * بخشی مستقل در صفحه‌ی پشتیبان‌گیری (کنار export/restore دستی).
  * بدون ورودی (props). فرم زمان‌بندی، مقصدها، سیاست نگهداری و دکمه‌های ذخیره/اجرای فوری را رسم می‌کند.
  * رمزهای SMB/FTP هرگز از سرور برنمی‌گردند (فقط smb_has_password/ftp_has_password بولی)؛
@@ -54,7 +71,7 @@ export default function BackupScheduleSettings() {
     fetchBackupSettings()
       .then((data) => {
         setSettings(data);
-        setForm({ ...data, smb_password: "", ftp_password: "", archive_password: "", archive_password_clear: false });
+        setForm(withEmptySecrets(data));
       })
       .catch((err) => setError(err.response?.data?.detail || "دریافت تنظیمات با خطا مواجه شد."));
   }
@@ -72,10 +89,14 @@ export default function BackupScheduleSettings() {
       const payload = { ...form };
       if (!payload.smb_password) delete payload.smb_password;
       if (!payload.ftp_password) delete payload.ftp_password;
+      if (!payload.sftp_password) delete payload.sftp_password;
+      if (!payload.s3_secret_key) delete payload.s3_secret_key;
+      if (!payload.sftp_host_key) delete payload.sftp_host_key;
       if (!payload.archive_password) delete payload.archive_password;
+      if (!payload.archive_password_current) delete payload.archive_password_current;
       const updated = await updateBackupSettings(payload);
       setSettings(updated);
-      setForm({ ...updated, smb_password: "", ftp_password: "", archive_password: "", archive_password_clear: false });
+      setForm(withEmptySecrets(updated));
       setSaveResult({ success: true, message: "تنظیمات با موفقیت ذخیره شد." });
     } catch (err) {
       setSaveResult({ success: false, message: err.response?.data?.detail || "ذخیره تنظیمات با خطا مواجه شد." });
@@ -155,7 +176,7 @@ export default function BackupScheduleSettings() {
     <Stack spacing={3}>
       <Typography variant="subtitle2" fontWeight={700} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <ScheduleOutlinedIcon fontSize="small" />
-        زمان‌بندی بکاپ خودکار و ارسال به سرور راه‌دور
+        زمان‌بندی بکاپ خودکار و ارسال به مقصدها
       </Typography>
 
       {/* وضعیت آخرین اجرای بکاپ */}
@@ -165,6 +186,9 @@ export default function BackupScheduleSettings() {
           {settings.last_run_message || (settings.last_run_success ? "موفق" : "ناموفق")}
         </Alert>
       )}
+
+      {/* ارسال‌های ناموفق که خودکار دوباره امتحان می‌شوند */}
+      <BackupRetryQueue refreshKey={settings?.last_run_at} onChanged={loadSettings} />
 
       {/* بخش زمان‌بندی: روزانه/هفتگی (ساعت و دقیقه، و روز هفته) یا هر چند ساعت یک‌بار */}
       <Stack spacing={2}>
@@ -410,10 +434,32 @@ export default function BackupScheduleSettings() {
 
       <Divider />
 
+      <BackupExtraDestinations form={form} settings={settings} updateForm={updateForm} />
+
+      <Divider />
+
+      {/* بررسی سالم رسیدن فایل به مقصد */}
+      <Stack spacing={1}>
+        <Typography variant="body2" fontWeight={700}>
+          بررسی سالم رسیدن فایل
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          بعد از هر ارسال، حجم فایل روی مقصد با فایل اصلی مقایسه می‌شود. پوشه‌ی محلی همیشه با هش کامل بررسی می‌شود و S3
+          خودش هش فایل را کنترل می‌کند. با گزینه‌ی زیر، فایل روی SMB/FTP/SFTP هم دوباره خوانده و هش آن مقایسه می‌شود (کندتر و
+          ترافیک دوبرابر).
+        </Typography>
+        <FormControlLabel
+          control={<Checkbox checked={Boolean(form.verify_full)} onChange={(e) => updateForm({ verify_full: e.target.checked })} />}
+          label="بررسی کامل با خواندن دوباره‌ی فایل (SMB / FTP / SFTP)"
+        />
+      </Stack>
+
+      <Divider />
+
       {/* سیاست نگهداری بکاپ‌ها روی سرور راه‌دور: بر اساس تعداد یا تعداد روز */}
       <Stack spacing={2}>
         <Typography variant="body2" fontWeight={700}>
-          نگهداری بکاپ‌های قدیمی روی سرور راه‌دور
+          نگهداری بکاپ‌های قدیمی روی مقصدها (به‌جز ایمیل)
         </Typography>
         <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
           <TextField
@@ -495,6 +541,17 @@ export default function BackupScheduleSettings() {
             : "فایل‌های بکاپ رمز ندارند. با تعیین رمز، فایل ZIP با AES-256 رمزدار می‌شود (با 7-Zip یا WinRAR باز می‌شود) و هنگام بازیابی همان رمز لازم است."}{" "}
           رمز را جای امن نگه دارید؛ بدون آن فایل بکاپ قابل بازیابی نیست.
         </Typography>
+        {settings?.has_archive_password && (form.archive_password || form.archive_password_clear) && (
+          <TextField
+            size="small"
+            type="password"
+            label="رمز فعلی (برای تغییر یا برداشتن رمز لازم است)"
+            value={form.archive_password_current || ""}
+            onChange={(e) => updateForm({ archive_password_current: e.target.value })}
+            autoComplete="current-password"
+            sx={{ maxWidth: 360 }}
+          />
+        )}
         <TextField
           size="small"
           type="password"
@@ -535,7 +592,10 @@ export default function BackupScheduleSettings() {
         <Button
           variant="outlined"
           onClick={handleRunNow}
-          disabled={isRunningNow || !(form.smb_enabled || form.ftp_enabled || form.email_enabled)}
+          disabled={
+            isRunningNow ||
+            !(form.smb_enabled || form.ftp_enabled || form.email_enabled || form.local_enabled || form.sftp_enabled || form.s3_enabled)
+          }
           startIcon={isRunningNow ? <CircularProgress size={16} /> : null}
         >
           {isRunningNow ? "در حال اجرا..." : "اجرای فوری بکاپ الان"}

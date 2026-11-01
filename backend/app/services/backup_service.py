@@ -287,10 +287,6 @@ if [ "$restore_exit" -eq 0 ]; then
   cd {backend_dir}
   {alembic_path} upgrade head
   migrate_exit=$?
-  # بکاپ از دیتابیسِ «حین ساخت همان بکاپ» گرفته شده؛ ردیف تاریخچه‌ی خودش (و هر بکاپ نیمه‌کاره‌ی دیگر) در آن «running» است
-  if [ "$migrate_exit" -eq 0 ]; then
-    {psql_path} "{libpq_url}" -c "UPDATE backup_runs SET status = 'failed', finished_at = now(), message = 'قطع‌شده: این بکاپ هنگام بازیابی دیتابیس در حال ساخت بود (وضعیت از داخل خود بکاپ آمده است).' WHERE status = 'running';" || true
-  fi
 else
   echo "pg_restore failed with exit code $restore_exit — skipping migrations."
   migrate_exit=1

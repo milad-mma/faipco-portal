@@ -7,11 +7,15 @@ Schema های «زمان‌بندی بکاپ + هدف راه‌دور (SMB/FTP)�
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.backup_dest_rules import check_local_path
 from app.models.backup_settings import BackupRetentionMode, BackupScheduleType
+
+_S3_BUCKET_RE = re.compile(r"[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]")
 
 # کاراکترهایی که در نام سرور/Share/مسیر SMB مجاز نیستند — این مقادیر در فرمان smbclient (-c "cd ...; put ...")
 # قرار می‌گیرند و با این کاراکترها می‌شد از گیومه خارج شد یا فرمان دیگری تزریق کرد
@@ -52,6 +56,8 @@ class BackupSettingsIn(BaseModel):
     # رمز فایل ZIP بکاپ (AES-256)؛ خالی = رمز قبلی حفظ شود؛ archive_password_clear=True یعنی برداشتن رمز
     archive_password: str | None = Field(default=None, max_length=200)
     archive_password_clear: bool = False
+    # برای تغییر یا برداشتن رمزِ موجود، رمز فعلی لازم است
+    archive_password_current: str | None = Field(default=None, max_length=200)
 
     smb_enabled: bool = False
     smb_host: str | None = None
@@ -68,6 +74,29 @@ class BackupSettingsIn(BaseModel):
     ftp_password: str | None = Field(default=None, description="در ویرایش، خالی بگذارید تا رمز قبلی حفظ شود")
     ftp_path: str | None = None
     ftp_use_tls: bool = True
+
+    local_enabled: bool = False
+    local_path: str | None = Field(default=None, max_length=500)
+
+    sftp_enabled: bool = False
+    sftp_host: str | None = Field(default=None, max_length=255)
+    sftp_port: int = Field(default=22, ge=1, le=65535)
+    sftp_username: str | None = Field(default=None, max_length=255)
+    sftp_password: str | None = Field(default=None, description="در ویرایش، خالی بگذارید تا رمز قبلی حفظ شود")
+    sftp_path: str | None = Field(default=None, max_length=500)
+    # کلید سرور که «تست اتصال SFTP» برگرداند؛ None = کلید ذخیره‌شده دست نخورد
+    sftp_host_key: str | None = Field(default=None, max_length=4000)
+
+    s3_enabled: bool = False
+    s3_endpoint: str | None = Field(default=None, max_length=500)
+    s3_region: str | None = Field(default=None, max_length=100)
+    s3_bucket: str | None = Field(default=None, max_length=255)
+    s3_prefix: str | None = Field(default=None, max_length=500)
+    s3_access_key: str | None = Field(default=None, max_length=255)
+    s3_secret_key: str | None = Field(default=None, description="در ویرایش، خالی بگذارید تا کلید قبلی حفظ شود")
+    s3_path_style: bool = True
+
+    verify_full: bool = False
 
     retention_mode: BackupRetentionMode = BackupRetentionMode.count
     retention_count: int = Field(default=30, ge=1, le=1000)
@@ -98,6 +127,20 @@ class BackupSettingsIn(BaseModel):
             raise ValueError("برای فعال‌کردن هدف FTP، نام سرور و نام کاربری الزامی‌اند")
         if self.email_enabled and not self.email_recipients:
             raise ValueError("برای فعال‌کردن ارسال به ایمیل، حداقل یک گیرنده لازم است")
+        if self.local_enabled:
+            self.local_path = check_local_path(self.local_path)
+        if self.sftp_enabled and not (self.sftp_host and self.sftp_username):
+            raise ValueError("برای فعال‌کردن SFTP، نام سرور و نام کاربری الزامی‌اند")
+        if self.sftp_path and ".." in self.sftp_path.replace("\\", "/").split("/"):
+            raise ValueError("مسیر SFTP نباید «..» داشته باشد")
+        if self.s3_enabled:
+            if not (self.s3_endpoint and self.s3_bucket and self.s3_access_key):
+                raise ValueError("برای فعال‌کردن S3، آدرس سرویس، نام Bucket و Access Key الزامی‌اند")
+            if not _S3_BUCKET_RE.fullmatch(self.s3_bucket.strip()):
+                raise ValueError("نام Bucket فقط حروف کوچک انگلیسی، عدد، نقطه و خط تیره (۳ تا ۶۳ نویسه) است")
+            self.s3_bucket = self.s3_bucket.strip()
+        if self.s3_prefix and ".." in self.s3_prefix.split("/"):
+            raise ValueError("پوشه‌ی داخل Bucket نباید «..» داشته باشد")
         return self
 
 
@@ -126,6 +169,29 @@ class BackupSettingsOut(BaseModel):
     ftp_has_password: bool  # آیا رمز FTP ذخیره شده است
     ftp_path: str | None
     ftp_use_tls: bool
+
+    local_enabled: bool = False
+    local_path: str | None = None
+
+    sftp_enabled: bool = False
+    sftp_host: str | None = None
+    sftp_port: int = 22
+    sftp_username: str | None = None
+    sftp_has_password: bool = False
+    sftp_path: str | None = None
+    sftp_host_key: str | None = None
+    sftp_fingerprint: str | None = None  # اثر انگشت کلید ذخیره‌شده‌ی سرور
+
+    s3_enabled: bool = False
+    s3_endpoint: str | None = None
+    s3_region: str | None = None
+    s3_bucket: str | None = None
+    s3_prefix: str | None = None
+    s3_access_key: str | None = None
+    s3_has_secret: bool = False
+    s3_path_style: bool = True
+
+    verify_full: bool = False
 
     retention_mode: BackupRetentionMode
     retention_count: int
@@ -161,3 +227,25 @@ class FtpTestConnectionIn(BaseModel):
     password: str | None = Field(default=None, description="خالی یعنی از رمز ذخیره‌شده فعلی استفاده شود")
     path: str | None = None
     use_tls: bool = True
+
+
+class DestinationTestIn(BaseModel):
+    """بدنه POST /backup/test-destination/{kind} برای local، sftp و s3 — مقادیر فعلی فرم (رمز خالی = رمز ذخیره‌شده)."""
+
+    local_path: str | None = None
+
+    sftp_host: str | None = None
+    sftp_port: int = Field(default=22, ge=1, le=65535)
+    sftp_username: str | None = None
+    sftp_password: str | None = None
+    sftp_path: str | None = None
+    sftp_host_key: str | None = None  # کلیدی که فرم فعلاً دارد (ذخیره‌شده یا تازه تأییدشده)
+    sftp_accept_new_key: bool = False  # کاربر پذیرفته که کلید سرور عوض شده است
+
+    s3_endpoint: str | None = None
+    s3_region: str | None = None
+    s3_bucket: str | None = None
+    s3_prefix: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_path_style: bool = True

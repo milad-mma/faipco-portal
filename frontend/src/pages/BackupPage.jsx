@@ -1,6 +1,6 @@
 // صفحه‌ی پشتیبان‌گیری و نگهداری پرتال (docs/backup.md):
 // دانلود بکاپ کامل (ZIP: دیتابیس + فایل‌های آپلودی؛ با «رمز فایل بکاپ» اگر در تنظیمات تعیین شده)، بازیابی همان ZIP روی همین
-// سرور با پیگیری زنده، پاک‌کردن کش اپلیکیشن و تنظیم زمان‌بندی/مقصدها/رمز.
+// سرور با پیگیری زنده و تنظیم زمان‌بندی/مقصدها/رمز.
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -17,9 +17,7 @@ import {
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
-import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
 import { downloadBackupArchive, fetchRestoreStatus, restoreBackupArchive } from "../api/backup";
-import { bustAppCache } from "../api/system";
 import { monoFontSx } from "../theme";
 import BackupScheduleSettings from "../components/BackupScheduleSettings";
 import { useAuth } from "../context/AuthContext";
@@ -39,10 +37,10 @@ async function blobErrorText(err, fallback) {
 
 export default function BackupPage() {
   const { user } = useAuth();
-  const canDownload = Boolean(user?.can_backup_download);
-  const canRestore = Boolean(user?.can_backup_restore);
-  const canDestinations = Boolean(user?.can_backup_destinations);
-  const canCache = Boolean(user?.can_bust_cache);
+  const canBackup = Boolean(user?.can_manage_backup); // system.backup — دانلود، بازیابی و تنظیمات
+  const canDownload = canBackup;
+  const canRestore = canBackup;
+  const canDestinations = canBackup;
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
@@ -57,8 +55,6 @@ export default function BackupPage() {
   const [restoreLog, setRestoreLog] = useState("");
   const [lastRestore, setLastRestore] = useState(null);
 
-  const [isBustingCache, setIsBustingCache] = useState(false);
-  const [cacheBustResult, setCacheBustResult] = useState(null);
   const pollTimer = useRef(null);
 
   // نتیجه‌ی آخرین بازیابی (بعد از بازیابی، صفحه بازخوانی و گاهی ورود دوباره لازم می‌شود)
@@ -147,19 +143,6 @@ export default function BackupPage() {
       setUploadPct(null);
       setRestoreResult({ success: false, message: err.response?.data?.detail || "بازیابی با خطا مواجه شد." });
       setIsRestoring(false);
-    }
-  }
-
-  async function handleBustCache() {
-    setCacheBustResult(null);
-    setIsBustingCache(true);
-    try {
-      const data = await bustAppCache();
-      setCacheBustResult({ success: true, message: data.message });
-    } catch (err) {
-      setCacheBustResult({ success: false, message: err.response?.data?.detail || "پاک‌کردن کش با خطا مواجه شد." });
-    } finally {
-      setIsBustingCache(false);
     }
   }
 
@@ -280,33 +263,6 @@ export default function BackupPage() {
               </Stack>
             </>
           )}
-        </Card>
-      )}
-
-      {canCache && (
-        <Card variant="outlined" sx={{ p: 3, borderRadius: 3, mt: 3 }}>
-          <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
-            نگهداری اپلیکیشن
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            پاک‌کردن کش اپلیکیشن برای همه کاربران
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            اپ در بازدید بعدی هر کاربر تازه بارگذاری می‌شود؛ داده‌ای پاک نمی‌شود. برای وقتی که آیکون یا صفحه‌ی قدیمی روی گوشی
-            کسی مانده است.
-          </Typography>
-          {cacheBustResult && (
-            <Alert severity={cacheBustResult.success ? "success" : "error"} sx={{ mb: 2 }}>{cacheBustResult.message}</Alert>
-          )}
-          <Button
-            variant="outlined"
-            startIcon={isBustingCache ? <CircularProgress size={18} /> : <DeleteSweepOutlinedIcon />}
-            onClick={handleBustCache}
-            disabled={isBustingCache}
-          >
-            {isBustingCache ? "در حال اعمال..." : "پاک‌کردن کش برای همه کاربران"}
-          </Button>
         </Card>
       )}
 

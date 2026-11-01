@@ -197,7 +197,7 @@ async def build_archive(*, password: str | None = None) -> dict:
         meta = {
             "set_id": set_id, "started_at": started, "app_version": getattr(settings, "APP_VERSION", None),
             "alembic_head": alembic_head, "pg_dump_version": _pg_dump_version(pg_dump),
-            "key_id": None, "key_mode": "zip-aes256" if password else None, "consistency_method": consistency,
+            "encrypted": bool(password), "consistency_method": consistency,
         }
         manifest = await asyncio.to_thread(write_zip, part, password, dump_path, rows, storage.path_of, meta)
         os.replace(part, final)

@@ -19,6 +19,8 @@ import { applyUpdate, checkForUpdate, fetchUpdateStatus } from "../api/system";
 import { monoFontSx } from "../theme";
 import AnnouncementSettings from "../components/AnnouncementSettings";
 import ProjectChecksCard from "../components/ProjectChecksCard";
+import AppCacheCard from "../components/AppCacheCard";
+import { useAuth } from "../context/AuthContext";
 
 const CONFIRM_PHRASE = "UPDATE";  // عبارتی که کاربر باید برای تأیید آپدیت تایپ کند
 const POLL_INTERVAL_MS = 3000;  // فاصله‌ی پرسیدن وضعیت آپدیت از سرور
@@ -26,7 +28,23 @@ const MAX_POLL_ATTEMPTS = 120; // حداکثر تعداد پرسش وضعیت (�
 
 // کامپوننت صفحه‌ی آپدیت؛ ورودی ندارد.
 // هنگام بارگذاری وجود آپدیت را بررسی می‌کند و فرم اعمال آپدیت را فقط در صورت وجود نسخه‌ی جدید نشان می‌دهد.
+// ادمین کل: آپدیت + کش + اعلان تغییرات + بررسی‌ها؛ دارنده‌ی فقط system.cache_bust: تنها کارت پاک‌کردن کش.
 export default function UpdatePage() {
+  const { user } = useAuth();
+  if (user?.is_superuser) return <UpdateAdminPage />;
+  return (
+    <Box sx={{ maxWidth: 640, mx: "auto" }}>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
+        نگهداری اپلیکیشن
+      </Typography>
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+        <AppCacheCard />
+      </Card>
+    </Box>
+  );
+}
+
+function UpdateAdminPage() {
   const [checkResult, setCheckResult] = useState(null); // خروجی checkForUpdate | null
   const [isChecking, setIsChecking] = useState(true);
 
@@ -275,6 +293,11 @@ export default function UpdatePage() {
           )}
         </Card>
       )}
+
+      {/* پاک‌کردن کش اپلیکیشن برای همه کاربران (نسخه‌ی تازه‌ی فرانت‌اند بدون آپدیت سرور) */}
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>
+        <AppCacheCard />
+      </Card>
 
       {/* ویرایشگر اعلان تغییرات برای اطلاع‌رسانی تغییرات نسخه به کاربران پس از آپدیت */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>

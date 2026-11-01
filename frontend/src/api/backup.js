@@ -1,7 +1,7 @@
 /**
  * توابع فراخوانی API پشتیبان‌گیری و بازیابی.
  * دانلود/بازیابی فایل پشتیبان، وضعیت بازیابی، تنظیمات پشتیبان‌گیری،
- * تست اتصال SMB/FTP و اجرای فوری پشتیبان‌گیری.
+ * تست مقصدها، اجرای فوری پشتیبان‌گیری و صف تلاش دوباره.
  */
 import { apiClient } from "./client";
 
@@ -62,5 +62,29 @@ export async function testFtpConnection(payload) {
 // POST /backup/run-now؛ ساخت پشتیبان در پس‌زمینه و ارسال به مقصدهای فعال؛ نتیجه در «آخرین اجرا»
 export async function runBackupNow() {
   const { data } = await apiClient.post("/backup/run-now");
+  return data;
+}
+
+// POST /backup/test-destination/{kind}؛ تست پوشه‌ی محلی (local)، SFTP یا S3 با مقادیر فرم
+export async function testBackupDestination(kind, payload) {
+  const { data } = await apiClient.post(`/backup/test-destination/${kind}`, payload, { timeout: 60000 });
+  return data;
+}
+
+// GET /backup/retry-queue؛ فایل‌هایی که ارسالشان ناموفق بوده و منتظر تلاش دوباره‌اند
+export async function fetchRetryQueue() {
+  const { data } = await apiClient.get("/backup/retry-queue");
+  return data; // { max_attempts, items: [{ filename, created_at, size, destinations: [...] }] }
+}
+
+// POST /backup/retry-queue/run؛ تلاش دوباره‌ی همه همین الان (پس‌زمینه)
+export async function runRetryQueueNow() {
+  const { data } = await apiClient.post("/backup/retry-queue/run");
+  return data;
+}
+
+// DELETE /backup/retry-queue/{filename}؛ حذف یک فایل از صف
+export async function discardRetryItem(filename) {
+  const { data } = await apiClient.delete(`/backup/retry-queue/${encodeURIComponent(filename)}`);
   return data;
 }

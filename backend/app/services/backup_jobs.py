@@ -9,7 +9,6 @@ import asyncio
 import json
 import logging
 import os
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,16 +29,13 @@ def _spawn(coro) -> None:
 async def _manual_backup(user_id: int | None, send: bool) -> None:
     from app.core.scheduler import _BACKUP_LOCK_KEY, _advisory_unlock, _try_advisory_lock
     from app.db.session import AsyncSessionLocal
-    from app.models.backup_v4 import BackupRun
-    from app.services.backup_settings_service import run_scheduled_backup
+    from app.services.backup_settings_service import BackupSettingsService, run_scheduled_backup
 
     async with AsyncSessionLocal() as db:
         if not await _try_advisory_lock(db, _BACKUP_LOCK_KEY):
-            db.add(BackupRun(
-                set_id=uuid.uuid4().hex, trigger="manual", status="failed", started_by=user_id,
-                message="بکاپ دیگری (یا پاک‌سازی فایل‌های موقت) در حال اجراست؛ چند دقیقه بعد دوباره امتحان کنید.",
-                finished_at=datetime.now(timezone.utc),
-            ))
+            settings = await BackupSettingsService(db).get_settings()
+            settings.last_run_at, settings.last_run_success = datetime.now(timezone.utc), False
+            settings.last_run_message = "بکاپ دیگری (یا پاک‌سازی فایل‌های موقت) در حال اجراست؛ چند دقیقه بعد دوباره امتحان کنید."
             await db.commit()
             return
         try:
@@ -52,6 +48,31 @@ async def _manual_backup(user_id: int | None, send: bool) -> None:
 
 def start_manual_backup(user_id: int | None, send_to_destinations: bool) -> None:
     _spawn(_manual_backup(user_id, send_to_destinations))
+
+
+async def run_retry_queue(*, force: bool) -> bool:
+    """
+    یک دور صف تلاش دوباره (services/backup_retry_queue.py) زیر قفل بکاپ. force=True: همه‌ی مقصدهای صف همین الان.
+    خروجی: False اگر بکاپ دیگری در جریان بود (این دور رد شد).
+    """
+    from app.core.scheduler import _BACKUP_LOCK_KEY, _advisory_unlock, _try_advisory_lock
+    from app.db.session import AsyncSessionLocal
+    from app.services.backup_retry_queue import retry_due
+
+    async with AsyncSessionLocal() as db:
+        if not await _try_advisory_lock(db, _BACKUP_LOCK_KEY):
+            return False
+        try:
+            await retry_due(db, force=force)
+        except Exception:  # noqa: BLE001
+            logger.exception("صف تلاش دوباره‌ی بکاپ ناموفق بود")
+        finally:
+            await _advisory_unlock(db, _BACKUP_LOCK_KEY)
+    return True
+
+
+def start_retry_now() -> None:
+    _spawn(run_retry_queue(force=True))
 
 
 # ---------- بازیابی از نسخه‌ی روی سرور ----------
@@ -129,30 +150,3 @@ async def _restore_upload(path: Path, password: str | None) -> None:
 def start_restore_upload(path: Path, password: str | None) -> None:
     write_stage_state("staging", "در صف…")
     _spawn(_restore_upload(path, password))
-
-
-STALE_RUN_HOURS = 3
-
-
-async def close_stale_runs() -> int:
-    """
-    ردیف‌های «running» قدیمی‌تر از STALE_RUN_HOURS (فرآیند با ری‌استارت/خرابی قطع شده) «ناموفق — قطع‌شده» می‌شوند تا دکمه‌ی
-    ساخت بکاپ برای همیشه قفل نماند. در شروع هر Worker و پیش از هر نمای کلی صدا زده می‌شود.
-    """
-    from datetime import timedelta
-
-    from sqlalchemy import update
-
-    from app.db.session import AsyncSessionLocal
-    from app.models.backup_v4 import BackupRun
-
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_RUN_HOURS)
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            update(BackupRun)
-            .where(BackupRun.status == "running", BackupRun.started_at < cutoff)
-            .values(status="failed", finished_at=datetime.now(timezone.utc),
-                    message="قطع‌شده: فرآیند ساخت بکاپ کامل نشد (ری‌استارت یا خرابی سرویس).")
-        )
-        await db.commit()
-        return result.rowcount or 0
