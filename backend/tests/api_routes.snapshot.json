@@ -1,5 +1,5 @@
 {
-  "count": 452,
+  "count": 454,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -238,6 +238,7 @@
     "GET /api/v1/system/sms-settings",
     "GET /api/v1/system/smtp-settings",
     "GET /api/v1/system/update-status",
+    "GET /api/v1/system/upload-limit",
     "GET /api/v1/system/usage-stats",
     "GET /api/v1/system/version",
     "GET /api/v1/users/access-overview",
@@ -452,6 +453,7 @@
     "PUT /api/v1/system/mobile-app-feature",
     "PUT /api/v1/system/sms-settings",
     "PUT /api/v1/system/smtp-settings",
+    "PUT /api/v1/system/upload-limit",
     "WEBSOCKET /api/v1/attendance/presence-ws"
   ]
 }

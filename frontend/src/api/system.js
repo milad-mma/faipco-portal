@@ -211,3 +211,14 @@ export async function testSmsSettings(toMobile) {
   );
   return data;
 }
+
+// سقف آپلود سرور (nginx) — فقط ادمین کل: { limit_mb, applied_mb, portal_max_file_mb, min_mb, max_mb, job }
+export async function fetchUploadLimit() {
+  const { data } = await apiClient.get("/system/upload-limit");
+  return data;
+}
+
+export async function saveUploadLimit(limitMb) {
+  const { data } = await apiClient.put("/system/upload-limit", { limit_mb: limitMb });
+  return data;
+}

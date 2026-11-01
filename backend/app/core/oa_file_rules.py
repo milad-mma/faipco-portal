@@ -114,7 +114,7 @@ def validate_settings(values: dict, server_max_file_mb: int) -> dict:
         if size > server_max_file_mb:
             raise FileRejected(
                 f"حجم هر فایل {label} نمی‌تواند از سقف آپلود سرور ({server_max_file_mb} مگابایت) بیشتر باشد. "
-                "برای بالاتر بردن آن باید تنظیم سرور تغییر کند."
+                "برای بالاتر بردن آن، ادمین کل «سقف آپلود سرور» را در «تنظیمات سامانه» تغییر دهد."
             )
         if not size <= total <= MAX_TOTAL_MB_CAP:
             raise FileRejected(f"حجم مجموع {label} باید بین حجم یک فایل و {MAX_TOTAL_MB_CAP} مگابایت باشد")

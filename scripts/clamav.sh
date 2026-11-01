@@ -60,17 +60,20 @@ case "$ACTION" in
     fi
     clamd_set StreamMaxLength 100M
     clamd_set AlertOLE2Macros yes
+    clamd_set EnableVersionCommand yes
     clamd_set LocalSocketMode 666
     fetch_db
     if has_db; then
-      systemctl enable --now clamav-freshclam clamav-daemon
-      sleep 20
+      systemctl reset-failed clamav-daemon >/dev/null 2>&1 || true
+      systemctl enable --now clamav-daemon.socket clamav-daemon clamav-freshclam
+      sleep 45
       systemctl is-active clamav-daemon && finish OK
-      echo "clamd روشن نشد؛ journalctl -u clamav-daemon را ببینید."
+      echo "clamd روشن نشد:"
+      journalctl -u clamav-daemon -n 30 --no-pager
       finish FAIL
     fi
     # بدون بانک، clamd روشن نمی‌شود؛ سرویس‌ها خاموش می‌مانند تا «دریافت بانک» از پنل
-    systemctl disable --now clamav-freshclam clamav-daemon >/dev/null 2>&1 || true
+    systemctl disable --now clamav-daemon.socket clamav-daemon clamav-freshclam >/dev/null 2>&1 || true
     echo "ClamAV نصب شد ولی بانک شناسایی دریافت نشد؛ بعد از برقراری VPN «دریافت بانک» را بزنید."
     finish FAIL
     ;;
@@ -81,22 +84,30 @@ case "$ACTION" in
     fetch_db
     has_db || finish FAIL
     if $was_active; then
-      systemctl restart clamav-daemon
+      # reload (بارگذاری بانک جدید بدون توقف) به‌جای restart؛ restart پشت‌سرهم با clamav-daemon.socket به start-limit-hit می‌خورد
+      if ! systemctl reload clamav-daemon; then
+        echo "بانک به‌روز شد ولی سرویس اسکن دوباره روشن نشد:"
+        journalctl -u clamav-daemon -n 30 --no-pager
+        finish FAIL
+      fi
       systemctl start clamav-freshclam >/dev/null 2>&1 || true
     fi
     finish OK
     ;;
   start)
+    clamd_set EnableVersionCommand yes  # پرتال نسخه و تاریخ بانک را با VERSION می‌خواند
     command -v clamd >/dev/null || [[ -x /usr/sbin/clamd ]] || { echo "ClamAV نصب نیست."; finish FAIL; }
     has_db || { echo "بانک شناسایی وجود ندارد؛ اول «دریافت بانک» را بزنید."; finish FAIL; }
-    systemctl enable --now clamav-freshclam clamav-daemon
-    sleep 20
+    systemctl reset-failed clamav-daemon >/dev/null 2>&1 || true
+    systemctl enable --now clamav-daemon.socket clamav-daemon clamav-freshclam
+    sleep 45
     systemctl is-active clamav-daemon && finish OK
     journalctl -u clamav-daemon -n 20 --no-pager
     finish FAIL
     ;;
   stop)
-    systemctl disable --now clamav-daemon clamav-freshclam >/dev/null 2>&1 || true
+    # socket هم خاموش می‌شود؛ وگرنه اولین اتصال پرتال (بررسی وضعیت) clamd را دوباره روشن می‌کند و RAM مصرف می‌شود
+    systemctl disable --now clamav-daemon.socket clamav-daemon clamav-freshclam >/dev/null 2>&1 || true
     echo "ClamAV خاموش شد (بدون مصرف RAM)."
     finish OK
     ;;

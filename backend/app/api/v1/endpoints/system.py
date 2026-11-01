@@ -34,7 +34,7 @@ from sqlalchemy import delete, select
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import require_permission
+from app.core.deps import get_current_user, require_permission
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.ip_allowlist_entry import IpAllowlistEntry
@@ -842,3 +842,40 @@ async def put_mobile_app_feature(
     from app.services.mobile_app_service import set_feature_enabled
 
     return {"enabled": await set_feature_enabled(db, payload.enabled)}
+
+
+# ---------- سقف آپلود سرور (nginx) — فقط ادمین کل؛ docs/upload-limit.md ----------
+
+
+class UploadLimitIn(BaseModel):
+    limit_mb: int
+
+
+def _require_superuser(user: User) -> None:
+    if not user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط ادمین کل می‌تواند سقف آپلود سرور را تغییر دهد")
+
+
+@router.get("/upload-limit")
+async def get_upload_limit(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """سقف آپلود ثبت‌شده، مقدار واقعی در nginx، سقف حجم فایل در پرتال و وضعیت آخرین اعمال."""
+    _require_superuser(current_user)
+    from app.services import server_upload_limit
+
+    return await server_upload_limit.state(db)
+
+
+@router.put("/upload-limit")
+async def set_upload_limit(
+    payload: UploadLimitIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """ذخیره و اعمال سقف آپلود روی nginx همین سرور (پس‌زمینه؛ با nginx -t و برگشت خودکار در خطا)."""
+    _require_superuser(current_user)
+    from app.services import server_upload_limit
+
+    try:
+        value = await server_upload_limit.set_limit(db, payload.limit_mb)
+    except server_upload_limit.UploadLimitError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    await db.commit()
+    return {"limit_mb": value}

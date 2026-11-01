@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.models.office_automation import OaAttachmentSettings, OaAuditEvent, OaFile
 from app.models.site import Site
 from app.models.user import User
-from app.services import oa_clamav, oa_scanner
+from app.services import oa_clamav, oa_scanner, server_upload_limit
 from app.services.oa_storage import LocalStorage, SizeLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -98,8 +98,7 @@ class OaFileService:
             )
         return out
 
-    @staticmethod
-    def catalog() -> dict:
+    async def catalog(self) -> dict:
         """فهرست ثابت فرمت‌ها، ممنوع‌ها و سقف سرور برای صفحه‌ی تنظیمات."""
         return {
             "formats": [
@@ -108,7 +107,8 @@ class OaFileService:
                 for f in rules.FORMATS
             ],
             "forbidden_label": rules.FORBIDDEN_LABEL,
-            "server_max_file_mb": get_settings().OA_SERVER_MAX_FILE_MB,
+            "server_max_file_mb": await server_upload_limit.portal_max_file_mb(self.db),
+            "server_upload_limit_mb": await server_upload_limit.get_limit_mb(self.db),
             "defaults": rules.default_settings(),
             "max_files_cap": rules.MAX_FILES_CAP,
             "max_total_mb_cap": rules.MAX_TOTAL_MB_CAP,
@@ -116,7 +116,7 @@ class OaFileService:
 
     async def save_site_settings(self, site_id: int, values: dict, user: User, ip: str | None = None) -> dict:
         try:
-            clean = rules.validate_settings(values, get_settings().OA_SERVER_MAX_FILE_MB)
+            clean = rules.validate_settings(values, await server_upload_limit.portal_max_file_mb(self.db))
         except rules.FileRejected as e:
             raise OaFileError(str(e)) from None
         if await self.db.get(Site, site_id) is None:
@@ -166,7 +166,7 @@ class OaFileService:
             await self.db.commit()
             raise OaFileError(str(e)) from None
 
-        max_mb = min(settings[f"{context}_max_file_mb"], get_settings().OA_SERVER_MAX_FILE_MB)
+        max_mb = min(settings[f"{context}_max_file_mb"], await server_upload_limit.portal_max_file_mb(self.db))
         try:
             temp_key, size, sha = await self.storage.receive(chunks, max_mb * rules.MIB)
         except SizeLimitExceeded:
@@ -353,6 +353,13 @@ class OaFileService:
                 scanner["db_stale"] = (datetime.now() - info["db_date"]).days > DB_STALE_DAYS
         except oa_scanner.ScannerUnavailable as e:
             scanner["error"] = str(e)
+        clam_state = await asyncio.to_thread(oa_clamav.system_state)
+        if scanner["available"] and not scanner["db_date"]:
+            # VERSION غیرفعال یا ناخوانا: تاریخ بانک از زمان فایل daily.* (آخرین به‌روزرسانی)
+            daily = [f for f in clam_state["db_files"] if f["name"].startswith("daily.")]
+            if daily:
+                scanner["db_date"] = datetime.fromtimestamp(daily[0]["mtime"])
+                scanner["db_stale"] = (datetime.now() - scanner["db_date"]).days > DB_STALE_DAYS
         try:
             disk = self.storage.usage()
         except OSError as e:
@@ -369,7 +376,7 @@ class OaFileService:
         return {
             "scan_enabled": scan_on,
             "unscanned_clean": unscanned,
-            "clamav": await asyncio.to_thread(oa_clamav.system_state),
+            "clamav": clam_state,
             "clamav_job": await asyncio.to_thread(oa_clamav.read_log),
             "scanner": scanner,
             "disk": disk,

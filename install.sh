@@ -536,6 +536,7 @@ www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collec
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh update-db
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh start
 www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-clamav --collect /bin/bash ${INSTALL_DIR}/scripts/clamav.sh stop
+www-data ALL=(root) NOPASSWD: /usr/bin/systemd-run --unit=faipco-upload-limit --collect /bin/bash ${INSTALL_DIR}/scripts/nginx-upload-limit.sh apply
 EOF
   chmod 440 /etc/sudoers.d/faipco-backend-restart
   visudo -c -f /etc/sudoers.d/faipco-backend-restart >/dev/null || {
@@ -609,6 +610,15 @@ EOF
   # از یک راه دیگر وارد صفحه شود، نمی‌تواند این‌ها را درخواست کند.
   permissions_policy_header="geolocation=(self), camera=(), microphone=(), usb=(), payment=(), magnetometer=(), gyroscope=(), accelerometer=()"
 
+  # سقف آپلود: مقدار ثبت‌شده در پنل (اگر هست) وگرنه ۲۵ مگابایت؛ فایل موجود دست نمی‌خورد
+  if [[ ! -f /etc/nginx/faipco-upload-limit.conf ]]; then
+    local upload_mb="25"
+    if [[ -f /var/lib/faipco/upload-limit-mb ]] && grep -qE '^[0-9]+$' /var/lib/faipco/upload-limit-mb; then
+      upload_mb="$(cat /var/lib/faipco/upload-limit-mb)"
+    fi
+    printf '# مدیریت‌شده از پنل پرتال (تنظیمات سامانه ← سقف آپلود سرور) — دستی تغییر ندهید\nclient_max_body_size %sm;\n' "$upload_mb" > /etc/nginx/faipco-upload-limit.conf
+  fi
+
   cat > /etc/nginx/sites-available/faipco-portal <<EOF
 server {
     listen 80 default_server;
@@ -633,9 +643,9 @@ server {
     add_header Content-Security-Policy "${csp_header}" always;
     add_header Permissions-Policy "${permissions_policy_header}" always;
 
-    # پیش‌فرض Nginx فقط ۱ مگابایت است — برای آپلود فیش حقوقی (XLSX سازمان‌های
-    # بزرگ می‌تواند چند مگابایت باشد) باید بیشتر باشد.
-    client_max_body_size 25m;
+    # سقف آپلود (پیش‌فرض Nginx فقط ۱ مگابایت است): از پنل «تنظیمات سامانه ← سقف آپلود سرور» تعیین و با
+    # scripts/nginx-upload-limit.sh در این فایل نوشته می‌شود؛ آپدیت مقدار تعیین‌شده را حفظ می‌کند.
+    include /etc/nginx/faipco-upload-limit.conf;
 
     # فشرده‌سازی: nginx.conf پیش‌فرض دبیان فقط text/html را فشرده می‌کند؛ باندل JS/CSS
     # و پاسخ‌های JSON گزارش‌ها (جدول‌های ماهانه، فهرست‌ها) بدون فشرده‌سازی چند برابر حجم دارند.

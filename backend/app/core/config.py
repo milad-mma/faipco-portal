@@ -94,9 +94,7 @@ class Settings(BaseSettings):
     OA_STORAGE_DIR: str = "/var/lib/faipco/oa-files"
     # سوکت clamd (ClamAV محلی)؛ اگر در دسترس نباشد فایل‌ها scan_pending می‌مانند و دوباره امتحان می‌شوند
     OA_CLAMD_SOCKET: str = "/var/run/clamav/clamd.ctl"
-    # سقف حجم هر فایل که پرتال اجازه‌ی تنظیمش را می‌دهد؛ باید کمتر از client_max_body_size در nginx (25m) باشد
-    # (بخشی از آن سربار multipart است). بالا بردن: هر دو با هم.
-    OA_SERVER_MAX_FILE_MB: int = 24
+    # سقف حجم هر فایل = «سقف آپلود سرور» از پنل (تنظیمات سامانه) منهای ۱ مگابایت؛ services/server_upload_limit.py
     # مهلت نگهداری فایل موقت بی‌پیوند پیش از پاک‌سازی (ساعت) — باید بیشتر از طولانی‌ترین بکاپ باشد
     OA_TEMP_RETENTION_HOURS: int = 48
 

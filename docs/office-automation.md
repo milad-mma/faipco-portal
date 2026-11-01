@@ -33,7 +33,7 @@
   - تصویر: امضای فایل + `Pillow.verify` + سقف ۲۰۰ مگاپیکسل؛
   - متن/CSV: بدون بایت NUL و کدگذاری UTF-8 یا Windows-1256؛
   - MP3/MP4: امضای فایل.
-- تنظیمات: `validate_settings` (حجم هر فایل ≤ `OA_SERVER_MAX_FILE_MB`=۲۴، مجموع ≥ حجم یک فایل، کل نامه ≥ مجموع نسخه، حداقل یک
+- تنظیمات: `validate_settings` (حجم هر فایل ≤ «سقف آپلود سرور» منهای ۱ (docs/upload-limit.md)، مجموع ≥ حجم یک فایل، کل نامه ≥ مجموع نسخه، حداقل یک
   فرمت). `check_quota` برای سهمیه‌ی تعداد/مجموع هنگام پیوست به نامه (فاز ۳الف).
 - چرخه: `uploading → rejected | scanning → clean | infected | scan_pending`؛ فقط clean قابل دانلود و permanent.
 

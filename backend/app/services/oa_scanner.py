@@ -67,7 +67,12 @@ def version(socket_path: str | None = None) -> str:
 
 
 def parse_version(text: str) -> dict:
-    """تجزیه‌ی پاسخ VERSION به نسخه‌ی برنامه، شماره‌ی بانک و تاریخ بانک (اگر قابل خواندن باشد)."""
+    """
+    تجزیه‌ی پاسخ VERSION به نسخه‌ی برنامه، شماره‌ی بانک و تاریخ بانک (اگر قابل خواندن باشد). اگر دستور VERSION در
+    clamd.conf غیرفعال باشد (EnableVersionCommand no) پاسخ «COMMAND UNAVAILABLE» است و همه‌ی مقدارها خالی می‌مانند.
+    """
+    if "UNAVAILABLE" in text.upper():
+        return {"raw": text, "engine": None, "db": None, "db_date": None}
     parts = text.split("/")
     out = {"raw": text, "engine": parts[0].replace("ClamAV", "").strip() or None, "db": None, "db_date": None}
     if len(parts) >= 2:
@@ -84,6 +89,8 @@ def scan_file(path: str, socket_path: str | None = None) -> ScanResult:
     """اسکن جریانی یک فایل؛ خطای اتصال/اسکنر → ScannerUnavailable."""
     sock_path = socket_path or _settings().OA_CLAMD_SOCKET
     db_version = version(sock_path)  # بانک شناسایی‌ای که این اسکن با آن انجام شد (scan_db_version)
+    if "UNAVAILABLE" in db_version.upper():
+        db_version = None  # دستور VERSION غیرفعال است؛ اسکن بدون آن انجام می‌شود
     s = _connect(sock_path)
     with s:
         try:

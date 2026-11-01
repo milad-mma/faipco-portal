@@ -44,7 +44,7 @@ async def list_attachment_settings(db: AsyncSession = Depends(get_db), current_u
     """تنظیمات پیوست سایت‌هایی که بیننده automation.settings آن‌ها را دارد + فهرست فرمت‌ها و سقف سرور."""
     sites = await _settings_sites(db, current_user)
     service = OaFileService(db)
-    return {"catalog": service.catalog(), "sites": await service.settings_for_sites(sites)}
+    return {"catalog": await service.catalog(), "sites": await service.settings_for_sites(sites)}
 
 
 class AttachmentSettingsIn(BaseModel):

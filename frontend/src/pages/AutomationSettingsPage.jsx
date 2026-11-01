@@ -218,7 +218,7 @@ function AttachmentSettingsTab() {
 
       <Alert severity="info" sx={{ py: 0.5 }}>
         سقف آپلود سرور: هر فایل حداکثر {toPersianDigits(serverMax)} مگابایت. حجم بیشتر از این قابل تنظیم نیست؛ برای بالاتر
-        بردن آن باید تنظیم سرور تغییر کند.
+        بردن آن، ادمین کل «سقف آپلود سرور» را در «تنظیمات سامانه» تغییر می‌دهد.
       </Alert>
 
       <Grid container spacing={2}>

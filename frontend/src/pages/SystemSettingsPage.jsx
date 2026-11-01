@@ -22,6 +22,8 @@ import {
 } from "../api/system";
 import SmtpSettings from "../components/SmtpSettings";
 import SmsSettings from "../components/SmsSettings";
+import UploadLimitSettings from "../components/UploadLimitSettings";
+import { useAuth } from "../context/AuthContext";
 import AccessGateSettings from "../components/AccessGateSettings";
 import MobileAppFeatureSettings from "../components/MobileAppFeatureSettings";
 import BrandingSurfaceEditor from "../components/BrandingSurfaceEditor";
@@ -261,6 +263,7 @@ const FIELD_GROUPS = [
  * داده‌های برندینگ را یک‌جا بارگذاری می‌کند و کارت‌های تنظیمات را رندر می‌کند؛ تغییرات بدون Restart سرور اعمال می‌شوند.
  */
 export default function SystemSettingsPage() {
+  const { user } = useAuth();
   const [values, setValues] = useState(null); // فیلدهای متنی — یک‌جا از /system/branding
   const [brandingData, setBrandingData] = useState(null); // پاسخ کامل (surfaces، pwa_icon، has_custom_*)
   const [savingGroup, setSavingGroup] = useState(null); // کدام گروه در حال ذخیره است
@@ -438,6 +441,13 @@ export default function SystemSettingsPage() {
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <SmsSettings />
         </Card>
+
+        {/* سقف آپلود nginx — فقط ادمین کل (تغییر تنظیم سرور) */}
+        {user?.is_superuser && (
+          <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
+            <UploadLimitSettings />
+          </Card>
+        )}
 
         <Card variant="outlined" sx={{ borderRadius: 2, p: 3 }}>
           <MobileAppFeatureSettings />
