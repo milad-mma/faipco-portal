@@ -138,14 +138,15 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
         paddingRight: `${m.right}mm`,
         paddingBottom: `${m.bottom}mm`,
         paddingLeft: `${m.left}mm`,
+        direction: "rtl", // درون‌خطی: افزونه‌ی RTL مقدار direction داخل sx را برعکس (ltr) می‌کند
       }}
+      dir="rtl"
       sx={{
         background: "#fff",
         color: "#000",
         fontFamily: "Vazirmatn, Tahoma, sans-serif",
         fontSize: `${layout.font_size_pt}pt`,
         lineHeight: 1.8,
-        direction: "rtl",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -210,7 +211,9 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
         <div ref={unitRef} style={{ height: `${bodyHmm}mm` }} />
         <Box
           ref={measureRef}
-          sx={{ width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", direction: "rtl", ...bodyStyles }}
+          dir="rtl"
+          style={{ direction: "rtl" }}
+          sx={{ width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", ...bodyStyles }}
         >
           <BodyContent subject={subject} bodyHtml={bodyHtml} />
         </Box>

@@ -119,8 +119,9 @@ export default function LetterEditor({ value, onChange, disabled = false }) {
           "& .oa-editor td, & .oa-editor th": { border: 1, borderColor: "grey.500", p: 0.75, verticalAlign: "top", minWidth: 40 },
           "& .oa-editor th": { bgcolor: "action.hover" },
           "& .oa-editor .selectedCell": { bgcolor: "action.selected" },
-          "& .oa-editor blockquote": { borderInlineStart: 4, borderColor: "divider", m: 0, pr: 1.5, color: "text.secondary" },
-          "& .oa-editor ul, & .oa-editor ol": { pr: 3, pl: 0 },
+          // ویژگی‌های منطقی (InlineStart): افزونه‌ی RTL برنامه pr/pl را برعکس می‌کند
+          "& .oa-editor blockquote": { borderInlineStart: "4px solid", borderColor: "divider", m: 0, paddingInlineStart: "12px", color: "text.secondary" },
+          "& .oa-editor ul, & .oa-editor ol": { paddingInlineStart: "24px", paddingInlineEnd: 0 },
         }}
       >
         <EditorContent editor={editor} />
