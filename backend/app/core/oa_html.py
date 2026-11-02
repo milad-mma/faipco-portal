@@ -4,7 +4,7 @@
 فهرست بسته (allowlist) — هر چیز دیگری حذف می‌شود:
 - تگ‌ها: p, h2, h3, strong, em, u, s, ul, ol, li, table, thead, tbody, tr, th, td, blockquote, br, span
 - ویژگی‌ها: dir (rtl/ltr/auto) روی همه؛ colspan/rowspan (۱ تا ۵۰) روی th/td؛ style فقط «text-align: right|center|left|justify»
-  روی p/h2/h3/li/th/td/blockquote.
+  روی p/h2/h3/li/th/td/blockquote؛ روی span فقط font-family (فهرست بسته) و font-size (۸ تا ۳۶pt).
 - تگ ناشناخته حذف و متنش نگه داشته می‌شود (مثلاً div/font/a از Word)؛ محتوای script/style/iframe/object/… کامل حذف می‌شود.
 - همه‌ی متن‌ها escape می‌شوند؛ کامنت، CDATA، processing instruction حذف؛ خروجی همیشه HTML خوش‌ساخت (تگ‌های باز بسته می‌شوند).
 پیاده‌سازی با html.parser استاندارد (بدون وابستگی) تا در همه‌جا قابل تست باشد. سرور منبع حقیقت است؛ ویرایشگر فقط راهنماست.
@@ -28,6 +28,34 @@ ALIASES = {"b": "strong", "i": "em", "strike": "s", "del": "s", "h1": "h2", "h4"
            }
 ALIGN_TAGS = {"p", "h2", "h3", "li", "th", "td", "blockquote"}
 ALIGN_RE = re.compile(r"^\s*text-align\s*:\s*(right|center|left|justify)\s*;?\s*$", re.I)
+# قلم متن روی span (ویرایشگر: نوع و اندازه‌ی قلم) — فقط فهرست بسته‌ی نام قلم و اندازه‌ی pt در بازه
+FONT_FAMILIES = {
+    "vazirmatn": "Vazirmatn",
+    "noto naskh arabic": "Noto Naskh Arabic",
+    "lalezar": "Lalezar",
+    "tahoma": "Tahoma",
+    "b nazanin": "B Nazanin",
+}
+FONT_SIZE_RE = re.compile(r"^\s*(\d{1,2}(?:\.\d)?)\s*pt\s*$", re.I)
+FONT_SIZE_MIN, FONT_SIZE_MAX = 8, 36
+
+
+def _span_style(value: str) -> str:
+    out = []
+    for decl in value.split(";"):
+        if ":" not in decl:
+            continue
+        prop, val = (x.strip() for x in decl.split(":", 1))
+        prop = prop.lower()
+        if prop == "font-family":
+            first = val.split(",")[0].strip().strip("'\"").lower()
+            if first in FONT_FAMILIES:
+                out.append(f"font-family: {FONT_FAMILIES[first]}")
+        elif prop == "font-size":
+            m = FONT_SIZE_RE.match(val)
+            if m and FONT_SIZE_MIN <= float(m.group(1)) <= FONT_SIZE_MAX:
+                out.append(f"font-size: {m.group(1)}pt")
+    return "; ".join(out)
 MAX_INPUT = 2_000_000  # حدود ۲ مگابایت HTML
 MAX_DEPTH = 64
 
@@ -45,6 +73,10 @@ def _clean_attrs(tag: str, attrs: list[tuple[str, str | None]]) -> str:
             out.append(f'dir="{value.lower()}"')
         elif name in ("colspan", "rowspan") and tag in ("th", "td") and value.isdigit() and 1 <= int(value) <= 50:
             out.append(f'{name}="{int(value)}"')
+        elif name == "style" and tag == "span":
+            style = _span_style(value)
+            if style:
+                out.append(f'style="{style}"')
         elif name == "style" and tag in ALIGN_TAGS:
             # فقط یک اعلان text-align؛ در style چندگانه‌ی Word همان یکی برداشته می‌شود
             for decl in value.split(";"):
@@ -145,8 +177,7 @@ def sanitize_html(raw: str | None) -> str:
     s.feed(raw)
     s.close()
     html = s.result()
-    # پاراگراف‌های خالی پشت‌سرهم (paste از Word) به یکی کاهش می‌یابد
-    html = re.sub(r"(?:<p>\s*</p>){3,}", "<p></p><p></p>", html)
+    # پاراگراف‌های خالی (Enter پشت‌سرهم) عمداً حفظ می‌شوند تا پیش‌نمایش و چاپ همان فاصله‌ی ویرایشگر را داشته باشند
     return html.strip()
 
 

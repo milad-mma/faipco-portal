@@ -116,3 +116,14 @@ def test_template_html_sanitizer():
         pass
     else:
         raise AssertionError("expected TemplateHtmlError")
+
+
+def test_span_font_style():
+    from app.core.oa_html import sanitize_html
+
+    out = sanitize_html(
+        '<p><span style="font-family: B Nazanin; font-size: 14pt; color: red">a</span>'
+        '<span style="font-family: url(x); font-size: 99pt">b</span><span style="font-size: 10.5pt">c</span></p>'
+    )
+    assert '<span style="font-family: B Nazanin; font-size: 14pt">a</span>' in out
+    assert "<span>b</span>" in out and '<span style="font-size: 10.5pt">c</span>' in out and "color" not in out

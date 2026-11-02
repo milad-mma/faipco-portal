@@ -6,6 +6,9 @@ import { Box } from "@mui/material";
 import { fetchLogoBlob } from "../../api/automationLetters";
 
 const PAPER = { A4: [210, 297], A5: [148, 210] };
+// فاصله‌ی متن از خط سربرگ و از پابرگ (میلی‌متر) — از ارتفاع ناحیه‌ی متن هر صفحه کم می‌شود
+const GAP_TOP_MM = 5;
+const GAP_BOTTOM_MM = 2;
 
 // آدرس blob: لوگو (img معمولی توکن نمی‌فرستد)
 export function useLogoUrl(fileId) {
@@ -48,7 +51,9 @@ function BodyContent({ subject, bodyHtml }) {
 }
 
 const bodyStyles = {
-  "& .oa-letter-body p": { margin: "0 0 2mm" },
+  // مثل ویرایشگر: فاصله‌های پشت‌سرهم حفظ شوند و پاراگراف خالی (Enter) یک خط جا بگیرد
+  "& .oa-letter-body": { whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  "& .oa-letter-body p": { margin: "0 0 2mm", minHeight: "1.8em" },
   "& .oa-letter-body h2": { fontSize: "1.3em", margin: "3mm 0 2mm" },
   "& .oa-letter-body h3": { fontSize: "1.15em", margin: "3mm 0 2mm" },
   "& .oa-letter-body ul, & .oa-letter-body ol": { margin: "0 0 2mm", paddingInlineStart: "7mm" },
@@ -154,9 +159,11 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
       }}
     >
       <Header layout={layout} logoUrl={logoUrl} values={values} />
-      <div style={{ height: `${bodyHmm}mm`, overflow: "hidden", position: "relative", flex: "none", paddingTop: 0 }}>
-        <div style={{ position: "absolute", left: 0, right: 0, top: `-${pageIndex * bodyHmm}mm` }}>
-          <BodyContent subject={subject} bodyHtml={bodyHtml} />
+      <div style={{ height: `${bodyHmm}mm`, position: "relative", flex: "none" }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: `${GAP_TOP_MM}mm`, bottom: `${GAP_BOTTOM_MM}mm`, overflow: "hidden" }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: `-${pageIndex * (bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM)}mm` }}>
+            <BodyContent subject={subject} bodyHtml={bodyHtml} />
+          </div>
         </div>
       </div>
       <Footer layout={layout} values={values} pageIndex={pageIndex} pages={pages} />
@@ -233,7 +240,7 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
     <Box ref={boxRef} sx={{ position: "relative", width: fit ? "100%" : undefined }}>
       {/* اندازه‌گیری: همان عرض، قلم و استایل متن، بیرون از دید */}
       <Box sx={{ position: "fixed", visibility: "hidden", pointerEvents: "none", left: 0, top: 0, zIndex: -1, "@media print": { display: "none" } }} aria-hidden>
-        <div ref={unitRef} style={{ height: `${bodyHmm}mm` }} />
+        <div ref={unitRef} style={{ height: `${bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM}mm` }} />
         <Box
           ref={measureRef}
           dir="rtl"

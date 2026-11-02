@@ -323,7 +323,7 @@ export default function OaDraftEditorPage() {
 
         <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            پیش‌نمایش {previewPaper} — {toPersianDigits(pages)} صفحه
+            پیش‌نمایش — کاغذ <bdi dir="ltr">{previewPaper}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
           {previewPaper === "A5" && pages > 1 && (
             <Alert

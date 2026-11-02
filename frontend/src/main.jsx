@@ -14,6 +14,10 @@ import "@fontsource/vazirmatn/500.css";
 import "@fontsource/vazirmatn/600.css";
 import "@fontsource/vazirmatn/700.css";
 import "@fontsource/vazirmatn/800.css";
+// قلم‌های اضافه‌ی ویرایشگر نامه (اتوماسیون): نسخ برای متن رسمی، لاله‌زار برای تیتر
+import "@fontsource/noto-naskh-arabic/400.css";
+import "@fontsource/noto-naskh-arabic/700.css";
+import "@fontsource/lalezar/400.css";
 import { rtlCache } from "./rtlCache";
 import { ThemeModeProvider } from "./context/ThemeModeContext";
 import { AuthProvider } from "./context/AuthContext";

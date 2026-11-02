@@ -1,7 +1,10 @@
 // ویرایشگر متن نامه (TipTap) — فقط امکاناتی که پاک‌ساز سرور (core/oa_html.py) نگه می‌دارد:
-// پاراگراف، تیتر ۲ و ۳، پررنگ/کج/زیرخط/خط‌خورده، فهرست، نقل‌قول، تراز متن و جدول. خروجی HTML با onChange.
+// پاراگراف، تیتر ۲ و ۳، نوع و اندازه‌ی قلم، پررنگ/کج/زیرخط/خط‌خورده، فهرست، نقل‌قول، تراز متن و جدول. خروجی HTML با onChange.
 import { useEffect } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { toPersianDigits } from "../../utils/searchText";
+import { EditorContent, Extension, useEditor } from "@tiptap/react";
+import TextStyle from "@tiptap/extension-text-style";
+import FontFamily from "@tiptap/extension-font-family";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -9,7 +12,7 @@ import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
-import { Box, Divider, IconButton, Stack, Tooltip } from "@mui/material";
+import { Box, Divider, IconButton, MenuItem, Select, Stack, Tooltip } from "@mui/material";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatUnderlinedIcon from "@mui/icons-material/FormatUnderlined";
@@ -29,6 +32,50 @@ import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
 import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
+
+// همان فهرست مجاز پاک‌ساز سرور (core/oa_html.py: FONT_FAMILIES و ۸ تا ۳۶pt)
+export const FONTS = [
+  { value: "", label: "قلم پیش‌فرض" },
+  { value: "Vazirmatn", label: "وزیرمتن" },
+  { value: "Noto Naskh Arabic", label: "نسخ" },
+  { value: "B Nazanin", label: "بی‌نازنین (اگر روی دستگاه نصب باشد)" },
+  { value: "Tahoma", label: "تاهوما" },
+  { value: "Lalezar", label: "لاله‌زار (تیتر)" },
+];
+const SIZES = ["8", "9", "10", "11", "12", "13", "14", "16", "18", "20", "24", "28"];
+
+// اندازه‌ی قلم روی علامت textStyle (TipTap 2 افزونه‌ی رسمی اندازه ندارد)
+const FontSize = Extension.create({
+  name: "fontSize",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["textStyle"],
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (el) => el.style.fontSize || null,
+            renderHTML: (attrs) => (attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {}),
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (size) =>
+        ({ chain }) =>
+          chain().setMark("textStyle", { fontSize: size }).run(),
+      unsetFontSize:
+        () =>
+        ({ chain }) =>
+          chain().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run(),
+    };
+  },
+});
+
+const selectSx = { height: 30, fontSize: 13, "& .MuiSelect-select": { py: 0.25, pr: 1 }, bgcolor: "background.paper" };
 
 function Btn({ title, icon, onClick, active, disabled }) {
   return (
@@ -55,6 +102,9 @@ export default function LetterEditor({ value, onChange, disabled = false, bare =
       StarterKit.configure({ heading: { levels: [2, 3] }, code: false, codeBlock: false, horizontalRule: false }),
       Underline,
       TextAlign.configure({ types: ["heading", "paragraph"], alignments: ["right", "center", "left", "justify"] }),
+      TextStyle,
+      FontFamily,
+      FontSize,
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
@@ -84,6 +134,34 @@ export default function LetterEditor({ value, onChange, disabled = false, bare =
   return (
     <Box sx={bare ? { bgcolor: "background.paper" } : { border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden", bgcolor: "background.paper" }}>
       <Stack direction="row" flexWrap="wrap" alignItems="center" sx={{ p: 0.5, gap: 0.25, bgcolor: bare ? "transparent" : "action.hover", borderBottom: bare ? 1 : 0, borderColor: "divider" }}>
+        <Select
+          size="small"
+          displayEmpty
+          value={editor.getAttributes("textStyle").fontFamily || ""}
+          onChange={(e) => (e.target.value ? c().setFontFamily(e.target.value).run() : c().unsetFontFamily().run())}
+          sx={{ ...selectSx, minWidth: 110 }}
+          disabled={disabled}
+          renderValue={(v) => (FONTS.find((f) => f.value === v)?.label || v || "قلم").split(" (")[0]}
+        >
+          {FONTS.map((f) => (
+            <MenuItem key={f.value} value={f.value} sx={{ fontFamily: f.value || undefined }}>{f.label}</MenuItem>
+          ))}
+        </Select>
+        <Select
+          size="small"
+          displayEmpty
+          value={(editor.getAttributes("textStyle").fontSize || "").replace("pt", "")}
+          onChange={(e) => (e.target.value ? c().setFontSize(`${e.target.value}pt`).run() : c().unsetFontSize().run())}
+          sx={{ ...selectSx, minWidth: 64 }}
+          disabled={disabled}
+          renderValue={(v) => (v ? toPersianDigits(v) : "اندازه")}
+        >
+          <MenuItem value="">پیش‌فرض</MenuItem>
+          {SIZES.map((sz) => (
+            <MenuItem key={sz} value={sz}>{toPersianDigits(sz)}</MenuItem>
+          ))}
+        </Select>
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
         <Btn title="پاراگراف" icon={<TextFieldsIcon fontSize="small" />} onClick={() => c().setParagraph().run()} active={editor.isActive("paragraph")} />
         <Btn title="تیتر" icon={<TitleIcon fontSize="small" />} onClick={() => c().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })} />
         <Btn title="تیتر کوچک" icon={<TitleIcon sx={{ fontSize: 15 }} />} onClick={() => c().toggleHeading({ level: 3 }).run()} active={editor.isActive("heading", { level: 3 })} />

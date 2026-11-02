@@ -327,7 +327,7 @@ export default function OaTemplatesPage() {
 
             <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "none", width: { xs: "100%", xl: "auto" }, overflowX: "auto" }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                پیش‌نمایش {paper}
+                پیش‌نمایش — کاغذ <bdi dir="ltr">{paper}</bdi>
               </Typography>
               <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName="نام سایت" />
             </Card>

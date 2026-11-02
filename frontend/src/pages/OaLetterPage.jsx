@@ -331,7 +331,7 @@ export default function OaLetterPage() {
 
         <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            متن نامه — {letter.paper_size}، {toPersianDigits(pages)} صفحه
+            متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
           <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={setPages} siteName={letter.site_name} />
         </Card>
