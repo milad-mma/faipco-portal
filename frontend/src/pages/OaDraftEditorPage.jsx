@@ -23,7 +23,9 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import { discardDraft, fetchComposeOptions, fetchDraft, saveDraft } from "../api/automationLetters";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
+import { discardDraft, fetchComposeOptions, fetchDraft, saveDraft, sendDraft } from "../api/automationLetters";
+import DraftExtras from "../components/oa/DraftExtras";
 import LetterEditor from "../components/oa/LetterEditor";
 import LetterPreview from "../components/oa/LetterPreview";
 import { toPersianDigits } from "../utils/searchText";
@@ -54,6 +56,10 @@ export default function OaDraftEditorPage() {
   const [conflict, setConflict] = useState(false);
   const [pages, setPages] = useState(1);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [extras, setExtras] = useState({ recipients: [], attachments: [] });
+  const [confirmSend, setConfirmSend] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const formRef = useRef(null);
   const savingRef = useRef(false); // دو ذخیره‌ی هم‌زمان با یک row_version به 409 کاذب می‌رسید
   const againRef = useRef(false);
@@ -64,8 +70,13 @@ export default function OaDraftEditorPage() {
   useEffect(() => {
     Promise.all([fetchDraft(id), fetchComposeOptions()])
       .then(([d, o]) => {
+        if (d.status !== "draft") {
+          navigate(`/automation/letters/${d.id}`, { replace: true }); // قبلاً ارسال شده
+          return;
+        }
         setDraft(d);
         setForm(formFrom(d));
+        setExtras({ recipients: d.recipients || [], attachments: d.attachments || [] });
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -87,6 +98,7 @@ export default function OaDraftEditorPage() {
         template_id: f.template_id ? Number(f.template_id) : null,
         row_version: d.row_version,
       });
+      draftRef.current = updated;
       setDraft(updated); // متن محلی جایگزین نمی‌شود تا مکان‌نما نپرد؛ پاک‌سازی سرور در نمایش بعدی اعمال است
       setDirty(formRef.current !== f);
       setSaveState({ ok: true, message: `ذخیره شد — ${new Date().toLocaleTimeString("fa-IR")}` });
@@ -146,6 +158,22 @@ export default function OaDraftEditorPage() {
     [options, draft],
   );
 
+  async function handleSend() {
+    setSending(true);
+    setSendError("");
+    try {
+      // آخرین متن اول ذخیره شود (اگر ذخیره‌ی خودکاری در جریان است، منتظر می‌مانیم)
+      while (savingRef.current) await new Promise((r) => setTimeout(r, 100));
+      await doSave();
+      const res = await sendDraft(draftRef.current.id, draftRef.current.row_version);
+      setDirty(false);
+      navigate(`/automation/letters/${res.letter_id}`, { replace: true });
+    } catch (err) {
+      setSendError(err.response?.data?.detail || "ارسال ناموفق بود.");
+      setSending(false);
+    }
+  }
+
   async function handleDiscard() {
     try {
       await discardDraft(draft.id);
@@ -202,6 +230,16 @@ export default function OaDraftEditorPage() {
         <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={() => setConfirmDiscard(true)} sx={{ height: 40 }}>
           حذف
         </Button>
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={<SendOutlinedIcon />}
+          onClick={() => { setSendError(""); setConfirmSend(true); }}
+          disabled={conflict || !extras.recipients.some((r) => r.role === "to")}
+          sx={{ height: 40 }}
+        >
+          ارسال
+        </Button>
       </Stack>
 
       {conflict && (
@@ -247,6 +285,13 @@ export default function OaDraftEditorPage() {
               <MenuItem value="A5">A5</MenuItem>
             </TextField>
           </Stack>
+          <DraftExtras
+            draftId={draft.id}
+            recipients={extras.recipients}
+            attachments={extras.attachments}
+            onChange={setExtras}
+            disabled={conflict || sending}
+          />
           <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={conflict} />
         </Stack>
 
@@ -278,6 +323,30 @@ export default function OaDraftEditorPage() {
       <Box className="oa-print-area">
         <LetterPreview paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} printOnly forcePages={pages} siteName={draft.site_name} />
       </Box>
+
+      <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
+        <DialogTitle>ارسال نامه</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1 }}>
+            «{form.subject || "بدون موضوع"}» برای {toPersianDigits(extras.recipients.filter((r) => r.role === "to").length)} گیرنده
+            {extras.recipients.some((r) => r.role === "cc")
+              ? ` و ${toPersianDigits(extras.recipients.filter((r) => r.role === "cc").length)} رونوشت`
+              : ""}{" "}
+            ارسال شود؟
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            بعد از ارسال، متن و گیرندگان قابل تغییر نیستند.
+            {form.confidentiality === "confidential" ? " این نامه محرمانه است و فقط گیرندگان و افرادی که به آن‌ها ارجاع شود آن را می‌بینند." : ""}
+          </Typography>
+          {sendError && <Alert severity="error" sx={{ mt: 2 }}>{sendError}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmSend(false)} disabled={sending}>انصراف</Button>
+          <Button variant="contained" color="success" onClick={handleSend} disabled={sending}>
+            {sending ? "در حال ارسال..." : "ارسال"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={confirmDiscard} onClose={() => setConfirmDiscard(false)}>
         <DialogTitle>حذف پیش‌نویس</DialogTitle>

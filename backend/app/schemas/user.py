@@ -74,6 +74,9 @@ class UserOut(BaseModel):
     can_manage_automation_settings: bool = False  # automation.settings — «تنظیمات اتوماسیون اداری» (سایت‌محور)
     can_oa_compose: bool = False  # automation.compose — پیش‌نویس نامه (سایت‌محور)
     can_oa_templates: bool = False  # automation.templates — قالب و سربرگ نامه (سایت‌محور)
+    can_oa_access: bool = False  # automation.access — کارتابل اتوماسیون
+    oa_unread: int = 0  # نامه‌های خوانده‌نشده‌ی کارتابل
+    oa_pending: int = 0  # مسئولیت‌های باز (در انتظار اقدام)
     bank_info_missing: bool = False  # اطلاعات یکی از بانک‌های اجباری سایت کامل نیست (یادآوری)
     bank_info_missing_count: int = 0  # تعداد بانک‌های اجباری تکمیل‌نشده (شمارنده‌ی قرمز «پنل کاربری»)
     family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده

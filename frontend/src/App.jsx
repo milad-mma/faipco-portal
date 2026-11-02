@@ -52,6 +52,8 @@ const AutomationSettingsPage = lazyPage(() => import("./pages/AutomationSettings
 const OaDraftsPage = lazyPage(() => import("./pages/OaDraftsPage"));
 const OaDraftEditorPage = lazyPage(() => import("./pages/OaDraftEditorPage"));
 const OaTemplatesPage = lazyPage(() => import("./pages/OaTemplatesPage"));
+const OaCartablePage = lazyPage(() => import("./pages/OaCartablePage"));
+const OaLetterPage = lazyPage(() => import("./pages/OaLetterPage"));
 const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
 const LeaveRequestsAdminListPage = lazyPage(
@@ -424,6 +426,22 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_oa_compose}>
                   <OaDraftEditorPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/cartable"
+              element={
+                <PermissionRoute check={(u) => u?.can_oa_access}>
+                  <OaCartablePage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/letters/:id"
+              element={
+                <PermissionRoute check={(u) => u?.can_oa_access}>
+                  <OaLetterPage />
                 </PermissionRoute>
               }
             />

@@ -231,7 +231,13 @@ async def _draft_site_check(db: AsyncSession, user: User, letter_id: int) -> OaL
 @router.get("/drafts/{letter_id}")
 async def get_draft(letter_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = await _draft_site_check(db, current_user, letter_id)
-    return await service.draft_out(letter_id, current_user)
+    out = await service.draft_out(letter_id, current_user)
+    if out["status"] == "draft":
+        from app.services.oa_cartable_service import OaCartableService
+
+        letter = await service._own_letter(letter_id, current_user)
+        out.update(await OaCartableService(db).draft_extras(letter))
+    return out
 
 
 @router.put("/drafts/{letter_id}")

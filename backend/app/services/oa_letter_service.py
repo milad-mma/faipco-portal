@@ -198,6 +198,9 @@ class OaLetterService:
         letter = await self._own_letter(letter_id, user)
         if letter.status != "draft":
             raise OaLetterError("فقط پیش‌نویس قابل حذف است", 409)
+        from app.services.oa_cartable_service import OaCartableService
+
+        await OaCartableService(self.db).delete_draft_files(letter)  # پیوست‌های هرگز ارسال‌نشده
         letter.discarded_at = datetime.now(timezone.utc)
         letter.status = "discarded"
         self.files.audit("letter.discard", user, entity="letter", entity_id=letter.id, site_id=letter.site_id)

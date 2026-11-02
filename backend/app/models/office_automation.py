@@ -131,6 +131,13 @@ class OaLetter(Base, TimestampMixin):
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     row_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # فاز ۳الف (Migration 137): فرستنده و زمان ارسال
+    sender_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    sender_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sender_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):
@@ -151,3 +158,107 @@ class OaLetterVersion(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="editing")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ---------- فاز ۳الف: گیرنده، دسترسی، مسئولیت، هامش، پیوست (Migration 137) ----------
+
+
+class OaRecipient(Base, TimestampMixin):
+    """گیرنده‌ی اصلی (to) یا رونوشت (cc) — همیشه شخص؛ نام/سمت/واحد لحظه‌ی انتخاب ذخیره می‌شود."""
+
+    __tablename__ = "oa_recipients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(4), nullable=False)  # to | cc
+    employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    department_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    selected_via: Mapped[str] = mapped_column(String(16), nullable=False, default="direct")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OaLetterAccess(Base):
+    """
+    دسترسی صریح یک شخص به یک نامه — تنها منبع دسترسی محتوایی (بخش ۵.۲ سند). نقش سازمانی یا مجوز ماژول رکوردی نمی‌سازد.
+    source: creator | sender | recipient | cc | referral. read_at: اولین مشاهده‌ی همین شخص.
+    """
+
+    __tablename__ = "oa_letter_access"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    can_act: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_refer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    granted_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    granted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class OaTask(Base, TimestampMixin):
+    """مسئولیت: kind action (اقدام) | info (اطلاع)؛ origin delivery (گیرنده‌ی اصلی) | referral. درخت با parent_task_id."""
+
+    __tablename__ = "oa_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_task_id: Mapped[int | None] = mapped_column(ForeignKey("oa_tasks.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    origin: Mapped[str] = mapped_column(String(12), nullable=False, default="delivery")
+    assignee_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    assignee_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    assignee_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")  # open | done | cancelled
+    result_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    created_by_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    acted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OaNote(Base, TimestampMixin):
+    """هامش داخلی؛ فقط برای کسانی که به نامه دسترسی دارند؛ هرگز در چاپ رسمی نمی‌آید."""
+
+    __tablename__ = "oa_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("oa_tasks.id", ondelete="SET NULL"), nullable=True)
+    author_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    author_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class OaAttachment(Base, TimestampMixin):
+    """پیوست یک نسخه‌ی نامه (فایل اتوماسیون)."""
+
+    __tablename__ = "oa_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_version_id: Mapped[int] = mapped_column(
+        ForeignKey("oa_letter_versions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_id: Mapped[int] = mapped_column(ForeignKey("oa_files.id", ondelete="RESTRICT"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class OaNotificationLog(Base):
+    """کلید یکتای هر اعلان ارسال‌شده (رویداد:نامه:شخص:…) تا در چند worker یا تلاش دوباره تکرار نشود."""
+
+    __tablename__ = "oa_notification_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

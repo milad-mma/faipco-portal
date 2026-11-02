@@ -36,6 +36,7 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 
 /**
@@ -297,13 +298,20 @@ export const NAV_ITEMS = [
       },
     ],
   },
-  // گروه اتوماسیون اداری (docs/office-automation.md) — فاز ۲: پیش‌نویس و قالب؛ کارتابل و ارسال از فاز ۳الف
+  // گروه اتوماسیون اداری (docs/office-automation.md) — کارتابل، پیش‌نویس، قالب و تنظیمات
   {
     label: "اتوماسیون اداری",
     path: "/automation/settings",
     icon: <EmailOutlinedIcon />,
     groupOnly: true,
     children: [
+      {
+        label: "کارتابل من",
+        path: "/automation/cartable",
+        icon: <InboxOutlinedIcon />,
+        check: (u) => u?.can_oa_access,
+        badge: (u) => u?.oa_pending || 0, // مسئولیت‌های باز شخصی (خوانده‌نشده‌ها در زبانه‌ی «دریافتی»)
+      },
       {
         label: "پیش‌نویس‌های من",
         path: "/automation/drafts",

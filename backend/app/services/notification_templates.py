@@ -277,6 +277,36 @@ TEMPLATES: dict[str, dict[str, dict]] = {
             "vars": {"name": "نام پرسنل"},
         },
     },
+    # اتوماسیون اداری (فاز ۳الف) — فقط اعلان، هیچ «اطلاعیه»ای ساخته نمی‌شود
+    "automation": {
+        "automation.new_letter": {
+            "label": "نامه‌ی جدید",
+            "recipient": "گیرنده‌ی اصلی نامه",
+            "when": "ارسال نامه",
+            "default": "نامه‌ی جدید از {sender}: {subject}",
+            "vars": {"sender": "نام فرستنده", "subject": "موضوع نامه"},
+        },
+        "automation.cc": {
+            "label": "رونوشت نامه",
+            "recipient": "گیرنده‌ی رونوشت",
+            "when": "ارسال نامه",
+            "default": "رونوشت نامه از {sender}: {subject}",
+            "vars": {"sender": "نام فرستنده", "subject": "موضوع نامه"},
+        },
+        "automation.referral": {
+            "label": "ارجاع نامه",
+            "recipient": "گیرنده‌ی ارجاع",
+            "when": "ارجاع نامه",
+            "default": "ارجاع نامه از {sender}: {subject}",
+            "vars": {"sender": "نام ارجاع‌دهنده", "subject": "موضوع نامه"},
+        },
+        "automation.confidential": {
+            "label": "نامه‌ی محرمانه (متن کلی)",
+            "recipient": "گیرنده/رونوشت/ارجاع نامه‌ی محرمانه",
+            "when": "ارسال یا ارجاع نامه‌ی محرمانه — بدون موضوع و فرستنده",
+            "default": "یک نامه‌ی محرمانه در کارتابل شما",
+        },
+    },
 }
 
 

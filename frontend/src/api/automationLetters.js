@@ -69,3 +69,77 @@ export async function saveDraft(id, payload) {
 export async function discardDraft(id) {
   await apiClient.delete(`/automation/drafts/${id}`);
 }
+
+// ---------- فاز ۳الف: گیرنده، پیوست، ارسال، کارتابل، نامه ----------
+
+// { people: [{employee_id, name, title, department}], departments: [{id, name, site}] } — بدون کد پرسنلی/ملی
+export async function fetchPeople(params) {
+  const { data } = await apiClient.get("/automation/people", { params });
+  return data;
+}
+
+export async function saveDraftRecipients(id, items) {
+  const { data } = await apiClient.put(`/automation/drafts/${id}/recipients`, { items });
+  return data; // { recipients, attachments }
+}
+
+export async function uploadDraftAttachment(id, file, onProgress) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post(`/automation/drafts/${id}/attachments`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 10 * 60 * 1000,
+    onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded * 100) / e.total) : 0),
+  });
+  return data; // { attachments }
+}
+
+export async function removeDraftAttachment(id, attachmentId) {
+  const { data } = await apiClient.delete(`/automation/drafts/${id}/attachments/${attachmentId}`);
+  return data;
+}
+
+export async function sendDraft(id, rowVersion) {
+  const { data } = await apiClient.post(`/automation/drafts/${id}/send`, { row_version: rowVersion });
+  return data; // { letter_id }
+}
+
+export async function fetchCartable(box, q, page) {
+  const { data } = await apiClient.get("/automation/cartable", { params: { box, q, page } });
+  return data; // { items, total, page, page_size }
+}
+
+export async function fetchLetter(id) {
+  const { data } = await apiClient.get(`/automation/letters/${id}`);
+  return data;
+}
+
+export async function referLetter(id, payload) {
+  const { data } = await apiClient.post(`/automation/letters/${id}/refer`, payload);
+  return data;
+}
+
+export async function completeTask(taskId, note) {
+  const { data } = await apiClient.post(`/automation/tasks/${taskId}/done`, { note });
+  return data;
+}
+
+export async function addLetterNote(id, text) {
+  const { data } = await apiClient.post(`/automation/letters/${id}/notes`, { text });
+  return data;
+}
+
+export async function makeLetterConfidential(id, reason) {
+  const { data } = await apiClient.post(`/automation/letters/${id}/make-confidential`, { reason });
+  return data;
+}
+
+// دانلود پیوست (نامه‌ی ارسال‌شده یا پیش‌نویس خود کاربر) به‌صورت Blob
+export async function downloadLetterAttachment({ letterId, attachmentId, draft = false }) {
+  const base = draft ? "drafts" : "letters";
+  const { data } = await apiClient.get(`/automation/${base}/${letterId}/attachments/${attachmentId}/download`, {
+    responseType: "blob",
+    timeout: 10 * 60 * 1000,
+  });
+  return data;
+}

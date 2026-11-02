@@ -408,6 +408,17 @@ class AuthService:
         base.can_manage_automation_settings = user.is_superuser or "automation.settings" in permission_codes
         base.can_oa_compose = user.is_superuser or "automation.compose" in permission_codes
         base.can_oa_templates = user.is_superuser or "automation.templates" in permission_codes
+        base.can_oa_access = user.is_superuser or "automation.access" in permission_codes
+        # شمارنده‌ی منوی «کارتابل من»: خوانده‌نشده + مسئولیت باز — فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد
+        base.oa_unread = base.oa_pending = 0
+        if base.can_oa_access and user.employee_id is not None:
+            try:
+                from app.services.oa_cartable_service import OaCartableService
+
+                c = await OaCartableService(self.db).counters(user.employee_id)
+                base.oa_unread, base.oa_pending = c["unread"], c["pending"]
+            except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
+                pass
         # یادآوری «اطلاعات بانکی تکمیل نشده» (فقط پرسنل؛ بانک‌های فعالِ اجباری سایت)
         base.bank_info_missing = False
         base.bank_info_missing_count = 0
