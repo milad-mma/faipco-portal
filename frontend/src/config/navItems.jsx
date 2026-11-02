@@ -316,7 +316,7 @@ export const NAV_ITEMS = [
         label: "پیش‌نویس‌های من",
         path: "/automation/drafts",
         icon: <EditNoteOutlinedIcon />,
-        check: (u) => u?.can_oa_compose,
+        check: (u) => u?.can_oa_access,
       },
       {
         label: "قالب‌های نامه",

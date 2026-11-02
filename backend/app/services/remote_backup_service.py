@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # الگوی نام فایل بکاپ؛ گروه ۱ زمان ساخت (UTC) است
-BACKUP_FILENAME_PATTERN = re.compile(r"faipco-backup-(\d{8}-\d{6})\.(?:tar\.gz\.age|tar\.gz|zip)")
+BACKUP_FILENAME_PATTERN = re.compile(r"faipco-backup-(\d{8}-\d{6})\.zip")
 
 
 class RemoteBackupError(Exception):

@@ -72,7 +72,6 @@ class UserOut(BaseModel):
     can_view_bank_accounts: bool = False  # bank_accounts.view یا manage — اطلاعات بانکی پرسنل
     can_manage_bank_accounts: bool = False  # bank_accounts.manage — تعریف بانک‌ها و اصلاح اطلاعات پرسنل
     can_manage_automation_settings: bool = False  # automation.settings — «تنظیمات اتوماسیون اداری» (سایت‌محور)
-    can_oa_compose: bool = False  # برابر can_oa_access (compose در access ادغام شد)
     can_oa_templates: bool = False  # automation.templates — قالب و سربرگ نامه (سایت‌محور)
     can_oa_access: bool = False  # automation.access — کارتابل اتوماسیون
     oa_unread: int = 0  # نامه‌های خوانده‌نشده‌ی کارتابل

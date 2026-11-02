@@ -259,7 +259,7 @@ export default function OaLetterPage() {
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
-        {user?.can_oa_compose && (
+        {user?.can_oa_access && (
           <>
             <Button variant="outlined" startIcon={<ReplyIcon />} onClick={() => newRelated("reply")} disabled={busy} sx={{ height: 40 }}>
               پاسخ

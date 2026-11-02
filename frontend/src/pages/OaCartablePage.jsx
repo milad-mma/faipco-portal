@@ -79,7 +79,7 @@ export default function OaCartablePage() {
           <Tooltip title="تنظیمات اعلان">
             <IconButton onClick={() => setPrefsOpen(true)}><NotificationsActiveOutlinedIcon /></IconButton>
           </Tooltip>
-          {user?.can_oa_compose && (
+          {user?.can_oa_access && (
             <Button variant="outlined" startIcon={<EditNoteOutlinedIcon />} onClick={() => navigate("/automation/drafts")} sx={{ height: 40 }}>
               پیش‌نویس‌ها و نامه‌ی جدید
             </Button>

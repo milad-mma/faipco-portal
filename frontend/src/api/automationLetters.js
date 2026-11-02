@@ -37,7 +37,7 @@ export async function fetchLogoBlob(fileId) {
   return data;
 }
 
-// ---------- پیش‌نویس (مجوز automation.compose) ----------
+// ---------- پیش‌نویس (مجوز automation.access) ----------
 
 // { sites, templates: [{id, site_id, name, default_paper_size}], urgencies, confidentiality }
 export async function fetchComposeOptions() {
@@ -143,9 +143,9 @@ export async function downloadLetterAttachment({ letterId, attachmentId, draft =
   return data;
 }
 
-// ---------- فاز ۳الف بخش دوم: پاسخ/عطف/پیرو و تنظیمات اعلان ----------
+// ---------- فاز ۳الف بخش دوم: پاسخ و تنظیمات اعلان ----------
 
-// type: reply | reference | follow_up ؛ خروجی: { draft_id }
+// type: فقط reply ؛ خروجی: { draft_id }
 export async function createRelatedDraft(letterId, type) {
   const { data } = await apiClient.post(`/automation/letters/${letterId}/related-draft`, { type });
   return data;

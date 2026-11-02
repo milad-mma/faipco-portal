@@ -95,7 +95,7 @@ class OaLetterService:
         except rules.LetterRulesError as e:
             raise OaLetterError(str(e)) from None
         if template_id is None:
-            t = OaTemplate(site_id=None, name=name, default_paper_size=default_paper_size, is_active=is_active,
+            t = OaTemplate(name=name, default_paper_size=default_paper_size, is_active=is_active,
                            created_by=user.id)
             self.db.add(t)
             await self.db.flush()

@@ -416,7 +416,7 @@ export default function App() {
             <Route
               path="/automation/drafts"
               element={
-                <PermissionRoute check={(u) => u?.can_oa_compose}>
+                <PermissionRoute check={(u) => u?.can_oa_access}>
                   <OaDraftsPage />
                 </PermissionRoute>
               }
@@ -424,7 +424,7 @@ export default function App() {
             <Route
               path="/automation/drafts/:id"
               element={
-                <PermissionRoute check={(u) => u?.can_oa_compose}>
+                <PermissionRoute check={(u) => u?.can_oa_access}>
                   <OaDraftEditorPage />
                 </PermissionRoute>
               }

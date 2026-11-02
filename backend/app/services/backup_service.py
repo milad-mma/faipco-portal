@@ -206,7 +206,7 @@ def schedule_restore(dump_path: Path, files_dir: Path | None = None) -> None:
     به‌جای pg_restore --clean از بازسازی کامل Schema استفاده می‌شود، چون --clean
     هنگام Drop تک‌تک Objectها (بدون CASCADE) روی وابستگی‌ها شکست می‌خورد.
     اگر برگشت داده هم شکست بخورد، داده قبلی در public_prerestore باقی می‌ماند و در لاگ ذکر می‌شود.
-    files_dir (بکاپ v4): پوشه‌ی objects استخراج‌شده؛ قبل از pg_restore پوشه‌ی objects فعلی اتوماسیون کنار گذاشته
+    files_dir (ZIP همراه فایل‌های آپلودی): پوشه‌ی objects استخراج‌شده؛ قبل از pg_restore پوشه‌ی objects فعلی اتوماسیون کنار گذاشته
     (objects.prerestore) و نسخه‌ی بکاپ جایش می‌نشیند؛ در شکست هر دو (دیتابیس و فایل‌ها) برمی‌گردند. قرنطینه و tmp دست نمی‌خورند.
     خطا: BackupError اگر راه‌اندازی systemd-run ناموفق باشد (دیتابیس دست‌نخورده می‌ماند).
     """

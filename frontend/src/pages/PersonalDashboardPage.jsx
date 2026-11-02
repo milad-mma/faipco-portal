@@ -16,6 +16,7 @@ import {
   Box,
   Card,
   Chip,
+  Dialog,
   Stack,
   Typography,
   useMediaQuery,
@@ -158,6 +159,7 @@ export default function PersonalDashboardPage() {
   const [todayAttendance, setTodayAttendance] = useState(null); // { checkIn, checkOut } | "unavailable" | null(loading)
   const [birthdays, setBirthdays] = useState(null); // متولدین امروز؛ null = در حال بارگذاری
   const [photoUrl, setPhotoUrl] = useState(null); // Object URL عکس پرسنلی؛ null = بدون عکس
+  const [photoOpen, setPhotoOpen] = useState(false); // نمایش بزرگ عکس وسط صفحه
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingLoanCount, setPendingLoanCount] = useState(0); // ضمانت‌ها و تأییدهای وام منتظر این کاربر
   const [pendingAdvanceCount, setPendingAdvanceCount] = useState(0); // تأییدهای مساعده منتظر این کاربر
@@ -331,17 +333,46 @@ export default function PersonalDashboardPage() {
               کد پرسنلی: {user?.personnel_code || "—"}
             </Typography>
           </Box>
+          {/* با کلیک روی عکس، نسخه‌ی بزرگ وسط صفحه باز می‌شود */}
           <Avatar
             src={photoUrl || undefined}
+            onClick={photoUrl ? () => setPhotoOpen(true) : undefined}
             sx={{
               width: 50,
               height: 50,
               backgroundColor: "rgba(255,255,255,0.18)",
               flexShrink: 0,
+              cursor: photoUrl ? "zoom-in" : "default",
             }}
           >
             {!photoUrl && <DefaultPersonAvatar />}
           </Avatar>
+          <Dialog
+            open={photoOpen && Boolean(photoUrl)}
+            onClose={() => setPhotoOpen(false)}
+            PaperProps={{ sx: { bgcolor: "transparent", boxShadow: "none", overflow: "visible", m: 2 } }}
+          >
+            <Box
+              component="img"
+              src={photoUrl || undefined}
+              alt=""
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={() => setPhotoOpen(false)}
+              sx={{
+                display: "block",
+                width: { xs: "75vw", sm: 320 },
+                maxWidth: 360,
+                maxHeight: "80vh",
+                objectFit: "contain",
+                borderRadius: 3,
+                bgcolor: "background.paper",
+                boxShadow: 8,
+                cursor: "zoom-out",
+                userSelect: "none",
+              }}
+            />
+          </Dialog>
         </Box>
         <Stack sx={{ px: 1.75, py: 1 }}>
           {/* ردیف‌های سایت/واحد/سمت؛ ردیف‌های بدون مقدار حذف می‌شوند */}

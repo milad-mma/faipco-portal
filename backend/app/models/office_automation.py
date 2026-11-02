@@ -88,8 +88,7 @@ class OaTemplate(Base, TimestampMixin):
     __tablename__ = "oa_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # از Migration 138 قالب برای همه یکسان است؛ site_id فقط سابقه‌ی قالب‌های قدیمی (اختیاری)
-    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True, index=True)
+    # قالب برای همه‌ی سایت‌ها یکسان است (ستون site_id در Migration 140 حذف شد)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     default_paper_size: Mapped[str] = mapped_column(String(4), nullable=False, default="A4")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -272,7 +271,7 @@ class OaNotificationLog(Base):
 
 
 class OaLetterRelation(Base):
-    """from_letter_id (نامه‌ی جدید) به to_letter_id اشاره می‌کند: reply (پاسخ) | reference (عطف) | follow_up (پیرو). دسترسی نمی‌دهد."""
+    """from_letter_id (نامه‌ی جدید) به to_letter_id اشاره می‌کند: فقط reply (پاسخ). دسترسی نمی‌دهد."""
 
     __tablename__ = "oa_letter_relations"
 
