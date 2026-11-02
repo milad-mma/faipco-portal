@@ -93,6 +93,7 @@ const EMPTY_MAPPING = {
   photo_table: "",
   photo_emp_no_column: "",
   photo_thumbnail_column: "",
+  photo_small_column: "",
   termination_date_column: "",
   termination_reason_column: "",
   education_column: "",
@@ -534,6 +535,7 @@ export default function SiteSettingsPage() {
             photo_table: mapping.photo_table || "",
             photo_emp_no_column: mapping.photo_emp_no_column || "",
             photo_thumbnail_column: mapping.photo_thumbnail_column || "",
+            photo_small_column: mapping.photo_small_column || "",
             termination_date_column: mapping.termination_date_column || "",
             termination_reason_column: mapping.termination_reason_column || "",
             education_column: mapping.education_column || "",
@@ -1463,8 +1465,9 @@ export default function SiteSettingsPage() {
               عکس پرسنل (اختیاری)
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              اگر جدول جداگانه‌ای عکس بندانگشتی پرسنل را نگه می‌دارد (مثل
-              EmployeeExtendedInfo)، هر سه فیلد زیر را پر کنید:
+              اگر جدول جداگانه‌ای عکس پرسنل را نگه می‌دارد (مثل
+              EmployeeExtendedInfo)، سه فیلد اول را پر کنید. برای «بارگذاری عکس
+              توسط پرسنل» ستون عکس کوچک هم لازم است.
             </Typography>
             <TextField
               label="نام جدول عکس"
@@ -1488,7 +1491,7 @@ export default function SiteSettingsPage() {
               disabled={isSaving}
             />
             <TextField
-              label="ستون تصویر بندانگشتی"
+              label="ستون عکس (نمایش در پرتال)"
               value={mappingForm.photo_thumbnail_column}
               onChange={(e) =>
                 setMappingForm({
@@ -1496,7 +1499,19 @@ export default function SiteSettingsPage() {
                   photo_thumbnail_column: e.target.value,
                 })
               }
-              helperText="مثال: ThumbnailImg"
+              helperText="مثال: Img (عکس اصلی) یا ThumbnailImg"
+              disabled={isSaving}
+            />
+            <TextField
+              label="ستون عکس کوچک"
+              value={mappingForm.photo_small_column}
+              onChange={(e) =>
+                setMappingForm({
+                  ...mappingForm,
+                  photo_small_column: e.target.value,
+                })
+              }
+              helperText="مثال: ThumbnailImg — هنگام ثبت عکس تأییدشده، عکس کوچک ۸۸×۸۸ مثل کاراوب در این ستون نوشته می‌شود"
               disabled={isSaving}
             />
 

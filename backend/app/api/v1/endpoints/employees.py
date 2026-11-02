@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, undefer
 
 from app.core.deps import get_current_user, require_permission
+from app.core.profile_photo_rules import image_media_type
 from app.core.text_normalize import normalize_search_text
 from app.core.site_access import (
     get_accessible_site_ids,
@@ -554,17 +555,6 @@ async def get_birthday_related_photo_thumbnail(
     )
 
 
-def _image_media_type(data: bytes) -> str:
-    """نوع تصویر از چند بایت اول (JPEG، PNG، WebP)؛ در غیر این صورت GIF مثل قبل."""
-    if data[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return "image/gif"
-
-
 @router.get("/{employee_id}/photo-thumbnail")
 async def get_employee_photo_thumbnail(
     employee_id: int,
@@ -589,7 +579,7 @@ async def get_employee_photo_thumbnail(
     # Cache خصوصی مرورگر (۱۰ دقیقه): عکس با Sync دوره‌ای عوض می‌شود و هر بار باز شدن داشبورد نباید دوباره دانلود شود
     return Response(
         content=employee.photo_thumbnail,
-        media_type=_image_media_type(employee.photo_thumbnail),
+        media_type=image_media_type(employee.photo_thumbnail),
         headers={"Cache-Control": "private, max-age=600"},
     )
 

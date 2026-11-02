@@ -16,7 +16,6 @@ import {
   Box,
   Card,
   Chip,
-  Dialog,
   Stack,
   Typography,
   useMediaQuery,
@@ -52,6 +51,7 @@ import { swr } from "../api/swrCache";
 import { toPersianDigits } from "../utils/searchText";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
+import ProfilePhotoDialog from "../components/ProfilePhotoDialog";
 import EmployeeAvatar from "../components/EmployeeAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
@@ -333,48 +333,21 @@ export default function PersonalDashboardPage() {
               کد پرسنلی: {user?.personnel_code || "—"}
             </Typography>
           </Box>
-          {/* با کلیک روی عکس، نسخه‌ی بزرگ وسط صفحه باز می‌شود */}
+          {/* با کلیک روی عکس، نسخه‌ی بزرگ وسط صفحه با «حذف تصویر» یا «بارگذاری تصویر» باز می‌شود */}
           <Avatar
             src={photoUrl || undefined}
-            onClick={photoUrl ? () => setPhotoOpen(true) : undefined}
+            onClick={user?.employee_id ? () => setPhotoOpen(true) : undefined}
             sx={{
               width: 50,
               height: 50,
               backgroundColor: "rgba(255,255,255,0.18)",
               flexShrink: 0,
-              cursor: photoUrl ? "zoom-in" : "default",
+              cursor: user?.employee_id ? "pointer" : "default",
             }}
           >
             {!photoUrl && <DefaultPersonAvatar />}
           </Avatar>
-          <Dialog
-            open={photoOpen && Boolean(photoUrl)}
-            onClose={() => setPhotoOpen(false)}
-            PaperProps={{ sx: { bgcolor: "transparent", boxShadow: "none", overflow: "visible", m: 2 } }}
-          >
-            <Box
-              component="img"
-              src={photoUrl || undefined}
-              alt=""
-              draggable={false}
-              onContextMenu={(e) => e.preventDefault()}
-              onClick={() => setPhotoOpen(false)}
-              sx={{
-                display: "block",
-                // دایره‌ای مثل آواتار داشبورد، با حلقه‌ی سفید دور عکس
-                width: { xs: "70vw", sm: 300 },
-                maxWidth: 340,
-                aspectRatio: "1 / 1",
-                objectFit: "cover",
-                borderRadius: "50%",
-                border: "4px solid #fff",
-                bgcolor: "background.paper",
-                boxShadow: 8,
-                cursor: "zoom-out",
-                userSelect: "none",
-              }}
-            />
-          </Dialog>
+          <ProfilePhotoDialog open={photoOpen} onClose={() => setPhotoOpen(false)} photoUrl={photoUrl} />
         </Box>
         <Stack sx={{ px: 1.75, py: 1 }}>
           {/* ردیف‌های سایت/واحد/سمت؛ ردیف‌های بدون مقدار حذف می‌شوند */}

@@ -69,6 +69,8 @@ class UserOut(BaseModel):
     can_manage_insurance: bool = False  # insurance.manage — تنظیمات بیمه تکمیلی
     can_view_family: bool = False  # family.view یا family.manage — مشخصات خانوادگی پرسنل (حق تاهل/اولاد)
     can_manage_family: bool = False  # family.manage — تأیید/رد، سابقه بیمه و تنظیم قواعد
+    can_approve_photos: bool = False  # photo.approve — بررسی درخواست بارگذاری/حذف عکس پرسنلی
+    photo_requests_pending: int = 0  # درخواست‌های عکس در انتظار (شمارنده‌ی منوی «عکس پرسنل»)
     can_view_bank_accounts: bool = False  # bank_accounts.view یا manage — اطلاعات بانکی پرسنل
     can_manage_bank_accounts: bool = False  # bank_accounts.manage — تعریف بانک‌ها و اصلاح اطلاعات پرسنل
     can_manage_automation_settings: bool = False  # automation.settings — «تنظیمات اتوماسیون اداری» (سایت‌محور)

@@ -174,6 +174,8 @@ class EmployeeMapping(Base, TimestampMixin):
     photo_table: Mapped[str | None] = mapped_column(String(128), nullable=True)
     photo_emp_no_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
     photo_thumbnail_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # ستون عکس کوچک (کاراوب: ThumbnailImg، GIF ۸۸×۸۸) — فقط برای نوشتن عکس تأییدشده؛ Migration 141
+    photo_small_column: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # اختیاری (گزارش جذب و ترک کار — Migration 089): فقط برای خواندن مستقیم آمار از منبع؛
     # پرسنل قطع‌همکاری‌شده وارد پرتال نمی‌شوند. کاراوب: End_Date / Cut_Reason / Grade_No + Grades

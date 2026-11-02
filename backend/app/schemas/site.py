@@ -75,6 +75,7 @@ _EMPLOYEE_COLUMN_FIELDS = (
     "position_lookup_name_column",
     "photo_emp_no_column",
     "photo_thumbnail_column",
+    "photo_small_column",
     "termination_date_column",
     "termination_reason_column",
     "education_column",
@@ -214,6 +215,7 @@ class EmployeeMappingIn(BaseModel):
     photo_table: str | None = None
     photo_emp_no_column: str | None = None
     photo_thumbnail_column: str | None = None
+    photo_small_column: str | None = None  # عکس کوچک برای نوشتن عکس تأییدشده (کاراوب: ThumbnailImg)
     # اختیاری: گزارش جذب و ترک کار (تاریخ/علت ترک کار، مدرک تحصیلی و Lookup آن، ماه شروع آمار)
     termination_date_column: str | None = None
     termination_reason_column: str | None = None

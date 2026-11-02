@@ -403,6 +403,7 @@ class AuthService:
         base.can_manage_insurance = user.is_superuser or "insurance.manage" in permission_codes
         base.can_view_family = user.is_superuser or "family.view" in permission_codes or "family.manage" in permission_codes
         base.can_manage_family = user.is_superuser or "family.manage" in permission_codes
+        base.can_approve_photos = user.is_superuser or "photo.approve" in permission_codes
         base.can_view_bank_accounts = user.is_superuser or bool({"bank_accounts.view", "bank_accounts.manage"} & set(permission_codes))
         base.can_manage_bank_accounts = user.is_superuser or "bank_accounts.manage" in permission_codes
         base.can_manage_automation_settings = user.is_superuser or "automation.settings" in permission_codes
@@ -505,6 +506,16 @@ class AuthService:
                     base.insurance_left_alerts = await InsuranceService(self.db).left_alert_count(sites)
             except Exception:  # noqa: BLE001
                 base.insurance_left_alerts = 0
+        # شمارنده‌ی منوی «عکس پرسنل»: درخواست‌های بارگذاری/حذف عکس در انتظار تأیید (Migration 141)
+        if base.can_approve_photos:
+            try:
+                from app.services.profile_photo_service import ProfilePhotoService
+
+                photo_sites = await get_sites_with_permission(self.db, user, "photo.approve")
+                async with self.db.begin_nested():
+                    base.photo_requests_pending = await ProfilePhotoService(self.db).pending_count(photo_sites)
+            except Exception:  # noqa: BLE001
+                base.photo_requests_pending = 0
         # ماژول وام به‌ازای سایتِ پرسنل (Migration 107)
         try:
             from app.services.loan_service import LoanService

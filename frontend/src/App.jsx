@@ -48,6 +48,7 @@ const FamilyPage = lazyPage(() => import("./pages/FamilyPage"));
 const BankInfoPage = lazyPage(() => import("./pages/BankInfoPage"));
 const BankAccountsAdminPage = lazyPage(() => import("./pages/BankAccountsAdminPage"));
 const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
+const PhotoRequestsAdminPage = lazyPage(() => import("./pages/PhotoRequestsAdminPage"));
 const AutomationSettingsPage = lazyPage(() => import("./pages/AutomationSettingsPage"));
 const OaDraftsPage = lazyPage(() => import("./pages/OaDraftsPage"));
 const OaDraftEditorPage = lazyPage(() => import("./pages/OaDraftEditorPage"));
@@ -450,6 +451,14 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_oa_templates}>
                   <OaTemplatesPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/photo-requests/admin"
+              element={
+                <PermissionRoute check={(u) => u?.can_approve_photos}>
+                  <PhotoRequestsAdminPage />
                 </PermissionRoute>
               }
             />

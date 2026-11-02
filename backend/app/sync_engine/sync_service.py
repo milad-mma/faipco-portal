@@ -30,7 +30,7 @@
 from datetime import datetime, timezone
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -1173,21 +1173,21 @@ class SyncService:
             if raw_photo:
                 photo_by_code[str(raw_code).strip()] = bytes(raw_photo)
 
-        if not photo_by_code:
-            return
-
-        # اعمال تصویر روی پرسنل همین سایت که در منبع عکس دارند
+        # اعمال تصویر روی پرسنل همین سایت؛ کسی که در منبع عکس ندارد (حذف عکس در کاراوب ردیف را نگه می‌دارد و
+        # ستون را NULL می‌کند) عکسش در پرتال هم پاک می‌شود. پرسنل دستی منبع ندارند و دست نمی‌خورند.
         # photo_thumbnail ستون deferred است؛ undefer می‌شود تا SQLAlchemy مقدار قبلی را داشته باشد و
         # برای عکس‌های بدون تغییر UPDATE بی‌مورد صادر نکند
         result = await self.db.execute(
             select(Employee)
             .options(undefer(Employee.photo_thumbnail))
-            .where(Employee.site_id == site_id, Employee.personnel_code.in_(photo_by_code.keys()))
+            .where(
+                Employee.site_id == site_id,
+                Employee.is_manually_created.is_(False),
+                or_(Employee.personnel_code.in_(photo_by_code.keys()), Employee.photo_thumbnail.is_not(None)),
+            )
         )
         for employee in result.scalars().all():
-            photo = photo_by_code.get(employee.personnel_code)
-            if photo is not None:
-                employee.photo_thumbnail = photo
+            employee.photo_thumbnail = photo_by_code.get(employee.personnel_code)
 
         await self.db.flush()
 

@@ -23,6 +23,7 @@ import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import FamilyRestroomOutlinedIcon from "@mui/icons-material/FamilyRestroomOutlined";
+import AccountBoxOutlinedIcon from "@mui/icons-material/AccountBoxOutlined";
 import HealthAndSafetyOutlinedIcon from "@mui/icons-material/HealthAndSafetyOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import WifiTetheringOutlinedIcon from "@mui/icons-material/WifiTetheringOutlined";
@@ -135,6 +136,13 @@ export const NAV_ITEMS = [
         path: "/family/admin",
         icon: <FamilyRestroomOutlinedIcon />,
         check: (u) => u?.can_view_family,
+      },
+      {
+        label: "عکس پرسنل",
+        path: "/photo-requests/admin",
+        icon: <AccountBoxOutlinedIcon />,
+        check: (u) => u?.can_approve_photos,
+        badge: (u) => u?.photo_requests_pending || 0,
       },
       {
         label: "اطلاعات بانکی پرسنل",

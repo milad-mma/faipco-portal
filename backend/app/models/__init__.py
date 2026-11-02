@@ -123,3 +123,4 @@ from app.models.office_automation import (  # noqa: F401
     OaAttachment, OaAttachmentSettings, OaAuditEvent, OaFile, OaLetter, OaLetterAccess, OaLetterVersion, OaNote,
     OaLetterRelation, OaNotificationLog, OaNotificationPref, OaRecipient, OaTask, OaTemplate, OaTemplateVersion,
 )
+from app.models.profile_photo import ProfilePhotoRequest  # noqa: F401
