@@ -179,7 +179,7 @@ export default function ProfilePhotoDialog({ open, onClose, photoUrl }) {
                 بارگذاری تصویر
               </Button>
               <Typography variant="caption" color="text.secondary" textAlign="center">
-                عکس چهره‌ی واضح و مربعی بهتر است. حجم و اندازه خودکار تنظیم می‌شود و بعد از تأیید منابع انسانی ثبت می‌شود.
+                لطفاً عکس پرسنلی خود را با چهره واضح، تمام‌رخ و پس‌زمینه ساده بارگذاری کنید. عکس پس از بررسی و تأیید واحد منابع انسانی در پروفایل شما نمایش داده می‌شود.
               </Typography>
             </>
           )}

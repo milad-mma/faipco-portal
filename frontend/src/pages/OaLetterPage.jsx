@@ -1,6 +1,6 @@
 // مشاهده‌ی نامه — اتوماسیون اداری فاز ۳الف: متن (پیش‌نمایش صفحه‌ای)، گیرندگان، پیوست‌ها، مسئولیت من (ثبت نتیجه / اعلام
 // رؤیت)، ارجاع، درخت گردش، هامش و محرمانه کردن. همه‌ی دسترسی‌ها در سرور (can) بررسی می‌شوند؛ این صفحه فقط نمایش می‌دهد.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
@@ -17,6 +17,7 @@ import {
   Divider,
   FormControlLabel,
   IconButton,
+  LinearProgress,
   MenuItem,
   Stack,
   Step,
@@ -34,9 +35,11 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import ReplyIcon from "@mui/icons-material/Reply";
 import LinkIcon from "@mui/icons-material/Link";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
 import {
   addLetterNote,
-  completeTask,
+  completeTaskWithFiles,
+  downloadTaskAttachment,
   createRelatedDraft,
   downloadLetterAttachment,
   fetchLetter,
@@ -66,19 +69,25 @@ const STATE_TEXT = { done: "انجام شد", current: "در انتظار اقد
 
 // گردش نامه مثل گردش درخواست وام: مراحل از سرور (letter.flow: ارسال، گیرندگان/رونوشت با وضعیت خواندن یا اقدام، ارجاع‌ها)؛
 // افقی در دسکتاپ، عمودی در موبایل یا وقتی مراحل زیاد است؛ زیرش تاریخچه با زمان
-function LetterFlow({ letter }) {
+function LetterFlow({ letter, onDownloadTaskFile }) {
   const small = useMediaQuery((t) => t.breakpoints.down("md"));
   const steps = letter.flow || [];
   const vertical = small || steps.length > 6;
   const firstOpen = steps.findIndex((s) => s.state === "current" || s.state === "unread");
   const events = [];
   for (const s of steps) {
-    if (s.key === "sent") events.push({ at: s.at, text: `ارسال توسط ${s.person || "—"}` });
+    if (s.key === "sent") events.push({ at: s.at, text: `ارسال توسط ${s.person || "—"}${s.sent_by ? ` (فرستاده‌شده به‌وسیله‌ی منشی: ${s.sent_by})` : ""}` });
     else if (s.key.startsWith("t")) {
       events.push({ at: s.created_at || s.at, text: `ارجاع ${s.from || ""} به ${s.person}${s.instruction ? `: ${s.instruction}` : ""}${s.due_at ? ` — مهلت ${fmt(s.due_at)}` : ""}` });
     }
     if (s.read_at && s.key !== "sent") events.push({ at: s.read_at, text: `${s.person} نامه را خواند` });
-    if (s.state === "done" && s.key !== "sent") events.push({ at: s.at, text: `${s.person}: ${s.label.includes("اطلاع") ? "رؤیت ثبت شد" : "اقدام شد"}${s.note ? ` — ${s.note}` : ""}` });
+    if (s.state === "done" && s.key !== "sent") {
+      events.push({
+        at: s.at,
+        text: `${s.person}: ${s.label.includes("اطلاع") ? "رؤیت ثبت شد" : "اقدام شد"}${s.note ? ` — ${s.note}` : ""}`,
+        files: s.attachments || [],
+      });
+    }
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
   return (
@@ -109,9 +118,26 @@ function LetterFlow({ letter }) {
       </Box>
       <Stack spacing={0.5} sx={{ mt: 1 }}>
         {events.map((e, i) => (
-          <Typography key={i} variant="caption" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
-            {fmt(e.at)} — {e.text}
-          </Typography>
+          <Box key={i}>
+            <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+              {fmt(e.at)} — {e.text}
+            </Typography>
+            {e.files?.length > 0 && (
+              <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 0.25 }}>
+                {e.files.map((a) => (
+                  <Chip
+                    key={a.id}
+                    size="small"
+                    variant="outlined"
+                    icon={<AttachFileIcon />}
+                    label={`${a.file.name} (${formatSize(a.file.size)})`}
+                    onClick={a.file.can_download ? () => onDownloadTaskFile(a) : undefined}
+                    sx={{ maxWidth: "100%" }}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
         ))}
       </Stack>
     </>
@@ -133,6 +159,9 @@ export default function OaLetterPage() {
   }, []);
   const [doneFor, setDoneFor] = useState(null); // task
   const [doneNote, setDoneNote] = useState("");
+  const [doneFiles, setDoneFiles] = useState([]);
+  const [doneProgress, setDoneProgress] = useState(0);
+  const doneFileRef = useRef(null);
   const [referOpen, setReferOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [refer, setRefer] = useState({ people: [], kind: "action", instruction: "", allow_refer: false, due: "" });
@@ -183,9 +212,47 @@ export default function OaLetterPage() {
   }
 
   async function submitDone() {
-    if (await run(() => completeTask(doneFor.id, doneNote), doneFor.kind === "info" ? "رؤیت ثبت شد." : "نتیجه ثبت شد.")) {
+    const ok = await run(
+      () => completeTaskWithFiles(doneFor.id, doneNote, doneFor.kind === "action" ? doneFiles : [], setDoneProgress),
+      doneFor.kind === "info" ? "رؤیت ثبت شد." : "نتیجه ثبت شد.",
+    );
+    setDoneProgress(0);
+    if (ok) {
       setDoneFor(null);
       setDoneNote("");
+      setDoneFiles([]);
+    }
+  }
+
+  function addDoneFiles(e) {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = "";
+    const lim = letter?.action_attachment_limits;
+    const next = [...doneFiles, ...picked];
+    if (lim) {
+      if (next.length > lim.max_files) {
+        setMsg({ ok: false, text: `حداکثر ${toPersianDigits(lim.max_files)} پیوست برای نتیجه‌ی اقدام مجاز است.` });
+        return;
+      }
+      const big = picked.find((f) => f.size > lim.max_file_mb * 1024 * 1024);
+      if (big) {
+        setMsg({ ok: false, text: `حجم «${big.name}» از ${toPersianDigits(lim.max_file_mb)} مگابایت بیشتر است.` });
+        return;
+      }
+      if (next.reduce((t, f) => t + f.size, 0) > lim.max_total_mb * 1024 * 1024) {
+        setMsg({ ok: false, text: `حجم مجموع پیوست‌ها از ${toPersianDigits(lim.max_total_mb)} مگابایت بیشتر می‌شود.` });
+        return;
+      }
+    }
+    setMsg(null);
+    setDoneFiles(next);
+  }
+
+  async function downloadTaskFile(a) {
+    try {
+      saveBlob(await downloadTaskAttachment(letter.id, a.id), a.file.name);
+    } catch {
+      setMsg({ ok: false, text: "دانلود ناموفق بود." });
     }
   }
 
@@ -293,7 +360,7 @@ export default function OaLetterPage() {
           severity="warning"
           sx={{ mb: 2 }}
           action={
-            <Button color="inherit" startIcon={<TaskAltIcon />} onClick={() => { setDoneFor(t); setDoneNote(""); }} disabled={busy}>
+            <Button color="inherit" startIcon={<TaskAltIcon />} onClick={() => { setDoneFor(t); setDoneNote(""); setDoneFiles([]); }} disabled={busy}>
               {t.kind === "info" ? "اعلام رؤیت" : "ثبت نتیجه"}
             </Button>
           }
@@ -322,6 +389,11 @@ export default function OaLetterPage() {
               <Typography variant="body2">
                 <b>فرستنده:</b> {letter.sender?.name}{letter.sender?.title ? ` (${letter.sender.title})` : ""} — {fmt(letter.sent_at)}
               </Typography>
+              {letter.sender?.sent_by && (
+                <Typography variant="caption" color="text.secondary">
+                  فرستاده‌شده به‌وسیله‌ی منشی: {letter.sender.sent_by}
+                </Typography>
+              )}
               <Box><Typography variant="body2" component="span" fontWeight={700}>گیرنده: </Typography>{people(to)}</Box>
               {cc.length > 0 && <Box><Typography variant="body2" component="span" fontWeight={700}>رونوشت: </Typography>{people(cc)}</Box>}
               {letter.recipients.some((r) => r.read_at) && (
@@ -362,7 +434,7 @@ export default function OaLetterPage() {
           )}
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "flow" }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>گردش و ارجاع‌ها</Typography>
-            <LetterFlow letter={letter} />
+            <LetterFlow letter={letter} onDownloadTaskFile={downloadTaskFile} />
           </Card>
 
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "notes" }}>
@@ -404,6 +476,31 @@ export default function OaLetterPage() {
             onChange={(e) => setDoneNote(e.target.value)}
             inputProps={{ maxLength: 4000 }}
           />
+          {doneFor?.kind === "action" && (
+            <Box sx={{ mt: 2 }}>
+              <input ref={doneFileRef} type="file" multiple hidden onChange={addDoneFiles} />
+              <Button size="small" variant="outlined" startIcon={<AttachFileIcon />} onClick={() => doneFileRef.current?.click()} disabled={busy}>
+                پیوست فایل
+              </Button>
+              {letter.action_attachment_limits && (
+                <Typography variant="caption" color="text.secondary" sx={{ mx: 1 }}>
+                  حداکثر {toPersianDigits(letter.action_attachment_limits.max_files)} فایل، هر کدام تا{" "}
+                  {toPersianDigits(letter.action_attachment_limits.max_file_mb)} مگابایت
+                </Typography>
+              )}
+              <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 1 }}>
+                {doneFiles.map((f, i) => (
+                  <Chip
+                    key={`${f.name}-${i}`}
+                    size="small"
+                    label={`${f.name} (${formatSize(f.size)})`}
+                    onDelete={busy ? undefined : () => setDoneFiles((list) => list.filter((_, j) => j !== i))}
+                  />
+                ))}
+              </Stack>
+              {busy && doneProgress > 0 && doneProgress < 100 && <LinearProgress variant="determinate" value={doneProgress} sx={{ mt: 1 }} />}
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDoneFor(null)} disabled={busy}>انصراف</Button>

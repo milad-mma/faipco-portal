@@ -161,3 +161,61 @@ export async function saveNotificationPrefs(enabled) {
   const { data } = await apiClient.put("/automation/notification-prefs", { enabled });
   return data;
 }
+
+// ---------- فاز ۳الف بخش سوم: پیوست نتیجه‌ی اقدام و منشی ----------
+
+// ثبت نتیجه همراه با فایل (multipart)؛ files: آرایه‌ی File
+export async function completeTaskWithFiles(taskId, note, files, onProgress) {
+  const formData = new FormData();
+  formData.append("note", note || "");
+  for (const f of files || []) formData.append("files", f);
+  const { data } = await apiClient.post(`/automation/tasks/${taskId}/complete`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 10 * 60 * 1000,
+    onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded * 100) / e.total) : 0),
+  });
+  return data;
+}
+
+export async function downloadTaskAttachment(letterId, attachmentId) {
+  const { data } = await apiClient.get(`/automation/letters/${letterId}/task-attachments/${attachmentId}/download`, {
+    responseType: "blob",
+    timeout: 10 * 60 * 1000,
+  });
+  return data;
+}
+
+// { secretaries: [{id, employee_id, name, title, department}], principals: [...], max }
+export async function fetchMySecretaries() {
+  const { data } = await apiClient.get("/automation/secretaries/mine");
+  return data;
+}
+
+export async function addMySecretary(employeeId) {
+  const { data } = await apiClient.post("/automation/secretaries/mine", { employee_id: employeeId });
+  return data;
+}
+
+export async function removeMySecretary(pairId) {
+  const { data } = await apiClient.delete(`/automation/secretaries/mine/${pairId}`);
+  return data;
+}
+
+// مدیریت (automation.settings): [{id, site, principal, secretary, principal_active, secretary_active}]
+export async function fetchAllSecretaries() {
+  const { data } = await apiClient.get("/automation/secretaries");
+  return data;
+}
+
+export async function adminAddSecretary(principalId, secretaryId) {
+  const { data } = await apiClient.post("/automation/secretaries", {
+    principal_employee_id: principalId,
+    secretary_employee_id: secretaryId,
+  });
+  return data;
+}
+
+export async function adminRemoveSecretary(pairId) {
+  const { data } = await apiClient.delete(`/automation/secretaries/${pairId}`);
+  return data;
+}

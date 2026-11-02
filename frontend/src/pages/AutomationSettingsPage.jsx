@@ -42,6 +42,7 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import PillTabs from "../components/PillTabs";
+import AdminSecretariesTab from "../components/oa/AdminSecretariesTab";
 import {
   deleteFile,
   downloadFile,
@@ -696,10 +697,13 @@ export default function AutomationSettingsPage() {
         tabs={[
           { key: "attachments", label: "پیوست‌ها" },
           { key: "scanner", label: "اسکنر و آزمایش آپلود" },
+          { key: "secretaries", label: "منشی‌ها" },
         ]}
         sx={{ mb: 2 }}
       />
-      {tab === "attachments" ? <AttachmentSettingsTab /> : <ScannerTab />}
+      {tab === "attachments" && <AttachmentSettingsTab />}
+      {tab === "scanner" && <ScannerTab />}
+      {tab === "secretaries" && <AdminSecretariesTab />}
     </Box>
   );
 }

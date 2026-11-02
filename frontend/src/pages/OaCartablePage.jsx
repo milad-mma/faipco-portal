@@ -24,6 +24,8 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import NotificationPrefsDialog from "../components/oa/NotificationPrefsDialog";
+import SecretariesDialog from "../components/oa/SecretariesDialog";
+import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
 import { fetchCartable } from "../api/automationLetters";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
@@ -50,6 +52,7 @@ export default function OaCartablePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [secretariesOpen, setSecretariesOpen] = useState(false);
 
   useEffect(() => {
     setData(null);
@@ -76,6 +79,9 @@ export default function OaCartablePage() {
           کارتابل من
         </Typography>
         <Stack direction="row" alignItems="center" gap={1}>
+          <Tooltip title="منشی‌ها">
+            <IconButton onClick={() => setSecretariesOpen(true)}><SupervisorAccountOutlinedIcon /></IconButton>
+          </Tooltip>
           <Tooltip title="تنظیمات اعلان">
             <IconButton onClick={() => setPrefsOpen(true)}><NotificationsActiveOutlinedIcon /></IconButton>
           </Tooltip>
@@ -171,6 +177,7 @@ export default function OaCartablePage() {
         </Box>
       )}
       <NotificationPrefsDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
+      <SecretariesDialog open={secretariesOpen} onClose={() => setSecretariesOpen(false)} />
     </Box>
   );
 }

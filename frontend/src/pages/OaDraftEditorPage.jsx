@@ -63,6 +63,7 @@ function formFrom(d) {
     template_id: d.template_id || "",
     urgency: d.urgency,
     confidentiality: d.confidentiality,
+    principal_employee_id: d.principal_employee_id || "", // «از طرف» (منشی)؛ خالی = خودم
   };
 }
 
@@ -130,6 +131,7 @@ export default function OaDraftEditorPage() {
       const updated = await saveDraft(d.id, {
         ...rest,
         template_id: f.template_id ? Number(f.template_id) : null,
+        principal_employee_id: f.principal_employee_id ? Number(f.principal_employee_id) : null,
         action_due_at: f.requires_action && due ? jalaliToIso(due) : null,
         row_version: d.row_version,
       });
@@ -268,6 +270,31 @@ export default function OaDraftEditorPage() {
       <Stack direction={{ xs: "column", lg: "row" }} spacing={3} alignItems="flex-start">
         {/* کارت نوشتن نامه، شبیه پنجره‌ی نوشتن ایمیل */}
         <Card variant="outlined" sx={{ flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", borderRadius: 3, bgcolor: "background.paper" }}>
+          {options.principals?.length > 0 && (
+            <Stack direction="row" alignItems="center" gap={1.5} sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ minWidth: 56 }}>از طرف</Typography>
+              <TextField
+                select
+                variant="standard"
+                size="small"
+                value={form.principal_employee_id}
+                onChange={(e) => update({ principal_employee_id: e.target.value }, { saveNow: true })}
+                disabled={lockedUI}
+                sx={{ minWidth: 220, "& .MuiInput-root": { fontSize: 14 } }}
+                SelectProps={{ displayEmpty: true }}
+              >
+                <MenuItem value="">خودم</MenuItem>
+                {options.principals.map((p) => (
+                  <MenuItem key={p.employee_id} value={p.employee_id}>
+                    {p.name}{p.title ? ` — ${p.title}` : ""}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {form.principal_employee_id && (
+                <Typography variant="caption" color="text.secondary">نامه به نام ایشان ارسال می‌شود</Typography>
+              )}
+            </Stack>
+          )}
           <RecipientRow
             label="گیرنده"
             role="to"
@@ -383,6 +410,7 @@ export default function OaDraftEditorPage() {
             ارسال شود؟
           </Typography>
           <Typography variant="body2" color="text.secondary">
+            {draft.principal_name ? `نامه به نام «${draft.principal_name}» ارسال می‌شود و در گردش نوشته می‌شود که شما (منشی) فرستاده‌اید. ` : ""}
             {form.requires_action ? "از گیرنده‌ی اصلی اقدام خواسته می‌شود. " : "فقط برای اطلاع گیرنده (بدون نیاز به اقدام). "}
             بعد از ارسال، متن و گیرندگان قابل تغییر نیستند.
             {form.confidentiality === "confidential" ? " این نامه محرمانه است و فقط گیرندگان و افرادی که به آن‌ها ارجاع شود آن را می‌بینند." : ""}

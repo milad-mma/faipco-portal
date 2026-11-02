@@ -24,6 +24,7 @@ from app.models.employee import Employee
 from app.models.site import Site
 from app.models.user import User
 from app.services.oa_file_service import OaFileError, file_out
+from app.services.oa_secretary_service import OaSecretaryService
 from app.services.oa_letter_service import (
     LOGO_EXTENSIONS,
     OaLetterError,
@@ -193,6 +194,7 @@ class DraftSaveIn(BaseModel):
     confidentiality: str = "normal"
     requires_action: bool = False
     action_due_at: datetime | None = None
+    principal_employee_id: int | None = None  # «از طرف» — فقط منشیِ آن شخص
     row_version: int
 
 
@@ -210,6 +212,8 @@ async def compose_options(db: AsyncSession = Depends(get_db), current_user: User
         ],
         "urgencies": rules.URGENCIES,
         "confidentiality": rules.CONFIDENTIALITY,
+        # کسانی که کاربر منشی آن‌هاست (برای «از طرف»)
+        "principals": await OaSecretaryService(db).principals_of(current_user.employee_id) if current_user.employee_id else [],
     }
 
 

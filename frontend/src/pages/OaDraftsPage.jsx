@@ -66,6 +66,7 @@ export default function OaDraftsPage() {
                   <Typography fontWeight={600} sx={{ flex: 1, minWidth: 0 }} noWrap>{d.subject || "(بدون موضوع)"}</Typography>
                   {URGENCY[d.urgency] && <Chip size="small" color="warning" label={URGENCY[d.urgency]} />}
                   {d.confidentiality === "confidential" && <Chip size="small" color="error" label="محرمانه" />}
+                  {d.principal_name && <Chip size="small" variant="outlined" color="primary" label={`از طرف ${d.principal_name}`} />}
                   <Typography variant="caption" color="text.secondary">{new Date(d.updated_at).toLocaleString("fa-IR")}</Typography>
                 </Stack>
                 <Typography variant="body2" color="text.secondary" noWrap>{d.excerpt || "—"}</Typography>

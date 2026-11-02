@@ -14,6 +14,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Request,
     UploadFile,
@@ -33,6 +34,7 @@ from app.services.oa_cartable_service import (
     OaCartableService,
     send_pushes,
 )
+from app.services.oa_secretary_service import OaSecretaryService
 
 router = APIRouter()
 UPLOAD_CHUNK = 1 << 20
@@ -248,6 +250,45 @@ async def complete_task(task_id: int, payload: DoneIn, db: AsyncSession = Depend
     return {"success": True}
 
 
+def _chunks_of(file: UploadFile):
+    async def gen():
+        while True:
+            block = await file.read(UPLOAD_CHUNK)
+            if not block:
+                return
+            yield block
+
+    return gen()
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task_with_files(task_id: int, request: Request, note: str = Form(default="", max_length=4000),
+                                   files: list[UploadFile] = File(default=[]), db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_user)):
+    """ثبت نتیجه همراه با پیوست (multipart: note + files[]). سقف از «پیوست اقدام» تنظیمات سایت نامه."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        await OaCartableService(db).complete_task(
+            task_id, current_user, note, [(f.filename or "", _chunks_of(f)) for f in files if f.filename],
+            ip=get_client_ip(request),
+        )
+    except OaCartableError as e:
+        _raise(e)
+    return {"success": True}
+
+
+@router.get("/letters/{letter_id}/task-attachments/{attachment_id}/download")
+async def download_task_attachment(letter_id: int, attachment_id: int, request: Request, db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaCartableService(db)
+    try:
+        f, name = await service.task_attachment_for_download(letter_id, attachment_id, current_user, get_client_ip(request))
+    except OaCartableError as e:
+        _raise(e)
+    return _stream(service, f, name)
+
+
 class NoteIn(BaseModel):
     text: str = Field(max_length=4000)
 
@@ -316,5 +357,75 @@ async def set_notification_prefs(payload: PrefsIn, db: AsyncSession = Depends(ge
     await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
     try:
         return await OaCartableService(db).set_prefs(current_user, payload.enabled)
+    except OaCartableError as e:
+        _raise(e)
+
+
+# ================= منشی =================
+
+
+class SecretaryIn(BaseModel):
+    employee_id: int
+
+
+class SecretaryPairIn(BaseModel):
+    principal_employee_id: int
+    secretary_employee_id: int
+
+
+@router.get("/secretaries/mine")
+async def my_secretaries(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """منشی‌های من (که از طرف من نامه می‌فرستند) و کسانی که من منشی آن‌ها هستم."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaSecretaryService(db).mine(current_user)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.post("/secretaries/mine")
+async def add_my_secretary(payload: SecretaryIn, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaSecretaryService(db).add_mine(current_user, payload.employee_id)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.delete("/secretaries/mine/{pair_id}")
+async def remove_my_secretary(pair_id: int, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaSecretaryService(db).remove_mine(current_user, pair_id)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.get("/secretaries")
+async def all_secretaries(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """مدیریت منشی‌ها برای دارنده‌ی automation.settings (سایت‌محور بر اساس سایت مدیر)."""
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    return await OaSecretaryService(db).admin_list(sites)
+
+
+@router.post("/secretaries")
+async def admin_add_secretary(payload: SecretaryPairIn, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    try:
+        return await OaSecretaryService(db).admin_add(current_user, sites, payload.principal_employee_id,
+                                                      payload.secretary_employee_id)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.delete("/secretaries/{pair_id}")
+async def admin_remove_secretary(pair_id: int, db: AsyncSession = Depends(get_db),
+                                 current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    try:
+        return await OaSecretaryService(db).admin_remove(current_user, sites, pair_id)
     except OaCartableError as e:
         _raise(e)

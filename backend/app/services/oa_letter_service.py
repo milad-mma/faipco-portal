@@ -185,7 +185,8 @@ class OaLetterService:
 
     async def save_draft(self, letter_id: int, *, subject: str, body_html: str, paper_size: str,
                          template_id: int | None, urgency: str, confidentiality: str, row_version: int,
-                         user: User, requires_action: bool = False, action_due_at: datetime | None = None) -> dict:
+                         user: User, requires_action: bool = False, action_due_at: datetime | None = None,
+                         principal_employee_id: int | None = None) -> dict:
         letter = await self._own_letter(letter_id, user)
         if letter.status != "draft":
             raise OaLetterError("فقط پیش‌نویس قابل ویرایش است", 409)
@@ -211,9 +212,41 @@ class OaLetterService:
         letter.subject, letter.urgency, letter.confidentiality = subject, urgency, confidentiality
         letter.requires_action = bool(requires_action)
         letter.action_due_at = action_due_at if requires_action else None
+        await self._set_principal(letter, principal_employee_id, user)
         letter.row_version += 1
         await self.db.commit()
         return await self.draft_out(letter.id, user)
+
+    async def _set_principal(self, letter: OaLetter, principal_employee_id: int | None, user: User) -> None:
+        """
+        «از طرف»: منشی نامه را به نام مدیر می‌فرستد. نامه متعلق به سایت همان مدیر می‌شود (تنظیمات سایت شخص).
+        None یا خود کاربر = نامه‌ی خود شخص.
+        """
+        from app.models.employee import Employee
+        from app.services.oa_secretary_service import OaSecretaryService
+
+        if not principal_employee_id or principal_employee_id == user.employee_id:
+            if letter.principal_employee_id is not None:
+                me = await self.db.get(Employee, user.employee_id) if user.employee_id else None
+                letter.principal_employee_id = None
+                if me is not None:
+                    letter.site_id = me.site_id
+            return
+        if principal_employee_id == letter.principal_employee_id:
+            return
+        if not await OaSecretaryService(self.db).is_secretary(principal_employee_id, user.employee_id):
+            raise OaLetterError("شما منشی این شخص نیستید یا دسترسی او به اتوماسیون فعال نیست", 403)
+        principal = await self.db.get(Employee, principal_employee_id)
+        letter.principal_employee_id = principal.id
+        letter.site_id = principal.site_id
+
+    async def _principal_name(self, letter: OaLetter) -> str | None:
+        if not letter.principal_employee_id:
+            return None
+        from app.models.employee import Employee
+
+        e = await self.db.get(Employee, letter.principal_employee_id)
+        return f"{e.first_name} {e.last_name}" if e else None
 
     async def discard_draft(self, letter_id: int, user: User) -> None:
         letter = await self._own_letter(letter_id, user)
@@ -241,6 +274,7 @@ class OaLetterService:
                 "id": letter.id, "site_id": letter.site_id, "site_name": sites.get(letter.site_id),
                 "subject": letter.subject, "urgency": letter.urgency, "confidentiality": letter.confidentiality,
                 "paper_size": v.paper_size, "excerpt": plain_text(v.body_html)[:160], "updated_at": letter.updated_at,
+                "principal_name": await self._principal_name(letter),
             }
             for letter, v in rows
         ]
@@ -266,4 +300,5 @@ class OaLetterService:
             "layout": layout, "body_area_mm": rules.body_area_mm(v.paper_size, layout),
             "paper_mm": rules.PAPER_SIZES[v.paper_size], "updated_at": letter.updated_at,
             "requires_action": letter.requires_action, "action_due_at": letter.action_due_at,
+            "principal_employee_id": letter.principal_employee_id, "principal_name": await self._principal_name(letter),
         }

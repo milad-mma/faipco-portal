@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -141,6 +141,10 @@ class OaLetter(Base, TimestampMixin):
     # Migration 138: «نیاز به اقدام گیرنده» — بدون تیک، گیرنده‌ی اصلی فقط می‌خواند (مسئولیت ساخته نمی‌شود)
     requires_action: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     action_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 142: منشی برای مدیر — نامه به نام این شخص (مدیر) ارسال می‌شود؛ creator_employee_id = منشی
+    principal_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class OaLetterVersion(Base, TimestampMixin):
@@ -291,3 +295,32 @@ class OaNotificationPref(Base):
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), primary_key=True)
     disabled_events: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------- فاز ۳الف بخش سوم: منشی و پیوست نتیجه‌ی اقدام (Migration 142) ----------
+
+
+class OaSecretary(Base):
+    """منشی یک مدیر: پیش‌نویس برای او تهیه و به نام او ارسال می‌کند. تعیین: خود مدیر یا دارنده‌ی automation.settings."""
+
+    __tablename__ = "oa_secretaries"
+    __table_args__ = (UniqueConstraint("principal_employee_id", "secretary_employee_id", name="uq_oa_secretary_pair"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    principal_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    secretary_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OaTaskAttachment(Base):
+    """فایل پیوست هنگام ثبت نتیجه‌ی یک مسئولیت (اقدام)."""
+
+    __tablename__ = "oa_task_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("oa_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("oa_files.id", ondelete="RESTRICT"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
