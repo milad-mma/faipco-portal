@@ -1,5 +1,5 @@
 // پیش‌نمایش صفحه‌ای نامه روی کاغذ A4/A5 با سربرگ، پابرگ و حاشیه‌ی قالب (اندازه‌ها به میلی‌متر، مثل چاپ).
-// متن در یک ظرف پنهان با همان عرض اندازه‌گیری و به تعداد صفحه تقسیم می‌شود؛ onPages(تعداد) به والد خبر می‌دهد.
+// متن در یک ظرف پنهان با همان عرض اندازه‌گیری و روی مرز خط‌ها به صفحه‌ها تقسیم می‌شود؛ onPages(تعداد، شکست‌ها) به والد خبر می‌دهد.
 // نکته: شکستن صفحه در پیش‌نمایش ساده است (ممکن است یک خط بین دو صفحه نصف شود)؛ نسخه‌ی رسمی PDF از فاز ارسال ساخته می‌شود.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
@@ -40,7 +40,7 @@ function BodyContent({ subject, bodyHtml }) {
   return (
     <>
       {subject ? (
-        <div style={{ fontWeight: 700, marginBottom: "4mm" }}>
+        <div className="oa-letter-subject" style={{ fontWeight: 700, marginBottom: "4mm" }}>
           موضوع: {subject}
         </div>
       ) : null}
@@ -127,9 +127,59 @@ function Footer({ layout, values, pageIndex, pages }) {
   );
 }
 
+/**
+ * شکستن صفحه روی مرز خط: همه‌ی خط‌های متن (مستطیل‌های Range روی هر گره‌ی متنی) و انتهای بلوک‌ها نقطه‌ی شکست مجازند.
+ * هر صفحه تا آخرین خطی که کامل جا می‌شود می‌رود و صفحه‌ی بعد درست از همان‌جا شروع می‌شود — هیچ خطی نصف نمی‌شود.
+ * خروجی: [{start, height}] به px (CSS px، همان واحد mm در چاپ).
+ */
+function computeSegments(container, pagePx) {
+  const top0 = container.getBoundingClientRect().top;
+  const total = container.scrollHeight;
+  const lines = []; // [top, bottom] هر خط متن
+  const blocks = []; // [top, bottom] هر بلوک (پاراگراف، ردیف جدول، …)
+  const walker = document.createTreeWalker(container, 4 /* NodeFilter.SHOW_TEXT */);
+  const range = document.createRange();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const r of range.getClientRects()) {
+      if (r.height > 0) lines.push([r.top - top0, r.bottom - top0]);
+    }
+  }
+  container.querySelectorAll("p, h2, h3, li, tr, blockquote, table, .oa-letter-subject").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.height > 0) blocks.push([r.top - top0, r.bottom - top0]);
+  });
+  const spans = lines.concat(blocks);
+  const segments = [];
+  let start = 0;
+  let guard = 0;
+  while (start < total - 1 && guard < 200) {
+    guard += 1;
+    const limit = start + pagePx;
+    if (limit >= total) {
+      segments.push({ start, height: total - start });
+      break;
+    }
+    // انتهای خط/بلوکی که کامل داخل [start, limit] است؛ بزرگ‌ترینش
+    let cut = start;
+    for (const [t, b] of spans) {
+      if (t >= start - 0.5 && b <= limit + 0.5 && b > cut) cut = b;
+    }
+    // آیا خطی هست که روی cut قطع شود؟ (خط بعدی زودتر از cut شروع شده) → cut را تا شروع آن خط عقب ببر
+    for (const [t, b] of lines) {
+      if (t < cut - 0.5 && b > cut + 0.5 && t > start + 0.5) cut = Math.min(cut, t);
+    }
+    if (cut <= start + 1) cut = limit; // خط/بلوکی بلندتر از یک صفحه: ناچار برش
+    segments.push({ start, height: cut - start });
+    start = cut;
+  }
+  return segments.length ? segments : [{ start: 0, height: Math.min(total, pagePx) }];
+}
+
 // ابعاد و حاشیه‌ها در style درون‌خطی‌اند، نه sx: افزونه‌ی RTL برنامه (rtlCache) چپ/راستِ sx را جابه‌جا می‌کند و
 // حاشیه‌ی راست/چپ کاغذ باید همان جهت فیزیکی بماند.
-function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values }) {
+function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment }) {
   const [w, h] = PAPER[paper];
   const m = layout.margins_mm;
   return (
@@ -160,8 +210,9 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
     >
       <Header layout={layout} logoUrl={logoUrl} values={values} />
       <div style={{ height: `${bodyHmm}mm`, position: "relative", flex: "none" }}>
-        <div style={{ position: "absolute", left: 0, right: 0, top: `${GAP_TOP_MM}mm`, bottom: `${GAP_BOTTOM_MM}mm`, overflow: "hidden" }}>
-          <div style={{ position: "absolute", left: 0, right: 0, top: `-${pageIndex * (bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM)}mm` }}>
+        {/* پنجره‌ی همین صفحه: دقیقاً از ابتدای خط اول تا انتهای خط آخر این صفحه */}
+        <div style={{ position: "absolute", left: 0, right: 0, top: `${GAP_TOP_MM}mm`, height: segment ? `${segment.height}px` : `calc(100% - ${GAP_TOP_MM + GAP_BOTTOM_MM}mm)`, overflow: "hidden" }}>
+          <div style={{ position: "absolute", left: 0, right: 0, display: "flow-root", top: segment ? `-${segment.start}px` : `-${pageIndex * (bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM)}mm` }}>
             <BodyContent subject={subject} bodyHtml={bodyHtml} />
           </div>
         </div>
@@ -173,9 +224,10 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
 
 /**
  * props: paper ("A4"|"A5")، layout (چیدمان همان اندازه)، subject، bodyHtml، scale (نمایش؛ ۱ = اندازه‌ی واقعی)،
- * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)، forcePages (تعداد صفحه‌ی ازپیش‌محاسبه)
+ * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n, segments)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)،
+ * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)
  */
-export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forcePages, siteName }) {
+export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName }) {
   // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
   const boxRef = useRef(null);
   const [fitScale, setFitScale] = useState(null);
@@ -204,8 +256,9 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   const logoUrl = useLogoUrl(layout?.header?.logo_file_id);
   const measureRef = useRef(null);
   const unitRef = useRef(null);
-  const [measured, setPages] = useState(1);
-  const pages = forcePages || measured; // نسخه‌ی چاپ (پنهان روی صفحه) تعداد را از پیش‌نمایش می‌گیرد
+  const [measured, setSegments] = useState(null);
+  const segments = forceSegments || measured; // نسخه‌ی چاپ (پنهان روی صفحه) شکست صفحه‌ها را از پیش‌نمایش می‌گیرد
+  const pages = segments?.length || 1;
   const [w, h] = PAPER[paper] || PAPER.A4;
   const m = layout.margins_mm;
   const bodyWmm = w - m.left - m.right;
@@ -214,12 +267,22 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   useLayoutEffect(() => {
     const el = measureRef.current;
     const unit = unitRef.current;
-    if (!el || !unit || forcePages) return;
-    const pagePx = unit.getBoundingClientRect().height || 1;
-    const n = Math.max(1, Math.ceil((el.scrollHeight - 1) / pagePx));
-    setPages(n);
-    onPages?.(n);
-  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forcePages]);
+    if (!el || !unit || forceSegments) return undefined;
+    let alive = true;
+    const run = () => {
+      if (!alive) return;
+      const pagePx = unit.getBoundingClientRect().height || 1;
+      const segs = computeSegments(el, pagePx);
+      setSegments(segs);
+      onPages?.(segs.length, segs);
+    };
+    run();
+    // قلم‌ها دیر بارگذاری می‌شوند و اندازه‌ی خط‌ها را عوض می‌کنند
+    document.fonts?.ready?.then(run).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forceSegments]);
 
   const values = {
     title: layout.header.title,
@@ -232,7 +295,7 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
     <Box key={i} sx={printOnly ? (i < pages - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : {}) : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
-      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} />
+      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} />
     </Box>
   ));
 
@@ -245,7 +308,7 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
           ref={measureRef}
           dir="rtl"
           style={{ direction: "rtl" }}
-          sx={{ width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", ...bodyStyles }}
+          sx={{ display: "flow-root", width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", ...bodyStyles }}
         >
           <BodyContent subject={subject} bodyHtml={bodyHtml} />
         </Box>

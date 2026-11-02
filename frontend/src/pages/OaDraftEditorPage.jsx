@@ -77,6 +77,11 @@ export default function OaDraftEditorPage() {
   const [saveState, setSaveState] = useState(null); // { ok, message }
   const [conflict, setConflict] = useState(false);
   const [pages, setPages] = useState(1);
+  const [segments, setSegments] = useState(null); // شکست صفحه‌های پیش‌نمایش، برای چاپ یکسان
+  const handlePages = useCallback((n, segs) => {
+    setPages(n);
+    setSegments(segs);
+  }, []);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [extras, setExtras] = useState({ recipients: [], attachments: [], attachment_limits: null });
   const [confirmSend, setConfirmSend] = useState(false);
@@ -340,13 +345,13 @@ export default function OaDraftEditorPage() {
             subject={form.subject}
             bodyHtml={form.body_html}
             fit
-            onPages={setPages}
+            onPages={handlePages}
             siteName={draft.site_name}
           />
         </Card>
       </Stack>
 
-      <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} pages={pages} siteName={draft.site_name} />
+      <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} segments={segments} siteName={draft.site_name} />
 
       <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
         <DialogTitle>ارسال نامه</DialogTitle>

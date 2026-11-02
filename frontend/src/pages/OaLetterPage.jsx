@@ -123,6 +123,11 @@ export default function OaLetterPage() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState(null); // { ok, text }
   const [pages, setPages] = useState(1);
+  const [segments, setSegments] = useState(null); // شکست صفحه‌های پیش‌نمایش، برای چاپ یکسان
+  const handlePages = useCallback((n, segs) => {
+    setPages(n);
+    setSegments(segs);
+  }, []);
   const [doneFor, setDoneFor] = useState(null); // task
   const [doneNote, setDoneNote] = useState("");
   const [referOpen, setReferOpen] = useState(false);
@@ -333,11 +338,11 @@ export default function OaLetterPage() {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={setPages} siteName={letter.site_name} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} />
         </Card>
       </Stack>
 
-      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} pages={pages} siteName={letter.site_name} />
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">

@@ -1,14 +1,14 @@
 // چاپ نامه: صفحه‌ها در یک Portal مستقیم زیر body رسم می‌شوند و هنگام چاپ کل برنامه (#root) با display:none کنار می‌رود.
 // قاعده‌های چاپ (از جمله @page با اندازه‌ی کاغذ) با یک <style media="print"> ساده در head گذاشته می‌شوند، نه از مسیر
 // emotion/افزونه‌ی RTL — تا مرورگر اندازه‌ی کاغذ (A4/A5) را حتماً تشخیص دهد. ظرف چاپ ltr و هم‌عرض کاغذ است تا برگه
-// به چپ نرود و نصفه نشود؛ خود صفحه‌ها rtl‌اند. props: paper، layout، subject، bodyHtml، pages (از پیش‌نمایش)، siteName
+// به چپ نرود و نصفه نشود؛ خود صفحه‌ها rtl‌اند. props: paper، layout، subject، bodyHtml، segments (شکست صفحه‌های پیش‌نمایش)، siteName
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import LetterPreview from "./LetterPreview";
 
 const PAPER_MM = { A4: [210, 297], A5: [148, 210] };
 
-export default function LetterPrint({ paper, layout, subject, bodyHtml, pages, siteName }) {
+export default function LetterPrint({ paper, layout, subject, bodyHtml, segments, siteName }) {
   const [w] = PAPER_MM[paper] || PAPER_MM.A4;
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function LetterPrint({ paper, layout, subject, bodyHtml, pages, s
 
   return createPortal(
     <div className="oa-print-root">
-      <LetterPreview paper={paper} layout={layout} subject={subject} bodyHtml={bodyHtml} printOnly forcePages={pages} siteName={siteName} />
+      <LetterPreview paper={paper} layout={layout} subject={subject} bodyHtml={bodyHtml} printOnly forceSegments={segments} siteName={siteName} />
     </div>,
     document.body,
   );
