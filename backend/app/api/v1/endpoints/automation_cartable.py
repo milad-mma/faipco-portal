@@ -279,17 +279,17 @@ async def make_confidential(letter_id: int, payload: ConfidentialIn, db: AsyncSe
     return {"success": True}
 
 
-# ================= پاسخ / عطف / پیرو و تنظیمات اعلان =================
+# ================= پاسخ و تنظیمات اعلان =================
 
 
 class RelatedDraftIn(BaseModel):
-    type: str = "reply"  # reply | reference | follow_up
+    type: str = "reply"  # فقط پاسخ
 
 
 @router.post("/letters/{letter_id}/related-draft", status_code=status.HTTP_201_CREATED)
 async def related_draft(letter_id: int, payload: RelatedDraftIn, db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_user)):
-    """پیش‌نویس پاسخ/عطف/پیرو به نامه‌ای که کاربر به آن دسترسی دارد. خروجی: {draft_id}."""
+    """پیش‌نویس پاسخ به نامه‌ای که کاربر به آن دسترسی دارد. خروجی: {draft_id}."""
     await _require(db, current_user, "automation.access", "نوشتن نامه")
     try:
         return {"draft_id": await OaCartableService(db).create_related_draft(letter_id, current_user, payload.type)}

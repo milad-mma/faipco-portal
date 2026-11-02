@@ -48,7 +48,7 @@ logger = logging.getLogger("faipco.automation")
 PAGE_SIZE = 20
 # رویدادهای اعلان که هر کس می‌تواند برای خودش خاموش کند (تنظیمات اعلان شخصی)
 PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من"}
-RELATION_TYPES = {"reply": "پاسخ", "reference": "عطف", "follow_up": "پیرو"}
+RELATION_TYPES = {"reply": "پاسخ"}  # عطف و پیرو به تصمیم کاربر حذف شد (۱۴۰۵/۰۸/۱۱)
 MAX_RECIPIENTS = 200
 MAX_NOTE = 4000
 MAX_INSTRUCTION = 2000
@@ -806,11 +806,11 @@ class OaCartableService:
         await self.db.commit()
         return await self.get_prefs(user)
 
-    # ================= پاسخ / عطف / پیرو =================
+    # ================= پاسخ =================
 
     async def create_related_draft(self, letter_id: int, user: User, rel_type: str) -> int:
         """
-        پیش‌نویس تازه مرتبط با نامه‌ای که کاربر به آن دسترسی دارد. پاسخ: گیرنده = فرستنده‌ی نامه (اگر مجاز باشد)، موضوع
+        پیش‌نویس پاسخ به نامه‌ای که کاربر به آن دسترسی دارد: گیرنده = فرستنده‌ی نامه (اگر مجاز باشد)، موضوع
         «پاسخ: …». نامه‌ی محرمانه → پیش‌نویس هم محرمانه. رابطه هیچ دسترسی‌ای به نامه‌ی مرجع نمی‌دهد.
         """
         from app.services.oa_letter_service import OaLetterError, OaLetterService
@@ -825,7 +825,7 @@ class OaCartableService:
             raise OaCartableError(str(e), e.status_code) from None
         new = await self.db.get(OaLetter, draft["id"])
         v = await self.db.get(OaLetterVersion, new.current_version_id)
-        prefix = {"reply": "پاسخ: ", "reference": "عطف به: ", "follow_up": "پیرو: "}[rel_type]
+        prefix = "پاسخ: "
         subject = (prefix + (src.subject or ""))[:300]
         v.subject = new.subject = subject
         new.confidentiality = letter.confidentiality

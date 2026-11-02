@@ -490,42 +490,6 @@ export default function PersonalDashboardPage() {
             </Typography>
           </Stack>
         </Card>
-        {/* کارت نامه‌ها (اتوماسیون اداری): خوانده‌نشده و در انتظار اقدام؛ فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد */}
-        {user?.can_oa_access && (
-          <Card
-            variant="outlined"
-            onClick={() => navigate(user.oa_pending ? "/automation/cartable?box=pending" : "/automation/cartable")}
-            sx={{
-              flex: 1,
-              borderRadius: 2,
-              p: 1.75,
-              cursor: "pointer",
-              "&:hover": { backgroundColor: "action.hover" },
-            }}
-          >
-            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
-              <MailOutlineIcon sx={{ fontSize: 16, color: "primary.main" }} />
-              <Typography variant="caption">نامه‌ها</Typography>
-            </Stack>
-            {user.oa_unread || user.oa_pending ? (
-              <>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">خوانده‌نشده:</Typography>
-                  <Typography variant="body2" fontWeight={700}>{toPersianDigits(user.oa_unread || 0)}</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">در انتظار اقدام:</Typography>
-                  <Typography variant="body2" fontWeight={700} color={user.oa_overdue ? "error.main" : "text.primary"}>
-                    {toPersianDigits(user.oa_pending || 0)}
-                    {user.oa_overdue ? ` (${toPersianDigits(user.oa_overdue)} معوق)` : ""}
-                  </Typography>
-                </Stack>
-              </>
-            ) : (
-              <Typography variant="caption" color="text.secondary">موردی در انتظار اقدام ندارید</Typography>
-            )}
-          </Card>
-        )}
       </Stack>
 
       {/* دکمه‌های میانبر: گزارش تردد + درخواست مرخصی */}
@@ -624,10 +588,46 @@ export default function PersonalDashboardPage() {
         </Card>
       </Stack>
 
-      {/* اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
+      {/* کارت نامه‌ها + اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
+      <Stack spacing={1.5} sx={{ gridArea: "recent", minWidth: 0 }}>
+        {/* کارت نامه‌ها (اتوماسیون اداری): خوانده‌نشده و در انتظار اقدام؛ فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد */}
+        {user?.can_oa_access && (
+          <Card
+            variant="outlined"
+            onClick={() => navigate(user.oa_pending ? "/automation/cartable?box=pending" : "/automation/cartable")}
+            sx={{
+              borderRadius: 2,
+              p: 1.75,
+              cursor: "pointer",
+              "&:hover": { backgroundColor: "action.hover" },
+            }}
+          >
+            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
+              <MailOutlineIcon sx={{ fontSize: 16, color: "primary.main" }} />
+              <Typography variant="caption">نامه‌ها</Typography>
+            </Stack>
+            {user.oa_unread || user.oa_pending ? (
+              <>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="caption" color="text.secondary">خوانده‌نشده:</Typography>
+                  <Typography variant="body2" fontWeight={700}>{toPersianDigits(user.oa_unread || 0)}</Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="caption" color="text.secondary">در انتظار اقدام:</Typography>
+                  <Typography variant="body2" fontWeight={700} color={user.oa_overdue ? "error.main" : "text.primary"}>
+                    {toPersianDigits(user.oa_pending || 0)}
+                    {user.oa_overdue ? ` (${toPersianDigits(user.oa_overdue)} معوق)` : ""}
+                  </Typography>
+                </Stack>
+              </>
+            ) : (
+              <Typography variant="caption" color="text.secondary">موردی در انتظار اقدام ندارید</Typography>
+            )}
+          </Card>
+        )}
       <Card
         variant="outlined"
-        sx={{ gridArea: "recent", borderRadius: 2, p: 1.75 }}
+        sx={{ borderRadius: 2, p: 1.75, flex: 1 }}
       >
         <Stack
           direction="row"
@@ -709,6 +709,7 @@ export default function PersonalDashboardPage() {
           </Stack>
         )}
       </Card>
+      </Stack>
 
       {/* شبکه ابزارها */}
       <Box

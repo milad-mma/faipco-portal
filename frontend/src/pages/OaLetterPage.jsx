@@ -17,7 +17,6 @@ import {
   Divider,
   FormControlLabel,
   IconButton,
-  Menu,
   MenuItem,
   Stack,
   Step,
@@ -34,7 +33,6 @@ import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import ReplyIcon from "@mui/icons-material/Reply";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import LinkIcon from "@mui/icons-material/Link";
 import {
   addLetterNote,
@@ -141,11 +139,9 @@ export default function OaLetterPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmConfidential, setConfirmConfidential] = useState(false);
-  const [relMenu, setRelMenu] = useState(null);
 
-  // پیش‌نویس پاسخ/عطف/پیرو و رفتن به ویرایشگر آن
+  // پیش‌نویس پاسخ و رفتن به ویرایشگر آن
   async function newRelated(type) {
-    setRelMenu(null);
     setBusy(true);
     setMsg(null);
     try {
@@ -268,13 +264,6 @@ export default function OaLetterPage() {
             <Button variant="outlined" startIcon={<ReplyIcon />} onClick={() => newRelated("reply")} disabled={busy} sx={{ height: 40 }}>
               پاسخ
             </Button>
-            <Button variant="outlined" onClick={(e) => setRelMenu(e.currentTarget)} disabled={busy} sx={{ height: 40, minWidth: 0, px: 1 }}>
-              <MoreHorizIcon />
-            </Button>
-            <Menu anchorEl={relMenu} open={Boolean(relMenu)} onClose={() => setRelMenu(null)}>
-              <MenuItem onClick={() => newRelated("reference")}>نامه‌ی جدید عطف به این نامه</MenuItem>
-              <MenuItem onClick={() => newRelated("follow_up")}>نامه‌ی جدید پیرو این نامه</MenuItem>
-            </Menu>
           </>
         )}
         {letter.permissions.refer && (
@@ -314,9 +303,21 @@ export default function OaLetterPage() {
         </Alert>
       ))}
 
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={2} alignItems="flex-start">
-        <Stack spacing={2} sx={{ flex: { lg: "1 1 0" }, minWidth: 0, width: "100%" }}>
-          <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+      {/* موبایل: فرستنده/گیرنده ← متن نامه ← پیوست‌ها ← گردش ← یادداشت؛ دسکتاپ: متن نامه در ستون دوم (چسبان) */}
+      <Box
+        sx={{
+          display: "grid",
+          gap: 2,
+          alignItems: "start",
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) minmax(0, 1fr)" },
+          gridTemplateAreas: {
+            xs: '"info" "text" "att" "flow" "notes"',
+            lg: '"info text" "att text" "flow text" "notes text"',
+          },
+          gridTemplateRows: { lg: "auto auto auto 1fr" },
+        }}
+      >
+          <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "info" }}>
             <Stack spacing={1}>
               <Typography variant="body2">
                 <b>فرستنده:</b> {letter.sender?.name}{letter.sender?.title ? ` (${letter.sender.title})` : ""} — {fmt(letter.sent_at)}
@@ -331,19 +332,6 @@ export default function OaLetterPage() {
                   ? `از گیرنده اقدام خواسته شده${letter.action_due_at ? ` — مهلت ${fmt(letter.action_due_at)}` : ""}`
                   : "برای اطلاع گیرنده (بدون نیاز به اقدام)"}
               </Typography>
-              {letter.attachments.length > 0 && (
-                <>
-                  <Divider />
-                  <Typography variant="body2" fontWeight={700}>پیوست‌ها</Typography>
-                  {letter.attachments.map((a) => (
-                    <Stack key={a.id} direction="row" alignItems="center" spacing={1}>
-                      <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{a.file.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{formatSize(a.file.size)}</Typography>
-                      <IconButton size="small" onClick={() => download(a)} disabled={!a.file.can_download}><DownloadOutlinedIcon fontSize="small" /></IconButton>
-                    </Stack>
-                  ))}
-                </>
-              )}
               {letter.permissions.make_confidential && (
                 <Box>
                   <Button size="small" color="error" startIcon={<LockOutlinedIcon />} onClick={() => setConfirmConfidential(true)}>
@@ -354,12 +342,30 @@ export default function OaLetterPage() {
             </Stack>
           </Card>
 
-          <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", gridArea: "text", minWidth: 0, alignSelf: "start", position: { lg: "sticky" }, top: { lg: 16 } }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+            متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
+          </Typography>
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} />
+        </Card>
+          {letter.attachments.length > 0 && (
+            <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "att" }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>پیوست‌ها</Typography>
+              {letter.attachments.map((a) => (
+                <Stack key={a.id} direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{a.file.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatSize(a.file.size)}</Typography>
+                  <IconButton size="small" onClick={() => download(a)} disabled={!a.file.can_download}><DownloadOutlinedIcon fontSize="small" /></IconButton>
+                </Stack>
+              ))}
+            </Card>
+          )}
+          <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "flow" }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>گردش و ارجاع‌ها</Typography>
             <LetterFlow letter={letter} />
           </Card>
 
-          <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+          <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "notes" }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>یادداشت‌های داخلی (هامش)</Typography>
             <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
               مثل یادداشتی که کنار نامه‌ی کاغذی نوشته می‌شود: فقط کسانی که این نامه را می‌بینند آن را می‌خوانند و در متن رسمی
@@ -380,15 +386,7 @@ export default function OaLetterPage() {
               )}
             </Stack>
           </Card>
-        </Stack>
-
-        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
-          </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} />
-        </Card>
-      </Stack>
+      </Box>
 
       <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} />
 
