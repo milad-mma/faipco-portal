@@ -361,11 +361,13 @@ export default function PersonalDashboardPage() {
               onClick={() => setPhotoOpen(false)}
               sx={{
                 display: "block",
-                width: { xs: "75vw", sm: 320 },
-                maxWidth: 360,
-                maxHeight: "80vh",
-                objectFit: "contain",
-                borderRadius: 3,
+                // دایره‌ای مثل آواتار داشبورد، با حلقه‌ی سفید دور عکس
+                width: { xs: "70vw", sm: 300 },
+                maxWidth: 340,
+                aspectRatio: "1 / 1",
+                objectFit: "cover",
+                borderRadius: "50%",
+                border: "4px solid #fff",
                 bgcolor: "background.paper",
                 boxShadow: 8,
                 cursor: "zoom-out",

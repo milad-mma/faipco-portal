@@ -38,6 +38,7 @@ import { gregorianToJalali, JALALI_MONTH_NAMES } from "../utils/jalaliDate";
 import TimeSelect24 from "../components/TimeSelect24";
 import AccessGateDialog from "../components/AccessGateDialog";
 import PillTabs from "../components/PillTabs";
+import { toPersianDigits } from "../utils/searchText";
 import { useAccessGateStatus } from "../hooks/useAccessGateStatus";
 import {
   decideLeaveRequest,
@@ -51,6 +52,7 @@ import {
 } from "../api/leaveRequests";
 
 // برچسب و رنگ چیپ هر وضعیت درخواست
+const MISSION_PLACE_MAX_LEN = 20; // طول ستون‌های Source/Distination در کاراوب
 const STATUS_LABELS = { pending: "در حال بررسی", approved: "تائید شده", rejected: "رد شده", cancelled: "ابطال شده" };
 const STATUS_COLORS = { pending: "warning", approved: "success", rejected: "error", cancelled: "default" };
 
@@ -472,13 +474,21 @@ function SubmitRequestForm({ onSubmitted }) {
 
             {selectedType.is_mission && (
               <Stack direction="row" spacing={1.5}>
-                <TextField label="مبدأ" value={source} onChange={(e) => setSource(e.target.value)} sx={{ flex: 1 }} />
-                <TextField
-                  label="مقصد"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  sx={{ flex: 1 }}
-                />
+                {/* ستون‌های مبدأ/مقصد در کاراوب حداکثر ۲۰ حرف‌اند */}
+                {[
+                  ["مبدأ", source, setSource],
+                  ["مقصد", destination, setDestination],
+                ].map(([label, value, setValue]) => (
+                  <TextField
+                    key={label}
+                    label={label}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value.slice(0, MISSION_PLACE_MAX_LEN))}
+                    slotProps={{ htmlInput: { maxLength: MISSION_PLACE_MAX_LEN } }}
+                    helperText={`${toPersianDigits(value.length)} از ${toPersianDigits(MISSION_PLACE_MAX_LEN)} حرف`}
+                    sx={{ flex: 1 }}
+                  />
+                ))}
               </Stack>
             )}
 

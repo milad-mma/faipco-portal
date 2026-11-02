@@ -554,6 +554,17 @@ async def get_birthday_related_photo_thumbnail(
     )
 
 
+def _image_media_type(data: bytes) -> str:
+    """نوع تصویر از چند بایت اول (JPEG، PNG، WebP)؛ در غیر این صورت GIF مثل قبل."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/gif"
+
+
 @router.get("/{employee_id}/photo-thumbnail")
 async def get_employee_photo_thumbnail(
     employee_id: int,
@@ -574,11 +585,11 @@ async def get_employee_photo_thumbnail(
     if employee is None or not employee.photo_thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عکسی برای این پرسنل ثبت نشده است")
 
-    # ThumbnailImg در EmployeeExtendedInfo همیشه GIF است (بر اساس نمونه واقعی داده)
+    # ستون نگاشت‌شده ممکن است Img (JPEG/PNG) یا ThumbnailImg (GIF) باشد؛ نوع از امضای اول فایل تشخیص داده می‌شود
     # Cache خصوصی مرورگر (۱۰ دقیقه): عکس با Sync دوره‌ای عوض می‌شود و هر بار باز شدن داشبورد نباید دوباره دانلود شود
     return Response(
         content=employee.photo_thumbnail,
-        media_type="image/gif",
+        media_type=_image_media_type(employee.photo_thumbnail),
         headers={"Cache-Control": "private, max-age=600"},
     )
 

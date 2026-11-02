@@ -84,6 +84,7 @@ class LeaveRequestError(Exception):
 
 
 # تردد فراموش‌شده: حداکثر چند روز گذشته قابل‌ثبت است (مثل WF_Action.RequestValidDays کاراوب)
+MISSION_PLACE_MAX_LEN = 20  # طول ستون‌های Source و Distination در WF_Requests کاراوب (nvarchar(20))
 FORGOTTEN_PUNCH_MAX_PAST_DAYS = 31
 # حداکثر فاصله ورود تا خروج در یک درخواست (شیفت شب ۱۲ ساعته + حاشیه)
 FORGOTTEN_PUNCH_MAX_SPAN_HOURS = 24
@@ -1319,6 +1320,17 @@ class LeaveRequestService:
             await self._ensure_no_overlap(
                 site_connection, mapping, employee, start_date, effective_end_date, start_hour, end_hour
             )
+
+        # مبدأ/مقصد: ستون‌های Source و Distination در کاراوب nvarchar(20) هستند؛ متن بلندتر خطای 8152 می‌دهد
+        if leave_type.is_mission:
+            source = (source or "").strip() or None
+            destination = (destination or "").strip() or None
+            for label, text in (("مبدأ", source), ("مقصد", destination)):
+                if text and len(text) > MISSION_PLACE_MAX_LEN:
+                    raise LeaveRequestError(
+                        f"«{label}» حداکثر {MISSION_PLACE_MAX_LEN} حرف می‌تواند باشد (الان {len(text)} حرف است)؛ "
+                        "توضیح بیشتر را در «توضیحات» بنویسید"
+                    )
 
         # تاریخ شمسی شروع به فرمت عددی YYYYMMDD
         jalali_start = jdatetime.date.fromgregorian(date=start_date)
