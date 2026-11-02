@@ -277,3 +277,44 @@ async def make_confidential(letter_id: int, payload: ConfidentialIn, db: AsyncSe
     except OaCartableError as e:
         _raise(e)
     return {"success": True}
+
+
+# ================= پاسخ / عطف / پیرو و تنظیمات اعلان =================
+
+
+class RelatedDraftIn(BaseModel):
+    type: str = "reply"  # reply | reference | follow_up
+
+
+@router.post("/letters/{letter_id}/related-draft", status_code=status.HTTP_201_CREATED)
+async def related_draft(letter_id: int, payload: RelatedDraftIn, db: AsyncSession = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    """پیش‌نویس پاسخ/عطف/پیرو به نامه‌ای که کاربر به آن دسترسی دارد. خروجی: {draft_id}."""
+    await _require(db, current_user, "automation.access", "نوشتن نامه")
+    try:
+        return {"draft_id": await OaCartableService(db).create_related_draft(letter_id, current_user, payload.type)}
+    except OaCartableError as e:
+        _raise(e)
+
+
+class PrefsIn(BaseModel):
+    enabled: dict[str, bool]
+
+
+@router.get("/notification-prefs")
+async def get_notification_prefs(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaCartableService(db).get_prefs(current_user)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.put("/notification-prefs")
+async def set_notification_prefs(payload: PrefsIn, db: AsyncSession = Depends(get_db),
+                                 current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaCartableService(db).set_prefs(current_user, payload.enabled)
+    except OaCartableError as e:
+        _raise(e)

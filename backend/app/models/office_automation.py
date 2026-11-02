@@ -266,3 +266,29 @@ class OaNotificationLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------- فاز ۳الف بخش دوم: رابطه‌ی نامه‌ها و تنظیمات اعلان (Migration 139) ----------
+
+
+class OaLetterRelation(Base):
+    """from_letter_id (نامه‌ی جدید) به to_letter_id اشاره می‌کند: reply (پاسخ) | reference (عطف) | follow_up (پیرو). دسترسی نمی‌دهد."""
+
+    __tablename__ = "oa_letter_relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(12), nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OaNotificationPref(Base):
+    """رویدادهای خاموش اعلان یک پرسنل (new_letter، cc، referral)؛ نبودن ردیف = همه روشن."""
+
+    __tablename__ = "oa_notification_prefs"
+
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), primary_key=True)
+    disabled_events: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

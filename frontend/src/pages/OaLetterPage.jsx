@@ -17,6 +17,7 @@ import {
   Divider,
   FormControlLabel,
   IconButton,
+  Menu,
   MenuItem,
   Stack,
   Step,
@@ -32,9 +33,13 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
+import ReplyIcon from "@mui/icons-material/Reply";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import LinkIcon from "@mui/icons-material/Link";
 import {
   addLetterNote,
   completeTask,
+  createRelatedDraft,
   downloadLetterAttachment,
   fetchLetter,
   makeLetterConfidential,
@@ -118,7 +123,7 @@ function LetterFlow({ letter }) {
 export default function OaLetterPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { refetchUser } = useAuth();
+  const { user, refetchUser } = useAuth();
   const [letter, setLetter] = useState(null);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState(null); // { ok, text }
@@ -136,6 +141,21 @@ export default function OaLetterPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmConfidential, setConfirmConfidential] = useState(false);
+  const [relMenu, setRelMenu] = useState(null);
+
+  // پیش‌نویس پاسخ/عطف/پیرو و رفتن به ویرایشگر آن
+  async function newRelated(type) {
+    setRelMenu(null);
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await createRelatedDraft(id, type);
+      navigate(`/automation/drafts/${res.draft_id}`);
+    } catch (err) {
+      setMsg({ ok: false, text: err.response?.data?.detail || "ساخت پیش‌نویس ناموفق بود." });
+      setBusy(false);
+    }
+  }
 
   const load = useCallback(() => {
     return fetchLetter(id)
@@ -243,10 +263,38 @@ export default function OaLetterPage() {
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
+        {user?.can_oa_compose && (
+          <>
+            <Button variant="outlined" startIcon={<ReplyIcon />} onClick={() => newRelated("reply")} disabled={busy} sx={{ height: 40 }}>
+              پاسخ
+            </Button>
+            <Button variant="outlined" onClick={(e) => setRelMenu(e.currentTarget)} disabled={busy} sx={{ height: 40, minWidth: 0, px: 1 }}>
+              <MoreHorizIcon />
+            </Button>
+            <Menu anchorEl={relMenu} open={Boolean(relMenu)} onClose={() => setRelMenu(null)}>
+              <MenuItem onClick={() => newRelated("reference")}>نامه‌ی جدید عطف به این نامه</MenuItem>
+              <MenuItem onClick={() => newRelated("follow_up")}>نامه‌ی جدید پیرو این نامه</MenuItem>
+            </Menu>
+          </>
+        )}
         {letter.permissions.refer && (
           <Button variant="contained" startIcon={<ForwardToInboxOutlinedIcon />} onClick={() => setReferOpen(true)} sx={{ height: 40 }}>ارجاع</Button>
         )}
       </Stack>
+
+      {letter.relations?.length > 0 && (
+        <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          {letter.relations.map((r, i) => (
+            <Chip
+              key={i}
+              variant="outlined"
+              icon={<LinkIcon />}
+              label={`${r.label}: ${r.subject || "نامه‌ای که به آن دسترسی ندارید"}`}
+              onClick={r.letter_id ? () => navigate(`/automation/letters/${r.letter_id}`) : undefined}
+            />
+          ))}
+        </Stack>
+      )}
 
       {msg && <Alert severity={msg.ok ? "success" : "error"} sx={{ mb: 2 }}>{msg.text}</Alert>}
 

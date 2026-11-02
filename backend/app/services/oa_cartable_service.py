@@ -32,7 +32,9 @@ from app.models.office_automation import (
     OaLetterAccess,
     OaLetterVersion,
     OaNote,
+    OaLetterRelation,
     OaNotificationLog,
+    OaNotificationPref,
     OaRecipient,
     OaTask,
     OaTemplateVersion,
@@ -44,6 +46,9 @@ from app.services.oa_file_service import OaFileService, file_out
 logger = logging.getLogger("faipco.automation")
 
 PAGE_SIZE = 20
+# رویدادهای اعلان که هر کس می‌تواند برای خودش خاموش کند (تنظیمات اعلان شخصی)
+PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من"}
+RELATION_TYPES = {"reply": "پاسخ", "reference": "عطف", "follow_up": "پیرو"}
 MAX_RECIPIENTS = 200
 MAX_NOTE = 4000
 MAX_INSTRUCTION = 2000
@@ -95,6 +100,9 @@ async def send_pushes(pushes: list[dict]) -> None:
                 await db.commit()
                 if inserted is None:
                     continue  # قبلاً فرستاده شده
+                pref = await db.get(OaNotificationPref, p["employee_id"])
+                if pref is not None and p.get("event") in (pref.disabled_events or []):
+                    continue  # خود شخص این رویداد را خاموش کرده است
                 user_ids = set((await db.execute(
                     select(User.id).where(User.employee_id == p["employee_id"], User.is_active.is_(True))
                 )).scalars().all())
@@ -207,6 +215,7 @@ class OaCartableService:
         confidential = letter.confidentiality == "confidential"
         self.pushes.append({
             "key": f"{event}:{letter.id}:{employee_id}:{extra}",
+            "event": event,
             "employee_id": employee_id,
             "site_id": letter.site_id,
             "text_key": push_text_key(event, confidential),
@@ -267,6 +276,7 @@ class OaCartableService:
                             "title": r.title_snapshot, "department": r.department_snapshot} for r in recipients],
             "attachments": await self._attachments(letter.current_version_id),
             "attachment_limits": await self._attachment_limits(letter.site_id),
+            "relations": await self.relations_for(letter.id, letter.creator_employee_id),
         }
 
     async def _attachment_limits(self, site_id: int) -> dict:
@@ -509,6 +519,7 @@ class OaCartableService:
             ],
             "attachments": await self._attachments(v.id),
             "flow": self._flow(letter, recipients, tasks, read_by),
+            "relations": await self.relations_for(letter.id, me.id),
             "requires_action": letter.requires_action, "action_due_at": letter.action_due_at,
             "tasks": [
                 {"id": t.id, "parent_id": t.parent_task_id, "kind": t.kind, "origin": t.origin, "status": t.status,
@@ -773,3 +784,91 @@ class OaCartableService:
                    OaLetter.status.in_(("dispatched", "closed")))
         )).one()
         return {"unread": unread, "pending": pending, "overdue": overdue}
+
+    # ================= تنظیمات اعلان شخصی =================
+
+    async def get_prefs(self, user: User) -> dict:
+        me = await self._me(user)
+        pref = await self.db.get(OaNotificationPref, me.id)
+        disabled = set(pref.disabled_events or []) if pref else set()
+        return {"events": [{"key": k, "label": v, "enabled": k not in disabled} for k, v in PUSH_EVENTS.items()]}
+
+    async def set_prefs(self, user: User, enabled: dict[str, bool]) -> dict:
+        me = await self._me(user)
+        disabled = sorted(k for k in PUSH_EVENTS if enabled.get(k) is False)
+        pref = await self.db.get(OaNotificationPref, me.id)
+        if pref is None:
+            pref = OaNotificationPref(employee_id=me.id, disabled_events=disabled)
+            self.db.add(pref)
+        else:
+            pref.disabled_events = disabled
+            pref.updated_at = _now()
+        await self.db.commit()
+        return await self.get_prefs(user)
+
+    # ================= پاسخ / عطف / پیرو =================
+
+    async def create_related_draft(self, letter_id: int, user: User, rel_type: str) -> int:
+        """
+        پیش‌نویس تازه مرتبط با نامه‌ای که کاربر به آن دسترسی دارد. پاسخ: گیرنده = فرستنده‌ی نامه (اگر مجاز باشد)، موضوع
+        «پاسخ: …». نامه‌ی محرمانه → پیش‌نویس هم محرمانه. رابطه هیچ دسترسی‌ای به نامه‌ی مرجع نمی‌دهد.
+        """
+        from app.services.oa_letter_service import OaLetterError, OaLetterService
+
+        if rel_type not in RELATION_TYPES:
+            raise OaCartableError("نوع ارتباط نامعتبر است")
+        letter, me, _, _ = await self._letter_for(letter_id, user, "view")
+        src = await self.db.get(OaLetterVersion, letter.current_version_id)
+        try:
+            draft = await OaLetterService(self.db).create_draft(paper_size=src.paper_size, template_id=None, user=user)
+        except OaLetterError as e:
+            raise OaCartableError(str(e), e.status_code) from None
+        new = await self.db.get(OaLetter, draft["id"])
+        v = await self.db.get(OaLetterVersion, new.current_version_id)
+        prefix = {"reply": "پاسخ: ", "reference": "عطف به: ", "follow_up": "پیرو: "}[rel_type]
+        subject = (prefix + (src.subject or ""))[:300]
+        v.subject = new.subject = subject
+        new.confidentiality = letter.confidentiality
+        self.db.add(OaLetterRelation(from_letter_id=new.id, to_letter_id=letter.id, type=rel_type, created_by=user.id))
+        if rel_type == "reply" and letter.sender_employee_id and letter.sender_employee_id != me.id:
+            if letter.sender_employee_id in await self._eligible({letter.sender_employee_id}, user):
+                snap = await self._snapshot(letter.sender_employee_id)
+                self.db.add(OaRecipient(letter_id=new.id, role="to", employee_id=snap["employee_id"], name_snapshot=snap["name"],
+                                        title_snapshot=snap["title"], department_snapshot=snap["department"]))
+        new.row_version += 1
+        self.files.audit("letter.relate", user, entity="letter", entity_id=new.id, site_id=new.site_id,
+                         details={"to": letter.id, "type": rel_type})
+        await self.db.commit()
+        return new.id
+
+    async def relations_for(self, letter_id: int, employee_id: int | None) -> list[dict]:
+        """
+        نامه‌های مرتبط (هر دو جهت). موضوع و پیوند فقط وقتی برمی‌گردد که بیننده خودش به آن نامه دسترسی دارد؛ وگرنه فقط نوع
+        رابطه (بدون موضوع). پیش‌نویس‌های دیگران نمایش داده نمی‌شوند.
+        """
+        rows = (await self.db.execute(
+            select(OaLetterRelation).where(or_(OaLetterRelation.from_letter_id == letter_id,
+                                               OaLetterRelation.to_letter_id == letter_id))
+        )).scalars().all()
+        out = []
+        for r in rows:
+            outgoing = r.from_letter_id == letter_id
+            other_id = r.to_letter_id if outgoing else r.from_letter_id
+            other = await self.db.get(OaLetter, other_id)
+            if other is None or other.discarded_at is not None or other.status not in ("dispatched", "closed"):
+                continue
+            visible = bool(employee_id) and bool((await self.db.execute(
+                select(OaLetterAccess.id).where(OaLetterAccess.letter_id == other_id, OaLetterAccess.employee_id == employee_id,
+                                                OaLetterAccess.revoked_at.is_(None)).limit(1)
+            )).scalar_one_or_none())
+            label = RELATION_TYPES.get(r.type, r.type)
+            out.append({
+                "direction": "outgoing" if outgoing else "incoming",
+                "type": r.type,
+                "label": (f"این نامه {label} به" if outgoing else f"{label} این نامه"),
+                "letter_id": other_id if visible else None,
+                "subject": other.subject if visible else None,
+                "sent_at": other.sent_at,
+            })
+        return out
+

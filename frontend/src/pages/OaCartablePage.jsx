@@ -10,16 +10,20 @@ import {
   CardActionArea,
   Chip,
   CircularProgress,
+  IconButton,
   Pagination,
   Stack,
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
+import NotificationPrefsDialog from "../components/oa/NotificationPrefsDialog";
 import { fetchCartable } from "../api/automationLetters";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
@@ -45,6 +49,7 @@ export default function OaCartablePage() {
   const [q, setQ] = useState(params.get("q") || "");
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [prefsOpen, setPrefsOpen] = useState(false);
 
   useEffect(() => {
     setData(null);
@@ -70,11 +75,16 @@ export default function OaCartablePage() {
         <Typography variant="h5" fontWeight={700}>
           کارتابل من
         </Typography>
-        {user?.can_oa_compose && (
-          <Button variant="outlined" startIcon={<EditNoteOutlinedIcon />} onClick={() => navigate("/automation/drafts")} sx={{ height: 40 }}>
-            پیش‌نویس‌ها و نامه‌ی جدید
-          </Button>
-        )}
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Tooltip title="تنظیمات اعلان">
+            <IconButton onClick={() => setPrefsOpen(true)}><NotificationsActiveOutlinedIcon /></IconButton>
+          </Tooltip>
+          {user?.can_oa_compose && (
+            <Button variant="outlined" startIcon={<EditNoteOutlinedIcon />} onClick={() => navigate("/automation/drafts")} sx={{ height: 40 }}>
+              پیش‌نویس‌ها و نامه‌ی جدید
+            </Button>
+          )}
+        </Stack>
       </Stack>
 
       <Tabs value={box} onChange={(_, v) => setParams({ box: v, q, page: 1 })} variant="scrollable" sx={{ mb: 2 }}>
@@ -160,6 +170,7 @@ export default function OaCartablePage() {
           <Pagination count={pages} page={page} onChange={(_, p) => setParams({ box, q, page: p })} />
         </Box>
       )}
+      <NotificationPrefsDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
     </Box>
   );
 }

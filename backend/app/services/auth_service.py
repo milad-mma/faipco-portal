@@ -410,13 +410,13 @@ class AuthService:
         base.can_oa_access = user.is_superuser or "automation.access" in permission_codes
         base.can_oa_compose = base.can_oa_access  # compose در access ادغام شد (Migration 138)
         # شمارنده‌ی منوی «کارتابل من»: خوانده‌نشده + مسئولیت باز — فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد
-        base.oa_unread = base.oa_pending = 0
+        base.oa_unread = base.oa_pending = base.oa_overdue = 0
         if base.can_oa_access and user.employee_id is not None:
             try:
                 from app.services.oa_cartable_service import OaCartableService
 
                 c = await OaCartableService(self.db).counters(user.employee_id)
-                base.oa_unread, base.oa_pending = c["unread"], c["pending"]
+                base.oa_unread, base.oa_pending, base.oa_overdue = c["unread"], c["pending"], c["overdue"]
             except Exception:  # noqa: BLE001 - نباید ورود را خراب کند
                 pass
         # یادآوری «اطلاعات بانکی تکمیل نشده» (فقط پرسنل؛ بانک‌های فعالِ اجباری سایت)

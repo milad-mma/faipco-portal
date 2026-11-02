@@ -121,5 +121,5 @@ from app.models.advance import (  # noqa: F401
 from app.models.user_session import UserSession  # noqa: F401
 from app.models.office_automation import (  # noqa: F401
     OaAttachment, OaAttachmentSettings, OaAuditEvent, OaFile, OaLetter, OaLetterAccess, OaLetterVersion, OaNote,
-    OaNotificationLog, OaRecipient, OaTask, OaTemplate, OaTemplateVersion,
+    OaLetterRelation, OaNotificationLog, OaNotificationPref, OaRecipient, OaTask, OaTemplate, OaTemplateVersion,
 )

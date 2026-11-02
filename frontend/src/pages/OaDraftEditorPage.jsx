@@ -9,6 +9,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -103,7 +104,12 @@ export default function OaDraftEditorPage() {
         }
         setDraft(d);
         setForm(formFrom(d));
-        setExtras({ recipients: d.recipients || [], attachments: d.attachments || [], attachment_limits: d.attachment_limits });
+        setExtras({
+          recipients: d.recipients || [],
+          attachments: d.attachments || [],
+          attachment_limits: d.attachment_limits,
+          relations: d.relations || [],
+        });
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -240,6 +246,19 @@ export default function OaDraftEditorPage() {
         </Alert>
       )}
       {saveState?.ok === false && !conflict && <Alert severity="error" sx={{ mb: 2 }}>{saveState.message}</Alert>}
+      {extras.relations?.length > 0 && (
+        <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          {extras.relations.map((r, i) => (
+            <Chip
+              key={i}
+              variant="outlined"
+              color="primary"
+              label={`${r.label}: ${r.subject || "نامه‌ی مرجع"}`}
+              onClick={r.letter_id ? () => window.open(`/automation/letters/${r.letter_id}`, "_blank") : undefined}
+            />
+          ))}
+        </Stack>
+      )}
       {draft.template_outdated && (
         <Alert severity="info" sx={{ mb: 2 }}>
           قالب «{draft.template_name}» بعد از ساخت این پیش‌نویس تغییر کرده است؛ با ذخیره‌ی بعدی نسخه‌ی تازه‌ی قالب اعمال می‌شود.

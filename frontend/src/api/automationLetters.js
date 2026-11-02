@@ -142,3 +142,22 @@ export async function downloadLetterAttachment({ letterId, attachmentId, draft =
   });
   return data;
 }
+
+// ---------- فاز ۳الف بخش دوم: پاسخ/عطف/پیرو و تنظیمات اعلان ----------
+
+// type: reply | reference | follow_up ؛ خروجی: { draft_id }
+export async function createRelatedDraft(letterId, type) {
+  const { data } = await apiClient.post(`/automation/letters/${letterId}/related-draft`, { type });
+  return data;
+}
+
+// { events: [{ key, label, enabled }] }
+export async function fetchNotificationPrefs() {
+  const { data } = await apiClient.get("/automation/notification-prefs");
+  return data;
+}
+
+export async function saveNotificationPrefs(enabled) {
+  const { data } = await apiClient.put("/automation/notification-prefs", { enabled });
+  return data;
+}
