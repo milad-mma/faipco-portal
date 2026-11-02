@@ -30,8 +30,9 @@ def default_layout(size: str) -> dict:
             "show_date": True,
             "show_attachment": True,
             "height_mm": 28 if a5 else 35,
+            "html": "",  # اگر پر باشد به‌جای سربرگ ساخته‌شده از فیلدها استفاده می‌شود (core/oa_template_html.py)
         },
-        "footer": {"text": "", "height_mm": 10 if a5 else 12},
+        "footer": {"text": "", "height_mm": 10 if a5 else 12, "html": ""},
         "signature": {"align": "left"},
     }
 
@@ -58,6 +59,15 @@ def _text(v, limit, label) -> str:
     return s
 
 
+def _template_html(raw, label: str) -> str:
+    from app.core.oa_template_html import TemplateHtmlError, sanitize_template_html
+
+    try:
+        return sanitize_template_html(raw if isinstance(raw, str) else "", label)
+    except TemplateHtmlError as e:
+        raise LetterRulesError(str(e)) from None
+
+
 def validate_layout(size: str, raw: dict) -> dict:
     """چیدمان یک اندازه‌ی کاغذ را بررسی و نرمال می‌کند (فقط کلیدهای شناخته‌شده می‌مانند)."""
     if size not in PAPER_SIZES:
@@ -81,11 +91,13 @@ def validate_layout(size: str, raw: dict) -> dict:
             "show_number": bool(h.get("show_number", True)),
             "show_date": bool(h.get("show_date", True)),
             "show_attachment": bool(h.get("show_attachment", True)),
-            "height_mm": _int(h.get("height_mm", d["header"]["height_mm"]), 10, 90, "ارتفاع سربرگ"),
+            "height_mm": _int(h.get("height_mm", d["header"]["height_mm"]), 10, 120, "ارتفاع سربرگ"),
+            "html": _template_html(h.get("html"), "HTML سربرگ"),
         },
         "footer": {
             "text": _text(f.get("text"), 300, "متن پابرگ"),
-            "height_mm": _int(f.get("height_mm", d["footer"]["height_mm"]), 0, 40, "ارتفاع پابرگ"),
+            "height_mm": _int(f.get("height_mm", d["footer"]["height_mm"]), 0, 60, "ارتفاع پابرگ"),
+            "html": _template_html(f.get("html"), "HTML پابرگ"),
         },
         "signature": {"align": sig.get("align") if sig.get("align") in ("left", "center", "right") else "left"},
     }

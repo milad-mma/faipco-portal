@@ -270,12 +270,13 @@ export default function OaDraftEditorPage() {
             bodyHtml={form.body_html}
             scale={previewPaper === "A5" ? 0.75 : 0.55}
             onPages={setPages}
+            siteName={draft.site_name}
           />
         </Card>
       </Stack>
 
       <Box className="oa-print-area">
-        <LetterPreview paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} printOnly forcePages={pages} />
+        <LetterPreview paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} printOnly forcePages={pages} siteName={draft.site_name} />
       </Box>
 
       <Dialog open={confirmDiscard} onClose={() => setConfirmDiscard(false)}>

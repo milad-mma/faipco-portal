@@ -95,3 +95,24 @@ def test_content_hash_detects_effective_changes():
     assert r.content_hash(**base, recipients=[2, 1]) == r.content_hash(**base, recipients=[1, 2])
     assert r.content_hash(**base, attachments=[1, 2]) != r.content_hash(**base, attachments=[2, 1])  # ترتیب پیوست مؤثر است
     assert r.clean_subject("  الف\nب ") == "الف ب"
+
+
+def test_template_html_sanitizer():
+    from app.core.oa_template_html import TemplateHtmlError, clean_style, sanitize_template_html
+
+    out = sanitize_template_html(
+        '<div style="display:flex;background-image:url(http://x)" onmouseover="x()"><img src="{{logo}}" height="60">'
+        '<img src="https://evil/x.png"><img src="data:image/png;base64,AA"><script>bad()</script>'
+        '<a href="javascript:x">لینک</a><table><tr><td colspan="2">{{number}}</td></tr></table></div>'
+    )
+    assert "url(" not in out and "onmouseover" not in out and "evil" not in out and "data:" not in out
+    assert "<script" not in out and "bad()" not in out and "<a" not in out and "لینک" in out
+    assert '<img src="{{logo}}" height="60">' in out and '<td colspan="2">{{number}}</td>' in out
+    assert clean_style("color: red; position: fixed; width: expression(1); display: grid; font-size: 10pt") == "color: red; font-size: 10pt"
+    assert clean_style('color: red" onload="x') == ""
+    try:
+        sanitize_template_html("x" * 60_000)
+    except TemplateHtmlError:
+        pass
+    else:
+        raise AssertionError("expected TemplateHtmlError")

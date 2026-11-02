@@ -59,15 +59,34 @@ const bodyStyles = {
   "& .oa-letter-body blockquote": { borderInlineStart: "1mm solid #bbb", margin: "2mm 0", paddingInlineStart: "3mm", color: "#444" },
 };
 
-function Header({ layout, logoUrl }) {
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// جای‌نگهدارهای HTML قالب ({{title}}، {{page}}، …) با مقدار escape‌شده؛ HTML خود قالب در سرور پاک‌سازی شده است
+// (core/oa_template_html.py). شماره/تاریخ/پیوست تا ارسال نامه نقطه‌چین است.
+export function fillTemplate(html, values) {
+  return (html || "").replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key) => (key in values ? esc(values[key]) : all));
+}
+
+function Header({ layout, logoUrl, values }) {
   const h = layout.header;
+  if (h.html) {
+    return (
+      <div
+        style={{ height: `${h.height_mm}mm`, overflow: "hidden", boxSizing: "border-box", flex: "none" }}
+        dangerouslySetInnerHTML={{
+          __html: fillTemplate(logoUrl ? h.html : h.html.replace(/<img [^>]*src="\{\{logo\}\}"[^>]*>/g, ""), { ...values, logo: logoUrl || "" }),
+        }}
+      />
+    );
+  }
   const field = (label) => (
     <div style={{ whiteSpace: "nowrap" }}>
       {label}: <span style={{ color: "#999" }}>..............</span>
     </div>
   );
   return (
-    <div style={{ height: `${h.height_mm}mm`, display: "flex", alignItems: "center", gap: "4mm", borderBottom: "0.3mm solid #999", boxSizing: "border-box" }}>
+    <div style={{ height: `${h.height_mm}mm`, display: "flex", alignItems: "center", gap: "4mm", borderBottom: "0.3mm solid #999", boxSizing: "border-box", flex: "none" }}>
       <div style={{ width: "28%", height: "100%", display: "flex", alignItems: "center" }}>
         {logoUrl ? <img src={logoUrl} alt="" style={{ maxHeight: "85%", maxWidth: "100%", objectFit: "contain" }} /> : null}
       </div>
@@ -84,17 +103,43 @@ function Header({ layout, logoUrl }) {
   );
 }
 
-function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm }) {
+function Footer({ layout, values, pageIndex, pages }) {
+  const f = layout.footer;
+  if (!(f.height_mm > 0)) return null;
+  if (f.html) {
+    return (
+      <div
+        style={{ height: `${f.height_mm}mm`, overflow: "hidden", boxSizing: "border-box", flex: "none" }}
+        dangerouslySetInnerHTML={{ __html: fillTemplate(f.html, { ...values, page: pageIndex + 1, pages }) }}
+      />
+    );
+  }
+  return (
+    <div style={{ height: `${f.height_mm}mm`, borderTop: "0.3mm solid #999", fontSize: "0.8em", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#333", flex: "none" }}>
+      <span>{f.text}</span>
+      {pages > 1 ? <span>صفحه {pageIndex + 1} از {pages}</span> : null}
+    </div>
+  );
+}
+
+// ابعاد و حاشیه‌ها در style درون‌خطی‌اند، نه sx: افزونه‌ی RTL برنامه (rtlCache) چپ/راستِ sx را جابه‌جا می‌کند و
+// حاشیه‌ی راست/چپ کاغذ باید همان جهت فیزیکی بماند.
+function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values }) {
   const [w, h] = PAPER[paper];
   const m = layout.margins_mm;
   return (
     <Box
       className="oa-page"
-      sx={{
+      style={{
         width: `${w}mm`,
         height: `${h}mm`,
         boxSizing: "border-box",
-        padding: `${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm`,
+        paddingTop: `${m.top}mm`,
+        paddingRight: `${m.right}mm`,
+        paddingBottom: `${m.bottom}mm`,
+        paddingLeft: `${m.left}mm`,
+      }}
+      sx={{
         background: "#fff",
         color: "#000",
         fontFamily: "Vazirmatn, Tahoma, sans-serif",
@@ -107,27 +152,22 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
         ...bodyStyles,
       }}
     >
-      <Header layout={layout} logoUrl={logoUrl} />
+      <Header layout={layout} logoUrl={logoUrl} values={values} />
       <div style={{ height: `${bodyHmm}mm`, overflow: "hidden", position: "relative", flex: "none", paddingTop: 0 }}>
-        <div style={{ position: "absolute", insetInline: 0, top: `-${pageIndex * bodyHmm}mm` }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: `-${pageIndex * bodyHmm}mm` }}>
           <BodyContent subject={subject} bodyHtml={bodyHtml} />
         </div>
       </div>
-      {layout.footer.height_mm > 0 && (
-        <div style={{ height: `${layout.footer.height_mm}mm`, borderTop: "0.3mm solid #999", fontSize: "0.8em", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#333" }}>
-          <span>{layout.footer.text}</span>
-          {pages > 1 ? <span>صفحه {pageIndex + 1} از {pages}</span> : null}
-        </div>
-      )}
+      <Footer layout={layout} values={values} pageIndex={pageIndex} pages={pages} />
     </Box>
   );
 }
 
 /**
  * props: paper ("A4"|"A5")، layout (چیدمان همان اندازه)، subject، bodyHtml، scale (نمایش؛ ۱ = اندازه‌ی واقعی)،
- * onPages(n)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)، forcePages (تعداد صفحه‌ی ازپیش‌محاسبه)
+ * siteName (برای {{site}})، onPages(n)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)، forcePages (تعداد صفحه‌ی ازپیش‌محاسبه)
  */
-export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, onPages, printOnly = false, forcePages }) {
+export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, onPages, printOnly = false, forcePages, siteName }) {
   const logoUrl = useLogoUrl(layout?.header?.logo_file_id);
   const measureRef = useRef(null);
   const unitRef = useRef(null);
@@ -148,11 +188,18 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
     onPages?.(n);
   }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forcePages]);
 
+  const values = {
+    title: layout.header.title,
+    subtitle: layout.header.subtitle,
+    site: siteName || "",
+    number: "..........",
+    date: "..........",
+    attachment: "..........",
+  };
+  // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
-    <Box key={i} sx={printOnly ? { breakAfter: "page", pageBreakAfter: "always" } : { width: `${w * scale}mm`, height: `${h * scale}mm`, boxShadow: 3, flex: "none" }}>
-      <Box sx={printOnly ? {} : { transform: `scale(${scale})`, transformOrigin: "top right" }}>
-        <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} />
-      </Box>
+    <Box key={i} sx={printOnly ? { breakAfter: "page", pageBreakAfter: "always" } : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom: scale }}>
+      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} />
     </Box>
   ));
 
@@ -168,7 +215,7 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
           <BodyContent subject={subject} bodyHtml={bodyHtml} />
         </Box>
       </Box>
-      {printOnly ? pageList : <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, justifyContent: "center" }}>{pageList}</Box>}
+      {printOnly ? pageList : <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>{pageList}</Box>}
     </Box>
   );
 }

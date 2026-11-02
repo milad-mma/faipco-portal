@@ -34,6 +34,49 @@ const SAMPLE_BODY =
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+// نمونه‌ی شروع برای سربرگ و پابرگ HTML (style درون‌خطی؛ جهت‌ها فیزیکی‌اند)
+const SAMPLE_HEADER_HTML = `<table style="width: 100%; height: 100%; border-collapse: collapse; border-bottom: 0.4mm solid #333">
+  <tr>
+    <td style="width: 30%; vertical-align: middle"><img src="{{logo}}" style="max-height: 22mm; max-width: 45mm"></td>
+    <td style="text-align: center; vertical-align: middle">
+      <div style="font-size: 15pt; font-weight: bold">{{title}}</div>
+      <div style="font-size: 10pt; color: #444">{{subtitle}}</div>
+    </td>
+    <td style="width: 30%; vertical-align: middle; font-size: 9pt; line-height: 1.9">
+      <div>شماره: {{number}}</div>
+      <div>تاریخ: {{date}}</div>
+      <div>پیوست: {{attachment}}</div>
+    </td>
+  </tr>
+</table>`;
+const SAMPLE_FOOTER_HTML = `<div style="border-top: 0.3mm solid #999; display: flex; justify-content: space-between; align-items: center; height: 100%; font-size: 8pt; color: #333">
+  <span>نشانی و تلفن شرکت</span>
+  <span>صفحه {{page}} از {{pages}}</span>
+</div>`;
+const PLACEHOLDER_HELP =
+  "جای‌نگهدارها: {{logo}} (فقط در src تصویر)، {{title}}، {{subtitle}}، {{site}}، {{number}}، {{date}}، {{attachment}}، {{page}}، {{pages}}. فقط style درون‌خطی؛ اسکریپت، لینک و تصویر بیرونی حذف می‌شوند.";
+
+function HtmlField({ label, value, onChange, sample }) {
+  return (
+    <Stack spacing={1}>
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>{label}</Typography>
+        {!value && <Button size="small" onClick={() => onChange(sample)}>شروع از نمونه</Button>}
+        {value && <Button size="small" color="inherit" onClick={() => onChange("")}>پاک کردن (برگشت به حالت ساده)</Button>}
+      </Stack>
+      <TextField
+        multiline
+        minRows={value ? 6 : 2}
+        maxRows={20}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="خالی = سربرگ/پابرگ ساده از فیلدهای بالا"
+        inputProps={{ dir: "ltr", spellCheck: false, style: { fontFamily: "monospace", fontSize: 13 } }}
+      />
+    </Stack>
+  );
+}
+
 function NumberField({ label, value, onChange, min, max, width = 110 }) {
   return (
     <TextField
@@ -79,7 +122,13 @@ export default function OaTemplatesPage() {
       return;
     }
     const t = d.templates.find((x) => x.id === id);
-    setForm({ ...t, layouts: clone(t.layouts) });
+    const layouts = clone(t.layouts);
+    for (const k of Object.keys(layouts)) {
+      // قالب‌های قدیمی‌تر فیلد html نداشتند
+      layouts[k].header.html = layouts[k].header.html || "";
+      layouts[k].footer.html = layouts[k].footer.html || "";
+    }
+    setForm({ ...t, layouts });
     setPaper(t.default_paper_size);
   }
 
@@ -222,7 +271,7 @@ export default function OaTemplatesPage() {
                       برداشتن لوگو از {paper}
                     </Button>
                   )}
-                  <NumberField label="ارتفاع (mm)" value={layout.header.height_mm} min={10} max={90} onChange={(v) => setHeader({ height_mm: v })} />
+                  <NumberField label="ارتفاع (mm)" value={layout.header.height_mm} min={10} max={120} onChange={(v) => setHeader({ height_mm: v })} />
                 </Stack>
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                   <TextField size="small" label="عنوان" value={layout.header.title} onChange={(e) => setHeader({ title: e.target.value })} sx={{ minWidth: 240 }} inputProps={{ maxLength: 120 }} />
@@ -246,8 +295,37 @@ export default function OaTemplatesPage() {
                 <Typography variant="subtitle2" fontWeight={700}>پابرگ</Typography>
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                   <TextField size="small" label="متن پابرگ (نشانی، تلفن، …)" value={layout.footer.text} onChange={(e) => setFooter({ text: e.target.value })} sx={{ minWidth: 300, flex: 1 }} inputProps={{ maxLength: 300 }} />
-                  <NumberField label="ارتفاع (mm)" value={layout.footer.height_mm} min={0} max={40} onChange={(v) => setFooter({ height_mm: v })} />
+                  <NumberField label="ارتفاع (mm)" value={layout.footer.height_mm} min={0} max={60} onChange={(v) => setFooter({ height_mm: v })} />
                 </Stack>
+
+                <Divider />
+                <Typography variant="subtitle2" fontWeight={700}>چیدمان با کد HTML (اختیاری)</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  اگر پر شود، به‌جای سربرگ/پابرگ ساده‌ی بالا استفاده می‌شود (ارتفاع همان «ارتفاع (mm)» بالاست). {PLACEHOLDER_HELP}
+                </Typography>
+                <HtmlField label={`HTML سربرگ ${paper}`} value={layout.header.html} onChange={(v) => setHeader({ html: v })} sample={SAMPLE_HEADER_HTML} />
+                <HtmlField label={`HTML پابرگ ${paper}`} value={layout.footer.html} onChange={(v) => setFooter({ html: v })} sample={SAMPLE_FOOTER_HTML} />
+                <Box>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const other = paper === "A4" ? "A5" : "A4";
+                      setForm((f) => ({
+                        ...f,
+                        layouts: {
+                          ...f.layouts,
+                          [other]: {
+                            ...f.layouts[other],
+                            header: { ...f.layouts[other].header, html: layout.header.html },
+                            footer: { ...f.layouts[other].footer, html: layout.footer.html },
+                          },
+                        },
+                      }));
+                    }}
+                  >
+                    کپی HTML این چیدمان به {paper === "A4" ? "A5" : "A4"}
+                  </Button>
+                </Box>
 
                 {result && <Alert severity={result.ok ? "success" : "error"}>{result.message}</Alert>}
                 <Box>
@@ -262,7 +340,7 @@ export default function OaTemplatesPage() {
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
                 پیش‌نمایش {paper}
               </Typography>
-              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} />
+              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName={siteName[form.site_id]} />
             </Card>
           </Stack>
         )}
