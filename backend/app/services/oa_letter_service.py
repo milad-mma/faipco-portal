@@ -114,6 +114,7 @@ class OaLetterService:
         self.files.audit("template.save", user, entity="template", entity_id=t.id, site_id=t.site_id,
                          details={"version_no": next_no, "name": name}, ip=ip)
         await self.db.commit()
+        await self.db.refresh(t, ["updated_at"])  # مقدار دیتابیس؛ خواندن تنبل در async ممکن نیست
         return next(x for x in await self.list_templates({t.site_id}) if x["id"] == t.id)
 
     async def template_versions(self, template_id: int) -> list[dict]:
@@ -222,6 +223,8 @@ class OaLetterService:
 
     async def draft_out(self, letter_id: int, user: User) -> dict:
         letter = await self._own_letter(letter_id, user)
+        # updated_at را دیتابیس پر می‌کند و بعد از INSERT/UPDATE منقضی است؛ خواندن تنبل در async ممکن نیست (MissingGreenlet)
+        await self.db.refresh(letter, ["updated_at"])
         v = await self.db.get(OaLetterVersion, letter.current_version_id)
         tv = await self.db.get(OaTemplateVersion, v.template_version_id) if v.template_version_id else None
         template_id = tv.template_id if tv else None
