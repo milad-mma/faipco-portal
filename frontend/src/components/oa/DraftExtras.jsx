@@ -1,23 +1,11 @@
-// گیرندگان (اصلی/رونوشت) و پیوست‌های پیش‌نویس نامه — هر تغییر فوراً در سرور ذخیره می‌شود.
-// props: draftId، recipients، attachments، onChange({recipients, attachments})، disabled،
-// section: "recipients" (بالای متن) | "attachments" (زیر متن)
-import { useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  Chip,
-  IconButton,
-  LinearProgress,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+// گیرندگان و پیوست‌های پیش‌نویس نامه (ظاهر شبیه ایمیل) — هر تغییر فوراً در سرور ذخیره می‌شود.
+// useDraftExtras: منطق مشترک؛ RecipientRow: ردیف «گیرنده»/«رونوشت» با چیپ؛ AttachmentChips: پیوست‌ها زیر متن؛
+// AttachButton: انتخاب چند فایل طبق سقف تنظیمات اتوماسیون سایت.
+import { useRef, useState } from "react";
+import { Box, Chip, IconButton, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import {
   downloadLetterAttachment,
   removeDraftAttachment,
@@ -44,11 +32,11 @@ export async function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-export default function DraftExtras({ draftId, recipients, attachments, onChange, disabled, section = "recipients" }) {
-  const [picker, setPicker] = useState(null); // "to" | "cc" | null
+/** منطق گیرنده/پیوست؛ extras: {recipients, attachments, attachment_limits}، setExtras از والد. */
+export function useDraftExtras(draftId, extras, setExtras) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [uploadPct, setUploadPct] = useState(null);
+  const [upload, setUpload] = useState(null); // { index, total, pct, name }
 
   async function saveRecipients(list) {
     setBusy(true);
@@ -58,7 +46,7 @@ export default function DraftExtras({ draftId, recipients, attachments, onChange
         draftId,
         list.map((r) => ({ employee_id: r.employee_id, role: r.role, selected_via: r.selected_via || "direct" })),
       );
-      onChange({ recipients: res.recipients, attachments: res.attachments });
+      setExtras((x) => ({ ...x, recipients: res.recipients, attachments: res.attachments }));
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره‌ی گیرندگان ناموفق بود.");
     } finally {
@@ -67,36 +55,57 @@ export default function DraftExtras({ draftId, recipients, attachments, onChange
   }
 
   function addPeople(role, people) {
-    setPicker(null);
-    const existing = new Set(recipients.map((r) => r.employee_id));
-    saveRecipients([...recipients, ...people.filter((p) => !existing.has(p.employee_id)).map((p) => ({ ...p, role }))]);
+    const existing = new Set(extras.recipients.map((r) => r.employee_id));
+    saveRecipients([...extras.recipients, ...people.filter((p) => !existing.has(p.employee_id)).map((p) => ({ ...p, role }))]);
   }
 
-  async function handleUpload(file) {
-    if (!file) return;
+  function removeRecipient(employeeId) {
+    saveRecipients(extras.recipients.filter((x) => x.employee_id !== employeeId));
+  }
+
+  // چند فایل پشت‌سرهم؛ بیش از ظرفیت باقی‌مانده یا بزرگ‌تر از سقف هر فایل، همان‌جا با پیام کنار گذاشته می‌شود
+  async function uploadFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
     setError("");
-    setUploadPct(0);
-    try {
-      const res = await uploadDraftAttachment(draftId, file, setUploadPct);
-      onChange({ recipients, attachments: res.attachments });
-    } catch (err) {
-      setError(err.response?.data?.detail || "بارگذاری پیوست ناموفق بود.");
-    } finally {
-      setUploadPct(null);
+    const lim = extras.attachment_limits || {};
+    const room = lim.max_files ? Math.max(0, lim.max_files - extras.attachments.length) : files.length;
+    const problems = [];
+    let queue = files;
+    if (files.length > room) {
+      problems.push(`حداکثر ${toPersianDigits(lim.max_files)} پیوست مجاز است؛ ${toPersianDigits(files.length - room)} فایل اضافه نشد.`);
+      queue = files.slice(0, room);
     }
+    if (lim.max_file_mb) {
+      const big = queue.filter((f) => f.size > lim.max_file_mb * 1024 * 1024);
+      if (big.length) problems.push(`فایل بزرگ‌تر از ${toPersianDigits(lim.max_file_mb)} مگابایت: ${big.map((f) => f.name).join("، ")}`);
+      queue = queue.filter((f) => f.size <= lim.max_file_mb * 1024 * 1024);
+    }
+    for (let i = 0; i < queue.length; i += 1) {
+      const f = queue[i];
+      setUpload({ index: i + 1, total: queue.length, pct: 0, name: f.name });
+      try {
+        const res = await uploadDraftAttachment(draftId, f, (pct) => setUpload((u) => ({ ...u, pct })));
+        setExtras((x) => ({ ...x, attachments: res.attachments }));
+      } catch (err) {
+        problems.push(`${f.name}: ${err.response?.data?.detail || "بارگذاری ناموفق بود"}`);
+      }
+    }
+    setUpload(null);
+    if (problems.length) setError(problems.join("\n"));
   }
 
-  async function handleRemove(id) {
+  async function removeAttachment(id) {
     setError("");
     try {
       const res = await removeDraftAttachment(draftId, id);
-      onChange({ recipients, attachments: res.attachments });
+      setExtras((x) => ({ ...x, attachments: res.attachments }));
     } catch (err) {
       setError(err.response?.data?.detail || "حذف پیوست ناموفق بود.");
     }
   }
 
-  async function handleDownload(a) {
+  async function download(a) {
     try {
       saveBlob(await downloadLetterAttachment({ letterId: draftId, attachmentId: a.id, draft: true }), a.file.name);
     } catch {
@@ -104,77 +113,108 @@ export default function DraftExtras({ draftId, recipients, attachments, onChange
     }
   }
 
-  const group = (role, label) => {
-    const list = recipients.filter((r) => r.role === role);
-    return (
-      <Stack spacing={1}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="body2" fontWeight={700} sx={{ minWidth: 70 }}>{label}</Typography>
-          <Button size="small" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setPicker(role)} disabled={disabled || busy}>
-            افزودن
-          </Button>
-        </Stack>
-        <Stack direction="row" flexWrap="wrap" gap={1}>
-          {list.length === 0 && <Typography variant="caption" color="text.secondary">—</Typography>}
-          {list.map((r) => (
-            <Tooltip key={r.employee_id} title={[r.title, r.department].filter(Boolean).join(" — ")}>
-              <Chip
-                label={r.name}
-                color={role === "to" ? "primary" : "default"}
-                variant={role === "to" ? "filled" : "outlined"}
-                onDelete={disabled ? undefined : () => saveRecipients(recipients.filter((x) => x.employee_id !== r.employee_id))}
-              />
-            </Tooltip>
-          ))}
-        </Stack>
-      </Stack>
-    );
-  };
+  return { error, setError, busy, upload, addPeople, removeRecipient, uploadFiles, removeAttachment, download };
+}
 
+/** ردیف «گیرنده» یا «رونوشت» مثل ایمیل: برچسب، چیپ‌ها و دکمه‌ی افزودن؛ end: محتوای انتهای ردیف (مثلاً «رونوشت»). */
+export function RecipientRow({ label, role, extras, api, disabled, end }) {
+  const [open, setOpen] = useState(false);
+  const list = extras.recipients.filter((r) => r.role === role);
   return (
-    <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "background.paper" }}>
-      <Stack spacing={2}>
-        {section === "recipients" && group("to", "گیرنده")}
-        {section === "recipients" && group("cc", "رونوشت")}
-        {section === "attachments" && <Box>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <Typography variant="body2" fontWeight={700} sx={{ minWidth: 70 }}>پیوست‌ها</Typography>
-            <Button size="small" component="label" startIcon={<AttachFileIcon />} disabled={disabled || uploadPct !== null}>
-              افزودن فایل
-              <input hidden type="file" onChange={(e) => { handleUpload(e.target.files?.[0]); e.target.value = ""; }} />
-            </Button>
-          </Stack>
-          {uploadPct !== null && <LinearProgress variant="determinate" value={uploadPct} sx={{ my: 1 }} />}
-          <Stack spacing={0.5} sx={{ mt: 1 }}>
-            {attachments.map((a) => (
-              <Stack key={a.id} direction="row" alignItems="center" spacing={1}>
-                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                  {a.file.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">{formatSize(a.file.size)}</Typography>
-                <Chip size="small" label={a.file.status_label} color={a.file.can_download ? "success" : "warning"} variant="outlined" />
-                {a.file.can_download && (
-                  <IconButton size="small" onClick={() => handleDownload(a)}><DownloadOutlinedIcon fontSize="small" /></IconButton>
-                )}
-                {!disabled && (
-                  <IconButton size="small" onClick={() => handleRemove(a.id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
-                )}
-              </Stack>
-            ))}
-          </Stack>
-          {attachments.length === 0 && uploadPct === null && (
-            <Typography variant="caption" color="text.secondary">پیوستی اضافه نشده است.</Typography>
-          )}
-        </Box>}
-        {error && <Alert severity="error">{error}</Alert>}
+    <Stack direction="row" alignItems="center" sx={{ px: 2, py: 0.75, minHeight: 48, borderBottom: 1, borderColor: "divider" }} gap={1}>
+      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 56 }}>{label}</Typography>
+      <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ flex: 1, minWidth: 0 }}>
+        {list.map((r) => (
+          <Tooltip key={r.employee_id} title={[r.title, r.department].filter(Boolean).join(" — ")}>
+            <Chip
+              size="small"
+              label={r.name}
+              variant={role === "to" ? "filled" : "outlined"}
+              onDelete={disabled ? undefined : () => api.removeRecipient(r.employee_id)}
+            />
+          </Tooltip>
+        ))}
+        <Tooltip title={role === "cc" ? "افزودن رونوشت" : "افزودن گیرنده"}>
+          <span>
+            <IconButton size="small" onClick={() => setOpen(true)} disabled={disabled || api.busy}>
+              <PersonAddAltOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
       </Stack>
+      {end}
       <PersonPicker
-        open={Boolean(picker)}
-        title={picker === "cc" ? "افزودن رونوشت" : "افزودن گیرنده"}
-        exclude={recipients.map((r) => r.employee_id)}
-        onClose={() => setPicker(null)}
-        onConfirm={(people) => addPeople(picker, people)}
+        open={open}
+        title={role === "cc" ? "افزودن رونوشت" : "افزودن گیرنده"}
+        exclude={extras.recipients.map((r) => r.employee_id)}
+        onClose={() => setOpen(false)}
+        onConfirm={(people) => {
+          setOpen(false);
+          api.addPeople(role, people);
+        }}
       />
-    </Card>
+    </Stack>
+  );
+}
+
+/** پیوست‌ها به‌صورت کارت‌های کوچک زیر متن (مثل جیمیل) + نوار پیشرفت بارگذاری. */
+export function AttachmentChips({ extras, api, disabled }) {
+  if (!extras.attachments.length && !api.upload) return null;
+  return (
+    <Box sx={{ px: 2, py: 1.5 }}>
+      <Stack direction="row" flexWrap="wrap" gap={1}>
+        {extras.attachments.map((a) => (
+          <Chip
+            key={a.id}
+            icon={<InsertDriveFileOutlinedIcon />}
+            variant="outlined"
+            color={a.file.can_download ? "default" : "warning"}
+            label={`${a.file.name} (${formatSize(a.file.size)})${a.file.can_download ? "" : ` — ${a.file.status_label}`}`}
+            onClick={a.file.can_download ? () => api.download(a) : undefined}
+            onDelete={disabled ? undefined : () => api.removeAttachment(a.id)}
+            sx={{ maxWidth: "100%" }}
+          />
+        ))}
+      </Stack>
+      {api.upload && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            بارگذاری {toPersianDigits(api.upload.index)} از {toPersianDigits(api.upload.total)}: {api.upload.name}
+          </Typography>
+          <LinearProgress variant="determinate" value={api.upload.pct} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** دکمه‌ی پیوست (گیره) با انتخاب چند فایل. */
+export function AttachButton({ extras, api, disabled }) {
+  const input = useRef(null);
+  const lim = extras.attachment_limits;
+  const full = lim?.max_files && extras.attachments.length >= lim.max_files;
+  const tip = lim
+    ? `پیوست فایل — حداکثر ${toPersianDigits(lim.max_files)} فایل، هر فایل تا ${toPersianDigits(lim.max_file_mb)} مگابایت`
+    : "پیوست فایل";
+  return (
+    <>
+      <Tooltip title={full ? "به سقف تعداد پیوست رسیده‌اید" : tip}>
+        <span>
+          <IconButton onClick={() => input.current?.click()} disabled={disabled || Boolean(api.upload) || Boolean(full)}>
+            <AttachFileIcon />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <input
+        ref={input}
+        hidden
+        type="file"
+        multiple
+        onChange={(e) => {
+          api.uploadFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+    </>
   );
 }

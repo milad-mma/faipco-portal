@@ -88,7 +88,8 @@ class OaTemplate(Base, TimestampMixin):
     __tablename__ = "oa_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    # از Migration 138 قالب برای همه یکسان است؛ site_id فقط سابقه‌ی قالب‌های قدیمی (اختیاری)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     default_paper_size: Mapped[str] = mapped_column(String(4), nullable=False, default="A4")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -138,6 +139,9 @@ class OaLetter(Base, TimestampMixin):
     sender_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
     sender_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 138: «نیاز به اقدام گیرنده» — بدون تیک، گیرنده‌ی اصلی فقط می‌خواند (مسئولیت ساخته نمی‌شود)
+    requires_action: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    action_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):

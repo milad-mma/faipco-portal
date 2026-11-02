@@ -1,7 +1,7 @@
-// «قالب‌های نامه» — اتوماسیون اداری فاز ۲: سربرگ، پابرگ، حاشیه و قلم هر سایت، جدا برای A4 و A5، با پیش‌نمایش زنده.
+// «قالب‌های نامه» — اتوماسیون اداری فاز ۲: سربرگ، پابرگ، حاشیه و قلم (برای همه‌ی سایت‌ها یکسان)، جدا برای A4 و A5، با پیش‌نمایش زنده.
 // هر ذخیره یک نسخه‌ی تازه می‌سازد؛ پیش‌نویس‌هایی که با نسخه‌ی قبلی ساخته شده‌اند تا ذخیره‌ی بعدی همان را نگه می‌دارند.
-// مجوز automation.templates همان سایت.
-import { useEffect, useMemo, useState } from "react";
+// قالب برای همه‌ی سایت‌ها یکسان است؛ مجوز automation.templates.
+import { useEffect, useState } from "react";
 import {
   Alert,
   Box,
@@ -118,7 +118,7 @@ export default function OaTemplatesPage() {
     setResult(null);
     setSelected(id);
     if (id === "new") {
-      setForm({ id: null, site_id: d.sites[0]?.id || "", name: "", default_paper_size: "A4", is_active: true, layouts: clone(d.default_layouts) });
+      setForm({ id: null, name: "", default_paper_size: "A4", is_active: true, layouts: clone(d.default_layouts) });
       return;
     }
     const t = d.templates.find((x) => x.id === id);
@@ -152,7 +152,7 @@ export default function OaTemplatesPage() {
     setUploading(true);
     setResult(null);
     try {
-      const f = await uploadTemplateLogo(form.site_id, file);
+      const f = await uploadTemplateLogo(file);
       // لوگو برای هر دو اندازه‌ی کاغذ؛ اگر لازم شد می‌شود یکی را برداشت
       setForm((prev) => ({
         ...prev,
@@ -172,7 +172,6 @@ export default function OaTemplatesPage() {
     setResult(null);
     try {
       const saved = await saveTemplate(form.id, {
-        site_id: Number(form.site_id),
         name: form.name,
         default_paper_size: form.default_paper_size,
         is_active: form.is_active,
@@ -187,7 +186,6 @@ export default function OaTemplatesPage() {
     }
   }
 
-  const siteName = useMemo(() => Object.fromEntries((data?.sites || []).map((s) => [s.id, s.name])), [data]);
 
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!data) {
@@ -204,7 +202,7 @@ export default function OaTemplatesPage() {
         قالب‌های نامه
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        سربرگ، پابرگ و حاشیه‌ی نامه‌های هر سایت. چیدمان A4 و A5 جدا تنظیم می‌شود. هر ذخیره یک نسخه‌ی تازه است و نامه‌های قبلی
+        سربرگ، پابرگ و حاشیه‌ی نامه‌ها — برای همه‌ی سایت‌ها یکسان. چیدمان A4 و A5 جدا تنظیم می‌شود. هر ذخیره یک نسخه‌ی تازه است و نامه‌های قبلی
         دست نمی‌خورند.
       </Typography>
 
@@ -215,7 +213,7 @@ export default function OaTemplatesPage() {
               <ListItemButton key={t.id} selected={selected === t.id} onClick={() => open(data, t.id)}>
                 <ListItemText
                   primary={t.name + (t.is_active ? "" : " (غیرفعال)")}
-                  secondary={`${data.sites.length > 1 ? `${t.site_name} — ` : ""}نسخه‌ی ${toPersianDigits(t.version_no || 0)}`}
+                  secondary={`نسخه‌ی ${toPersianDigits(t.version_no || 0)}`}
                 />
               </ListItemButton>
             ))}
@@ -227,7 +225,7 @@ export default function OaTemplatesPage() {
           </List>
           <Divider />
           <Box sx={{ p: 1 }}>
-            <Button fullWidth startIcon={<AddIcon />} onClick={() => open(data, "new")} disabled={!data.sites.length} sx={{ height: 40 }}>
+            <Button fullWidth startIcon={<AddIcon />} onClick={() => open(data, "new")} sx={{ height: 40 }}>
               قالب جدید
             </Button>
           </Box>
@@ -239,15 +237,6 @@ export default function OaTemplatesPage() {
               <Stack spacing={2}>
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                   <TextField size="small" label="نام قالب" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={{ minWidth: 220 }} inputProps={{ maxLength: 120 }} />
-                  {form.id ? (
-                    data.sites.length > 1 && <TextField size="small" label="سایت" value={siteName[form.site_id] || ""} disabled sx={{ minWidth: 160 }} />
-                  ) : (
-                    <TextField select size="small" label="سایت" value={form.site_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })} sx={{ minWidth: 160 }}>
-                      {data.sites.map((s) => (
-                        <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-                      ))}
-                    </TextField>
-                  )}
                   <TextField select size="small" label="کاغذ پیش‌فرض" value={form.default_paper_size} onChange={(e) => setForm({ ...form, default_paper_size: e.target.value })} sx={{ width: 140 }}>
                     <MenuItem value="A4">A4</MenuItem>
                     <MenuItem value="A5">A5</MenuItem>
@@ -262,7 +251,7 @@ export default function OaTemplatesPage() {
 
                 <Typography variant="subtitle2" fontWeight={700}>سربرگ</Typography>
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
-                  <Button component="label" variant="outlined" startIcon={uploading ? <CircularProgress size={16} /> : <ImageOutlinedIcon />} disabled={uploading || !form.site_id} sx={{ height: 40 }}>
+                  <Button component="label" variant="outlined" startIcon={uploading ? <CircularProgress size={16} /> : <ImageOutlinedIcon />} disabled={uploading} sx={{ height: 40 }}>
                     {layout.header.logo_file_id ? "تغییر لوگو" : "بارگذاری لوگو"}
                     <input hidden type="file" accept=".png,.jpg,.jpeg,.webp" onChange={(e) => { handleLogo(e.target.files?.[0]); e.target.value = ""; }} />
                   </Button>
@@ -329,7 +318,7 @@ export default function OaTemplatesPage() {
 
                 {result && <Alert severity={result.ok ? "success" : "error"}>{result.message}</Alert>}
                 <Box>
-                  <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />} onClick={handleSave} disabled={saving || !form.name.trim() || !form.site_id} sx={{ height: 40 }}>
+                  <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />} onClick={handleSave} disabled={saving || !form.name.trim()} sx={{ height: 40 }}>
                     {form.id ? "ذخیره (نسخه‌ی تازه)" : "ساخت قالب"}
                   </Button>
                 </Box>
@@ -340,7 +329,7 @@ export default function OaTemplatesPage() {
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
                 پیش‌نمایش {paper}
               </Typography>
-              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName={siteName[form.site_id]} />
+              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName="نام سایت" />
             </Card>
           </Stack>
         )}

@@ -51,31 +51,23 @@ const URGENCY = { normal: "عادی", urgent: "فوری", immediate: "آنی" };
 const KIND = { action: "اقدام", info: "اطلاع" };
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "");
 
-// گردش نامه مثل گردش درخواست وام: مراحل (Stepper؛ افقی در دسکتاپ، عمودی در موبایل یا وقتی مراحل زیاد است) و زیرش تاریخچه
+const STATE_TEXT = { done: "انجام شد", current: "در انتظار اقدام", read: "خوانده شد", unread: "خوانده نشده", cancelled: "لغو شد" };
+
+// گردش نامه مثل گردش درخواست وام: مراحل از سرور (letter.flow: ارسال، گیرندگان/رونوشت با وضعیت خواندن یا اقدام، ارجاع‌ها)؛
+// افقی در دسکتاپ، عمودی در موبایل یا وقتی مراحل زیاد است؛ زیرش تاریخچه با زمان
 function LetterFlow({ letter }) {
-  const vertical = useMediaQuery((t) => t.breakpoints.down("md")) || letter.tasks.length > 5;
-  const tasks = [...letter.tasks].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  const steps = [
-    { key: "sent", label: "ارسال", person: letter.sender?.name, state: "done", at: letter.sent_at },
-    ...tasks.map((t) => ({
-      key: t.id,
-      label: `${t.origin === "referral" ? "ارجاع" : "گیرنده"} — ${KIND[t.kind]}`,
-      person: t.assignee,
-      state: t.status === "done" ? "done" : t.status === "open" ? "current" : "cancelled",
-      at: t.done_at || t.created_at,
-      overdue: t.status === "open" && t.due_at && new Date(t.due_at) < new Date(),
-    })),
-  ];
-  const firstOpen = steps.findIndex((s) => s.state === "current");
-  // تاریخچه: ارسال، هر ارجاع (با دستور) و هر نتیجه، به ترتیب زمان
-  const events = [{ at: letter.sent_at, text: `ارسال توسط ${letter.sender?.name || "—"}` }];
-  for (const t of tasks) {
-    if (t.origin === "referral") {
-      events.push({ at: t.created_at, text: `ارجاع ${t.created_by || ""} به ${t.assignee} (${KIND[t.kind]})${t.instruction ? `: ${t.instruction}` : ""}${t.due_at ? ` — مهلت ${fmt(t.due_at)}` : ""}` });
+  const small = useMediaQuery((t) => t.breakpoints.down("md"));
+  const steps = letter.flow || [];
+  const vertical = small || steps.length > 6;
+  const firstOpen = steps.findIndex((s) => s.state === "current" || s.state === "unread");
+  const events = [];
+  for (const s of steps) {
+    if (s.key === "sent") events.push({ at: s.at, text: `ارسال توسط ${s.person || "—"}` });
+    else if (s.key.startsWith("t")) {
+      events.push({ at: s.created_at || s.at, text: `ارجاع ${s.from || ""} به ${s.person}${s.instruction ? `: ${s.instruction}` : ""}${s.due_at ? ` — مهلت ${fmt(s.due_at)}` : ""}` });
     }
-    if (t.status === "done") {
-      events.push({ at: t.done_at, text: `${t.assignee}: ${t.kind === "info" ? "رؤیت شد" : "اقدام شد"}${t.result_note ? ` — ${t.result_note}` : ""}` });
-    }
+    if (s.read_at && s.key !== "sent") events.push({ at: s.read_at, text: `${s.person} نامه را خواند` });
+    if (s.state === "done" && s.key !== "sent") events.push({ at: s.at, text: `${s.person}: ${s.label.includes("اطلاع") ? "رؤیت ثبت شد" : "اقدام شد"}${s.note ? ` — ${s.note}` : ""}` });
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
   return (
@@ -88,13 +80,13 @@ function LetterFlow({ letter }) {
           sx={{ my: 1 }}
         >
           {steps.map((s) => (
-            <Step key={s.key} completed={s.state === "done"}>
+            <Step key={s.key} completed={s.state === "done" || s.state === "read"}>
               <StepLabel
-                error={s.overdue}
+                error={Boolean(s.overdue)}
                 optional={
-                  <Typography variant="caption" color="text.secondary" component="div">
+                  <Typography variant="caption" color={s.state === "unread" ? "text.disabled" : "text.secondary"} component="div">
                     {s.person}
-                    {s.state === "current" ? " — در انتظار" : s.state === "cancelled" ? " — لغو شد" : ""}
+                    {s.key !== "sent" ? ` — ${STATE_TEXT[s.state]}` : ""}
                   </Typography>
                 }
               >
@@ -273,7 +265,7 @@ export default function OaLetterPage() {
       ))}
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2} alignItems="flex-start">
-        <Stack spacing={2} sx={{ flex: "1 1 0", minWidth: 0, width: "100%" }}>
+        <Stack spacing={2} sx={{ flex: { lg: "1 1 0" }, minWidth: 0, width: "100%" }}>
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
             <Stack spacing={1}>
               <Typography variant="body2">
@@ -282,8 +274,13 @@ export default function OaLetterPage() {
               <Box><Typography variant="body2" component="span" fontWeight={700}>گیرنده: </Typography>{people(to)}</Box>
               {cc.length > 0 && <Box><Typography variant="body2" component="span" fontWeight={700}>رونوشت: </Typography>{people(cc)}</Box>}
               {letter.recipients.some((r) => r.read_at) && (
-                <Typography variant="caption" color="text.secondary">✓ = رؤیت شده (فقط برای فرستنده نمایش داده می‌شود)</Typography>
+                <Typography variant="caption" color="text.secondary">✓ = خوانده شده</Typography>
               )}
+              <Typography variant="caption" color="text.secondary">
+                {letter.requires_action
+                  ? `از گیرنده اقدام خواسته شده${letter.action_due_at ? ` — مهلت ${fmt(letter.action_due_at)}` : ""}`
+                  : "برای اطلاع گیرنده (بدون نیاز به اقدام)"}
+              </Typography>
               {letter.attachments.length > 0 && (
                 <>
                   <Divider />
@@ -335,7 +332,7 @@ export default function OaLetterPage() {
           </Card>
         </Stack>
 
-        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "1 1 0", minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
+        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — {letter.paper_size}، {toPersianDigits(pages)} صفحه
           </Typography>

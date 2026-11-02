@@ -111,7 +111,12 @@ export default function OaCartablePage() {
               <CardActionArea onClick={() => navigate(`/automation/letters/${it.letter_id}`)} sx={{ p: 1.5 }}>
                 <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
                   {it.confidentiality === "confidential" && <LockOutlinedIcon fontSize="small" color="error" />}
-                  <Typography fontWeight={it.unread ? 800 : 500} sx={{ flex: 1, minWidth: 0 }} noWrap>
+                  <Typography
+                    fontWeight={it.unread ? 800 : 400}
+                    color={box === "inbox" && !it.unread ? "text.secondary" : "text.primary"}
+                    sx={{ flex: 1, minWidth: 0 }}
+                    noWrap
+                  >
                     {it.subject || "(بدون موضوع)"}
                   </Typography>
                   {URGENCY[it.urgency] && <Chip size="small" color="warning" label={URGENCY[it.urgency]} />}

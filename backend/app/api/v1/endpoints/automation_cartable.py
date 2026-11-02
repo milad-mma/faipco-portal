@@ -2,7 +2,7 @@
 اتوماسیون اداری فاز ۳الف: گیرنده و پیوست پیش‌نویس، ارسال، کارتابل، مشاهده‌ی نامه، ارجاع، انجام مسئولیت، هامش، محرمانه کردن.
 
 - کارتابل و هر کاری روی نامه: مجوز automation.access (هر سایت) + دسترسی صریح به همان نامه (core/oa_access_rules.can).
-- گیرنده/پیوست/ارسال پیش‌نویس: فقط سازنده و مجوز automation.compose سایت نامه.
+- گیرنده/پیوست/ارسال پیش‌نویس: فقط سازنده با automation.access (ادغام compose، Migration 138).
 """
 from __future__ import annotations
 
@@ -50,14 +50,12 @@ async def _require(db: AsyncSession, user: User, code: str, label: str) -> set[i
 
 
 async def _compose_draft(db: AsyncSession, user: User, letter_id: int) -> OaCartableService:
-    sites = await _require(db, user, "automation.compose", "نوشتن نامه")
+    await _require(db, user, "automation.access", "نوشتن نامه")
     service = OaCartableService(db)
     try:
-        letter = await service._own_draft(letter_id, user)
+        await service._own_draft(letter_id, user)
     except OaCartableError as e:
         _raise(e)
-    if sites is not None and letter.site_id not in sites:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="به این سایت دسترسی ندارید")
     return service
 
 

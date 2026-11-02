@@ -175,12 +175,23 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   useEffect(() => {
     if (!fit || printOnly || !boxRef.current) return undefined;
     const el = boxRef.current;
-    const pagePx = ((PAPER[paper] || PAPER.A4)[0] * 96) / 25.4;
-    const measure = () => setFitScale(Math.max(0.3, Math.min(1.2, (el.clientWidth - 8) / pagePx)));
+    const [pw, ph] = PAPER[paper] || PAPER.A4;
+    const pageW = (pw * 96) / 25.4;
+    const pageH = (ph * 96) / 25.4;
+    // عرض ظرف، ولی نه بلندتر از ارتفاع پنجره (تا یک صفحه‌ی کامل بدون اسکرول زیاد دیده شود)
+    const measure = () => {
+      const byWidth = (el.clientWidth - 8) / pageW;
+      const byHeight = (window.innerHeight - 140) / pageH;
+      setFitScale(Math.max(0.3, Math.min(1, byWidth, byHeight)));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [fit, printOnly, paper]);
   const zoom = fit && fitScale ? fitScale : scale;
   const logoUrl = useLogoUrl(layout?.header?.logo_file_id);

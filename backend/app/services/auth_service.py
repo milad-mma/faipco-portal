@@ -406,9 +406,9 @@ class AuthService:
         base.can_view_bank_accounts = user.is_superuser or bool({"bank_accounts.view", "bank_accounts.manage"} & set(permission_codes))
         base.can_manage_bank_accounts = user.is_superuser or "bank_accounts.manage" in permission_codes
         base.can_manage_automation_settings = user.is_superuser or "automation.settings" in permission_codes
-        base.can_oa_compose = user.is_superuser or "automation.compose" in permission_codes
         base.can_oa_templates = user.is_superuser or "automation.templates" in permission_codes
         base.can_oa_access = user.is_superuser or "automation.access" in permission_codes
+        base.can_oa_compose = base.can_oa_access  # compose در access ادغام شد (Migration 138)
         # شمارنده‌ی منوی «کارتابل من»: خوانده‌نشده + مسئولیت باز — فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد
         base.oa_unread = base.oa_pending = 0
         if base.can_oa_access and user.employee_id is not None:

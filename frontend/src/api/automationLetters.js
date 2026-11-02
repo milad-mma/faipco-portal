@@ -3,7 +3,7 @@ import { apiClient } from "./client";
 
 // ---------- قالب‌ها (مجوز automation.templates) ----------
 
-// { sites: [{id, name}], templates: [...], default_layouts: {A4, A5}, paper_mm: {A4: [210, 297], A5: [148, 210]} }
+// { templates: [...], default_layouts: {A4, A5}, paper_mm: {A4: [210, 297], A5: [148, 210]} } — قالب برای همه یکسان
 export async function fetchTemplates() {
   const { data } = await apiClient.get("/automation/templates");
   return data;
@@ -21,9 +21,8 @@ export async function fetchTemplateVersions(templateId) {
   return data;
 }
 
-export async function uploadTemplateLogo(siteId, file) {
+export async function uploadTemplateLogo(file) {
   const formData = new FormData();
-  formData.append("site_id", String(siteId));
   formData.append("file", file);
   const { data } = await apiClient.post("/automation/templates/logo", formData, {
     headers: { "Content-Type": "multipart/form-data" },

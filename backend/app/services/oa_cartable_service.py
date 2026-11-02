@@ -13,7 +13,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_letter_rules as rules
@@ -135,16 +135,31 @@ class OaCartableService:
         e, dept = row
         return {"employee_id": e.id, "name": _full_name(e), "title": e.position_title, "department": dept}
 
-    async def _eligible(self, employee_ids: set[int]) -> set[int]:
+    async def _allowed_sites(self, user: User) -> set[int] | None:
+        """
+        سایت‌هایی که کاربر می‌تواند به پرسنلشان نامه بفرستد یا ارجاع دهد: سایت خودش + هر سایتی که automation.access آن را
+        دارد. None = همه (دسترسی سراسری یا ادمین کل).
+        """
+        from app.core.site_access import get_sites_with_permission
+
+        sites = await get_sites_with_permission(self.db, user, "automation.access")
+        if sites is None:
+            return None
+        me = await self._me(user)
+        return set(sites) | {me.site_id}
+
+    async def _eligible(self, employee_ids: set[int], user: User) -> set[int]:
+        """از employee_ids، کسانی که فعال‌اند، دسترسی اتوماسیون دارند و در سایت مجاز فرستنده‌اند."""
         if not employee_ids:
             return set()
-        rows = (await self.db.execute(
-            select(Employee.id).where(
-                Employee.id.in_(employee_ids), Employee.is_active.is_(True), Employee.is_enabled.is_(True),
-                Employee.id.in_(eligible_users_subquery()),
-            )
-        )).scalars().all()
-        return set(rows)
+        stmt = select(Employee.id).where(
+            Employee.id.in_(employee_ids), Employee.is_active.is_(True), Employee.is_enabled.is_(True),
+            Employee.id.in_(eligible_users_subquery()),
+        )
+        allowed = await self._allowed_sites(user)
+        if allowed is not None:
+            stmt = stmt.where(Employee.site_id.in_(allowed))
+        return set((await self.db.execute(stmt)).scalars().all())
 
     async def _rows(self, letter_id: int, employee_id: int) -> list[dict]:
         rows = (await self.db.execute(
@@ -214,6 +229,9 @@ class OaCartableService:
             .outerjoin(Department, Department.id == Employee.department_id)
             .where(Employee.is_active.is_(True), Employee.is_enabled.is_(True), Employee.id.in_(eligible_users_subquery()))
         )
+        allowed = await self._allowed_sites(user)
+        if allowed is not None:
+            stmt = stmt.where(Employee.site_id.in_(allowed))
         for word in (q or "").split()[:4]:
             like = f"%{word}%"
             stmt = stmt.where(or_(Employee.first_name.ilike(like), Employee.last_name.ilike(like),
@@ -229,6 +247,7 @@ class OaCartableService:
             .where(Department.id.in_(
                 select(Employee.department_id).where(Employee.id.in_(eligible_users_subquery()), Employee.is_active.is_(True))
             ))
+            .where(true() if allowed is None else Department.site_id.in_(allowed))
             .order_by(Site.name, Department.name)
         )).all()
         return {
@@ -247,6 +266,18 @@ class OaCartableService:
             "recipients": [{"employee_id": r.employee_id, "role": r.role, "name": r.name_snapshot,
                             "title": r.title_snapshot, "department": r.department_snapshot} for r in recipients],
             "attachments": await self._attachments(letter.current_version_id),
+            "attachment_limits": await self._attachment_limits(letter.site_id),
+        }
+
+    async def _attachment_limits(self, site_id: int) -> dict:
+        """سقف پیوست نامه از تنظیمات سایت فرستنده (برای انتخاب چند فایل در رابط؛ سرور دوباره بررسی می‌کند)."""
+        from app.services import server_upload_limit
+
+        st = await self.files.site_settings(site_id)
+        return {
+            "max_files": st["letter_max_files"],
+            "max_file_mb": min(st["letter_max_file_mb"], await server_upload_limit.portal_max_file_mb(self.db)),
+            "max_total_mb": st["letter_max_total_mb"],
         }
 
     async def set_recipients(self, letter_id: int, user: User, items: list[dict]) -> dict:
@@ -262,10 +293,12 @@ class OaCartableService:
             clean[eid] = {"role": role, "via": it.get("selected_via") if it.get("selected_via") in ("direct", "department", "title") else "direct", "order": i}
         if len(clean) > MAX_RECIPIENTS:
             raise OaCartableError(f"حداکثر {MAX_RECIPIENTS} گیرنده")
-        ok = await self._eligible(set(clean))
+        ok = await self._eligible(set(clean), user)
         bad = set(clean) - ok
         if bad:
-            raise OaCartableError("یک یا چند نفر از گیرندگان مجاز به استفاده از اتوماسیون نیستند یا غیرفعال‌اند")
+            raise OaCartableError(
+                "یک یا چند نفر از گیرندگان مجاز نیستند (غیرفعال، بدون دسترسی اتوماسیون، یا در سایتی که شما به آن دسترسی ندارید)"
+            )
         old = {r.employee_id: r for r in (await self.db.execute(
             select(OaRecipient).where(OaRecipient.letter_id == letter.id))).scalars()}
         for eid, r in old.items():
@@ -381,7 +414,7 @@ class OaCartableService:
         ids = {r.employee_id for r in recipients if r.employee_id}
         if me.id in ids:
             raise OaCartableError("نمی‌توانید خودتان را گیرنده‌ی نامه‌ی خودتان کنید")
-        if (ids - await self._eligible(ids)) or len(ids) != len(recipients):
+        if (ids - await self._eligible(ids, user)) or len(ids) != len(recipients):
             raise OaCartableError("یک یا چند گیرنده دیگر فعال یا مجاز نیستند؛ فهرست گیرندگان را بررسی کنید")
         att_files = (await self.db.execute(
             select(OaFile).join(OaAttachment, OaAttachment.file_id == OaFile.id)
@@ -411,8 +444,9 @@ class OaCartableService:
             self.db.add(OaLetterAccess(letter_id=letter.id, employee_id=r.employee_id, source=g["source"],
                                        can_act=g["can_act"], can_refer=g["can_refer"],
                                        granted_by_employee_id=me.id, granted_by_user_id=user.id))
-            if g["task_kind"]:
-                self.db.add(OaTask(letter_id=letter.id, kind=g["task_kind"], origin="delivery",
+            # مسئولیت فقط وقتی سازنده «نیاز به اقدام گیرنده» را زده باشد؛ وگرنه گیرنده فقط می‌خواند
+            if g["task_kind"] and letter.requires_action:
+                self.db.add(OaTask(letter_id=letter.id, kind=g["task_kind"], origin="delivery", due_at=letter.action_due_at,
                                    assignee_employee_id=r.employee_id, assignee_name_snapshot=r.name_snapshot,
                                    assignee_title_snapshot=r.title_snapshot, created_by_employee_id=me.id,
                                    created_by_name_snapshot=snap["name"]))
@@ -449,13 +483,19 @@ class OaCartableService:
         layout = (tv.layouts if tv else rules.default_layouts())[v.paper_size]
         site = await self.db.get(Site, letter.site_id)
         sources = {r["source"] for r in rows if not r["revoked_at"]}
-        is_sender = bool(sources & {"sender", "creator"})
         info = {"status": letter.status, "confidentiality": letter.confidentiality}
         recipients = (await self.db.execute(
             select(OaRecipient).where(OaRecipient.letter_id == letter.id).order_by(OaRecipient.role.desc(), OaRecipient.sort_order)
         )).scalars().all()
         tasks = (await self.db.execute(select(OaTask).where(OaTask.letter_id == letter.id).order_by(OaTask.id))).scalars().all()
         notes = (await self.db.execute(select(OaNote).where(OaNote.letter_id == letter.id).order_by(OaNote.id))).scalars().all()
+        read_by = {
+            eid: at for eid, at in (await self.db.execute(
+                select(OaLetterAccess.employee_id, func.min(OaLetterAccess.read_at))
+                .where(OaLetterAccess.letter_id == letter.id, OaLetterAccess.revoked_at.is_(None))
+                .group_by(OaLetterAccess.employee_id)
+            )).all()
+        }
         return {
             "id": letter.id, "status": letter.status, "subject": v.subject, "body_html": v.body_html,
             "paper_size": v.paper_size, "layout": layout, "site_name": site.name if site else None,
@@ -464,11 +504,12 @@ class OaCartableService:
             "sent_at": letter.sent_at, "my_roles": sorted(sources),
             "recipients": [
                 {"role": r.role, "name": r.name_snapshot, "title": r.title_snapshot, "department": r.department_snapshot,
-                 # وضعیت رؤیت هر گیرنده فقط برای فرستنده
-                 "read_at": r.read_at if is_sender else None, "delivered_at": r.delivered_at}
+                 "read_at": r.read_at, "delivered_at": r.delivered_at}
                 for r in recipients
             ],
             "attachments": await self._attachments(v.id),
+            "flow": self._flow(letter, recipients, tasks, read_by),
+            "requires_action": letter.requires_action, "action_due_at": letter.action_due_at,
             "tasks": [
                 {"id": t.id, "parent_id": t.parent_task_id, "kind": t.kind, "origin": t.origin, "status": t.status,
                  "assignee": t.assignee_name_snapshot, "assignee_title": t.assignee_title_snapshot,
@@ -486,6 +527,48 @@ class OaCartableService:
             },
             "my_open_tasks": [{"id": t.id, "kind": t.kind, "instruction": t.instruction} for t in my_tasks],
         }
+
+    @staticmethod
+    def _flow(letter: OaLetter, recipients, tasks, read_by: dict) -> list[dict]:
+        """
+        مراحل گردش برای نمایش (مثل گردش درخواست وام): ارسال، هر گیرنده/رونوشت با وضعیت خوانده‌شدن یا اقدام، سپس ارجاع‌ها.
+        state: done (اقدام/رؤیت ثبت شد) | current (در انتظار اقدام) | read (خوانده شد) | unread | cancelled.
+        """
+        def state(task, emp_id):
+            if task is not None:
+                if task.status == "done":
+                    return "done"
+                if task.status != "open":
+                    return "cancelled"
+                return "current"
+            return "read" if read_by.get(emp_id) else "unread"
+
+        delivery = {t.assignee_employee_id: t for t in tasks if t.origin == "delivery"}
+        now = _now()
+        steps = [{"key": "sent", "label": "ارسال", "person": letter.sender_name_snapshot, "title": letter.sender_title_snapshot,
+                  "state": "done", "at": letter.sent_at}]
+        for r in recipients:
+            t = delivery.get(r.employee_id)
+            steps.append({
+                "key": f"r{r.id}", "label": ("گیرنده" if r.role == "to" else "رونوشت") + (" — اقدام" if t else ""),
+                "person": r.name_snapshot, "title": r.title_snapshot, "state": state(t, r.employee_id),
+                "read_at": read_by.get(r.employee_id), "at": (t.done_at if t and t.done_at else r.delivered_at),
+                "note": t.result_note if t else None, "due_at": t.due_at if t else None,
+                "overdue": bool(t and t.status == "open" and t.due_at and t.due_at < now),
+            })
+        for t in tasks:
+            if t.origin != "referral":
+                continue
+            steps.append({
+                "key": f"t{t.id}", "label": f"ارجاع — {'اقدام' if t.kind == 'action' else 'اطلاع'}",
+                "person": t.assignee_name_snapshot, "title": t.assignee_title_snapshot,
+                "state": state(t, t.assignee_employee_id), "read_at": read_by.get(t.assignee_employee_id),
+                "at": t.done_at or t.created_at, "created_at": t.created_at, "from": t.created_by_name_snapshot,
+                "instruction": t.instruction,
+                "note": t.result_note, "due_at": t.due_at,
+                "overdue": bool(t.status == "open" and t.due_at and t.due_at < now),
+            })
+        return steps
 
     async def attachment_for_download(self, letter_id: int, attachment_id: int, user: User, ip: str | None):
         letter, me, rows, _ = await self._letter_for(letter_id, user, "download")
@@ -535,8 +618,10 @@ class OaCartableService:
             raise OaCartableError("حداکثر ۵۰ نفر در هر ارجاع")
         if me.id in ids:
             raise OaCartableError("ارجاع به خودتان ممکن نیست")
-        if ids - await self._eligible(ids):
-            raise OaCartableError("یک یا چند نفر مجاز به استفاده از اتوماسیون نیستند یا غیرفعال‌اند")
+        if ids - await self._eligible(ids, user):
+            raise OaCartableError(
+                "یک یا چند نفر مجاز نیستند (غیرفعال، بدون دسترسی اتوماسیون، یا در سایتی که شما به آن دسترسی ندارید)"
+            )
         instruction = (instruction or "").strip()[:MAX_INSTRUCTION]
         busy = set((await self.db.execute(
             select(OaTask.assignee_employee_id).where(OaTask.letter_id == letter.id, OaTask.status == "open",
