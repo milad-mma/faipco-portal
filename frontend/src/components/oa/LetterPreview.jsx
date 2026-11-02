@@ -166,9 +166,23 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
 
 /**
  * props: paper ("A4"|"A5")، layout (چیدمان همان اندازه)، subject، bodyHtml، scale (نمایش؛ ۱ = اندازه‌ی واقعی)،
- * siteName (برای {{site}})، onPages(n)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)، forcePages (تعداد صفحه‌ی ازپیش‌محاسبه)
+ * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)، forcePages (تعداد صفحه‌ی ازپیش‌محاسبه)
  */
-export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, onPages, printOnly = false, forcePages, siteName }) {
+export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forcePages, siteName }) {
+  // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
+  const boxRef = useRef(null);
+  const [fitScale, setFitScale] = useState(null);
+  useEffect(() => {
+    if (!fit || printOnly || !boxRef.current) return undefined;
+    const el = boxRef.current;
+    const pagePx = ((PAPER[paper] || PAPER.A4)[0] * 96) / 25.4;
+    const measure = () => setFitScale(Math.max(0.3, Math.min(1.2, (el.clientWidth - 8) / pagePx)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fit, printOnly, paper]);
+  const zoom = fit && fitScale ? fitScale : scale;
   const logoUrl = useLogoUrl(layout?.header?.logo_file_id);
   const measureRef = useRef(null);
   const unitRef = useRef(null);
@@ -199,13 +213,13 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   };
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
-    <Box key={i} sx={printOnly ? { breakAfter: "page", pageBreakAfter: "always" } : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom: scale }}>
+    <Box key={i} sx={printOnly ? { breakAfter: "page", pageBreakAfter: "always" } : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
       <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} />
     </Box>
   ));
 
   return (
-    <Box sx={{ position: "relative" }}>
+    <Box ref={boxRef} sx={{ position: "relative", width: fit ? "100%" : undefined }}>
       {/* اندازه‌گیری: همان عرض، قلم و استایل متن، بیرون از دید */}
       <Box sx={{ position: "fixed", visibility: "hidden", pointerEvents: "none", left: 0, top: 0, zIndex: -1, "@media print": { display: "none" } }} aria-hidden>
         <div ref={unitRef} style={{ height: `${bodyHmm}mm` }} />

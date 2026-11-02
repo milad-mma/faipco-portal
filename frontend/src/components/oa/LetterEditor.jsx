@@ -81,7 +81,7 @@ export default function LetterEditor({ value, onChange, disabled = false }) {
   const inTable = editor.isActive("table");
 
   return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden" }}>
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden", bgcolor: "background.paper" }}>
       <Stack direction="row" flexWrap="wrap" alignItems="center" sx={{ p: 0.5, gap: 0.25, bgcolor: "action.hover" }}>
         <Btn title="پاراگراف" icon={<TextFieldsIcon fontSize="small" />} onClick={() => c().setParagraph().run()} active={editor.isActive("paragraph")} />
         <Btn title="تیتر" icon={<TitleIcon fontSize="small" />} onClick={() => c().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })} />

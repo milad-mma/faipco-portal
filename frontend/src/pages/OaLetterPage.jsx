@@ -20,8 +20,12 @@ import {
   IconButton,
   MenuItem,
   Stack,
+  Step,
+  StepLabel,
+  Stepper,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import ForwardToInboxOutlinedIcon from "@mui/icons-material/ForwardToInboxOutlined";
@@ -45,39 +49,69 @@ import { toPersianDigits } from "../utils/searchText";
 
 const URGENCY = { normal: "عادی", urgent: "فوری", immediate: "آنی" };
 const KIND = { action: "اقدام", info: "اطلاع" };
-const STATUS = { open: "باز", done: "انجام‌شده", cancelled: "لغوشده" };
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "");
 
-// درخت گردش: هر مسئولیت و ارجاع‌های زیرش
-function TaskTree({ tasks, parentId = null, depth = 0 }) {
-  const children = tasks.filter((t) => (t.parent_id || null) === parentId);
-  if (!children.length) return null;
+// گردش نامه مثل گردش درخواست وام: مراحل (Stepper؛ افقی در دسکتاپ، عمودی در موبایل یا وقتی مراحل زیاد است) و زیرش تاریخچه
+function LetterFlow({ letter }) {
+  const vertical = useMediaQuery((t) => t.breakpoints.down("md")) || letter.tasks.length > 5;
+  const tasks = [...letter.tasks].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const steps = [
+    { key: "sent", label: "ارسال", person: letter.sender?.name, state: "done", at: letter.sent_at },
+    ...tasks.map((t) => ({
+      key: t.id,
+      label: `${t.origin === "referral" ? "ارجاع" : "گیرنده"} — ${KIND[t.kind]}`,
+      person: t.assignee,
+      state: t.status === "done" ? "done" : t.status === "open" ? "current" : "cancelled",
+      at: t.done_at || t.created_at,
+      overdue: t.status === "open" && t.due_at && new Date(t.due_at) < new Date(),
+    })),
+  ];
+  const firstOpen = steps.findIndex((s) => s.state === "current");
+  // تاریخچه: ارسال، هر ارجاع (با دستور) و هر نتیجه، به ترتیب زمان
+  const events = [{ at: letter.sent_at, text: `ارسال توسط ${letter.sender?.name || "—"}` }];
+  for (const t of tasks) {
+    if (t.origin === "referral") {
+      events.push({ at: t.created_at, text: `ارجاع ${t.created_by || ""} به ${t.assignee} (${KIND[t.kind]})${t.instruction ? `: ${t.instruction}` : ""}${t.due_at ? ` — مهلت ${fmt(t.due_at)}` : ""}` });
+    }
+    if (t.status === "done") {
+      events.push({ at: t.done_at, text: `${t.assignee}: ${t.kind === "info" ? "رؤیت شد" : "اقدام شد"}${t.result_note ? ` — ${t.result_note}` : ""}` });
+    }
+  }
+  events.sort((a, b) => new Date(a.at) - new Date(b.at));
   return (
-    <Stack spacing={1} sx={{ pr: depth ? 0 : 0, borderInlineStart: depth ? "2px solid" : "none", borderColor: "divider", paddingInlineStart: depth ? "12px" : 0, marginInlineStart: depth ? "8px" : 0 }}>
-      {children.map((t) => (
-        <Box key={t.id}>
-          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-            <Typography variant="body2" fontWeight={700}>{t.assignee}</Typography>
-            {t.assignee_title && <Typography variant="caption" color="text.secondary">{t.assignee_title}</Typography>}
-            <Chip size="small" variant="outlined" label={`${t.origin === "referral" ? "ارجاع" : "گیرنده"} — ${KIND[t.kind]}`} />
-            <Chip size="small" color={t.status === "done" ? "success" : t.status === "open" ? "warning" : "default"} label={STATUS[t.status] || t.status} />
-          </Stack>
-          <Typography variant="caption" color="text.secondary" component="div">
-            از {t.created_by || "—"} — {fmt(t.created_at)}
-            {t.due_at ? ` — مهلت ${fmt(t.due_at)}` : ""}
+    <>
+      <Box sx={{ overflowX: "auto" }}>
+        <Stepper
+          activeStep={firstOpen === -1 ? steps.length : firstOpen}
+          orientation={vertical ? "vertical" : "horizontal"}
+          alternativeLabel={!vertical}
+          sx={{ my: 1 }}
+        >
+          {steps.map((s) => (
+            <Step key={s.key} completed={s.state === "done"}>
+              <StepLabel
+                error={s.overdue}
+                optional={
+                  <Typography variant="caption" color="text.secondary" component="div">
+                    {s.person}
+                    {s.state === "current" ? " — در انتظار" : s.state === "cancelled" ? " — لغو شد" : ""}
+                  </Typography>
+                }
+              >
+                {s.label}
+              </StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+      </Box>
+      <Stack spacing={0.5} sx={{ mt: 1 }}>
+        {events.map((e, i) => (
+          <Typography key={i} variant="caption" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+            {fmt(e.at)} — {e.text}
           </Typography>
-          {t.instruction && <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>دستور: {t.instruction}</Typography>}
-          {t.result_note && (
-            <Typography variant="body2" color="success.main" sx={{ whiteSpace: "pre-wrap" }}>
-              نتیجه ({fmt(t.done_at)}): {t.result_note}
-            </Typography>
-          )}
-          <Box sx={{ mt: 1 }}>
-            <TaskTree tasks={tasks} parentId={t.id} depth={depth + 1} />
-          </Box>
-        </Box>
-      ))}
-    </Stack>
+        ))}
+      </Stack>
+    </>
   );
 }
 
@@ -153,7 +187,7 @@ export default function OaLetterPage() {
   }
 
   async function submitNote() {
-    if (await run(() => addLetterNote(id, note), "هامش ثبت شد.")) setNote("");
+    if (await run(() => addLetterNote(id, note), "یادداشت ثبت شد.")) setNote("");
   }
 
   async function download(a) {
@@ -239,7 +273,7 @@ export default function OaLetterPage() {
       ))}
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2} alignItems="flex-start">
-        <Stack spacing={2} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+        <Stack spacing={2} sx={{ flex: "1 1 0", minWidth: 0, width: "100%" }}>
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
             <Stack spacing={1}>
               <Typography variant="body2">
@@ -275,13 +309,14 @@ export default function OaLetterPage() {
 
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>گردش و ارجاع‌ها</Typography>
-            {letter.tasks.length ? <TaskTree tasks={letter.tasks} /> : <Typography variant="body2" color="text.secondary">—</Typography>}
+            <LetterFlow letter={letter} />
           </Card>
 
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>هامش</Typography>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>یادداشت‌های داخلی (هامش)</Typography>
             <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
-              یادداشت داخلی؛ فقط کسانی که این نامه را می‌بینند آن را می‌خوانند و در چاپ نمی‌آید.
+              مثل یادداشتی که کنار نامه‌ی کاغذی نوشته می‌شود: فقط کسانی که این نامه را می‌بینند آن را می‌خوانند و در متن رسمی
+              و چاپ نامه نمی‌آید.
             </Typography>
             <Stack spacing={1}>
               {letter.notes.map((n) => (
@@ -292,7 +327,7 @@ export default function OaLetterPage() {
               ))}
               {letter.permissions.note && (
                 <Stack direction="row" spacing={1} alignItems="flex-start">
-                  <TextField size="small" multiline maxRows={6} fullWidth placeholder="هامش جدید" value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 4000 }} />
+                  <TextField size="small" multiline maxRows={6} fullWidth placeholder="یادداشت جدید" sx={{ "& .MuiInputBase-root": { bgcolor: "background.paper" } }} value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 4000 }} />
                   <Button variant="outlined" onClick={submitNote} disabled={busy || !note.trim()} sx={{ height: 40 }}>ثبت</Button>
                 </Stack>
               )}
@@ -300,11 +335,11 @@ export default function OaLetterPage() {
           </Card>
         </Stack>
 
-        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "none", width: { xs: "100%", lg: "auto" }, overflowX: "auto" }}>
+        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "1 1 0", minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — {letter.paper_size}، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} scale={letter.paper_size === "A5" ? 0.75 : 0.55} onPages={setPages} siteName={letter.site_name} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={setPages} siteName={letter.site_name} />
         </Card>
       </Stack>
 

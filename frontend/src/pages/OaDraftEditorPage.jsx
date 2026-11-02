@@ -255,7 +255,7 @@ export default function OaDraftEditorPage() {
       )}
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={3} alignItems="flex-start">
-        <Stack spacing={2} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+        <Stack spacing={2} sx={{ flex: "1 1 0", minWidth: 0, width: "100%", "& .MuiInputBase-root": { bgcolor: "background.paper" } }}>
           <TextField
             label="موضوع"
             value={form.subject}
@@ -286,6 +286,7 @@ export default function OaDraftEditorPage() {
             </TextField>
           </Stack>
           <DraftExtras
+            section="recipients"
             draftId={draft.id}
             recipients={extras.recipients}
             attachments={extras.attachments}
@@ -293,9 +294,17 @@ export default function OaDraftEditorPage() {
             disabled={conflict || sending}
           />
           <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={conflict} />
+          <DraftExtras
+            section="attachments"
+            draftId={draft.id}
+            recipients={extras.recipients}
+            attachments={extras.attachments}
+            onChange={setExtras}
+            disabled={conflict || sending}
+          />
         </Stack>
 
-        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "none", width: { xs: "100%", lg: "auto" }, overflowX: "auto" }}>
+        <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "1 1 0", minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             پیش‌نمایش {previewPaper} — {toPersianDigits(pages)} صفحه
           </Typography>
@@ -313,7 +322,7 @@ export default function OaDraftEditorPage() {
             layout={draft.layout}
             subject={form.subject}
             bodyHtml={form.body_html}
-            scale={previewPaper === "A5" ? 0.75 : 0.55}
+            fit
             onPages={setPages}
             siteName={draft.site_name}
           />

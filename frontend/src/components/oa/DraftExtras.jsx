@@ -1,5 +1,6 @@
 // گیرندگان (اصلی/رونوشت) و پیوست‌های پیش‌نویس نامه — هر تغییر فوراً در سرور ذخیره می‌شود.
-// props: draftId، recipients، attachments، onChange({recipients, attachments})، disabled
+// props: draftId، recipients، attachments، onChange({recipients, attachments})، disabled،
+// section: "recipients" (بالای متن) | "attachments" (زیر متن)
 import { useState } from "react";
 import {
   Alert,
@@ -43,7 +44,7 @@ export async function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-export default function DraftExtras({ draftId, recipients, attachments, onChange, disabled }) {
+export default function DraftExtras({ draftId, recipients, attachments, onChange, disabled, section = "recipients" }) {
   const [picker, setPicker] = useState(null); // "to" | "cc" | null
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -131,11 +132,11 @@ export default function DraftExtras({ draftId, recipients, attachments, onChange
   };
 
   return (
-    <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+    <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "background.paper" }}>
       <Stack spacing={2}>
-        {group("to", "گیرنده")}
-        {group("cc", "رونوشت")}
-        <Box>
+        {section === "recipients" && group("to", "گیرنده")}
+        {section === "recipients" && group("cc", "رونوشت")}
+        {section === "attachments" && <Box>
           <Stack direction="row" alignItems="center" spacing={1}>
             <Typography variant="body2" fontWeight={700} sx={{ minWidth: 70 }}>پیوست‌ها</Typography>
             <Button size="small" component="label" startIcon={<AttachFileIcon />} disabled={disabled || uploadPct !== null}>
@@ -161,7 +162,10 @@ export default function DraftExtras({ draftId, recipients, attachments, onChange
               </Stack>
             ))}
           </Stack>
-        </Box>
+          {attachments.length === 0 && uploadPct === null && (
+            <Typography variant="caption" color="text.secondary">پیوستی اضافه نشده است.</Typography>
+          )}
+        </Box>}
         {error && <Alert severity="error">{error}</Alert>}
       </Stack>
       <PersonPicker
