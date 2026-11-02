@@ -1,0 +1,272 @@
+// «قالب‌های نامه» — اتوماسیون اداری فاز ۲: سربرگ، پابرگ، حاشیه و قلم هر سایت، جدا برای A4 و A5، با پیش‌نمایش زنده.
+// هر ذخیره یک نسخه‌ی تازه می‌سازد؛ پیش‌نویس‌هایی که با نسخه‌ی قبلی ساخته شده‌اند تا ذخیره‌ی بعدی همان را نگه می‌دارند.
+// مجوز automation.templates همان سایت.
+import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  CircularProgress,
+  Divider,
+  FormControlLabel,
+  List,
+  ListItemButton,
+  ListItemText,
+  MenuItem,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import { fetchTemplates, saveTemplate, uploadTemplateLogo } from "../api/automationLetters";
+import LetterPreview from "../components/oa/LetterPreview";
+import { toPersianDigits } from "../utils/searchText";
+
+const SAMPLE_SUBJECT = "نمونه‌ی موضوع نامه";
+const SAMPLE_BODY =
+  "<p>با سلام و احترام،</p><p>این متن نمونه است تا جای سربرگ، پابرگ و حاشیه‌ها روی کاغذ دیده شود. متن واقعی نامه هنگام نوشتن پیش‌نویس وارد می‌شود.</p><p>با تشکر</p>";
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+function NumberField({ label, value, onChange, min, max, width = 110 }) {
+  return (
+    <TextField
+      size="small"
+      type="number"
+      label={label}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      inputProps={{ min, max }}
+      sx={{ width }}
+    />
+  );
+}
+
+export default function OaTemplatesPage() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(null); // id قالب یا "new"
+  const [form, setForm] = useState(null);
+  const [paper, setPaper] = useState("A4");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null); // { ok, message }
+
+  function load(selectId) {
+    return fetchTemplates()
+      .then((d) => {
+        setData(d);
+        if (selectId) open(d, selectId);
+      })
+      .catch((err) => setError(err.response?.data?.detail || "دریافت قالب‌ها ناموفق بود."));
+  }
+
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function open(d, id) {
+    setResult(null);
+    setSelected(id);
+    if (id === "new") {
+      setForm({ id: null, site_id: d.sites[0]?.id || "", name: "", default_paper_size: "A4", is_active: true, layouts: clone(d.default_layouts) });
+      return;
+    }
+    const t = d.templates.find((x) => x.id === id);
+    setForm({ ...t, layouts: clone(t.layouts) });
+    setPaper(t.default_paper_size);
+  }
+
+  const layout = form?.layouts?.[paper];
+
+  function setLayout(patch) {
+    setForm((f) => ({ ...f, layouts: { ...f.layouts, [paper]: { ...f.layouts[paper], ...patch } } }));
+  }
+  function setHeader(patch) {
+    setLayout({ header: { ...layout.header, ...patch } });
+  }
+  function setFooter(patch) {
+    setLayout({ footer: { ...layout.footer, ...patch } });
+  }
+  function setMargin(key, v) {
+    setLayout({ margins_mm: { ...layout.margins_mm, [key]: v } });
+  }
+
+  async function handleLogo(file) {
+    if (!file) return;
+    setUploading(true);
+    setResult(null);
+    try {
+      const f = await uploadTemplateLogo(form.site_id, file);
+      // لوگو برای هر دو اندازه‌ی کاغذ؛ اگر لازم شد می‌شود یکی را برداشت
+      setForm((prev) => ({
+        ...prev,
+        layouts: Object.fromEntries(
+          Object.entries(prev.layouts).map(([k, l]) => [k, { ...l, header: { ...l.header, logo_file_id: f.id } }]),
+        ),
+      }));
+    } catch (err) {
+      setResult({ ok: false, message: err.response?.data?.detail || "بارگذاری لوگو ناموفق بود." });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setResult(null);
+    try {
+      const saved = await saveTemplate(form.id, {
+        site_id: Number(form.site_id),
+        name: form.name,
+        default_paper_size: form.default_paper_size,
+        is_active: form.is_active,
+        layouts: form.layouts,
+      });
+      await load(saved.id);
+      setResult({ ok: true, message: `ذخیره شد (نسخه‌ی ${toPersianDigits(saved.version_no)}).` });
+    } catch (err) {
+      setResult({ ok: false, message: err.response?.data?.detail || "ذخیره ناموفق بود." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const siteName = useMemo(() => Object.fromEntries((data?.sites || []).map((s) => [s.id, s.name])), [data]);
+
+  if (error) return <Alert severity="error">{error}</Alert>;
+  if (!data) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
+        قالب‌های نامه
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        سربرگ، پابرگ و حاشیه‌ی نامه‌های هر سایت. چیدمان A4 و A5 جدا تنظیم می‌شود. هر ذخیره یک نسخه‌ی تازه است و نامه‌های قبلی
+        دست نمی‌خورند.
+      </Typography>
+
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
+        <Card variant="outlined" sx={{ width: { xs: "100%", md: 240 }, flex: "none", borderRadius: 2 }}>
+          <List dense>
+            {data.templates.map((t) => (
+              <ListItemButton key={t.id} selected={selected === t.id} onClick={() => open(data, t.id)}>
+                <ListItemText
+                  primary={t.name + (t.is_active ? "" : " (غیرفعال)")}
+                  secondary={`${data.sites.length > 1 ? `${t.site_name} — ` : ""}نسخه‌ی ${toPersianDigits(t.version_no || 0)}`}
+                />
+              </ListItemButton>
+            ))}
+            {data.templates.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                هنوز قالبی نیست.
+              </Typography>
+            )}
+          </List>
+          <Divider />
+          <Box sx={{ p: 1 }}>
+            <Button fullWidth startIcon={<AddIcon />} onClick={() => open(data, "new")} disabled={!data.sites.length} sx={{ height: 40 }}>
+              قالب جدید
+            </Button>
+          </Box>
+        </Card>
+
+        {form && layout && (
+          <Stack direction={{ xs: "column", xl: "row" }} spacing={2} sx={{ flex: 1, minWidth: 0, width: "100%" }} alignItems="flex-start">
+            <Card variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1, minWidth: 0, width: "100%" }}>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  <TextField size="small" label="نام قالب" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={{ minWidth: 220 }} inputProps={{ maxLength: 120 }} />
+                  {form.id ? (
+                    data.sites.length > 1 && <TextField size="small" label="سایت" value={siteName[form.site_id] || ""} disabled sx={{ minWidth: 160 }} />
+                  ) : (
+                    <TextField select size="small" label="سایت" value={form.site_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })} sx={{ minWidth: 160 }}>
+                      {data.sites.map((s) => (
+                        <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                  <TextField select size="small" label="کاغذ پیش‌فرض" value={form.default_paper_size} onChange={(e) => setForm({ ...form, default_paper_size: e.target.value })} sx={{ width: 140 }}>
+                    <MenuItem value="A4">A4</MenuItem>
+                    <MenuItem value="A5">A5</MenuItem>
+                  </TextField>
+                  <FormControlLabel control={<Checkbox checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />} label="فعال" />
+                </Stack>
+
+                <Tabs value={paper} onChange={(_, v) => setPaper(v)}>
+                  <Tab value="A4" label="چیدمان A4" />
+                  <Tab value="A5" label="چیدمان A5" />
+                </Tabs>
+
+                <Typography variant="subtitle2" fontWeight={700}>سربرگ</Typography>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Button component="label" variant="outlined" startIcon={uploading ? <CircularProgress size={16} /> : <ImageOutlinedIcon />} disabled={uploading || !form.site_id} sx={{ height: 40 }}>
+                    {layout.header.logo_file_id ? "تغییر لوگو" : "بارگذاری لوگو"}
+                    <input hidden type="file" accept=".png,.jpg,.jpeg,.webp" onChange={(e) => { handleLogo(e.target.files?.[0]); e.target.value = ""; }} />
+                  </Button>
+                  {layout.header.logo_file_id && (
+                    <Button color="inherit" onClick={() => setHeader({ logo_file_id: null })} sx={{ height: 40 }}>
+                      برداشتن لوگو از {paper}
+                    </Button>
+                  )}
+                  <NumberField label="ارتفاع (mm)" value={layout.header.height_mm} min={10} max={90} onChange={(v) => setHeader({ height_mm: v })} />
+                </Stack>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  <TextField size="small" label="عنوان" value={layout.header.title} onChange={(e) => setHeader({ title: e.target.value })} sx={{ minWidth: 240 }} inputProps={{ maxLength: 120 }} />
+                  <TextField size="small" label="زیرعنوان" value={layout.header.subtitle} onChange={(e) => setHeader({ subtitle: e.target.value })} sx={{ minWidth: 240 }} inputProps={{ maxLength: 200 }} />
+                </Stack>
+                <Stack direction="row" flexWrap="wrap">
+                  <FormControlLabel control={<Checkbox checked={layout.header.show_number} onChange={(e) => setHeader({ show_number: e.target.checked })} />} label="شماره" />
+                  <FormControlLabel control={<Checkbox checked={layout.header.show_date} onChange={(e) => setHeader({ show_date: e.target.checked })} />} label="تاریخ" />
+                  <FormControlLabel control={<Checkbox checked={layout.header.show_attachment} onChange={(e) => setHeader({ show_attachment: e.target.checked })} />} label="پیوست" />
+                </Stack>
+
+                <Typography variant="subtitle2" fontWeight={700}>حاشیه‌ها و قلم</Typography>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  <NumberField label="بالا (mm)" value={layout.margins_mm.top} min={5} max={60} onChange={(v) => setMargin("top", v)} />
+                  <NumberField label="پایین (mm)" value={layout.margins_mm.bottom} min={5} max={60} onChange={(v) => setMargin("bottom", v)} />
+                  <NumberField label="راست (mm)" value={layout.margins_mm.right} min={5} max={60} onChange={(v) => setMargin("right", v)} />
+                  <NumberField label="چپ (mm)" value={layout.margins_mm.left} min={5} max={60} onChange={(v) => setMargin("left", v)} />
+                  <NumberField label="قلم (pt)" value={layout.font_size_pt} min={8} max={18} onChange={(v) => setLayout({ font_size_pt: v })} />
+                </Stack>
+
+                <Typography variant="subtitle2" fontWeight={700}>پابرگ</Typography>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  <TextField size="small" label="متن پابرگ (نشانی، تلفن، …)" value={layout.footer.text} onChange={(e) => setFooter({ text: e.target.value })} sx={{ minWidth: 300, flex: 1 }} inputProps={{ maxLength: 300 }} />
+                  <NumberField label="ارتفاع (mm)" value={layout.footer.height_mm} min={0} max={40} onChange={(v) => setFooter({ height_mm: v })} />
+                </Stack>
+
+                {result && <Alert severity={result.ok ? "success" : "error"}>{result.message}</Alert>}
+                <Box>
+                  <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlinedIcon />} onClick={handleSave} disabled={saving || !form.name.trim() || !form.site_id} sx={{ height: 40 }}>
+                    {form.id ? "ذخیره (نسخه‌ی تازه)" : "ساخت قالب"}
+                  </Button>
+                </Box>
+              </Stack>
+            </Card>
+
+            <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: "none", width: { xs: "100%", xl: "auto" }, overflowX: "auto" }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                پیش‌نمایش {paper}
+              </Typography>
+              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} />
+            </Card>
+          </Stack>
+        )}
+      </Stack>
+    </Box>
+  );
+}

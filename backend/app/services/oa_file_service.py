@@ -150,6 +150,7 @@ class OaFileService:
         context: str = "letter",
         purpose: str = "attachment",
         ip: str | None = None,
+        formats: list[str] | None = None,
     ) -> OaFile:
         """
         یک فایل را طبق تنظیمات سایت می‌پذیرد. رد (پسوند/حجم/ساختار) → OaFileError با پیام فارسی (ردیف rejected
@@ -158,6 +159,8 @@ class OaFileService:
         if context not in ("letter", "action"):
             raise OaFileError("نوع پیوست نامعتبر است")
         settings = await self.site_settings(site_id)
+        if formats is not None:  # مثلاً لوگوی قالب: فقط تصویر، مستقل از فرمت‌های پیوست سایت
+            settings = {**settings, "allowed_formats": list(formats)}
         name = (filename or "").strip()[:255] or "file"
         try:
             fmt = rules.format_for_name(name, settings["allowed_formats"])

@@ -35,6 +35,8 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 
 /**
  * منبع واحد همه‌ی مقصدهای منوی برنامه.
@@ -295,13 +297,25 @@ export const NAV_ITEMS = [
       },
     ],
   },
-  // گروه اتوماسیون اداری (docs/office-automation.md) — فاز ۱: فقط تنظیمات سایت؛ کارتابل و نامه از فاز ۳الف
+  // گروه اتوماسیون اداری (docs/office-automation.md) — فاز ۲: پیش‌نویس و قالب؛ کارتابل و ارسال از فاز ۳الف
   {
     label: "اتوماسیون اداری",
     path: "/automation/settings",
     icon: <EmailOutlinedIcon />,
     groupOnly: true,
     children: [
+      {
+        label: "پیش‌نویس‌های من",
+        path: "/automation/drafts",
+        icon: <EditNoteOutlinedIcon />,
+        check: (u) => u?.can_oa_compose,
+      },
+      {
+        label: "قالب‌های نامه",
+        path: "/automation/templates",
+        icon: <ArticleOutlinedIcon />,
+        check: (u) => u?.can_oa_templates,
+      },
       {
         label: "تنظیمات اتوماسیون",
         path: "/automation/settings",

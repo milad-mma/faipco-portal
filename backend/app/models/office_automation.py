@@ -79,7 +79,7 @@ class OaAuditEvent(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
 
-# ---------- فاز ۲: قالب و پیش‌نویس نامه (Migration 134) ----------
+# ---------- فاز ۲: قالب و پیش‌نویس نامه (Migration 136) ----------
 
 
 class OaTemplate(Base, TimestampMixin):

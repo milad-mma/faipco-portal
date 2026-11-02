@@ -114,7 +114,7 @@ class OaLetterService:
         self.files.audit("template.save", user, entity="template", entity_id=t.id, site_id=t.site_id,
                          details={"version_no": next_no, "name": name}, ip=ip)
         await self.db.commit()
-        return (await self.list_templates({t.site_id}))[[x["id"] for x in await self.list_templates({t.site_id})].index(t.id)]
+        return next(x for x in await self.list_templates({t.site_id}) if x["id"] == t.id)
 
     async def template_versions(self, template_id: int) -> list[dict]:
         rows = (await self.db.execute(

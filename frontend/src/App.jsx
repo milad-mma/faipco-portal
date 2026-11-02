@@ -49,6 +49,9 @@ const BankInfoPage = lazyPage(() => import("./pages/BankInfoPage"));
 const BankAccountsAdminPage = lazyPage(() => import("./pages/BankAccountsAdminPage"));
 const FamilyAdminPage = lazyPage(() => import("./pages/FamilyAdminPage"));
 const AutomationSettingsPage = lazyPage(() => import("./pages/AutomationSettingsPage"));
+const OaDraftsPage = lazyPage(() => import("./pages/OaDraftsPage"));
+const OaDraftEditorPage = lazyPage(() => import("./pages/OaDraftEditorPage"));
+const OaTemplatesPage = lazyPage(() => import("./pages/OaTemplatesPage"));
 const TurnoverReportPage = lazyPage(() => import("./pages/TurnoverReportPage"));
 const LeaveRequestPage = lazyPage(() => import("./pages/LeaveRequestPage"));
 const LeaveRequestsAdminListPage = lazyPage(
@@ -405,6 +408,30 @@ export default function App() {
               element={
                 <PermissionRoute check={(u) => u?.can_manage_automation_settings}>
                   <AutomationSettingsPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/drafts"
+              element={
+                <PermissionRoute check={(u) => u?.can_oa_compose}>
+                  <OaDraftsPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/drafts/:id"
+              element={
+                <PermissionRoute check={(u) => u?.can_oa_compose}>
+                  <OaDraftEditorPage />
+                </PermissionRoute>
+              }
+            />
+            <Route
+              path="/automation/templates"
+              element={
+                <PermissionRoute check={(u) => u?.can_oa_templates}>
+                  <OaTemplatesPage />
                 </PermissionRoute>
               }
             />

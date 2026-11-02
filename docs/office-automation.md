@@ -98,4 +98,43 @@
 
 ## فاز ۱ب — بکاپ — جزئیات در `docs/backup.md`
 به تصمیم کاربر ساده شد: همان ZIP قبلی + فایل‌های آپلودی اتوماسیون (snapshot مشترک با دیتابیس، تطبیق هش) + رمز اختیاری AES-256؛
-بازیابی هماهنگ دیتابیس و فایل‌ها با برگشت در شکست؛ مجوزهای `backup.*`. کلیدهای age و مقصدهای اضافه کنار گذاشته شدند.
+بازیابی هماهنگ دیتابیس و فایل‌ها با برگشت در شکست؛ مجوز همان `system.backup`. مقصدهای پوشه‌ی محلی، SFTP و S3، بررسی سالم
+رسیدن و صف تلاش دوباره (Migration 135) اضافه شدند.
+
+## فاز ۲ — قالب و پیش‌نویس نامه (Migration 136)
+
+### داده و قواعد
+- `oa_templates` / `oa_template_versions`: قالب مخصوص یک سایت؛ هر ذخیره یک نسخه‌ی تغییرناپذیر با `layouts = {A4, A5}`
+  (حاشیه‌ها، قلم، سربرگ: لوگو/عنوان/زیرعنوان/نمایش شماره-تاریخ-پیوست/ارتفاع، پابرگ: متن/ارتفاع). قواعد: `core/oa_letter_rules.py`.
+- `oa_letters` / `oa_letter_versions`: فاز ۲ فقط پیش‌نویس شخصی (status=draft، فقط سازنده)؛ نسخه‌ی ۱ با status=editing؛ قفل
+  خوش‌بینانه `row_version` (409)؛ `content_hash` در هر ذخیره.
+- متن نامه همیشه در سرور با فهرست مجاز پاک‌سازی می‌شود (`core/oa_html.py`): p، h2، h3، strong، em، u، s، فهرست، جدول، blockquote،
+  br، span؛ فقط `dir`، `colspan/rowspan` و `style: text-align`.
+- لوگو: فایل اتوماسیون با purpose=template، فقط PNG/JPG/WEBP (مستقل از فرمت‌های پیوست سایت)؛ با ذخیره در نسخه‌ی قالب permanent.
+
+### API (`endpoints/automation_letters.py`)
+- قالب (`automation.templates` همان سایت): `GET/POST /automation/templates`، `PUT /automation/templates/{id}`،
+  `GET …/{id}/versions`، `POST /automation/templates/logo`، `GET /automation/templates/logo/{file_id}` (templates یا compose).
+- پیش‌نویس (`automation.compose` همان سایت): `GET /automation/compose/options`، `GET/POST /automation/drafts`،
+  `GET/PUT/DELETE /automation/drafts/{id}`.
+- پرچم‌های کاربر: `can_oa_compose`، `can_oa_templates`.
+
+### رابط
+- «پیش‌نویس‌های من» (`/automation/drafts`) و ویرایشگر (`/automation/drafts/:id`): TipTap (فقط امکانات مجاز پاک‌ساز)، ذخیره‌ی
+  خودکار ۳ ثانیه بعد از آخرین تغییر و Ctrl+S، هشدار بستن صفحه، پیش‌نمایش صفحه‌ای A4/A5 به میلی‌متر با شمار صفحه و پیشنهاد A4
+  وقتی A5 بیش از یک صفحه شود، چاپ مرورگر (`@page` بدون حاشیه).
+- «قالب‌های نامه» (`/automation/templates`): فهرست، فرم چیدمان جدا برای A4/A5، لوگو، پیش‌نمایش زنده با متن نمونه.
+- محدودیت: شکستن صفحه در پیش‌نمایش و چاپ ساده است (ممکن است یک خط بین دو صفحه نصف شود)؛ نسخه‌ی رسمی PDF در فاز ارسال.
+
+### تست
+- `tests/test_oa_letters.py`: پاک‌ساز HTML، چیدمان، content_hash. فرانت‌اند فقط eslint (بسته‌های TipTap در محیط توسعه نصب نشدند؛
+  روی سرور با `npm install`).
+
+### چک‌لیست سرور تست (فاز ۲)
+1. alembic 136؛ ساخت فرانت با بسته‌های `@tiptap/*`.
+2. به نقش آزمایشی `automation.templates` و `automation.compose` برای یک سایت بدهید.
+3. قالب جدید با لوگو و عنوان → ذخیره (نسخه‌ی ۱) → تغییر حاشیه → ذخیره (نسخه‌ی ۲).
+4. نامه‌ی جدید با همان قالب → متن با جدول و تیتر → چند ثانیه صبر → «ذخیره شد».
+5. همان پیش‌نویس در دو تب: ذخیره در تب اول، تغییر در تب دوم → پیام «در جای دیگری تغییر کرده».
+6. A5 با متن طولانی → هشدار و دکمه‌ی «A4 شود»؛ چاپ → صفحه‌ها اندازه‌ی واقعی.
+7. کاربر دیگر (حتی با compose) پیش‌نویس شما را نمی‌بیند؛ آدرس مستقیم → «پیش‌نویس یافت نشد».

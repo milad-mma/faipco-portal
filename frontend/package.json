@@ -20,7 +20,16 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
     "stylis": "^4.3.4",
-    "@mui/stylis-plugin-rtl": "^7.3.8"
+    "@mui/stylis-plugin-rtl": "^7.3.8",
+    "@tiptap/react": "^2.11.5",
+    "@tiptap/pm": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "@tiptap/extension-underline": "^2.11.5",
+    "@tiptap/extension-text-align": "^2.11.5",
+    "@tiptap/extension-table": "^2.11.5",
+    "@tiptap/extension-table-row": "^2.11.5",
+    "@tiptap/extension-table-header": "^2.11.5",
+    "@tiptap/extension-table-cell": "^2.11.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",

@@ -406,6 +406,8 @@ class AuthService:
         base.can_view_bank_accounts = user.is_superuser or bool({"bank_accounts.view", "bank_accounts.manage"} & set(permission_codes))
         base.can_manage_bank_accounts = user.is_superuser or "bank_accounts.manage" in permission_codes
         base.can_manage_automation_settings = user.is_superuser or "automation.settings" in permission_codes
+        base.can_oa_compose = user.is_superuser or "automation.compose" in permission_codes
+        base.can_oa_templates = user.is_superuser or "automation.templates" in permission_codes
         # یادآوری «اطلاعات بانکی تکمیل نشده» (فقط پرسنل؛ بانک‌های فعالِ اجباری سایت)
         base.bank_info_missing = False
         base.bank_info_missing_count = 0

@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     automation,
+    automation_letters,
     dashboard,
     error_logs,
     access_gate,
@@ -95,3 +96,4 @@ api_router.include_router(access_gate.router, prefix="/access-gate", tags=["acce
 api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])
 api_router.include_router(error_logs.router, prefix="/error-logs", tags=["error-logs"])
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
+api_router.include_router(automation_letters.router, prefix="/automation", tags=["automation"])

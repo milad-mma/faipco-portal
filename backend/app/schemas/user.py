@@ -72,6 +72,8 @@ class UserOut(BaseModel):
     can_view_bank_accounts: bool = False  # bank_accounts.view یا manage — اطلاعات بانکی پرسنل
     can_manage_bank_accounts: bool = False  # bank_accounts.manage — تعریف بانک‌ها و اصلاح اطلاعات پرسنل
     can_manage_automation_settings: bool = False  # automation.settings — «تنظیمات اتوماسیون اداری» (سایت‌محور)
+    can_oa_compose: bool = False  # automation.compose — پیش‌نویس نامه (سایت‌محور)
+    can_oa_templates: bool = False  # automation.templates — قالب و سربرگ نامه (سایت‌محور)
     bank_info_missing: bool = False  # اطلاعات یکی از بانک‌های اجباری سایت کامل نیست (یادآوری)
     bank_info_missing_count: int = 0  # تعداد بانک‌های اجباری تکمیل‌نشده (شمارنده‌ی قرمز «پنل کاربری»)
     family_disabled: bool = False  # فرم «مشخصات خانوادگی» از پنل منابع انسانی غیرفعال شده
