@@ -15,7 +15,6 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
-  GlobalStyles,
   IconButton,
   InputBase,
   MenuItem,
@@ -32,16 +31,23 @@ import { discardDraft, fetchComposeOptions, fetchDraft, saveDraft, sendDraft } f
 import { AttachButton, AttachmentChips, RecipientRow, useDraftExtras } from "../components/oa/DraftExtras";
 import LetterEditor from "../components/oa/LetterEditor";
 import LetterPreview from "../components/oa/LetterPreview";
+import LetterPrint from "../components/oa/LetterPrint";
 import { toPersianDigits } from "../utils/searchText";
+import { gregorianToJalali, jalaliToGregorian } from "../utils/jalaliDate";
+import JalaliCalendarField from "../components/JalaliCalendarField";
 
 const AUTOSAVE_MS = 3000;
 
-// تاریخ سرور → مقدار datetime-local (به وقت مرورگر)
-function toLocalInput(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// تاریخ سرور ↔ رشته‌ی شمسی «YYYY/MM/DD» فیلد تقویم؛ مهلت = پایان همان روز (۲۳:۵۹ به وقت مرورگر)
+const pad2 = (n) => String(n).padStart(2, "0");
+function toJalaliInput(iso) {
+  if (!iso) return null;
+  const { jy, jm, jd } = gregorianToJalali(new Date(iso));
+  return `${jy}/${pad2(jm)}/${pad2(jd)}`;
+}
+function jalaliToIso(value) {
+  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(value || "");
+  return m ? jalaliToGregorian(Number(m[1]), Number(m[2]), Number(m[3]), 23, 59).toISOString() : null;
 }
 
 const selectSx = { minWidth: 110, "& .MuiInput-root": { fontSize: 14 } };
@@ -49,7 +55,7 @@ const selectSx = { minWidth: 110, "& .MuiInput-root": { fontSize: 14 } };
 function formFrom(d) {
   return {
     requires_action: Boolean(d.requires_action),
-    action_due: toLocalInput(d.action_due_at),
+    action_due: toJalaliInput(d.action_due_at),
     subject: d.subject || "",
     body_html: d.body_html || "",
     paper_size: d.paper_size,
@@ -73,7 +79,6 @@ export default function OaDraftEditorPage() {
   const [pages, setPages] = useState(1);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [extras, setExtras] = useState({ recipients: [], attachments: [], attachment_limits: null });
-  const [showCc, setShowCc] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -94,7 +99,6 @@ export default function OaDraftEditorPage() {
         setDraft(d);
         setForm(formFrom(d));
         setExtras({ recipients: d.recipients || [], attachments: d.attachments || [], attachment_limits: d.attachment_limits });
-        setShowCc((d.recipients || []).some((r) => r.role === "cc"));
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -115,7 +119,7 @@ export default function OaDraftEditorPage() {
       const updated = await saveDraft(d.id, {
         ...rest,
         template_id: f.template_id ? Number(f.template_id) : null,
-        action_due_at: f.requires_action && due ? new Date(due).toISOString() : null,
+        action_due_at: f.requires_action && due ? jalaliToIso(due) : null,
         row_version: d.row_version,
       });
       draftRef.current = updated;
@@ -217,18 +221,6 @@ export default function OaDraftEditorPage() {
 
   return (
     <Box>
-      {/* چاپ: فقط صفحه‌های نامه، اندازه‌ی واقعی، بدون حاشیه‌ی مرورگر */}
-      <GlobalStyles
-        styles={{
-          ".oa-print-area": { display: "none" },
-          "@media print": {
-            "@page": { size: `${previewPaper} portrait`, margin: 0 },
-            "body *": { visibility: "hidden" },
-            ".oa-print-area, .oa-print-area *": { visibility: "visible" },
-            ".oa-print-area": { display: "block", position: "absolute", top: 0, right: 0 },
-          },
-        }}
-      />
 
       <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
         <IconButton onClick={() => navigate("/automation/drafts")}><ArrowForwardIcon /></IconButton>
@@ -258,9 +250,8 @@ export default function OaDraftEditorPage() {
             extras={extras}
             api={api}
             disabled={lockedUI}
-            end={!showCc && <Button size="small" onClick={() => setShowCc(true)}>رونوشت</Button>}
           />
-          {showCc && <RecipientRow label="رونوشت" role="cc" extras={extras} api={api} disabled={lockedUI} />}
+          <RecipientRow label="رونوشت" role="cc" extras={extras} api={api} disabled={lockedUI} />
           <Box sx={{ px: 2, borderBottom: 1, borderColor: "divider" }}>
             <InputBase
               fullWidth
@@ -271,7 +262,7 @@ export default function OaDraftEditorPage() {
               sx={{ py: 1.25, fontSize: 15 }}
             />
           </Box>
-          <Stack direction="row" flexWrap="wrap" alignItems="center" gap={2} sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}>
+          <Stack direction="row" flexWrap="wrap" alignItems="flex-end" columnGap={2.5} rowGap={2} sx={{ px: 2, pt: 1.5, pb: 2, borderBottom: 1, borderColor: "divider" }}>
             <TextField select variant="standard" size="small" label="فوریت" value={form.urgency} onChange={(e) => update({ urgency: e.target.value })} sx={selectSx}>
               {Object.entries(options.urgencies).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
@@ -287,21 +278,18 @@ export default function OaDraftEditorPage() {
               <MenuItem value="A5">A5</MenuItem>
             </TextField>
             <FormControlLabel
-              control={<Checkbox size="small" checked={form.requires_action} onChange={(e) => update({ requires_action: e.target.checked })} />}
-              label={<Typography variant="body2">نیاز به اقدام گیرنده</Typography>}
+              control={<Checkbox size="small" color="error" checked={form.requires_action} onChange={(e) => update({ requires_action: e.target.checked })} />}
+              label={<Typography variant="body2" color="error.main" fontWeight={600}>نیاز به اقدام از سمت گیرنده</Typography>}
               sx={{ m: 0 }}
             />
             {form.requires_action && (
-              <TextField
-                variant="standard"
-                size="small"
-                type="datetime-local"
-                label="مهلت اقدام (اختیاری)"
-                value={form.action_due}
-                onChange={(e) => update({ action_due: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-                sx={{ minWidth: 200 }}
-              />
+              <Box sx={{ width: 190 }}>
+                <JalaliCalendarField
+                  label="مهلت اقدام (اختیاری)"
+                  value={form.action_due}
+                  onChange={(v) => update({ action_due: v })}
+                />
+              </Box>
             )}
           </Stack>
           <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={conflict} bare />
@@ -358,9 +346,7 @@ export default function OaDraftEditorPage() {
         </Card>
       </Stack>
 
-      <Box className="oa-print-area">
-        <LetterPreview paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} printOnly forcePages={pages} siteName={draft.site_name} />
-      </Box>
+      <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} pages={pages} siteName={draft.site_name} />
 
       <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
         <DialogTitle>ارسال نامه</DialogTitle>

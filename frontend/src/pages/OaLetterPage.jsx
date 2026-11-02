@@ -16,7 +16,6 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
-  GlobalStyles,
   IconButton,
   MenuItem,
   Stack,
@@ -42,10 +41,19 @@ import {
   referLetter,
 } from "../api/automationLetters";
 import LetterPreview from "../components/oa/LetterPreview";
+import LetterPrint from "../components/oa/LetterPrint";
 import PersonPicker from "../components/oa/PersonPicker";
 import { formatSize, saveBlob } from "../components/oa/DraftExtras";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
+import { jalaliToGregorian } from "../utils/jalaliDate";
+import JalaliCalendarField from "../components/JalaliCalendarField";
+
+// «YYYY/MM/DD» شمسی → ISO پایان همان روز
+function jalaliEndOfDay(value) {
+  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(value || "");
+  return m ? jalaliToGregorian(Number(m[1]), Number(m[2]), Number(m[3]), 23, 59).toISOString() : null;
+}
 
 const URGENCY = { normal: "عادی", urgent: "فوری", immediate: "آنی" };
 const KIND = { action: "اقدام", info: "اطلاع" };
@@ -168,7 +176,7 @@ export default function OaLetterPage() {
           kind: refer.kind,
           instruction: refer.instruction,
           allow_refer: refer.allow_refer,
-          due_at: refer.due ? new Date(refer.due).toISOString() : null,
+          due_at: refer.due ? jalaliEndOfDay(refer.due) : null,
         }),
       "ارجاع انجام شد.",
     );
@@ -222,17 +230,6 @@ export default function OaLetterPage() {
 
   return (
     <Box>
-      <GlobalStyles
-        styles={{
-          ".oa-print-area": { display: "none" },
-          "@media print": {
-            "@page": { size: `${letter.paper_size} portrait`, margin: 0 },
-            "body *": { visibility: "hidden" },
-            ".oa-print-area, .oa-print-area *": { visibility: "visible" },
-            ".oa-print-area": { display: "block", position: "absolute", top: 0, right: 0 },
-          },
-        }}
-      />
 
       <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
         <IconButton onClick={() => navigate("/automation/cartable")}><ArrowForwardIcon /></IconButton>
@@ -340,9 +337,7 @@ export default function OaLetterPage() {
         </Card>
       </Stack>
 
-      <Box className="oa-print-area">
-        <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} printOnly forcePages={pages} siteName={letter.site_name} />
-      </Box>
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} pages={pages} siteName={letter.site_name} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">
@@ -383,15 +378,9 @@ export default function OaLetterPage() {
               <MenuItem value="info">برای اطلاع</MenuItem>
             </TextField>
             <TextField multiline minRows={2} label="دستور / توضیح" value={refer.instruction} onChange={(e) => setRefer((r) => ({ ...r, instruction: e.target.value }))} inputProps={{ maxLength: 2000 }} />
-            <TextField
-              size="small"
-              type="datetime-local"
-              label="مهلت (اختیاری)"
-              value={refer.due}
-              onChange={(e) => setRefer((r) => ({ ...r, due: e.target.value }))}
-              InputLabelProps={{ shrink: true }}
-              sx={{ maxWidth: 260 }}
-            />
+            <Box sx={{ maxWidth: 240 }}>
+              <JalaliCalendarField label="مهلت (اختیاری)" value={refer.due || null} onChange={(v) => setRefer((r) => ({ ...r, due: v || "" }))} />
+            </Box>
             <FormControlLabel
               control={<Checkbox checked={refer.allow_refer} onChange={(e) => setRefer((r) => ({ ...r, allow_refer: e.target.checked }))} />}
               label="اجازه‌ی ارجاع دوباره به دیگران"

@@ -224,7 +224,7 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
   };
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
-    <Box key={i} sx={printOnly ? { breakAfter: "page", pageBreakAfter: "always" } : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
+    <Box key={i} sx={printOnly ? (i < pages - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : {}) : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
       <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} />
     </Box>
   ));
