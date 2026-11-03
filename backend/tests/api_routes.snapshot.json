@@ -1,5 +1,5 @@
 {
-  "count": 506,
+  "count": 508,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -89,6 +89,7 @@
     "GET /api/v1/automation/letters/{letter_id}/task-attachments/{attachment_id}/download",
     "GET /api/v1/automation/notification-prefs",
     "GET /api/v1/automation/people",
+    "GET /api/v1/automation/secretariats",
     "GET /api/v1/automation/secretaries",
     "GET /api/v1/automation/secretaries/mine",
     "GET /api/v1/automation/settings/attachments",
@@ -439,6 +440,7 @@
     "PUT /api/v1/automation/drafts/{letter_id}",
     "PUT /api/v1/automation/drafts/{letter_id}/recipients",
     "PUT /api/v1/automation/notification-prefs",
+    "PUT /api/v1/automation/secretariats/{site_id}",
     "PUT /api/v1/automation/settings/attachments/{site_id}",
     "PUT /api/v1/automation/settings/scan",
     "PUT /api/v1/automation/templates/{template_id}",

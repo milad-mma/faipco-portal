@@ -145,6 +145,10 @@ class OaLetter(Base, TimestampMixin):
     principal_employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Migration 143: شماره و تاریخ رسمی (صدور در ثبت نهایی = ارسال نامه‌ی داخلی)
+    secretariat_id: Mapped[int | None] = mapped_column(ForeignKey("oa_secretariats.id", ondelete="RESTRICT"), nullable=True)
+    official_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):
@@ -324,3 +328,45 @@ class OaTaskAttachment(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------- فاز ۳ب: دبیرخانه و شماره‌گذاری (Migration 143) ----------
+
+
+class OaSecretariat(Base, TimestampMixin):
+    """یک دبیرخانه برای هر سایت؛ پیشوند شماره فقط از پرتال و پس از اولین شماره قفل."""
+
+    __tablename__ = "oa_secretariats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="دبیرخانه")
+    number_prefix: Mapped[str | None] = mapped_column(String(10), nullable=True, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class OaNumberCounter(Base):
+    """شمارنده‌ی هر دبیرخانه در هر سال شمسی (قفل ردیف هنگام صدور)."""
+
+    __tablename__ = "oa_number_counters"
+    __table_args__ = (UniqueConstraint("secretariat_id", "jalali_year", name="uq_oa_counter_year"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    secretariat_id: Mapped[int] = mapped_column(ForeignKey("oa_secretariats.id", ondelete="CASCADE"), nullable=False)
+    jalali_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class OaIssuedNumber(Base):
+    """هر شماره‌ی صادرشده (یکتا)؛ void بعد از ابطال و هرگز دوباره صادر نمی‌شود."""
+
+    __tablename__ = "oa_issued_numbers"
+    __table_args__ = (UniqueConstraint("secretariat_id", "number", name="uq_oa_issued_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    secretariat_id: Mapped[int] = mapped_column(ForeignKey("oa_secretariats.id", ondelete="RESTRICT"), nullable=False)
+    number: Mapped[str] = mapped_column(String(40), nullable=False)
+    letter_id: Mapped[int | None] = mapped_column(ForeignKey("oa_letters.id", ondelete="SET NULL"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="used")  # used | void
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

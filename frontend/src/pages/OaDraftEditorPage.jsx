@@ -89,6 +89,7 @@ export default function OaDraftEditorPage() {
   const [confirmSend, setConfirmSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [numberingError, setNumberingError] = useState(""); // پیشوند دبیرخانه‌ی سایت تعیین نشده → ارسال ممکن نیست
   const formRef = useRef(null);
   const savingRef = useRef(false); // دو ذخیره‌ی هم‌زمان با یک row_version به 409 کاذب می‌رسید
   const againRef = useRef(false);
@@ -111,6 +112,7 @@ export default function OaDraftEditorPage() {
           attachment_limits: d.attachment_limits,
           relations: d.relations || [],
         });
+        setNumberingError(d.numbering_error || "");
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -248,6 +250,11 @@ export default function OaDraftEditorPage() {
         </Alert>
       )}
       {saveState?.ok === false && !conflict && <Alert severity="error" sx={{ mb: 2 }}>{saveState.message}</Alert>}
+      {numberingError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {numberingError}؛ تا تعیین آن، نامه ذخیره می‌شود ولی ارسال نمی‌شود. (مسئول تنظیمات اتوماسیون ← دبیرخانه و شماره)
+        </Alert>
+      )}
       {extras.relations?.length > 0 && (
         <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
           {extras.relations.map((r, i) => (
@@ -352,7 +359,7 @@ export default function OaDraftEditorPage() {
               variant="contained"
               startIcon={<SendOutlinedIcon />}
               onClick={() => { setSendError(""); setConfirmSend(true); }}
-              disabled={conflict || !extras.recipients.some((r) => r.role === "to")}
+              disabled={conflict || Boolean(numberingError) || !extras.recipients.some((r) => r.role === "to")}
               sx={{ height: 40, borderRadius: 5, px: 3 }}
             >
               ارسال
@@ -412,7 +419,7 @@ export default function OaDraftEditorPage() {
           <Typography variant="body2" color="text.secondary">
             {draft.principal_name ? `نامه به نام «${draft.principal_name}» ارسال می‌شود و در گردش نوشته می‌شود که شما (منشی) فرستاده‌اید. ` : ""}
             {form.requires_action ? "از گیرنده‌ی اصلی اقدام خواسته می‌شود. " : "فقط برای اطلاع گیرنده (بدون نیاز به اقدام). "}
-            بعد از ارسال، متن و گیرندگان قابل تغییر نیستند.
+            هنگام ارسال شماره و تاریخ رسمی از دبیرخانه گرفته می‌شود. بعد از ارسال، متن و گیرندگان قابل تغییر نیستند.
             {form.confidentiality === "confidential" ? " این نامه محرمانه است و فقط گیرندگان و افرادی که به آن‌ها ارجاع شود آن را می‌بینند." : ""}
           </Typography>
           {sendError && <Alert severity="error" sx={{ mt: 2 }}>{sendError}</Alert>}

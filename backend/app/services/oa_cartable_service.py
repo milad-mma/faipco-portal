@@ -43,6 +43,7 @@ from app.models.office_automation import (
 from app.models.site import Site
 from app.models.user import User
 from app.services.oa_file_service import OaFileService, file_out
+from app.services.oa_secretariat_service import jalali_date_str
 
 logger = logging.getLogger("faipco.automation")
 
@@ -278,7 +279,18 @@ class OaCartableService:
             "attachments": await self._attachments(letter.current_version_id),
             "attachment_limits": await self._attachment_limits(letter.site_id),
             "relations": await self.relations_for(letter.id, letter.creator_employee_id),
+            "numbering_error": await self._numbering_error(letter.site_id),
         }
+
+    async def _numbering_error(self, site_id: int) -> str | None:
+        """پیش از ارسال: اگر پیشوند دبیرخانه‌ی سایت نامه تعیین نشده، پیام فارسی (ارسال ممکن نیست)."""
+        from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
+
+        try:
+            await OaSecretariatService(self.db).ensure_ready(site_id)
+        except OaSecretariatError as e:
+            return str(e)
+        return None
 
     async def _attachment_limits(self, site_id: int) -> dict:
         """سقف پیوست نامه از تنظیمات سایت فرستنده (برای انتخاب چند فایل در رابط؛ سرور دوباره بررسی می‌کند)."""
@@ -444,6 +456,14 @@ class OaCartableService:
             raise OaCartableError("بعضی پیوست‌ها هنوز بررسی (اسکن) نشده‌اند یا سالم نیستند؛ کمی بعد دوباره امتحان کنید")
 
         now = _now()
+        # ثبت نهایی نامه‌ی داخلی = ارسال: شماره و تاریخ رسمی در همین تراکنش (قفل شمارنده؛ خطا → هیچ شماره‌ای صادر نمی‌شود)
+        from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
+
+        try:
+            secretariat, number = await OaSecretariatService(self.db).issue(letter.site_id, letter.id, now)
+        except OaSecretariatError as e:
+            raise OaCartableError(str(e), e.status_code) from None
+        letter.secretariat_id, letter.official_number, letter.registered_at = secretariat.id, number, now
         snap = await self._snapshot(sender.id)
         v.status, v.frozen_at = "frozen", now
         v.content_hash = rules.content_hash(
@@ -477,7 +497,7 @@ class OaCartableService:
             f.state = "permanent"
         self.files.audit("letter.send", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"to": sum(r.role == "to" for r in recipients), "cc": sum(r.role == "cc" for r in recipients),
-                                  "attachments": len(att_files),
+                                  "attachments": len(att_files), "number": number,
                                   **({"on_behalf_of": sender.id} if sender.id != me.id else {})})
         await self.db.commit()
         return letter.id
@@ -528,6 +548,8 @@ class OaCartableService:
             "paper_size": v.paper_size, "layout": layout, "site_name": site.name if site else None,
             "urgency": letter.urgency, "confidentiality": letter.confidentiality,
             "sender": {"name": letter.sender_name_snapshot, "title": letter.sender_title_snapshot, "sent_by": sent_by},
+            "official_number": letter.official_number, "official_date": jalali_date_str(letter.registered_at),
+            "attachments_count": len(await self._attachments(v.id)),
             "sent_at": letter.sent_at, "my_roles": sorted(sources),
             "recipients": [
                 {"role": r.role, "name": r.name_snapshot, "title": r.title_snapshot, "department": r.department_snapshot,
@@ -815,12 +837,13 @@ class OaCartableService:
             .correlate(OaLetter).scalar_subquery()
         )
         return [OaLetter.id, OaLetter.subject, OaLetter.urgency, OaLetter.confidentiality, OaLetter.sender_name_snapshot,
-                OaLetter.sent_at, OaLetter.status, att_count.label("attachments")]
+                OaLetter.sent_at, OaLetter.status, att_count.label("attachments"), OaLetter.official_number]
 
     @staticmethod
     def _row(r, extra: dict | None = None) -> dict:
         out = {"letter_id": r.id, "subject": r.subject, "urgency": r.urgency, "confidentiality": r.confidentiality,
-               "sender": r.sender_name_snapshot, "sent_at": r.sent_at, "attachments": r.attachments}
+               "sender": r.sender_name_snapshot, "sent_at": r.sent_at, "attachments": r.attachments,
+               "official_number": r.official_number}
         out.update(extra or {})
         return out
 
@@ -864,7 +887,8 @@ class OaCartableService:
         stmt = stmt.where(OaLetter.status.in_(("dispatched", "closed")), OaLetter.discarded_at.is_(None))
         for word in (q or "").split()[:5]:
             like = f"%{word}%"
-            stmt = stmt.where(or_(OaLetter.subject.ilike(like), OaLetter.sender_name_snapshot.ilike(like)))
+            stmt = stmt.where(or_(OaLetter.subject.ilike(like), OaLetter.sender_name_snapshot.ilike(like),
+                                  OaLetter.official_number.ilike(like)))
         total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
         rows = (await self.db.execute(stmt.order_by(order, OaLetter.id.desc()).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE))).all()
         now = _now()

@@ -245,3 +245,13 @@
   هر خطا همه را پاک می‌کند و مسئولیت باز می‌ماند. فایل اسکن‌نشده پذیرفته نمی‌شود.
 - جدول `oa_task_attachments`؛ نمایش در تاریخچه‌ی گردش زیر «اقدام شد» با دانلود
   (`GET /automation/letters/{id}/task-attachments/{aid}/download`، هر کس به نامه دسترسی دارد).
+
+## فاز ۳ب — بخش اول: دبیرخانه و شماره‌ی رسمی (Migration 143)
+- هر سایت یک دبیرخانه (`oa_secretariats`). پیشوند فقط از «تنظیمات اتوماسیون ← دبیرخانه و شماره» (automation.settings همان سایت)؛
+  ۱ تا ۱۰ نویسه‌ی رقم/لاتین، یکتا، بدون پیش‌فرض؛ بعد از اولین شماره قفل. هر تغییر در audit (`secretariat.prefix` با old/new).
+- الگو `{prefix}/{yyyy}/{seq:06}` (`core/oa_numbering_rules.py`)؛ سال شمسی به وقت تهران؛ شمارنده‌ی هر سایت×سال (`oa_number_counters`)
+  با `SELECT … FOR UPDATE` داخل تراکنش ارسال؛ هر شماره در `oa_issued_numbers` (یکتا، used/void).
+- نامه‌ی داخلی: ارسال = ثبت نهایی ← `official_number`، `registered_at`، `secretariat_id`. خطا ← rollback کامل، شماره‌ای صادر نمی‌شود.
+- بدون پیشوند: پیش‌نویس ذخیره می‌شود ولی ارسال ممکن نیست (هشدار در ویرایشگر، `numbering_error` در extras).
+- نمایش: سربرگ نامه ({{number}} {{date}} {{attachment}} و سربرگ ساده)، اطلاعات نامه، کارتابل؛ جست‌وجوی کارتابل روی شماره هم.
+- API: `GET /automation/secretariats`، `PUT /automation/secretariats/{site_id}` {number_prefix, name}.

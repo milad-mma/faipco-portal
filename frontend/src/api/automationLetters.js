@@ -219,3 +219,16 @@ export async function adminRemoveSecretary(pairId) {
   const { data } = await apiClient.delete(`/automation/secretaries/${pairId}`);
   return data;
 }
+
+// ---------- فاز ۳ب: دبیرخانه و پیشوند شماره (automation.settings) ----------
+
+// [{site_id, site_name, secretariat_id, name, number_prefix, locked, issued_count, current_year, last_number_this_year, sample}]
+export async function fetchSecretariats() {
+  const { data } = await apiClient.get("/automation/secretariats");
+  return data;
+}
+
+export async function saveSecretariat(siteId, payload) {
+  const { data } = await apiClient.put(`/automation/secretariats/${siteId}`, payload);
+  return data;
+}

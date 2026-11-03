@@ -109,7 +109,7 @@ export default function OaCartablePage() {
         ))}
       </Tabs>
 
-      <TextField size="small" placeholder="جست‌وجو در موضوع و فرستنده" value={q} onChange={(e) => setQ(e.target.value)} sx={{ mb: 2, width: { xs: "100%", sm: 360 } }} />
+      <TextField size="small" placeholder="جست‌وجو در موضوع، فرستنده و شماره" value={q} onChange={(e) => setQ(e.target.value)} sx={{ mb: 2, width: { xs: "100%", sm: 360 } }} />
 
       {error && <Alert severity="error">{error}</Alert>}
       {!data && !error && (
@@ -147,6 +147,11 @@ export default function OaCartablePage() {
                   )}
                 </Stack>
                 <Stack direction="row" gap={2} flexWrap="wrap" sx={{ mt: 0.5 }}>
+                  {it.official_number && (
+                    <Typography variant="caption" color="text.secondary">
+                      <bdi dir="ltr">{it.official_number}</bdi>
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary">
                     {box === "sent" ? "ارسال" : it.task_from && it.task_from !== it.sender ? `ارجاع از ${it.task_from}` : `از ${it.sender || "—"}`} — {fmt(it.at)}
                   </Typography>

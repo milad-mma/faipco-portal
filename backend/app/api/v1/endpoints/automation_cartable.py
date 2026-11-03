@@ -35,6 +35,7 @@ from app.services.oa_cartable_service import (
     send_pushes,
 )
 from app.services.oa_secretary_service import OaSecretaryService
+from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
 
 router = APIRouter()
 UPLOAD_CHUNK = 1 << 20
@@ -428,4 +429,29 @@ async def admin_remove_secretary(pair_id: int, db: AsyncSession = Depends(get_db
     try:
         return await OaSecretaryService(db).admin_remove(current_user, sites, pair_id)
     except OaCartableError as e:
+        _raise(e)
+
+
+# ================= دبیرخانه و پیشوند شماره (automation.settings) =================
+
+
+class SecretariatIn(BaseModel):
+    number_prefix: str = Field(max_length=20)
+    name: str | None = Field(default=None, max_length=200)
+
+
+@router.get("/secretariats")
+async def list_secretariats(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    return await OaSecretariatService(db).list_for_admin(sites)
+
+
+@router.put("/secretariats/{site_id}")
+async def save_secretariat(site_id: int, payload: SecretariatIn, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    try:
+        return await OaSecretariatService(db).save(current_user, sites, site_id, number_prefix=payload.number_prefix,
+                                                   name=payload.name)
+    except OaSecretariatError as e:
         _raise(e)

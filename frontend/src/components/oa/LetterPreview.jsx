@@ -85,9 +85,10 @@ function Header({ layout, logoUrl, values }) {
       />
     );
   }
-  const field = (label) => (
+  const field = (label, value) => (
     <div style={{ whiteSpace: "nowrap" }}>
-      {label}: <span style={{ color: "#999" }}>..............</span>
+      {label}:{" "}
+      {value && !/^\.+$/.test(value) ? <bdi dir="ltr">{value}</bdi> : <span style={{ color: "#999" }}>..............</span>}
     </div>
   );
   return (
@@ -100,9 +101,9 @@ function Header({ layout, logoUrl, values }) {
         {h.subtitle ? <div style={{ fontSize: "0.9em", color: "#444" }}>{h.subtitle}</div> : null}
       </div>
       <div style={{ width: "28%", fontSize: "0.85em", lineHeight: 1.7 }}>
-        {h.show_number ? field("شماره") : null}
-        {h.show_date ? field("تاریخ") : null}
-        {h.show_attachment ? field("پیوست") : null}
+        {h.show_number ? field("شماره", values.number) : null}
+        {h.show_date ? field("تاریخ", values.date) : null}
+        {h.show_attachment ? field("پیوست", values.attachment) : null}
       </div>
     </div>
   );
@@ -225,9 +226,9 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
 /**
  * props: paper ("A4"|"A5")، layout (چیدمان همان اندازه)، subject، bodyHtml، scale (نمایش؛ ۱ = اندازه‌ی واقعی)،
  * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n, segments)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)،
- * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)
+ * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)
  */
-export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName }) {
+export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta }) {
   // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
   const boxRef = useRef(null);
   const [fitScale, setFitScale] = useState(null);
@@ -288,9 +289,10 @@ export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml,
     title: layout.header.title,
     subtitle: layout.header.subtitle,
     site: siteName || "",
-    number: "..........",
-    date: "..........",
-    attachment: "..........",
+    // شماره/تاریخ/پیوست رسمی بعد از ارسال (meta)؛ پیش‌نویس نقطه‌چین
+    number: meta?.number || "..........",
+    date: meta?.date || "..........",
+    attachment: meta?.attachment || "..........",
   };
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (

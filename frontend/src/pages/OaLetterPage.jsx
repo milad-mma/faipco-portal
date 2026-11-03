@@ -302,6 +302,12 @@ export default function OaLetterPage() {
   }
 
   const confidential = letter.confidentiality === "confidential";
+  // شماره/تاریخ/پیوست رسمی برای سربرگ نامه
+  const meta = {
+    number: letter.official_number || "",
+    date: letter.official_date ? toPersianDigits(letter.official_date) : "",
+    attachment: letter.attachments_count ? `دارد (${toPersianDigits(letter.attachments_count)})` : "ندارد",
+  };
   const to = letter.recipients.filter((r) => r.role === "to");
   const cc = letter.recipients.filter((r) => r.role === "cc");
   const people = (list) =>
@@ -323,6 +329,7 @@ export default function OaLetterPage() {
         <IconButton onClick={() => navigate("/automation/cartable")}><ArrowForwardIcon /></IconButton>
         {confidential && <LockOutlinedIcon color="error" />}
         <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>{letter.subject}</Typography>
+        {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{letter.official_number}</bdi>} title="شماره‌ی نامه" />}
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
@@ -387,6 +394,12 @@ export default function OaLetterPage() {
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "info" }}>
             <Stack spacing={1}>
               <Typography variant="body2">
+                {letter.official_number && (
+                  <>
+                    <b>شماره:</b> <bdi dir="ltr">{letter.official_number}</bdi> — <b>تاریخ:</b> {toPersianDigits(letter.official_date || "")}
+                    <br />
+                  </>
+                )}
                 <b>فرستنده:</b> {letter.sender?.name}{letter.sender?.title ? ` (${letter.sender.title})` : ""} — {fmt(letter.sent_at)}
               </Typography>
               {letter.sender?.sent_by && (
@@ -418,7 +431,7 @@ export default function OaLetterPage() {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} />
         </Card>
           {letter.attachments.length > 0 && (
             <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "att" }}>
@@ -460,7 +473,7 @@ export default function OaLetterPage() {
           </Card>
       </Box>
 
-      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} />
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">
