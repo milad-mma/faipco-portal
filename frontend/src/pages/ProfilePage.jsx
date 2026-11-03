@@ -4,6 +4,7 @@
  * انتخاب حالت نمایش (سیستم/روشن/تیره)، تنظیم مخفی‌سازی تولد، فعال‌سازی اعلان Push،
  * ویرایش مشخصات، تغییر رمز و خروج از حساب.
  */
+import CreditFooter from "../components/CreditFooter";
 import { useEffect, useState } from "react";
 import {
   Box,
@@ -437,6 +438,9 @@ export default function ProfilePage() {
           </ListItemButton>
         </List>
       </Card>
+
+      {/* ادمین فوتر را از Layout می‌گیرد (تکراری نشود) */}
+      {!user?.is_superuser && <CreditFooter sx={{ mt: 2 }} />}
 
       {/* دیالوگ‌های تغییر رمز و ویرایش مشخصات */}
       <ChangePasswordDialog

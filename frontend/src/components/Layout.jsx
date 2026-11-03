@@ -6,6 +6,7 @@
  * صفحه‌ی جاری از طریق <Outlet /> رندر می‌شود؛ دیالوگ تغییر رمز، اطلاعیه‌ی پاپ‌آپ و Snackbar پیام‌ها هم اینجا هستند.
  */
 import { Suspense, useEffect, useMemo, useState } from "react";
+import CreditFooter from "./CreditFooter";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -547,9 +548,6 @@ export default function Layout() {
                 mt: 0,
                 // فاصله‌ی ناچ روی پوسته‌ی بیرونی اعمال شده؛ این‌جا فقط فاصله‌ی عادی بالای محتوا
                 pt: 2,
-                // ستونی تا فوتر در صفحه‌های کوتاه هم پایین بماند
-                display: "flex",
-                flexDirection: "column",
               }
             : {
                 // ادمین: فاصله‌ی بالا به اندازه‌ی AppBar ثابت + ناحیه‌ی امن ناچ (که AppBar هم همین‌قدر بلندتر شده)؛
@@ -576,32 +574,8 @@ export default function Layout() {
         >
           <Outlet />
         </Suspense>
-        {/* فوتر پنل پرسنل: گرادیان کارت مشخصات پرسنل داشبورد، متن سفید؛ انتهای محتوا (اسکرول با صفحه) */}
-        {isPersonnelNav && (
-          <Box
-            component="footer"
-            sx={{
-              mt: "auto",
-              pt: 4,
-              mx: { xs: -2, md: -4 },
-              mb: { xs: -2, md: -4 },
-            }}
-          >
-            <Box
-              sx={{
-                background: "linear-gradient(90deg, #185E95 0%, #2E84AA 100%)",
-                color: "#fff",
-                textAlign: "center",
-                py: 1.5,
-                px: 2,
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
-              طراحی و توسعه: میلاد محمدعلی‌زاده
-            </Box>
-          </Box>
-        )}
+        {/* فوتر «طراحی و توسعه» فقط در نمای ادمین (برای پرسنل فقط در صفحه‌ی پنل کاربری) */}
+        {!isPersonnelNav && <CreditFooter sx={{ mt: 4 }} />}
       </Box>
 
       {/* نوار پایین برای همه‌ی کاربران غیرادمین در همه‌ی اندازه‌های صفحه: داشبورد، اطلاعیه‌ها و پنل کاربری.
