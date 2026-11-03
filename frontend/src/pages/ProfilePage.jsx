@@ -439,7 +439,7 @@ export default function ProfilePage() {
         </List>
       </Card>
 
-      {/* ادمین فوتر را از Layout می‌گیرد (تکراری نشود) */}
+      {/* ادمین فوتر را در سایدبار دارد (تکراری نشود) */}
       {!user?.is_superuser && <CreditFooter sx={{ mt: 2 }} />}
 
       {/* دیالوگ‌های تغییر رمز و ویرایش مشخصات */}

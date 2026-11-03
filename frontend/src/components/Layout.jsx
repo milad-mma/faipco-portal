@@ -350,6 +350,8 @@ export default function Layout() {
           );
         })}
       </List>
+      {/* فوتر «طراحی و توسعه» پایین سایدبار ادمین (منو اسکرول می‌خورد و این ثابت می‌ماند) */}
+      <CreditFooter sx={{ borderRadius: 0, flexShrink: 0, py: 1.25, fontSize: 11.5 }} />
     </Box>
   );
 
@@ -574,8 +576,6 @@ export default function Layout() {
         >
           <Outlet />
         </Suspense>
-        {/* فوتر «طراحی و توسعه» فقط در نمای ادمین (برای پرسنل فقط در صفحه‌ی پنل کاربری) */}
-        {!isPersonnelNav && <CreditFooter sx={{ mt: 4 }} />}
       </Box>
 
       {/* نوار پایین برای همه‌ی کاربران غیرادمین در همه‌ی اندازه‌های صفحه: داشبورد، اطلاعیه‌ها و پنل کاربری.
