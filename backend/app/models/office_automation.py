@@ -149,6 +149,15 @@ class OaLetter(Base, TimestampMixin):
     secretariat_id: Mapped[int | None] = mapped_column(ForeignKey("oa_secretariats.id", ondelete="RESTRICT"), nullable=True)
     official_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 144: امضای شخصی فرستنده (چک‌باکس «امضا شود»؛ هیچ‌کس به نام دیگری امضا نمی‌کند)
+    sign_on_send: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    signature_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("oa_signature_versions.id", ondelete="RESTRICT"), nullable=True
+    )
+    signer_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    signer_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    signer_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):
@@ -370,3 +379,25 @@ class OaIssuedNumber(Base):
     letter_id: Mapped[int | None] = mapped_column(ForeignKey("oa_letters.id", ondelete="SET NULL"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(8), nullable=False, default="used")  # used | void
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OaSignatureVersion(Base):
+    """
+    نسخه‌ی امضای شخصی (فاز ۳ب، Migration 144). یک نسخه‌ی active برای هر نفر؛ غیرفعال‌سازی فقط آینده را متوقف می‌کند و
+    فایل امضای استفاده‌شده هرگز حذف نمی‌شود.
+    """
+
+    __tablename__ = "oa_signature_versions"
+    __table_args__ = (UniqueConstraint("owner_employee_id", "version_no", name="uq_oa_signature_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_id: Mapped[int] = mapped_column(ForeignKey("oa_files.id", ondelete="RESTRICT"), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    method: Mapped[str] = mapped_column(String(8), nullable=False)  # draw | upload
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")  # active | inactive
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deactivate_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)

@@ -255,3 +255,16 @@
 - بدون پیشوند: پیش‌نویس ذخیره می‌شود ولی ارسال ممکن نیست (هشدار در ویرایشگر، `numbering_error` در extras).
 - نمایش: سربرگ نامه ({{number}} {{date}} {{attachment}} و سربرگ ساده)، اطلاعات نامه، کارتابل؛ جست‌وجوی کارتابل روی شماره هم.
 - API: `GET /automation/secretariats`، `PUT /automation/secretariats/{site_id}` {number_prefix, name}.
+
+## فاز ۳ب — بخش دوم: امضای شخصی (Migration 144؛ تصمیم‌های ۱۴۰۵/۰۸/۱۲)
+- «امضای من» در پنل کاربری (دارندگان automation.access): رسم با Pointer Events (موس/لمس/قلم) یا بارگذاری PNG/JPG/WEBP تا ۲MiB
+  (حداکثر ۴۰۰۰×۴۰۰۰ و ۸ مگاپیکسل). سرور (`core/oa_signature_rules.py`): decode، رد SVG/HTML، حذف اختیاری پس‌زمینه‌ی روشن،
+  برش خودکار حاشیه، حداکثر ۹۰۰×۳۶۰، PNG تازه بدون metadata. **بدون تأیید هویت دوباره** (تصمیم کاربر).
+- نسخه‌دار (`oa_signature_versions`؛ ایندکس یکتای جزئی: یک active برای هر نفر). ثبت تازه نسخه‌ی قبلی را inactive می‌کند؛
+  فایل امضای قبلی حذف نمی‌شود. غیرفعال‌سازی فقط آینده را متوقف می‌کند. audit: `signature.create` / `signature.deactivate`.
+- نوشتن نامه: چک‌باکس «امضا شود» (فقط با امضای فعال و فقط نامه‌ی به نام خود؛ نامه‌ی «از طرف» مدیر امضا نمی‌شود).
+  هنگام ارسال: نسخه‌ی active همان لحظه + نام و سمت لحظه‌ای روی نامه (`signature_version_id`، `signer_*`، `signed_at`).
+- نمایش: پایین متن، سمت چپ (تصویر + نام + سمت)؛ در پیش‌نمایش پیش‌نویس، صفحه‌ی نامه و چاپ؛ بلوک امضا بین دو صفحه نصف نمی‌شود.
+- API: `GET/POST/DELETE /automation/signature/mine`، `GET /automation/signature/mine/image`،
+  `GET /automation/letters/{id}/signature-image` (هر کسی که نامه را می‌بیند).
+- هنوز نیست: مشاهده/غیرفعال‌سازی امضای دیگران توسط ادمین؛ امضا در گردش تأیید (بخش بعد).

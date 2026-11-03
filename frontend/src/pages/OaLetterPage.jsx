@@ -39,6 +39,7 @@ import AttachFileIcon from "@mui/icons-material/AttachFile";
 import {
   addLetterNote,
   completeTaskWithFiles,
+  fetchLetterSignatureBlob,
   downloadTaskAttachment,
   createRelatedDraft,
   downloadLetterAttachment,
@@ -49,6 +50,7 @@ import {
 import LetterPreview from "../components/oa/LetterPreview";
 import LetterPrint from "../components/oa/LetterPrint";
 import PersonPicker from "../components/oa/PersonPicker";
+import useBlobUrl from "../components/oa/useBlobUrl";
 import { formatSize, saveBlob } from "../components/oa/DraftExtras";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
@@ -168,6 +170,7 @@ export default function OaLetterPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmConfidential, setConfirmConfidential] = useState(false);
+  const signatureUrl = useBlobUrl(letter?.signature ? `letter-sig-${letter.id}` : null, () => fetchLetterSignatureBlob(letter.id));
 
   // پیش‌نویس پاسخ و رفتن به ویرایشگر آن
   async function newRelated(type) {
@@ -308,6 +311,7 @@ export default function OaLetterPage() {
     date: letter.official_date ? toPersianDigits(letter.official_date) : "",
     attachment: letter.attachments_count ? `دارد (${toPersianDigits(letter.attachments_count)})` : "ندارد",
   };
+  const signature = letter.signature ? { name: letter.signature.name, title: letter.signature.title, imageUrl: signatureUrl } : null;
   const to = letter.recipients.filter((r) => r.role === "to");
   const cc = letter.recipients.filter((r) => r.role === "cc");
   const people = (list) =>
@@ -431,7 +435,7 @@ export default function OaLetterPage() {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} signature={signature} />
         </Card>
           {letter.attachments.length > 0 && (
             <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "att" }}>
@@ -473,7 +477,7 @@ export default function OaLetterPage() {
           </Card>
       </Box>
 
-      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} />
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} signature={signature} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">

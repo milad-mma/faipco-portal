@@ -244,3 +244,42 @@ export async function fetchOaDashboard() {
   const { data } = await apiClient.get("/automation/dashboard");
   return data;
 }
+
+// ---------- فاز ۳ب: امضای شخصی ----------
+
+// { active: {id, version_no, method, status, created_at} | null, history: [...] }
+export async function fetchMySignature() {
+  const { data } = await apiClient.get("/automation/signature/mine");
+  return data;
+}
+
+// blob: تصویر (بوم رسم یا فایل)؛ method: draw | upload
+export async function saveMySignature(blob, method, removeBackground) {
+  const formData = new FormData();
+  formData.append("file", blob, method === "draw" ? "signature.png" : blob.name || "signature");
+  formData.append("method", method);
+  formData.append("remove_background", removeBackground ? "true" : "false");
+  const { data } = await apiClient.post("/automation/signature/mine", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 2 * 60 * 1000,
+  });
+  return data;
+}
+
+export async function deactivateMySignature() {
+  const { data } = await apiClient.delete("/automation/signature/mine");
+  return data;
+}
+
+export async function fetchMySignatureBlob(versionId) {
+  const { data } = await apiClient.get("/automation/signature/mine/image", {
+    params: versionId ? { version_id: versionId } : undefined,
+    responseType: "blob",
+  });
+  return data;
+}
+
+export async function fetchLetterSignatureBlob(letterId) {
+  const { data } = await apiClient.get(`/automation/letters/${letterId}/signature-image`, { responseType: "blob" });
+  return data;
+}

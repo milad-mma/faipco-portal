@@ -28,7 +28,8 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
-import { discardDraft, fetchComposeOptions, fetchDraft, saveDraft, sendDraft } from "../api/automationLetters";
+import { discardDraft, fetchComposeOptions, fetchDraft, fetchMySignatureBlob, saveDraft, sendDraft } from "../api/automationLetters";
+import useBlobUrl from "../components/oa/useBlobUrl";
 import { AttachButton, AttachmentChips, RecipientRow, useDraftExtras } from "../components/oa/DraftExtras";
 import LetterEditor from "../components/oa/LetterEditor";
 import LetterPreview from "../components/oa/LetterPreview";
@@ -64,6 +65,7 @@ function formFrom(d) {
     urgency: d.urgency,
     confidentiality: d.confidentiality,
     principal_employee_id: d.principal_employee_id || "", // «از طرف» (منشی)؛ خالی = خودم
+    sign_on_send: Boolean(d.sign_on_send),
   };
 }
 
@@ -89,7 +91,9 @@ export default function OaDraftEditorPage() {
   const [confirmSend, setConfirmSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
-  const [numberingError, setNumberingError] = useState(""); // پیشوند دبیرخانه‌ی سایت تعیین نشده → ارسال ممکن نیست
+  const [numberingError, setNumberingError] = useState("");
+  const [hasSignature, setHasSignature] = useState(false);
+  const mySignatureUrl = useBlobUrl(hasSignature ? "my-signature" : null, () => fetchMySignatureBlob()); // پیشوند دبیرخانه‌ی سایت تعیین نشده → ارسال ممکن نیست
   const formRef = useRef(null);
   const savingRef = useRef(false); // دو ذخیره‌ی هم‌زمان با یک row_version به 409 کاذب می‌رسید
   const againRef = useRef(false);
@@ -113,6 +117,7 @@ export default function OaDraftEditorPage() {
           relations: d.relations || [],
         });
         setNumberingError(d.numbering_error || "");
+        setHasSignature(Boolean(d.has_signature));
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -232,7 +237,10 @@ export default function OaDraftEditorPage() {
     );
   }
 
-  const previewPaper = draft.paper_size; // چیدمان از سرور برای همین اندازه آمده است
+  const previewPaper = draft.paper_size;
+  // پیش‌نمایش امضا: فقط امضای خود نویسنده و فقط وقتی «امضا شود» زده شده و نامه به نام خودش است
+  const willSign = form.sign_on_send && draft.has_signature && !form.principal_employee_id;
+  const previewSignature = willSign ? { name: draft.signer_name, title: draft.signer_title, imageUrl: mySignatureUrl } : null; // چیدمان از سرور برای همین اندازه آمده است
 
   return (
     <Box>
@@ -340,6 +348,28 @@ export default function OaDraftEditorPage() {
               label={<Typography variant="body2" color="error.main" fontWeight={600}>نیاز به اقدام از سمت گیرنده</Typography>}
               sx={{ m: 0 }}
             />
+            <Tooltip
+              title={
+                !draft.has_signature
+                  ? "امضای فعال ندارید (پنل کاربری ← امضای من)"
+                  : form.principal_employee_id
+                    ? "نامه‌ای که از طرف دیگری ارسال می‌شود با امضای شما امضا نمی‌شود"
+                    : ""
+              }
+            >
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={Boolean(willSign)}
+                    disabled={!draft.has_signature || Boolean(form.principal_employee_id) || lockedUI}
+                    onChange={(e) => update({ sign_on_send: e.target.checked })}
+                  />
+                }
+                label={<Typography variant="body2">امضا شود</Typography>}
+                sx={{ m: 0 }}
+              />
+            </Tooltip>
             {form.requires_action && (
               <Box sx={{ width: 190 }}>
                 <JalaliCalendarField
@@ -400,11 +430,12 @@ export default function OaDraftEditorPage() {
             fit
             onPages={handlePages}
             siteName={draft.site_name}
+            signature={previewSignature}
           />
         </Card>
       </Stack>
 
-      <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} segments={segments} siteName={draft.site_name} />
+      <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} segments={segments} siteName={draft.site_name} signature={previewSignature} />
 
       <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
         <DialogTitle>ارسال نامه</DialogTitle>

@@ -465,6 +465,17 @@ class OaCartableService:
             raise OaCartableError(str(e), e.status_code) from None
         letter.secretariat_id, letter.official_number, letter.registered_at = secretariat.id, number, now
         snap = await self._snapshot(sender.id)
+        # امضای شخصی: فقط امضای فعال خود فرستنده‌ی واقعی و فقط برای نامه‌ی به نام خودش
+        if letter.sign_on_send:
+            from app.services.oa_signature_service import OaSignatureService
+
+            if sender.id != me.id:
+                raise OaCartableError("نامه‌ای که از طرف دیگری ارسال می‌شود با امضای شما امضا نمی‌شود؛ «امضا شود» را بردارید")
+            sig = await OaSignatureService(self.db).active_for(me.id)
+            if sig is None:
+                raise OaCartableError("امضای فعال ندارید؛ از پنل کاربری ← امضای من امضا ثبت کنید یا «امضا شود» را بردارید")
+            letter.signature_version_id, letter.signer_employee_id, letter.signed_at = sig.id, me.id, now
+            letter.signer_name_snapshot, letter.signer_title_snapshot = snap["name"], snap["title"]
         v.status, v.frozen_at = "frozen", now
         v.content_hash = rules.content_hash(
             subject=v.subject, body_html=v.body_html, paper_size=v.paper_size, template_version_id=v.template_version_id,
@@ -549,6 +560,8 @@ class OaCartableService:
             "urgency": letter.urgency, "confidentiality": letter.confidentiality,
             "sender": {"name": letter.sender_name_snapshot, "title": letter.sender_title_snapshot, "sent_by": sent_by},
             "official_number": letter.official_number, "official_date": jalali_date_str(letter.registered_at),
+            "signature": {"name": letter.signer_name_snapshot, "title": letter.signer_title_snapshot,
+                          "signed_at": letter.signed_at} if letter.signature_version_id else None,
             "attachments_count": len(await self._attachments(v.id)),
             "sent_at": letter.sent_at, "my_roles": sorted(sources),
             "recipients": [
@@ -790,6 +803,18 @@ class OaCartableService:
         self.files.audit("task.done", user, entity="task", entity_id=task.id,
                          details={"letter_id": task.letter_id, "attachments": len(uploaded)})
         await self.db.commit()
+
+    async def signature_file(self, letter_id: int, user: User):
+        """تصویر امضای روی نامه — برای هر کسی که نامه را می‌بیند (همان نسخه‌ی امضای لحظه‌ی ارسال)."""
+        letter, *_ = await self._letter_for(letter_id, user, "view")
+        if not letter.signature_version_id:
+            raise OaCartableError("این نامه امضا ندارد", 404)
+        from app.services.oa_signature_service import OaSignatureError, OaSignatureService
+
+        try:
+            return await OaSignatureService(self.db).file_of(letter.signature_version_id)
+        except OaSignatureError as e:
+            raise OaCartableError(str(e), e.status_code) from None
 
     async def task_attachment_for_download(self, letter_id: int, attachment_id: int, user: User, ip: str | None):
         letter, *_ = await self._letter_for(letter_id, user, "download")

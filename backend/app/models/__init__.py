@@ -122,6 +122,6 @@ from app.models.user_session import UserSession  # noqa: F401
 from app.models.office_automation import (  # noqa: F401
     OaAttachment, OaAttachmentSettings, OaAuditEvent, OaFile, OaLetter, OaLetterAccess, OaLetterVersion, OaNote,
     OaLetterRelation, OaNotificationLog, OaNotificationPref, OaRecipient, OaSecretary, OaTask, OaTaskAttachment, OaTemplate,
-    OaTemplateVersion, OaSecretariat, OaNumberCounter, OaIssuedNumber,
+    OaTemplateVersion, OaSecretariat, OaNumberCounter, OaIssuedNumber, OaSignatureVersion,
 )
 from app.models.profile_photo import ProfilePhotoRequest  # noqa: F401

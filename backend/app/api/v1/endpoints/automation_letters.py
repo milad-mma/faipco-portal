@@ -195,6 +195,7 @@ class DraftSaveIn(BaseModel):
     requires_action: bool = False
     action_due_at: datetime | None = None
     principal_employee_id: int | None = None  # «از طرف» — فقط منشیِ آن شخص
+    sign_on_send: bool = False  # «امضا شود» (امضای فعال خود نویسنده)
     row_version: int
 
 

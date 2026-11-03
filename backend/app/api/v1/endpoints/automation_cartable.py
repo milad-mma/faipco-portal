@@ -36,6 +36,7 @@ from app.services.oa_cartable_service import (
 )
 from app.services.oa_secretary_service import OaSecretaryService
 from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
+from app.services.oa_signature_service import OaSignatureError, OaSignatureService
 
 router = APIRouter()
 UPLOAD_CHUNK = 1 << 20
@@ -475,3 +476,70 @@ async def save_secretariat(site_id: int, payload: SecretariatIn, db: AsyncSessio
                                                    name=payload.name)
     except OaSecretariatError as e:
         _raise(e)
+
+
+# ================= امضای شخصی =================
+
+
+def _png(service_files, f) -> StreamingResponse:
+    return StreamingResponse(
+        service_files.storage.iter_file(f.storage_key), media_type="image/png",
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/signature/mine")
+async def my_signature(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaSignatureService(db).mine(current_user)
+    except OaSignatureError as e:
+        _raise(e)
+
+
+@router.post("/signature/mine")
+async def create_my_signature(file: UploadFile = File(...), method: str = Form(default="upload"),
+                              remove_background: bool = Form(default=False), db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    """ثبت امضای تازه (رسم: PNG بوم مرورگر؛ بارگذاری: PNG/JPG/WEBP تا ۲ مگابایت). نسخه‌ی قبلی غیرفعال می‌شود."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    from app.core.oa_signature_rules import MAX_UPLOAD_BYTES
+
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        return await OaSignatureService(db).create(current_user, raw, method=method, remove_background=remove_background)
+    except OaSignatureError as e:
+        _raise(e)
+
+
+@router.delete("/signature/mine")
+async def deactivate_my_signature(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaSignatureService(db).deactivate_mine(current_user)
+    except OaSignatureError as e:
+        _raise(e)
+
+
+@router.get("/signature/mine/image")
+async def my_signature_image(version_id: int | None = None, db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaSignatureService(db)
+    try:
+        f = await service.my_file(current_user, version_id)
+    except OaSignatureError as e:
+        _raise(e)
+    return _png(service.files, f)
+
+
+@router.get("/letters/{letter_id}/signature-image")
+async def letter_signature_image(letter_id: int, db: AsyncSession = Depends(get_db),
+                                 current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaCartableService(db)
+    try:
+        f = await service.signature_file(letter_id, current_user)
+    except OaCartableError as e:
+        _raise(e)
+    return _png(service.files, f)

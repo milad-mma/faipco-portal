@@ -186,7 +186,7 @@ class OaLetterService:
     async def save_draft(self, letter_id: int, *, subject: str, body_html: str, paper_size: str,
                          template_id: int | None, urgency: str, confidentiality: str, row_version: int,
                          user: User, requires_action: bool = False, action_due_at: datetime | None = None,
-                         principal_employee_id: int | None = None) -> dict:
+                         principal_employee_id: int | None = None, sign_on_send: bool = False) -> dict:
         letter = await self._own_letter(letter_id, user)
         if letter.status != "draft":
             raise OaLetterError("فقط پیش‌نویس قابل ویرایش است", 409)
@@ -213,6 +213,8 @@ class OaLetterService:
         letter.requires_action = bool(requires_action)
         letter.action_due_at = action_due_at if requires_action else None
         await self._set_principal(letter, principal_employee_id, user)
+        # امضا فقط امضای خود نویسنده؛ نامه‌ای که منشی به نام مدیر می‌فرستد امضا نمی‌شود
+        letter.sign_on_send = bool(sign_on_send) and not letter.principal_employee_id
         letter.row_version += 1
         await self.db.commit()
         return await self.draft_out(letter.id, user)
@@ -301,4 +303,20 @@ class OaLetterService:
             "paper_mm": rules.PAPER_SIZES[v.paper_size], "updated_at": letter.updated_at,
             "requires_action": letter.requires_action, "action_due_at": letter.action_due_at,
             "principal_employee_id": letter.principal_employee_id, "principal_name": await self._principal_name(letter),
+            **await self._signature_info(letter, user),
+        }
+
+    async def _signature_info(self, letter: OaLetter, user: User) -> dict:
+        """چک‌باکس «امضا شود»: فقط اگر نویسنده امضای فعال دارد و نامه به نام خودش است."""
+        from app.models.employee import Employee
+        from app.services.oa_signature_service import OaSignatureService
+
+        active = await OaSignatureService(self.db).active_for(user.employee_id) if user.employee_id else None
+        me = await self.db.get(Employee, user.employee_id) if user.employee_id else None
+        return {
+            "sign_on_send": letter.sign_on_send,
+            "has_signature": active is not None,
+            "can_sign": active is not None and not letter.principal_employee_id,
+            "signer_name": f"{me.first_name} {me.last_name}" if me else None,
+            "signer_title": me.position_title if me else None,
         }

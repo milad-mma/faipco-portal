@@ -36,7 +36,7 @@ export function useLogoUrl(fileId) {
 }
 
 // محتوای متن نامه (موضوع + بدنه) با استایل یکسان در اندازه‌گیری و نمایش
-function BodyContent({ subject, bodyHtml }) {
+function BodyContent({ subject, bodyHtml, signature }) {
   return (
     <>
       {subject ? (
@@ -46,6 +46,20 @@ function BodyContent({ subject, bodyHtml }) {
       ) : null}
       {/* body_html در سرور با فهرست مجاز پاک‌سازی شده است (core/oa_html.py) */}
       <div className="oa-letter-body" dangerouslySetInnerHTML={{ __html: bodyHtml || "" }} />
+      {/* امضا: پایین متن، سمت چپ (در صفحه‌ی rtl، flex-end = چپ؛ style درون‌خطی تا افزونه‌ی RTL جابه‌جایش نکند) */}
+      {signature ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "6mm" }}>
+          <div className="oa-letter-signature" style={{ width: "55mm", textAlign: "center", lineHeight: 1.6 }}>
+            <div style={{ height: "20mm", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {signature.imageUrl ? (
+                <img src={signature.imageUrl} alt="" style={{ maxHeight: "20mm", maxWidth: "50mm", objectFit: "contain" }} />
+              ) : null}
+            </div>
+            <div style={{ fontWeight: 700 }}>{faDigits(signature.name || "")}</div>
+            {signature.title ? <div style={{ fontSize: "0.9em" }}>{faDigits(signature.title)}</div> : null}
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -159,6 +173,14 @@ function computeSegments(container, pagePx) {
     const r = el.getBoundingClientRect();
     if (r.height > 0) blocks.push([r.top - top0, r.bottom - top0]);
   });
+  const atoms = [];
+  container.querySelectorAll(".oa-letter-signature").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.height > 0) {
+      atoms.push([r.top - top0, r.bottom - top0]);
+      blocks.push([r.top - top0, r.bottom - top0]);
+    }
+  });
   const spans = lines.concat(blocks);
   const segments = [];
   let start = 0;
@@ -179,6 +201,10 @@ function computeSegments(container, pagePx) {
     for (const [t, b] of lines) {
       if (t < cut - 0.5 && b > cut + 0.5 && t > start + 0.5) cut = Math.min(cut, t);
     }
+    // بلوک امضا نصف نمی‌شود: اگر برش داخلش افتاد، کل امضا به صفحه‌ی بعد می‌رود
+    for (const [t, b] of atoms) {
+      if (t < cut - 0.5 && b > cut + 0.5 && t > start + 0.5) cut = Math.min(cut, t);
+    }
     if (cut <= start + 1) cut = limit; // خط/بلوکی بلندتر از یک صفحه: ناچار برش
     segments.push({ start, height: cut - start });
     start = cut;
@@ -188,7 +214,7 @@ function computeSegments(container, pagePx) {
 
 // ابعاد و حاشیه‌ها در style درون‌خطی‌اند، نه sx: افزونه‌ی RTL برنامه (rtlCache) چپ/راستِ sx را جابه‌جا می‌کند و
 // حاشیه‌ی راست/چپ کاغذ باید همان جهت فیزیکی بماند.
-function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment }) {
+function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment, signature }) {
   const [w, h] = PAPER[paper];
   const m = layout.margins_mm;
   return (
@@ -222,7 +248,7 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
         {/* پنجره‌ی همین صفحه: دقیقاً از ابتدای خط اول تا انتهای خط آخر این صفحه */}
         <div style={{ position: "absolute", left: 0, right: 0, top: `${GAP_TOP_MM}mm`, height: segment ? `${segment.height}px` : `calc(100% - ${GAP_TOP_MM + GAP_BOTTOM_MM}mm)`, overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, right: 0, display: "flow-root", top: segment ? `-${segment.start}px` : `-${pageIndex * (bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM)}mm` }}>
-            <BodyContent subject={subject} bodyHtml={bodyHtml} />
+            <BodyContent subject={subject} bodyHtml={bodyHtml} signature={signature} />
           </div>
         </div>
       </div>
@@ -234,9 +260,10 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
 /**
  * props: paper ("A4"|"A5")، layout (چیدمان همان اندازه)، subject، bodyHtml، scale (نمایش؛ ۱ = اندازه‌ی واقعی)،
  * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n, segments)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)،
- * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)
+ * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)،
+ * signature ({name, title, imageUrl} — پایین متن سمت چپ)
  */
-export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta }) {
+export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta, signature }) {
   const subject = useMemo(() => (rawSubject ? faDigits(rawSubject) : rawSubject), [rawSubject]);
   const bodyHtml = useMemo(() => faDigitsHtml(rawBody), [rawBody]);
   // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
@@ -293,7 +320,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
     return () => {
       alive = false;
     };
-  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forceSegments]);
+  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forceSegments, Boolean(signature), signature?.name, signature?.title]);
 
   const values = {
     title: layout.header.title,
@@ -307,7 +334,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
     <Box key={i} sx={printOnly ? (i < pages - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : {}) : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
-      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} />
+      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} signature={signature} />
     </Box>
   ));
 
@@ -322,7 +349,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
           style={{ direction: "rtl" }}
           sx={{ display: "flow-root", width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", ...bodyStyles }}
         >
-          <BodyContent subject={subject} bodyHtml={bodyHtml} />
+          <BodyContent subject={subject} bodyHtml={bodyHtml} signature={signature} />
         </Box>
       </Box>
       {printOnly ? pageList : <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>{pageList}</Box>}
