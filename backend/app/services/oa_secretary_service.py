@@ -126,6 +126,45 @@ class OaSecretaryService(OaCartableService):
             })
         return out
 
+    async def admin_people(self, sites: set[int] | None, *, q: str = "", department_id: int | None = None,
+                           title: str = "", limit: int = 50) -> dict:
+        """
+        انتخاب مدیر/منشی در تنظیمات: پرسنل فعال دارای دسترسی اتوماسیون در سایت‌های تنظیمات کاربر — مستقل از این‌که خود
+        کاربر پرسنل باشد یا automation.access داشته باشد. فقط نام، سمت و واحد.
+        """
+        from sqlalchemy import or_, true
+
+        stmt = (
+            select(Employee, Department.name)
+            .outerjoin(Department, Department.id == Employee.department_id)
+            .where(Employee.is_active.is_(True), Employee.is_enabled.is_(True), Employee.id.in_(eligible_users_subquery()))
+        )
+        if sites is not None:
+            stmt = stmt.where(Employee.site_id.in_(sites or {-1}))
+        for word in (q or "").split()[:4]:
+            like = f"%{word}%"
+            stmt = stmt.where(or_(Employee.first_name.ilike(like), Employee.last_name.ilike(like),
+                                  Employee.position_title.ilike(like), Department.name.ilike(like)))
+        if department_id:
+            stmt = stmt.where(Employee.department_id == department_id)
+        if title.strip():
+            stmt = stmt.where(Employee.position_title.ilike(f"%{title.strip()}%"))
+        rows = (await self.db.execute(stmt.order_by(Employee.last_name, Employee.first_name).limit(min(limit, 200)))).all()
+        depts = (await self.db.execute(
+            select(Department.id, Department.name, Site.name)
+            .join(Site, Site.id == Department.site_id)
+            .where(Department.id.in_(
+                select(Employee.department_id).where(Employee.id.in_(eligible_users_subquery()), Employee.is_active.is_(True))
+            ))
+            .where(true() if sites is None else Department.site_id.in_(sites or {-1}))
+            .order_by(Site.name, Department.name)
+        )).all()
+        return {
+            "people": [{"employee_id": e.id, "name": _full_name(e), "title": e.position_title, "department": d}
+                       for e, d in rows],
+            "departments": [{"id": i, "name": n, "site": s} for i, n, s in depts],
+        }
+
     async def admin_add(self, user: User, sites: set[int] | None, principal_id: int, secretary_id: int) -> list[dict]:
         principal = await self.db.get(Employee, principal_id)
         secretary = await self.db.get(Employee, secretary_id)

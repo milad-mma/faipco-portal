@@ -14,7 +14,7 @@ import {
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import PersonPicker from "./PersonPicker";
-import { adminAddSecretary, adminRemoveSecretary, fetchAllSecretaries } from "../../api/automationLetters";
+import { adminAddSecretary, adminRemoveSecretary, fetchAllSecretaries, fetchSecretaryPeople } from "../../api/automationLetters";
 
 const personText = (p) => `${p.name}${p.title ? ` — ${p.title}` : ""}`;
 
@@ -126,6 +126,8 @@ export default function AdminSecretariesTab() {
         exclude={principal && picker === "secretary" ? [principal.employee_id] : []}
         onClose={() => setPicker(null)}
         onConfirm={onPick}
+        fetcher={fetchSecretaryPeople}
+        emptyText="کسی پیدا نشد. فقط پرسنل فعال سایت‌هایی که تنظیمات اتوماسیونشان با شماست و خودشان مجوز «استفاده از اتوماسیون اداری» دارند نمایش داده می‌شوند."
       />
     </Stack>
   );

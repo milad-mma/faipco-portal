@@ -411,6 +411,14 @@ async def all_secretaries(db: AsyncSession = Depends(get_db), current_user: User
     return await OaSecretaryService(db).admin_list(sites)
 
 
+@router.get("/secretaries/people")
+async def secretary_people(q: str = "", department_id: int | None = None, title: str = "",
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """پرسنل قابل انتخاب به‌عنوان مدیر/منشی برای مسئول تنظیمات (بدون نیاز به پرسنل بودن خود او)."""
+    sites = await _require(db, current_user, "automation.settings", "تنظیمات اتوماسیون اداری")
+    return await OaSecretaryService(db).admin_people(sites, q=q[:100], department_id=department_id, title=title[:100])
+
+
 @router.post("/secretaries")
 async def admin_add_secretary(payload: SecretaryPairIn, db: AsyncSession = Depends(get_db),
                               current_user: User = Depends(get_current_user)):

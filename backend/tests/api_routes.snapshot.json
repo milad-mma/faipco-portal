@@ -1,5 +1,5 @@
 {
-  "count": 508,
+  "count": 509,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -92,6 +92,7 @@
     "GET /api/v1/automation/secretariats",
     "GET /api/v1/automation/secretaries",
     "GET /api/v1/automation/secretaries/mine",
+    "GET /api/v1/automation/secretaries/people",
     "GET /api/v1/automation/settings/attachments",
     "GET /api/v1/automation/settings/status",
     "GET /api/v1/automation/templates",

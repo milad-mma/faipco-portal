@@ -207,6 +207,12 @@ export async function fetchAllSecretaries() {
   return data;
 }
 
+// جست‌وجوی پرسنل برای تعیین مدیر/منشی (automation.settings) — هم‌شکل fetchPeople
+export async function fetchSecretaryPeople(params) {
+  const { data } = await apiClient.get("/automation/secretaries/people", { params });
+  return data;
+}
+
 export async function adminAddSecretary(principalId, secretaryId) {
   const { data } = await apiClient.post("/automation/secretaries", {
     principal_employee_id: principalId,

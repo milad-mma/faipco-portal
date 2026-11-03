@@ -22,7 +22,7 @@ import {
 import { fetchPeople } from "../../api/automationLetters";
 import { toPersianDigits } from "../../utils/searchText";
 
-export default function PersonPicker({ open, title = "انتخاب افراد", exclude = [], onClose, onConfirm }) {
+export default function PersonPicker({ open, title = "انتخاب افراد", exclude = [], onClose, onConfirm, fetcher = fetchPeople, emptyText }) {
   const [q, setQ] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [positionTitle, setPositionTitle] = useState("");
@@ -34,13 +34,13 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
     if (!open) return undefined;
     setLoading(true);
     const t = setTimeout(() => {
-      fetchPeople({ q, department_id: departmentId || undefined, title: positionTitle || undefined })
+      fetcher({ q, department_id: departmentId || undefined, title: positionTitle || undefined })
         .then(setData)
-        .catch(() => setData({ people: [], departments: [] }))
+        .catch((err) => setData({ people: [], departments: [], error: err.response?.data?.detail || "دریافت فهرست پرسنل ناموفق بود." }))
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [open, q, departmentId, positionTitle]);
+  }, [open, q, departmentId, positionTitle, fetcher]);
 
   useEffect(() => {
     if (open) setSelected({});
@@ -102,7 +102,7 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
               </Box>
             ) : people.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                کسی پیدا نشد. فقط پرسنل فعالی که به اتوماسیون اداری دسترسی دارند نمایش داده می‌شوند.
+                {data?.error || emptyText || "کسی پیدا نشد. فقط پرسنل فعالی که به اتوماسیون اداری دسترسی دارند نمایش داده می‌شوند."}
               </Typography>
             ) : (
               <List dense disablePadding>
