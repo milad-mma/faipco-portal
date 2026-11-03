@@ -1,5 +1,6 @@
-// «کارتابل من» — اتوماسیون اداری فاز ۳الف: دریافتی، در انتظار اقدام، ارسالی، انجام‌شده (و پیوند پیش‌نویس‌ها).
-// فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد؛ ردیف خوانده‌نشده پررنگ. صفحه‌بندی و جست‌وجو در سرور.
+// «کارتابل من» — اتوماسیون اداری: دریافتی، در انتظار اقدام، ارسالی، انجام‌شده (و پیوند پیش‌نویس‌ها).
+// ظاهر مثل صفحه‌ی «اطلاعیه‌ها»: تب‌های قرصی، کارت با آیکون پاکت (خوانده‌نشده پررنگ)، تاریخ زیر عنوان و نشان فوریت.
+// فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد؛ صفحه‌بندی و جست‌وجو در سرور.
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -7,40 +8,162 @@ import {
   Box,
   Button,
   Card,
-  CardActionArea,
   Chip,
   CircularProgress,
   IconButton,
   Pagination,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
-import AttachFileIcon from "@mui/icons-material/AttachFile";
+import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
+import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
+import DraftsOutlinedIcon from "@mui/icons-material/DraftsOutlined";
+import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
+import PendingActionsOutlinedIcon from "@mui/icons-material/PendingActionsOutlined";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
+import TaskAltOutlinedIcon from "@mui/icons-material/TaskAltOutlined";
+import BackLink from "../components/BackLink";
 import NotificationPrefsDialog from "../components/oa/NotificationPrefsDialog";
 import SecretariesDialog from "../components/oa/SecretariesDialog";
-import SupervisorAccountOutlinedIcon from "@mui/icons-material/SupervisorAccountOutlined";
 import { fetchCartable } from "../api/automationLetters";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
 
 const BOXES = [
-  { key: "inbox", label: "دریافتی" },
-  { key: "pending", label: "در انتظار اقدام" },
-  { key: "sent", label: "ارسالی" },
-  { key: "done", label: "انجام‌شده" },
+  { key: "inbox", label: "دریافتی", icon: <InboxOutlinedIcon fontSize="small" /> },
+  { key: "pending", label: "در انتظار اقدام", icon: <PendingActionsOutlinedIcon fontSize="small" /> },
+  { key: "sent", label: "ارسالی", icon: <SendOutlinedIcon fontSize="small" /> },
+  { key: "done", label: "انجام‌شده", icon: <TaskAltOutlinedIcon fontSize="small" /> },
 ];
-const URGENCY = { urgent: "فوری", immediate: "آنی" };
+// نشان فوریت مثل نشان اولویت اطلاعیه‌ها
+const URGENCY = {
+  normal: { label: "عادی", bg: "secondary.main", color: "secondary.contrastText" },
+  urgent: { label: "فوری", bg: "error.light", color: "common.white" },
+  immediate: { label: "آنی", bg: "error.main", color: "error.contrastText" },
+};
 const ROLE = { recipient: "گیرنده", cc: "رونوشت", referral: "ارجاع" };
 const KIND = { action: "اقدام", info: "اطلاع" };
 
-const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "");
+const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR") : "");
+
+function UrgencyBadge({ urgency }) {
+  const cfg = URGENCY[urgency] || URGENCY.normal;
+  return (
+    <Box
+      sx={{
+        borderRadius: 999,
+        bgcolor: cfg.bg,
+        color: cfg.color,
+        height: 28,
+        minWidth: 44,
+        px: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 12,
+        fontWeight: 800,
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
+    </Box>
+  );
+}
+
+function LetterCard({ it, box, onOpen }) {
+  // در «دریافتی» خوانده‌نشده‌ها پررنگ؛ در «در انتظار اقدام» همه برجسته؛ بقیه حالت خوانده‌شده
+  const highlight = box === "pending" || (box === "inbox" && it.unread);
+  const from =
+    box === "sent"
+      ? null
+      : it.task_from && it.task_from !== it.sender
+        ? `ارجاع از ${it.task_from}`
+        : `از ${it.sender || "—"}`;
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
+      <Box
+        onClick={onOpen}
+        sx={{
+          minHeight: 70,
+          p: 1.5,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 1.25,
+          cursor: "pointer",
+          "&:hover": { backgroundColor: "action.hover" },
+        }}
+      >
+        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, flex: 1 }}>
+          <Box
+            sx={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              bgcolor: highlight ? "secondary.main" : "action.hover",
+              color: highlight ? "secondary.contrastText" : "text.disabled",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            {box === "inbox" && !it.unread ? <DraftsOutlinedIcon fontSize="small" /> : <MailOutlineIcon fontSize="small" />}
+          </Box>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+              {it.confidentiality === "confidential" && <LockOutlinedIcon sx={{ fontSize: 16 }} color="error" titleAccess="محرمانه" />}
+              <Typography
+                fontSize={14}
+                fontWeight={highlight ? 800 : 500}
+                color={highlight ? "text.primary" : "text.secondary"}
+                sx={{ lineHeight: 1.7, wordBreak: "break-word", minWidth: 0 }}
+              >
+                {it.subject || "(بدون موضوع)"}
+              </Typography>
+            </Stack>
+            <Typography fontSize={11} color="text.secondary" sx={{ mt: 0.25 }}>
+              {[
+                from,
+                it.official_number ? `شماره ${toPersianDigits(it.official_number)}` : null,
+                it.instruction ? `دستور: ${it.instruction}` : null,
+                box === "done" && it.result_note ? `نتیجه: ${it.result_note}` : null,
+              ]
+                .filter(Boolean)
+                .join(" — ")}
+            </Typography>
+            {/* تاریخ زیر عنوان مثل اطلاعیه‌ها (textAlign left با افزونه‌ی RTL راست‌چین می‌شود) */}
+            <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "left", mt: 0.25 }}>
+              {fmt(it.at)}
+            </Typography>
+            {it.due_at && box === "pending" && (
+              <Typography fontSize={11} color={it.overdue ? "error" : "text.secondary"} sx={{ mt: 0.25 }}>
+                مهلت: {fmt(it.due_at)}
+                {it.overdue ? " (معوق)" : ""}
+              </Typography>
+            )}
+          </Box>
+        </Stack>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+          {it.kind && <Chip size="small" variant="outlined" color="info" label={KIND[it.kind]} sx={{ height: 18, fontSize: 10 }} />}
+          {(it.roles || [])
+            .filter((r) => ROLE[r])
+            .map((r) => (
+              <Chip key={r} size="small" variant="outlined" label={ROLE[r]} sx={{ height: 18, fontSize: 10, display: { xs: "none", sm: "inline-flex" } }} />
+            ))}
+          {it.attachments > 0 && <AttachFileOutlinedIcon fontSize="small" sx={{ color: "text.secondary" }} titleAccess="دارای پیوست" />}
+          <UrgencyBadge urgency={it.urgency} />
+        </Stack>
+      </Box>
+    </Card>
+  );
+}
 
 export default function OaCartablePage() {
   const navigate = useNavigate();
@@ -71,11 +194,13 @@ export default function OaCartablePage() {
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
+  const count = (key) => (key === "inbox" ? user?.oa_unread : key === "pending" ? user?.oa_pending : 0);
 
   return (
-    <Box sx={{ maxWidth: 1000, mx: "auto" }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
-        <Typography variant="h5" fontWeight={700}>
+    <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
+      {!user?.is_superuser && <BackLink to="/my-dashboard" />}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
+        <Typography variant="h5" fontWeight={800}>
           کارتابل من
         </Typography>
         <Stack direction="row" alignItems="center" gap={1}>
@@ -86,30 +211,66 @@ export default function OaCartablePage() {
             <IconButton onClick={() => setPrefsOpen(true)}><NotificationsActiveOutlinedIcon /></IconButton>
           </Tooltip>
           {user?.can_oa_access && (
-            <Button variant="outlined" startIcon={<EditNoteOutlinedIcon />} onClick={() => navigate("/automation/drafts")} sx={{ height: 40 }}>
+            <Button
+              variant="contained"
+              startIcon={<EditNoteOutlinedIcon />}
+              onClick={() => navigate("/automation/drafts")}
+              sx={{ borderRadius: 999 }}
+            >
               پیش‌نویس‌ها و نامه‌ی جدید
             </Button>
           )}
         </Stack>
-      </Stack>
+      </Box>
 
-      <Tabs value={box} onChange={(_, v) => setParams({ box: v, q, page: 1 })} variant="scrollable" sx={{ mb: 2 }}>
-        {BOXES.map((b) => (
-          <Tab
-            key={b.key}
-            value={b.key}
-            label={
-              b.key === "inbox" && user?.oa_unread
-                ? `${b.label} (${toPersianDigits(user.oa_unread)})`
-                : b.key === "pending" && user?.oa_pending
-                  ? `${b.label} (${toPersianDigits(user.oa_pending)})`
-                  : b.label
-            }
-          />
-        ))}
-      </Tabs>
+      {/* تب‌های قرصی مثل صفحه‌ی اطلاعیه‌ها */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: `repeat(${BOXES.length}, 1fr)` },
+          bgcolor: "action.hover",
+          borderRadius: { xs: 3, sm: 999 },
+          p: 0.5,
+          mb: 2,
+          gap: 0.5,
+        }}
+      >
+        {BOXES.map((b) => {
+          const n = count(b.key);
+          return (
+            <Box
+              key={b.key}
+              onClick={() => setParams({ box: b.key, q, page: 1 })}
+              sx={{
+                height: 34,
+                borderRadius: 999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 0.75,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 700,
+                color: box === b.key ? "primary.main" : "text.secondary",
+                bgcolor: box === b.key ? "background.paper" : "transparent",
+                boxShadow: box === b.key ? 1 : "none",
+              }}
+            >
+              {b.icon}
+              {b.label}
+              {n ? ` (${toPersianDigits(n)})` : ""}
+            </Box>
+          );
+        })}
+      </Box>
 
-      <TextField size="small" placeholder="جست‌وجو در موضوع، فرستنده و شماره" value={q} onChange={(e) => setQ(e.target.value)} sx={{ mb: 2, width: { xs: "100%", sm: 360 } }} />
+      <TextField
+        size="small"
+        placeholder="جست‌وجو در موضوع، فرستنده و شماره"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        sx={{ mb: 2, width: { xs: "100%", sm: 360 }, "& .MuiInputBase-root": { height: 40 } }}
+      />
 
       {error && <Alert severity="error">{error}</Alert>}
       {!data && !error && (
@@ -118,68 +279,23 @@ export default function OaCartablePage() {
         </Box>
       )}
       {data && data.items.length === 0 && (
-        <Alert severity="info">{box === "pending" ? "موردی در انتظار اقدام ندارید." : "نامه‌ای نیست."}</Alert>
+        <Card variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary">
+            {box === "pending" ? "موردی در انتظار اقدام ندارید." : "نامه‌ای نیست."}
+          </Typography>
+        </Card>
       )}
       {data && data.items.length > 0 && (
-        <Stack spacing={1}>
+        <Stack spacing={1.5}>
           {data.items.map((it) => (
-            <Card key={`${it.letter_id}-${it.task_id || ""}`} variant="outlined" sx={{ borderRadius: 2, ...(it.unread ? { borderInlineStartWidth: "4px", borderInlineStartColor: "primary.main", bgcolor: "action.hover" } : {}) }}>
-              <CardActionArea onClick={() => navigate(`/automation/letters/${it.letter_id}`)} sx={{ p: 1.5 }}>
-                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                  {it.confidentiality === "confidential" && <LockOutlinedIcon fontSize="small" color="error" />}
-                  <Typography
-                    fontWeight={it.unread ? 800 : 400}
-                    color={box === "inbox" && !it.unread ? "text.secondary" : "text.primary"}
-                    sx={{ flex: 1, minWidth: 0 }}
-                    noWrap
-                  >
-                    {it.subject || "(بدون موضوع)"}
-                  </Typography>
-                  {URGENCY[it.urgency] && <Chip size="small" color="warning" label={URGENCY[it.urgency]} />}
-                  {it.kind && <Chip size="small" variant="outlined" label={KIND[it.kind]} />}
-                  {(it.roles || []).map((r) => <Chip key={r} size="small" variant="outlined" label={ROLE[r] || r} />)}
-                  {it.overdue && <Chip size="small" color="error" label="معوق" />}
-                  {it.attachments > 0 && (
-                    <Stack direction="row" alignItems="center" sx={{ color: "text.secondary" }}>
-                      <AttachFileIcon sx={{ fontSize: 16 }} />
-                      <Typography variant="caption">{toPersianDigits(it.attachments)}</Typography>
-                    </Stack>
-                  )}
-                </Stack>
-                <Stack direction="row" gap={2} flexWrap="wrap" sx={{ mt: 0.5 }}>
-                  {it.official_number && (
-                    <Typography variant="caption" color="text.secondary">
-                      <bdi dir="ltr">{toPersianDigits(it.official_number)}</bdi>
-                    </Typography>
-                  )}
-                  <Typography variant="caption" color="text.secondary">
-                    {box === "sent" ? "ارسال" : it.task_from && it.task_from !== it.sender ? `ارجاع از ${it.task_from}` : `از ${it.sender || "—"}`} — {fmt(it.at)}
-                  </Typography>
-                  {it.instruction && (
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 400 }}>
-                      دستور: {it.instruction}
-                    </Typography>
-                  )}
-                  {it.due_at && box === "pending" && (
-                    <Typography variant="caption" color={it.overdue ? "error" : "text.secondary"}>
-                      مهلت: {fmt(it.due_at)}
-                    </Typography>
-                  )}
-                  {box === "done" && it.result_note && (
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 400 }}>
-                      نتیجه: {it.result_note}
-                    </Typography>
-                  )}
-                </Stack>
-              </CardActionArea>
-            </Card>
+            <LetterCard key={`${it.letter_id}-${it.task_id || ""}`} it={it} box={box} onOpen={() => navigate(`/automation/letters/${it.letter_id}`)} />
           ))}
         </Stack>
       )}
       {data && pages > 1 && (
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-          <Pagination count={pages} page={page} onChange={(_, p) => setParams({ box, q, page: p })} />
-        </Box>
+        <Stack alignItems="center" sx={{ pt: 1.5 }}>
+          <Pagination count={pages} page={page} onChange={(_, p) => setParams({ box, q, page: p })} color="primary" />
+        </Stack>
       )}
       <NotificationPrefsDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
       <SecretariesDialog open={secretariesOpen} onClose={() => setSecretariesOpen(false)} />
