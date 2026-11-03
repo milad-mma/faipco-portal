@@ -36,7 +36,7 @@ export function useLogoUrl(fileId) {
 }
 
 // محتوای متن نامه (موضوع + بدنه) با استایل یکسان در اندازه‌گیری و نمایش
-function BodyContent({ subject, bodyHtml, signature }) {
+function BodyContent({ subject, bodyHtml, signatures }) {
   return (
     <>
       {subject ? (
@@ -47,17 +47,18 @@ function BodyContent({ subject, bodyHtml, signature }) {
       {/* body_html در سرور با فهرست مجاز پاک‌سازی شده است (core/oa_html.py) */}
       <div className="oa-letter-body" dangerouslySetInnerHTML={{ __html: bodyHtml || "" }} />
       {/* امضا: پایین متن، سمت چپ (در صفحه‌ی rtl، flex-end = چپ؛ style درون‌خطی تا افزونه‌ی RTL جابه‌جایش نکند) */}
-      {signature ? (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "6mm" }}>
-          <div className="oa-letter-signature" style={{ width: "55mm", textAlign: "center", lineHeight: 1.6 }}>
-            <div style={{ height: "20mm", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {signature.imageUrl ? (
-                <img src={signature.imageUrl} alt="" style={{ maxHeight: "20mm", maxWidth: "50mm", objectFit: "contain" }} />
-              ) : null}
+      {signatures?.length ? (
+        // چند امضا (نویسنده و مراحل «امضا»ی گردش تأیید) کنار هم؛ آخرین امضاکننده سمت چپ‌تر
+        <div className="oa-letter-signature" style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: "4mm", marginTop: "6mm" }}>
+          {signatures.map((sg, i) => (
+            <div key={sg.key || i} style={{ width: "50mm", textAlign: "center", lineHeight: 1.6 }}>
+              <div style={{ height: "20mm", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {sg.imageUrl ? <img src={sg.imageUrl} alt="" style={{ maxHeight: "20mm", maxWidth: "46mm", objectFit: "contain" }} /> : null}
+              </div>
+              <div style={{ fontWeight: 700 }}>{faDigits(sg.name || "")}</div>
+              {sg.title ? <div style={{ fontSize: "0.9em" }}>{faDigits(sg.title)}</div> : null}
             </div>
-            <div style={{ fontWeight: 700 }}>{faDigits(signature.name || "")}</div>
-            {signature.title ? <div style={{ fontSize: "0.9em" }}>{faDigits(signature.title)}</div> : null}
-          </div>
+          ))}
         </div>
       ) : null}
     </>
@@ -214,7 +215,7 @@ function computeSegments(container, pagePx) {
 
 // ابعاد و حاشیه‌ها در style درون‌خطی‌اند، نه sx: افزونه‌ی RTL برنامه (rtlCache) چپ/راستِ sx را جابه‌جا می‌کند و
 // حاشیه‌ی راست/چپ کاغذ باید همان جهت فیزیکی بماند.
-function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment, signature }) {
+function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment, signatures }) {
   const [w, h] = PAPER[paper];
   const m = layout.margins_mm;
   return (
@@ -248,7 +249,7 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
         {/* پنجره‌ی همین صفحه: دقیقاً از ابتدای خط اول تا انتهای خط آخر این صفحه */}
         <div style={{ position: "absolute", left: 0, right: 0, top: `${GAP_TOP_MM}mm`, height: segment ? `${segment.height}px` : `calc(100% - ${GAP_TOP_MM + GAP_BOTTOM_MM}mm)`, overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, right: 0, display: "flow-root", top: segment ? `-${segment.start}px` : `-${pageIndex * (bodyHmm - GAP_TOP_MM - GAP_BOTTOM_MM)}mm` }}>
-            <BodyContent subject={subject} bodyHtml={bodyHtml} signature={signature} />
+            <BodyContent subject={subject} bodyHtml={bodyHtml} signatures={signatures} />
           </div>
         </div>
       </div>
@@ -263,7 +264,8 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
  * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)،
  * signature ({name, title, imageUrl} — پایین متن سمت چپ)
  */
-export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta, signature }) {
+export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta, signature, signatures: signaturesProp }) {
+  const signatures = signaturesProp || (signature ? [signature] : null);
   const subject = useMemo(() => (rawSubject ? faDigits(rawSubject) : rawSubject), [rawSubject]);
   const bodyHtml = useMemo(() => faDigitsHtml(rawBody), [rawBody]);
   // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
@@ -320,7 +322,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
     return () => {
       alive = false;
     };
-  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forceSegments, Boolean(signature), signature?.name, signature?.title]);
+  }, [subject, bodyHtml, paper, bodyWmm, bodyHmm, layout.font_size_pt, onPages, forceSegments, (signatures || []).map((sg) => `${sg.name}|${sg.title}`).join(",")]);
 
   const values = {
     title: layout.header.title,
@@ -334,7 +336,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
     <Box key={i} sx={printOnly ? (i < pages - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : {}) : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
-      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} signature={signature} />
+      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} signatures={signatures} />
     </Box>
   ));
 
@@ -349,7 +351,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
           style={{ direction: "rtl" }}
           sx={{ display: "flow-root", width: `${bodyWmm}mm`, fontSize: `${layout.font_size_pt}pt`, lineHeight: 1.8, fontFamily: "Vazirmatn, Tahoma, sans-serif", ...bodyStyles }}
         >
-          <BodyContent subject={subject} bodyHtml={bodyHtml} signature={signature} />
+          <BodyContent subject={subject} bodyHtml={bodyHtml} signatures={signatures} />
         </Box>
       </Box>
       {printOnly ? pageList : <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>{pageList}</Box>}

@@ -268,3 +268,18 @@
 - API: `GET/POST/DELETE /automation/signature/mine`، `GET /automation/signature/mine/image`،
   `GET /automation/letters/{id}/signature-image` (هر کسی که نامه را می‌بیند).
 - هنوز نیست: مشاهده/غیرفعال‌سازی امضای دیگران توسط ادمین؛ امضا در گردش تأیید (بخش بعد).
+
+## فاز ۳ب — بخش سوم: گردش تأیید ترتیبی، پاراف و امضای مدیر (Migration 145؛ تصمیم ۱۴۰۵/۰۸/۱۲)
+- ویرایشگر نامه: «مسیر تأیید» (اختیاری) — افراد به ترتیب، هر کدام **پاراف / تأیید / امضا**؛ جابه‌جایی و حذف.
+  با مسیر، دکمه «ارسال برای تأیید» می‌شود. نامه‌ی «از طرف» مدیر: مرحله‌ی آخر خودکار «امضا»ی خود مدیر (حذف‌نشدنی).
+- `draft → in_approval → (همه‌ی مراحل) → dispatched`: نسخه در طول تأیید قفل (submitted) و هر تأیید با content_hash ثبت می‌شود.
+  فقط مرحله‌ی فعال task (kind = paraph/approve/sign، origin=approval) و دسترسی (source=approver) می‌گیرد؛ در «در انتظار اقدام» و
+  کارت داشبورد دیده می‌شود. با تأیید آخرین مرحله نامه **خودکار** شماره می‌گیرد و به نام نویسنده (یا مدیر) ارسال می‌شود.
+- «تأیید و امضا» فقط با امضای فعال خود تأییدکننده؛ نام و سمت لحظه‌ی امضا ثبت می‌شود. همه‌ی امضاها (نویسنده + مراحل امضا)
+  پایین متن سمت چپ کنار هم چاپ می‌شوند؛ پاراف و تأیید فقط در گردش نمایش داده می‌شوند.
+- «برگشت برای اصلاح» (توضیح اجباری) ← نامه دوباره پیش‌نویس نویسنده؛ مسیر برای دور بعد کپی می‌شود و توضیح بالای مسیر نمایش
+  داده می‌شود. نویسنده می‌تواند نامه‌ی در انتظار تأیید را «پس بگیرد».
+- اعلان: `automation.approval` (نوبت تأیید)، `automation.returned` (برگشت) — قابل خاموش کردن در تنظیمات اعلان شخصی.
+- API: `PUT /automation/drafts/{id}/approval-steps`، `POST /automation/drafts/{id}/submit`، `POST /automation/letters/{id}/withdraw`،
+  `POST /automation/approval-steps/{id}/approve|return`، `GET /automation/letters/{id}/signature-image?step_id=`.
+- `core/oa_approval_rules.py` (تست: `tests/test_oa_approval_rules.py`)، `services/oa_approval_service.py`.

@@ -279,7 +279,39 @@ export async function fetchMySignatureBlob(versionId) {
   return data;
 }
 
-export async function fetchLetterSignatureBlob(letterId) {
-  const { data } = await apiClient.get(`/automation/letters/${letterId}/signature-image`, { responseType: "blob" });
+// stepId خالی: امضای نویسنده؛ با stepId: امضای مرحله‌ی «امضا»ی گردش تأیید
+export async function fetchLetterSignatureBlob(letterId, stepId) {
+  const { data } = await apiClient.get(`/automation/letters/${letterId}/signature-image`, {
+    params: stepId ? { step_id: stepId } : undefined,
+    responseType: "blob",
+  });
+  return data;
+}
+
+// ---------- فاز ۳ب: گردش تأیید ترتیبی ----------
+
+// steps: [{employee_id, kind: paraph|approve|sign}] به ترتیب → { steps, auto_final, history }
+export async function setApprovalSteps(letterId, steps) {
+  const { data } = await apiClient.put(`/automation/drafts/${letterId}/approval-steps`, { steps });
+  return data;
+}
+
+export async function submitForApproval(letterId, rowVersion) {
+  const { data } = await apiClient.post(`/automation/drafts/${letterId}/submit`, { row_version: rowVersion });
+  return data; // { letter_id }
+}
+
+export async function withdrawLetter(letterId) {
+  const { data } = await apiClient.post(`/automation/letters/${letterId}/withdraw`);
+  return data;
+}
+
+export async function approveStep(stepId, note) {
+  const { data } = await apiClient.post(`/automation/approval-steps/${stepId}/approve`, { note: note || "" }, { timeout: 60 * 1000 });
+  return data; // { letter_id, dispatched }
+}
+
+export async function returnStep(stepId, note) {
+  const { data } = await apiClient.post(`/automation/approval-steps/${stepId}/return`, { note });
   return data;
 }

@@ -37,6 +37,7 @@ from app.services.oa_cartable_service import (
 from app.services.oa_secretary_service import OaSecretaryService
 from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
 from app.services.oa_signature_service import OaSignatureError, OaSignatureService
+from app.services.oa_approval_service import OaApprovalService
 
 router = APIRouter()
 UPLOAD_CHUNK = 1 << 20
@@ -170,6 +171,85 @@ async def send_letter(letter_id: int, payload: SendIn, background_tasks: Backgro
         _raise(e)
     background_tasks.add_task(send_pushes, service.pushes)
     return {"letter_id": lid}
+
+
+# ================= گردش تأیید ترتیبی (پاراف / تأیید / امضا) =================
+
+
+class ApprovalStepIn(BaseModel):
+    employee_id: int
+    kind: str
+
+
+class ApprovalPlanIn(BaseModel):
+    steps: list[ApprovalStepIn] = Field(max_length=20)
+
+
+class ApprovalActIn(BaseModel):
+    note: str = Field(default="", max_length=2000)
+
+
+@router.put("/drafts/{letter_id}/approval-steps")
+async def set_approval_steps(letter_id: int, payload: ApprovalPlanIn, db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_user)):
+    """مسیر تأیید پیش‌نویس (به ترتیب). نامه‌ی «از طرف» مدیر: امضای مدیر خودکار در آخر اضافه می‌شود."""
+    await _compose_draft(db, current_user, letter_id)
+    try:
+        return await OaApprovalService(db).set_plan(letter_id, current_user, [s.model_dump() for s in payload.steps])
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.post("/drafts/{letter_id}/submit")
+async def submit_for_approval(letter_id: int, payload: SendIn, background_tasks: BackgroundTasks,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _compose_draft(db, current_user, letter_id)
+    service = OaApprovalService(db)
+    try:
+        lid = await service.submit(letter_id, current_user, payload.row_version)
+    except OaCartableError as e:
+        _raise(e)
+    background_tasks.add_task(send_pushes, service.pushes)
+    return {"letter_id": lid}
+
+
+@router.post("/letters/{letter_id}/withdraw")
+async def withdraw_from_approval(letter_id: int, db: AsyncSession = Depends(get_db),
+                                 current_user: User = Depends(get_current_user)):
+    """پس گرفتن نامه‌ی در انتظار تأیید توسط نویسنده (دوباره پیش‌نویس می‌شود)."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaApprovalService(db).withdraw(letter_id, current_user)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.post("/approval-steps/{step_id}/approve")
+async def approve_step(step_id: int, payload: ApprovalActIn, background_tasks: BackgroundTasks,
+                       db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """پاراف / تأیید / تأیید و امضا (مرحله‌ی فعال خود کاربر). آخرین مرحله ← شماره و ارسال خودکار."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaApprovalService(db)
+    try:
+        result = await service.approve(step_id, current_user, payload.note)
+    except OaCartableError as e:
+        _raise(e)
+    background_tasks.add_task(send_pushes, service.pushes)
+    return result
+
+
+@router.post("/approval-steps/{step_id}/return")
+async def return_step(step_id: int, payload: ApprovalActIn, background_tasks: BackgroundTasks,
+                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """برگشت برای اصلاح (توضیح اجباری) — نامه به پیش‌نویس نویسنده برمی‌گردد."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaApprovalService(db)
+    try:
+        result = await service.return_for_changes(step_id, current_user, payload.note)
+    except OaCartableError as e:
+        _raise(e)
+    background_tasks.add_task(send_pushes, service.pushes)
+    return result
 
 
 # ================= کارتابل و نامه =================
@@ -534,12 +614,12 @@ async def my_signature_image(version_id: int | None = None, db: AsyncSession = D
 
 
 @router.get("/letters/{letter_id}/signature-image")
-async def letter_signature_image(letter_id: int, db: AsyncSession = Depends(get_db),
+async def letter_signature_image(letter_id: int, step_id: int | None = None, db: AsyncSession = Depends(get_db),
                                  current_user: User = Depends(get_current_user)):
     await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
     service = OaCartableService(db)
     try:
-        f = await service.signature_file(letter_id, current_user)
+        f = await service.signature_file(letter_id, current_user, step_id)
     except OaCartableError as e:
         _raise(e)
     return _png(service.files, f)

@@ -49,7 +49,11 @@ logger = logging.getLogger("faipco.automation")
 
 PAGE_SIZE = 20
 # رویدادهای اعلان که هر کس می‌تواند برای خودش خاموش کند (تنظیمات اعلان شخصی)
-PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من"}
+PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من",
+               "approval": "نوبت تأیید/پاراف/امضای من", "returned": "برگشت نامه‌ی من برای اصلاح"}
+APPROVAL_KINDS = ("paraph", "approve", "sign")
+# نامه‌هایی که مسئولیت تأییدشان در کارتابل «در انتظار اقدام» می‌آید
+TASK_LETTER_STATUSES = ("dispatched", "closed", "in_approval", "approved")
 RELATION_TYPES = {"reply": "پاسخ"}  # عطف و پیرو به تصمیم کاربر حذف شد (۱۴۰۵/۰۸/۱۱)
 MAX_RECIPIENTS = 200
 MAX_NOTE = 4000
@@ -280,7 +284,13 @@ class OaCartableService:
             "attachment_limits": await self._attachment_limits(letter.site_id),
             "relations": await self.relations_for(letter.id, letter.creator_employee_id),
             "numbering_error": await self._numbering_error(letter.site_id),
+            "approval_plan": await self._approval_plan(letter),
         }
+
+    async def _approval_plan(self, letter: OaLetter) -> dict:
+        from app.services.oa_approval_service import OaApprovalService
+
+        return await OaApprovalService(self.db).plan_out(letter)
 
     async def _numbering_error(self, site_id: int) -> str | None:
         """پیش از ارسال: اگر پیشوند دبیرخانه‌ی سایت نامه تعیین نشده، پیام فارسی (ارسال ممکن نیست)."""
@@ -423,6 +433,15 @@ class OaCartableService:
             raise OaCartableError("این نامه قابل ارسال نیست", 409)
         if letter.row_version != row_version:
             raise OaCartableError("پیش‌نویس در جای دیگری تغییر کرده است؛ صفحه را تازه کنید.", 409)
+        from app.services.oa_approval_service import has_plan
+
+        if letter.principal_employee_id or await has_plan(self.db, letter.id, letter.approval_round + 1):
+            raise OaCartableError("این نامه مسیر تأیید دارد؛ از «ارسال برای تأیید» استفاده کنید", 409)
+        ctx = await self._validate_for_send(letter, user)
+        return await self._dispatch(letter, user, ctx)
+
+    async def _validate_for_send(self, letter: OaLetter, user: User) -> dict:
+        """بررسی‌های پیش از ارسال/ارسال برای تأیید (user = نویسنده‌ی نامه). خروجی: زمینه‌ی ارسال."""
         me = await self._me(user)
         # منشی: نامه به نام مدیر (principal) ارسال می‌شود؛ منشی بودن در لحظه‌ی ارسال دوباره بررسی می‌شود
         sender = me
@@ -454,7 +473,14 @@ class OaCartableService:
         )).scalars().all()
         if any(f.status != "clean" for f in att_files):
             raise OaCartableError("بعضی پیوست‌ها هنوز بررسی (اسکن) نشده‌اند یا سالم نیستند؛ کمی بعد دوباره امتحان کنید")
+        return {"me": me, "sender": sender, "v": v, "recipients": recipients, "att_files": att_files}
 
+    async def _dispatch(self, letter: OaLetter, user: User, ctx: dict, approval_signatures: int = 0) -> int:
+        """
+        ثبت نهایی و تحویل (یک تراکنش؛ commit همین‌جا): شماره، امضای نویسنده، تثبیت نسخه، دسترسی و مسئولیت گیرندگان، Push.
+        user = نویسنده‌ی نامه (در تأیید نهایی هم کاربر نویسنده، نه تأییدکننده).
+        """
+        me, sender, v, recipients, att_files = ctx["me"], ctx["sender"], ctx["v"], ctx["recipients"], ctx["att_files"]
         now = _now()
         # ثبت نهایی نامه‌ی داخلی = ارسال: شماره و تاریخ رسمی در همین تراکنش (قفل شمارنده؛ خطا → هیچ شماره‌ای صادر نمی‌شود)
         from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
@@ -485,8 +511,13 @@ class OaCartableService:
         letter.sender_employee_id = sender.id
         letter.sender_name_snapshot, letter.sender_title_snapshot = snap["name"], snap["title"]
         letter.row_version += 1
-        self.db.add(OaLetterAccess(letter_id=letter.id, employee_id=me.id, source="creator",
-                                   granted_by_user_id=user.id, read_at=now))
+        has_creator_row = (await self.db.execute(
+            select(OaLetterAccess.id).where(OaLetterAccess.letter_id == letter.id, OaLetterAccess.employee_id == me.id,
+                                            OaLetterAccess.source == "creator").limit(1)
+        )).scalar_one_or_none()
+        if not has_creator_row:  # نامه‌ای که برای تأیید رفته، ردیف creator را از همان زمان دارد
+            self.db.add(OaLetterAccess(letter_id=letter.id, employee_id=me.id, source="creator",
+                                       granted_by_user_id=user.id, read_at=now))
         self.db.add(OaLetterAccess(letter_id=letter.id, employee_id=sender.id, source="sender", can_refer=True,
                                    granted_by_employee_id=me.id if sender.id != me.id else None,
                                    granted_by_user_id=user.id, read_at=now if sender.id == me.id else None))
@@ -542,6 +573,17 @@ class OaCartableService:
         )).scalars().all()
         tasks = (await self.db.execute(select(OaTask).where(OaTask.letter_id == letter.id).order_by(OaTask.id))).scalars().all()
         task_files = await self._task_files([t.id for t in tasks])
+        from app.services.oa_approval_service import OaApprovalService
+
+        approval_service = OaApprovalService(self.db)
+        approval_steps = (await approval_service.letter_approval(letter, me.id, user) or {}).get("steps", [])
+        # امضاها روی نامه: امضای نویسنده (چک‌باکس «امضا شود») و امضای مراحل «امضا»ی تأییدشده
+        signatures = []
+        if letter.signature_version_id:
+            signatures.append({"key": "author", "name": letter.signer_name_snapshot, "title": letter.signer_title_snapshot})
+        for st in await approval_service.approval_signatures(letter):
+            signatures.append({"key": f"step-{st.id}", "step_id": st.id, "name": st.approver_name_snapshot,
+                               "title": st.approver_title_snapshot})
         sent_by = None
         if letter.creator_employee_id and letter.sender_employee_id and letter.creator_employee_id != letter.sender_employee_id:
             creator = await self.db.get(Employee, letter.creator_employee_id)
@@ -570,7 +612,8 @@ class OaCartableService:
                 for r in recipients
             ],
             "attachments": await self._attachments(v.id),
-            "flow": self._flow(letter, recipients, tasks, read_by, task_files, sent_by),
+            "flow": self._flow(letter, recipients, [t for t in tasks if t.kind not in APPROVAL_KINDS], read_by, task_files,
+                               sent_by, approval_steps),
             "relations": await self.relations_for(letter.id, me.id),
             "requires_action": letter.requires_action, "action_due_at": letter.action_due_at,
             "tasks": [
@@ -588,7 +631,10 @@ class OaCartableService:
                 "note": can("note", letter=info, rows=rows),
                 "make_confidential": can("make_confidential", letter=info, rows=rows),
             },
-            "my_open_tasks": [{"id": t.id, "kind": t.kind, "instruction": t.instruction} for t in my_tasks],
+            "my_open_tasks": [{"id": t.id, "kind": t.kind, "instruction": t.instruction} for t in my_tasks
+                              if t.kind not in APPROVAL_KINDS],
+            "approval": await approval_service.letter_approval(letter, me.id, user),
+            "signatures": signatures,
             "action_attachment_limits": await self._action_limits(letter.site_id) if my_tasks else None,
         }
 
@@ -616,7 +662,7 @@ class OaCartableService:
 
     @staticmethod
     def _flow(letter: OaLetter, recipients, tasks, read_by: dict, task_files: dict | None = None,
-              sent_by: str | None = None) -> list[dict]:
+              sent_by: str | None = None, approval_steps: list | None = None) -> list[dict]:
         """
         مراحل گردش برای نمایش (مثل گردش درخواست وام): ارسال، هر گیرنده/رونوشت با وضعیت خوانده‌شدن یا اقدام، سپس ارجاع‌ها.
         state: done (اقدام/رؤیت ثبت شد) | current (در انتظار اقدام) | read (خوانده شد) | unread | cancelled.
@@ -633,8 +679,19 @@ class OaCartableService:
         delivery = {t.assignee_employee_id: t for t in tasks if t.origin == "delivery"}
         now = _now()
         task_files = task_files or {}
-        steps = [{"key": "sent", "label": "ارسال", "person": letter.sender_name_snapshot, "title": letter.sender_title_snapshot,
-                  "state": "done", "at": letter.sent_at, "sent_by": sent_by}]
+        # مراحل تأیید دور آخر پیش از «ارسال»
+        approval_state = {"approved": "done", "active": "current", "pending": "unread", "returned": "cancelled",
+                          "cancelled": "cancelled"}
+        steps = [{
+            "key": f"a{a['id']}", "label": a["kind_label"], "person": a["name"], "title": a["title"],
+            "state": approval_state.get(a["status"], "unread"), "at": a["acted_at"] or a["activated_at"],
+            "note": a["note"], "approval": True, "approval_status": a["status"],
+        } for a in (approval_steps or [])]
+        if letter.sent_at:
+            steps.append({"key": "sent", "label": "ارسال", "person": letter.sender_name_snapshot,
+                          "title": letter.sender_title_snapshot, "state": "done", "at": letter.sent_at, "sent_by": sent_by})
+        else:
+            return steps  # هنوز ارسال نشده (در انتظار تأیید): گیرندگان بعد از ارسال نمایش داده می‌شوند
         for r in recipients:
             t = delivery.get(r.employee_id)
             steps.append({
@@ -751,6 +808,8 @@ class OaCartableService:
         task = await self.db.get(OaTask, task_id)
         if task is None or task.assignee_employee_id != me.id:
             raise OaCartableError("مسئولیت یافت نشد", 404)
+        if task.kind in APPROVAL_KINDS:
+            raise OaCartableError("این مرحله‌ی تأیید است؛ از دکمه‌های تأیید/برگشت در صفحه‌ی نامه استفاده کنید", 409)
         letter, *_ = await self._letter_for(task.letter_id, user, "act")  # دسترسی هنوز برقرار باشد
         if task.status != "open":
             raise OaCartableError("این مسئولیت قبلاً بسته شده است", 409)
@@ -804,15 +863,24 @@ class OaCartableService:
                          details={"letter_id": task.letter_id, "attachments": len(uploaded)})
         await self.db.commit()
 
-    async def signature_file(self, letter_id: int, user: User):
-        """تصویر امضای روی نامه — برای هر کسی که نامه را می‌بیند (همان نسخه‌ی امضای لحظه‌ی ارسال)."""
+    async def signature_file(self, letter_id: int, user: User, step_id: int | None = None):
+        """
+        تصویر امضای روی نامه — برای هر کسی که نامه را می‌بیند. بدون step_id: امضای نویسنده؛ با step_id: امضای همان مرحله‌ی
+        «امضا»ی تأییدشده (همان نسخه‌ی امضای لحظه‌ی تأیید).
+        """
         letter, *_ = await self._letter_for(letter_id, user, "view")
-        if not letter.signature_version_id:
+        version_id = letter.signature_version_id
+        if step_id:
+            from app.models.office_automation import OaApprovalStep
+
+            st = await self.db.get(OaApprovalStep, step_id)
+            version_id = st.signature_version_id if st and st.letter_id == letter.id and st.status == "approved" else None
+        if not version_id:
             raise OaCartableError("این نامه امضا ندارد", 404)
         from app.services.oa_signature_service import OaSignatureError, OaSignatureService
 
         try:
-            return await OaSignatureService(self.db).file_of(letter.signature_version_id)
+            return await OaSignatureService(self.db).file_of(version_id)
         except OaSignatureError as e:
             raise OaCartableError(str(e), e.status_code) from None
 
@@ -909,7 +977,8 @@ class OaCartableService:
             order = OaLetter.sent_at.desc()
         else:
             raise OaCartableError("کارتابل نامعتبر است")
-        stmt = stmt.where(OaLetter.status.in_(("dispatched", "closed")), OaLetter.discarded_at.is_(None))
+        statuses = TASK_LETTER_STATUSES if box in ("pending", "done") else ("dispatched", "closed")
+        stmt = stmt.where(OaLetter.status.in_(statuses), OaLetter.discarded_at.is_(None))
         for word in (q or "").split()[:5]:
             like = f"%{word}%"
             stmt = stmt.where(or_(OaLetter.subject.ilike(like), OaLetter.sender_name_snapshot.ilike(like),
@@ -947,7 +1016,7 @@ class OaCartableService:
                    OaTask.kind, OaTask.due_at, OaTask.created_at, OaTask.created_by_name_snapshot)
             .join(OaTask, OaTask.letter_id == OaLetter.id)
             .where(OaTask.assignee_employee_id == me.id, OaTask.status == "open",
-                   OaLetter.status.in_(("dispatched", "closed")), OaLetter.discarded_at.is_(None))
+                   OaLetter.status.in_(TASK_LETTER_STATUSES), OaLetter.discarded_at.is_(None))
             .order_by(overdue_rank, urgency_rank, OaTask.due_at.asc().nullslast(), OaTask.created_at.desc())
             .limit(limit)
         )).all()
@@ -995,7 +1064,7 @@ class OaCartableService:
             .select_from(OaTask)
             .join(OaLetter, OaLetter.id == OaTask.letter_id)
             .where(OaTask.assignee_employee_id == employee_id, OaTask.status == "open",
-                   OaLetter.status.in_(("dispatched", "closed")))
+                   OaLetter.status.in_(TASK_LETTER_STATUSES))
         )).one()
         return {"unread": unread, "pending": pending, "overdue": overdue}
 

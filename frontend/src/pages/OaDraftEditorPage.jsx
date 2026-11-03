@@ -28,7 +28,8 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
-import { discardDraft, fetchComposeOptions, fetchDraft, fetchMySignatureBlob, saveDraft, sendDraft } from "../api/automationLetters";
+import { discardDraft, fetchComposeOptions, fetchDraft, fetchMySignatureBlob, saveDraft, sendDraft, submitForApproval } from "../api/automationLetters";
+import ApprovalPathEditor from "../components/oa/ApprovalPathEditor";
 import useBlobUrl from "../components/oa/useBlobUrl";
 import { AttachButton, AttachmentChips, RecipientRow, useDraftExtras } from "../components/oa/DraftExtras";
 import LetterEditor from "../components/oa/LetterEditor";
@@ -93,6 +94,7 @@ export default function OaDraftEditorPage() {
   const [sendError, setSendError] = useState("");
   const [numberingError, setNumberingError] = useState("");
   const [hasSignature, setHasSignature] = useState(false);
+  const [approvalPlan, setApprovalPlan] = useState({ steps: [], auto_final: null, history: [] });
   const mySignatureUrl = useBlobUrl(hasSignature ? "my-signature" : null, () => fetchMySignatureBlob()); // پیشوند دبیرخانه‌ی سایت تعیین نشده → ارسال ممکن نیست
   const formRef = useRef(null);
   const savingRef = useRef(false); // دو ذخیره‌ی هم‌زمان با یک row_version به 409 کاذب می‌رسید
@@ -118,6 +120,7 @@ export default function OaDraftEditorPage() {
         });
         setNumberingError(d.numbering_error || "");
         setHasSignature(Boolean(d.has_signature));
+        setApprovalPlan(d.approval_plan || { steps: [], auto_final: null, history: [] });
         setOptions(o);
       })
       .catch((err) => setError(err.response?.data?.detail || "پیش‌نویس پیدا نشد."));
@@ -200,6 +203,7 @@ export default function OaDraftEditorPage() {
   const api = useDraftExtras(draft?.id, extras, setExtras);
   const templates = options?.templates || [];
   const lockedUI = conflict || sending;
+  const needsApproval = approvalPlan.steps.length > 0 || Boolean(approvalPlan.auto_final);
 
   async function handleSend() {
     setSending(true);
@@ -208,7 +212,9 @@ export default function OaDraftEditorPage() {
       // آخرین متن اول ذخیره شود (اگر ذخیره‌ی خودکاری در جریان است، منتظر می‌مانیم)
       while (savingRef.current) await new Promise((r) => setTimeout(r, 100));
       await doSave();
-      const res = await sendDraft(draftRef.current.id, draftRef.current.row_version);
+      const res = needsApproval
+        ? await submitForApproval(draftRef.current.id, draftRef.current.row_version)
+        : await sendDraft(draftRef.current.id, draftRef.current.row_version);
       setDirty(false);
       navigate(`/automation/letters/${res.letter_id}`, { replace: true });
     } catch (err) {
@@ -238,6 +244,7 @@ export default function OaDraftEditorPage() {
   }
 
   const previewPaper = draft.paper_size;
+  // مسیر تأیید (یا نامه‌ی «از طرف» مدیر که امضای او خودکار است) → «ارسال برای تأیید»
   // پیش‌نمایش امضا: فقط امضای خود نویسنده و فقط وقتی «امضا شود» زده شده و نامه به نام خودش است
   const willSign = form.sign_on_send && draft.has_signature && !form.principal_employee_id;
   const previewSignature = willSign ? { name: draft.signer_name, title: draft.signer_title, imageUrl: mySignatureUrl } : null; // چیدمان از سرور برای همین اندازه آمده است
@@ -293,7 +300,17 @@ export default function OaDraftEditorPage() {
                 variant="standard"
                 size="small"
                 value={form.principal_employee_id}
-                onChange={(e) => update({ principal_employee_id: e.target.value }, { saveNow: true })}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  update({ principal_employee_id: pid }, { saveNow: true });
+                  // امضای خود مدیر خودکار آخر مسیر تأیید است
+                  const p = options.principals.find((x) => x.employee_id === pid);
+                  setApprovalPlan((plan) => ({
+                    ...plan,
+                    steps: plan.steps.filter((st) => st.employee_id !== pid),
+                    auto_final: p ? { employee_id: p.employee_id, name: p.name, title: p.title, kind: "sign", required: true } : null,
+                  }));
+                }}
                 disabled={lockedUI}
                 sx={{ minWidth: 220, "& .MuiInput-root": { fontSize: 14 } }}
                 SelectProps={{ displayEmpty: true }}
@@ -382,6 +399,7 @@ export default function OaDraftEditorPage() {
           </Stack>
           <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={conflict} bare />
           <AttachmentChips extras={extras} api={api} disabled={lockedUI} />
+          <ApprovalPathEditor letterId={draft.id} plan={approvalPlan} onChange={setApprovalPlan} disabled={lockedUI} />
           {api.error && <Alert severity="error" sx={{ mx: 2, mb: 1, whiteSpace: "pre-wrap" }} onClose={() => api.setError("")}>{api.error}</Alert>}
           {/* نوار پایین مثل ایمیل: ارسال، پیوست، چاپ، وضعیت ذخیره، حذف */}
           <Stack direction="row" alignItems="center" gap={1} sx={{ px: 2, py: 1.25, borderTop: 1, borderColor: "divider" }}>
@@ -392,7 +410,7 @@ export default function OaDraftEditorPage() {
               disabled={conflict || Boolean(numberingError) || !extras.recipients.some((r) => r.role === "to")}
               sx={{ height: 40, borderRadius: 5, px: 3 }}
             >
-              ارسال
+              {needsApproval ? "ارسال برای تأیید" : "ارسال"}
             </Button>
             <AttachButton extras={extras} api={api} disabled={lockedUI} />
             <Tooltip title="چاپ">
@@ -438,7 +456,7 @@ export default function OaDraftEditorPage() {
       <LetterPrint paper={previewPaper} layout={draft.layout} subject={form.subject} bodyHtml={form.body_html} segments={segments} siteName={draft.site_name} signature={previewSignature} />
 
       <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
-        <DialogTitle>ارسال نامه</DialogTitle>
+        <DialogTitle>{needsApproval ? "ارسال برای تأیید" : "ارسال نامه"}</DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 1 }}>
             «{form.subject || "بدون موضوع"}» برای {toPersianDigits(extras.recipients.filter((r) => r.role === "to").length)} گیرنده
@@ -450,7 +468,9 @@ export default function OaDraftEditorPage() {
           <Typography variant="body2" color="text.secondary">
             {draft.principal_name ? `نامه به نام «${draft.principal_name}» ارسال می‌شود و در گردش نوشته می‌شود که شما (منشی) فرستاده‌اید. ` : ""}
             {form.requires_action ? "از گیرنده‌ی اصلی اقدام خواسته می‌شود. " : "فقط برای اطلاع گیرنده (بدون نیاز به اقدام). "}
-            هنگام ارسال شماره و تاریخ رسمی از دبیرخانه گرفته می‌شود. بعد از ارسال، متن و گیرندگان قابل تغییر نیستند.
+            {needsApproval
+              ? `نامه به ترتیب برای ${toPersianDigits(approvalPlan.steps.length + (approvalPlan.auto_final ? 1 : 0))} نفر مسیر تأیید فرستاده می‌شود و بعد از آخرین تأیید، خودکار شماره می‌گیرد و برای گیرندگان ارسال می‌شود. تا وقتی در انتظار تأیید است متن قفل است؛ با «پس گرفتن» یا «برگشت برای اصلاح» دوباره قابل ویرایش می‌شود.`
+              : "هنگام ارسال شماره و تاریخ رسمی از دبیرخانه گرفته می‌شود. بعد از ارسال، متن و گیرندگان قابل تغییر نیستند."}
             {form.confidentiality === "confidential" ? " این نامه محرمانه است و فقط گیرندگان و افرادی که به آن‌ها ارجاع شود آن را می‌بینند." : ""}
           </Typography>
           {sendError && <Alert severity="error" sx={{ mt: 2 }}>{sendError}</Alert>}
@@ -458,7 +478,7 @@ export default function OaDraftEditorPage() {
         <DialogActions>
           <Button onClick={() => setConfirmSend(false)} disabled={sending}>انصراف</Button>
           <Button variant="contained" color="success" onClick={handleSend} disabled={sending}>
-            {sending ? "در حال ارسال..." : "ارسال"}
+            {sending ? "در حال ارسال..." : needsApproval ? "ارسال برای تأیید" : "ارسال"}
           </Button>
         </DialogActions>
       </Dialog>

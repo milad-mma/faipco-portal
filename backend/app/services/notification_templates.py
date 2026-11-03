@@ -300,6 +300,20 @@ TEMPLATES: dict[str, dict[str, dict]] = {
             "default": "ارجاع نامه از {sender}: {subject}",
             "vars": {"sender": "نام ارجاع‌دهنده", "subject": "موضوع نامه"},
         },
+        "automation.approval": {
+            "label": "نوبت تأیید نامه",
+            "recipient": "تأییدکننده‌ی مرحله‌ی فعال",
+            "when": "ارسال برای تأیید یا تأیید مرحله‌ی قبل",
+            "default": "نامه‌ی {sender} در انتظار {action} شما: {subject}",
+            "vars": {"sender": "نویسنده", "subject": "موضوع نامه", "action": "پاراف / تأیید / تأیید و امضا"},
+        },
+        "automation.returned": {
+            "label": "برگشت نامه برای اصلاح",
+            "recipient": "نویسنده‌ی نامه",
+            "when": "تأییدکننده نامه را برای اصلاح برگرداند",
+            "default": "نامه‌ی شما برای اصلاح برگشت ({by}): {subject}",
+            "vars": {"by": "تأییدکننده", "subject": "موضوع نامه"},
+        },
         "automation.confidential": {
             "label": "نامه‌ی محرمانه (متن کلی)",
             "recipient": "گیرنده/رونوشت/ارجاع نامه‌ی محرمانه",

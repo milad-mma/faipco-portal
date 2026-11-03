@@ -266,7 +266,8 @@ class OaLetterService:
         rows = (await self.db.execute(
             select(OaLetter, OaLetterVersion)
             .join(OaLetterVersion, OaLetterVersion.id == OaLetter.current_version_id)
-            .where(OaLetter.created_by == user.id, OaLetter.status == "draft", OaLetter.discarded_at.is_(None))
+            .where(OaLetter.created_by == user.id, OaLetter.status.in_(("draft", "in_approval")),
+                   OaLetter.discarded_at.is_(None))
             .order_by(OaLetter.updated_at.desc())
             .limit(200)
         )).all()
@@ -277,6 +278,7 @@ class OaLetterService:
                 "subject": letter.subject, "urgency": letter.urgency, "confidentiality": letter.confidentiality,
                 "paper_size": v.paper_size, "excerpt": plain_text(v.body_html)[:160], "updated_at": letter.updated_at,
                 "principal_name": await self._principal_name(letter),
+                "status": letter.status,
             }
             for letter, v in rows
         ]

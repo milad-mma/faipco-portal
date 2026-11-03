@@ -158,6 +158,9 @@ class OaLetter(Base, TimestampMixin):
     signer_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
     signer_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 145: گردش تأیید ترتیبی (دور فعلی؛ ارسال دوباره بعد از برگشت = دور تازه)
+    approval_round: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):
@@ -401,3 +404,31 @@ class OaSignatureVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deactivate_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+class OaApprovalStep(Base):
+    """
+    مرحله‌ی گردش تأیید ترتیبی (Migration 145). round = دور ارسال برای تأیید؛ مسیر پیش‌نویس با status=planned در دور بعدی.
+    status: planned | pending | active | approved | returned | cancelled. required: امضای خودکار مدیر (نامه‌ی «از طرف»).
+    """
+
+    __tablename__ = "oa_approval_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    letter_id: Mapped[int] = mapped_column(ForeignKey("oa_letters.id", ondelete="CASCADE"), nullable=False, index=True)
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)  # paraph | approve | sign
+    approver_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    approver_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    approver_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="planned")
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("oa_tasks.id", ondelete="SET NULL"), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    signature_version_id: Mapped[int | None] = mapped_column(ForeignKey("oa_signature_versions.id", ondelete="RESTRICT"), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

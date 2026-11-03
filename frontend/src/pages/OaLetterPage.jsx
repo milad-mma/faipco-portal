@@ -50,7 +50,7 @@ import {
 import LetterPreview from "../components/oa/LetterPreview";
 import LetterPrint from "../components/oa/LetterPrint";
 import PersonPicker from "../components/oa/PersonPicker";
-import useBlobUrl from "../components/oa/useBlobUrl";
+import ApprovalPanel from "../components/oa/ApprovalPanel";
 import { formatSize, saveBlob } from "../components/oa/DraftExtras";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
@@ -64,7 +64,7 @@ function jalaliEndOfDay(value) {
 }
 
 const URGENCY = { normal: "عادی", urgent: "فوری", immediate: "آنی" };
-const KIND = { action: "اقدام", info: "اطلاع" };
+const KIND = { action: "اقدام", info: "اطلاع", paraph: "پاراف", approve: "تأیید", sign: "امضا" };
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "");
 
 const STATE_TEXT = { done: "انجام شد", current: "در انتظار اقدام", read: "خوانده شد", unread: "خوانده نشده", cancelled: "لغو شد" };
@@ -170,7 +170,32 @@ export default function OaLetterPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmConfidential, setConfirmConfidential] = useState(false);
-  const signatureUrl = useBlobUrl(letter?.signature ? `letter-sig-${letter.id}` : null, () => fetchLetterSignatureBlob(letter.id));
+  // تصویر امضاها (نویسنده و مراحل «امضا»ی گردش تأیید)
+  const [sigUrls, setSigUrls] = useState({});
+  const sigKey = (letter?.signatures || []).map((sg) => sg.key).join(",");
+  useEffect(() => {
+    if (!letter?.signatures?.length) {
+      setSigUrls({});
+      return undefined;
+    }
+    let alive = true;
+    const made = [];
+    Promise.all(
+      letter.signatures.map((sg) =>
+        fetchLetterSignatureBlob(letter.id, sg.step_id)
+          .then((b) => {
+            const u = URL.createObjectURL(b);
+            made.push(u);
+            return [sg.key, u];
+          })
+          .catch(() => [sg.key, null]),
+      ),
+    ).then((pairs) => alive && setSigUrls(Object.fromEntries(pairs)));
+    return () => {
+      alive = false;
+      made.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [letter?.id, sigKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // پیش‌نویس پاسخ و رفتن به ویرایشگر آن
   async function newRelated(type) {
@@ -311,7 +336,8 @@ export default function OaLetterPage() {
     date: letter.official_date ? toPersianDigits(letter.official_date) : "",
     attachment: letter.attachments_count ? `دارد (${toPersianDigits(letter.attachments_count)})` : "ندارد",
   };
-  const signature = letter.signature ? { name: letter.signature.name, title: letter.signature.title, imageUrl: signatureUrl } : null;
+  const signatures = (letter.signatures || []).map((sg) => ({ ...sg, imageUrl: sigUrls[sg.key] }));
+  const sent = ["dispatched", "closed"].includes(letter.status);
   const to = letter.recipients.filter((r) => r.role === "to");
   const cc = letter.recipients.filter((r) => r.role === "cc");
   const people = (list) =>
@@ -337,7 +363,7 @@ export default function OaLetterPage() {
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
-        {user?.can_oa_access && (
+        {user?.can_oa_access && sent && (
           <>
             <Button variant="outlined" startIcon={<ReplyIcon />} onClick={() => newRelated("reply")} disabled={busy} sx={{ height: 40 }}>
               پاسخ
@@ -388,13 +414,13 @@ export default function OaLetterPage() {
           gap: 2,
           alignItems: "start",
           gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) minmax(0, 1fr)" },
-          gridTemplateAreas: {
-            xs: '"info" "text" "att" "flow" "notes"',
-            lg: '"info text" "att text" "flow text" "notes text"',
-          },
-          gridTemplateRows: { lg: "auto auto auto 1fr" },
+          gridTemplateAreas: letter.approval
+            ? { xs: '"approval" "info" "text" "att" "flow" "notes"', lg: '"approval text" "info text" "att text" "flow text" "notes text"' }
+            : { xs: '"info" "text" "att" "flow" "notes"', lg: '"info text" "att text" "flow text" "notes text"' },
+          gridTemplateRows: { lg: letter.approval ? "auto auto auto auto 1fr" : "auto auto auto 1fr" },
         }}
       >
+          <ApprovalPanel letter={letter} onDone={load} onMessage={setMsg} />
           <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "info" }}>
             <Stack spacing={1}>
               <Typography variant="body2">
@@ -404,7 +430,7 @@ export default function OaLetterPage() {
                     <br />
                   </>
                 )}
-                <b>فرستنده:</b> {letter.sender?.name}{letter.sender?.title ? ` (${letter.sender.title})` : ""} — {fmt(letter.sent_at)}
+                <b>فرستنده:</b> {letter.sender?.name || "—"}{letter.sender?.title ? ` (${letter.sender.title})` : ""} — {letter.sent_at ? fmt(letter.sent_at) : "هنوز ارسال نشده"}
               </Typography>
               {letter.sender?.sent_by && (
                 <Typography variant="caption" color="text.secondary">
@@ -435,7 +461,7 @@ export default function OaLetterPage() {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} signature={signature} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} signatures={signatures} />
         </Card>
           {letter.attachments.length > 0 && (
             <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "att" }}>
@@ -477,7 +503,7 @@ export default function OaLetterPage() {
           </Card>
       </Box>
 
-      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} signature={signature} />
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} signatures={signatures} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">

@@ -48,7 +48,7 @@ const URGENCY = {
   immediate: { label: "آنی", bg: "error.main", color: "error.contrastText" },
 };
 const ROLE = { recipient: "گیرنده", cc: "رونوشت", referral: "ارجاع" };
-const KIND = { action: "اقدام", info: "اطلاع" };
+const KIND = { action: "اقدام", info: "اطلاع", paraph: "پاراف", approve: "تأیید", sign: "امضا" };
 
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR") : "");
 
