@@ -238,3 +238,9 @@ export async function saveSecretariat(siteId, payload) {
   const { data } = await apiClient.put(`/automation/secretariats/${siteId}`, payload);
   return data;
 }
+
+// کارت داشبورد: { counters: {unread, pending, overdue}, items: [حداکثر ۳ مورد اولویت‌دار] }
+export async function fetchOaDashboard() {
+  const { data } = await apiClient.get("/automation/dashboard");
+  return data;
+}

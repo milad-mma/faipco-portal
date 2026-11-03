@@ -906,6 +906,54 @@ class OaCartableService:
                 items.append(self._row(r, {"at": r.sent_at}))
         return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE}
 
+    async def dashboard_items(self, user: User, limit: int = 3) -> list[dict]:
+        """
+        کارت داشبورد: حداکثر سه مورد اولویت‌دار — اول مسئولیت‌های باز (معوق، فوریت، نزدیک‌ترین مهلت)، بعد نامه‌های
+        خوانده‌نشده‌ی دریافتی. فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد.
+        """
+        from sqlalchemy import case
+
+        me = await self._me(user)
+        now = _now()
+        urgency_rank = case((OaLetter.urgency == "immediate", 0), (OaLetter.urgency == "urgent", 1), else_=2)
+        overdue_rank = case((and_(OaTask.due_at.is_not(None), OaTask.due_at < now), 0), else_=1)
+        rows = (await self.db.execute(
+            select(OaLetter.id, OaLetter.subject, OaLetter.urgency, OaLetter.confidentiality, OaLetter.sender_name_snapshot,
+                   OaTask.kind, OaTask.due_at, OaTask.created_at, OaTask.created_by_name_snapshot)
+            .join(OaTask, OaTask.letter_id == OaLetter.id)
+            .where(OaTask.assignee_employee_id == me.id, OaTask.status == "open",
+                   OaLetter.status.in_(("dispatched", "closed")), OaLetter.discarded_at.is_(None))
+            .order_by(overdue_rank, urgency_rank, OaTask.due_at.asc().nullslast(), OaTask.created_at.desc())
+            .limit(limit)
+        )).all()
+        items = [{
+            "letter_id": r.id, "subject": r.subject, "urgency": r.urgency, "confidentiality": r.confidentiality,
+            "from": r.created_by_name_snapshot or r.sender_name_snapshot, "at": r.created_at, "due_at": r.due_at,
+            "overdue": bool(r.due_at and r.due_at < now), "reason": "pending", "kind": r.kind,
+        } for r in rows]
+        if len(items) < limit:
+            seen = {i["letter_id"] for i in items}
+            acc = (
+                select(OaLetterAccess.letter_id.label("lid"), func.max(OaLetterAccess.granted_at).label("at"))
+                .where(OaLetterAccess.employee_id == me.id, OaLetterAccess.revoked_at.is_(None),
+                       OaLetterAccess.read_at.is_(None), OaLetterAccess.source.in_(("recipient", "cc", "referral")))
+                .group_by(OaLetterAccess.letter_id).subquery()
+            )
+            more = (await self.db.execute(
+                select(OaLetter.id, OaLetter.subject, OaLetter.urgency, OaLetter.confidentiality,
+                       OaLetter.sender_name_snapshot, acc.c.at)
+                .join(acc, acc.c.lid == OaLetter.id)
+                .where(OaLetter.status.in_(("dispatched", "closed")), OaLetter.discarded_at.is_(None),
+                       OaLetter.id.not_in(seen or {-1}))
+                .order_by(urgency_rank, acc.c.at.desc())
+                .limit(limit - len(items))
+            )).all()
+            items += [{
+                "letter_id": r.id, "subject": r.subject, "urgency": r.urgency, "confidentiality": r.confidentiality,
+                "from": r.sender_name_snapshot, "at": r.at, "due_at": None, "overdue": False, "reason": "unread", "kind": None,
+            } for r in more]
+        return items
+
     async def counters(self, employee_id: int) -> dict:
         """شمارنده‌ها فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد."""
         unread = (await self.db.execute(

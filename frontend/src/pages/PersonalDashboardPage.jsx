@@ -33,7 +33,6 @@ import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
-import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { fetchMyNotices, fetchMyReceiptUnread } from "../api/notices";
@@ -48,10 +47,10 @@ import { fetchLoanInboxCount } from "../api/loans";
 import { fetchAdvanceInboxCount } from "../api/advances";
 import { fetchMyFeedbackUnreadCount } from "../api/feedback";
 import { swr } from "../api/swrCache";
-import { toPersianDigits } from "../utils/searchText";
 import BirthdayReactionBar from "../components/BirthdayReactionBar";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import ProfilePhotoDialog from "../components/ProfilePhotoDialog";
+import DashboardLettersCard from "../components/oa/DashboardLettersCard";
 import EmployeeAvatar from "../components/EmployeeAvatar";
 import PerformanceEvaluationToolCard from "../components/PerformanceEvaluationToolCard";
 
@@ -597,40 +596,7 @@ export default function PersonalDashboardPage() {
       {/* کارت نامه‌ها + اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
       <Stack spacing={1.5} sx={{ gridArea: "recent", minWidth: 0 }}>
         {/* کارت نامه‌ها (اتوماسیون اداری): خوانده‌نشده و در انتظار اقدام؛ فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد */}
-        {user?.can_oa_access && (
-          <Card
-            variant="outlined"
-            onClick={() => navigate(user.oa_pending ? "/automation/cartable?box=pending" : "/automation/cartable")}
-            sx={{
-              borderRadius: 2,
-              p: 1.75,
-              cursor: "pointer",
-              "&:hover": { backgroundColor: "action.hover" },
-            }}
-          >
-            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ color: "text.secondary", mb: 1 }}>
-              <MailOutlineIcon sx={{ fontSize: 16, color: "primary.main" }} />
-              <Typography variant="caption">نامه‌ها</Typography>
-            </Stack>
-            {user.oa_unread || user.oa_pending ? (
-              <>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">خوانده‌نشده:</Typography>
-                  <Typography variant="body2" fontWeight={700}>{toPersianDigits(user.oa_unread || 0)}</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">در انتظار اقدام:</Typography>
-                  <Typography variant="body2" fontWeight={700} color={user.oa_overdue ? "error.main" : "text.primary"}>
-                    {toPersianDigits(user.oa_pending || 0)}
-                    {user.oa_overdue ? ` (${toPersianDigits(user.oa_overdue)} معوق)` : ""}
-                  </Typography>
-                </Stack>
-              </>
-            ) : (
-              <Typography variant="caption" color="text.secondary">موردی در انتظار اقدام ندارید</Typography>
-            )}
-          </Card>
-        )}
+        {user?.can_oa_access && <DashboardLettersCard user={user} />}
       <Card
         variant="outlined"
         sx={{ borderRadius: 2, p: 1.75, flex: 1 }}

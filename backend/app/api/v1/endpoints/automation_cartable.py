@@ -184,6 +184,18 @@ async def cartable(box: str = "inbox", q: str = "", page: int = 1, db: AsyncSess
         _raise(e)
 
 
+@router.get("/dashboard")
+async def dashboard(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """کارت داشبورد: شمارنده‌ها + حداکثر سه مورد اولویت‌دار."""
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    service = OaCartableService(db)
+    try:
+        me = await service._me(current_user)
+        return {"counters": await service.counters(me.id), "items": await service.dashboard_items(current_user)}
+    except OaCartableError as e:
+        _raise(e)
+
+
 @router.get("/counters")
 async def counters(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
