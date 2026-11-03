@@ -149,7 +149,7 @@ export default function OaCartablePage() {
                 <Stack direction="row" gap={2} flexWrap="wrap" sx={{ mt: 0.5 }}>
                   {it.official_number && (
                     <Typography variant="caption" color="text.secondary">
-                      <bdi dir="ltr">{it.official_number}</bdi>
+                      <bdi dir="ltr">{toPersianDigits(it.official_number)}</bdi>
                     </Typography>
                   )}
                   <Typography variant="caption" color="text.secondary">

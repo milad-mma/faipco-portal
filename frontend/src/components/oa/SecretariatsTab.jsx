@@ -49,7 +49,7 @@ function Row({ row, onSaved }) {
       </Stack>
       {row.sample && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          شماره‌ی بعدی: <bdi dir="ltr" style={{ fontWeight: 700 }}>{row.sample}</bdi>
+          شماره‌ی بعدی: <bdi dir="ltr" style={{ fontWeight: 700 }}>{toPersianDigits(row.sample)}</bdi>
         </Typography>
       )}
       {msg && <Alert severity={msg.ok ? "success" : "error"} sx={{ mt: 1 }}>{msg.text}</Alert>}
@@ -70,7 +70,7 @@ export default function SecretariatsTab() {
       <Typography variant="body2" color="text.secondary">
         هر نامه هنگام ارسال یک شماره‌ی رسمی از دبیرخانه‌ی سایت خودش می‌گیرد، با الگوی
         <bdi dir="ltr"> پیشوند/سال/ترتیب </bdi>
-        (مثل <bdi dir="ltr">01/1405/000125</bdi>). شمارش هر سال شمسی از ۱ شروع می‌شود و شماره‌ی تکراری صادر نمی‌شود.
+        (مثل <bdi dir="ltr">۰۱/۱۴۰۵/۰۰۰۱۲۵</bdi>). شمارش هر سال شمسی از ۱ شروع می‌شود و شماره‌ی تکراری صادر نمی‌شود.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {!rows && !error && (

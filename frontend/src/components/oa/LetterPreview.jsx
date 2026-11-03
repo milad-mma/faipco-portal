@@ -1,7 +1,7 @@
 // پیش‌نمایش صفحه‌ای نامه روی کاغذ A4/A5 با سربرگ، پابرگ و حاشیه‌ی قالب (اندازه‌ها به میلی‌متر، مثل چاپ).
 // متن در یک ظرف پنهان با همان عرض اندازه‌گیری و روی مرز خط‌ها به صفحه‌ها تقسیم می‌شود؛ onPages(تعداد، شکست‌ها) به والد خبر می‌دهد.
 // نکته: شکستن صفحه در پیش‌نمایش ساده است (ممکن است یک خط بین دو صفحه نصف شود)؛ نسخه‌ی رسمی PDF از فاز ارسال ساخته می‌شود.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { fetchLogoBlob } from "../../api/automationLetters";
 
@@ -64,6 +64,14 @@ const bodyStyles = {
   "& .oa-letter-body blockquote": { borderInlineStart: "1mm solid #bbb", margin: "2mm 0", paddingInlineStart: "3mm", color: "#444" },
 };
 
+// همه‌ی اعداد داخل نامه فارسی نمایش داده می‌شوند (متن، موضوع، سربرگ، پابرگ، شماره و صفحه) — فقط در نمایش/چاپ؛ متن ذخیره‌شده دست نمی‌خورد
+const FA = "۰۱۲۳۴۵۶۷۸۹";
+export const faDigits = (v) => String(v ?? "").replace(/[0-9]/g, (d) => FA[d]);
+// فقط متن بین برچسب‌ها؛ ویژگی‌ها (src، style، …) و موجودیت‌های HTML مثل &#39; تغییر نمی‌کنند
+export function faDigitsHtml(html) {
+  return String(html || "").replace(/(<[^>]*>)|(&#?\w+;)|([0-9]+)/g, (all, tag, ent, num) => (num ? faDigits(num) : all));
+}
+
 const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -80,7 +88,7 @@ function Header({ layout, logoUrl, values }) {
       <div
         style={{ height: `${h.height_mm}mm`, overflow: "hidden", boxSizing: "border-box", flex: "none" }}
         dangerouslySetInnerHTML={{
-          __html: fillTemplate(logoUrl ? h.html : h.html.replace(/<img [^>]*src="\{\{logo\}\}"[^>]*>/g, ""), { ...values, logo: logoUrl || "" }),
+          __html: faDigitsHtml(fillTemplate(logoUrl ? h.html : h.html.replace(/<img [^>]*src="\{\{logo\}\}"[^>]*>/g, ""), { ...values, logo: logoUrl || "" })),
         }}
       />
     );
@@ -88,7 +96,7 @@ function Header({ layout, logoUrl, values }) {
   const field = (label, value) => (
     <div style={{ whiteSpace: "nowrap" }}>
       {label}:{" "}
-      {value && !/^\.+$/.test(value) ? <bdi dir="ltr">{value}</bdi> : <span style={{ color: "#999" }}>..............</span>}
+      {value && !/^\.+$/.test(value) ? <bdi dir="ltr">{faDigits(value)}</bdi> : <span style={{ color: "#999" }}>..............</span>}
     </div>
   );
   return (
@@ -97,8 +105,8 @@ function Header({ layout, logoUrl, values }) {
         {logoUrl ? <img src={logoUrl} alt="" style={{ maxHeight: "85%", maxWidth: "100%", objectFit: "contain" }} /> : null}
       </div>
       <div style={{ flex: 1, textAlign: "center" }}>
-        {h.title ? <div style={{ fontWeight: 700, fontSize: "1.25em" }}>{h.title}</div> : null}
-        {h.subtitle ? <div style={{ fontSize: "0.9em", color: "#444" }}>{h.subtitle}</div> : null}
+        {h.title ? <div style={{ fontWeight: 700, fontSize: "1.25em" }}>{faDigits(h.title)}</div> : null}
+        {h.subtitle ? <div style={{ fontSize: "0.9em", color: "#444" }}>{faDigits(h.subtitle)}</div> : null}
       </div>
       <div style={{ width: "28%", fontSize: "0.85em", lineHeight: 1.7 }}>
         {h.show_number ? field("شماره", values.number) : null}
@@ -116,14 +124,14 @@ function Footer({ layout, values, pageIndex, pages }) {
     return (
       <div
         style={{ height: `${f.height_mm}mm`, overflow: "hidden", boxSizing: "border-box", flex: "none" }}
-        dangerouslySetInnerHTML={{ __html: fillTemplate(f.html, { ...values, page: pageIndex + 1, pages }) }}
+        dangerouslySetInnerHTML={{ __html: faDigitsHtml(fillTemplate(f.html, { ...values, page: pageIndex + 1, pages })) }}
       />
     );
   }
   return (
     <div style={{ height: `${f.height_mm}mm`, borderTop: "0.3mm solid #999", fontSize: "0.8em", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#333", flex: "none" }}>
-      <span>{f.text}</span>
-      {pages > 1 ? <span>صفحه {pageIndex + 1} از {pages}</span> : null}
+      <span>{faDigits(f.text)}</span>
+      {pages > 1 ? <span>صفحه {faDigits(pageIndex + 1)} از {faDigits(pages)}</span> : null}
     </div>
   );
 }
@@ -228,7 +236,9 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
  * fit (هم‌عرض ظرف)، siteName (برای {{site}})، onPages(n, segments)، printOnly (فقط برای چاپ: بدون scale، صفحه‌ها پشت هم با شکست صفحه)،
  * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)
  */
-export default function LetterPreview({ paper = "A4", layout, subject, bodyHtml, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta }) {
+export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta }) {
+  const subject = useMemo(() => (rawSubject ? faDigits(rawSubject) : rawSubject), [rawSubject]);
+  const bodyHtml = useMemo(() => faDigitsHtml(rawBody), [rawBody]);
   // fit: کوچک‌نمایی به اندازه‌ی عرض ظرف (مثلاً نیمی از صفحه در دسکتاپ)؛ وگرنه scale ثابت
   const boxRef = useRef(null);
   const [fitScale, setFitScale] = useState(null);

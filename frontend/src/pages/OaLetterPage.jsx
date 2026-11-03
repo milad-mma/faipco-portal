@@ -329,7 +329,7 @@ export default function OaLetterPage() {
         <IconButton onClick={() => navigate("/automation/cartable")}><ArrowForwardIcon /></IconButton>
         {confidential && <LockOutlinedIcon color="error" />}
         <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>{letter.subject}</Typography>
-        {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{letter.official_number}</bdi>} title="شماره‌ی نامه" />}
+        {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi>} title="شماره‌ی نامه" />}
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
@@ -396,7 +396,7 @@ export default function OaLetterPage() {
               <Typography variant="body2">
                 {letter.official_number && (
                   <>
-                    <b>شماره:</b> <bdi dir="ltr">{letter.official_number}</bdi> — <b>تاریخ:</b> {toPersianDigits(letter.official_date || "")}
+                    <b>شماره:</b> <bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi> — <b>تاریخ:</b> {toPersianDigits(letter.official_date || "")}
                     <br />
                   </>
                 )}
