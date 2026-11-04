@@ -34,10 +34,13 @@ import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import ReplyIcon from "@mui/icons-material/Reply";
+import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import BlockOutlinedIcon from "@mui/icons-material/BlockOutlined";
 import LinkIcon from "@mui/icons-material/Link";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import {
   addLetterNote,
+  cancelLetter,
   completeTaskWithFiles,
   fetchLetterSignatureBlob,
   downloadTaskAttachment,
@@ -170,6 +173,8 @@ export default function OaLetterPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmConfidential, setConfirmConfidential] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   // تصویر امضاها (نویسنده و مراحل «امضا»ی گردش تأیید)
   const [sigUrls, setSigUrls] = useState({});
   const sigKey = (letter?.signatures || []).map((sg) => sg.key).join(",");
@@ -362,6 +367,7 @@ export default function OaLetterPage() {
         {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi>} title="شماره‌ی نامه" />}
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
+        {letter.status === "cancelled" && <Chip color="error" label="ابطال‌شده" />}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
         {user?.can_oa_access && sent && (
           <>
@@ -370,10 +376,28 @@ export default function OaLetterPage() {
             </Button>
           </>
         )}
+        {letter.permissions.correction && (
+          <Button variant="outlined" startIcon={<EditNoteOutlinedIcon />} onClick={() => newRelated("correction")} disabled={busy} sx={{ height: 40 }}>
+            اصلاحیه
+          </Button>
+        )}
+        {letter.permissions.cancel && (
+          <Button variant="outlined" color="error" startIcon={<BlockOutlinedIcon />} onClick={() => setCancelOpen(true)} disabled={busy} sx={{ height: 40 }}>
+            ابطال
+          </Button>
+        )}
         {letter.permissions.refer && (
           <Button variant="contained" startIcon={<ForwardToInboxOutlinedIcon />} onClick={() => setReferOpen(true)} sx={{ height: 40 }}>ارجاع</Button>
         )}
       </Stack>
+
+      {letter.cancelled && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          این نامه در {fmt(letter.cancelled.at)} توسط {letter.cancelled.by || "—"} ابطال شد. دلیل: {letter.cancelled.reason}
+          <br />
+          شماره‌ی آن باطل است و دوباره صادر نمی‌شود؛ برای اصلاح، «اصلاحیه» بنویسید.
+        </Alert>
+      )}
 
       {letter.relations?.length > 0 && (
         <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
@@ -461,7 +485,7 @@ export default function OaLetterPage() {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
             متن نامه — کاغذ <bdi dir="ltr">{letter.paper_size}</bdi>، {toPersianDigits(pages)} صفحه
           </Typography>
-          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} signatures={signatures} />
+          <LetterPreview paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} fit onPages={handlePages} siteName={letter.site_name} meta={meta} signatures={signatures} cancelled={letter.status === "cancelled"} />
         </Card>
           {letter.attachments.length > 0 && (
             <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "att" }}>
@@ -503,7 +527,7 @@ export default function OaLetterPage() {
           </Card>
       </Box>
 
-      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} signatures={signatures} />
+      <LetterPrint paper={letter.paper_size} layout={letter.layout} subject={letter.subject} bodyHtml={letter.body_html} segments={segments} siteName={letter.site_name} meta={meta} signatures={signatures} cancelled={letter.status === "cancelled"} />
 
       {/* ثبت نتیجه / اعلام رؤیت */}
       <Dialog open={Boolean(doneFor)} onClose={() => !busy && setDoneFor(null)} fullWidth maxWidth="sm">
@@ -597,6 +621,32 @@ export default function OaLetterPage() {
           setRefer((r) => ({ ...r, people: [...r.people, ...list] }));
         }}
       />
+
+      <Dialog open={cancelOpen} onClose={() => !busy && setCancelOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>ابطال نامه</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            نامه حذف نمی‌شود؛ نشان «ابطال» می‌گیرد، شماره‌اش باطل می‌شود و مسئولیت‌های باز آن لغو می‌شوند. این کار برگشت ندارد.
+          </Typography>
+          <TextField autoFocus fullWidth multiline minRows={2} label="دلیل ابطال" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} inputProps={{ maxLength: 2000 }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCancelOpen(false)} disabled={busy}>انصراف</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={busy || !cancelReason.trim()}
+            onClick={async () => {
+              if (await run(() => cancelLetter(id, cancelReason), "نامه ابطال شد.")) {
+                setCancelOpen(false);
+                setCancelReason("");
+              }
+            }}
+          >
+            ابطال شود
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={confirmConfidential} onClose={() => setConfirmConfidential(false)}>
         <DialogTitle>محرمانه کردن نامه</DialogTitle>

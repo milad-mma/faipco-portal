@@ -50,11 +50,12 @@ logger = logging.getLogger("faipco.automation")
 PAGE_SIZE = 20
 # رویدادهای اعلان که هر کس می‌تواند برای خودش خاموش کند (تنظیمات اعلان شخصی)
 PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من",
-               "approval": "نوبت تأیید/پاراف/امضای من", "returned": "برگشت نامه‌ی من برای اصلاح"}
+               "approval": "نوبت تأیید/پاراف/امضای من", "returned": "برگشت نامه‌ی من برای اصلاح",
+               "cancelled": "ابطال نامه‌ای که در آن هستم"}
 APPROVAL_KINDS = ("paraph", "approve", "sign")
 # نامه‌هایی که مسئولیت تأییدشان در کارتابل «در انتظار اقدام» می‌آید
 TASK_LETTER_STATUSES = ("dispatched", "closed", "in_approval", "approved")
-RELATION_TYPES = {"reply": "پاسخ"}  # عطف و پیرو به تصمیم کاربر حذف شد (۱۴۰۵/۰۸/۱۱)
+RELATION_TYPES = {"reply": "پاسخ", "correction": "اصلاحیه"}  # عطف و پیرو به تصمیم کاربر حذف شد (۱۴۰۵/۰۸/۱۱)
 MAX_RECIPIENTS = 200
 MAX_NOTE = 4000
 MAX_INSTRUCTION = 2000
@@ -626,7 +627,11 @@ class OaCartableService:
             ],
             "notes": [{"id": n.id, "author": n.author_name_snapshot, "text": n.text, "created_at": n.created_at,
                        "mine": n.author_employee_id == me.id} for n in notes],
+            "cancelled": {"at": letter.cancelled_at, "reason": letter.cancel_reason, "by": letter.cancelled_by_name}
+            if letter.status == "cancelled" else None,
             "permissions": {
+                "cancel": await self._can_cancel(letter, user),
+                "correction": letter.status in ("dispatched", "closed", "cancelled") and bool(sources & {"creator", "sender"}),
                 "refer": can("refer", letter=info, rows=rows),
                 "note": can("note", letter=info, rows=rows),
                 "make_confidential": can("make_confidential", letter=info, rows=rows),
@@ -915,6 +920,48 @@ class OaCartableService:
                            author_employee_id=me.id, author_name_snapshot=snap["name"], text=text))
         await self.db.commit()
 
+    async def _can_cancel(self, letter: OaLetter, user: User) -> bool:
+        from app.core.site_access import get_sites_with_permission
+
+        if letter.status not in ("dispatched", "closed"):
+            return False
+        sites = await get_sites_with_permission(self.db, user, "automation.cancel")
+        return sites is None or letter.site_id in sites
+
+    async def cancel(self, letter_id: int, user: User, reason: str) -> None:
+        """
+        ابطال نامه‌ی ثبت‌شده (مجوز automation.cancel سایت نامه + دسترسی به خود نامه): دلیل اجباری، شماره void،
+        مسئولیت‌های باز لغو، نامه و سابقه حذف نمی‌شوند و نشان «ابطال» می‌گیرند.
+        """
+        from app.models.office_automation import OaIssuedNumber
+
+        reason = (reason or "").strip()
+        if not reason:
+            raise OaCartableError("دلیل ابطال را بنویسید")
+        letter, me, _, _ = await self._letter_for(letter_id, user, "view", lock=True)
+        if letter.status == "cancelled":
+            return
+        if not await self._can_cancel(letter, user):
+            raise OaCartableError("اجازه‌ی ابطال این نامه را ندارید", 403)
+        now = _now()
+        snap = await self._snapshot(me.id)
+        letter.status, letter.cancelled_at, letter.cancel_reason = "cancelled", now, reason[:2000]
+        letter.cancelled_by_user_id, letter.cancelled_by_name = user.id, snap["name"]
+        letter.row_version += 1
+        await self.db.execute(update(OaIssuedNumber).where(OaIssuedNumber.letter_id == letter.id).values(status="void"))
+        await self.db.execute(update(OaTask).where(OaTask.letter_id == letter.id, OaTask.status == "open")
+                              .values(status="cancelled", result_note="نامه ابطال شد"))
+        subject = (await self.db.get(OaLetterVersion, letter.current_version_id)).subject
+        participants = set((await self.db.execute(
+            select(OaLetterAccess.employee_id).where(OaLetterAccess.letter_id == letter.id, OaLetterAccess.revoked_at.is_(None))
+        )).scalars().all()) - {me.id}
+        for eid in participants:
+            self._push(event="cancelled", letter=letter, employee_id=eid,
+                       values={"number": letter.official_number or "", "subject": subject, "by": snap["name"]})
+        self.files.audit("letter.cancel", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
+                         details={"number": letter.official_number, "reason": reason[:300]})
+        await self.db.commit()
+
     async def make_confidential(self, letter_id: int, user: User, reason: str | None) -> None:
         letter, *_ = await self._letter_for(letter_id, user, "make_confidential", lock=True)
         letter.confidentiality = "confidential"  # تغییر غیرمؤثر: نسخه‌ی جدید نمی‌سازد
@@ -936,7 +983,7 @@ class OaCartableService:
     def _row(r, extra: dict | None = None) -> dict:
         out = {"letter_id": r.id, "subject": r.subject, "urgency": r.urgency, "confidentiality": r.confidentiality,
                "sender": r.sender_name_snapshot, "sent_at": r.sent_at, "attachments": r.attachments,
-               "official_number": r.official_number}
+               "official_number": r.official_number, "status": r.status}
         out.update(extra or {})
         return out
 
@@ -977,7 +1024,7 @@ class OaCartableService:
             order = OaLetter.sent_at.desc()
         else:
             raise OaCartableError("کارتابل نامعتبر است")
-        statuses = TASK_LETTER_STATUSES if box in ("pending", "done") else ("dispatched", "closed")
+        statuses = TASK_LETTER_STATUSES if box in ("pending", "done") else ("dispatched", "closed", "cancelled")
         stmt = stmt.where(OaLetter.status.in_(statuses), OaLetter.discarded_at.is_(None))
         for word in (q or "").split()[:5]:
             like = f"%{word}%"
@@ -1100,7 +1147,13 @@ class OaCartableService:
 
         if rel_type not in RELATION_TYPES:
             raise OaCartableError("نوع ارتباط نامعتبر است")
-        letter, me, _, _ = await self._letter_for(letter_id, user, "view")
+        letter, me, rows, _ = await self._letter_for(letter_id, user, "view")
+        if rel_type == "correction":
+            sources = {r["source"] for r in rows if not r["revoked_at"]}
+            if not sources & {"creator", "sender"}:
+                raise OaCartableError("اصلاحیه را فقط نویسنده یا فرستنده‌ی نامه می‌نویسد", 403)
+            if letter.status not in ("dispatched", "closed", "cancelled"):
+                raise OaCartableError("اصلاحیه فقط برای نامه‌ی ثبت‌شده است", 409)
         src = await self.db.get(OaLetterVersion, letter.current_version_id)
         try:
             draft = await OaLetterService(self.db).create_draft(paper_size=src.paper_size, template_id=None, user=user)
@@ -1108,7 +1161,7 @@ class OaCartableService:
             raise OaCartableError(str(e), e.status_code) from None
         new = await self.db.get(OaLetter, draft["id"])
         v = await self.db.get(OaLetterVersion, new.current_version_id)
-        prefix = "پاسخ: "
+        prefix = "اصلاحیه: " if rel_type == "correction" else "پاسخ: "
         subject = (prefix + (src.subject or ""))[:300]
         v.subject = new.subject = subject
         new.confidentiality = letter.confidentiality
@@ -1118,6 +1171,17 @@ class OaCartableService:
                 snap = await self._snapshot(letter.sender_employee_id)
                 self.db.add(OaRecipient(letter_id=new.id, role="to", employee_id=snap["employee_id"], name_snapshot=snap["name"],
                                         title_snapshot=snap["title"], department_snapshot=snap["department"]))
+        if rel_type == "correction":
+            # همان گیرندگان و رونوشت‌های نامه‌ی اصلی (اگر هنوز مجازند)؛ متن اصلی برای ویرایش کپی می‌شود
+            v.body_html = src.body_html
+            old = list((await self.db.execute(
+                select(OaRecipient).where(OaRecipient.letter_id == letter.id).order_by(OaRecipient.sort_order)
+            )).scalars().all())
+            ok = await self._eligible({r.employee_id for r in old if r.employee_id}, user)
+            for i, r in enumerate(x for x in old if x.employee_id in ok and x.employee_id != me.id):
+                snap = await self._snapshot(r.employee_id)
+                self.db.add(OaRecipient(letter_id=new.id, role=r.role, employee_id=r.employee_id, name_snapshot=snap["name"],
+                                        title_snapshot=snap["title"], department_snapshot=snap["department"], sort_order=i))
         new.row_version += 1
         self.files.audit("letter.relate", user, entity="letter", entity_id=new.id, site_id=new.site_id,
                          details={"to": letter.id, "type": rel_type})
@@ -1138,7 +1202,7 @@ class OaCartableService:
             outgoing = r.from_letter_id == letter_id
             other_id = r.to_letter_id if outgoing else r.from_letter_id
             other = await self.db.get(OaLetter, other_id)
-            if other is None or other.discarded_at is not None or other.status not in ("dispatched", "closed"):
+            if other is None or other.discarded_at is not None or other.status not in ("dispatched", "closed", "cancelled"):
                 continue
             visible = bool(employee_id) and bool((await self.db.execute(
                 select(OaLetterAccess.id).where(OaLetterAccess.letter_id == other_id, OaLetterAccess.employee_id == employee_id,

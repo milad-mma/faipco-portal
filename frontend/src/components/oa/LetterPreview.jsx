@@ -215,7 +215,7 @@ function computeSegments(container, pagePx) {
 
 // ابعاد و حاشیه‌ها در style درون‌خطی‌اند، نه sx: افزونه‌ی RTL برنامه (rtlCache) چپ/راستِ sx را جابه‌جا می‌کند و
 // حاشیه‌ی راست/چپ کاغذ باید همان جهت فیزیکی بماند.
-function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment, signatures }) {
+function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bodyHmm, values, segment, signatures, cancelled }) {
   const [w, h] = PAPER[paper];
   const m = layout.margins_mm;
   return (
@@ -241,9 +241,24 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        position: "relative",
         ...bodyStyles,
       }}
     >
+      {/* نشان «ابطال» روی هر صفحه‌ی نامه‌ی باطل‌شده (نمایش و چاپ) */}
+      {cancelled ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "none", zIndex: 2,
+          }}
+        >
+          <div style={{ transform: "rotate(-30deg)", border: "1.5mm solid rgba(200,0,0,0.55)", color: "rgba(200,0,0,0.55)", fontSize: "34pt", fontWeight: 900, padding: "2mm 10mm", borderRadius: "3mm" }}>
+            ابطال
+          </div>
+        </div>
+      ) : null}
       <Header layout={layout} logoUrl={logoUrl} values={values} />
       <div style={{ height: `${bodyHmm}mm`, position: "relative", flex: "none" }}>
         {/* پنجره‌ی همین صفحه: دقیقاً از ابتدای خط اول تا انتهای خط آخر این صفحه */}
@@ -264,7 +279,7 @@ function Page({ paper, layout, logoUrl, pageIndex, pages, subject, bodyHtml, bod
  * forceSegments (شکست صفحه‌های ازپیش‌محاسبه‌شده‌ی پیش‌نمایش)، meta ({number, date, attachment} رسمی بعد از ارسال)،
  * signature ({name, title, imageUrl} — پایین متن سمت چپ)
  */
-export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta, signature, signatures: signaturesProp }) {
+export default function LetterPreview({ paper = "A4", layout, subject: rawSubject, bodyHtml: rawBody, scale = 0.6, fit = false, onPages, printOnly = false, forceSegments, siteName, meta, signature, signatures: signaturesProp, cancelled = false }) {
   const signatures = signaturesProp || (signature ? [signature] : null);
   const subject = useMemo(() => (rawSubject ? faDigits(rawSubject) : rawSubject), [rawSubject]);
   const bodyHtml = useMemo(() => faDigitsHtml(rawBody), [rawBody]);
@@ -336,7 +351,7 @@ export default function LetterPreview({ paper = "A4", layout, subject: rawSubjec
   // کوچک‌نمایی با zoom (نه transform): اندازه‌ی واقعی در چیدمان حساب می‌شود و اسکرول/جهت RTL به هم نمی‌ریزد
   const pageList = Array.from({ length: pages }, (_, i) => (
     <Box key={i} sx={printOnly ? (i < pages - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : {}) : { boxShadow: 3, flex: "none", lineHeight: 0 }} style={printOnly ? undefined : { zoom }}>
-      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} signatures={signatures} />
+      <Page paper={paper} layout={layout} logoUrl={logoUrl} pageIndex={i} pages={pages} subject={subject} bodyHtml={bodyHtml} bodyHmm={bodyHmm} values={values} segment={segments?.[i]} signatures={signatures} cancelled={cancelled} />
     </Box>
   ));
 

@@ -151,6 +151,7 @@ function LetterCard({ it, box, onOpen }) {
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+          {it.status === "cancelled" && <Chip size="small" color="error" label="ابطال" sx={{ height: 18, fontSize: 10 }} />}
           {it.kind && <Chip size="small" variant="outlined" color="info" label={KIND[it.kind]} sx={{ height: 18, fontSize: 10 }} />}
           {(it.roles || [])
             .filter((r) => ROLE[r])

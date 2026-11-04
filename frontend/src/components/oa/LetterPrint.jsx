@@ -8,7 +8,7 @@ import LetterPreview from "./LetterPreview";
 
 const PAPER_MM = { A4: [210, 297], A5: [148, 210] };
 
-export default function LetterPrint({ paper, layout, subject, bodyHtml, segments, siteName, meta, signature, signatures }) {
+export default function LetterPrint({ paper, layout, subject, bodyHtml, segments, siteName, meta, signature, signatures, cancelled }) {
   const [w] = PAPER_MM[paper] || PAPER_MM.A4;
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function LetterPrint({ paper, layout, subject, bodyHtml, segments
 
   return createPortal(
     <div className="oa-print-root">
-      <LetterPreview paper={paper} layout={layout} subject={subject} bodyHtml={bodyHtml} printOnly forceSegments={segments} siteName={siteName} meta={meta} signature={signature} signatures={signatures} />
+      <LetterPreview paper={paper} layout={layout} subject={subject} bodyHtml={bodyHtml} printOnly forceSegments={segments} siteName={siteName} meta={meta} signature={signature} signatures={signatures} cancelled={cancelled} />
     </div>,
     document.body,
   );

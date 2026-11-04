@@ -283,3 +283,13 @@
 - API: `PUT /automation/drafts/{id}/approval-steps`، `POST /automation/drafts/{id}/submit`، `POST /automation/letters/{id}/withdraw`،
   `POST /automation/approval-steps/{id}/approve|return`، `GET /automation/letters/{id}/signature-image?step_id=`.
 - `core/oa_approval_rules.py` (تست: `tests/test_oa_approval_rules.py`)، `services/oa_approval_service.py`.
+
+## فاز ۳ب — بخش چهارم: ابطال و اصلاحیه (Migration 146)
+- PDF رسمی سمت سرور فعلاً ساخته نمی‌شود (تصمیم ۱۴۰۵/۰۸/۱۳)؛ چاپ/ذخیره‌ی PDF از مرورگر با همان چیدمان.
+- **ابطال** (مجوز جدید `automation.cancel`، سایت‌محور روی سایت نامه + دسترسی به خود نامه): فقط نامه‌ی ثبت‌شده
+  (dispatched/closed)؛ دلیل اجباری؛ status=cancelled، شماره در `oa_issued_numbers` → void (هرگز دوباره صادر نمی‌شود)،
+  مسئولیت‌های باز لغو، نامه و سابقه حذف نمی‌شوند. نشان «ابطال» روی هر صفحه (نمایش و چاپ)، کادر قرمز با دلیل و ابطال‌کننده،
+  برچسب در کارتابل. اعلان `automation.cancelled` به همه‌ی شرکت‌کنندگان. audit: `letter.cancel`.
+- **اصلاحیه** (`related-draft` با type=correction): فقط نویسنده/فرستنده‌ی نامه‌ی ثبت‌شده یا باطل‌شده؛ پیش‌نویس با موضوع
+  «اصلاحیه: …»، متن نامه‌ی اصلی برای ویرایش، همان گیرندگان و رونوشت‌ها (اگر هنوز مجازند)، رابطه‌ی correction.
+- API: `POST /automation/letters/{id}/cancel` {reason}.

@@ -315,3 +315,9 @@ export async function returnStep(stepId, note) {
   const { data } = await apiClient.post(`/automation/approval-steps/${stepId}/return`, { note });
   return data;
 }
+
+// ابطال نامه‌ی ثبت‌شده (automation.cancel) — دلیل اجباری
+export async function cancelLetter(letterId, reason) {
+  const { data } = await apiClient.post(`/automation/letters/${letterId}/cancel`, { reason });
+  return data;
+}

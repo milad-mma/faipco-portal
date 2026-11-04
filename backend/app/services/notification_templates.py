@@ -314,6 +314,13 @@ TEMPLATES: dict[str, dict[str, dict]] = {
             "default": "نامه‌ی شما برای اصلاح برگشت ({by}): {subject}",
             "vars": {"by": "تأییدکننده", "subject": "موضوع نامه"},
         },
+        "automation.cancelled": {
+            "label": "ابطال نامه",
+            "recipient": "همه‌ی شرکت‌کنندگان نامه",
+            "when": "نامه‌ی ثبت‌شده ابطال شد",
+            "default": "نامه‌ی {number} ابطال شد ({by}): {subject}",
+            "vars": {"number": "شماره‌ی نامه", "by": "ابطال‌کننده", "subject": "موضوع نامه"},
+        },
         "automation.confidential": {
             "label": "نامه‌ی محرمانه (متن کلی)",
             "recipient": "گیرنده/رونوشت/ارجاع نامه‌ی محرمانه",

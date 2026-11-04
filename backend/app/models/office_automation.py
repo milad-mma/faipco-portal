@@ -161,6 +161,11 @@ class OaLetter(Base, TimestampMixin):
     # Migration 145: گردش تأیید ترتیبی (دور فعلی؛ ارسال دوباره بعد از برگشت = دور تازه)
     approval_round: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 146: ابطال (automation.cancel) — نامه، شماره و سابقه حفظ می‌شوند؛ شماره void
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancelled_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class OaLetterVersion(Base, TimestampMixin):

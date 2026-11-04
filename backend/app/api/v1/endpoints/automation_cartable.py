@@ -418,13 +418,31 @@ async def make_confidential(letter_id: int, payload: ConfidentialIn, db: AsyncSe
 
 
 class RelatedDraftIn(BaseModel):
-    type: str = "reply"  # فقط پاسخ
+    type: str = "reply"  # reply (پاسخ) | correction (اصلاحیه)
+
+
+class CancelIn(BaseModel):
+    reason: str = Field(max_length=2000)
+
+
+@router.post("/letters/{letter_id}/cancel")
+async def cancel_letter(letter_id: int, payload: CancelIn, background_tasks: BackgroundTasks,
+                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """ابطال نامه‌ی ثبت‌شده (automation.cancel سایت نامه)؛ شماره باطل می‌شود و نامه و سابقه می‌مانند."""
+    await _require(db, current_user, "automation.cancel", "ابطال نامه")
+    service = OaCartableService(db)
+    try:
+        await service.cancel(letter_id, current_user, payload.reason)
+    except OaCartableError as e:
+        _raise(e)
+    background_tasks.add_task(send_pushes, service.pushes)
+    return {"success": True}
 
 
 @router.post("/letters/{letter_id}/related-draft", status_code=status.HTTP_201_CREATED)
 async def related_draft(letter_id: int, payload: RelatedDraftIn, db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_user)):
-    """پیش‌نویس پاسخ به نامه‌ای که کاربر به آن دسترسی دارد. خروجی: {draft_id}."""
+    """پیش‌نویس پاسخ یا اصلاحیه (type: reply | correction) به نامه‌ای که کاربر به آن دسترسی دارد. خروجی: {draft_id}."""
     await _require(db, current_user, "automation.access", "نوشتن نامه")
     try:
         return {"draft_id": await OaCartableService(db).create_related_draft(letter_id, current_user, payload.type)}
