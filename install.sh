@@ -499,6 +499,9 @@ Environment="PATH=${INSTALL_DIR}/backend/.venv/bin:/usr/local/sbin:/usr/local/bi
 ExecStart=${INSTALL_DIR}/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 2
 Restart=always
 RestartSec=5
+# /var/lib/faipco (بکاپ، فایل‌های اتوماسیون، سقف آپلود) را systemd پیش از هر اجرا با مالک www-data می‌سازد
+StateDirectory=faipco
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target

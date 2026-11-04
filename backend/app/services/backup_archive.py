@@ -42,7 +42,14 @@ class PasswordRequired(ArchiveError):
 
 
 def backup_dir() -> Path:
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except PermissionError:
+        # سرویس (www-data) اجازه‌ی ساخت /var/lib/faipco را ندارد: install.sh (یا StateDirectory سرویس) آن را می‌سازد
+        raise ArchiveError(
+            f"پوشه‌ی {BACKUP_DIR} وجود ندارد و سرویس اجازه‌ی ساخت آن را ندارد؛ یک بار install.sh را اجرا کنید "
+            "(یا آپدیت از پنل) تا ساخته شود."
+        ) from None
     return BACKUP_DIR
 
 

@@ -56,6 +56,11 @@ def _remove(filename: str) -> None:
 def list_entries() -> list[dict]:
     """ورودی‌های صف، جدیدترین اول. هر ورودی: {filename, created_at, sha256, size, kinds: {kind: {attempts, next_at, last_error}}, given_up: {kind: error}}"""
     out = []
+    from app.services.backup_archive import BACKUP_DIR
+
+    # فقط خواندن: اگر پوشه هنوز ساخته نشده (هیچ بکاپی در صف نیست) چیزی نمی‌سازد و خطا نمی‌دهد
+    if not (BACKUP_DIR / "pending").is_dir():
+        return out
     for meta in pending_dir().glob("*.json"):
         entry = _read(meta)
         if entry and R.parse_filename_ok(entry.get("filename", "")):
