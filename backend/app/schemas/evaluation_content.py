@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -34,6 +36,7 @@ class EvaluationPeriodOut(EvaluationPeriodIn):
     status: str
     created_by_user_id: int | None = None
     is_disabled: bool = False
+    incomplete_closed: bool = False  # ارزیابی‌های انجام‌نشده بسته شده (نتایج ثبت‌شده در دسترس)
     # تعداد ارزیابی‌های منتشرشده (انتساب‌ها) و انجام‌شده؛ فقط در فهرست دوره‌ها پر می‌شود
     assignments_total: int = 0
     assignments_completed: int = 0
@@ -47,8 +50,12 @@ class EvaluationPeriodStatusUpdate(BaseModel):
 
 
 class EvaluationPeriodDisabledUpdate(BaseModel):
-    """بدنه فعال/غیرفعال‌کردن یک دوره."""
+    """
+    بدنه فعال/غیرفعال‌کردن یک دوره. is_disabled=false: فعال کامل.
+    is_disabled=true با mode: full (غیرفعال کامل) یا incomplete (فقط بستن ارزیابی‌های انجام‌نشده).
+    """
     is_disabled: bool
+    mode: Literal["full", "incomplete"] = "full"
 
 
 class EvaluationPeriodDeleteIn(BaseModel):

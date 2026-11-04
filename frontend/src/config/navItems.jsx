@@ -203,7 +203,7 @@ export const NAV_ITEMS = [
         label: "تنظیمات مرخصی/ماموریت",
         path: "/leave-requests/settings",
         icon: <SettingsOutlinedIcon />,
-        check: (u) => u?.can_manage_sites,
+        check: (u) => u?.can_manage_sites || u?.can_manage_leave_settings,
       },
     ],
   },

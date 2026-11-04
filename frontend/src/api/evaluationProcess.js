@@ -5,10 +5,24 @@
 import { apiClient } from "./client";
 
 // POST /performance/periods/{id}/generate-assignments با form_id؛ تخصیص‌های ارزیابی دوره را تولید و نتیجه را برمی‌گرداند
-export async function generateEvaluationAssignments(periodId, formId) {
+// scope: site | departments | supervisors | employees (دامنه‌ی ارزیابی‌شونده‌ها)
+export async function generateEvaluationAssignments(periodId, formId, scope = "site", departmentIds = [], employeeIds = []) {
   const { data } = await apiClient.post(`/performance/periods/${periodId}/generate-assignments`, {
     form_id: formId,
+    scope,
+    department_ids: departmentIds,
+    employee_ids: employeeIds,
   });
+  return data;
+}
+
+export async function fetchAssignmentScopeOptions(periodId) {
+  const { data } = await apiClient.get(`/performance/periods/${periodId}/assignment-scope-options`);
+  return data;
+}
+
+export async function searchAssignmentScopePeople(periodId, q) {
+  const { data } = await apiClient.get(`/performance/periods/${periodId}/assignment-scope-people`, { params: { q } });
   return data;
 }
 
@@ -51,6 +65,12 @@ export async function submitEvaluation(evaluationId) {
 // GET /performance/my-results؛ نتایج ارزیابی‌های کاربر جاری (به‌عنوان ارزیابی‌شونده) را برمی‌گرداند
 export async function fetchMyEvaluationResults() {
   const { data } = await apiClient.get("/performance/my-results");
+  return data;
+}
+
+// GET /performance/my-not-evaluated؛ دوره‌های بسته‌شده‌ای که کاربر جاری در آن ارزیابی نشده (با متن پیام)
+export async function fetchMyNotEvaluated() {
+  const { data } = await apiClient.get("/performance/my-not-evaluated");
   return data;
 }
 

@@ -35,6 +35,7 @@ import {
 import {
   fetchMyEvaluationResultAnswers,
   fetchMyEvaluationResults,
+  fetchMyNotEvaluated,
   fetchMyEvaluations,
   fetchMyShiftLeadEvaluations,
   fetchMyYearlyAverage,
@@ -470,6 +471,7 @@ export default function MyPerformancePage() {
   }
 
   const [results, setResults] = useState(null); // نتایج ارزیابی کاربر؛ null = در حال بارگذاری
+  const [notEvaluated, setNotEvaluated] = useState([]); // دوره‌های بسته‌شده‌ای که ارزیابی نشده (پیام به جای نتیجه)
   const [detailsResult, setDetailsResult] = useState(null); // نتیجه‌ای که دیالوگ جزئیاتش باز است
   // وضعیت محدودیت دسترسی (AccessGate)؛ با برگشت به صفحه یا بازگشت فوکوس خودکار تازه می‌شود
   const { status: gateStatus } = useAccessGateStatus();
@@ -518,6 +520,9 @@ export default function MyPerformancePage() {
           err.response?.data?.detail || "دریافت نتایج ارزیابی با خطا مواجه شد.",
         ),
       );
+    fetchMyNotEvaluated()
+      .then(setNotEvaluated)
+      .catch(() => setNotEvaluated([]));
     fetchMyYearlyAverage()
       .then(setYearlyAverage)
       .catch(() => setYearlyAverage(null));
@@ -603,10 +608,17 @@ export default function MyPerformancePage() {
       {tab === 0 && (
         <Box>
           <YearlyAverageCard yearlyAverage={yearlyAverage} />
+          {notEvaluated.map((n) => (
+            <Alert key={n.period_id} severity="warning" sx={{ mb: 1.5 }}>
+              {n.message}
+            </Alert>
+          ))}
           {results === null ? null : results.length === 0 ? (
+            notEvaluated.length > 0 ? null : (
             <Typography variant="body2" color="text.secondary">
               هنوز هیچ ارزیابی‌ای برای شما ثبت نشده است.
             </Typography>
+            )
           ) : (
             results.map((result) => (
               <ResultCard

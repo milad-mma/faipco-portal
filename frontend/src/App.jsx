@@ -523,7 +523,7 @@ export default function App() {
             <Route
               path="/leave-requests/settings"
               element={
-                <PermissionRoute check={(u) => u?.can_manage_sites}>
+                <PermissionRoute check={(u) => u?.can_manage_sites || u?.can_manage_leave_settings}>
                   <LeaveRequestStructurePage />
                 </PermissionRoute>
               }

@@ -37,3 +37,9 @@
 ## API
 `/api/v1/profile-photo/...` — `me`، `me/upload`، `me/delete`، `me/pending` (DELETE)، `me/pending/image`،
 `requests`، `requests/{id}/image|current|approve|reject`.
+
+## اعلان‌ها (Push)
+- ثبت درخواست بارگذاری/حذف → همه‌ی کاربران دارای `photo.approve` برای سایت آن پرسنل (سراسری یا همان سایت)، به‌جز خودش. کلید `photo.hr_new`، کلیک → `/photo-requests/admin`.
+- تأیید → خودِ پرسنل (`photo.approved`)؛ رد → خودِ پرسنل با دلیل (`photo.rejected`). کلیک → `/profile`.
+- ارسال بعد از commit در پس‌زمینه (`send_photo_push`)؛ خطا فقط لاگ می‌شود.
+- متن‌ها در پایین صفحه‌ی «عکس پرسنل» قابل ویرایش‌اند (ماژول سراسری `photo`؛ برای کسی که `photo.approve` را برای همه‌ی سایت‌ها دارد).

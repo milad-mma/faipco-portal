@@ -1,6 +1,6 @@
 /**
  * بخش جمع‌شونده‌ی «متن اعلان‌ها» برای صفحه‌ی مدیریت یک ماژول سراسری (متن مشترک همه‌ی سایت‌ها).
- * ورودی: module (notices | evaluation | birthday | feedback | login_security | family)، title و sx.
+ * ورودی: module (notices | evaluation | birthday | feedback | login_security | family | photo)، title و sx.
  * فقط برای کسی نمایش داده می‌شود که مجوز همان ماژول را برای همه‌ی سایت‌ها دارد
  * (user.notification_template_modules از /auth/me). محتوا فقط با باز شدن بارگذاری می‌شود.
  */

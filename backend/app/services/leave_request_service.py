@@ -686,6 +686,54 @@ def _to_personnel_code_int(employee: Employee) -> int:
 _background_push_tasks: set = set()
 
 
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def _row_from_values(values: dict) -> dict:
+    """مقادیر منطقی ردیف جدید (_insert_request_sync) → شکل ردیف کاراوب برای متن اعلان."""
+    return {
+        "EmpNo": values.get("emp_no"),
+        "StartDate": values.get("start_date"),
+        "EndDate": values.get("end_date"),
+        "StartHour": values.get("start_hour"),
+        "EndHour": values.get("end_hour"),
+        "OperationsID": values.get("operations_id"),
+        "ActionId": values.get("action_id"),
+        "CardNo": values.get("card_no"),
+    }
+
+
+def _push_when(row: dict) -> str:
+    """
+    زمان درخواست برای متن اعلان (ارقام فارسی): روزانه «۱۴۰۵/۰۸/۱۵» یا «۱۴۰۵/۰۸/۱۵ تا ۱۴۰۵/۰۸/۱۷»، ساعتی «۱۴۰۵/۰۸/۱۵ از
+    ۱۰:۰۰ تا ۱۲:۰۰»، تردد فراموش‌شده/مجوز خروج «۱۴۰۵/۰۸/۱۵ ساعت ۱۶:۳۰». row با کلیدهای ردیف کاراوب.
+    """
+    def jd(value) -> str:
+        if value is None:
+            return ""
+        d = value.date() if hasattr(value, "date") else value
+        return jdatetime.date.fromgregorian(date=d).strftime("%Y/%m/%d")
+
+    def hm(value) -> str:
+        v = int(value) % 2400
+        return f"{v // 100:02d}:{v % 100:02d}"
+
+    start, end = row.get("StartDate"), row.get("EndDate")
+    sh, eh = row.get("StartHour"), row.get("EndHour")
+    if sh is not None and int(sh) == 0 and not eh:
+        sh = None  # روزانه‌ی ثبت‌شده در خودِ کاراوب با ساعت ۰
+    if sh is not None and (end is None or jd(end) == jd(start)):
+        if eh is None or int(eh) == 0 or int(eh) == int(sh):
+            text = f"{jd(start)} ساعت {hm(sh)}"  # تردد فراموش‌شده / مجوز خروج
+        else:
+            text = f"{jd(start)} از {hm(sh)} تا {hm(eh)}"
+    elif end is not None and jd(end) != jd(start):
+        text = f"{jd(start)} تا {jd(end)}"
+    else:
+        text = jd(start)
+    return text.translate(_FA_DIGITS)
+
+
 def _schedule_push(site_id: int, emp_no: int, url: str, body: str) -> None:
     """ورودی: سایت، کد پرسنلی گیرنده، آدرس مقصد و متن. ارسال Push را به‌صورت Task پس‌زمینه زمان‌بندی می‌کند و فوراً برمی‌گردد."""
     task = asyncio.create_task(_send_push_to_emp_no(site_id, emp_no, url, body))
@@ -979,11 +1027,9 @@ class LeaveRequestService:
                 )
             )
             if stage == "hr":
-                hr_body = await notification_templates.render(self.db, site_id, "leave.hr_forgotten_pending")
-                for emp_no in await self._with_substitute(site_id, target):
-                    _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", hr_body)
+                await self._notify_hr_forgotten(site_id, target, row)
             else:
-                await self._notify_approver_of_new_request(site_id, target)
+                await self._notify_approver_of_new_request(site_id, target, row)
         await self.db.flush()
         if unresolved:
             await self._attach_requester_and_approver(site_id, unresolved)
@@ -1194,6 +1240,7 @@ class LeaveRequestService:
 
         # درج یک ردیف درخواست به‌ازای هر تردد، به ترتیب زمانی
         request_ids: list[int] = []
+        push_rows: list[dict] = []
         for p, _, label in sorted(parsed, key=lambda item: item[1]):
             jalali = jdatetime.date.fromgregorian(date=p.punch_date)
             text = (description or "").strip()
@@ -1218,9 +1265,13 @@ class LeaveRequestService:
                 request_ids.append(await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values))
             except Exception as e:
                 raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
+            push_rows.append(_row_from_values(values))
 
-        # یک اعلان به سرپرست برای همه ترددهای این درخواست
-        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
+        # یک اعلان به سرپرست برای همه ترددهای این درخواست (زمان همه‌ی ترددها در متن)
+        push_row = dict(push_rows[0]) if push_rows else {}
+        if len(push_rows) > 1:
+            push_row["_when"] = "، ".join(_push_when(r) for r in push_rows)
+        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no, push_row)
         return {
             "request_id": request_ids[0],
             "request_ids": request_ids,
@@ -1310,7 +1361,11 @@ class LeaveRequestService:
             else:
                 if end_date is None:
                     raise LeaveRequestRulesError("تاریخ پایان الزامی است")
-                duration = compute_daily_duration(start_date, end_date)
+                duration = compute_daily_duration(start_date, end_date)  # اعتبارسنجی بازه
+                if not leave_type.is_mission:
+                    duration = await self._daily_leave_days(
+                        employee.site_id, employee.personnel_code, kara_names, site_connection, start_date, end_date
+                    )
                 effective_end_date = end_date
         except LeaveRequestRulesError as e:
             raise LeaveRequestError(str(e)) from e  # تبدیل به خطای قابل نمایش سرویس
@@ -1383,12 +1438,52 @@ class LeaveRequestService:
             raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
 
         # اطلاع‌رسانی به تأییدکننده در پس‌زمینه - خطای Push هرگز ثبت درخواست را متوقف نمی‌کند
-        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no)
+        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no, _row_from_values(values))
 
         return {
             "request_id": new_request_id,
             "approver_name": (await self._get_approver_names(employee.site_id, [cur_emp_no])).get(cur_emp_no),
         }
+
+    async def _daily_leave_days(
+        self, site_id: int, emp_code, kara_names: KaraNames | None, site_connection: SiteConnection, start: date, end: date
+    ) -> int:
+        """
+        مدت مرخصی روزانه = روزهای کاری بازه (تصمیم ۱۴۰۵/۰۸/۱۳): تعطیلات تقویم رسمی سایت و روز غیرکاری شیفت فرد (جمعه،
+        شیفت تعطیل) حساب نمی‌شوند. مرخصی‌ای که فقط روز تعطیل دارد ثبت می‌شود با مدت ۰. ماموریت همان روز تقویمی است.
+        اگر خواندن تقویم/شیفت از کاراوب ممکن نباشد: جمعه‌ها کم می‌شوند.
+        """
+        days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+        holidays: set[date] = set()
+        attendance = (
+            await self.db.execute(select(AttendanceMapping).where(AttendanceMapping.site_id == site_id))
+        ).scalar_one_or_none()
+        if attendance is not None:
+            from app.services.monthly_attendance_service import _fetch_holidays_sync
+
+            branch = await site_branch.get_site_branch_value(self.db, site_id)
+            months: dict[tuple[int, int], list[date]] = {}
+            for d in days:
+                j = jdatetime.date.fromgregorian(date=d)
+                months.setdefault((j.year, j.month), []).append(d)
+            for (jy, jm), month_days in months.items():
+                try:
+                    off = await asyncio.to_thread(_fetch_holidays_sync, site_connection, attendance, jy, jm, branch)
+                except Exception:
+                    logger.warning("خواندن تقویم تعطیلات %s/%s ناموفق بود", jy, jm, exc_info=True)
+                    off = set()
+                holidays |= {d for d in month_days if jdatetime.date.fromgregorian(date=d).day in off}
+        working: list[bool] | None = None
+        if kara_names is not None and str(emp_code or "").isdigit():
+            try:
+                working = await asyncio.to_thread(
+                    _run_kara_writeback_sync, site_connection, kara_names, kara_wb.working_days_sync, int(emp_code), days
+                )
+            except Exception:
+                logger.warning("خواندن شیفت‌های %s برای مدت مرخصی ناموفق بود", emp_code, exc_info=True)
+        if working is None:
+            working = [d.weekday() != 4 for d in days]  # جمعه
+        return sum(1 for d, w in zip(days, working) if w and d not in holidays)
 
     async def _shift_window(
         self, employee: Employee, kara_names: KaraNames | None, site_connection: SiteConnection, day: date
@@ -1497,10 +1592,41 @@ class LeaveRequestService:
                     logger.warning("اعمال بعدی درخواست ساعتی %s ناموفق بود", row.get("RequestId"), exc_info=True)
         return applied
 
-    async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int) -> None:
-        """ورودی: سایت و کد پرسنلی تأییدکننده. اعلان Push «درخواست در انتظار تصمیم شما» (به جانشین فعالش هم) با لینک به کارتابل."""
-        body = await notification_templates.render(self.db, site_id, "leave.approver_new")
+    async def _push_vars(self, type_site_id: int, row: dict, note: str | None = None) -> dict:
+        """
+        متغیرهای متن اعلان یک درخواست (ردیف کاراوب): type = عنوان نوع در پرتال، name = نام درخواست‌دهنده،
+        when = تاریخ/ساعت، note = نظر تأییدکننده با برچسب (اگر هست). هیچ‌وقت خطا نمی‌دهد.
+        """
+        values = {"type": "مرخصی/ماموریت", "name": "", "when": "", "note": ""}
+        try:
+            lookup = await self._get_type_lookup(type_site_id)
+            matched = lookup.get((row.get("OperationsID"), row.get("ActionId"), row.get("CardNo")))
+            if matched is None:  # ActionId/OperationsID ثبت‌شده در خودِ کاراوب ممکن است فرق کند؛ کارت کافی است
+                matched = next((v for k, v in lookup.items() if k[2] is not None and k[2] == row.get("CardNo")), None)
+            if matched:
+                values["type"] = matched[1]
+            emp_no = row.get("EmpNo")
+            if emp_no is not None:
+                values["name"] = (await self._get_approver_names(type_site_id, [emp_no])).get(int(emp_no), "")
+            values["when"] = row.get("_when") or _push_when(row)
+        except Exception:  # noqa: BLE001 - اعلان نباید عملیات اصلی را متوقف کند
+            logger.warning("ساخت متغیرهای اعلان درخواست %s ناموفق بود", row.get("RequestId"), exc_info=True)
+        if (note or "").strip():
+            values["note"] = f"\nنظر تأییدکننده: {note.strip()}"
+        return values
+
+    async def _notify_approver_of_new_request(self, site_id: int, cur_emp_no: int, row: dict | None = None) -> None:
+        """ورودی: سایت، کد پرسنلی تأییدکننده و ردیف درخواست. اعلان Push «درخواست … در انتظار تصمیم شما» (به جانشین فعالش هم)."""
+        values = await self._push_vars(site_id, row or {})
+        body = await notification_templates.render(self.db, site_id, "leave.approver_new", **values)
         for emp_no in await self._with_substitute(site_id, cur_emp_no):
+            _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body)
+
+    async def _notify_hr_forgotten(self, site_id: int, hr_emp_no: int, row: dict, type_site_id: int | None = None) -> None:
+        """اعلان «تردد فراموش‌شده‌ی تأییدشده توسط سرپرست در انتظار شما» به مسئول نیروی انسانی (و جانشینش)."""
+        values = await self._push_vars(type_site_id or site_id, row)
+        body = await notification_templates.render(self.db, site_id, "leave.hr_forgotten_pending", **values)
+        for emp_no in await self._with_substitute(site_id, hr_emp_no):
             _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body)
 
     async def _with_substitute(self, site_id: int, emp_no: int | None) -> list[int]:
@@ -1510,23 +1636,31 @@ class LeaveRequestService:
         substitute = (await active_substitute_codes(self.db, site_id)).get(emp_no)
         return [emp_no] + ([substitute] if substitute is not None and substitute != emp_no else [])
 
-    async def _notify_requester_of_forgotten_punch(self, site_id: int, emp_no: int, stage: str) -> None:
-        """ورودی: سایت، کد پرسنلی درخواست‌دهنده و مرحله (supervisor / approved / rejected). اعلان Push مرحله‌ی تردد فراموش‌شده را با لینک به تب «درخواست‌های من» زمان‌بندی می‌کند."""
-        # متن اعلان هر مرحله (قابل‌ویرایش در «متن اعلان‌ها»ی تنظیمات مرخصی/ماموریت)
+    async def _notify_requester_of_forgotten_punch(
+        self, site_id: int, emp_no: int, stage: str, row: dict | None = None, note: str | None = None,
+        type_site_id: int | None = None,
+    ) -> None:
+        """ورودی: سایت، کد پرسنلی درخواست‌دهنده، مرحله (supervisor / approved / rejected) و ردیف. اعلان Push مرحله‌ی تردد فراموش‌شده."""
+        values = await self._push_vars(type_site_id or site_id, row or {}, note if stage == "rejected" else None)
         _schedule_push(
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
-            await notification_templates.render(self.db, site_id, f"leave.forgotten_{stage}"),
+            await notification_templates.render(self.db, site_id, f"leave.forgotten_{stage}", **values),
         )
 
-    async def _notify_requester_of_decision(self, site_id: int, emp_no: int) -> None:
-        """ورودی: سایت و کد پرسنلی درخواست‌دهنده. اعلان Push «درخواست شما بررسی شد» را با لینک به تب «درخواست‌های من» زمان‌بندی می‌کند."""
+    async def _notify_requester_of_decision(
+        self, site_id: int, emp_no: int, approved: bool, row: dict | None = None, note: str | None = None,
+        type_site_id: int | None = None,
+    ) -> None:
+        """ورودی: سایت، کد پرسنلی درخواست‌دهنده، تصمیم و ردیف. اعلان Push «درخواست «نوع» شما برای … تأیید/رد شد»."""
+        values = await self._push_vars(type_site_id or site_id, row or {}, None if approved else note)
+        key = "leave.requester_approved" if approved else "leave.requester_rejected"
         _schedule_push(
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
-            await notification_templates.render(self.db, site_id, "leave.requester_decided"),
+            await notification_templates.render(self.db, site_id, key, **values),
         )
 
     # ---------- خواندن/نمایش ----------
@@ -2131,6 +2265,7 @@ class LeaveRequestService:
             normalized.append(item)
         await self._apply_real_reviews(site_connection, mapping, normalized)
         self._annotate_stage(normalized, await self._get_hr_officer_emp_no(site_id))
+        await self._attach_approver_names(site_id, normalized)  # تأییدکننده زیر وضعیت در پنل ادمین
         return normalized
 
     async def _list_lookup(
@@ -2277,11 +2412,9 @@ class LeaveRequestService:
                 # اعلان به درخواست‌دهنده (مرحله سرپرست) و به مسئول نیروی انسانی
                 if request_row.get("EmpNo") is not None:
                     await self._notify_requester_of_forgotten_punch(
-                        requester_site_id, request_row["EmpNo"], "supervisor"
+                        requester_site_id, request_row["EmpNo"], "supervisor", request_row, type_site_id=site_id
                     )
-                hr_body = await notification_templates.render(self.db, requester_site_id, "leave.hr_forgotten_pending")
-                for emp_no in await self._with_substitute(requester_site_id, hr_emp_no):
-                    _schedule_push(requester_site_id, emp_no, "/leave-requests?tab=pending", hr_body)
+                await self._notify_hr_forgotten(requester_site_id, hr_emp_no, request_row, type_site_id=site_id)
                 return  # تصمیم نهایی هنوز ثبت نمی‌شود
 
         # ثبت تصمیم نهایی روی WF_Requests. ManagerIdea عمداً خالی نوشته می‌شود (مثل
@@ -2339,10 +2472,13 @@ class LeaveRequestService:
         if requester_emp_no is not None:
             if is_forgotten:
                 await self._notify_requester_of_forgotten_punch(
-                    requester_site_id, requester_emp_no, "approved" if approved else "rejected"
+                    requester_site_id, requester_emp_no, "approved" if approved else "rejected", request_row,
+                    manager_idea, type_site_id=site_id,
                 )
             else:
-                await self._notify_requester_of_decision(requester_site_id, requester_emp_no)
+                await self._notify_requester_of_decision(
+                    requester_site_id, requester_emp_no, approved, request_row, manager_idea, type_site_id=site_id
+                )
 
     # ---------- ویرایش مدیریتی (فقط leave_requests.manage) ----------
 
@@ -2426,7 +2562,17 @@ class LeaveRequestService:
             elif updates.get("start_date") is not None and updates.get("end_date") is not None:
                 start_date_only = updates["start_date"].date() if hasattr(updates["start_date"], "date") else updates["start_date"]  # datetime -> date
                 end_date_only = updates["end_date"].date() if hasattr(updates["end_date"], "date") else updates["end_date"]
-                column_updates[mapping.duration_column] = str(compute_daily_duration(start_date_only, end_date_only))
+                days = compute_daily_duration(start_date_only, end_date_only)
+                # مرخصی (نه ماموریت): فقط روزهای کاری (همان قاعده‌ی ثبت)
+                target_type = (await self.db.execute(
+                    select(LeaveRequestType).where(LeaveRequestType.site_id == site_id, LeaveRequestType.card_no == target_card)
+                )).scalars().first()
+                if target_type is not None and not target_type.is_mission:
+                    kara_names = await self._get_kara_names(site_id, mapping, site_connection)
+                    days = await self._daily_leave_days(
+                        site_id, current_rows[0].get("EmpNo"), kara_names, site_connection, start_date_only, end_date_only
+                    )
+                column_updates[mapping.duration_column] = str(days)
         except LeaveRequestRulesError as e:
             raise LeaveRequestError(str(e)) from e
 

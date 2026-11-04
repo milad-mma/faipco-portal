@@ -351,6 +351,14 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
     return _group_shift(prev=False)
 
 
+def working_days_sync(cur, n: KaraNames, emp_no: int, days: list[date]) -> list[bool]:
+    """
+    برای هر روز: آیا روز کاری شیفت فرد است؟ (همان منبع کسر مرخصی استحقاقی: کسر ۰ = غیرکاری مثل جمعه/شیفت تعطیل).
+    فقط می‌خواند. تعطیلات تقویم رسمی جدا (در سرویس) کم می‌شود.
+    """
+    return [_day_deduction_minutes(cur, n, emp_no, d) > 0 for d in days]
+
+
 def _mor_mam_amounts(cur, n: KaraNames, emp_no: int, card_no: int, start: date, end: date):
     """
     مقادیر (Requested, StandardRequested, Inc_Type) ردیف Mor_Mam را مثل کاراوب حساب می‌کند.

@@ -5,13 +5,20 @@ Schema های Pydantic برای «جریان انجام ارزیابی»: تول
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class GenerateAssignmentsIn(BaseModel):
-    """بدنه درخواست تولید انتساب‌های یک دوره با یک فرم."""
+    """
+    بدنه درخواست تولید انتساب‌های یک دوره با یک فرم و دامنه‌ی ارزیابی‌شونده‌ها:
+    site (کل سایت) / departments (پرسنل واحدها) / supervisors (سرپرستان واحدها، اختیاری محدود به واحدها) / employees.
+    """
     form_id: int
+    scope: Literal["site", "departments", "supervisors", "employees"] = "site"
+    department_ids: list[int] = Field(default_factory=list, max_length=500)
+    employee_ids: list[int] = Field(default_factory=list, max_length=2000)
 
 
 class GenerateAssignmentsOut(BaseModel):
@@ -19,6 +26,7 @@ class GenerateAssignmentsOut(BaseModel):
     created_count: int
     removed_count: int = 0  # انتساب‌های شروع‌نشده‌ای که دیگر با ساختار نمی‌خواندند و حذف شدند
     total_assignments: int
+    targets_count: int = 0  # ارزیابی‌شونده‌های این دامنه که انتساب دارند
 
 
 class EmployeeBriefOut(BaseModel):

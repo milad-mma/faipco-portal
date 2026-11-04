@@ -95,7 +95,9 @@ def test_shift_window_day_night_and_off():
 
 def test_hourly_inside_day_shift():
     w = shift_window(630, 1430, 0)
-    validate_hourly_in_shift(w, 630, 1430)
+    assert "مرخصی روزانه" in _raises(validate_hourly_in_shift, w, 630, 1430)  # کل شیفت = روزانه
+    validate_hourly_in_shift(w, 630, 1400)
+    validate_hourly_in_shift(w, 700, 1430)
     validate_hourly_in_shift(w, 1000, 1200)
     assert "داخل ساعت کاری" in _raises(validate_hourly_in_shift, w, 600, 800)
     assert "داخل ساعت کاری" in _raises(validate_hourly_in_shift, w, 1400, 1500)
@@ -108,7 +110,8 @@ def test_hourly_night_shift_after_midnight():
     validate_hourly_in_shift(w, 0, 230)
     validate_hourly_in_shift(w, 100, 200)
     validate_hourly_in_shift(w, 2300, 100)  # عبور از نیمه‌شب در یک درخواست (مثل درخواست ۲۶۲ کاراوب)
-    validate_hourly_in_shift(w, 1830, 230)
+    validate_hourly_in_shift(w, 1830, 200)
+    assert "مرخصی روزانه" in _raises(validate_hourly_in_shift, w, w["start"], w["end"] % 2400)  # کل شیفت شب
     assert "مجوز خروج" in _raises(validate_hourly_in_shift, w, 2300, 300)  # بعد از پایان رسمی
     assert "داخل ساعت کاری" in _raises(validate_hourly_in_shift, w, 200, 300)
     assert "بعد از ساعت شروع" in _raises(validate_hourly_in_shift, shift_window(630, 1430, 0), 1200, 1000)

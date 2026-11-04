@@ -12,7 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -69,6 +69,12 @@ async def _run_period_status_sync() -> None:
         logger.exception("هم‌گام‌سازی خودکار وضعیت دوره پس از ثبت ارزیابی با خطا مواجه شد")
 
 
+NOT_EVALUATED_MESSAGE = (
+    "ارزیابی عملکرد شما در دوره‌ی «{period}» توسط {evaluator} در مهلت تعیین‌شده انجام نشد؛ "
+    "به همین دلیل نتیجه‌ای برای شما در این دوره ثبت نشده است."
+)
+
+
 class EvaluationProcessError(Exception):
     """خطای قابل نمایش به کاربر در جریان انجام ارزیابی (دسترسی، اعتبارسنجی، وضعیت)."""
     pass
@@ -86,6 +92,8 @@ class EvaluationProcessService:
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None or period.is_disabled:
             raise EvaluationProcessError("این دوره ارزیابی غیرفعال شده و دیگر در دسترس نیست")
+        if period.incomplete_closed:
+            raise EvaluationProcessError("ارزیابی‌های انجام‌نشده‌ی این دوره بسته شده و دیگر قابل انجام یا ویرایش نیست")
 
     async def _get_owned_assignment(self, assignment_id: int, evaluator_employee_id: int) -> EvaluationAssignment:
         """انتساب را برمی‌گرداند به شرط وجود، فعال بودن دوره و این‌که ارزیابِ آن همین پرسنل باشد؛ وگرنه EvaluationProcessError."""
@@ -372,6 +380,7 @@ class EvaluationProcessService:
                 EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
                 EvaluationPeriod.status == EvaluationPeriodStatus.active,
                 EvaluationPeriod.is_disabled.is_(False),
+                EvaluationPeriod.incomplete_closed.is_(False),
                 EvaluationPeriod.end_date > now,
                 EvaluationPeriod.end_date <= deadline_limit,
             )
@@ -582,6 +591,11 @@ class EvaluationProcessService:
             .where(
                 EvaluationAssignment.evaluator_employee_id == evaluator_employee_id,
                 EvaluationPeriod.is_disabled.is_(False),
+                # انجام‌نشده‌های دوره‌ی «بسته‌شده» دیده نمی‌شوند؛ ثبت‌شده‌ها (فقط مشاهده) می‌مانند
+                or_(
+                    EvaluationPeriod.incomplete_closed.is_(False),
+                    EvaluationAssignment.status == EvaluationAssignmentStatus.completed,
+                ),
             )
         )
         assignments = assignments_result.scalars().all()
@@ -629,6 +643,45 @@ class EvaluationProcessService:
             .order_by(Evaluation.submitted_at.desc())
         )
         return list(result.scalars().all())
+
+    async def get_my_not_evaluated(self, target_employee_id: int) -> list[dict]:
+        """
+        دوره‌های «بسته‌شده» (incomplete_closed) که این پرسنل در آن انتساب داشته ولی هیچ ارزیابی ثبت‌شده‌ای ندارد
+        (پیش‌نویس = انجام‌نشده). خروجی: [{"period_id", "period_title", "evaluator_names", "message"}].
+        """
+        rows = (await self.db.execute(
+            select(EvaluationPeriod.id, EvaluationPeriod.title, EvaluationAssignment.status,
+                   Employee.first_name, Employee.last_name)
+            .join(EvaluationAssignment, EvaluationAssignment.period_id == EvaluationPeriod.id)
+            .join(Employee, Employee.id == EvaluationAssignment.evaluator_employee_id)
+            .where(
+                EvaluationAssignment.target_employee_id == target_employee_id,
+                EvaluationPeriod.incomplete_closed.is_(True),
+                EvaluationPeriod.is_disabled.is_(False),
+            )
+            .order_by(EvaluationPeriod.id.desc())
+        )).all()
+        periods: dict[int, dict] = {}
+        for pid, title, status, first, last in rows:
+            p = periods.setdefault(pid, {"period_id": pid, "period_title": title, "done": False, "names": []})
+            if status == EvaluationAssignmentStatus.completed:
+                p["done"] = True
+            else:
+                name = f"{first} {last}".strip()
+                if name and name not in p["names"]:
+                    p["names"].append(name)
+        out = []
+        for p in periods.values():
+            if p["done"]:
+                continue
+            names = " و ".join(p["names"]) or "مدیر/سرپرست شما"
+            out.append({
+                "period_id": p["period_id"],
+                "period_title": p["period_title"],
+                "evaluator_names": p["names"],
+                "message": NOT_EVALUATED_MESSAGE.format(period=p["period_title"], evaluator=names),
+            })
+        return out
 
     async def get_my_result_answers(self, evaluation_id: int, target_employee_id: int) -> list[EvaluationAnswer]:
         """
@@ -732,6 +785,7 @@ class EvaluationProcessService:
                 EvaluationAssignment.evaluator_employee_id == employee_id,
                 EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
                 EvaluationPeriod.is_disabled.is_(False),
+                EvaluationPeriod.incomplete_closed.is_(False),
             )
         )
         pending_count = len(pending_result.all())

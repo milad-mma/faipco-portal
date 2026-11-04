@@ -9,6 +9,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -16,8 +17,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
+  Radio,
+  RadioGroup,
   Snackbar,
   Stack,
   Table,
@@ -35,7 +39,11 @@ import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { fetchSites } from "../api/sites";
 import { fetchEvaluationForms } from "../api/evaluationForms";
-import { generateEvaluationAssignments } from "../api/evaluationProcess";
+import {
+  fetchAssignmentScopeOptions,
+  generateEvaluationAssignments,
+  searchAssignmentScopePeople,
+} from "../api/evaluationProcess";
 import InlineTitleEdit from "../components/InlineTitleEdit";
 import JalaliDateTimePicker from "../components/JalaliDateTimePicker";
 import {
@@ -248,6 +256,11 @@ function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
             این دوره غیرفعال است - ارزیابی‌هایش برای ارزیاب‌ها و پرسنل نمایش داده نمی‌شود.
           </Alert>
         )}
+        {period.incomplete_closed && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            ارزیابی‌های انجام‌نشده‌ی این دوره بسته شده است؛ نتایج ثبت‌شده برای پرسنل نمایش داده می‌شود.
+          </Alert>
+        )}
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
@@ -314,6 +327,78 @@ function PublishedEvaluationsDialog({ period, onClose, onChanged }) {
  * دیالوگ حذف قطعی دوره‌ای که ارزیابی منتشرشده دارد یا پیش‌نویس نیست.
  * ورودی: دوره، onClose و onDeleted؛ دکمه‌ی حذف فقط با تایپ دقیق عنوان دوره فعال می‌شود.
  */
+/**
+ * دیالوگ غیرفعال کردن دوره با دو حالت: غیرفعال کامل، یا فقط بستن ارزیابی‌های انجام‌نشده (نتایج ثبت‌شده می‌ماند).
+ */
+function DisablePeriodDialog({ period, onClose, onDone }) {
+  const [mode, setMode] = useState("full");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      await setEvaluationPeriodDisabled(period.id, true, mode);
+      onDone(mode);
+    } catch (err) {
+      setError(err.response?.data?.detail || "تغییر وضعیت دسترسی با خطا مواجه شد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const option = (value, title, text) => (
+    <Box
+      onClick={() => setMode(value)}
+      sx={{
+        p: 1.5,
+        borderRadius: 2,
+        cursor: "pointer",
+        border: 1.5,
+        borderColor: mode === value ? "primary.main" : "divider",
+        bgcolor: mode === value ? "action.selected" : "transparent",
+      }}
+    >
+      <FormControlLabel
+        value={value}
+        control={<Radio size="small" />}
+        label={<Typography fontWeight={700}>{title}</Typography>}
+      />
+      <Typography variant="body2" color="text.secondary" sx={{ pr: 4 }}>
+        {text}
+      </Typography>
+    </Box>
+  );
+
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
+      <DialogTitle>غیرفعال کردن دوره‌ی «{period.title}»</DialogTitle>
+      <DialogContent>
+        <RadioGroup value={mode} onChange={(e) => setMode(e.target.value)} sx={{ gap: 1.5 }}>
+          {option(
+            "full",
+            "غیرفعال کردن کامل",
+            "همه‌ی ارزیابی‌های این دوره از دسترس خارج می‌شود: ارزیاب‌ها نه فهرست ارزیابی‌ها را می‌بینند و نه می‌توانند ارزیابی کنند، و پرسنل هم نتیجه‌ای نمی‌بینند. هر زمان بخواهید می‌توانید دوره را دوباره فعال کنید."
+          )}
+          {option(
+            "incomplete",
+            "بستن ارزیابی‌های انجام‌نشده",
+            "فقط ارزیابی‌هایی که مدیر یا سرپرست هنوز ثبت نهایی نکرده از دسترس ارزیاب‌ها خارج می‌شود. پرسنلی که ارزیابی شده‌اند نتیجه‌ی خود را مثل قبل می‌بینند و پرسنلی که ارزیابی نشده‌اند به جای نتیجه پیامی می‌بینند که ارزیابی آن‌ها انجام نشده است. این کار هم قابل برگشت است."
+          )}
+        </RadioGroup>
+        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>انصراف</Button>
+        <Button variant="contained" color="warning" onClick={submit} disabled={busy}>
+          {busy ? "در حال اعمال..." : "تأیید و غیرفعال کردن"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function DeletePeriodDialog({ period, onClose, onDeleted }) {
   const [confirmTitle, setConfirmTitle] = useState("");
   const [error, setError] = useState("");
@@ -373,25 +458,62 @@ function DeletePeriodDialog({ period, onClose, onDeleted }) {
 function GenerateAssignmentsDialog({ open, onClose, period }) {
   const [forms, setForms] = useState([]);
   const [formId, setFormId] = useState("");
-  const [result, setResult] = useState(null);  // نتیجه‌ی تولید انتساب: { created_count, total_assignments }
+  const [scope, setScope] = useState("site");
+  const [departments, setDepartments] = useState([]);
+  const [selectedDepts, setSelectedDepts] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [peopleQuery, setPeopleQuery] = useState("");
+  const [selectedPeople, setSelectedPeople] = useState([]);
+  const [result, setResult] = useState(null);  // { created_count, removed_count, total_assignments, targets_count }
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  // با باز شدن دیالوگ، وضعیت قبلی پاک و فرم‌های سایت دوره دریافت می‌شوند
+  // با باز شدن دیالوگ، وضعیت قبلی پاک و فرم‌ها و واحدهای سایت دوره دریافت می‌شوند
   useEffect(() => {
     if (!open) return;
     setResult(null);
     setError("");
     setFormId("");
+    setScope("site");
+    setSelectedDepts([]);
+    setSelectedPeople([]);
     fetchEvaluationForms(period?.site_id).then(setForms);
+    fetchAssignmentScopeOptions(period.id)
+      .then((d) => setDepartments(d.departments || []))
+      .catch(() => setDepartments([]));
   }, [open, period]);
 
-  // انتساب‌ها را برای دوره و فرم انتخاب‌شده تولید می‌کند (اجرای دوباره فقط موارد جدید را می‌سازد)
+  // جستجوی افراد (دامنه‌ی «افراد خاص»)
+  useEffect(() => {
+    if (!open || scope !== "employees") return;
+    let alive = true;
+    const t = setTimeout(() => {
+      searchAssignmentScopePeople(period.id, peopleQuery)
+        .then((d) => alive && setPeople(d))
+        .catch(() => alive && setPeople([]));
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [open, scope, peopleQuery, period]);
+
+  const needsDepts = scope === "departments";
+  const needsPeople = scope === "employees";
+  const ready =
+    formId && (!needsDepts || selectedDepts.length > 0) && (!needsPeople || selectedPeople.length > 0);
+
   async function handleGenerate() {
     setError("");
     setIsSaving(true);
     try {
-      const data = await generateEvaluationAssignments(period.id, formId);
+      const data = await generateEvaluationAssignments(
+        period.id,
+        formId,
+        scope,
+        scope === "departments" || scope === "supervisors" ? selectedDepts.map((d) => d.id) : [],
+        scope === "employees" ? selectedPeople.map((p) => p.id) : []
+      );
       setResult(data);
     } catch (err) {
       setError(err.response?.data?.detail || "تولید انتساب با خطا مواجه شد.");
@@ -400,15 +522,61 @@ function GenerateAssignmentsDialog({ open, onClose, period }) {
     }
   }
 
+  const deptOptions = scope === "supervisors" ? departments.filter((d) => d.has_supervisor) : departments;
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>تولید انتساب ارزیابی برای «{period?.title}»</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         <Typography variant="body2" color="text.secondary">
-          بر اساس ساختار ارزیابی تعریف‌شده (سرپرست/مدیر سایت/سرشیفت)، برای همه پرسنل واجد شرایط این
-          دوره، Assignment ساخته می‌شود - اجرای دوباره، فقط موارد جدید (مثلاً پرسنل تازه‌اضافه‌شده) را
-          اضافه می‌کند، چیزی را تکراری نمی‌سازد.
+          انتخاب کنید <b>چه کسانی ارزیابی شوند</b>. ارزیاب هر نفر از ساختار ارزیابی تعیین می‌شود (سرپرست واحد، مدیر یا
+          سرشیفت)؛ مثلاً سرپرست هر واحد را مدیری ارزیابی می‌کند که در ساختار برای او تعیین شده است.
         </Typography>
+        <TextField select label="ارزیابی‌شونده‌ها" value={scope} onChange={(e) => { setScope(e.target.value); setResult(null); }}>
+          <MenuItem value="site">همه‌ی پرسنل سایت</MenuItem>
+          <MenuItem value="departments">پرسنل واحدهای انتخابی</MenuItem>
+          <MenuItem value="supervisors">سرپرستان واحدها</MenuItem>
+          <MenuItem value="employees">افراد خاص</MenuItem>
+        </TextField>
+        {(scope === "departments" || scope === "supervisors") && (
+          <Autocomplete
+            multiple
+            options={deptOptions}
+            value={selectedDepts}
+            onChange={(_, v) => setSelectedDepts(v)}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            getOptionLabel={(o) => o.name}
+            noOptionsText="واحدی پیدا نشد"
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label={scope === "supervisors" ? "واحدها (خالی = سرپرستان همه‌ی واحدها)" : "واحدها"}
+              />
+            )}
+          />
+        )}
+        {needsPeople && (
+          <Autocomplete
+            multiple
+            options={people}
+            value={selectedPeople}
+            filterOptions={(x) => x}
+            onChange={(_, v) => setSelectedPeople(v)}
+            onInputChange={(_, v, reason) => reason === "input" && setPeopleQuery(v)}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            getOptionLabel={(o) => o.name}
+            noOptionsText="کسی پیدا نشد"
+            renderOption={(props, o) => (
+              <li {...props} key={o.id}>
+                <Box>
+                  <Typography variant="body2">{o.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{o.department || "—"}</Typography>
+                </Box>
+              </li>
+            )}
+            renderInput={(params) => <TextField {...params} label="افراد (جستجو با نام یا واحد)" />}
+          />
+        )}
         <TextField select label="فرم ارزیابی" value={formId} onChange={(e) => setFormId(e.target.value)}>
           {forms
             .filter((f) => f.status === "active")
@@ -418,16 +586,23 @@ function GenerateAssignmentsDialog({ open, onClose, period }) {
               </MenuItem>
             ))}
         </TextField>
+        <Alert severity="info">
+          اجرای دوباره چیزی را تکراری نمی‌سازد و فقط به همین گروه دست می‌زند. اگر کسی از این گروه قبلاً با فرم دیگری
+          انتساب گرفته و ارزیابی‌اش هنوز شروع نشده، انتسابش به این فرم تغییر می‌کند. ارزیابی شروع‌شده یا ثبت‌شده هرگز
+          حذف نمی‌شود. برای چند فرم: اول «همه‌ی پرسنل سایت» را با فرم عمومی بسازید، بعد گروه‌های خاص را با فرم خودشان.
+        </Alert>
         {result && (
           <Alert severity="success">
-            {result.created_count} انتساب جدید ساخته شد - مجموع انتساب‌های این دوره/فرم: {result.total_assignments}
+            {result.targets_count} نفر در این گروه انتساب دارند — {result.created_count} انتساب جدید ساخته شد
+            {result.removed_count ? ` و ${result.removed_count} انتساب قبلی حذف/جابه‌جا شد` : ""}. مجموع انتساب‌های این
+            فرم در دوره: {result.total_assignments}
           </Alert>
         )}
         {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>بستن</Button>
-        <Button variant="contained" onClick={handleGenerate} disabled={isSaving || !formId}>
+        <Button variant="contained" onClick={handleGenerate} disabled={isSaving || !ready}>
           {isSaving ? "در حال تولید..." : "تولید انتساب"}
         </Button>
       </DialogActions>
@@ -447,6 +622,7 @@ export default function EvaluationPeriodsPage() {
   const [generateDialogPeriod, setGenerateDialogPeriod] = useState(null);  // دوره‌ی دیالوگ تولید انتساب؛ null = بسته
   const [publishedPeriod, setPublishedPeriod] = useState(null);  // دوره‌ی دیالوگ ارزیابی‌های منتشرشده؛ null = بسته
   const [deletingPeriod, setDeletingPeriod] = useState(null);  // دوره‌ی دیالوگ حذف قطعی؛ null = بسته
+  const [disablingPeriod, setDisablingPeriod] = useState(null);  // دوره‌ی دیالوگ غیرفعال کردن؛ null = بسته
   const [toast, setToast] = useState("");  // پیام Snackbar موفقیت
 
   // دریافت فهرست سایت‌ها برای نمایش نام سایت و انتخاب در دیالوگ
@@ -500,17 +676,14 @@ export default function EvaluationPeriodsPage() {
 
   // دسترسی ارزیاب‌ها و پرسنل به ارزیابی‌های دوره را قطع/وصل می‌کند (غیرفعال‌سازی با تأیید)
   async function handleToggleDisabled(period) {
-    const disable = !period.is_disabled;
-    if (
-      disable &&
-      !window.confirm(
-        `ارزیابی‌های دوره «${period.title}» برای ارزیاب‌ها و پرسنل غیرفعال شوند؟ (نه فهرست، نه انجام، نه نتیجه - قابل برگشت)`
-      )
-    )
+    const inactive = period.is_disabled || period.incomplete_closed;
+    if (!inactive) {
+      setDisablingPeriod(period); // انتخاب حالت در دیالوگ
       return;
+    }
     try {
-      await setEvaluationPeriodDisabled(period.id, disable);
-      setToast(disable ? "دوره غیرفعال شد و دیگر در دسترس پرسنل نیست." : "دوره دوباره فعال شد.");
+      await setEvaluationPeriodDisabled(period.id, false);
+      setToast("دوره دوباره فعال شد.");
       loadPeriods();
     } catch (err) {
       setError(err.response?.data?.detail || "تغییر وضعیت دسترسی با خطا مواجه شد.");
@@ -634,6 +807,15 @@ export default function EvaluationPeriodsPage() {
                   {period.is_disabled && (
                     <Chip size="small" color="error" variant="outlined" label="غیرفعال" sx={{ mt: 0.5 }} />
                   )}
+                  {period.incomplete_closed && (
+                    <Chip
+                      size="small"
+                      color="warning"
+                      variant="outlined"
+                      label="ارزیابی‌های انجام‌نشده بسته شد"
+                      sx={{ mt: 0.5 }}
+                    />
+                  )}
                 </TableCell>
                 <TableCell>
                   <Button size="small" onClick={() => setPublishedPeriod(period)}>
@@ -656,10 +838,10 @@ export default function EvaluationPeriodsPage() {
                     {period.status !== "draft" && (
                       <Button
                         size="small"
-                        color={period.is_disabled ? "success" : "warning"}
+                        color={period.is_disabled || period.incomplete_closed ? "success" : "warning"}
                         onClick={() => handleToggleDisabled(period)}
                       >
-                        {period.is_disabled ? "فعال‌سازی" : "غیرفعال"}
+                        {period.is_disabled || period.incomplete_closed ? "فعال‌سازی" : "غیرفعال"}
                       </Button>
                     )}
                     <Button size="small" color="error" onClick={() => handleDelete(period)}>
@@ -699,6 +881,22 @@ export default function EvaluationPeriodsPage() {
           period={publishedPeriod}
           onClose={() => setPublishedPeriod(null)}
           onChanged={loadPeriods}
+        />
+      )}
+
+      {disablingPeriod && (
+        <DisablePeriodDialog
+          period={disablingPeriod}
+          onClose={() => setDisablingPeriod(null)}
+          onDone={(mode) => {
+            setDisablingPeriod(null);
+            setToast(
+              mode === "full"
+                ? "دوره غیرفعال شد و دیگر در دسترس پرسنل نیست."
+                : "ارزیابی‌های انجام‌نشده بسته شد؛ نتایج ثبت‌شده برای پرسنل در دسترس است."
+            );
+            loadPeriods();
+          }}
         />
       )}
 

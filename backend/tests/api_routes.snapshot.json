@@ -1,5 +1,5 @@
 {
-  "count": 525,
+  "count": 528,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -229,11 +229,14 @@
     "GET /api/v1/performance/forms/{form_id}",
     "GET /api/v1/performance/my-dashboard-summary",
     "GET /api/v1/performance/my-evaluations",
+    "GET /api/v1/performance/my-not-evaluated",
     "GET /api/v1/performance/my-results",
     "GET /api/v1/performance/my-results/{evaluation_id}/answers",
     "GET /api/v1/performance/my-shift-lead-evaluations",
     "GET /api/v1/performance/my-yearly-average",
     "GET /api/v1/performance/periods",
+    "GET /api/v1/performance/periods/{period_id}/assignment-scope-options",
+    "GET /api/v1/performance/periods/{period_id}/assignment-scope-people",
     "GET /api/v1/performance/periods/{period_id}/assignments",
     "GET /api/v1/performance/reports/sites/{site_id}/compare",
     "GET /api/v1/performance/reports/sites/{site_id}/compare/export",

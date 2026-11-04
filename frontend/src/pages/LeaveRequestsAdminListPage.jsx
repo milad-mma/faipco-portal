@@ -106,6 +106,17 @@ function toDateOnly(date) {
 }
 
 // متن «مدت» که همیشه از شروع/پایان محاسبه می‌شود: ساعتی به ساعت و دقیقه، روزانه به تعداد روز؛ تردد فراموش‌شده مدت ندارد
+function approverLabel(item) {
+  if (item.status === "pending") {
+    if (!item.current_approver_name) return "";
+    const sub = item.current_approver_substitute_name ? ` (جانشین: ${item.current_approver_substitute_name})` : "";
+    return `تأییدکننده: ${item.current_approver_name}${sub}`;
+  }
+  if (item.status === "cancelled") return "";
+  const name = item.approved_by_name || item.current_approver_name;
+  return name ? `${item.status === "rejected" ? "ردکننده" : "تأییدکننده"}: ${name}` : "";
+}
+
 function formatDuration(item) {
   if (item.is_forgotten_punch || item.is_exit_permit) return "—";
   if (item.start_hour != null && item.end_hour != null) {
@@ -805,6 +816,11 @@ export default function LeaveRequestsAdminListPage() {
                           color={STATUS_COLORS[item.status]}
                           label={statusChipLabel(item)}
                         />
+                        {approverLabel(item) && (
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            {approverLabel(item)}
+                          </Typography>
+                        )}
                         {item.status !== "pending" && item.approved_at && (
                           <Typography variant="caption" color="text.secondary" sx={onlyXs}>
                             {faDateTime(item.approved_at)}
@@ -926,6 +942,14 @@ export default function LeaveRequestsAdminListPage() {
                       ) : (
                         item.description || "—"
                       )}
+                      {/* مبدأ/مقصد ماموریت زیر توضیحات */}
+                      {item.is_mission && (item.source || item.destination) && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          {item.source ? `مبدأ: ${item.source}` : ""}
+                          {item.source && item.destination ? " — " : ""}
+                          {item.destination ? `مقصد: ${item.destination}` : ""}
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap" }}>{faDateTime(item.submitted_at)}</TableCell>
                     <TableCell>
@@ -971,6 +995,12 @@ export default function LeaveRequestsAdminListPage() {
                           color={STATUS_COLORS[item.status]}
                           label={statusChipLabel(item)}
                         />
+                      )}
+                      {/* تأییدکننده زیر وضعیت: در انتظار = تأییدکننده‌ی فعلی، بررسی‌شده = تصمیم‌گیرنده */}
+                      {approverLabel(item) && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          {approverLabel(item)}
+                        </Typography>
                       )}
                       {/* تاریخ و ساعت تأیید/رد زیر وضعیت */}
                       {item.status !== "pending" && item.approved_at && (

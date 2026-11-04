@@ -156,7 +156,7 @@ async def set_period_disabled(
     """غیرفعال/فعال‌کردن دسترسی پرسنل به ارزیابی‌های این دوره (برگشت‌پذیر)؛ نیازمند مجوز مدیریت دوره."""
     await _get_managed_period(db, current_user, period_id)
     try:
-        return await EvaluationPeriodService(db).set_disabled(period_id, payload.is_disabled)
+        return await EvaluationPeriodService(db).set_disabled(period_id, payload.is_disabled, payload.mode)
     except EvaluationPeriodError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

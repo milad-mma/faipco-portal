@@ -51,6 +51,9 @@ class EvaluationPeriod(Base, TimestampMixin):
     # غیرفعال: ارزیابی‌های این دوره برای ارزیاب‌ها و پرسنل پنهان است (فهرست، انجام،
     # نتیجه و اجبار)؛ فقط ادمین در صفحه دوره‌ها و گزارش‌ها می‌بیند. برگشت‌پذیر است.
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # «بستن ارزیابی‌های انجام‌نشده» (Migration 149): انتساب‌های pending (حتی پیش‌نویس) از دسترس ارزیاب خارج و قفل؛
+    # نتایج ثبت‌شده برای پرسنل می‌ماند و ارزیابی‌نشده‌ها پیام «ارزیابی انجام نشد» می‌بینند. با is_disabled جمع نمی‌شود.
+    incomplete_closed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     site: Mapped["Site"] = relationship()  # noqa: F821

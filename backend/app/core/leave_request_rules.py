@@ -167,6 +167,11 @@ def kara_day_offset(window: dict | None, start_hour: int) -> int:
     return 1 if start_hour < window["start"] else 0
 
 
+FULL_SHIFT_HOURLY_ERROR = (
+    "این بازه کل ساعت کاری شیفت شما در این روز است؛ به جای مرخصی ساعتی، «مرخصی روزانه» ثبت کنید."
+)
+
+
 def validate_hourly_in_shift(window: dict | None, start_hour: int, end_hour: int) -> None:
     """
     مرخصی ساعتی فقط داخل ساعت رسمی شیفت همان روز. window=None یعنی شیفتی پیدا نشد (بدون محدودیت).
@@ -183,6 +188,9 @@ def validate_hourly_in_shift(window: dict | None, start_hour: int, end_hour: int
     if e <= s or s < window["start"] or e > window["end"]:
         tail = " برای بعد از پایان شیفت «مجوز خروج» ثبت کنید." if e > window["end"] else ""
         raise LeaveRequestRulesError(f"ساعت مرخصی باید داخل ساعت کاری همان روز باشد. {window_label(window)}.{tail}")
+    # کل شیفت (از ابتدا تا پایان) = مرخصی روزانه، نه ساعتی
+    if s <= window["start"] and e >= window["end"]:
+        raise LeaveRequestRulesError(FULL_SHIFT_HOURLY_ERROR)
 
 
 def validate_exit_after_shift(window: dict | None, exit_hour: int) -> None:

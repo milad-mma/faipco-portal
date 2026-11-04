@@ -14,7 +14,7 @@ Endpoint های عکس پرسنلی (پیشوند /profile-photo).
   POST   /profile-photo/requests/{id}/approve   ثبت در دیتابیس منبع (کاراوب) و پرتال
   POST   /profile-photo/requests/{id}/reject    رد با دلیل
 """
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.user import User
-from app.services.profile_photo_service import ProfilePhotoError, ProfilePhotoService
+from app.services.profile_photo_service import ProfilePhotoError, ProfilePhotoService, send_photo_push
 
 router = APIRouter()
 
@@ -71,6 +71,7 @@ async def my_photo_status(db: AsyncSession = Depends(get_db), current_user: User
 
 @router.post("/me/upload", status_code=status.HTTP_201_CREATED)
 async def request_upload(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -78,19 +79,23 @@ async def request_upload(
     employee = await _employee(db, current_user)
     content = await file.read(MAX_INPUT_BYTES + 1)
     try:
-        await ProfilePhotoService(db).request_upload(employee, content)
+        req = await ProfilePhotoService(db).request_upload(employee, content)
     except ProfilePhotoError as e:
         _bad(e)
+    background_tasks.add_task(send_photo_push, req.id)
     return await ProfilePhotoService(db).my_status(employee)
 
 
 @router.post("/me/delete", status_code=status.HTTP_201_CREATED)
-async def request_delete(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def request_delete(
+    background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     employee = await _employee(db, current_user)
     try:
-        await ProfilePhotoService(db).request_delete(employee)
+        req = await ProfilePhotoService(db).request_delete(employee)
     except ProfilePhotoError as e:
         _bad(e)
+    background_tasks.add_task(send_photo_push, req.id)
     return await ProfilePhotoService(db).my_status(employee)
 
 
@@ -143,18 +148,26 @@ async def request_current_image(request_id: int, db: AsyncSession = Depends(get_
 
 
 @router.post("/requests/{request_id}/approve")
-async def approve(request_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def approve(
+    request_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     sites = await _sites(db, current_user)
     try:
-        return await ProfilePhotoService(db).approve(request_id, sites, current_user)
+        result = await ProfilePhotoService(db).approve(request_id, sites, current_user)
     except ProfilePhotoError as e:
         _bad(e)
+    background_tasks.add_task(send_photo_push, request_id)
+    return result
 
 
 @router.post("/requests/{request_id}/reject")
 async def reject(
     request_id: int,
     payload: RejectIn,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -163,4 +176,5 @@ async def reject(
         await ProfilePhotoService(db).reject(request_id, sites, current_user, payload.reason)
     except ProfilePhotoError as e:
         _bad(e)
+    background_tasks.add_task(send_photo_push, request_id)
     return {"ok": True}

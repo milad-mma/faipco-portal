@@ -11,6 +11,7 @@ photo_thumbnail_column = عکس اصلی / photo_small_column = عکس کوچک)
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 import psycopg2
@@ -23,9 +24,55 @@ from app.models.employee import Employee, EmployeeMapping
 from app.models.profile_photo import ProfilePhotoRequest
 from app.models.site import DbType, SiteConnection
 from app.models.user import User
+from app.services import notification_templates
 from app.services.leave_request_service import _connect, _quote
 
+logger = logging.getLogger(__name__)
+
 ACTION_LABELS = {"upload": "بارگذاری عکس", "delete": "حذف عکس"}
+PHOTO_APPROVE = "photo.approve"
+
+
+async def send_photo_push(request_id: int) -> None:
+    """
+    اعلان (Push) عکس پرسنلی، بعد از commit در پس‌زمینه؛ خطا فقط لاگ می‌شود:
+    - درخواست در انتظار → همه‌ی کاربران دارای photo.approve برای سایت آن پرسنل (سراسری یا همان سایت)، به‌جز خودش
+    - تأیید/رد → خودِ پرسنل
+    """
+    from app.core.permission_grants import grants_subquery
+    from app.db.session import AsyncSessionLocal
+    from app.services.push_service import PushService
+
+    try:
+        async with AsyncSessionLocal() as db:
+            req = await db.get(ProfilePhotoRequest, request_id)
+            if req is None:
+                return
+            emp = await db.get(Employee, req.employee_id)
+            name = f"{emp.first_name} {emp.last_name}".strip() if emp else ""
+            action = ACTION_LABELS.get(req.action, "")
+            if req.status == "pending":
+                g = grants_subquery()
+                ids = set((await db.execute(
+                    select(User.id).join(g, g.c.user_id == User.id).where(
+                        g.c.code == PHOTO_APPROVE, (g.c.site_id.is_(None)) | (g.c.site_id == req.site_id),
+                        User.is_active.is_(True),
+                    )
+                )).scalars().all())
+                ids -= set((await db.execute(select(User.id).where(User.employee_id == req.employee_id))).scalars().all())
+                body = await notification_templates.render(db, None, "photo.hr_new", name=name, action=action)
+                url = "/photo-requests/admin"
+            elif req.status in ("approved", "rejected"):
+                ids = set((await db.execute(select(User.id).where(User.employee_id == req.employee_id))).scalars().all())
+                key = "photo.approved" if req.status == "approved" else "photo.rejected"
+                body = await notification_templates.render(db, None, key, action=action, reason=req.reject_reason or "")
+                url = "/profile"
+            else:
+                return
+            if ids:
+                await asyncio.wait_for(PushService(db).notify_users(ids, url=url, priority="normal", body=body), timeout=60)
+    except Exception:  # noqa: BLE001 - اعلان نباید خطای کاربر شود
+        logger.exception("ارسال اعلان عکس پرسنلی ناموفق بود (درخواست %s)", request_id)
 
 
 class ProfilePhotoError(Exception):

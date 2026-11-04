@@ -31,7 +31,8 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import BackLink from "../components/BackLink";
 import EmployeePicker from "../components/EmployeePicker";
 import NotificationTemplatesEditor from "../components/NotificationTemplatesEditor";
-import { fetchSites } from "../api/sites";
+import { fetchMyAccessibleSites, fetchSites } from "../api/sites";
+import { useAuth } from "../context/AuthContext";
 import { fetchDepartments } from "../api/departments";
 import {
   fetchLeaveNotificationTemplates,
@@ -931,6 +932,7 @@ function LeaveNotifySection({ siteId }) {
  * وضعیت ماژول، نوع‌های درخواست، تأییدکننده‌ی هر واحد و مسئول نیروی انسانی.
  */
 export default function LeaveRequestStructurePage() {
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState(""); // سایت انتخابی
@@ -944,7 +946,17 @@ export default function LeaveRequestStructurePage() {
 
   // بارگذاری سایت‌ها و انتخاب سایت اولیه
   useEffect(() => {
-    fetchSites().then((data) => {
+    // فقط سایت‌هایی که کاربر تنظیمات مرخصی‌شان را دارد (leave_requests.settings یا sites.manage)
+    Promise.all([
+      fetchMyAccessibleSites("leave_requests.settings").catch(() => ({ unrestricted: false, sites: [] })),
+      fetchMyAccessibleSites("sites.manage").catch(() => ({ unrestricted: false, sites: [] })),
+    ]).then(async ([a, b]) => {
+      let data;
+      if (a.unrestricted || b.unrestricted) data = await fetchSites();
+      else {
+        const byId = new Map([...a.sites, ...b.sites].map((s) => [s.id, s]));
+        data = [...byId.values()];
+      }
       setSites(data);
       // اگر از تب «نگاشت مرخصی/ماموریت» تنظیمات سایت آمده باشیم، همان سایت انتخاب می‌شود
       const requested = Number(searchParams.get("site"));
@@ -956,7 +968,7 @@ export default function LeaveRequestStructurePage() {
 
   return (
     <Box>
-      <BackLink to="/sites" label="بازگشت" />
+      {user?.can_manage_sites && <BackLink to="/sites" label="بازگشت" />}
       <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
         تنظیمات درخواست مرخصی/ماموریت
       </Typography>

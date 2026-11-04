@@ -200,12 +200,16 @@ class EvaluationPeriodService:
         await self.db.refresh(period)
         return period
 
-    async def set_disabled(self, period_id: int, disabled: bool) -> EvaluationPeriod:
-        """غیرفعال/فعال‌کردن دسترسی پرسنل به ارزیابی‌های منتشرشده این دوره (برگشت‌پذیر)."""
+    async def set_disabled(self, period_id: int, disabled: bool, mode: str = "full") -> EvaluationPeriod:
+        """
+        غیرفعال/فعال‌کردن دوره (برگشت‌پذیر). mode=full: همه چیز از دسترس خارج. mode=incomplete: فقط ارزیابی‌های
+        انجام‌نشده (pending، حتی پیش‌نویس) بسته می‌شود و نتایج ثبت‌شده برای پرسنل می‌ماند. disabled=False هر دو را برمی‌دارد.
+        """
         period = await self.db.get(EvaluationPeriod, period_id)
         if period is None:
             raise EvaluationPeriodError("دوره ارزیابی موردنظر یافت نشد")
-        period.is_disabled = disabled
+        period.is_disabled = bool(disabled and mode == "full")
+        period.incomplete_closed = bool(disabled and mode == "incomplete")
         await self.db.commit()
         await self.db.refresh(period)
         return period

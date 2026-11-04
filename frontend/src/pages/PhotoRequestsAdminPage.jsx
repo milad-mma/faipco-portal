@@ -20,6 +20,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import DefaultPersonAvatar from "../components/DefaultPersonAvatar";
 import { approvePhotoRequest, fetchPhotoRequestBlob, fetchPhotoRequests, rejectPhotoRequest } from "../api/profilePhoto";
 import { useAuth } from "../context/AuthContext";
+import ModuleNotificationTemplates from "../components/ModuleNotificationTemplates";
 import { toPersianDigits } from "../utils/searchText";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "");
@@ -205,6 +206,7 @@ export default function PhotoRequestsAdminPage() {
           <Pagination count={pages} page={page} onChange={(_, p) => setPage(p)} />
         </Box>
       )}
+      <ModuleNotificationTemplates module="photo" title="متن اعلان‌های عکس پرسنلی" />
     </Box>
   );
 }

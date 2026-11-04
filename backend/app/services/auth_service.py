@@ -410,6 +410,7 @@ class AuthService:
         base.can_oa_templates = user.is_superuser or "automation.templates" in permission_codes
         base.can_oa_access = user.is_superuser or "automation.access" in permission_codes
         base.can_oa_reassign = user.is_superuser or "automation.reassign" in permission_codes
+        base.can_manage_leave_settings = user.is_superuser or "leave_requests.settings" in permission_codes
         # شمارنده‌ی منوی «کارتابل من»: خوانده‌نشده + مسئولیت باز — فقط نامه‌هایی که خود شخص به آن‌ها دسترسی دارد
         base.oa_unread = base.oa_pending = base.oa_overdue = 0
         if base.can_oa_access and user.employee_id is not None:

@@ -58,9 +58,37 @@ async def generate_assignments(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دوره ارزیابی موردنظر یافت نشد")
     await require_site_permission(db, current_user, period.site_id, "performance.assignments.manage")
     try:
-        return await EvaluationAssignmentService(db).generate_assignments(period_id, payload.form_id)
+        return await EvaluationAssignmentService(db).generate_assignments(
+            period_id, payload.form_id, payload.scope, payload.department_ids, payload.employee_ids
+        )
     except EvaluationAssignmentError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+async def _period_for_assignments(db: AsyncSession, user: User, period_id: int) -> EvaluationPeriod:
+    period = await db.get(EvaluationPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دوره ارزیابی موردنظر یافت نشد")
+    await require_site_permission(db, user, period.site_id, "performance.assignments.manage")
+    return period
+
+
+@router.get("/periods/{period_id}/assignment-scope-options")
+async def assignment_scope_options(
+    period_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """واحدهای سایت دوره (با پرچم داشتن سرپرست ارزیابی) برای دیالوگ تولید انتساب."""
+    await _period_for_assignments(db, current_user, period_id)
+    return await EvaluationAssignmentService(db).scope_options(period_id)
+
+
+@router.get("/periods/{period_id}/assignment-scope-people")
+async def assignment_scope_people(
+    period_id: int, q: str = "", db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """جستجوی پرسنل فعال سایت دوره برای دامنه‌ی «افراد خاص»."""
+    await _period_for_assignments(db, current_user, period_id)
+    return await EvaluationAssignmentService(db).scope_people(period_id, q[:100])
 
 
 @router.get("/my-evaluations", response_model=list[MyEvaluationItemOut])
@@ -180,6 +208,20 @@ async def get_my_results(
 
     employee_id = _require_employee(current_user)
     return await EvaluationProcessService(db).get_my_results(employee_id)
+
+
+@router.get("/my-not-evaluated")
+async def get_my_not_evaluated(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """دوره‌های «ارزیابی‌های انجام‌نشده بسته شد» که کاربر جاری در آن ارزیابی نشده؛ با متن پیام آماده‌ی نمایش."""
+    try:
+        await AccessGateService(db).check(current_user, "evaluation_result")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    employee_id = _require_employee(current_user)
+    return await EvaluationProcessService(db).get_my_not_evaluated(employee_id)
 
 
 @router.get("/my-results/{evaluation_id}/answers", response_model=list[MyAnswerOut])

@@ -43,8 +43,9 @@ export async function deleteEvaluationPeriod(periodId, confirmTitle) {
 }
 
 // PUT /performance/periods/{id}/disabled؛ دوره را فعال/غیرفعال می‌کند و دوره‌ی به‌روزشده را برمی‌گرداند
-export async function setEvaluationPeriodDisabled(periodId, isDisabled) {
-  const { data } = await apiClient.put(`/performance/periods/${periodId}/disabled`, { is_disabled: isDisabled });
+// mode: full (غیرفعال کامل) | incomplete (بستن ارزیابی‌های انجام‌نشده)
+export async function setEvaluationPeriodDisabled(periodId, isDisabled, mode = "full") {
+  const { data } = await apiClient.put(`/performance/periods/${periodId}/disabled`, { is_disabled: isDisabled, mode });
   return data;
 }
 

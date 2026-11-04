@@ -2,7 +2,7 @@
 Endpoint های مدیریتی «درخواست مرخصی/ماموریت» (پیشوند /leave-requests-admin).
 
     - تنظیمات ادمین سایت (نگاشت کاراوب، نوع‌ها، فهرست‌های مرجع، تأییدکننده واحد، مسئول نیروی
-      انسانی، وضعیت ماژول): مجوز sites.manage روی همان سایت
+      انسانی، وضعیت ماژول): مجوز leave_requests.settings یا sites.manage روی همان سایت
     - گزارش همه درخواست‌های یک سایت و خروجی Excel: leave_requests.view یا leave_requests.manage،
       یا مجوز به‌تفکیک نوع (leave_requests.view.type.<عنوان>) با محدودیت‌های خاص
     - ویرایش/حذف مدیریتی یک درخواست: فقط leave_requests.manage
@@ -58,7 +58,21 @@ from app.services.leave_request_structure_service import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SITES_MANAGE = "sites.manage"  # مجوز لازم برای همه‌ی endpoint های تنظیمات سایت
+SITES_MANAGE = "sites.manage"
+LEAVE_SETTINGS = "leave_requests.settings"  # Migration 148: تنظیمات مرخصی/ماموریت به تفکیک سایت (بدون مدیریت سایت)
+
+
+async def _require_settings(db: AsyncSession, user: User, site_id: int | None) -> None:
+    """
+    تنظیمات مرخصی/ماموریت یک سایت: مجوز leave_requests.settings همان سایت، یا sites.manage همان سایت (مثل قبل).
+    """
+    if user.is_superuser:
+        return
+    for code in (LEAVE_SETTINGS, SITES_MANAGE):
+        sites = await get_sites_with_permission(db, user, code)
+        if sites is None or (site_id is not None and site_id in sites):
+            return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه‌ی تنظیمات مرخصی/ماموریت این سایت را ندارید")
 
 
 @router.get("/sites/{site_id}/mapping", response_model=LeaveRequestMappingOut | None)
@@ -68,7 +82,7 @@ async def get_mapping(
     current_user: User = Depends(get_current_user),
 ):
     """نگاشت کاراوب یک سایت (null اگر تنظیم نشده). مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).get_mapping(site_id)
 
 
@@ -89,7 +103,7 @@ async def upsert_mapping(
     current_user: User = Depends(get_current_user),
 ):
     """ساخت یا به‌روزرسانی نگاشت کاراوب سایت (اولین ساخت، نوع‌های پیش‌فرض را هم می‌سازد). مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     # نگاشت موجود: فقط فیلدهای ارسال‌شده تغییر می‌کنند (فیلدی که در فرم نیست به پیش‌فرض برنمی‌گردد؛ مثلاً جدول کارت‌ها
     # که پیش‌فرض اسکیما «Cards» است و نام واقعی آن در کاراوب WF_Cards). نگاشت تازه: همه‌ی فیلدها با پیش‌فرض‌ها
     service = LeaveRequestStructureService(db)
@@ -105,7 +119,7 @@ async def delete_mapping(
     current_user: User = Depends(get_current_user),
 ):
     """حذف نگاشت سایت (ماژول برای سایت غیرفعال می‌شود). مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     await LeaveRequestStructureService(db).delete_mapping(site_id)
 
 
@@ -119,7 +133,7 @@ async def get_action_lookup(
     فهرست WF_Action کاراوب (ActionId + عنوان فارسی) برای فهرست کمکی فرم «افزودن نوع درخواست».
     مجوز: sites.manage. 400 اگر نگاشت یا اتصال کاراوب سایت مشکل داشته باشد.
     """
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestService(db).list_action_lookup(site_id)
     except LeaveRequestError as e:
@@ -133,7 +147,7 @@ async def get_operation_lookup(
     current_user: User = Depends(get_current_user),
 ):
     """فهرست WF_OperationTypes کاراوب (OperationId + عنوان) برای فرم «افزودن نوع درخواست». مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestService(db).list_operation_lookup(site_id)
     except LeaveRequestError as e:
@@ -147,7 +161,7 @@ async def get_card_lookup(
     current_user: User = Depends(get_current_user),
 ):
     """فهرست کارت‌های کاراوب (Card_No + عنوان + ActionId کارت) برای فرم «افزودن نوع درخواست». مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestService(db).list_card_lookup(site_id)
     except LeaveRequestError as e:
@@ -169,7 +183,7 @@ async def list_types(
         manage_sites = await get_sites_with_permission(db, current_user, "leave_requests.manage")
         has_leave_manage = manage_sites is None or site_id in manage_sites  # None = مجوز سراسری
         if not has_leave_manage:
-            await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+            await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).list_types(site_id)
 
 
@@ -181,7 +195,7 @@ async def add_type(
     current_user: User = Depends(get_current_user),
 ):
     """ساخت یک نوع درخواست جدید برای سایت (مجوز مشاهده‌ی عنوانش هم ساخته می‌شود). مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).add_type(
         site_id, payload.title, payload.is_mission, payload.is_hourly, payload.action_id, payload.operation_id, payload.card_no,
         payload.is_forgotten_punch, payload.is_exit_permit,
@@ -201,7 +215,7 @@ async def update_type(
     leave_type = await db.get(LeaveRequestType, type_id)
     if leave_type is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نوع درخواست موردنظر یافت نشد")
-    await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, leave_type.site_id)
     try:
         data = {k: v for k, v in payload.model_dump().items() if v is not None}  # فیلدهای خالی اعمال نمی‌شوند
         # مهلت ثبت: null فرستاده‌شده یعنی «بدون محدودیت»
@@ -223,7 +237,7 @@ async def delete_type(
     leave_type = await db.get(LeaveRequestType, type_id)
     if leave_type is None:
         return
-    await require_site_permission(db, current_user, leave_type.site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, leave_type.site_id)
     await LeaveRequestStructureService(db).delete_type(type_id)
 
 
@@ -234,7 +248,7 @@ async def list_approvers(
     current_user: User = Depends(get_current_user),
 ):
     """تأییدکننده‌های دستی واحدهای یک سایت. مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).list_approvers(site_id)
 
 
@@ -253,10 +267,10 @@ async def set_approver(
     department = await db.get(Department, department_id)
     if department is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="واحد سازمانی موردنظر یافت نشد")
-    await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, department.site_id)
     approver = await db.get(Employee, payload.approver_employee_id)
     if approver is not None and approver.site_id != department.site_id:
-        await require_site_permission(db, current_user, approver.site_id, SITES_MANAGE)
+        await _require_settings(db, current_user, approver.site_id)
     structure = LeaveRequestStructureService(db)
     old_code = await _manual_approver_code(db, department_id)
     try:
@@ -289,7 +303,7 @@ async def remove_approver(
     department = await db.get(Department, department_id)
     if department is None:
         return
-    await require_site_permission(db, current_user, department.site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, department.site_id)
     await LeaveRequestStructureService(db).remove_approver(department_id)
 
 
@@ -301,7 +315,7 @@ async def set_punch_tolerance(
     current_user: User = Depends(get_current_user),
 ):
     """تلرانس (دقیقه) تطبیق تردد با مرخصی/ماموریت ساعتی این سایت. مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestStructureService(db).set_punch_tolerance(site_id, payload.minutes)
     except LeaveRequestStructureError as e:
@@ -315,7 +329,7 @@ async def get_module_status(
     current_user: User = Depends(get_current_user),
 ):
     """وضعیت ماژول برای سایت: نگاشت دارد؟ از پنل غیرفعال شده؟ مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).get_module_status(site_id)
 
 
@@ -327,7 +341,7 @@ async def set_module_status(
     current_user: User = Depends(get_current_user),
 ):
     """فعال/غیرفعال‌کردن موقت ماژول برای سایت. مجوز: sites.manage. 400 اگر سایت نگاشت نداشته باشد."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestStructureService(db).set_module_disabled(site_id, payload.is_disabled)
     except LeaveRequestStructureError as e:
@@ -341,7 +355,7 @@ async def get_hr_officer(
     current_user: User = Depends(get_current_user),
 ):
     """مسئول نیروی انسانی سایت (تأییدکننده نهایی «تردد فراموش‌شده»)؛ null اگر تعیین نشده. مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     return await LeaveRequestStructureService(db).get_hr_officer(site_id)
 
 
@@ -353,7 +367,7 @@ async def set_hr_officer(
     current_user: User = Depends(get_current_user),
 ):
     """تعیین/جایگزینی مسئول نیروی انسانی سایت. مجوز: sites.manage. 400 اگر پرسنل از این سایت نباشد یا کد پرسنلی عددی نداشته باشد."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     structure = LeaveRequestStructureService(db)
     previous = await structure.get_hr_officer(site_id)
     old_code = _emp_code(previous.employee) if previous is not None else None
@@ -420,7 +434,7 @@ async def list_stuck_requests(
     current_user: User = Depends(get_current_user),
 ):
     """درخواست‌های بدون تصمیمی که پیش تأییدکننده‌ی ترک‌کار مانده‌اند. مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         return await LeaveRequestService(db).stuck_requests(site_id)
     except LeaveRequestError as e:
@@ -437,7 +451,7 @@ async def reassign_stuck_requests(
     «انتقال به تأییدکننده‌های فعلی»: درخواست‌های مانده پیش تأییدکننده‌ی ترک‌کار به سرپرست امروز (زنجیره‌ی کاراوب /
     تأییدکننده‌ی دستی) یا مسئول نیروی انسانی فعلی منتقل می‌شوند. مجوز: sites.manage.
     """
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     try:
         result = await LeaveRequestService(db).reassign_approvers(
             site_id, reason="انتقال دستی از پنل تنظیمات", by_user_id=current_user.id
@@ -455,7 +469,7 @@ async def remove_hr_officer(
     current_user: User = Depends(get_current_user),
 ):
     """حذف مسئول نیروی انسانی سایت. مجوز: sites.manage."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     await LeaveRequestStructureService(db).remove_hr_officer(site_id)
 
 
@@ -672,7 +686,7 @@ async def get_leave_notification_templates(
     site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """متن اعلان‌های مرخصی/ماموریت و تردد فراموش‌شده‌ی این سایت. مجوز: sites.manage (همان تنظیمات مرخصی)."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     if await db.get(Site, site_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت پیدا نشد")
     return await notification_templates.list_templates(db, "leave", site_id)
@@ -686,7 +700,7 @@ async def put_leave_notification_templates(
     current_user: User = Depends(get_current_user),
 ):
     """ذخیره‌ی متن اعلان‌ها؛ متن خالی = برگشت به پیش‌فرض."""
-    await require_site_permission(db, current_user, site_id, SITES_MANAGE)
+    await _require_settings(db, current_user, site_id)
     if await db.get(Site, site_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سایت پیدا نشد")
     try:
