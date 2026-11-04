@@ -32,8 +32,6 @@ import {
 } from "@mui/material";
 import LockResetOutlinedIcon from "@mui/icons-material/LockResetOutlined";
 import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
-import DrawOutlinedIcon from "@mui/icons-material/DrawOutlined";
-import MySignatureDialog from "../components/oa/MySignatureDialog";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
@@ -92,7 +90,7 @@ export default function ProfilePage() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [contactInfoDialogOpen, setContactInfoDialogOpen] = useState(false);
   const [devicesDialogOpen, setDevicesDialogOpen] = useState(false);
-  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false); // «امضای من» (اتوماسیون اداری) // دیالوگ «دستگاه‌های من» (نشست‌های فعال)
+  // دیالوگ «دستگاه‌های من» (نشست‌های فعال)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [pushPermission, setPushPermission] = useState(() =>
     getNotificationPermission(),
@@ -418,14 +416,6 @@ export default function ProfilePage() {
               />
             </ListItemButton>
           )}
-          {user?.can_oa_access && user?.employee_id && (
-            <ListItemButton onClick={() => setSignatureDialogOpen(true)}>
-              <ListItemIcon>
-                <DrawOutlinedIcon />
-              </ListItemIcon>
-              <ListItemText primary="امضای من" />
-            </ListItemButton>
-          )}
           <ListItemButton onClick={() => setDevicesDialogOpen(true)}>
             <ListItemIcon>
               <DevicesOutlinedIcon />
@@ -466,7 +456,6 @@ export default function ProfilePage() {
         open={devicesDialogOpen}
         onClose={() => setDevicesDialogOpen(false)}
       />
-      <MySignatureDialog open={signatureDialogOpen} onClose={() => setSignatureDialogOpen(false)} />
 
       {/* دیالوگ تأیید خروج از حساب */}
       <Dialog

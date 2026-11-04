@@ -368,7 +368,7 @@ export default function OaDraftEditorPage() {
             <Tooltip
               title={
                 !draft.has_signature
-                  ? "امضای فعال ندارید (پنل کاربری ← امضای من)"
+                  ? "امضای فعال ندارید (اتوماسیون اداری ← امضای من)"
                   : form.principal_employee_id
                     ? "نامه‌ای که از طرف دیگری ارسال می‌شود با امضای شما امضا نمی‌شود"
                     : ""

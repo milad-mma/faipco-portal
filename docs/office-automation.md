@@ -257,7 +257,7 @@
 - API: `GET /automation/secretariats`، `PUT /automation/secretariats/{site_id}` {number_prefix, name}.
 
 ## فاز ۳ب — بخش دوم: امضای شخصی (Migration 144؛ تصمیم‌های ۱۴۰۵/۰۸/۱۲)
-- «امضای من» در پنل کاربری (دارندگان automation.access): رسم با Pointer Events (موس/لمس/قلم) یا بارگذاری PNG/JPG/WEBP تا ۲MiB
+- «امضای من» در منوی اتوماسیون اداری، مسیر /automation/signature (دارندگان automation.access؛ پیش‌تر در پنل کاربری): رسم با Pointer Events (موس/لمس/قلم) یا بارگذاری PNG/JPG/WEBP تا ۲MiB
   (حداکثر ۴۰۰۰×۴۰۰۰ و ۸ مگاپیکسل). سرور (`core/oa_signature_rules.py`): decode، رد SVG/HTML، حذف اختیاری پس‌زمینه‌ی روشن،
   برش خودکار حاشیه، حداکثر ۹۰۰×۳۶۰، PNG تازه بدون metadata. **بدون تأیید هویت دوباره** (تصمیم کاربر).
 - نسخه‌دار (`oa_signature_versions`؛ ایندکس یکتای جزئی: یک active برای هر نفر). ثبت تازه نسخه‌ی قبلی را inactive می‌کند؛

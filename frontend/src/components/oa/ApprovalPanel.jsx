@@ -94,9 +94,9 @@ export default function ApprovalPanel({ letter, onDone, onMessage }) {
             <Alert
               severity="warning"
               sx={{ mb: 1 }}
-              action={<Button color="inherit" size="small" onClick={() => navigate("/profile")}>امضای من</Button>}
+              action={<Button color="inherit" size="small" onClick={() => navigate("/automation/signature")}>امضای من</Button>}
             >
-              برای «تأیید و امضا» اول در پنل کاربری امضا ثبت کنید.
+              برای «تأیید و امضا» اول در «اتوماسیون اداری ← امضای من» امضا ثبت کنید.
             </Alert>
           )}
           <TextField size="small" fullWidth multiline maxRows={4} placeholder="توضیح (اختیاری)" value={note} onChange={(e) => setNote(e.target.value)} inputProps={{ maxLength: 2000 }} sx={{ mb: 1, "& .MuiInputBase-root": { bgcolor: "background.paper" } }} />

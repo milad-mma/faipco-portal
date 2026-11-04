@@ -1,4 +1,4 @@
-// «امضای من» (پنل کاربری، دارندگان دسترسی اتوماسیون): نمایش امضای فعال، رسم با موس/لمس/قلم یا بارگذاری تصویر،
+// «امضای من» (منوی اتوماسیون اداری ← امضای من؛ inline = داخل صفحه به جای دیالوگ): نمایش امضای فعال، رسم با موس/لمس/قلم یا بارگذاری تصویر،
 // حذف اختیاری پس‌زمینه‌ی روشن، غیرفعال‌سازی. سرور تصویر را پاک‌سازی، برش و به PNG تبدیل می‌کند.
 // هر ثبت نسخه‌ی تازه است؛ امضای قبلی روی نامه‌های قبلی می‌ماند.
 import { useEffect, useRef, useState } from "react";
@@ -85,7 +85,29 @@ function SignaturePad({ padRef, onChange }) {
   );
 }
 
-export default function MySignatureDialog({ open, onClose }) {
+// پوسته‌ی داخل صفحه (همان ساختار Dialog)
+const InlineRoot = ({ children }) => (
+  <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, bgcolor: "background.paper", maxWidth: 640 }}>
+    {children}
+  </Box>
+);
+const InlineTitle = ({ children }) => (
+  <Typography variant="h6" fontWeight={800} sx={{ px: 3, pt: 2.5, pb: 1 }}>
+    {children}
+  </Typography>
+);
+const InlineContent = ({ children }) => <Box sx={{ px: 3, pb: 2 }}>{children}</Box>;
+const InlineActions = ({ children }) => (
+  <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ px: 3, pb: 2.5 }}>
+    {children}
+  </Stack>
+);
+
+export default function MySignatureDialog({ open, onClose, inline = false }) {
+  const Root = inline ? InlineRoot : Dialog;
+  const Title = inline ? InlineTitle : DialogTitle;
+  const Content = inline ? InlineContent : DialogContent;
+  const Actions = inline ? InlineActions : DialogActions;
   const [data, setData] = useState(null);
   const [imgUrl, setImgUrl] = useState(null);
   const [mode, setMode] = useState("view"); // view | draw | upload
@@ -166,9 +188,9 @@ export default function MySignatureDialog({ open, onClose }) {
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>امضای من</DialogTitle>
-      <DialogContent>
+    <Root {...(inline ? {} : { open, onClose: busy ? undefined : onClose, fullWidth: true, maxWidth: "sm" })}>
+      <Title>امضای من</Title>
+      <Content>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           این امضا وقتی «امضا شود» را در نوشتن نامه بزنید، پایین نامه کنار نام و سمت شما می‌نشیند. هیچ‌کس دیگری نمی‌تواند با
           امضای شما نامه امضا کند. امضای تصویری تأیید سازمانی داخلی است، نه امضای دیجیتال.
@@ -237,8 +259,8 @@ export default function MySignatureDialog({ open, onClose }) {
             </Typography>
           </>
         )}
-      </DialogContent>
-      <DialogActions>
+      </Content>
+      <Actions>
         {mode !== "view" ? (
           <>
             <Button onClick={() => setMode("view")} disabled={busy}>انصراف</Button>
@@ -246,10 +268,10 @@ export default function MySignatureDialog({ open, onClose }) {
               {busy ? "در حال ثبت..." : "ثبت امضا"}
             </Button>
           </>
-        ) : (
+        ) : inline ? null : (
           <Button onClick={onClose} disabled={busy}>بستن</Button>
         )}
-      </DialogActions>
-    </Dialog>
+      </Actions>
+    </Root>
   );
 }

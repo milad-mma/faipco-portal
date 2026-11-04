@@ -40,6 +40,7 @@ import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import DrawOutlinedIcon from "@mui/icons-material/DrawOutlined";
 
 /**
  * منبع واحد همه‌ی مقصدهای منوی برنامه.
@@ -326,6 +327,12 @@ export const NAV_ITEMS = [
         path: "/automation/drafts",
         icon: <EditNoteOutlinedIcon />,
         check: (u) => u?.can_oa_access,
+      },
+      {
+        label: "امضای من",
+        path: "/automation/signature",
+        icon: <DrawOutlinedIcon />,
+        check: (u) => u?.can_oa_access && u?.employee_id,
       },
       {
         label: "قالب‌های نامه",
