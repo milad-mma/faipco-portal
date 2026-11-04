@@ -38,6 +38,7 @@ from app.services.oa_secretary_service import OaSecretaryService
 from app.services.oa_secretariat_service import OaSecretariatError, OaSecretariatService
 from app.services.oa_signature_service import OaSignatureError, OaSignatureService
 from app.services.oa_approval_service import OaApprovalService
+from app.services.oa_transfer_service import OaTransferService
 
 router = APIRouter()
 UPLOAD_CHUNK = 1 << 20
@@ -641,3 +642,52 @@ async def letter_signature_image(letter_id: int, step_id: int | None = None, db:
     except OaCartableError as e:
         _raise(e)
     return _png(service.files, f)
+
+
+# ================= انتقال کارهای باز (automation.reassign) =================
+
+
+class TransferIn(BaseModel):
+    from_employee_id: int
+    to_employee_id: int
+    reason: str = Field(max_length=2000)
+
+
+@router.get("/transfer/candidates")
+async def transfer_candidates(side: str = "from", q: str = "", db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    """side=from: افراد دارای کار باز (فعال/غیرفعال؛ تعداد فقط غیرمحرمانه)؛ side=to: جایگزین‌های مجاز."""
+    sites = await _require(db, current_user, "automation.reassign", "انتقال کارهای باز")
+    service = OaTransferService(db)
+    if side == "to":
+        return await service.candidates_to(sites, q[:100])
+    return await service.candidates_from(sites, q[:100])
+
+
+@router.get("/transfer/preview/{employee_id}")
+async def transfer_preview(employee_id: int, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.reassign", "انتقال کارهای باز")
+    try:
+        return await OaTransferService(db).preview(sites, employee_id)
+    except OaCartableError as e:
+        _raise(e)
+
+
+@router.post("/transfer")
+async def do_transfer(payload: TransferIn, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.reassign", "انتقال کارهای باز")
+    service = OaTransferService(db)
+    try:
+        result = await service.transfer(current_user, sites, payload.from_employee_id, payload.to_employee_id, payload.reason)
+    except OaCartableError as e:
+        _raise(e)
+    background_tasks.add_task(send_pushes, service.pushes)
+    return result
+
+
+@router.get("/transfer/history")
+async def transfer_history(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sites = await _require(db, current_user, "automation.reassign", "انتقال کارهای باز")
+    return await OaTransferService(db).history(sites)

@@ -252,6 +252,9 @@ class OaTask(Base, TimestampMixin):
     created_by_name_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
     acted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 147: انتقال کارهای باز (automation.reassign) — task قبلی reassigned و پیوند به task جدید
+    transfer_id: Mapped[int | None] = mapped_column(ForeignKey("oa_task_transfers.id", ondelete="SET NULL"), nullable=True)
+    reassigned_to_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class OaNote(Base, TimestampMixin):
@@ -436,4 +439,25 @@ class OaApprovalStep(Base):
     acted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OaTaskTransfer(Base):
+    """
+    انتقال کارهای باز یک نفر به جایگزین (Migration 147). visible_summary فقط موارد غیرمحرمانه (شناسه/موضوع نامه)؛
+    درباره‌ی محرمانه هیچ تعداد یا موضوعی ذخیره و نمایش داده نمی‌شود.
+    """
+
+    __tablename__ = "oa_task_transfers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    from_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    to_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    to_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"), nullable=True, index=True)
+    performed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    performed_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    visible_summary: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

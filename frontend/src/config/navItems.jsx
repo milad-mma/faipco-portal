@@ -35,6 +35,7 @@ import BugReportOutlinedIcon from "@mui/icons-material/BugReportOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
@@ -331,6 +332,12 @@ export const NAV_ITEMS = [
         path: "/automation/templates",
         icon: <ArticleOutlinedIcon />,
         check: (u) => u?.can_oa_templates,
+      },
+      {
+        label: "انتقال کارهای باز",
+        path: "/automation/transfer",
+        icon: <SwapHorizOutlinedIcon />,
+        check: (u) => u?.can_oa_reassign,
       },
       {
         label: "تنظیمات اتوماسیون",

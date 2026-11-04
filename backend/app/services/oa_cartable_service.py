@@ -51,7 +51,7 @@ PAGE_SIZE = 20
 # رویدادهای اعلان که هر کس می‌تواند برای خودش خاموش کند (تنظیمات اعلان شخصی)
 PUSH_EVENTS = {"new_letter": "نامه‌ی جدید (گیرنده‌ی اصلی)", "cc": "رونوشت نامه", "referral": "ارجاع نامه به من",
                "approval": "نوبت تأیید/پاراف/امضای من", "returned": "برگشت نامه‌ی من برای اصلاح",
-               "cancelled": "ابطال نامه‌ای که در آن هستم"}
+               "cancelled": "ابطال نامه‌ای که در آن هستم", "transfer": "انتقال کار باز دیگران به من"}
 APPROVAL_KINDS = ("paraph", "approve", "sign")
 # نامه‌هایی که مسئولیت تأییدشان در کارتابل «در انتظار اقدام» می‌آید
 TASK_LETTER_STATUSES = ("dispatched", "closed", "in_approval", "approved")
@@ -681,7 +681,8 @@ class OaCartableService:
                 return "current"
             return "read" if read_by.get(emp_id) else "unread"
 
-        delivery = {t.assignee_employee_id: t for t in tasks if t.origin == "delivery"}
+        recipient_set = {r.employee_id for r in recipients}
+        delivery = {t.assignee_employee_id: t for t in tasks if t.origin == "delivery" and t.assignee_employee_id in recipient_set}
         now = _now()
         task_files = task_files or {}
         # مراحل تأیید دور آخر پیش از «ارسال»
@@ -707,7 +708,19 @@ class OaCartableService:
                 "overdue": bool(t and t.status == "open" and t.due_at and t.due_at < now),
                 "attachments": task_files.get(t.id, []) if t else [],
             })
+        recipient_ids = {r.employee_id for r in recipients}
         for t in tasks:
+            # کار تحویلِ منتقل‌شده به جایگزین (انتقال کارهای باز)
+            if t.origin == "delivery" and t.transfer_id and t.assignee_employee_id not in recipient_ids:
+                steps.append({
+                    "key": f"t{t.id}", "label": f"انتقال — {'اقدام' if t.kind == 'action' else 'اطلاع'}",
+                    "person": t.assignee_name_snapshot, "title": t.assignee_title_snapshot,
+                    "state": state(t, t.assignee_employee_id), "read_at": read_by.get(t.assignee_employee_id),
+                    "at": t.done_at or t.created_at, "note": t.result_note, "due_at": t.due_at,
+                    "overdue": bool(t.status == "open" and t.due_at and t.due_at < now),
+                    "attachments": task_files.get(t.id, []),
+                })
+                continue
             if t.origin != "referral":
                 continue
             steps.append({

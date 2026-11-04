@@ -321,3 +321,26 @@ export async function cancelLetter(letterId, reason) {
   const { data } = await apiClient.post(`/automation/letters/${letterId}/cancel`, { reason });
   return data;
 }
+
+// ---------- فاز ۳ب: انتقال کارهای باز (automation.reassign) ----------
+
+// side: from (افراد دارای کار باز) | to (جایگزین‌ها)
+export async function fetchTransferCandidates(side, q) {
+  const { data } = await apiClient.get("/automation/transfer/candidates", { params: { side, q } });
+  return data;
+}
+
+export async function fetchTransferPreview(employeeId) {
+  const { data } = await apiClient.get(`/automation/transfer/preview/${employeeId}`);
+  return data;
+}
+
+export async function doTaskTransfer(fromId, toId, reason) {
+  const { data } = await apiClient.post("/automation/transfer", { from_employee_id: fromId, to_employee_id: toId, reason });
+  return data;
+}
+
+export async function fetchTransferHistory() {
+  const { data } = await apiClient.get("/automation/transfer/history");
+  return data;
+}

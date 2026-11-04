@@ -321,6 +321,13 @@ TEMPLATES: dict[str, dict[str, dict]] = {
             "default": "نامه‌ی {number} ابطال شد ({by}): {subject}",
             "vars": {"number": "شماره‌ی نامه", "by": "ابطال‌کننده", "subject": "موضوع نامه"},
         },
+        "automation.transfer": {
+            "label": "انتقال کار باز",
+            "recipient": "جایگزین",
+            "when": "کارهای باز کسی به شما منتقل شد",
+            "default": "کار باز نامه‌ی «{subject}» از {from} به شما منتقل شد",
+            "vars": {"from": "فرد قبلی", "subject": "موضوع نامه"},
+        },
         "automation.confidential": {
             "label": "نامه‌ی محرمانه (متن کلی)",
             "recipient": "گیرنده/رونوشت/ارجاع نامه‌ی محرمانه",

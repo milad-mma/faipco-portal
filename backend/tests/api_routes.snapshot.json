@@ -1,5 +1,5 @@
 {
-  "count": 521,
+  "count": 525,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -103,6 +103,9 @@
     "GET /api/v1/automation/templates",
     "GET /api/v1/automation/templates/logo/{file_id}",
     "GET /api/v1/automation/templates/{template_id}/versions",
+    "GET /api/v1/automation/transfer/candidates",
+    "GET /api/v1/automation/transfer/history",
+    "GET /api/v1/automation/transfer/preview/{employee_id}",
     "GET /api/v1/backup/export",
     "GET /api/v1/backup/restore-status",
     "GET /api/v1/backup/retry-queue",
@@ -329,6 +332,7 @@
     "POST /api/v1/automation/tasks/{task_id}/done",
     "POST /api/v1/automation/templates",
     "POST /api/v1/automation/templates/logo",
+    "POST /api/v1/automation/transfer",
     "POST /api/v1/backup/restore",
     "POST /api/v1/backup/retry-queue/run",
     "POST /api/v1/backup/run-now",

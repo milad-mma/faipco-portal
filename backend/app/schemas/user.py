@@ -76,6 +76,7 @@ class UserOut(BaseModel):
     can_manage_automation_settings: bool = False  # automation.settings — «تنظیمات اتوماسیون اداری» (سایت‌محور)
     can_oa_templates: bool = False  # automation.templates — قالب و سربرگ نامه (سایت‌محور)
     can_oa_access: bool = False  # automation.access — کارتابل اتوماسیون
+    can_oa_reassign: bool = False  # automation.reassign — انتقال کارهای باز افراد ترک‌کار/جابه‌جا
     oa_unread: int = 0  # نامه‌های خوانده‌نشده‌ی کارتابل
     oa_pending: int = 0  # مسئولیت‌های باز (در انتظار اقدام)
     oa_overdue: int = 0  # مسئولیت‌های باز با مهلت گذشته
