@@ -57,21 +57,25 @@ function attendanceHtml(data) {
 const printCss = `
 @page{size:A4 portrait;margin:0}
 .receipt-preview-overlay,.receipt-preview-overlay *{box-sizing:border-box}
-/* Match the active MUI portal theme; print content remains unchanged. */
-.receipt-preview-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:var(--receipt-surface);color:var(--receipt-text);font-family:Tahoma,'DejaVu Sans',sans-serif;direction:rtl}
-.receipt-preview-toolbar{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:64px;padding:10px max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));padding-top:calc(10px + env(safe-area-inset-top,0px));background:var(--receipt-paper);color:var(--receipt-text);border-bottom:1px solid var(--receipt-divider);font-family:'Vazirmatn',Tahoma,sans-serif;box-shadow:0 2px 8px #08172c0b}
-.receipt-preview-toolbar-title{font-size:15px;font-weight:800;line-height:1.6}
+/* Preview chrome follows portal theme. The A4 document MUST keep its own light ink palette. */
+.receipt-preview-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:var(--receipt-surface);color:var(--receipt-text);font-family:'Vazirmatn',Tahoma,sans-serif;direction:rtl}
+.receipt-preview-toolbar{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:64px;padding:10px max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));padding-top:calc(10px + env(safe-area-inset-top,0px));background:var(--receipt-paper);color:var(--receipt-text);border-bottom:1px solid var(--receipt-divider);font-family:'Vazirmatn',Tahoma,sans-serif;box-shadow:none}
+.receipt-preview-toolbar-title{font-size:16px;font-weight:700;line-height:1.5;color:var(--receipt-text)}
 .receipt-preview-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.receipt-preview-button{font-family:inherit;color:var(--receipt-on-primary);border:1px solid var(--receipt-primary);border-radius:6px;padding:9px 16px;cursor:pointer;background:var(--receipt-primary);font-size:13px;font-weight:600;line-height:1.5;min-height:40px;touch-action:manipulation}
+.receipt-preview-button{appearance:none;display:inline-flex;justify-content:center;align-items:center;gap:8px;font-family:inherit;color:var(--receipt-on-primary);border:1px solid var(--receipt-primary);border-radius:6px;padding:8px 16px;cursor:pointer;background:var(--receipt-primary);font-size:13px;font-weight:600;line-height:1.5;min-height:38px;touch-action:manipulation;transition:background-color .15s ease,border-color .15s ease}
 .receipt-preview-button:hover:not(:disabled){filter:brightness(.94)}
 .receipt-preview-button:disabled{opacity:.55;cursor:wait}
-.receipt-preview-close{background:transparent;color:var(--receipt-primary);border-color:var(--receipt-divider)}
+.receipt-preview-close{background:transparent;color:var(--receipt-text);border-color:var(--receipt-divider)}
 .receipt-preview-close:hover{background:var(--receipt-surface)}
 .receipt-preview-button:focus-visible{outline:3px solid var(--receipt-primary);outline-offset:2px}
 .receipt-preview-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 8px 25px}
 .receipt-preview-loading{text-align:center;padding:24px;color:var(--receipt-text)}
 .receipt-preview-frame{margin:0 auto;position:relative}
-.receipt-preview-sheet{position:absolute;top:0;left:0;transform-origin:top left;background:#fff;width:210mm;min-height:297mm;box-shadow:0 2px 15px #0002;direction:rtl}
+/* The portal dark theme sets white text on the overlay. Never inherit it into the white A4 sheet. */
+.receipt-preview-sheet{position:absolute;top:0;left:0;transform-origin:top left;background:#fff!important;color:#171717!important;color-scheme:light;width:210mm;min-height:297mm;box-shadow:0 2px 15px #0002;direction:rtl;font-family:Tahoma,'DejaVu Sans',sans-serif}
+.receipt-preview-sheet .payroll,.receipt-preview-sheet .pay-title,.receipt-preview-sheet .pay-subtitle,.receipt-preview-sheet .info,.receipt-preview-sheet .pay-head,.receipt-preview-sheet .pay-row,.receipt-preview-sheet .pay-cell,.receipt-preview-sheet .summary,.receipt-preview-sheet .summary-row,.receipt-preview-sheet .att-value{color:#171717!important}
+.receipt-preview-sheet .att-label,.receipt-preview-sheet .att-title{color:#2b3990!important}
+.receipt-preview-sheet .att-subtitle{color:#333!important}
 .receipt-preview-overlay .payroll{padding:8mm;font-size:8pt}
 .receipt-preview-overlay .pay-title{text-align:center;font-size:12pt;font-weight:bold;margin-bottom:4pt}
 .receipt-preview-overlay .pay-subtitle{text-align:center;font-size:10pt;font-weight:bold;margin-bottom:6pt}
@@ -107,7 +111,7 @@ const printCss = `
 .receipt-preview-overlay .att-label{background:#fafbfd;font-weight:400;color:#2b3990;direction:rtl;text-align:right}
 .receipt-preview-overlay .att-value{font-weight:400;direction:rtl;justify-content:center;text-align:center;overflow-wrap:anywhere}
 .receipt-preview-overlay .hilite{background:#fafbfd}
-@media(max-width:600px){.receipt-preview-toolbar{padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;flex-wrap:wrap;gap:8px}.receipt-preview-toolbar-title{width:100%;text-align:center}.receipt-preview-controls{width:100%;justify-content:center}.receipt-preview-button{flex:1;min-height:42px}.receipt-preview-scroll{padding:10px 4px 20px}}
+@media(max-width:600px){.receipt-preview-toolbar{padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;flex-wrap:wrap;gap:8px}.receipt-preview-toolbar-title{width:100%;text-align:right;font-size:15px}.receipt-preview-controls{width:100%;justify-content:stretch}.receipt-preview-button{flex:1;min-height:42px}.receipt-preview-scroll{padding:10px 4px 20px}}
 @media print{
   body > :not(.receipt-preview-overlay){display:none!important}
   html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important}
@@ -115,7 +119,7 @@ const printCss = `
   .receipt-preview-toolbar,.receipt-preview-loading{display:none!important}
   .receipt-preview-scroll{overflow:visible!important;padding:0!important;display:block!important}
   .receipt-preview-frame{width:210mm!important;height:auto!important;margin:0!important}
-  .receipt-preview-sheet{position:static!important;transform:none!important;width:210mm!important;min-height:0!important;box-shadow:none!important}
+  .receipt-preview-sheet{position:static!important;transform:none!important;width:210mm!important;min-height:0!important;box-shadow:none!important;background:#fff!important;color:#171717!important;color-scheme:light}
   .receipt-preview-overlay *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
 `;
@@ -130,7 +134,7 @@ export async function openReceiptBrowserPrint(noticeId, kind) {
   const style = document.createElement('style');
   style.textContent = printCss;
   style.dataset.faipcoReceiptPreview = '1';
-  // Use the same actual palette as the portal (including manual dark/light selection).
+  // Toolbar follows the actual portal theme. A4 content is separately locked to print colors.
   const savedMode = window.localStorage.getItem('faipco_theme_mode');
   const darkMode = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
   const palette = (darkMode ? darkTheme : lightTheme).palette;
