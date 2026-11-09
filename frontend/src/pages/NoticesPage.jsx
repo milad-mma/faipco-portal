@@ -80,9 +80,16 @@ function triggerBlobDownload(blob, filename) {
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  try {
+    // Browser extensions/download managers can take over the link and even throw
+    // after receiving the file. This does not indicate an API/PDF failure.
+    link.click();
+  } catch (error) {
+    console.warn("Receipt download handed to browser or download manager:", error?.name || "unknown");
+  } finally {
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  }
 }
 
 // فیش حقوقی کاربر برای یک اطلاعیه را دانلود می‌کند.
@@ -103,7 +110,9 @@ async function downloadPayrollReceipt(noticeId, setDownloadError, onGateBlocked)
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
-        : "دانلود فیش با خطا مواجه شد."
+        : !err.response
+          ? "وضعیت دانلود در مرورگر مشخص نیست. اگر دانلودمنیجر فایل را دریافت کرده، نیازی به اقدام نیست؛ در غیر این صورت دوباره تلاش کنید."
+          : "دانلود فیش با خطا مواجه شد."
     );
   }
 }
@@ -125,7 +134,9 @@ async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked)
     setDownloadError(
       err.response?.status === 404
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
-        : "دانلود فیش با خطا مواجه شد."
+        : !err.response
+          ? "وضعیت دانلود در مرورگر مشخص نیست. اگر دانلودمنیجر فایل را دریافت کرده، نیازی به اقدام نیست؛ در غیر این صورت دوباره تلاش کنید."
+          : "دانلود فیش با خطا مواجه شد."
     );
   }
 }

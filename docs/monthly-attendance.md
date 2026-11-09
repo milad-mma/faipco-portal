@@ -367,3 +367,8 @@ ORDER BY enter_date_column ASC, enter_time_column ASC
 امنیت: فهرست مجاز همیشه در سرور (`services/my_staff_service.py`) ساخته می‌شود و کلاینت نمی‌تواند هر `employee_id` دلخواهی را بخواند.
 دروازه‌ی دسترسی (`attendance_report`) برای سرپرست هم اعمال می‌شود. اگر نگاشت مرخصی/اتصال کاراوب نباشد، فقط تخصیص دستی حساب می‌شود.
 فایل‌ها: `services/my_staff_service.py`، `core/org_tree.subtree_codes`، `pages/MyStaffAttendancePage.jsx`، `components/MonthlyAttendanceTable.jsx` (جدول مشترک).
+
+
+## چاپ و دانلود فیش کارکرد
+
+جزییات روش مرورگر و دانلود جایگزین در [مستند دو روش دریافت فیش](receipt-pdf-dual-method.md) آمده است.

@@ -5,7 +5,7 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ 
 const show = (v) => escapeHtml(v).replace(/\n/g, '<br>');
 const sectionsFixed = ['وام', 'کسور', 'مزایا', 'سایر'];
 const weights = { 'وام': 19, 'کسور': 24, 'مزایا': 24, 'سایر': 33 };
-const footerPositions = { 'شماره حساب': 1, 'خالص پرداختی': 1 };
+const footerPositions = { 'جمع مزایا': 0, 'جمع کسور': 0, 'جمع اقساط وام': 0, 'شماره حساب': 1, 'خالص پرداختی': 1 };
 
 function payrollHtml(data) {
   const infos = [], footers = [], sections = new Map();
@@ -28,13 +28,14 @@ function payrollHtml(data) {
     const f = (sections.get(s) || [])[i];
     return `<div class="pay-cell">${f ? `<span class="val">${show(f.value)}</span><span class="lbl">${show(f.label)}</span>` : ''}</div>`;
   }).join('')}</div>`).join('');
-  const footer = footers.length ? `<div class="summary" style="grid-template-columns:${grid}">${cols.map((s) => {
-    const items = footers.filter((f) => (cols.includes(f.column) ? f.column : cols[0]) === s);
-    return `<div>${[0, 1].map((idx) => {
-      const f = items.find((x) => (footerPositions[x.label] || 0) === idx);
+  // Match ReportLab: one grid row for totals and a second row for net pay/account.
+  // A column can contain a value on either row independently of the input order.
+  const footer = footers.length ? `<div class="summary" style="grid-template-columns:${grid}">${[0, 1].map((rowIdx) =>
+    cols.map((s) => {
+      const f = footers.find((x) => (cols.includes(x.column) ? x.column : cols[0]) === s && (footerPositions[x.label] ?? 0) === rowIdx);
       return `<div class="summary-row">${f ? `<span>${show(f.value)}</span><span>${show(f.label)}</span>` : '&nbsp;'}</div>`;
-    }).join('')}</div>`;
-  }).join('')}</div>` : '';
+    }).join('')
+  ).join('')}</div>` : '';
   return `<div class="payroll"><div class="pay-title">${show(reportTitle || data.site_name || data.notice_title || 'فیش حقوقی')}</div>${month || year ? `<div class="pay-subtitle">فیش حقوق ${show(month)} ماه سال ${show(year)}</div>` : ''}${infoHtml}<div class="pay-head" style="grid-template-columns:${grid}">${cols.map((s) => `<div>${show(s)}</div>`).join('')}</div>${rows}${footer}</div>`;
 }
 
@@ -50,65 +51,174 @@ function attendanceHtml(data) {
   return `<div class="attendance"><div class="att-top"><img src="/faipco-logo.png" alt=""><div class="att-title">فیش کارکرد</div><div class="att-subtitle">${show(data.month_year)}</div></div><div class="att-table">${right.map((k,i) => `<div class="att-row">${pair(left[i])}${pair(k)}</div>`).join('')}</div></div>`;
 }
 
+// Only the preview UI is screen-responsive; the printed document always uses A4.
+// The print template is intentionally kept separate from the existing server PDF.
 const printCss = `
 @page{size:A4 portrait;margin:0}
-*{box-sizing:border-box}
-html,body{margin:0;background:#eee;color:#111;font-family:Tahoma,'DejaVu Sans',sans-serif}
-.toolbar{background:#252225;padding:12px;text-align:center;position:sticky;top:0}
-.toolbar button{font-family:inherit;background:#985a65;color:#fff;border:0;border-radius:5px;padding:10px 24px;cursor:pointer}
-.sheet{background:#fff;width:210mm;min-height:297mm;margin:14px auto}
-.payroll{padding:8mm;font-size:8pt}
-.pay-title{text-align:center;font-size:12pt;font-weight:bold;margin-bottom:4pt}
-.pay-subtitle{text-align:center;font-size:10pt;font-weight:bold;margin-bottom:6pt}
-.info{display:grid;direction:ltr;background:#d3d3d3;border:.7pt solid black;margin-bottom:1.5mm}
-.info>div{direction:rtl;text-align:right;border-right:.5pt solid black;padding:2pt 3pt;font-size:9pt;min-width:0}
-.info>div:last-child{border-right:0}
-.pay-head,.pay-row,.summary{display:grid;direction:ltr}
-.pay-head{background:#d3d3d3;border:.7pt solid black;font-size:9pt;text-align:center;font-weight:bold}
-.pay-head>div{padding:3pt 2pt;border-right:.7pt solid black}
-.pay-head>div:last-child{border-right:0}
-.pay-row{border-left:.7pt solid black;border-right:.7pt solid black;break-inside:avoid}
-.pay-row:last-of-type{border-bottom:.7pt solid black}
-.pay-cell{display:flex;direction:ltr;min-height:12pt;align-items:flex-start;padding:1.5pt 2pt;line-height:1.15;border-right:.7pt solid black;break-inside:avoid;font-size:8pt}
-.pay-cell:last-child{border-right:0}
-.pay-cell .val{width:40%;text-align:right;direction:rtl;overflow-wrap:anywhere}
-.pay-cell .lbl{width:60%;text-align:right;direction:rtl;overflow-wrap:anywhere}
-.summary{background:#d3d3d3;border:.6pt solid black;margin-top:1mm}
-.summary>div{border-right:.5pt solid black;padding:2pt 3pt;font-size:8pt}
-.summary>div:last-child{border-right:0}
-.summary-row{display:flex;min-height:13pt;align-items:center;direction:ltr}
-.summary-row span:first-child{width:58%;text-align:right;direction:rtl;overflow-wrap:anywhere}
-.summary-row span:last-child{width:42%;text-align:right;direction:rtl;overflow-wrap:anywhere}
-.attendance{padding:25mm 20mm;font-size:9.5pt}
-.att-top{min-height:37mm;position:relative;text-align:center}
-.att-top img{position:absolute;left:0;top:-6mm;width:26mm;height:26mm;object-fit:contain}
-.att-title{font-size:15pt;font-weight:bold;color:#2b3990;line-height:19pt}
-.att-subtitle{font-size:10.5pt;color:#333}
-.att-table{margin-top:4mm;border:1.5pt solid #2b3990}
-.att-row{display:grid;grid-template-columns:22.115% 27.885% 22.115% 27.885%;direction:ltr;break-inside:avoid}
-.att-row>div{padding:4.5pt 4pt;min-height:25pt;display:flex;align-items:center;border-right:.5pt solid #c7cbe0;border-bottom:.5pt solid #c7cbe0}
-.att-row:last-child>div{border-bottom:0}
-.att-row>div:last-child{border-right:0}
-.att-label{background:#fafbfd;font-weight:bold;color:#2b3990;direction:rtl;text-align:right}
-.att-value{font-weight:bold;direction:rtl;justify-content:center;text-align:center;overflow-wrap:anywhere}
-.hilite{background:#fafbfd}
-@media print{html,body{margin:0!important;background:#fff!important}.toolbar{display:none!important}.sheet{margin:0;width:210mm;min-height:0}*{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+.receipt-preview-overlay,.receipt-preview-overlay *{box-sizing:border-box}
+.receipt-preview-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:#e9e9ed;color:#111;font-family:Tahoma,'DejaVu Sans',sans-serif;direction:rtl}
+.receipt-preview-toolbar{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));background:#252225;color:#fff}
+.receipt-preview-toolbar-title{font-size:14px;font-weight:bold}
+.receipt-preview-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.receipt-preview-button{font-family:inherit;color:#fff;border:1px solid #fff5;border-radius:7px;padding:9px 13px;cursor:pointer;background:#985a65;font-size:13px;touch-action:manipulation}
+.receipt-preview-close{background:transparent}
+.receipt-preview-button:focus-visible{outline:3px solid #e8cfcb;outline-offset:2px}
+.receipt-preview-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 8px 25px}
+.receipt-preview-loading{text-align:center;padding:24px;color:#252225}
+.receipt-preview-frame{margin:0 auto;position:relative}
+.receipt-preview-sheet{position:absolute;top:0;left:0;transform-origin:top left;background:#fff;width:210mm;min-height:297mm;box-shadow:0 2px 15px #0002;direction:rtl}
+.receipt-preview-overlay .payroll{padding:8mm;font-size:8pt}
+.receipt-preview-overlay .pay-title{text-align:center;font-size:12pt;font-weight:bold;margin-bottom:4pt}
+.receipt-preview-overlay .pay-subtitle{text-align:center;font-size:10pt;font-weight:bold;margin-bottom:6pt}
+.receipt-preview-overlay .info{display:grid;direction:ltr;background:#d3d3d3;border:.7pt solid black;margin-bottom:1.5mm}
+.receipt-preview-overlay .info>div{direction:rtl;text-align:right;border-right:.5pt solid black;padding:2pt 3pt;font-size:9pt;min-width:0}
+.receipt-preview-overlay .info>div:last-child{border-right:0}
+.receipt-preview-overlay .pay-head,.receipt-preview-overlay .pay-row,.receipt-preview-overlay .summary{display:grid;direction:ltr}
+.receipt-preview-overlay .pay-head{background:#d3d3d3;border:.7pt solid black;font-size:9pt;text-align:center;font-weight:bold}
+.receipt-preview-overlay .pay-head>div{padding:3pt 2pt;border-right:.7pt solid black}
+.receipt-preview-overlay .pay-head>div:last-child{border-right:0}
+.receipt-preview-overlay .pay-row{border-left:.7pt solid black;border-right:.7pt solid black;break-inside:avoid}
+.receipt-preview-overlay .pay-row:last-of-type{border-bottom:.7pt solid black}
+.receipt-preview-overlay .pay-cell{display:flex;direction:ltr;min-height:12pt;align-items:flex-start;padding:1.5pt 2pt;line-height:1.15;border-right:.7pt solid black;break-inside:avoid;font-size:8pt}
+.receipt-preview-overlay .pay-cell:last-child{border-right:0}
+.receipt-preview-overlay .pay-cell .val{width:40%;text-align:right;direction:rtl;overflow-wrap:anywhere}
+.receipt-preview-overlay .pay-cell .lbl{width:60%;text-align:right;direction:rtl;overflow-wrap:anywhere}
+.receipt-preview-overlay .summary{background:#d3d3d3;border:.6pt solid black;margin-top:1mm}
+.receipt-preview-overlay .summary-row{border-right:.5pt solid black;border-bottom:.5pt solid black;padding:2pt 3pt;font-size:8pt;display:flex;min-height:17pt;align-items:center;direction:ltr}
+.receipt-preview-overlay .summary-row:nth-child(4n){border-right:0}
+.receipt-preview-overlay .summary-row:nth-last-child(-n+4){border-bottom:0}
+.receipt-preview-overlay .summary-row span:first-child{width:58%;text-align:right;direction:rtl;overflow-wrap:anywhere}
+.receipt-preview-overlay .summary-row span:last-child{width:42%;text-align:right;direction:rtl;overflow-wrap:anywhere}
+.receipt-preview-overlay .attendance{padding:25mm 20mm;font-size:9.5pt}
+.receipt-preview-overlay .att-top{position:relative;text-align:center;line-height:1.2}
+.receipt-preview-overlay .att-top img{position:absolute;left:0;top:-6mm;width:26mm;height:26mm;object-fit:contain}
+.receipt-preview-overlay .att-title{font-size:15pt;font-weight:400;color:#2b3990;line-height:19pt}
+.receipt-preview-overlay .att-subtitle{font-size:10.5pt;font-weight:400;color:#333;line-height:14pt}
+.receipt-preview-overlay .att-table{margin-top:4mm;border:1.5pt solid #2b3990}
+.receipt-preview-overlay .att-row{display:grid;grid-template-columns:22.115% 27.885% 22.115% 27.885%;direction:ltr;break-inside:avoid}
+.receipt-preview-overlay .att-row>div{padding:4.5pt 4pt;min-height:25pt;display:flex;align-items:center;border-right:.5pt solid #c7cbe0;border-bottom:.5pt solid #c7cbe0}
+.receipt-preview-overlay .att-row:last-child>div{border-bottom:0}
+.receipt-preview-overlay .att-row>div:last-child{border-right:0}
+.receipt-preview-overlay .att-label{background:#fafbfd;font-weight:400;color:#2b3990;direction:rtl;text-align:right}
+.receipt-preview-overlay .att-value{font-weight:400;direction:rtl;justify-content:center;text-align:center;overflow-wrap:anywhere}
+.receipt-preview-overlay .hilite{background:#fafbfd}
+@media(max-width:600px){.receipt-preview-toolbar{padding:10px 12px}.receipt-preview-toolbar-title{width:100%;text-align:center}.receipt-preview-controls{width:100%;justify-content:center}.receipt-preview-button{flex:1;min-height:42px}.receipt-preview-scroll{padding:10px 4px 20px}}
+@media print{
+  body > :not(.receipt-preview-overlay){display:none!important}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important}
+  .receipt-preview-overlay{position:static!important;display:block!important;background:#fff!important;inset:auto!important;overflow:visible!important}
+  .receipt-preview-toolbar,.receipt-preview-loading{display:none!important}
+  .receipt-preview-scroll{overflow:visible!important;padding:0!important;display:block!important}
+  .receipt-preview-frame{width:210mm!important;height:auto!important;margin:0!important}
+  .receipt-preview-sheet{position:static!important;transform:none!important;width:210mm!important;min-height:0!important;box-shadow:none!important}
+  .receipt-preview-overlay *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
 `;
 
-/** Called directly on click so that Safari can open the preview before any await. */
+let closeCurrentPreview = null;
+
+/** Display a responsive preview in this tab; printing is triggered by a real button click. */
 export async function openReceiptBrowserPrint(noticeId, kind) {
-  const popup = window.open('', '_blank');
-  if (!popup) throw new Error('POPUP_BLOCKED');
-  popup.document.body.textContent = 'در حال دریافت فیش...';
+  if (closeCurrentPreview) closeCurrentPreview();
+  const previousFocus = document.activeElement;
+  const previousOverflow = document.body.style.overflow;
+  const style = document.createElement('style');
+  style.textContent = printCss;
+  style.dataset.faipcoReceiptPreview = '1';
+  const overlay = document.createElement('section');
+  overlay.className = 'receipt-preview-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', kind === 'payroll' ? 'پیش‌نمایش فیش حقوقی' : 'پیش‌نمایش فیش کارکرد');
+  const toolbar = document.createElement('header');
+  toolbar.className = 'receipt-preview-toolbar';
+  const title = document.createElement('div');
+  title.className = 'receipt-preview-toolbar-title';
+  title.textContent = kind === 'payroll' ? 'پیش‌نمایش فیش حقوقی' : 'پیش‌نمایش فیش کارکرد';
+  const controls = document.createElement('div');
+  controls.className = 'receipt-preview-controls';
+  const printButton = document.createElement('button');
+  printButton.type = 'button';
+  printButton.className = 'receipt-preview-button';
+  printButton.textContent = 'چاپ / ذخیره PDF';
+  printButton.disabled = true;
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'receipt-preview-button receipt-preview-close';
+  closeButton.textContent = 'بستن';
+  controls.append(printButton, closeButton);
+  toolbar.append(title, controls);
+  const scroll = document.createElement('main');
+  scroll.className = 'receipt-preview-scroll';
+  const loading = document.createElement('div');
+  loading.className = 'receipt-preview-loading';
+  loading.textContent = 'در حال آماده‌سازی پیش‌نمایش فیش...';
+  scroll.append(loading);
+  overlay.append(toolbar, scroll);
+
+  let closed = false;
+  let resizeObserver;
+  let frame;
+  let sheet;
+  const onKey = (event) => {
+    if (event.key === 'Escape') close();
+    if (event.key === 'Tab') {
+      const buttons = [printButton, closeButton].filter((button) => !button.disabled);
+      if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1].focus(); }
+      else if (!event.shiftKey && document.activeElement === buttons[buttons.length - 1]) { event.preventDefault(); buttons[0].focus(); }
+    }
+  };
+  function updateScale() {
+    if (!frame || !sheet || closed) return;
+    const nativeWidth = sheet.offsetWidth;
+    const availableWidth = scroll.clientWidth - 8;
+    if (!nativeWidth || availableWidth <= 0) return;
+    const scale = Math.min(1, availableWidth / nativeWidth);
+    sheet.style.transform = `scale(${scale})`;
+    frame.style.width = `${nativeWidth * scale}px`;
+    frame.style.height = `${sheet.scrollHeight * scale}px`;
+  }
+  function close() {
+    if (closed) return;
+    closed = true;
+    resizeObserver?.disconnect();
+    window.removeEventListener('resize', updateScale);
+    document.removeEventListener('keydown', onKey, true);
+    overlay.remove();
+    style.remove();
+    document.body.style.overflow = previousOverflow;
+    if (closeCurrentPreview === close) closeCurrentPreview = null;
+    if (previousFocus?.isConnected) previousFocus.focus();
+  }
+  closeCurrentPreview = close;
+  closeButton.addEventListener('click', close);
+  // Same-document print works directly from the user's click and avoids popup blockers.
+  printButton.addEventListener('click', () => {
+    if (!closed && !printButton.disabled) window.print();
+  });
+  document.head.append(style);
+  document.body.append(overlay);
+  document.body.style.overflow = 'hidden';
+  document.addEventListener('keydown', onKey, true);
+  closeButton.focus();
   try {
     const data = await fetchReceiptPrintData(noticeId, kind);
-    if (popup.closed) return;
+    if (closed) return;
     const html = kind === 'payroll' ? payrollHtml(data) : attendanceHtml(data);
-    popup.document.open();
-    popup.document.write(`<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${kind === 'payroll' ? 'فیش حقوقی' : 'فیش کارکرد'}</title><style>${printCss}</style></head><body><div class="toolbar"><button onclick="window.print()">چاپ / ذخیره PDF</button></div><div class="sheet">${html}</div></body></html>`);
-    popup.document.close();
+    frame = document.createElement('div');
+    frame.className = 'receipt-preview-frame';
+    sheet = document.createElement('div');
+    sheet.className = 'receipt-preview-sheet';
+    sheet.innerHTML = html; // Every field interpolated by the renderers is escaped.
+    frame.append(sheet);
+    loading.replaceWith(frame);
+    printButton.disabled = false;
+    resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateScale) : null;
+    resizeObserver?.observe(scroll);
+    window.addEventListener('resize', updateScale);
+    updateScale();
   } catch (error) {
-    if (!popup.closed) popup.document.body.textContent = 'دریافت فیش با خطا مواجه شد. پنجره را ببندید و مجدداً تلاش کنید.';
+    close();
     throw error;
   }
 }

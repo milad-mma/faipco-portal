@@ -200,3 +200,8 @@ curl -X POST http://localhost:8000/api/v1/notices/attendance-card \
 /notices/{id}/attendance-card/mine` همیشه از روی `current_user.employee_id`
 فیلتر می‌کند؛ این دانلود هم تابع پیش‌نیاز دسترسی (`attendance_card`) است.
 
+
+
+## روش های چاپ و دانلود فیش
+
+برای راهنمای دو دکمه و مسیرهای API به [مستند دو روش دریافت فیش](receipt-pdf-dual-method.md) مراجعه کنید.
