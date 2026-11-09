@@ -45,3 +45,17 @@ cd backend && source .venv/bin/activate && python -m pytest -q tests
 
 - `POST /system/run-checks` → `systemd-run --unit=faipco-check` به‌عنوان root (قانون sudoers در `install.sh`؛ روی نصب‌های قبلی با اولین آپدیت/اجرای install.sh اضافه می‌شود). فقط می‌خواند/تست می‌کند؛ به همین دلیل برخلاف آپدیت، رمز دوباره خواسته نمی‌شود.
 - `GET /system/check-status` → لاگ زنده از `/var/log/faipco-check.log` (هر اجرا از نو نوشته می‌شود) + `is_running` / `is_passed` / `is_failed` (بر اساس خط `[CHECK] RESULT: PASS|FAIL` در انتهای لاگ).
+
+## ثبت APIهای چاپ فیش در Snapshot (۹ نوامبر ۲۰۲۶)
+
+دو Endpoint خواندنی جدیدِ چاپ مرورگر فیش حقوقی و کارکرد که از قبل در سورس موجود بودند، در مرجع `backend/tests/api_routes.snapshot.json` ثبت شدند. تعداد مرجع اکنون **۵۳۰ مسیر** است (قبلاً ۵۲۸). هدف رفع شکست `test_runtime_routes_match_snapshot` در «بررسی سلامت پروژه» است؛ هیچ Endpoint، رفتار Backend یا Migration تغییر نکرده است.
+
+بررسی پس از نصب نسخه:
+
+```bash
+cd /var/www/html/backend
+python3 tests/api_snapshot.py
+.venv/bin/python -m pytest -q tests/test_api_routes_runtime.py
+```
+
+در صورت افزودن عمدی مسیر جدید در آینده، پیش از انتشار `python3 tests/api_snapshot.py --write` را اجرا کنید و فایل JSON مرجع را همراه تغییر مسیر در Git ثبت کنید؛ صرفاً برای سبز شدن تست، مسیر ناشناخته را بدون بررسی تأیید نکنید.

@@ -79,3 +79,10 @@
 - بر اساس `docs/design-system.md`، `frontend/src/theme.js` و کامنت‌های `ThemeModeContext.jsx` و همین فایل بررسی شد. برگه چاپی عامدانه از رنگ‌بندی تم پیروی نمی‌کند؛ فقط پوسته پیش‌نمایش از آن پیروی می‌کند.
 - تغییر کد فقط در `frontend/src/services/receiptBrowserPrint.js` است. مسیر جایگزین ReportLab، Backend، فیش‌ها، دیتابیس و دیگر ماژول‌ها تغییر ندارند.
 - آزمون دستی موردنیاز در سرور تست: فیش حقوقی و کارکرد در حالت روشن و تیره، پیش‌نمایش موبایل، و Print / Save PDF در Chrome/Edge/Firefox و Safari/iOS.
+
+## ثبت مسیرهای چاپ در مرجع تست API (۹ نوامبر ۲۰۲۶)
+
+- دو مسیر عمدی `GET /api/v1/notices/{notice_id}/payroll/mine/print-data` و `GET /api/v1/notices/{notice_id}/attendance-card/mine/print-data` در `backend/tests/api_routes.snapshot.json` ثبت شدند.
+- تعداد مسیرهای مرجع از ۵۲۸ به ۵۳۰ افزایش یافت؛ این ثبت، کد Endpointها یا مجوزهای آن‌ها را تغییر نمی‌دهد.
+- کنترل ایستای `python3 tests/api_snapshot.py` باید `OK: 530 مسیر API دقیقاً مطابق مرجع است.` برگرداند.
+- تست `test_runtime_routes_match_snapshot` نیز در محیط Backend دارای وابستگی‌ها اجرا شود؛ در صورت افزودن عمدی Endpoint در آینده، همزمان با تغییر کد، مرجع با `python3 tests/api_snapshot.py --write` بازتولید و همراه تغییر Commit شود.
