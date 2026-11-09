@@ -77,6 +77,7 @@ export async function updateMyBirthdayVisibility(hideBirthdayInDashboard) {
 export async function fetchEmployeePhotoThumbnailBlob(employeeId) {
   const { data } = await apiClient.get(`/employees/${employeeId}/photo-thumbnail`, {
     responseType: "blob",
+    signal,
   });
   return data; // Blob از نوع image/gif
 }
@@ -139,7 +140,7 @@ export async function setBirthdayReaction(employeeId, emoji) {
 }
 
 // GET /employees/birthday-photo/{id}؛ خروجی: عکس پرسنل برای آواتار کارت تولد به صورت Blob
-export async function fetchBirthdayPhotoThumbnailBlob(employeeId) {
+export async function fetchBirthdayPhotoThumbnailBlob(employeeId, signal) {
   // مسیر جدا از /photo-thumbnail (که فقط برای خود شخص یا Admin است)؛ این مسیر عکس را فقط
   // در زمینه‌ی تولد (متولد امروز یا تبریک‌گوینده) برای همه‌ی کاربران برمی‌گرداند
   const { data } = await apiClient.get(`/employees/birthday-photo/${employeeId}`, {

@@ -293,6 +293,8 @@ def _fetch_holidays_sync(
 _CACHE_TTL_SECONDS = 30
 _CACHE_MAX_ENTRIES = 500
 _cache: dict[tuple, tuple[float, tuple]] = {}
+# Coalesce concurrent misses within an ASGI worker. A separate task survives a caller disconnect.
+_inflight_sources: dict[tuple, asyncio.Task] = {}
 
 
 def _cache_get(key: tuple):
@@ -316,6 +318,31 @@ def _cache_put(key: tuple, value: tuple) -> None:
         while len(_cache) >= _CACHE_MAX_ENTRIES:
             _cache.pop(next(iter(_cache)))
     _cache[key] = (now, value)
+
+
+async def _get_month_sources_cached(key: tuple, fetcher):
+    """Reuse one source read per key (including concurrent misses) inside this worker.
+
+    Shielding prevents one cancelled HTTP request from cancelling work awaited by other users.
+    Failed reads are never cached; a later request is allowed to retry.
+    """
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    task = _inflight_sources.get(key)
+    if task is None:
+        async def _load():
+            try:
+                value = await fetcher()
+                _cache_put(key, value)
+                return value
+            finally:
+                if _inflight_sources.get(key) is asyncio.current_task():
+                    _inflight_sources.pop(key, None)
+
+        task = asyncio.create_task(_load())
+        _inflight_sources[key] = task
+    return await asyncio.shield(task)
 
 
 async def _fetch_month_sources(
@@ -414,15 +441,13 @@ async def get_monthly_attendance(
         branch_value,
         use_overlay,
     )
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        raw_rows, holidays, overlay = cached
-    else:
-        raw_rows, holidays, overlay = await _fetch_month_sources(
+    raw_rows, holidays, overlay = await _get_month_sources_cached(
+        cache_key,
+        lambda: _fetch_month_sources(
             site_connection, mapping, emp_no, from_date, to_date, year, month, branch_value, branch_int,
             kara_names if use_overlay else None,
-        )
-        _cache_put(cache_key, (raw_rows, holidays, overlay))
+        ),
+    )
 
     def _label(card_no: int) -> dict:
         """برای یک شماره کارت، {"code", "label", "kind"} می‌سازد؛ عنوان پرتال بر عنوان کاراوب مقدم است."""

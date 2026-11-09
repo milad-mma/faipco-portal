@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { fetchBirthdayPhotoThumbnailBlob } from "../api/employees";
-import { swr } from "../api/swrCache";
+import { swrAbortable } from "../api/swrCache";
 import DefaultPersonAvatar from "./DefaultPersonAvatar";
 
 /**
@@ -25,24 +25,24 @@ export default function EmployeeAvatar({ employeeId, hasPhoto, size = 30 }) {
     // Blob تصویر (با واترمارک همین بیننده) ۱۰ دقیقه در Cache حافظه می‌ماند تا با برگشت به صفحه
     // یا باز شدن دوباره‌ی فهرست، عکس‌ها فوراً نمایش داده شوند
     const urls = [];
-    let cancelled = false;
+    const controller = new AbortController();
     let lastBlob = null;
-    swr(
+    swrAbortable(
       `birthdayPhoto:${employeeId}`,
-      () => fetchBirthdayPhotoThumbnailBlob(employeeId),
+      (signal) => fetchBirthdayPhotoThumbnailBlob(employeeId, signal),
       (blob) => {
-        if (cancelled || blob === lastBlob) return;
+        if (controller.signal.aborted || blob === lastBlob) return;
         lastBlob = blob;
         const url = URL.createObjectURL(blob);
         urls.push(url);
         setPhotoUrl(url);
       },
-      { maxAgeMs: 10 * 60 * 1000 }
+      { maxAgeMs: 10 * 60 * 1000, signal: controller.signal }
     ).catch(() => {
-      if (!cancelled && !lastBlob) setPhotoUrl(null);
+      if (!controller.signal.aborted && !lastBlob) setPhotoUrl(null);
     });
     return () => {
-      cancelled = true;
+      controller.abort();
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [employeeId, hasPhoto]);

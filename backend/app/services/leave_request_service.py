@@ -349,6 +349,34 @@ def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, wh
         connection.close()
 
 
+
+def _select_pending_assignments_sync(conn: SiteConnection, mapping: LeaveRequestMapping, codes: list[int]) -> list[dict]:
+    """Only the two personnel codes needed for the dashboard count; keep the source-site branch filter."""
+    q = lambda name: _quote(conn.db_type, name)  # noqa: E731
+    branch_sql, branch_params = _branch_filter_sql(q, mapping)
+    placeholders = ", ".join(f"%(c{i})s" for i in range(len(codes)))
+    params = {**{f"c{i}": c for i, c in enumerate(codes)}, **branch_params}
+    connection = _connect(conn)
+    try:
+        query = (
+            f"SELECT {q(mapping.emp_no_column)} AS {q('EmpNo')}, "
+            f"{q(mapping.cur_emp_no_column)} AS {q('CurEmpNo')} "
+            f"FROM {q(mapping.table_name)} "
+            f"WHERE {q(mapping.cur_emp_no_column)} IN ({placeholders}) "
+            f"AND {q(mapping.is_final_approved_column)} IS NULL {branch_sql}"
+        )  # noqa: S608 — identifiers originate only from the admin-configured mapping
+        with _dict_cursor(connection, conn.db_type) as cur:
+            cur.execute(query, params)
+            return list(cur.fetchall())
+    finally:
+        connection.close()
+
+
+def _count_actionable_pending(rows: list[dict], cur_emp_no: int, substitutes: dict[int, int]) -> int:
+    """Apply the exact same substitute/self-request restriction as the full cartable."""
+    return sum(1 for r in rows if can_act_on(cur_emp_no, r.get("CurEmpNo"), r.get("EmpNo"), substitutes))
+
+
 def _insert_review_sync(
     conn: SiteConnection,
     mapping: LeaveRequestMapping,
@@ -1812,13 +1840,17 @@ class LeaveRequestService:
             raise LeaveRequestError("برای همین بازه زمانی از قبل درخواستی ثبت کرده‌اید")
 
     async def get_pending_count_for_approver(self, approver_employee: Employee) -> int:
-        """ورودی: پرسنل تأییدکننده. تعداد درخواست‌های در انتظار تصمیم او را برای شمارنده کارت داشبورد برمی‌گرداند؛ اگر ماژول برای سایت تنظیم نیست، صفر."""
+        """Count pending actions without loading/normalizing the entire approver cartable."""
         try:
-            pending = await self.list_pending_for_approver(approver_employee)
+            mapping, conn = await self._get_mapping_and_connection(approver_employee.site_id, user_facing=True)
+            cur_emp_no = _to_personnel_code_int(approver_employee)
+            substitutes = await active_substitute_codes(self.db, approver_employee.site_id)
+            codes = list(dict.fromkeys([cur_emp_no, *sorted(managers_of_substitute(cur_emp_no, substitutes))]))
+            rows = await asyncio.to_thread(_select_pending_assignments_sync, conn, mapping, codes)
+            return _count_actionable_pending(rows, cur_emp_no, substitutes)
         except LeaveRequestError:
-            # اگر این سایت اصلاً نگاشت مرخصی/ماموریت ندارد، شمارنده صفر است - نه خطا
+            # Keep the previous semantics for sites without a configured leave module.
             return 0
-        return len(pending)
 
     async def delete_request(self, request_id: int, employee: Employee) -> None:
         """
