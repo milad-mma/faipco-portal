@@ -43,6 +43,7 @@ import {
   unarchiveNotice,
 } from "../api/notices";
 import NoticeReportTable from "../components/NoticeReportTable";
+import { openReceiptBrowserPrint } from "../services/receiptBrowserPrint";
 
 // برچسب و رنگ نشان اولویت هر اطلاعیه
 const PRIORITY_LABELS = {
@@ -126,6 +127,23 @@ async function downloadAttendanceCard(noticeId, setDownloadError, onGateBlocked)
         ? "فیشی برای شما در این اطلاعیه یافت نشد."
         : "دانلود فیش با خطا مواجه شد."
     );
+  }
+}
+
+// Method 1: same browser print/save approach as office automation.
+async function browserPrintReceipt(noticeId, kind, setDownloadError, onGateBlocked) {
+  setDownloadError("");
+  try {
+    await openReceiptBrowserPrint(noticeId, kind);
+  } catch (err) {
+    if (err.response?.status === 403) {
+      onGateBlocked?.(err.response?.data?.detail || null);
+      return;
+    }
+    setDownloadError(err.message === "POPUP_BLOCKED"
+      ? "مرورگر پنجره پیش‌نمایش را مسدود کرده است. اجازه باز شدن پنجره را بدهید یا از روش جایگزین استفاده کنید."
+      : err.response?.status === 404 ? "فیشی برای شما در این اطلاعیه یافت نشد."
+      : "آماده‌سازی پیش‌نمایش چاپ با خطا مواجه شد. می‌توانید از دانلود جایگزین استفاده کنید.");
   }
 }
 
@@ -306,6 +324,11 @@ const ReceivedNoticeCard = memo(function ReceivedNoticeCard({ notice, onOpened, 
           {isPayroll && (
             <>
               {notice.has_my_payroll_receipt ? (
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <Button size="small" variant="contained" onClick={(e) => {
+                  e.stopPropagation();
+                  browserPrintReceipt(notice.id, "payroll", setDownloadError, openGate);
+                }}>چاپ / ذخیره PDF (مرورگر)</Button>
                 <Button
                   size="small"
                   variant="outlined"
@@ -315,8 +338,9 @@ const ReceivedNoticeCard = memo(function ReceivedNoticeCard({ notice, onOpened, 
                     downloadPayrollReceipt(notice.id, setDownloadError, openGate);
                   }}
                 >
-                  دانلود فیش من (PDF)
+                  دانلود PDF (روش جایگزین)
                 </Button>
+                </Stack>
               ) : (
                 <Typography variant="caption" color="text.secondary">
                   فیشی برای شما در این اطلاعیه یافت نشد.
@@ -333,6 +357,11 @@ const ReceivedNoticeCard = memo(function ReceivedNoticeCard({ notice, onOpened, 
           {isAttendanceCard && (
             <>
               {notice.has_my_attendance_card ? (
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <Button size="small" variant="contained" onClick={(e) => {
+                  e.stopPropagation();
+                  browserPrintReceipt(notice.id, "attendance", setDownloadError, openGate);
+                }}>چاپ / ذخیره PDF (مرورگر)</Button>
                 <Button
                   size="small"
                   variant="outlined"
@@ -342,8 +371,9 @@ const ReceivedNoticeCard = memo(function ReceivedNoticeCard({ notice, onOpened, 
                     downloadAttendanceCard(notice.id, setDownloadError, openGate);
                   }}
                 >
-                  دانلود فیش کارکرد من (PDF)
+                  دانلود PDF (روش جایگزین)
                 </Button>
+                </Stack>
               ) : (
                 <Typography variant="caption" color="text.secondary">
                   کارتی برای شما در این اطلاعیه یافت نشد.

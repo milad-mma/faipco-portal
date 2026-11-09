@@ -638,6 +638,41 @@ async def download_my_payroll_receipt(
     )
 
 
+@router.get("/{notice_id}/payroll/mine/print-data")
+async def get_my_payroll_print_data(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Only the logged-in employee's own receipt; browser-only printable data."""
+    try:
+        await AccessGateService(db).check(current_user, "payroll_receipt")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    notice = await db.get(Notice, notice_id)
+    if notice is None or notice.is_deleted or notice.notice_type != NoticeType.payroll:
+        raise HTTPException(status_code=404, detail="اطلاعیه یافت نشد")
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=404, detail="فیشی برای شما یافت نشد")
+    receipt = await PayrollNoticeService(db).get_my_receipt(notice_id, current_user.employee_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="فیشی برای شما یافت نشد")
+    employee = await db.get(Employee, current_user.employee_id)
+    from app.models.site import Site
+    site = await db.get(Site, employee.site_id) if employee else None
+    return Response(
+        content=json.dumps({
+            "notice_title": notice.title,
+            "employee_name": f"{employee.first_name} {employee.last_name}" if employee else "",
+            "personnel_code": receipt.source_personnel_code,
+            "site_name": site.name if site else None,
+            "fields": json.loads(receipt.fields_json),
+        }, ensure_ascii=False),
+        media_type="application/json; charset=utf-8",
+        headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
+    )
+
+
 # ---------- اطلاعیه فیش کارکرد (Attendance Card Notice) ----------
 
 
@@ -733,4 +768,33 @@ async def download_my_attendance_card(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="attendance-card-{notice_id}.pdf"'},
+    )
+
+
+@router.get("/{notice_id}/attendance-card/mine/print-data")
+async def get_my_attendance_card_print_data(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Only the logged-in employee's attendance data for browser print."""
+    try:
+        await AccessGateService(db).check(current_user, "attendance_card")
+    except AccessGateBlocked as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    notice = await db.get(Notice, notice_id)
+    if notice is None or notice.is_deleted or notice.notice_type != NoticeType.attendance_card:
+        raise HTTPException(status_code=404, detail="اطلاعیه یافت نشد")
+    if current_user.employee_id is None:
+        raise HTTPException(status_code=404, detail="کارتی برای شما یافت نشد")
+    receipt = await AttendanceCardNoticeService(db).get_my_receipt(notice_id, current_user.employee_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="کارتی برای شما یافت نشد")
+    return Response(
+        content=json.dumps({
+            "month_year": notice.card_subtitle or notice.title,
+            "fields": json.loads(receipt.fields_json),
+        }, ensure_ascii=False),
+        media_type="application/json; charset=utf-8",
+        headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
     )
