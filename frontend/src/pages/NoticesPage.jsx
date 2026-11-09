@@ -457,6 +457,7 @@ export default function NoticesPage() {
 
   const [tab, setTab] = useState("received");
   const [notices, setNotices] = useState(null);
+  const [listError, setListError] = useState(""); // پاسخ نامعتبر/خطای دریافت باید پیام بدهد، نه صفحه سفید
   const [noticesTotal, setNoticesTotal] = useState(0);
   const [noticesPage, setNoticesPage] = useState(1);  // صفحه فعلی تب دریافتی (از ۱)
   const NOTICES_PAGE_SIZE = 10;
@@ -468,25 +469,53 @@ export default function NoticesPage() {
 
   // یک صفحه از اطلاعیه‌های دریافتی (با فیلتر نوع در نمای اختصاصی) را بارگذاری می‌کند
   function loadNotices(page = noticesPage) {
-    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, noticeType: typeFilter || undefined }).then((data) => {
-      setNotices(data.items);
-      setNoticesTotal(data.total);
-    });
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, noticeType: typeFilter || undefined })
+      .then((data) => {
+        if (!Array.isArray(data?.items)) {
+          setListError("ساختار پاسخ اطلاعیه‌ها معتبر نیست. صفحه را دوباره بارگذاری کنید.");
+          setNotices([]);
+          setNoticesTotal(0);
+          return;
+        }
+        setListError("");
+        setNotices(data.items);
+        setNoticesTotal(Number.isFinite(data.total) ? data.total : data.items.length);
+      })
+      .catch(() => {
+        setListError("دریافت اطلاعیه‌ها با خطا مواجه شد.");
+        setNotices([]);
+      });
   }
 
   // یک صفحه از اطلاعیه‌های آرشیوشده را بارگذاری می‌کند
   function loadArchived(page = archivedPage) {
-    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: "only" }).then((data) => {
-      setArchivedNotices(data.items);
-      setArchivedTotal(data.total);
-    });
+    fetchMyNotices({ page, pageSize: NOTICES_PAGE_SIZE, archived: "only" })
+      .then((data) => {
+        if (!Array.isArray(data?.items)) {
+          setListError("ساختار پاسخ آرشیو اطلاعیه‌ها معتبر نیست.");
+          setArchivedNotices([]);
+          setArchivedTotal(0);
+          return;
+        }
+        setListError("");
+        setArchivedNotices(data.items);
+        setArchivedTotal(Number.isFinite(data.total) ? data.total : data.items.length);
+      })
+      .catch(() => {
+        setListError("دریافت آرشیو اطلاعیه‌ها با خطا مواجه شد.");
+        setArchivedNotices([]);
+      });
   }
 
   // با تغییر فیلتر نوع: بارگذاری صفحه اول دریافتی و (در نمای کامل) مجوزهای ارسال
   useEffect(() => {
     loadNotices(1);
     setNoticesPage(1);
-    if (!isFilteredView) fetchAvailableTargets().then(setAvailableTargets);
+    if (!isFilteredView) {
+      fetchAvailableTargets()
+        .then((data) => setAvailableTargets(data && typeof data === "object" ? data : {}))
+        .catch(() => setAvailableTargets({}));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter]);
 
@@ -517,8 +546,8 @@ export default function NoticesPage() {
   const canCreateAnything =
     availableTargets &&
     (availableTargets.can_target_all ||
-      availableTargets.site_ids.length > 0 ||
-      availableTargets.department_ids.length > 0 ||
+      (Array.isArray(availableTargets.site_ids) && availableTargets.site_ids.length > 0) ||
+      (Array.isArray(availableTargets.department_ids) && availableTargets.department_ids.length > 0) ||
       availableTargets.can_target_employee ||
       availableTargets.can_upload_payroll ||
       availableTargets.can_upload_attendance_card);
@@ -562,6 +591,7 @@ export default function NoticesPage() {
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       {!user?.is_superuser && <BackLink to="/my-dashboard" />}
+      {listError && <Alert severity="error" sx={{ mb: 2 }}>{listError}</Alert>}
       {/* عنوان صفحه و دکمه «اطلاعیه جدید» (برای دارندگان مجوز ارسال) */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
         <Typography variant="h5" fontWeight={800}>

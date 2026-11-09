@@ -190,9 +190,16 @@ export default function PersonalDashboardPage() {
       "dashboard:notices",
       () => fetchMyNotices({ page: 1, pageSize: 20, archived: "all" }),
       (data) => {
-        setRecentNotices(data.items);
+        // پاسخ SWR می‌تواند از cache یا API بیاید؛ داده نامعتبر نباید کل داشبورد را از کار بیندازد.
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (!Array.isArray(data?.items)) {
+          console.warn("Invalid dashboard notices response: items must be an array");
+        }
+        setRecentNotices(items);
         setUnreadCount(
-          data.unread_total ?? data.items.filter((n) => !n.is_read).length,
+          Number.isFinite(data?.unread_total)
+            ? data.unread_total
+            : items.filter((n) => !n?.is_read).length,
         );
       },
     ).catch(() => setRecentNotices((prev) => prev ?? []));

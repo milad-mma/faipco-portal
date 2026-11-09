@@ -145,7 +145,14 @@ function ResultDetailsDialog({ result, onClose }) {
   // دریافت پاسخ‌های این نتیجه؛ در خطا فهرست خالی می‌شود
   useEffect(() => {
     fetchMyEvaluationResultAnswers(result.id)
-      .then(setAnswers)
+      .then((data) => {
+        if (!Array.isArray(data)) {
+          setError("ساختار پاسخ جزئیات ارزیابی معتبر نیست.");
+          setAnswers([]);
+          return;
+        }
+        setAnswers(data);
+      })
       .catch((err) => {
         setError(
           err.response?.data?.detail || "دریافت جزئیات با خطا مواجه شد.",
@@ -495,7 +502,14 @@ export default function MyPerformancePage() {
   // ارزیابی‌هایی که کاربر باید انجام دهد را دریافت می‌کند
   function loadPending() {
     fetchMyEvaluations()
-      .then(setPending)
+      .then((data) => {
+        if (!Array.isArray(data)) {
+          setError("ساختار پاسخ ارزیابی‌های در انتظار معتبر نیست.");
+          setPending([]);
+          return;
+        }
+        setPending(data);
+      })
       .catch((err) =>
         setError(
           err.response?.data?.detail ||
@@ -507,21 +521,28 @@ export default function MyPerformancePage() {
   // ارزیابی‌های سرشیفت‌ها را دریافت می‌کند؛ در خطا فهرست خالی می‌شود
   function loadShiftLeadEvaluations() {
     fetchMyShiftLeadEvaluations()
-      .then(setShiftLeadEvaluations)
+      .then((data) => setShiftLeadEvaluations(Array.isArray(data) ? data : []))
       .catch(() => setShiftLeadEvaluations([]));
   }
 
   // بارگذاری اولیه: نتایج، میانگین سالانه، ارزیابی‌های در انتظار و ارزیابی‌های سرشیفت‌ها
   useEffect(() => {
     fetchMyEvaluationResults()
-      .then(setResults)
+      .then((data) => {
+        if (!Array.isArray(data)) {
+          setError("ساختار پاسخ نتایج ارزیابی معتبر نیست.");
+          setResults([]);
+          return;
+        }
+        setResults(data);
+      })
       .catch((err) =>
         setError(
           err.response?.data?.detail || "دریافت نتایج ارزیابی با خطا مواجه شد.",
         ),
       );
     fetchMyNotEvaluated()
-      .then(setNotEvaluated)
+      .then((data) => setNotEvaluated(Array.isArray(data) ? data : []))
       .catch(() => setNotEvaluated([]));
     fetchMyYearlyAverage()
       .then(setYearlyAverage)
@@ -566,9 +587,9 @@ export default function MyPerformancePage() {
   }
 
   const pendingCount =
-    pending?.filter((p) => p.status !== "submitted").length || 0; // تعداد ارزیابی‌های ثبت‌نشده (در برچسب تب)
+    (Array.isArray(pending) ? pending : []).filter((p) => p?.status !== "submitted").length; // تعداد ارزیابی‌های ثبت‌نشده (در برچسب تب)
   const hasShiftLeadEvaluations =
-    shiftLeadEvaluations && shiftLeadEvaluations.length > 0; // تب سرشیفت‌ها فقط در صورت وجود داده نمایش داده می‌شود
+    Array.isArray(shiftLeadEvaluations) && shiftLeadEvaluations.length > 0; // تب سرشیفت‌ها فقط در صورت وجود داده نمایش داده می‌شود
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
