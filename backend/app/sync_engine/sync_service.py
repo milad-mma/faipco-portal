@@ -30,7 +30,7 @@
 from datetime import datetime, timezone
 import logging
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -1163,33 +1163,49 @@ class SyncService:
             mapping.photo_table, [mapping.photo_emp_no_column, mapping.photo_thumbnail_column]
         )
 
-        # کد پرسنلی -> بایت‌های تصویر (ردیف‌های بدون کد یا بدون تصویر نادیده گرفته می‌شوند)
+        # Source reads can be partial or empty. Never interpret a missing row/NULL
+        # as a deletion: doing so can erase photos already stored in PostgreSQL.
+        # Only concrete, non-empty image payloads are eligible for updates.
         photo_by_code: dict[str, bytes] = {}
         for row in rows:
             raw_code = row.get(mapping.photo_emp_no_column)
             if raw_code is None:
                 continue
             raw_photo = row.get(mapping.photo_thumbnail_column)
-            if raw_photo:
-                photo_by_code[str(raw_code).strip()] = bytes(raw_photo)
+            if not raw_photo:
+                continue
+            code = str(raw_code).strip()
+            if code:
+                photo_by_code[code] = bytes(raw_photo)
 
-        # اعمال تصویر روی پرسنل همین سایت؛ کسی که در منبع عکس ندارد (حذف عکس در کاراوب ردیف را نگه می‌دارد و
-        # ستون را NULL می‌کند) عکسش در پرتال هم پاک می‌شود. پرسنل دستی منبع ندارند و دست نمی‌خورند.
-        # photo_thumbnail ستون deferred است؛ undefer می‌شود تا SQLAlchemy مقدار قبلی را داشته باشد و
-        # برای عکس‌های بدون تغییر UPDATE بی‌مورد صادر نکند
+        if not photo_by_code:
+            logger.warning(
+                "Photo sync for site %s returned no usable photos; existing photos preserved",
+                site_id,
+            )
+            return
+
+        # Update only employees for whom the source supplied actual image bytes.
+        # An absent source row or an explicit NULL never clears a saved image.
+        # The deferred image column is loaded so unchanged bytes are not rewritten.
         result = await self.db.execute(
             select(Employee)
             .options(undefer(Employee.photo_thumbnail))
             .where(
                 Employee.site_id == site_id,
                 Employee.is_manually_created.is_(False),
-                or_(Employee.personnel_code.in_(photo_by_code.keys()), Employee.photo_thumbnail.is_not(None)),
+                Employee.personnel_code.in_(photo_by_code.keys()),
             )
         )
+        updated = 0
         for employee in result.scalars().all():
-            employee.photo_thumbnail = photo_by_code.get(employee.personnel_code)
+            incoming = photo_by_code.get(employee.personnel_code)
+            if incoming is not None and employee.photo_thumbnail != incoming:
+                employee.photo_thumbnail = incoming
+                updated += 1
 
         await self.db.flush()
+        logger.info("Photo sync site %s: %s photo updates", site_id, updated)
 
     async def _deactivate_missing(self, site_id: int, seen_codes: set[str]) -> int:
         """

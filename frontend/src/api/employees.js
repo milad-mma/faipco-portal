@@ -74,7 +74,7 @@ export async function updateMyBirthdayVisibility(hideBirthdayInDashboard) {
 }
 
 // GET /employees/{id}/photo-thumbnail؛ خروجی: تصویر کوچک پرسنل به صورت Blob
-export async function fetchEmployeePhotoThumbnailBlob(employeeId) {
+export async function fetchEmployeePhotoThumbnailBlob(employeeId, signal) {
   const { data } = await apiClient.get(`/employees/${employeeId}/photo-thumbnail`, {
     responseType: "blob",
     signal,
@@ -145,6 +145,7 @@ export async function fetchBirthdayPhotoThumbnailBlob(employeeId, signal) {
   // در زمینه‌ی تولد (متولد امروز یا تبریک‌گوینده) برای همه‌ی کاربران برمی‌گرداند
   const { data } = await apiClient.get(`/employees/birthday-photo/${employeeId}`, {
     responseType: "blob",
+    signal,
   });
   return data;
 }
