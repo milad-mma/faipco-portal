@@ -462,23 +462,13 @@ EOF
   # Note: we don't use --silent because it also hides error output
   npm install --no-fund --no-audit
 
-  # assetlinks.json (اثر انگشت کلید امضای اپ اندروید) را بک‌اند در dist می‌نویسد؛ Build پوشه‌ی dist را از نو می‌سازد.
-  # نسخه‌ی فعلی نگه داشته و بلافاصله برگردانده می‌شود تا اپ اندروید حتی چند دقیقه‌ی Build هم بدون اثر انگشت
-  # درست نماند (وگرنه نوار آدرس نمایش داده می‌شود).
-  local assetlinks_backup=""
-  if [ -f dist/.well-known/assetlinks.json ] && ! grep -q "REPLACE_WITH" dist/.well-known/assetlinks.json; then
-    assetlinks_backup="$(mktemp)"
-    cp dist/.well-known/assetlinks.json "$assetlinks_backup"
-  fi
-
+  # The Vite plugin preserves a valid dist/.well-known/assetlinks.json
+  # through every build (including direct `npm run build`). The placeholder
+  # was removed from public/ so builds cannot overwrite the stored SHA-256.
+  # On first install the backend creates assetlinks.json from admin settings.
   log "Building frontend (this may take a few minutes)..."
   npm run build
 
-  if [ -n "$assetlinks_backup" ]; then
-    mkdir -p dist/.well-known
-    cp "$assetlinks_backup" dist/.well-known/assetlinks.json
-    rm -f "$assetlinks_backup"
-  fi
   # فایل‌های Build برای کاربر سرویس قابل‌نوشتن باشند (بک‌اند assetlinks.json و عنوان index.html را بازنویسی می‌کند)
   chown -R www-data:www-data dist 2>/dev/null || true
 }

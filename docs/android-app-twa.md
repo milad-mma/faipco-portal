@@ -81,11 +81,10 @@ bubblewrap build
 keytool -list -v -keystore android.keystore -alias android
 ```
 
-این مقدار را کپی کنید و در سرور، در فایل
-`frontend/public/.well-known/assetlinks.json` جایگزین
-`REPLACE_WITH_REAL_SHA256_FINGERPRINT_AFTER_RUNNING_BUBBLEWRAP` کنید،
-سپس یک آپدیت معمولی (`sudo bash install.sh` یا از پنل) بزنید تا این فایل
-روی سرور به‌روز شود.
+این مقدار را در پنل مدیریت پرتال، بخش «تنظیمات اپ اندروید»، ذخیره کنید.
+Backend فایل `frontend/dist/.well-known/assetlinks.json` را از روی همین تنظیمات تولید می‌کند.
+فایل نمونه در `frontend/public` دیگر وجود ندارد و Build نیز فایل معتبر را حفظ می‌کند؛
+**فایل `assetlinks.json` را دستی داخل `public` ایجاد نکنید.**
 
 برای تأیید اینکه درست تنظیم شده:
 
