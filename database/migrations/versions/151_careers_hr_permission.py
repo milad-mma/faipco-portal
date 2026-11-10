@@ -1,11 +1,11 @@
 """Dedicated global HR permission for sensitive recruitment records.
 
-Revision ID: 117
-Revises: 116
+Revision ID: 151
+Revises: 150
 """
 from alembic import op
-revision = "117"
-down_revision = "116"
+revision = "151"
+down_revision = "150"
 branch_labels = None
 depends_on = None
 

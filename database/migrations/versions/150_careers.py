@@ -1,13 +1,13 @@
 """Recruitment applications and public careers page copy.
 
-Revision ID: 116
-Revises: 115
+Revision ID: 150
+Revises: 149
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "116"
-down_revision = "115"
+revision = "150"
+down_revision = "149"
 branch_labels = None
 depends_on = None
 
