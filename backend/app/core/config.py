@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     # سقف حجم هر فایل = «سقف آپلود سرور» از پنل (تنظیمات سامانه) منهای ۱ مگابایت؛ services/server_upload_limit.py
     # مهلت نگهداری فایل موقت بی‌پیوند پیش از پاک‌سازی (ساعت) — باید بیشتر از طولانی‌ترین بکاپ باشد
     OA_TEMP_RETENTION_HOURS: int = 48
+    # تنظیمات ماژول استخدام عمومی (فایل رزومه خارج از webroot، اسکن اختیاری LAN)
+    CAREERS_RESUME_DIR: str = "/var/lib/faipco/careers-resumes"
+    CAREERS_CLAMAV_SOCKET: str = ""
+    CAREERS_RATE_LIMIT_SECRET: str = ""  # اگر خالی باشد از SECRET_KEY امن سامانه استفاده می‌شود
 
     # پیکربندی خواندن .env: مسیر مطلق فایل، کدگذاری UTF-8 و حساسیت به حروف بزرگ/کوچک نام متغیرها
     model_config = SettingsConfigDict(

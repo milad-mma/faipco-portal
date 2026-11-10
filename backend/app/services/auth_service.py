@@ -456,6 +456,17 @@ class AuthService:
         base.can_admin_loans = user.is_superuser or bool(
             {"loans.policy", "loans.finance", "loans.view"} & set(permission_codes)
         )
+        if user.is_superuser:
+            base.can_manage_careers = True
+        elif "careers.manage" in permission_codes:
+            # پرونده‌های عمومی استخدام Site ندارند؛ فقط مجوز واقعاً سراسری.
+            from app.core.permission_grants import grants_subquery
+            grants = grants_subquery()
+            base.can_manage_careers = (await self.db.scalar(select(grants.c.user_id).where(
+                grants.c.user_id == user.id, grants.c.code == "careers.manage", grants.c.site_id.is_(None)
+            ).limit(1))) is not None
+        else:
+            base.can_manage_careers = False
         base.can_admin_advances = user.is_superuser or bool(
             {"advances.policy", "advances.finance", "advances.view"} & set(permission_codes)
         )

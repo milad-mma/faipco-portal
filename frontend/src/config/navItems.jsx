@@ -92,6 +92,7 @@ export const NAV_ITEMS = [
     icon: <GroupOutlinedIcon />,
     groupOnly: true,
     children: [
+      { label: "درخواست‌های استخدام", path: "/careers/admin", icon: <GroupOutlinedIcon />, check: (u) => u?.can_manage_careers },
       {
         label: "پرسنل",
         path: "/employees",

@@ -125,3 +125,4 @@ from app.models.office_automation import (  # noqa: F401
     OaTemplateVersion, OaSecretariat, OaNumberCounter, OaIssuedNumber, OaSignatureVersion, OaApprovalStep, OaTaskTransfer,
 )
 from app.models.profile_photo import ProfilePhotoRequest  # noqa: F401
+from app.models.careers import CareerApplication, CareerPageSetting  # noqa: F401

@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
+import CareersHRRoute from "./components/CareersHRRoute";
 import SiteNoticeReportRoute from "./components/SiteNoticeReportRoute";
 import PermissionRoute from "./components/PermissionRoute";
 import Layout from "./components/Layout";
@@ -20,6 +21,9 @@ import NotFoundPage from "./pages/NotFoundPage";
 
 // صفحه‌ها به‌صورت تنبل (هر صفحه یک chunk جدا) بارگذاری می‌شوند تا بار اول فقط کد لازم دانلود و اجرا شود؛
 // ورود و داشبورد شخصی (پرکاربردترین مسیرها) مستقیم import شده‌اند
+const CareersPage = lazyPage(() => import("./pages/CareersPage"));
+const CareersAdminPage = lazyPage(() => import("./pages/CareersAdminPage"));
+const CareerPrintPage = lazyPage(() => import("./pages/CareerPrintPage"));
 const ForgotPasswordPage = lazyPage(() => import("./pages/ForgotPasswordPage"));
 const PublicAppDownloadPage = lazyPage(
   () => import("./pages/PublicAppDownloadPage"),
@@ -146,11 +150,14 @@ export default function App() {
         <Routes>
           {/* مسیرهای عمومی (بدون نیاز به ورود): ورود، فراموشی و بازنشانی رمز عبور */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/careers" element={<CareersPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           {/* دانلود عمومی اپ اندروید (برای QR کد و پیامک) */}
           <Route path="/app" element={<PublicAppDownloadPage />} />
 
+          {/* پیش‌نمایش چاپ مستقل از Layout، اما فقط با احراز هویت و مجوز HR */}
+          <Route path="/careers/admin/print/:id" element={<ProtectedRoute><CareersHRRoute><CareerPrintPage /></CareersHRRoute></ProtectedRoute>} />
           {/* مسیرهای داخلی: نیازمند ورود و نمایش داخل Layout اصلی (منو و نوار بالا) */}
           <Route
             element={
@@ -159,6 +166,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
+            <Route path="/careers/admin" element={<CareersHRRoute><CareersAdminPage /></CareersHRRoute>} />
             {/* داشبورد مدیریتی و به‌روزرسانی فقط برای Admin؛ گزارش حضور برای دارندگان مجوز لاگ تردد */}
             <Route
               path="/"

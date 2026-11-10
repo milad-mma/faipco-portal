@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     automation,
     automation_letters,
     automation_cartable,
+    careers,
     dashboard,
     error_logs,
     access_gate,
@@ -101,3 +102,4 @@ api_router.include_router(error_logs.router, prefix="/error-logs", tags=["error-
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(automation_letters.router, prefix="/automation", tags=["automation"])
 api_router.include_router(automation_cartable.router, prefix="/automation", tags=["automation"])
+api_router.include_router(careers.router, prefix="/careers", tags=["careers"])

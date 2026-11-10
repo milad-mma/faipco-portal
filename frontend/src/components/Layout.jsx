@@ -41,6 +41,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import { useAuth } from "../context/AuthContext";
+import { apiClient } from "../api/client";
 import { useBranding } from "../context/BrandingContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 import { setPresencePage, usePresenceMonitor } from "../utils/presenceSocket";
@@ -94,6 +95,26 @@ export default function Layout() {
   const [menuAnchor, setMenuAnchor] = useState(null);  // عنصر لنگر منوی پروفایل؛ null = منو بسته
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState("");  // متن پیام Snackbar؛ رشته‌ی خالی = پنهان
+
+  // اعلان داخلیِ ثبت استخدام: فقط شمارنده شناسه، بدون داده شخصی و تنها برای HR مجاز.
+  useEffect(() => {
+    if (!user?.can_manage_careers) return;
+    let running = true;
+    const key = `careers-last-alert-${user.id}`;
+    const check = async () => {
+      try {
+        const { data } = await apiClient.get("/careers/latest");
+        if (!running) return;
+        const value = Number(data.latest_id || 0);
+        const previous = Number(localStorage.getItem(key) || 0);
+        if (previous && value > previous) setSnackbar("درخواست استخدام جدیدی دریافت شد. برای بررسی به بخش استخدام مراجعه کنید.");
+        if (value > previous) localStorage.setItem(key, String(value));
+      } catch { /* notifications are best effort; backend enforces authorization */ }
+    };
+    check();
+    const timer = setInterval(check, 60000);
+    return () => { running = false; clearInterval(timer); };
+  }, [user?.id, user?.can_manage_careers]);
 
   // آیتم‌های منو را بر اساس مجوز کاربر فیلتر می‌کند و مسیر مؤثر هر آیتم والد را تعیین می‌کند.
   const visibleNavItems = useMemo(
