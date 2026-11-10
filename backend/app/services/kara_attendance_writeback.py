@@ -208,7 +208,7 @@ def _kasr_minutes(row: dict | None, thursday: bool) -> int | None:
 def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
     """
     دقیقه‌ی کسر مرخصی استحقاقی برای یک روز از شیفت همان روز را برمی‌گرداند.
-    منابع به ترتیب: کارکرد روزانه، تقویم شیفت گروهی (ماه‌های آینده)، آخرین شیفت ثبت‌شده‌ی فرد؛
+    منابع به ترتیب: تقویم گروهی جاری، کارکرد روزانه فقط در نبود تقویم، و آخرین شیفت فرد به‌عنوان fallback؛
     هر منبع فقط اگر نگاشت شده باشد. در نهایت قاعده‌ی روز هفته (جمعه ۰، پنجشنبه ۲۴۰، بقیه ۴۸۰).
     """
     thursday = day.weekday() == _THURSDAY
@@ -218,21 +218,8 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
         shifts, sh_no = n.t("shifts"), n.c("shifts", "shift_no")
         kasr = f"s.{n.c('shifts', 'kasr_gh')} AS KasrGh, s.{n.c('shifts', 'kasr_gh5')} AS KasrGh5"  # ستون‌های کسر شیفت
 
-        # ۱) کارکرد روزانه‌ی کاراوب: شماره‌ی شیفت روز -> کسر آن شیفت
-        if n.has("daily_work"):
-            W = lambda role: n.c("daily_work", role)  # noqa: E731
-            cur.execute(
-                f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {kasr} "
-                f"FROM {n.t('daily_work')} w LEFT JOIN {shifts} s ON s.{sh_no} = w.{W('shift_no')} "
-                f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
-                {"e": emp_no, "d": jalali},
-            )
-            minutes = _kasr_minutes(cur.fetchone(), thursday)
-            if minutes is not None:
-                return minutes
-
-        # ۲) کارکرد روزانه فقط تا آخر ماه جاری ساخته می‌شود؛ برای ماه‌های آینده از تقویم
-        # شیفت گروهی کاراوب: گروه فرد در آن تاریخ -> شیفت آن روز گروه (ستون روز ماه)
+        # ۱) تقویم گروهی جاری مرجع اصلی است؛ DailyWork ممکن است پس از ویرایش تقویم
+        # مجدداً محاسبه نشده باشد و شیفت قدیمی را نگه داشته باشد.
         if n.has("grp_shift") and n.has("emp_grps"):
             j_year, j_month, j_day = jalali // 10000, (jalali // 100) % 100, jalali % 100
             day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
@@ -245,6 +232,19 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
                 f"SELECT TOP 1 e.{E('new_grp_no')} FROM {n.t('emp_grps')} e "
                 f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC)",
                 {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
+            )
+            minutes = _kasr_minutes(cur.fetchone(), thursday)
+            if minutes is not None:
+                return minutes
+
+        # ۲) فقط در نبود تقویم گروهی معتبر، از کارکرد روزانه استفاده می‌کنیم.
+        if n.has("daily_work"):
+            W = lambda role: n.c("daily_work", role)  # noqa: E731
+            cur.execute(
+                f"SELECT TOP 1 w.{W('shift_no')} AS ShiftNo, {kasr} "
+                f"FROM {n.t('daily_work')} w LEFT JOIN {shifts} s ON s.{sh_no} = w.{W('shift_no')} "
+                f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
+                {"e": emp_no, "d": jalali},
             )
             minutes = _kasr_minutes(cur.fetchone(), thursday)
             if minutes is not None:
@@ -271,7 +271,8 @@ def _day_deduction_minutes(cur, n: KaraNames, emp_no: int, day: date) -> int:
 def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
     """
     بازه‌ی شیفت یک روزِ پرسنل برای محدودیت مرخصی ساعتی و مجوز خروج (docs/leave-requests.md).
-    منابع به همان ترتیب کسر مرخصی: کارکرد روزانه‌ی همان تاریخ، وگرنه تقویم شیفت گروهی (EmpGrps → GrpShift).
+    منابع: تقویم شیفت گروهی جاری (EmpGrps → GrpShift)، و تنها در نبود آن کارکرد روزانه.
+    صرف اختلاف DailyWork با تقویم، نشانه‌ی استثنای دستی نیست.
     ردیفی که شماره‌ی شیفتش در جدول شیفت‌ها نیست (مثل ۵۰۱ = استراحت/جمعه) روز غیرکاری است.
     خروجی: خروجی shift_window (+ shift_no) یا None اگر از هیچ منبعی پیدا نشد یا ستون‌های ساعت نگاشت نشده‌اند.
     """
@@ -302,10 +303,9 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
             w["shift_no"] = int(row["ShiftNo"])
         return w
 
-    def _group_shift(prev: bool):
+    def _group_shift():
         """
-        شیفت همین روز از تقویم گروه شیفت پرسنل (EmpGrps → GrpShift.D{روز}): گروه فعلی، یا با prev=True گروهِ قبل از
-        آخرین تغییر گروه.
+        شیفت جاری همان روز از تقویم گروه شیفت پرسنل (EmpGrps → GrpShift.D{روز}).
         """
         if not (n.has("grp_shift") and n.has("emp_grps")):
             return None
@@ -313,20 +313,19 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
         day_col = quote_mssql(f"{n.raw('grp_shift', 'day_prefix')}{j_day}")
         G = lambda role: n.c("grp_shift", role)  # noqa: E731
         E = lambda role: n.c("emp_grps", role)  # noqa: E731
-        latest = (
-            f"SELECT TOP 1 e.{E('date')} FROM {n.t('emp_grps')} e "
-            f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC"
-        )
-        date_cond = f"e.{E('date')} < ({latest})" if prev else f"e.{E('date')} <= %(d)s"
         cur.execute(
             f"SELECT TOP 1 g.{day_col} AS ShiftNo, {cols} "
             f"FROM {n.t('grp_shift')} g LEFT JOIN {n.t('shifts')} s ON s.{sh_no} = g.{day_col} "
             f"WHERE g.{G('year')} = %(y)s AND g.{G('month')} = %(m)s AND g.{G('grp_no')} = ("
             f"SELECT TOP 1 e.{E('new_grp_no')} FROM {n.t('emp_grps')} e "
-            f"WHERE e.{E('emp_no')} = %(e)s AND {date_cond} ORDER BY e.{E('date')} DESC)",
+            f"WHERE e.{E('emp_no')} = %(e)s AND e.{E('date')} <= %(d)s ORDER BY e.{E('date')} DESC)",
             {"y": j_year, "m": j_month, "e": emp_no, "d": jalali},
         )
         return _from_row(cur.fetchone())
+
+    current = _group_shift()
+    if current is not None:
+        return current  # حتی اگر DailyWork یک شماره شیفت قدیمی متفاوت داشته باشد.
 
     if n.has("daily_work"):
         W = lambda role: n.c("daily_work", role)  # noqa: E731
@@ -336,19 +335,8 @@ def shift_window_sync(cur, n: KaraNames, emp_no: int, day: date) -> dict | None:
             f"WHERE w.{W('emp_no')} = %(e)s AND w.{W('date')} = %(d)s",
             {"e": emp_no, "d": jalali},
         )
-        row = cur.fetchone()
-        if row and row.get("ShiftNo") is not None:
-            daily = _from_row(row)
-            # آخرین ساعت کاری ثبت‌شده ملاک است (دستور کاربر؛ docs/leave-requests.md): کاراوب کارکرد روزانه را برای کل ماه
-            # از قبل می‌سازد و با تغییر گروه شیفت (EmpGrps) دوباره حساب نمی‌کند. اگر کارکرد روزانه با تقویم گروه فعلی فرق
-            # دارد ولی همان شیفت گروه قبلی است، کهنه است و شیفت گروه جدید ملاک است؛ وگرنه تغییر دستیِ همان روز است.
-            current = _group_shift(prev=False)
-            if current is not None and daily is not None and current.get("shift_no") != daily.get("shift_no"):
-                previous = _group_shift(prev=True)
-                if previous is not None and previous.get("shift_no") == daily.get("shift_no"):
-                    return current
-            return daily
-    return _group_shift(prev=False)
+        return _from_row(cur.fetchone())
+    return None
 
 
 def working_days_sync(cur, n: KaraNames, emp_no: int, days: list[date]) -> list[bool]:

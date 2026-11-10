@@ -259,6 +259,31 @@ function SubmitRequestForm({ onSubmitted }) {
       alive = false;
     };
   }, [punchKey]);
+  // اگر کاربر پس از تغییر تقویم در کاراوب به فرم باز برگردد، شیفت دوباره خوانده می‌شود.
+  // در Refresh خودکار، ساعت‌هایی که کاربر خودش وارد کرده بازنویسی نمی‌شوند؛
+  // اعتبارسنجی ثبت نهایی همواره در Backend با شیفت جاری انجام می‌شود.
+  useEffect(() => {
+    if (!shiftKey && !punchKey) return undefined;
+    let alive = true;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      if (shiftKey) {
+        const [, day] = shiftKey.split("|");
+        fetchShiftWindow(day).then((data) => { if (alive) setShift(data); }).catch(() => {});
+      }
+      if (punchKey) {
+        fetchShiftWindow(punchKey).then((data) => { if (alive) setPunchShift(data); }).catch(() => {});
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [shiftKey, punchKey]);
+
   const activePunchShift = punchKey ? punchShift : null;
 
   const activeShift = shiftKey ? shift : null;
