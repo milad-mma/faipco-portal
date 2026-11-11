@@ -261,6 +261,7 @@ export default function OaCartablePage() {
                 cursor: "pointer",
                 fontSize: 12,
                 fontWeight: 700,
+                fontFamily: "inherit",
                 color: box === b.key ? "primary.main" : "text.secondary",
                 bgcolor: box === b.key ? "background.paper" : "transparent",
                 boxShadow: box === b.key ? 1 : "none",
