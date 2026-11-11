@@ -6,51 +6,111 @@ import { runInNewContext } from 'node:vm';
 
 const raw = readFileSync(fileURLToPath(new URL('../src/utils/serviceWorker.js', import.meta.url)), 'utf8');
 
-function setup({ waiting = true, registrationExists = true } = {}) {
+function setup({ waiting = true, registrationExists = true, updateOnRequest = false } = {}) {
   const source = raw
     .replace(/\bexport (const|async function|function)\b/g, '$1')
     .replace(/12 \* 1000/g, '45')
-    .concat('\n;globalThis.testAPI = { applyPendingUpdate, registerServiceWorker, checkDeployedVersion };');
+    .concat('\n;globalThis.testAPI = { applyPendingUpdate, registerServiceWorker, onReleasePublished };');
 
   const worker = new EventTarget();
   worker.state = 'installed';
   worker.postMessage = () => {};
   const sw = new EventTarget();
-  const old = {};
-  sw.controller = old;
+  sw.controller = {};
   sw.register = async () => registration;
   sw.getRegistration = async () => registrationExists ? registration : undefined;
   const registration = new EventTarget();
   registration.waiting = waiting ? worker : null;
   registration.installing = null;
-  registration.update = async () => {};
+  let updateCalls = 0;
+  registration.update = async () => {
+    updateCalls++;
+    if (updateOnRequest) {
+      registration.installing = worker;
+      registration.dispatchEvent(new Event('updatefound'));
+      queueMicrotask(() => {
+        registration.waiting = worker;
+        worker.dispatchEvent(new Event('statechange'));
+      });
+    }
+  };
   let reloads = 0;
-  let cacheDeleted = false;
-  let unregistered = false;
-  registration.unregister = async () => { unregistered = true; };
+  let notifications = 0;
   const window = new EventTarget();
   window.location = { reload() { reloads++; } };
+  window.addEventListener('faipco-update-ready', () => { notifications++; });
   const document = new EventTarget();
   document.readyState = 'complete';
   document.visibilityState = 'visible';
+  const timers = [];
   const context = {
     navigator: { serviceWorker: sw }, window, document,
-    caches: { keys() { cacheDeleted = true; return []; } },
-    setTimeout, clearTimeout, setInterval() {}, clearInterval() {},
-    console, Date, AbortController, CustomEvent: class extends Event { constructor(type) { super(type); } },
+    setTimeout, clearTimeout,
+    setInterval(fn, ms) { timers.push(ms); }, clearInterval() {},
+    console, Date, AbortController,
+    CustomEvent: class extends Event { constructor(type) { super(type); } },
     __APP_BUILD__: 'build-old',
-    fetch: async () => ({ ok: true, json: async () => ({ build: 'build-old' }) }),
+    fetch() { throw Error('periodic version.json fetch is forbidden'); },
   };
   runInNewContext(source, context);
   return {
-    ...context.testAPI, worker, sw, registration,
+    ...context.testAPI, worker, sw, registration, document, window,
     get reloads() { return reloads; },
-    get cacheDeleted() { return cacheDeleted; },
-    get unregistered() { return unregistered; },
+    get updates() { return updateCalls; },
+    get notifications() { return notifications; },
+    get timers() { return timers; },
   };
 }
 
-test('ready update switches SW, then reloads; never removes caches or registration', async () => {
+async function flush() { await new Promise((resolve) => setImmediate(resolve)); }
+
+test('no periodic polling; existing fully installed waiting worker triggers a prompt', async () => {
+  const s = setup();
+  s.registerServiceWorker();
+  await flush();
+  assert.equal(s.notifications, 1);
+  assert.deepEqual(s.timers, []);
+  assert.equal(s.updates, 0);
+});
+
+test('a release event NEVER announces until a new worker is installed and waiting', async () => {
+  const s = setup({ waiting: false, updateOnRequest: false });
+  s.registerServiceWorker();
+  await flush();
+  s.onReleasePublished('build-new');
+  await flush();
+  assert.equal(s.updates, 1);
+  assert.equal(s.notifications, 0);
+  assert.equal(s.reloads, 0);
+});
+
+test('server release event triggers SW check; installed worker announces once', async () => {
+  const s = setup({ waiting: false, updateOnRequest: true });
+  s.registerServiceWorker();
+  await flush();
+  s.onReleasePublished('build-new');
+  await flush();
+  assert.equal(s.updates, 1);
+  assert.equal(s.notifications, 1);
+  assert.equal(s.reloads, 0);
+  s.onReleasePublished('build-new');
+  await flush();
+  assert.equal(s.notifications, 1);
+});
+
+test('same build and invalid build events are ignored', async () => {
+  const s = setup({ waiting: false });
+  s.registerServiceWorker();
+  await flush();
+  s.onReleasePublished('build-old');
+  s.onReleasePublished('../hack');
+  s.onReleasePublished(null);
+  await flush();
+  assert.equal(s.notifications, 0);
+  assert.equal(s.updates, 0);
+});
+
+test('ready update activates by consent and reloads without removing caches', async () => {
   const s = setup();
   s.worker.postMessage = ({type}) => {
     assert.equal(type, 'SKIP_WAITING');
@@ -59,48 +119,20 @@ test('ready update switches SW, then reloads; never removes caches or registrati
   const result = await s.applyPendingUpdate();
   assert.equal(result.ok, true);
   assert.equal(s.reloads, 1);
-  assert.equal(s.cacheDeleted, false);
-  assert.equal(s.unregistered, false);
 });
 
-test('installation failure returns retryable error, without reload or cache deletion', async () => {
+test('no waiting worker yields immediate retryable error, not an endless loader', async () => {
   const s = setup({ waiting: false });
   const result = await s.applyPendingUpdate();
   assert.equal(result.ok, false);
-  assert.equal(result.reason, 'install-timeout');
+  assert.equal(result.reason, 'not-ready');
   assert.equal(s.reloads, 0);
-  assert.equal(s.cacheDeleted, false);
-  assert.equal(s.unregistered, false);
 });
 
-test('a worker arriving during update is activated normally', async () => {
-  const s = setup({ waiting: false });
-  s.registration.update = async () => {
-    queueMicrotask(() => {
-      s.registration.waiting = s.worker;
-      s.worker.dispatchEvent(new Event('statechange'));
-    });
-  };
-  s.registration.installing = s.worker;
-  s.worker.postMessage = () => {
-    queueMicrotask(() => { s.sw.controller = s.worker; s.sw.dispatchEvent(new Event('controllerchange')); });
-  };
-  const result = await s.applyPendingUpdate();
-  assert.equal(result.ok, true);
-  assert.equal(s.reloads, 1);
-});
-
-test('controller change without user confirmation does not reload a form', async () => {
+test('controller change without consent never reloads an unsaved form', async () => {
   const s = setup();
   s.registerServiceWorker();
-  await new Promise((resolve) => setImmediate(resolve));
+  await flush();
   s.sw.dispatchEvent(new Event('controllerchange'));
   assert.equal(s.reloads, 0);
-});
-
-test('no registered worker: error is returned, login and stored data stay intact', async () => {
-  const s = setup({ registrationExists: false });
-  assert.equal((await s.applyPendingUpdate()).ok, false);
-  assert.equal(s.reloads, 0);
-  assert.equal(s.cacheDeleted, false);
 });

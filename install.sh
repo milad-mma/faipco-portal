@@ -66,6 +66,7 @@ DB_USER="faipco_user"
 BACKEND_PORT=8000
 LOG_FILE="/var/log/faipco-install.log"
 IS_UPDATE="false"
+FRONTEND_STAGED_DIST=""
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[FAIPCO]${NC} $1"; }
@@ -106,6 +107,10 @@ on_error() {
   local line_no=$1
   err "Install failed at line ${line_no} (exit code: ${exit_code})."
   err "For full details: cat ${LOG_FILE}"
+  # Never leave an uncommitted staging build mistaken for a live release.
+  if [[ -n "$FRONTEND_STAGED_DIST" && "$FRONTEND_STAGED_DIST" == "$INSTALL_DIR/frontend/releases/.staging."* ]]; then
+    rm -rf -- "$FRONTEND_STAGED_DIST" || true
+  fi
   # مستقیم در لاگ (نه از طریق tee): وقتی از پنل (systemd-run) اجرا می‌شود، با تمام شدن اسکریپت systemd فرآیند tee را
   # هم می‌بندد و ممکن است آخرین خطوط هرگز در لاگ نوشته نشوند؛ پنل با همین پیام شکست را تشخیص می‌دهد
   printf '\n[FAIPCO-RESULT] Install failed at line %s (exit code: %s).\n' "$line_no" "$exit_code" >> "$LOG_FILE" 2>/dev/null || true
@@ -458,19 +463,65 @@ build_frontend() {
 VITE_API_BASE_URL=/api/v1
 VITE_VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
 EOF
-
-  # Note: we don't use --silent because it also hides error output
   npm install --no-fund --no-audit
 
-  # The Vite plugin preserves a valid dist/.well-known/assetlinks.json
-  # through every build (including direct `npm run build`). The placeholder
-  # was removed from public/ so builds cannot overwrite the stored SHA-256.
-  # On first install the backend creates assetlinks.json from admin settings.
-  log "Building frontend (this may take a few minutes)..."
-  npm run build
+  # A partial npm/Vite build must NEVER overwrite Nginx's live dist/.
+  # Build to a private staging directory; activation is performed only after
+  # migrations, services, Nginx and security configuration all succeed.
+  mkdir -p "$INSTALL_DIR/frontend/releases"
+  FRONTEND_STAGED_DIST="$(mktemp -d "$INSTALL_DIR/frontend/releases/.staging.XXXXXXXX")"
+  log "Building frontend to staging (live app stays untouched)..."
+  if ! npm run build -- --outDir "$FRONTEND_STAGED_DIST"; then
+    rm -rf -- "$FRONTEND_STAGED_DIST"
+    FRONTEND_STAGED_DIST=""
+    err "Frontend staging build failed; previous release is still live."
+    return 1
+  fi
+  # Do NOT switch here: keep the current site intact through the remaining steps.
+  chown -R www-data:www-data "$FRONTEND_STAGED_DIST" 2>/dev/null || true
+}
 
-  # فایل‌های Build برای کاربر سرویس قابل‌نوشتن باشند (بک‌اند assetlinks.json و عنوان index.html را بازنویسی می‌کند)
-  chown -R www-data:www-data dist 2>/dev/null || true
+publish_frontend_release() {
+  # A build must never be published if the restarted FastAPI application is
+  # still unavailable. Validate health before touching the live dist symlink.
+  local healthy="false"
+  local attempt
+  for attempt in {1..20}; do
+    if curl -fsS --connect-timeout 2 --max-time 4 "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null 2>&1; then
+      healthy="true"
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$healthy" != "true" ]]; then
+    err "Backend did not become healthy; previous frontend release stays active."
+    return 1
+  fi
+  if [[ -z "$FRONTEND_STAGED_DIST" || ! -d "$FRONTEND_STAGED_DIST" ]]; then
+    err "Frontend staging directory is missing; refusing to publish."
+    return 1
+  fi
+  log "Validating frontend and activating complete release..."
+  "$INSTALL_DIR/backend/.venv/bin/python" \
+    "$INSTALL_DIR/scripts/activate_frontend_release.py" "$INSTALL_DIR" "$FRONTEND_STAGED_DIST"
+  FRONTEND_STAGED_DIST=""
+  # The backend edits index.html and assetlinks.json later from its www-data
+  # account. The activation script may have copied files as root.
+  chown -R www-data:www-data "$(readlink -f "$INSTALL_DIR/frontend/dist")" 2>/dev/null || true
+
+  # Brand settings + Android TWA fingerprints are written into the new live
+  # release after switching; backend startup earlier saw the previous release.
+  (cd "$INSTALL_DIR/backend" && .venv/bin/python - <<'PYPOST'
+import asyncio
+from app.main import sync_index_html_branding
+asyncio.run(sync_index_html_branding())
+PYPOST
+  ) || warn "Could not reapply live branding / Android assetlinks after release"
+
+  # PostgreSQL NOTIFY broadcasts between all uvicorn workers, including 2+
+  # processes. On reconnect, a client can also read the published version.
+  (cd "$INSTALL_DIR" && "$INSTALL_DIR/backend/.venv/bin/python" \
+    scripts/publish_release_event.py) || warn "Release is live but the realtime broadcast failed; resume/reconnect remains available"
 }
 
 configure_systemd() {
@@ -885,6 +936,13 @@ print_summary() {
 
 main() {
   require_root
+  mkdir -p /run/lock
+  exec 9>/run/lock/faipco-install.lock
+  if ! flock -n 9; then
+    err "Another FAIPCO installer is already running; refusing overlapping releases."
+    return 1
+  fi
+
   setup_logging
 
   log "Starting FAIPCO Portal installer... (full log saved to ${LOG_FILE})"
@@ -928,6 +986,9 @@ main() {
   stage "Step 8 - Admin user and security"
   seed_and_create_admin
   configure_firewall
+
+  # Commit + notify only after ALL installer stages have succeeded.
+  publish_frontend_release
 
   print_summary
   # پیام نهایی مستقیم در لاگ (نه از طریق tee) تا پنل آپدیت حتماً پایان موفق را ببیند؛ و یک ثانیه فرصت به tee برای نوشتن

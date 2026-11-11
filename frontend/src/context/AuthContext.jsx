@@ -10,6 +10,7 @@ import { apiClient } from "../api/client";
 import { useOnlineStatus } from "./OnlineStatusContext";
 import { setCacheOwner } from "../api/swrCache";
 import { classifySessionRestoreError } from "../utils/authRestorePolicy";
+import { connectReleaseNotifications } from "../utils/releaseSocket";
 
 const AuthContext = createContext(null);
 const RETRY_DELAYS_MS = [2500, 5000, 10000, 20000];
@@ -26,6 +27,13 @@ export function AuthProvider({ children }) {
   // A logout or new login must invalidate an older, outstanding restore.
   const sessionEpochRef = useRef(0);
   const previouslyOnlineRef = useRef(isOnline);
+
+  // A dedicated version socket is independent of presence/GPS and RBAC modules.
+  // It exists only for authenticated sessions (including admins without employee_id).
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return connectReleaseNotifications();
+  }, [user?.id]);
 
   setCacheOwner(user?.id);
 

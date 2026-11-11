@@ -1,5 +1,5 @@
 {
-  "count": 540,
+  "count": 541,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -540,6 +540,7 @@
     "PUT /api/v1/system/sms-settings",
     "PUT /api/v1/system/smtp-settings",
     "PUT /api/v1/system/upload-limit",
-    "WEBSOCKET /api/v1/attendance/presence-ws"
+    "WEBSOCKET /api/v1/attendance/presence-ws",
+    "WEBSOCKET /api/v1/system/release-ws"
   ]
 }

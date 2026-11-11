@@ -7,8 +7,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { preserveAssetLinks } from "./scripts/preserveAssetLinks.mjs";
 
-// شناسه‌ی هر Build (زمان ساخت): داخل کد (__APP_BUILD__) و در dist/version.json؛ صفحه‌ی باز هر ۳۰ ثانیه version.json
-// را می‌خواند و اگر عوض شده بود فوراً پیام «نسخه جدید پرتال آماده است» را نشان می‌دهد (src/utils/serviceWorker.js)
+// شناسه Build داخل __APP_BUILD__ و version.json؛ فقط بعد از انتشار موفق، Backend
+// رویداد نسخه را از WebSocket ارسال می‌کند. اعلان پس از نصب کامل SW نمایش داده می‌شود.
 const APP_BUILD = String(Date.now());
 
 function versionFile() {

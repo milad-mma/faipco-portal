@@ -31,6 +31,7 @@ from app.core.config import get_settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.router import api_router
 from app.services.usage_stats_service import flush_usage, record_usage
+from app.services.release_events import release_bus
 
 settings = get_settings()
 
@@ -68,8 +69,12 @@ async def lifespan(app: FastAPI):
     error_log_service.start()
     await sync_index_html_branding()
     await start_scheduler()
-    yield
-    stop_scheduler()
+    release_bus.start()
+    try:
+        yield
+    finally:
+        await release_bus.stop()
+        stop_scheduler()
     await error_log_service.stop()
     await flush_usage()
     kara_pool.close_all()  # اتصال‌های بی‌کار کاراوب

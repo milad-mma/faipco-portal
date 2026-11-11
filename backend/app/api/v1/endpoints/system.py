@@ -29,7 +29,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import delete, select
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -99,6 +99,72 @@ async def get_app_version():
     """
     settings = get_settings()
     return {"version": settings.APP_VERSION, "update_channel": settings.UPDATE_CHANNEL}
+
+
+@router.websocket("/release-ws")
+async def release_websocket(websocket: WebSocket):
+    """Authenticated, low-traffic portal release notifications (not GPS presence).
+
+    Authentication is transmitted via the websocket subprotocol handshake,
+    rather than the URL query string.  This channel sends only a build ID.
+    PostgreSQL LISTEN/NOTIFY handles multi-worker fanout; on connect the active
+    release is replayed so sleep/wake or server restarts never lose an update.
+    """
+    from urllib.parse import urlsplit
+
+    from app.core.security import decode_token, is_token_revoked_by_password_change
+    from app.db.session import AsyncSessionLocal
+    from app.repositories.user_repository import UserRepository
+    from app.services import session_service
+    from app.services.release_events import deployed_build, release_bus
+
+    origin = websocket.headers.get("origin")
+    if origin and urlsplit(origin).netloc.lower() != websocket.headers.get("host", "").lower():
+        await websocket.close(code=4403)
+        return
+    protocols = [value.strip() for value in websocket.headers.get("sec-websocket-protocol", "").split(",")]
+    tokens = [part[5:] for part in protocols if part.startswith("auth.")]
+    payload = decode_token(tokens[0]) if len(tokens) == 1 else None
+    if not payload or payload.get("type") != "access":
+        await websocket.close(code=4401)
+        return
+    try:
+        user_id = int(payload["sub"])
+        async with AsyncSessionLocal() as db:
+            user, employee_active = await UserRepository(db).get_by_id_with_employee_status(user_id)
+            valid = bool(user and user.is_active and employee_active is not False)
+            if valid and is_token_revoked_by_password_change(payload, user.password_changed_at):
+                valid = False
+            if valid and payload.get("sid"):
+                valid = await session_service.validate(db, user.id, payload["sid"]) is not None
+    except (TypeError, ValueError, KeyError):
+        valid = False
+    except Exception:
+        logger.exception("Release WS authentication failed")
+        await websocket.close(code=1011)
+        return
+    if not valid:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept(subprotocol="faipco-release")
+    queue = release_bus.subscribe()
+    try:
+        # A missed NOTIFY while Android was backgrounded is recovered here.
+        current = deployed_build()
+        if current:
+            await websocket.send_json({"type": "portal.release", "build": current})
+        while True:
+            try:
+                build = await asyncio.wait_for(queue.get(), timeout=30)
+                await websocket.send_json({"type": "portal.release", "build": build})
+            except asyncio.TimeoutError:
+                # Keep idle WebSockets alive through nginx/proxies; no DB read.
+                await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, RuntimeError, OSError):
+        pass
+    finally:
+        release_bus.unsubscribe(queue)
 
 
 @router.get("/usage-stats")

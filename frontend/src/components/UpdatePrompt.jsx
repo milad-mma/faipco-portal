@@ -40,7 +40,7 @@ export default function UpdatePrompt() {
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       message={error
         ? "نسخه جدید هنوز آماده نشده است. اتصال را بررسی کنید و دوباره تلاش کنید."
-        : "نسخه جدید پرتال شناسایی شد"}
+        : "نسخه جدید پرتال آماده است"}
       action={
         <Button
           color="inherit"
