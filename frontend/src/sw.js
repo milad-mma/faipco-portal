@@ -25,7 +25,17 @@ registerRoute(({ url }) => url.pathname.startsWith("/api/"), new NetworkOnly());
 // درخواست‌های ناوبری (باز کردن مستقیم یا Refresh یک مسیر مثل /notices) با index.html پیش‌کش‌شده پاسخ داده می‌شوند
 const navigationHandler = createHandlerBoundToURL("/index.html");
 // فایل‌های واقعی (assetlinks) نباید با index.html جواب داده شوند
-registerRoute(new NavigationRoute(navigationHandler, { denylist: [/^\/\.well-known\//] }));
+// Recovery path for clients upgrading FROM the old release: it deleted every
+// Cache Storage entry before sending SKIP_WAITING. If the new worker's precache
+// was also erased, fetch the shell from the network instead of showing a blank
+// page. Normal updates still use the precached shell.
+registerRoute(new NavigationRoute(async (context) => {
+  try {
+    return await navigationHandler(context);
+  } catch {
+    return fetch("/index.html", { cache: "no-store" });
+  }
+}, { denylist: [/^\/\.well-known\//] }));
 
 // آیکون‌های اعلان: Chrome تصویر icon/badge را هنگام نمایش اعلان از شبکه می‌گیرد؛ اگر گوشی در آن لحظه در خواب
 // (Doze) باشد یا اینترنتش ضعیف، گرفتن تصویر شکست می‌خورد و Chrome زنگوله‌ی پیش‌فرض خودش را نشان می‌دهد («گاهی با
@@ -66,8 +76,12 @@ async function notificationImage(path) {
 
 // رویداد نصب نسخه‌ی جدید Service Worker
 self.addEventListener("install", (event) => {
-  // آیکون‌های اعلان همین حالا در Cache گذاشته می‌شوند (نصب منتظر آن نمی‌ماند اگر شبکه نباشد)
-  event.waitUntil(cacheNotificationIcons());
+  // دانلود آیکون‌های اختیاری نباید نصب SW و آپدیت TWA را روی اینترنت کند معطل کند.
+  // اگر بارگیری بیش از ۱.۵ ثانیه طول کشید، نصب ادامه می‌یابد؛ خود Push بعداً تصاویر را دریافت می‌کند.
+  event.waitUntil(Promise.race([
+    cacheNotificationIcons(),
+    new Promise((resolve) => setTimeout(resolve, 1500)),
+  ]));
   // skipWaiting خودکار صدا زده نمی‌شود: نسخه‌ی جدید در حالت waiting می‌ماند تا کاربر با دکمه‌ی «بارگذاری»
   // تأیید کند، تا Reload ناخواسته وسط پر کردن یک فرم (مثل نوشتن اطلاعیه) رخ ندهد
 });

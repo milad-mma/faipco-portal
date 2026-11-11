@@ -3,56 +3,56 @@ import { Button, CircularProgress, Snackbar } from "@mui/material";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
 import { applyPendingUpdate, UPDATE_READY_EVENT } from "../utils/serviceWorker";
 
-/**
- * پیام کوچک «نسخه جدید پرتال آماده است» که فقط وقتی نسخه‌ی جدید Deploy و آماده شده ظاهر می‌شود
- * (با رویداد UPDATE_READY_EVENT از serviceWorker). بدون ورودی (props).
- * تا کاربر روی «بارگذاری» کلیک نکند Reload انجام نمی‌شود، پس کار نیمه‌تمام (مثلاً فرم) از دست نمی‌رود.
- */
+/** Manual PWA/TWA update. Never blocks permanently when a mobile download stalls. */
 export default function UpdatePrompt() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);  // در حال اعمال نسخه‌ی جدید (دکمه غیرفعال و اسپینر)
+  const [isApplying, setIsApplying] = useState(false);
+  const [error, setError] = useState(false);
 
-  // گوش دادن به رویداد آماده بودن نسخه‌ی جدید و نمایش پیام
   useEffect(() => {
     function handleUpdateReady() {
+      setError(false);
       setIsOpen(true);
     }
     window.addEventListener(UPDATE_READY_EVENT, handleUpdateReady);
     return () => window.removeEventListener(UPDATE_READY_EVENT, handleUpdateReady);
   }, []);
 
-  // اعمال به‌روزرسانی با کلیک کاربر
   async function handleReloadClick() {
-    // حالت «در حال بارگذاری» از کلیک دوباره جلوگیری می‌کند و بازخورد بصری می‌دهد
+    if (isApplying) return;
     setIsApplying(true);
-    // applyPendingUpdate صبر می‌کند تا Cache Storage پاک شود (localStorage و ورود کاربر دست‌نخورده می‌مانند)
-    // و سپس نسخه‌ی جدید را فعال می‌کند؛ Reload توسط controllerchange در serviceWorker.js انجام می‌شود.
-    await applyPendingUpdate();
+    setError(false);
+    try {
+      const result = await applyPendingUpdate();
+      if (!result?.ok) setError(true);
+      // Successful activation triggers a page reload inside applyPendingUpdate.
+    } catch {
+      setError(true);
+    } finally {
+      // On network/installation failures the button is usable again.
+      setIsApplying(false);
+    }
   }
 
   return (
     <Snackbar
       open={isOpen}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      message="نسخه جدید پرتال آماده است"
+      message={error
+        ? "نسخه جدید هنوز آماده نشده است. اتصال را بررسی کنید و دوباره تلاش کنید."
+        : "نسخه جدید پرتال شناسایی شد"}
       action={
         <Button
           color="inherit"
           size="small"
           disabled={isApplying}
-          startIcon={
-            isApplying ? (
-              <CircularProgress size={14} color="inherit" />
-            ) : (
-              <SystemUpdateAltOutlinedIcon fontSize="small" />
-            )
-          }
+          startIcon={isApplying
+            ? <CircularProgress size={14} color="inherit" />
+            : <SystemUpdateAltOutlinedIcon fontSize="small" />}
           onClick={handleReloadClick}
-          // حالت غیرفعالِ پیش‌فرض MUI رنگ خاکستری تیره می‌دهد که روی زمینه‌ی تیره‌ی Snackbar دیده نمی‌شد؛
-          // «در حال بارگذاری...» با همان رنگ متن پیام (کمی کم‌رنگ‌تر) نمایش داده می‌شود
           sx={{ "&.Mui-disabled": { color: "inherit", opacity: 0.8 } }}
         >
-          {isApplying ? "در حال بارگذاری..." : "بارگذاری"}
+          {isApplying ? "در حال آماده‌سازی..." : error ? "تلاش دوباره" : "بارگذاری"}
         </Button>
       }
     />
