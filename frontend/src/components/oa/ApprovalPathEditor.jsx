@@ -13,7 +13,7 @@ import { toPersianDigits } from "../../utils/searchText";
 
 const KINDS = { paraph: "پاراف", approve: "تأیید", sign: "امضا" };
 
-export default function ApprovalPathEditor({ letterId, plan, onChange, disabled }) {
+export default function ApprovalPathEditor({ letterId, plan, onChange, disabled, onBusyChange, onErrorChange }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -22,13 +22,17 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled 
 
   async function save(next) {
     setBusy(true);
+    onBusyChange?.(true);
     setError("");
+    onErrorChange?.(false);
     try {
       onChange(await setApprovalSteps(letterId, next.map((s) => ({ employee_id: s.employee_id, kind: s.kind }))));
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره‌ی مسیر تأیید ناموفق بود.");
+      onErrorChange?.(true);
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   }
 
@@ -57,9 +61,9 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled 
       )}
       <Stack spacing={0.75}>
         {steps.map((s, i) => (
-          <Stack key={s.id || s.employee_id} direction="row" alignItems="center" gap={1} sx={{ p: 0.75, borderRadius: 1, bgcolor: "action.hover" }}>
+          <Stack key={s.id || s.employee_id} direction="row" alignItems="center" gap={{ xs: 0.25, sm: 1 }} sx={{ p: 0.75, borderRadius: 1, bgcolor: "action.hover", minWidth: 0 }}>
             <Chip size="small" label={toPersianDigits(i + 1)} />
-            <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${s.name}${s.title ? ` — ${s.title}` : ""}`}>
               {s.name}
               {s.title ? ` — ${s.title}` : ""}
             </Typography>
@@ -70,7 +74,7 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled 
               value={s.kind}
               disabled={disabled || busy}
               onChange={(e) => save(steps.map((x, j) => (j === i ? { ...x, kind: e.target.value } : x)))}
-              sx={{ minWidth: 80 }}
+              sx={{ width: 86, flexShrink: 0 }}
             >
               {Object.entries(KINDS).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
@@ -83,7 +87,7 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled 
           <Tooltip title="نامه‌ای که از طرف مدیر نوشته می‌شود، آخر کار با امضای خود او ارسال می‌شود">
             <Stack direction="row" alignItems="center" gap={1} sx={{ p: 0.75, borderRadius: 1, bgcolor: "action.selected" }}>
               <Chip size="small" label={toPersianDigits(steps.length + 1)} />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${auto.name}${auto.title ? ` — ${auto.title}` : ""}`}>
                 {auto.name}
                 {auto.title ? ` — ${auto.title}` : ""}
               </Typography>

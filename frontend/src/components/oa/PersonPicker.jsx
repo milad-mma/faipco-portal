@@ -1,6 +1,6 @@
 // انتخاب فردمحور گیرنده/ارجاع: جست‌وجوی نام، فیلتر واحد و عنوان سمت (فقط برای پیدا کردن افراد؛ گیرنده همیشه شخص است).
 // فقط نام، سمت و واحد نمایش داده می‌شود (کد پرسنلی/ملی هرگز). onConfirm([{employee_id, name, title, department, selected_via}])
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -28,19 +28,26 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
   const [positionTitle, setPositionTitle] = useState("");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const requestIdRef = useRef(0);
   const [selected, setSelected] = useState({}); // employee_id → person
 
   useEffect(() => {
+    const req = ++requestIdRef.current;
     if (!open) return undefined;
     setLoading(true);
+    setData(null);
     const t = setTimeout(() => {
-      fetcher({ q, department_id: departmentId || undefined, title: positionTitle || undefined })
-        .then(setData)
-        .catch((err) => setData({ people: [], departments: [], error: err.response?.data?.detail || "دریافت فهرست پرسنل ناموفق بود." }))
-        .finally(() => setLoading(false));
+      fetcher({ q, department_id: departmentId || undefined, title: positionTitle || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+        .then((result) => { if (req === requestIdRef.current) setData(result); })
+        .catch((err) => { if (req === requestIdRef.current) setData({ people: [], departments: [], error: err.response?.data?.detail || "دریافت فهرست پرسنل ناموفق بود." }); })
+        .finally(() => { if (req === requestIdRef.current) setLoading(false); });
     }, 300);
-    return () => clearTimeout(t);
-  }, [open, q, departmentId, positionTitle, fetcher]);
+    return () => { ++requestIdRef.current; clearTimeout(t); };
+  }, [open, q, departmentId, positionTitle, page, fetcher]);
+
+  useEffect(() => { setPage(0); }, [q, departmentId, positionTitle, open]);
 
   useEffect(() => {
     if (open) setSelected({});
@@ -74,7 +81,7 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
           <TextField size="small" label="جست‌وجوی نام" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-          <Stack direction="row" spacing={1.5}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
             <TextField select size="small" label="واحد" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} sx={{ flex: 1 }}>
               <MenuItem value="">همه‌ی واحدها</MenuItem>
               {(data?.departments || []).map((d) => (
@@ -87,11 +94,11 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
           </Stack>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Typography variant="caption" color="text.secondary">
-              {loading ? "در حال جست‌وجو..." : `${toPersianDigits(people.length)} نفر`}
+              {loading ? "در حال جست‌وجو..." : `${toPersianDigits(data?.total ?? people.length)} نفر${(data?.total || 0) > PAGE_SIZE ? ` — صفحه ${toPersianDigits(page + 1)}` : ""}`}
             </Typography>
             {(departmentId || positionTitle) && people.length > 0 && (
               <Button size="small" onClick={selectAllShown}>
-                انتخاب همه‌ی این فهرست
+                انتخاب افراد این صفحه
               </Button>
             )}
           </Stack>
@@ -117,6 +124,13 @@ export default function PersonPicker({ open, title = "انتخاب افراد", 
               </List>
             )}
           </Box>
+          {(page > 0 || data?.has_more) && (
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ minHeight: 40 }}>
+              <Button size="small" disabled={loading || page === 0} onClick={() => setPage((v) => Math.max(0, v - 1))}>صفحه قبل</Button>
+              <Typography variant="body2" color="text.secondary">صفحه {toPersianDigits(page + 1)}</Typography>
+              <Button size="small" disabled={loading || !data?.has_more} onClick={() => setPage((v) => v + 1)}>صفحه بعد</Button>
+            </Stack>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

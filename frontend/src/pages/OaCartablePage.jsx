@@ -7,7 +7,9 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Card,
+  CardActionArea,
   Chip,
   CircularProgress,
   IconButton,
@@ -87,8 +89,9 @@ function LetterCard({ it, box, onOpen }) {
         : `از ${it.sender || "—"}`;
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
-      <Box
+      <CardActionArea
         onClick={onOpen}
+        aria-label={`نمایش نامه: ${it.subject || "بدون موضوع"}`}
         sx={{
           minHeight: 70,
           p: 1.5,
@@ -96,11 +99,11 @@ function LetterCard({ it, box, onOpen }) {
           alignItems: "flex-start",
           justifyContent: "space-between",
           gap: 1.25,
-          cursor: "pointer",
+          minWidth: 0,
           "&:hover": { backgroundColor: "action.hover" },
         }}
       >
-        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, flex: 1 }}>
+        <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
           <Box
             sx={{
               width: 42,
@@ -123,12 +126,13 @@ function LetterCard({ it, box, onOpen }) {
                 fontSize={14}
                 fontWeight={highlight ? 800 : 500}
                 color={highlight ? "text.primary" : "text.secondary"}
-                sx={{ lineHeight: 1.7, wordBreak: "break-word", minWidth: 0 }}
+                title={it.subject || "(بدون موضوع)"}
+                sx={{ lineHeight: 1.7, overflowWrap: "anywhere", minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2 }}
               >
                 {it.subject || "(بدون موضوع)"}
               </Typography>
             </Stack>
-            <Typography fontSize={11} color="text.secondary" sx={{ mt: 0.25 }}>
+            <Typography fontSize={12} color="text.secondary" noWrap sx={{ mt: 0.25, minWidth: 0 }}>
               {[
                 from,
                 it.official_number ? `شماره ${toPersianDigits(it.official_number)}` : null,
@@ -139,29 +143,30 @@ function LetterCard({ it, box, onOpen }) {
                 .join(" — ")}
             </Typography>
             {/* تاریخ زیر عنوان مثل اطلاعیه‌ها (textAlign left با افزونه‌ی RTL راست‌چین می‌شود) */}
-            <Typography fontSize={10} color="text.secondary" sx={{ direction: "ltr", textAlign: "left", mt: 0.25 }}>
+            <Typography fontSize={12} color="text.secondary" sx={{ direction: "ltr", textAlign: "left", mt: 0.25 }}>
               {fmt(it.at)}
             </Typography>
             {it.due_at && box === "pending" && (
-              <Typography fontSize={11} color={it.overdue ? "error" : "text.secondary"} sx={{ mt: 0.25 }}>
+              <Typography fontSize={12} color={it.overdue ? "error" : "text.secondary"} sx={{ mt: 0.25 }}>
                 مهلت: {fmt(it.due_at)}
                 {it.overdue ? " (معوق)" : ""}
               </Typography>
             )}
           </Box>
         </Stack>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
-          {it.status === "cancelled" && <Chip size="small" color="error" label="ابطال" sx={{ height: 18, fontSize: 10 }} />}
-          {it.kind && <Chip size="small" variant="outlined" color="info" label={KIND[it.kind]} sx={{ height: 18, fontSize: 10 }} />}
+        <Stack direction="row" spacing={0.5} alignItems="flex-start" justifyContent="flex-end"
+          flexWrap="wrap" sx={{ flexShrink: 0, width: { xs: 70, sm: 225 }, minWidth: 0 }}>
+          {it.status === "cancelled" && <Chip size="small" color="error" label="ابطال" sx={{ height: 24, fontSize: 12, display: { xs: "none", sm: "inline-flex" } }} />}
+          {it.kind && <Chip size="small" variant="outlined" color="info" label={KIND[it.kind]} sx={{ height: 24, fontSize: 12, display: { xs: "none", sm: "inline-flex" } }} />}
           {(it.roles || [])
             .filter((r) => ROLE[r])
             .map((r) => (
-              <Chip key={r} size="small" variant="outlined" label={ROLE[r]} sx={{ height: 18, fontSize: 10, display: { xs: "none", sm: "inline-flex" } }} />
+              <Chip key={r} size="small" variant="outlined" label={ROLE[r]} sx={{ height: 24, fontSize: 12, display: { xs: "none", sm: "inline-flex" } }} />
             ))}
           {it.attachments > 0 && <AttachFileOutlinedIcon fontSize="small" sx={{ color: "text.secondary" }} titleAccess="دارای پیوست" />}
           <UrgencyBadge urgency={it.urgency} />
         </Stack>
-      </Box>
+      </CardActionArea>
     </Card>
   );
 }
@@ -178,21 +183,24 @@ export default function OaCartablePage() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [secretariesOpen, setSecretariesOpen] = useState(false);
 
+  const searchValue = params.get("q") || "";
   useEffect(() => {
+    let active = true;
     setData(null);
     setError("");
-    fetchCartable(box, params.get("q") || "", page)
-      .then(setData)
-      .catch((err) => setError(err.response?.data?.detail || "دریافت کارتابل ناموفق بود."));
-  }, [box, page, params]);
+    fetchCartable(box, searchValue, page)
+      .then((result) => { if (active) setData(result); })
+      .catch((err) => { if (active) setError(err.response?.data?.detail || "دریافت کارتابل ناموفق بود."); });
+    return () => { active = false; };
+  }, [box, searchValue, page]);
 
   // جست‌وجو با تأخیر کوتاه
   useEffect(() => {
     const t = setTimeout(() => {
-      if ((params.get("q") || "") !== q) setParams({ box, q, page: 1 });
+      if (searchValue !== q) setParams({ box, q, page: 1 });
     }, 400);
     return () => clearTimeout(t);
-  }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, searchValue, box, setParams]);
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
   const count = (key) => (key === "inbox" ? user?.oa_unread : key === "pending" ? user?.oa_pending : 0);
@@ -200,8 +208,8 @@ export default function OaCartablePage() {
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
       {!user?.is_superuser && <BackLink to="/my-dashboard" />}
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 2 }}>
-        <Typography variant="h5" fontWeight={800}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" }, alignItems: "center", mb: 2, gap: 2 }}>
+        <Typography variant="h5" fontWeight={800} sx={{ minWidth: 0 }}>
           کارتابل من
         </Typography>
         <Stack direction="row" alignItems="center" gap={1}>
@@ -239,11 +247,12 @@ export default function OaCartablePage() {
         {BOXES.map((b) => {
           const n = count(b.key);
           return (
-            <Box
+            <ButtonBase
               key={b.key}
               onClick={() => setParams({ box: b.key, q, page: 1 })}
+              aria-pressed={box === b.key}
               sx={{
-                height: 34,
+                minHeight: 44,
                 borderRadius: 999,
                 display: "flex",
                 alignItems: "center",
@@ -260,7 +269,7 @@ export default function OaCartablePage() {
               {b.icon}
               {b.label}
               {n ? ` (${toPersianDigits(n)})` : ""}
-            </Box>
+            </ButtonBase>
           );
         })}
       </Box>

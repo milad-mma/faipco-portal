@@ -57,13 +57,12 @@ import ApprovalPanel from "../components/oa/ApprovalPanel";
 import { formatSize, saveBlob } from "../components/oa/DraftExtras";
 import { useAuth } from "../context/AuthContext";
 import { toPersianDigits } from "../utils/searchText";
-import { jalaliToGregorian } from "../utils/jalaliDate";
+import { oaJalaliEndOfDay } from "../utils/oaDates";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 
 // «YYYY/MM/DD» شمسی → ISO پایان همان روز
 function jalaliEndOfDay(value) {
-  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(value || "");
-  return m ? jalaliToGregorian(Number(m[1]), Number(m[2]), Number(m[3]), 23, 59).toISOString() : null;
+  return oaJalaliEndOfDay(value);
 }
 
 const URGENCY = { normal: "عادی", urgent: "فوری", immediate: "آنی" };
@@ -360,10 +359,12 @@ export default function OaLetterPage() {
   return (
     <Box>
 
-      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
-        <IconButton onClick={() => navigate("/automation/cartable")}><ArrowForwardIcon /></IconButton>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1, minWidth: 0 }}>
+        <IconButton onClick={() => navigate("/automation/cartable")} aria-label="بازگشت به کارتابل"><ArrowForwardIcon /></IconButton>
         {confidential && <LockOutlinedIcon color="error" />}
-        <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>{letter.subject}</Typography>
+        <Typography variant="h6" fontWeight={700} title={letter.subject} sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{letter.subject}</Typography>
+      </Stack>
+      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 2, minHeight: 40 }}>
         {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi>} title="شماره‌ی نامه" />}
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}

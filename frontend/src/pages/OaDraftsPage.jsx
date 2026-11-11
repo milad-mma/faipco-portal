@@ -62,13 +62,20 @@ export default function OaDraftsPage() {
           {drafts.map((d) => (
             <Card key={d.id} variant="outlined" sx={{ borderRadius: 2 }}>
               <CardActionArea onClick={() => navigate(d.status === "in_approval" ? `/automation/letters/${d.id}` : `/automation/drafts/${d.id}`)} sx={{ p: 1.5 }}>
-                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                  <Typography fontWeight={600} sx={{ flex: 1, minWidth: 0 }} noWrap>{d.subject || "(بدون موضوع)"}</Typography>
+                <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                  <Typography title={d.subject || "(بدون موضوع)"} fontWeight={600} sx={{ flex: 1, minWidth: 0 }} noWrap>{d.subject || "(بدون موضوع)"}</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: { xs: 11, sm: 12 } }}>
+                    {new Date(d.updated_at).toLocaleDateString("fa-IR")}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 0.5, minHeight: 28 }}>
                   {URGENCY[d.urgency] && <Chip size="small" color="warning" label={URGENCY[d.urgency]} />}
                   {d.confidentiality === "confidential" && <Chip size="small" color="error" label="محرمانه" />}
-                  {d.principal_name && <Chip size="small" variant="outlined" color="primary" label={`از طرف ${d.principal_name}`} />}
+                  {d.principal_name && <Chip size="small" variant="outlined" color="primary" label={`از طرف ${d.principal_name}`}
+                    sx={{ maxWidth: { xs: 160, sm: 260 }, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />}
                   {d.status === "in_approval" && <Chip size="small" color="warning" label="در انتظار تأیید" />}
-                  <Typography variant="caption" color="text.secondary">{new Date(d.updated_at).toLocaleString("fa-IR")}</Typography>
+
+
                 </Stack>
                 <Typography variant="body2" color="text.secondary" noWrap>{d.excerpt || "—"}</Typography>
               </CardActionArea>

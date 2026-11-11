@@ -78,12 +78,14 @@ def _stream(service: OaCartableService, f, name: str) -> StreamingResponse:
 
 
 @router.get("/people")
-async def people(q: str = "", department_id: int | None = None, title: str = "", db: AsyncSession = Depends(get_db),
+async def people(q: str = "", department_id: int | None = None, title: str = "",
+                 limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db),
                  current_user: User = Depends(get_current_user)):
     """پرسنل قابل انتخاب به‌عنوان گیرنده/ارجاع (فقط نام، سمت، واحد)."""
     await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
     try:
-        return await OaCartableService(db).picker(current_user, q=q[:100], department_id=department_id, title=title[:100])
+        return await OaCartableService(db).picker(current_user, q=q[:100], department_id=department_id, title=title[:100],
+                                                 limit=min(max(limit, 1), 100), offset=min(max(offset, 0), 100000))
     except OaCartableError as e:
         _raise(e)
 

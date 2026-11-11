@@ -151,6 +151,7 @@ class OaFileService:
         purpose: str = "attachment",
         ip: str | None = None,
         formats: list[str] | None = None,
+        commit_on_success: bool = True,
     ) -> OaFile:
         """
         یک فایل را طبق تنظیمات سایت می‌پذیرد. رد (پسوند/حجم/ساختار) → OaFileError با پیام فارسی (ردیف rejected
@@ -210,8 +211,13 @@ class OaFileService:
             row.status = rules.STATUS_CLEAN
         self.audit("file.upload", user, entity="file", entity_id=row.id, site_id=site_id,
                    details={"name": name, "size": size, "format": fmt.code, "status": row.status}, ip=ip)
-        await self.db.commit()
-        await self.db.refresh(row)
+        if commit_on_success:
+            await self.db.commit()
+            await self.db.refresh(row)
+        else:
+            # Caller atomically commits the attachment relation with the file metadata.
+            # In particular, retain the parent letter FOR UPDATE lock until attached.
+            await self.db.flush()
         return row
 
     def _record_rejected(self, site_id, name, user, reason, purpose, ip, fmt_code=None) -> None:

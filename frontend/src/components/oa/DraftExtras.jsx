@@ -1,7 +1,7 @@
 // گیرندگان و پیوست‌های پیش‌نویس نامه (ظاهر شبیه ایمیل) — هر تغییر فوراً در سرور ذخیره می‌شود.
 // useDraftExtras: منطق مشترک؛ RecipientRow: ردیف «گیرنده»/«رونوشت» با چیپ؛ AttachmentChips: پیوست‌ها زیر متن؛
 // AttachButton: انتخاب چند فایل طبق سقف تنظیمات اتوماسیون سایت.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Chip, IconButton, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
@@ -35,74 +35,108 @@ export async function saveBlob(blob, name) {
 /** منطق گیرنده/پیوست؛ extras: {recipients, attachments, attachment_limits}، setExtras از والد. */
 export function useDraftExtras(draftId, extras, setExtras) {
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [upload, setUpload] = useState(null); // { index, total, pct, name }
+  const [pending, setPending] = useState(0);
+  const [upload, setUpload] = useState(null);
+  const pendingRef = useRef(new Set());
+  const failureRef = useRef("");
+  const recipientQueueRef = useRef(Promise.resolve());
+  const desiredRecipientsRef = useRef(extras.recipients);
+  // When the server returns the latest recipients, synchronize the working copy.
+  useEffect(() => {
+    if (!pendingRef.current.size) desiredRecipientsRef.current = extras.recipients;
+  }, [extras.recipients]);
 
-  async function saveRecipients(list) {
-    setBusy(true);
+  function track(operation) {
+    pendingRef.current.add(operation);
+    setPending(pendingRef.current.size);
+    const done = operation.catch((err) => {
+      const message = err.response?.data?.detail || err.message || "ذخیره تغییرات ناموفق بود.";
+      failureRef.current = message;
+      setError(message);
+    }).finally(() => {
+      pendingRef.current.delete(operation);
+      setPending(pendingRef.current.size);
+    });
+    return done;
+  }
+
+  async function awaitIdle() {
+    while (pendingRef.current.size) {
+      await Promise.allSettled(Array.from(pendingRef.current));
+    }
+    if (failureRef.current) throw new Error(failureRef.current);
+  }
+
+  function saveRecipients(list) {
+    desiredRecipientsRef.current = list;
+    failureRef.current = "";
     setError("");
-    try {
+    // Serialize updates so two quick changes cannot overwrite each other.
+    const operation = recipientQueueRef.current.then(async () => {
       const res = await saveDraftRecipients(
         draftId,
         list.map((r) => ({ employee_id: r.employee_id, role: r.role, selected_via: r.selected_via || "direct" })),
       );
       setExtras((x) => ({ ...x, recipients: res.recipients, attachments: res.attachments }));
-    } catch (err) {
-      setError(err.response?.data?.detail || "ذخیره‌ی گیرندگان ناموفق بود.");
-    } finally {
-      setBusy(false);
-    }
+    });
+    recipientQueueRef.current = operation.catch(() => {});
+    return track(operation);
   }
 
   function addPeople(role, people) {
-    const existing = new Set(extras.recipients.map((r) => r.employee_id));
-    saveRecipients([...extras.recipients, ...people.filter((p) => !existing.has(p.employee_id)).map((p) => ({ ...p, role }))]);
+    const current = desiredRecipientsRef.current;
+    const existing = new Set(current.map((r) => r.employee_id));
+    return saveRecipients([...current, ...people.filter((p) => !existing.has(p.employee_id)).map((p) => ({ ...p, role }))]);
   }
 
   function removeRecipient(employeeId) {
-    saveRecipients(extras.recipients.filter((x) => x.employee_id !== employeeId));
+    return saveRecipients(desiredRecipientsRef.current.filter((x) => x.employee_id !== employeeId));
   }
 
-  // چند فایل پشت‌سرهم؛ بیش از ظرفیت باقی‌مانده یا بزرگ‌تر از سقف هر فایل، همان‌جا با پیام کنار گذاشته می‌شود
-  async function uploadFiles(fileList) {
+  function uploadFiles(fileList) {
     const files = Array.from(fileList || []);
-    if (!files.length) return;
+    if (!files.length) return Promise.resolve();
+    failureRef.current = "";
     setError("");
-    const lim = extras.attachment_limits || {};
-    const room = lim.max_files ? Math.max(0, lim.max_files - extras.attachments.length) : files.length;
-    const problems = [];
-    let queue = files;
-    if (files.length > room) {
-      problems.push(`حداکثر ${toPersianDigits(lim.max_files)} پیوست مجاز است؛ ${toPersianDigits(files.length - room)} فایل اضافه نشد.`);
-      queue = files.slice(0, room);
-    }
-    if (lim.max_file_mb) {
-      const big = queue.filter((f) => f.size > lim.max_file_mb * 1024 * 1024);
-      if (big.length) problems.push(`فایل بزرگ‌تر از ${toPersianDigits(lim.max_file_mb)} مگابایت: ${big.map((f) => f.name).join("، ")}`);
-      queue = queue.filter((f) => f.size <= lim.max_file_mb * 1024 * 1024);
-    }
-    for (let i = 0; i < queue.length; i += 1) {
-      const f = queue[i];
-      setUpload({ index: i + 1, total: queue.length, pct: 0, name: f.name });
-      try {
-        const res = await uploadDraftAttachment(draftId, f, (pct) => setUpload((u) => ({ ...u, pct })));
-        setExtras((x) => ({ ...x, attachments: res.attachments }));
-      } catch (err) {
-        problems.push(`${f.name}: ${err.response?.data?.detail || "بارگذاری ناموفق بود"}`);
+    return track((async () => {
+      const lim = extras.attachment_limits || {};
+      const room = lim.max_files ? Math.max(0, lim.max_files - extras.attachments.length) : files.length;
+      const problems = [];
+      let queue = files;
+      if (files.length > room) {
+        problems.push(`حداکثر ${toPersianDigits(lim.max_files)} پیوست مجاز است؛ ${toPersianDigits(files.length - room)} فایل اضافه نشد.`);
+        queue = files.slice(0, room);
       }
-    }
-    setUpload(null);
-    if (problems.length) setError(problems.join("\n"));
+      if (lim.max_file_mb) {
+        const big = queue.filter((f) => f.size > lim.max_file_mb * 1024 * 1024);
+        if (big.length) problems.push(`فایل بزرگ‌تر از ${toPersianDigits(lim.max_file_mb)} مگابایت: ${big.map((f) => f.name).join("، ")}`);
+        queue = queue.filter((f) => f.size <= lim.max_file_mb * 1024 * 1024);
+      }
+      try {
+        for (let i = 0; i < queue.length; i += 1) {
+          const file = queue[i];
+          setUpload({ index: i + 1, total: queue.length, pct: 0, name: file.name });
+          try {
+            const res = await uploadDraftAttachment(draftId, file, (pct) => setUpload((u) => u ? ({ ...u, pct }) : u));
+            setExtras((x) => ({ ...x, attachments: res.attachments }));
+          } catch (err) {
+            problems.push(`${file.name}: ${err.response?.data?.detail || "بارگذاری ناموفق بود"}`);
+          }
+        }
+      } finally {
+        setUpload(null);
+      }
+      if (problems.length) throw new Error(problems.join("\n"));
+    })());
   }
 
-  async function removeAttachment(id) {
+  function removeAttachment(id) {
+    failureRef.current = "";
     setError("");
-    try {
+    return track((async () => {
       const res = await removeDraftAttachment(draftId, id);
       setExtras((x) => ({ ...x, attachments: res.attachments }));
-    } catch (err) {
-      setError(err.response?.data?.detail || "حذف پیوست ناموفق بود.");
-    }
+    })());
   }
 
   async function download(a) {
@@ -113,7 +147,10 @@ export function useDraftExtras(draftId, extras, setExtras) {
     }
   }
 
-  return { error, setError, busy, upload, addPeople, removeRecipient, uploadFiles, removeAttachment, download };
+  return {
+    error, setError, busy: pending > 0, pending, upload, awaitIdle,
+    addPeople, removeRecipient, uploadFiles, removeAttachment, download,
+  };
 }
 
 /** ردیف «گیرنده» یا «رونوشت» مثل ایمیل: برچسب، چیپ‌ها و دکمه‌ی افزودن؛ end: محتوای انتهای ردیف (مثلاً «رونوشت»). */
@@ -121,7 +158,7 @@ export function RecipientRow({ label, role, extras, api, disabled, end }) {
   const [open, setOpen] = useState(false);
   const list = extras.recipients.filter((r) => r.role === role);
   return (
-    <Stack direction="row" alignItems="center" sx={{ px: 2, py: 0.75, minHeight: 48, borderBottom: 1, borderColor: "divider" }} gap={1}>
+    <Stack direction="row" alignItems="center" sx={{ px: 2, py: 0.75, minHeight: 48, borderBottom: 1, borderColor: "divider", minWidth: 0 }} gap={1}>
       <Typography variant="body2" color="text.secondary" sx={{ minWidth: 56 }}>{label}</Typography>
       <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ flex: 1, minWidth: 0 }}>
         {list.map((r) => (
@@ -130,7 +167,8 @@ export function RecipientRow({ label, role, extras, api, disabled, end }) {
               size="small"
               label={r.name}
               variant={role === "to" ? "filled" : "outlined"}
-              onDelete={disabled ? undefined : () => api.removeRecipient(r.employee_id)}
+              onDelete={disabled || api.busy ? undefined : () => api.removeRecipient(r.employee_id)}
+              sx={{ maxWidth: { xs: 180, sm: 260 }, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
             />
           </Tooltip>
         ))}
@@ -171,8 +209,8 @@ export function AttachmentChips({ extras, api, disabled }) {
             color={a.file.can_download ? "default" : "warning"}
             label={`${a.file.name} (${formatSize(a.file.size)})${a.file.can_download ? "" : ` — ${a.file.status_label}`}`}
             onClick={a.file.can_download ? () => api.download(a) : undefined}
-            onDelete={disabled ? undefined : () => api.removeAttachment(a.id)}
-            sx={{ maxWidth: "100%" }}
+            onDelete={disabled || api.busy ? undefined : () => api.removeAttachment(a.id)}
+            sx={{ maxWidth: { xs: "100%", sm: 320 }, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
           />
         ))}
       </Stack>
@@ -200,7 +238,7 @@ export function AttachButton({ extras, api, disabled }) {
     <>
       <Tooltip title={full ? "به سقف تعداد پیوست رسیده‌اید" : tip}>
         <span>
-          <IconButton onClick={() => input.current?.click()} disabled={disabled || Boolean(api.upload) || Boolean(full)}>
+          <IconButton onClick={() => input.current?.click()} disabled={disabled || api.busy || Boolean(api.upload) || Boolean(full)}>
             <AttachFileIcon />
           </IconButton>
         </span>

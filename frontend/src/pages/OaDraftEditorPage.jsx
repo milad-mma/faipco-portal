@@ -36,22 +36,12 @@ import LetterEditor from "../components/oa/LetterEditor";
 import LetterPreview from "../components/oa/LetterPreview";
 import LetterPrint from "../components/oa/LetterPrint";
 import { toPersianDigits } from "../utils/searchText";
-import { gregorianToJalali, jalaliToGregorian } from "../utils/jalaliDate";
+import { oaToJalali, oaJalaliEndOfDay } from "../utils/oaDates";
 import JalaliCalendarField from "../components/JalaliCalendarField";
 
 const AUTOSAVE_MS = 3000;
-
-// تاریخ سرور ↔ رشته‌ی شمسی «YYYY/MM/DD» فیلد تقویم؛ مهلت = پایان همان روز (۲۳:۵۹ به وقت مرورگر)
-const pad2 = (n) => String(n).padStart(2, "0");
-function toJalaliInput(iso) {
-  if (!iso) return null;
-  const { jy, jm, jd } = gregorianToJalali(new Date(iso));
-  return `${jy}/${pad2(jm)}/${pad2(jd)}`;
-}
-function jalaliToIso(value) {
-  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(value || "");
-  return m ? jalaliToGregorian(Number(m[1]), Number(m[2]), Number(m[3]), 23, 59).toISOString() : null;
-}
+const toJalaliInput = oaToJalali;
+const jalaliToIso = oaJalaliEndOfDay;
 
 const selectSx = { minWidth: 110, "& .MuiInput-root": { fontSize: 14 } };
 
@@ -81,6 +71,7 @@ export default function OaDraftEditorPage() {
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState(null); // { ok, message }
   const [conflict, setConflict] = useState(false);
+  const [conflictBackupOpen, setConflictBackupOpen] = useState(false);
   const [pages, setPages] = useState(1);
   const [segments, setSegments] = useState(null); // شکست صفحه‌های پیش‌نمایش، برای چاپ یکسان
   const handlePages = useCallback((n, segs) => {
@@ -91,6 +82,9 @@ export default function OaDraftEditorPage() {
   const [extras, setExtras] = useState({ recipients: [], attachments: [], attachment_limits: null });
   const [confirmSend, setConfirmSend] = useState(false);
   const [sending, setSending] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState(false);
+  const approvalBusyRef = useRef(false);
   const [sendError, setSendError] = useState("");
   const [numberingError, setNumberingError] = useState("");
   const [hasSignature, setHasSignature] = useState(false);
@@ -98,7 +92,6 @@ export default function OaDraftEditorPage() {
   const mySignatureUrl = useBlobUrl(hasSignature ? "my-signature" : null, () => fetchMySignatureBlob()); // پیشوند دبیرخانه‌ی سایت تعیین نشده → ارسال ممکن نیست
   const formRef = useRef(null);
   const savingRef = useRef(false); // دو ذخیره‌ی هم‌زمان با یک row_version به 409 کاذب می‌رسید
-  const againRef = useRef(false);
   const draftRef = useRef(null);
   formRef.current = form;
   draftRef.current = draft;
@@ -129,10 +122,9 @@ export default function OaDraftEditorPage() {
   const doSave = useCallback(async () => {
     const f = formRef.current;
     const d = draftRef.current;
-    if (!f || !d) return;
+    if (!f || !d || conflict) return false;
     if (savingRef.current) {
-      againRef.current = true; // بعد از تمام شدن ذخیره‌ی فعلی دوباره ذخیره می‌شود
-      return;
+      return false;
     }
     savingRef.current = true;
     setSaving(true);
@@ -149,20 +141,16 @@ export default function OaDraftEditorPage() {
       setDraft(updated); // متن محلی جایگزین نمی‌شود تا مکان‌نما نپرد؛ پاک‌سازی سرور در نمایش بعدی اعمال است
       setDirty(formRef.current !== f);
       setSaveState({ ok: true, message: `ذخیره شد — ${new Date().toLocaleTimeString("fa-IR")}` });
+      return true;
     } catch (err) {
       if (err.response?.status === 409) setConflict(true);
       setSaveState({ ok: false, message: err.response?.data?.detail || "ذخیره ناموفق بود؛ دوباره امتحان کنید." });
+      return false;
     } finally {
       savingRef.current = false;
       setSaving(false);
-      if (againRef.current) {
-        againRef.current = false;
-        setTimeout(() => doSaveRef.current?.(), 0);
-      }
     }
-  }, []);
-  const doSaveRef = useRef(null);
-  doSaveRef.current = doSave;
+  }, [conflict]);
 
   // ذخیره‌ی خودکار چند ثانیه بعد از آخرین تغییر
   useEffect(() => {
@@ -193,8 +181,28 @@ export default function OaDraftEditorPage() {
     };
   }, [dirty, conflict, doSave]);
 
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const protectLinks = (event) => {
+      const anchor = event.target?.closest?.("a[href]");
+      if (!anchor || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const target = new URL(anchor.href, window.location.href);
+      if (target.origin !== window.location.origin || target.pathname === window.location.pathname) return;
+      if (!window.confirm("تغییرات ذخیره‌نشده دارید. بدون ذخیره خارج شوید؟")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("click", protectLinks, true);
+    return () => document.removeEventListener("click", protectLinks, true);
+  }, [dirty]);
+
   function update(patch, { saveNow = false } = {}) {
-    setForm((f) => ({ ...f, ...patch }));
+    // Update the ref immediately: a save scheduled in the same tick must see the
+    // newly selected template, paper size or principal (not the previous render).
+    const next = { ...formRef.current, ...patch };
+    formRef.current = next;
+    setForm(next);
     setDirty(true);
     // قالب و اندازه‌ی کاغذ چیدمان پیش‌نمایش را عوض می‌کنند؛ فوراً ذخیره می‌شود تا چیدمان تازه از سرور برسد
     if (saveNow) setTimeout(doSave, 0);
@@ -203,22 +211,29 @@ export default function OaDraftEditorPage() {
   const api = useDraftExtras(draft?.id, extras, setExtras);
   const templates = options?.templates || [];
   const lockedUI = conflict || sending;
+  const submissionBlocked = lockedUI || saving || api.busy || approvalBusy || approvalError || Boolean(api.error);
   const needsApproval = approvalPlan.steps.length > 0 || Boolean(approvalPlan.auto_final);
 
   async function handleSend() {
+    if (sending) return;
     setSending(true);
     setSendError("");
     try {
-      // آخرین متن اول ذخیره شود (اگر ذخیره‌ی خودکاری در جریان است، منتظر می‌مانیم)
-      while (savingRef.current) await new Promise((r) => setTimeout(r, 100));
-      await doSave();
+      if (approvalBusyRef.current || approvalError) throw new Error("ذخیره مسیر تأیید هنوز کامل نشده است.");
+      // No final send until every recipient / attachment mutation has finished successfully.
+      await api.awaitIdle();
+      while (savingRef.current) await new Promise((r) => setTimeout(r, 60));
+      const saved = await doSave();
+      if (!saved || conflict) throw new Error("آخرین تغییرات ذخیره نشدند. نامه ارسال نشد؛ دوباره ذخیره کنید.");
+      await api.awaitIdle();
+      if (approvalBusyRef.current || approvalError) throw new Error("مسیر تأیید ذخیره نشده است.");
       const res = needsApproval
         ? await submitForApproval(draftRef.current.id, draftRef.current.row_version)
         : await sendDraft(draftRef.current.id, draftRef.current.row_version);
       setDirty(false);
       navigate(`/automation/letters/${res.letter_id}`, { replace: true });
     } catch (err) {
-      setSendError(err.response?.data?.detail || "ارسال ناموفق بود.");
+      setSendError(err.response?.data?.detail || err.message || "ارسال ناموفق بود.");
       setSending(false);
     }
   }
@@ -252,16 +267,21 @@ export default function OaDraftEditorPage() {
   return (
     <Box>
 
-      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-        <IconButton onClick={() => navigate("/automation/drafts")}><ArrowForwardIcon /></IconButton>
-        <Typography variant="h6" fontWeight={700} sx={{ flex: 1, minWidth: 0 }} noWrap>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2, minWidth: 0 }}>
+        <IconButton aria-label="بازگشت به پیش‌نویس‌ها" onClick={() => {
+          if (dirty && !window.confirm("تغییرات ذخیره‌نشده دارید. بدون ذخیره خارج شوید؟")) return;
+          navigate("/automation/drafts");
+        }}><ArrowForwardIcon /></IconButton>
+        <Typography variant="h6" fontWeight={700} title={form.subject || "نامه‌ی جدید"} sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {form.subject || "نامه‌ی جدید"}
         </Typography>
       </Stack>
 
       {conflict && (
-        <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => window.location.reload()}>تازه کردن</Button>}>
-          این پیش‌نویس در تب یا دستگاه دیگری تغییر کرده است. برای جلوگیری از پاک شدن آن تغییرها، ذخیره متوقف شد. صفحه را تازه کنید.
+        <Alert severity="error" sx={{ mb: 2 }} action={
+          <Button color="inherit" onClick={() => setConflictBackupOpen(true)}>برداشتن نسخه‌ی متن من</Button>
+        }>
+          این پیش‌نویس در تب یا دستگاه دیگری تغییر کرده است. ذخیره متوقف شده است. قبل از دریافت نسخه‌ی جدید، متن فعلی خود را در پنجره‌ی کناری کپی کنید.
         </Alert>
       )}
       {saveState?.ok === false && !conflict && <Alert severity="error" sx={{ mb: 2 }}>{saveState.message}</Alert>}
@@ -342,26 +362,27 @@ export default function OaDraftEditorPage() {
               value={form.subject}
               onChange={(e) => update({ subject: e.target.value })}
               inputProps={{ maxLength: 300 }}
+              disabled={lockedUI}
               sx={{ py: 1.25, fontSize: 15 }}
             />
           </Box>
           <Stack direction="row" flexWrap="wrap" alignItems="flex-end" columnGap={2.5} rowGap={2} sx={{ px: 2, pt: 1.5, pb: 2, borderBottom: 1, borderColor: "divider" }}>
-            <TextField select variant="standard" size="small" label="فوریت" value={form.urgency} onChange={(e) => update({ urgency: e.target.value })} sx={selectSx}>
+            <TextField select variant="standard" size="small" label="فوریت" value={form.urgency} onChange={(e) => update({ urgency: e.target.value })} disabled={lockedUI} sx={selectSx}>
               {Object.entries(options.urgencies).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
-            <TextField select variant="standard" size="small" label="محرمانگی" value={form.confidentiality} onChange={(e) => update({ confidentiality: e.target.value })} sx={selectSx}>
+            <TextField select variant="standard" size="small" label="محرمانگی" value={form.confidentiality} onChange={(e) => update({ confidentiality: e.target.value })} disabled={lockedUI} sx={selectSx}>
               {Object.entries(options.confidentiality).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
-            <TextField select variant="standard" size="small" label="قالب" value={form.template_id} onChange={(e) => update({ template_id: e.target.value }, { saveNow: true })} sx={{ ...selectSx, minWidth: 150 }} disabled={conflict}>
+            <TextField select variant="standard" size="small" label="قالب" value={form.template_id} onChange={(e) => update({ template_id: e.target.value }, { saveNow: true })} sx={{ ...selectSx, minWidth: 150 }} disabled={lockedUI}>
               <MenuItem value="">بدون قالب</MenuItem>
               {templates.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
             </TextField>
-            <TextField select variant="standard" size="small" label="کاغذ" value={form.paper_size} onChange={(e) => update({ paper_size: e.target.value }, { saveNow: true })} sx={{ ...selectSx, minWidth: 70 }} disabled={conflict}>
+            <TextField select variant="standard" size="small" label="کاغذ" value={form.paper_size} onChange={(e) => update({ paper_size: e.target.value }, { saveNow: true })} sx={{ ...selectSx, minWidth: 70 }} disabled={lockedUI}>
               <MenuItem value="A4">A4</MenuItem>
               <MenuItem value="A5">A5</MenuItem>
             </TextField>
             <FormControlLabel
-              control={<Checkbox size="small" color="error" checked={form.requires_action} onChange={(e) => update({ requires_action: e.target.checked })} />}
+              control={<Checkbox size="small" color="error" checked={form.requires_action} disabled={lockedUI} onChange={(e) => update({ requires_action: e.target.checked })} />}
               label={<Typography variant="body2" color="error.main" fontWeight={600}>نیاز به اقدام از سمت گیرنده</Typography>}
               sx={{ m: 0 }}
             />
@@ -388,7 +409,7 @@ export default function OaDraftEditorPage() {
               />
             </Tooltip>
             {form.requires_action && (
-              <Box sx={{ width: 190 }}>
+              <Box sx={{ width: 190, pointerEvents: lockedUI ? "none" : "auto", opacity: lockedUI ? 0.6 : 1 }}>
                 <JalaliCalendarField
                   label="مهلت اقدام (اختیاری)"
                   value={form.action_due}
@@ -397,18 +418,26 @@ export default function OaDraftEditorPage() {
               </Box>
             )}
           </Stack>
-          <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={conflict} bare />
+          <LetterEditor value={form.body_html} onChange={(html) => update({ body_html: html })} disabled={lockedUI} bare />
           <AttachmentChips extras={extras} api={api} disabled={lockedUI} />
-          <ApprovalPathEditor letterId={draft.id} plan={approvalPlan} onChange={setApprovalPlan} disabled={lockedUI} />
+          <ApprovalPathEditor
+            letterId={draft.id} plan={approvalPlan} onChange={setApprovalPlan} disabled={lockedUI}
+            onBusyChange={(busy) => { approvalBusyRef.current = busy; setApprovalBusy(busy); }}
+            onErrorChange={setApprovalError}
+          />
           {api.error && <Alert severity="error" sx={{ mx: 2, mb: 1, whiteSpace: "pre-wrap" }} onClose={() => api.setError("")}>{api.error}</Alert>}
           {/* نوار پایین مثل ایمیل: ارسال، پیوست، چاپ، وضعیت ذخیره، حذف */}
-          <Stack direction="row" alignItems="center" gap={1} sx={{ px: 2, py: 1.25, borderTop: 1, borderColor: "divider" }}>
+          <Box sx={{
+            display: "grid", alignItems: "center", gap: { xs: 0.5, sm: 1 },
+            gridTemplateColumns: { xs: "minmax(0, 1fr) 40px 40px 40px", sm: "max-content 40px 40px minmax(0, 1fr) 40px" },
+            px: { xs: 1, sm: 2 }, py: 1.25, borderTop: 1, borderColor: "divider", minWidth: 0,
+          }}>
             <Button
               variant="contained"
               startIcon={<SendOutlinedIcon />}
               onClick={() => { setSendError(""); setConfirmSend(true); }}
-              disabled={conflict || Boolean(numberingError) || !extras.recipients.some((r) => r.role === "to")}
-              sx={{ height: 40, borderRadius: 5, px: 3 }}
+              disabled={submissionBlocked || Boolean(numberingError) || !extras.recipients.some((r) => r.role === "to")}
+              sx={{ height: 40, borderRadius: 5, px: { xs: 1.5, sm: 3 }, flexShrink: 0, whiteSpace: "nowrap" }}
             >
               {needsApproval ? "ارسال برای تأیید" : "ارسال"}
             </Button>
@@ -418,13 +447,14 @@ export default function OaDraftEditorPage() {
                 <IconButton onClick={() => window.print()} disabled={dirty}><PrintOutlinedIcon /></IconButton>
               </span>
             </Tooltip>
-            <Typography variant="caption" color={saveState?.ok === false ? "error" : "text.secondary"} sx={{ flex: 1, minWidth: 0 }} noWrap>
+            <Typography variant="caption" color={saveState?.ok === false ? "error" : "text.secondary"}
+              sx={{ minWidth: 0, gridRow: { xs: 2, sm: "auto" }, gridColumn: { xs: "1 / -1", sm: "auto" } }} noWrap>
               {saving ? "در حال ذخیره..." : dirty ? "تغییر ذخیره‌نشده" : saveState?.message || "پیش‌نویس خودکار ذخیره می‌شود"}
             </Typography>
             <Tooltip title="حذف پیش‌نویس">
-              <IconButton onClick={() => setConfirmDiscard(true)}><DeleteOutlineIcon /></IconButton>
+              <IconButton onClick={() => setConfirmDiscard(true)} disabled={submissionBlocked} aria-label="حذف پیش‌نویس"><DeleteOutlineIcon /></IconButton>
             </Tooltip>
-          </Stack>
+          </Box>
         </Card>
 
         <Card variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", flex: { lg: "1 1 0" }, minWidth: 0, width: "100%", position: { lg: "sticky" }, top: { lg: 16 } }}>
@@ -477,9 +507,31 @@ export default function OaDraftEditorPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmSend(false)} disabled={sending}>انصراف</Button>
-          <Button variant="contained" color="success" onClick={handleSend} disabled={sending}>
+          <Button variant="contained" color="success" onClick={handleSend} disabled={submissionBlocked}>
             {sending ? "در حال ارسال..." : needsApproval ? "ارسال برای تأیید" : "ارسال"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={conflictBackupOpen} onClose={() => setConflictBackupOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>نگهداری متن فعلی شما</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            این متن هنوز روی سرور ذخیره نشده است. آن را کپی و در جای امن نگهداری کنید، سپس نسخه‌ی جدید پیش‌نویس را دریافت کنید.
+          </Typography>
+          <TextField label="موضوع" fullWidth value={form.subject} InputProps={{ readOnly: true }} sx={{ mb: 2 }} />
+          <TextField label="متن نامه (HTML)" fullWidth multiline minRows={8} maxRows={15}
+            value={form.body_html} InputProps={{ readOnly: true }} helperText="برای حفظ قالب‌بندی، متن کامل HTML را کپی کنید." />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConflictBackupOpen(false)}>بستن</Button>
+          <Button variant="contained" onClick={() => {
+            const text = `موضوع: ${form.subject}\n\n${form.body_html}`;
+            navigator.clipboard?.writeText(text).catch(() => setSaveState({ ok: false, message: "کپی خودکار انجام نشد؛ متن را دستی انتخاب و کپی کنید." }));
+          }}>کپی متن</Button>
+          <Button color="warning" onClick={() => {
+            if (window.confirm("از کپی متن فعلی خود مطمئن هستید؟ با دریافت نسخه جدید، تغییرات ذخیره‌نشده جایگزین می‌شوند.")) window.location.reload();
+          }}>دریافت نسخه جدید</Button>
         </DialogActions>
       </Dialog>
 

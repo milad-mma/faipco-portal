@@ -1,7 +1,7 @@
 // «قالب‌های نامه» — اتوماسیون اداری فاز ۲: سربرگ، پابرگ، حاشیه و قلم (برای همه‌ی سایت‌ها یکسان)، جدا برای A4 و A5، با پیش‌نمایش زنده.
 // هر ذخیره یک نسخه‌ی تازه می‌سازد؛ پیش‌نویس‌هایی که با نسخه‌ی قبلی ساخته شده‌اند تا ذخیره‌ی بعدی همان را نگه می‌دارند.
 // قالب برای همه‌ی سایت‌ها یکسان است؛ مجوز automation.templates.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -26,6 +26,7 @@ import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import { fetchTemplates, saveTemplate, uploadTemplateLogo } from "../api/automationLetters";
 import LetterPreview from "../components/oa/LetterPreview";
+import { safePreviewLayouts } from "../components/oa/sanitizeTemplatePreview";
 import { toPersianDigits } from "../utils/searchText";
 
 const SAMPLE_SUBJECT = "نمونه‌ی موضوع نامه";
@@ -100,12 +101,14 @@ export default function OaTemplatesPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null); // { ok, message }
+  const openedSnapshot = useRef(null);
+  const isDirty = Boolean(form && openedSnapshot.current && JSON.stringify(form) !== openedSnapshot.current);
 
   function load(selectId) {
     return fetchTemplates()
       .then((d) => {
         setData(d);
-        if (selectId) open(d, selectId);
+        if (selectId) open(d, selectId, true);
       })
       .catch((err) => setError(err.response?.data?.detail || "دریافت قالب‌ها ناموفق بود."));
   }
@@ -114,25 +117,39 @@ export default function OaTemplatesPage() {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function open(d, id) {
+  function open(d, id, force = false) {
+    if (!force && id === selected) return;
+    if (!force && isDirty && !window.confirm("تغییرات قالب ذخیره نشده‌اند. بدون ذخیره قالب دیگری باز شود؟")) return;
     setResult(null);
     setSelected(id);
+    let next;
     if (id === "new") {
-      setForm({ id: null, name: "", default_paper_size: "A4", is_active: true, layouts: clone(d.default_layouts) });
-      return;
+      next = { id: null, name: "", default_paper_size: "A4", is_active: true, layouts: clone(d.default_layouts) };
+    } else {
+      const t = d.templates.find((x) => x.id === id);
+      if (!t) return;
+      const layouts = clone(t.layouts);
+      for (const k of Object.keys(layouts)) {
+        layouts[k].header.html = layouts[k].header.html || "";
+        layouts[k].footer.html = layouts[k].footer.html || "";
+      }
+      next = { ...t, layouts };
+      setPaper(t.default_paper_size);
     }
-    const t = d.templates.find((x) => x.id === id);
-    const layouts = clone(t.layouts);
-    for (const k of Object.keys(layouts)) {
-      // قالب‌های قدیمی‌تر فیلد html نداشتند
-      layouts[k].header.html = layouts[k].header.html || "";
-      layouts[k].footer.html = layouts[k].footer.html || "";
-    }
-    setForm({ ...t, layouts });
-    setPaper(t.default_paper_size);
+    openedSnapshot.current = JSON.stringify(next);
+    setForm(next);
   }
 
   const layout = form?.layouts?.[paper];
+  const previewLayouts = useMemo(() => safePreviewLayouts(form?.layouts), [form?.layouts]);
+  const previewLayout = previewLayouts?.[paper];
+
+  useEffect(() => {
+    if (!isDirty) return undefined;
+    const beforeUnload = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [isDirty]);
 
   function setLayout(patch) {
     setForm((f) => ({ ...f, layouts: { ...f.layouts, [paper]: { ...f.layouts[paper], ...patch } } }));
@@ -207,12 +224,13 @@ export default function OaTemplatesPage() {
       </Typography>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
-        <Card variant="outlined" sx={{ width: { xs: "100%", md: 240 }, flex: "none", borderRadius: 2 }}>
+        <Card variant="outlined" sx={{ width: { xs: "100%", md: 240 }, flex: "none", minWidth: 0, borderRadius: 2 }}>
           <List dense>
             {data.templates.map((t) => (
               <ListItemButton key={t.id} selected={selected === t.id} onClick={() => open(data, t.id)}>
                 <ListItemText
                   primary={t.name + (t.is_active ? "" : " (غیرفعال)")}
+                  primaryTypographyProps={{ noWrap: true, title: t.name }}
                   secondary={`نسخه‌ی ${toPersianDigits(t.version_no || 0)}`}
                 />
               </ListItemButton>
@@ -329,7 +347,7 @@ export default function OaTemplatesPage() {
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
                 پیش‌نمایش — کاغذ <bdi dir="ltr">{paper}</bdi>
               </Typography>
-              <LetterPreview paper={paper} layout={layout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName="نام سایت" />
+              <LetterPreview paper={paper} layout={previewLayout} subject={SAMPLE_SUBJECT} bodyHtml={SAMPLE_BODY} scale={paper === "A5" ? 0.7 : 0.5} siteName="نام سایت" />
             </Card>
           </Stack>
         )}

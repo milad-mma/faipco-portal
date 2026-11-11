@@ -20,6 +20,7 @@ from app.core import oa_letter_rules as rules
 from app.models.employee import Employee
 from app.models.office_automation import (
     OaApprovalStep,
+    OaAttachment,
     OaLetter,
     OaLetterAccess,
     OaLetterVersion,
@@ -279,8 +280,29 @@ class OaApprovalService(OaCartableService):
                 if s.task_id:
                     await self.db.execute(update(OaTask).where(OaTask.id == s.task_id, OaTask.status == "open")
                                           .values(status="cancelled"))
-        v = await self.db.get(OaLetterVersion, letter.current_version_id)
-        v.status = "editing"
+        # Never unlock the version which an approver signed/reviewed.  Create an editable
+        # successor; the original content hash, status and attachment rows remain immutable.
+        previous = await self.db.get(OaLetterVersion, letter.current_version_id)
+        if previous is None or previous.status != "submitted":
+            raise OaCartableError("نسخه‌ی ارسال‌شده برای تأیید پیدا نشد", 409)
+        version = OaLetterVersion(
+            letter_id=letter.id, version_no=previous.version_no + 1,
+            subject=previous.subject, body_html=previous.body_html,
+            paper_size=previous.paper_size, template_version_id=previous.template_version_id,
+            content_hash=previous.content_hash, status="editing", created_by=letter.created_by,
+        )
+        self.db.add(version)
+        await self.db.flush()
+        prior_files = (await self.db.execute(
+            select(OaAttachment).where(OaAttachment.letter_version_id == previous.id)
+            .order_by(OaAttachment.sort_order, OaAttachment.id)
+        )).scalars().all()
+        for a in prior_files:
+            self.db.add(OaAttachment(
+                letter_version_id=version.id, file_id=a.file_id,
+                sort_order=a.sort_order, description=a.description, added_by=a.added_by,
+            ))
+        letter.current_version_id = version.id
         letter.status = "draft"
         letter.row_version += 1
         await self._copy_plan_to_next_round(letter, steps)

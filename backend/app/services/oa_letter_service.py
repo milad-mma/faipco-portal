@@ -187,7 +187,12 @@ class OaLetterService:
                          template_id: int | None, urgency: str, confidentiality: str, row_version: int,
                          user: User, requires_action: bool = False, action_due_at: datetime | None = None,
                          principal_employee_id: int | None = None, sign_on_send: bool = False) -> dict:
-        letter = await self._own_letter(letter_id, user)
+        # Lock BEFORE checking row_version; simultaneous saves must never pass the same version.
+        letter = (await self.db.execute(
+            select(OaLetter).where(OaLetter.id == letter_id).with_for_update()
+        )).scalar_one_or_none()
+        if letter is None or letter.discarded_at is not None or letter.created_by != user.id:
+            raise OaLetterError("پیش‌نویس یافت نشد", 404)
         if letter.status != "draft":
             raise OaLetterError("فقط پیش‌نویس قابل ویرایش است", 409)
         if letter.row_version != row_version:

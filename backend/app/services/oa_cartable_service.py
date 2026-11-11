@@ -17,6 +17,7 @@ from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_letter_rules as rules
+from app.core.oa_html import plain_text
 from app.core.oa_access_rules import (
     can,
     delivery_grants,
@@ -92,36 +93,52 @@ async def send_pushes(pushes: list[dict]) -> None:
     """
     if not pushes:
         return
-    from sqlalchemy.dialects.postgresql import insert
-
     from app.db.session import AsyncSessionLocal
     from app.services import notification_templates
     from app.services.push_service import PushService
 
-    try:
-        async with AsyncSessionLocal() as db:
-            for p in pushes:
-                inserted = (await db.execute(
-                    insert(OaNotificationLog).values(key=p["key"][:200]).on_conflict_do_nothing().returning(OaNotificationLog.id)
+    for p in pushes:
+        try:
+            async with AsyncSessionLocal() as db:
+                key = p["key"][:200]
+                # Transaction-scoped lock: prevent two workers sending the same key together.
+                # A failure rolls back WITHOUT leaving a false "sent" record.
+                from sqlalchemy import text as sql_text
+                await db.execute(sql_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
+                existing = (await db.execute(
+                    select(OaNotificationLog.id).where(OaNotificationLog.key == key).limit(1)
                 )).scalar_one_or_none()
-                await db.commit()
-                if inserted is None:
-                    continue  # قبلاً فرستاده شده
+                if existing:
+                    await db.rollback()
+                    continue
                 pref = await db.get(OaNotificationPref, p["employee_id"])
                 if pref is not None and p.get("event") in (pref.disabled_events or []):
-                    continue  # خود شخص این رویداد را خاموش کرده است
+                    # Record deliberate suppression as completed, not a delivery error.
+                    db.add(OaNotificationLog(key=key))
+                    await db.commit()
+                    continue
                 user_ids = set((await db.execute(
                     select(User.id).where(User.employee_id == p["employee_id"], User.is_active.is_(True))
                 )).scalars().all())
                 if not user_ids:
+                    await db.rollback()
                     continue
                 body = await notification_templates.render(db, p["site_id"], p["text_key"], **p.get("values", {}))
-                await asyncio.wait_for(
-                    PushService(db).notify_users(user_ids, url=p["url"], priority=p.get("priority", "normal"), body=body),
-                    timeout=60,
-                )
-    except Exception:
-        logger.exception("ارسال اعلان اتوماسیون ناموفق بود")
+                # PushService may commit while pruning expired subscriptions. Keep the
+                # advisory lock on THIS transaction, and use a separate session to send.
+                async with AsyncSessionLocal() as push_db:
+                    stats = await asyncio.wait_for(
+                        PushService(push_db).notify_users(
+                            user_ids, url=p["url"], priority=p.get("priority", "normal"),
+                            body=body, return_stats=True,
+                        ), timeout=60,
+                    )
+                if not stats or stats["failed"] > 0 or stats["sent"] == 0:
+                    raise RuntimeError(f"Push not fully delivered: {stats}")
+                db.add(OaNotificationLog(key=key))
+                await db.commit()
+        except Exception:
+            logger.exception("ارسال اعلان اتوماسیون ناموفق بود (recipient=%s)", p.get("employee_id"))
 
 
 class OaCartableService:
@@ -234,7 +251,7 @@ class OaCartableService:
     # ================= انتخاب گیرنده (فردمحور) =================
 
     async def picker(self, user: User, *, q: str = "", department_id: int | None = None, title: str = "",
-                     limit: int = 50) -> dict:
+                     limit: int = 50, offset: int = 0) -> dict:
         """
         پرسنل قابل انتخاب (فعال + دسترسی اتوماسیون). فقط نام، سمت و واحد — کد پرسنلی/ملی هرگز برنمی‌گردد.
         فیلتر واحد/عنوان فقط برای پیدا کردن اشخاص است (گیرنده همیشه شخص است).
@@ -256,7 +273,12 @@ class OaCartableService:
             stmt = stmt.where(Employee.department_id == department_id)
         if title.strip():
             stmt = stmt.where(Employee.position_title.ilike(f"%{title.strip()}%"))
-        rows = (await self.db.execute(stmt.order_by(Employee.last_name, Employee.first_name).limit(min(limit, 200)))).all()
+        page_size = min(max(limit, 1), 100)
+        offset = max(offset, 0)
+        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        rows = (await self.db.execute(
+            stmt.order_by(Employee.last_name, Employee.first_name, Employee.id).offset(offset).limit(page_size)
+        )).all()
         depts = (await self.db.execute(
             select(Department.id, Department.name, Site.name)
             .join(Site, Site.id == Department.site_id)
@@ -270,6 +292,7 @@ class OaCartableService:
             "people": [{"employee_id": e.id, "name": _full_name(e), "title": e.position_title, "department": d}
                        for e, d in rows],
             "departments": [{"id": i, "name": n, "site": s} for i, n, s in depts],
+            "total": total, "offset": offset, "limit": page_size, "has_more": offset + len(rows) < total,
         }
 
     # ================= پیش‌نویس: گیرندگان و پیوست =================
@@ -363,7 +386,9 @@ class OaCartableService:
         from app.core import oa_file_rules as frules
         from app.services.oa_file_service import OaFileError
 
-        letter = await self._own_draft(letter_id, user)
+        # Hold letter lock throughout attachment write/commit so cross-device dispatch
+        # waits instead of sending a version without an in-flight attachment.
+        letter = await self._own_draft(letter_id, user, lock=True)
         settings = await self.files.site_settings(letter.site_id)
         existing = (await self.db.execute(
             select(OaFile.size).join(OaAttachment, OaAttachment.file_id == OaFile.id)
@@ -373,7 +398,8 @@ class OaCartableService:
             raise OaCartableError(f"حداکثر {settings['letter_max_files']} پیوست برای هر نامه مجاز است")
         try:
             row = await self.files.upload(site_id=letter.site_id, filename=filename, chunks=chunks, user=user,
-                                          context="letter", purpose="attachment", ip=ip)
+                                          context="letter", purpose="attachment", ip=ip,
+                                          commit_on_success=False)
         except OaFileError as e:
             raise OaCartableError(str(e), e.status_code) from None
         try:
@@ -390,7 +416,7 @@ class OaCartableService:
         return {"attachments": await self._attachments(letter.current_version_id)}
 
     async def remove_attachment(self, letter_id: int, attachment_id: int, user: User) -> dict:
-        letter = await self._own_draft(letter_id, user)
+        letter = await self._own_draft(letter_id, user, lock=True)
         a = await self.db.get(OaAttachment, attachment_id)
         if a is None or a.letter_version_id != letter.current_version_id:
             raise OaCartableError("پیوست یافت نشد", 404)
@@ -398,25 +424,36 @@ class OaCartableService:
         await self.db.delete(a)
         await self.db.flush()
         if f is not None:
-            if f.storage_key:
-                self.files.storage.delete(f.storage_key)
-            await self.db.delete(f)
+            # A withdrawn/returned approval may have the same file in a frozen older version.
+            # Do not delete its physical storage or row while that historical reference exists.
+            referenced = (await self.db.execute(
+                select(OaAttachment.id).where(OaAttachment.file_id == f.id).limit(1)
+            )).scalar_one_or_none()
+            if referenced is None:
+                if f.storage_key:
+                    self.files.storage.delete(f.storage_key)
+                await self.db.delete(f)
         await self.db.commit()
         return {"attachments": await self._attachments(letter.current_version_id)}
 
     async def delete_draft_files(self, letter: OaLetter) -> None:
         """حذف پیش‌نویس: پیوست‌هایش هرگز به کسی نرسیده‌اند و پاک می‌شوند (فراخواننده commit می‌کند)."""
+        # Delete only the current *editing* version's attachments. Previously submitted
+        # approval rounds are audit evidence and must remain recoverable after discard.
         rows = (await self.db.execute(
             select(OaAttachment, OaFile).join(OaFile, OaFile.id == OaAttachment.file_id)
-            .join(OaLetterVersion, OaLetterVersion.id == OaAttachment.letter_version_id)
-            .where(OaLetterVersion.letter_id == letter.id)
+            .where(OaAttachment.letter_version_id == letter.current_version_id)
         )).all()
         for a, f in rows:
             await self.db.delete(a)
             await self.db.flush()
-            if f.storage_key:
-                self.files.storage.delete(f.storage_key)
-            await self.db.delete(f)
+            still_referenced = (await self.db.execute(
+                select(OaAttachment.id).where(OaAttachment.file_id == f.id).limit(1)
+            )).scalar_one_or_none()
+            if still_referenced is None:
+                if f.storage_key:
+                    self.files.storage.delete(f.storage_key)
+                await self.db.delete(f)
 
     # ================= ارسال =================
 
@@ -455,7 +492,7 @@ class OaCartableService:
         v = await self.db.get(OaLetterVersion, letter.current_version_id)
         if not (v.subject or "").strip():
             raise OaCartableError("موضوع نامه را بنویسید")
-        if not (v.body_html or "").strip():
+        if not plain_text(v.body_html or "").strip():
             raise OaCartableError("متن نامه خالی است")
         recipients = list((await self.db.execute(
             select(OaRecipient).where(OaRecipient.letter_id == letter.id).order_by(OaRecipient.sort_order)
@@ -1228,7 +1265,7 @@ class OaCartableService:
                 "label": (f"این نامه {label} به" if outgoing else f"{label} این نامه"),
                 "letter_id": other_id if visible else None,
                 "subject": other.subject if visible else None,
-                "sent_at": other.sent_at,
+                "sent_at": other.sent_at if visible else None,
             })
         return out
 

@@ -70,20 +70,21 @@ class PushService:
         priority: str = "normal",
         notice_type: str = "normal",
         body: str | None = None,
-    ) -> None:
+        return_stats: bool = False,
+    ) -> dict | None:
         """
         به همه دستگاه‌های کاربران user_ids یک اعلان Push می‌فرستد (موازی، حداکثر ۲۰ هم‌زمان).
         ورودی: آدرس مقصد کلیک، اولویت، نوع اطلاعیه و متن اختیاری body؛ اگر body داده نشود،
         متن پیش‌فرض «اطلاعیه جدید» استفاده می‌شود. اشتراک‌های منقضی (404/410) حذف می‌شوند.
         """
         if not settings.VAPID_PRIVATE_KEY or not user_ids:
-            return  # Push هنوز پیکربندی نشده یا مخاطبی وجود ندارد
+            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0} if return_stats else None  # no subscriptions/VAPID
 
         # همه اشتراک‌های ثبت‌شده برای کاربران هدف
         result = await self.db.execute(select(PushSubscription).where(PushSubscription.user_id.in_(user_ids)))
         subscriptions = list(result.scalars().all())
         if not subscriptions:
-            return
+            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0} if return_stats else None
 
         # نام و نام‌خانوادگی هرکدام از مخاطبان (برای شخصی‌سازی متن اعلان) —
         # کاربران مدیریتی محض (بدون employee_id، مثل admin) در این نگاشت
@@ -196,3 +197,6 @@ class PushService:
             failed_count,
             len(stale_ids),
         )
+        if return_stats:
+            return {"attempted": len(subscriptions), "sent": sent_count,
+                    "failed": failed_count, "stale": len(stale_ids)}
