@@ -16,7 +16,10 @@ Workbox داخلش Cache قدیمی را پاک می‌کند) را شروع ک�
 """
 from __future__ import annotations
 
+import os
 import re
+import stat
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,20 +34,30 @@ _FRONTEND_SW_PATH = (
     Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist" / "sw.js"
 )
 
-# خط برچسب cache-bust در انتهای فایل
+# خط برچسب cache-bust در انتهای فایل (نسخه‌های قدیمی ۱۴ رقمی نیز خوانده می‌شوند)
 _BUST_MARKER_PATTERN = re.compile(r"\n// cache-bust: [^\n]*\n?$")
+_BUST_VERSION_PATTERN = re.compile(r"\n// cache-bust: (\d{14}(?:\d{6})?)\n?$")
+
+
+def deployed_cache_refresh() -> str | None:
+    """The cache-refresh marker on the *live* SW. Replayed on WS reconnect."""
+    try:
+        match = _BUST_VERSION_PATTERN.search(_FRONTEND_SW_PATH.read_text(encoding="utf-8"))
+        return match.group(1) if match else None
+    except (OSError, UnicodeError):
+        return None
 
 
 def bump_app_cache_version() -> str:
     """
     برچسب cache-bust انتهای frontend/dist/sw.js را با زمان فعلی جایگزین/اضافه می‌کند.
-    خروجی: رشته نسخه جدید (YYYYmmddHHMMSS). خطا: CacheBustError اگر sw.js نباشد.
+    خروجی: شناسه یکتای نوسازی (UTC تا دقت میکروثانیه). خطا: CacheBustError اگر sw.js نباشد.
     """
     if not _FRONTEND_SW_PATH.exists():
         raise CacheBustError(f"فایل sw.js پیدا نشد: {_FRONTEND_SW_PATH}")
 
     content = _FRONTEND_SW_PATH.read_text(encoding="utf-8")
-    new_version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    new_version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     marker = f"\n// cache-bust: {new_version}\n"
 
     # اگر از قبل یک برچسب cache-bust در انتهای فایل بود، جایگزینش می‌کنیم؛
@@ -54,9 +67,19 @@ def bump_app_cache_version() -> str:
     else:
         new_content = content.rstrip("\n") + "\n" + marker.lstrip("\n")
 
-    # نوشتن Atomic — یا فایل کاملاً جایگزین می‌شود یا اصلاً دست‌نخورده می‌ماند
-    tmp_path = _FRONTEND_SW_PATH.with_suffix(".js.tmp")
-    tmp_path.write_text(new_content, encoding="utf-8")
-    tmp_path.replace(_FRONTEND_SW_PATH)
+    # نوشتن Atomic با فایل موقت مستقل (دو درخواست همزمان روی یک .tmp نمی‌نویسند).
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=_FRONTEND_SW_PATH.parent,
+            prefix=".sw-refresh-", suffix=".tmp", delete=False,
+        ) as temp:
+            tmp_path = Path(temp.name)
+            temp.write(new_content)
+        os.chmod(tmp_path, stat.S_IMODE(_FRONTEND_SW_PATH.stat().st_mode))
+        os.replace(tmp_path, _FRONTEND_SW_PATH)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
     return new_version

@@ -17,6 +17,8 @@ let swRegistration = null;
 let announced = false;
 let registering = false;
 let checking = false;
+let pendingKind = "release";
+let lastRefreshStamp = null;
 const observedRegistrations = new WeakSet();
 
 function notifyUpdateReady(registration) {
@@ -24,7 +26,7 @@ function notifyUpdateReady(registration) {
   waitingRegistration = registration;
   if (announced) return;
   announced = true;
-  window.dispatchEvent(new CustomEvent(UPDATE_READY_EVENT));
+  window.dispatchEvent(new CustomEvent(UPDATE_READY_EVENT, { detail: { kind: pendingKind } }));
 }
 
 function observeRegistration(registration) {
@@ -42,8 +44,9 @@ function observeRegistration(registration) {
   onUpdateFound();
 }
 
-async function checkForInstalledUpdate() {
+async function checkForInstalledUpdate(kind = "release") {
   if (checking || announced || !("serviceWorker" in navigator)) return;
+  pendingKind = kind;
   checking = true;
   try {
     const registration = swRegistration || (await navigator.serviceWorker.getRegistration());
@@ -69,7 +72,16 @@ async function checkForInstalledUpdate() {
 export function onReleasePublished(build) {
   if (typeof build !== "string" || !/^[\w.-]{1,96}$/.test(build)) return;
   if (CURRENT_BUILD && build === CURRENT_BUILD) return;
-  void checkForInstalledUpdate();
+  void checkForInstalledUpdate("release");
+}
+
+/** A manual server-side SW refresh is distinct from publishing a new build.
+ * It is allowed even when build === CURRENT_BUILD. */
+export function onCacheRefreshPublished(stamp) {
+  if (typeof stamp !== "string" || !/^\d{14}(?:\d{6})?$/.test(stamp)) return;
+  if (stamp === lastRefreshStamp) return;
+  lastRefreshStamp = stamp;
+  void checkForInstalledUpdate("cache_refresh");
 }
 
 /** Applies only a fully installed waiting worker, on explicit user approval. */

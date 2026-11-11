@@ -134,10 +134,10 @@ export async function fetchProjectCheckStatus() {
   return data; // { log, is_running, is_passed, is_failed }
 }
 
-// POST /system/cache-bust؛ تغییر نسخه‌ی کش تا کلاینت‌ها فایل‌های جدید را بگیرند؛ خروجی: نتیجه و نسخه
+// POST /system/cache-bust؛ نوسازی SW و ارسال رویداد آنی؛ نتیجه شامل موفقیت ارسال رویداد است.
 export async function bustAppCache() {
   const { data } = await apiClient.post("/system/cache-bust");
-  return data; // { success, version, message }
+  return data; // { success, version, realtime_sent, message }
 }
 
 // GET /system/ip-allowlist؛ خروجی: فعال بودن، متن فهرست و تعداد رنج‌های IP مجاز

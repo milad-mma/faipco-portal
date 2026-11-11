@@ -294,7 +294,7 @@ function UpdateAdminPage() {
         </Card>
       )}
 
-      {/* پاک‌کردن کش اپلیکیشن برای همه کاربران (نسخه‌ی تازه‌ی فرانت‌اند بدون آپدیت سرور) */}
+      {/* نوسازی نسخه ذخیره‌شده اپ برای کاربران، بدون انتشار Build جدید */}
       <Card variant="outlined" sx={{ borderRadius: 2, p: 3, mt: 3 }}>
         <AppCacheCard />
       </Card>

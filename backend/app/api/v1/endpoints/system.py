@@ -7,9 +7,8 @@ Endpoint های تنظیمات و ابزارهای سیستمی (پنل Admin �
 /system/apply-update               (POST) اجرای install.sh در پس‌زمینه
 /system/run-checks, /check-status  اجرای check.sh و وضعیت آن
 /system/update-status              (GET)  وضعیت زنده آپدیت
-/system/cache-bust   (POST)   نصب اجباری Service Worker جدید برای همه کاربران
-                                (پاک‌کردن کامل کش اپلیکیشن — انگار همه دارند
-                                اولین‌بار اپ را باز می‌کنند).
+/system/cache-bust   (POST)   درخواست نوسازی نسخه ذخیره‌شدهٔ اپ در دستگاه‌ها
+                                (بدون امکان پاک‌کردن مستقیم حافظه مرورگر).
 /system/ip-allowlist (GET/PUT) وضعیت کامل قابلیت محدودیت IP: یک متن
                                 ویرایش‌پذیر (هر رنج در یک خط) + کلید
                                 فعال/غیرفعال مستقل.
@@ -52,7 +51,8 @@ from app.schemas.system import (
 from app.schemas.smtp import SmtpSettingsIn, SmtpSettingsOut, SmtpTestEmailIn
 from app.schemas.sms import SmsSettingsIn, SmsSettingsOut, SmsTestSendIn
 from app.services.auth_service import AuthError, AuthService
-from app.services.cache_service import CacheBustError, bump_app_cache_version
+from app.services.cache_service import CacheBustError, bump_app_cache_version, deployed_cache_refresh
+from app.services.release_events import publish_cache_refresh
 from app.services.email_service import EmailError, EmailNotConfiguredError, get_smtp_settings, send_email
 from app.services.sms_service import SmsError, SmsNotConfiguredError, get_sms_settings, send_sms_code
 from app.core.security import decrypt_secret, encrypt_secret
@@ -154,10 +154,13 @@ async def release_websocket(websocket: WebSocket):
         current = deployed_build()
         if current:
             await websocket.send_json({"type": "portal.release", "build": current})
+        stamp = deployed_cache_refresh()
+        if stamp:
+            await websocket.send_json({"type": "portal.cache_refresh", "stamp": stamp})
         while True:
             try:
-                build = await asyncio.wait_for(queue.get(), timeout=30)
-                await websocket.send_json({"type": "portal.release", "build": build})
+                event = await asyncio.wait_for(queue.get(), timeout=30)
+                await websocket.send_json(event)
             except asyncio.TimeoutError:
                 # Keep idle WebSockets alive through nginx/proxies; no DB read.
                 await websocket.send_json({"type": "ping"})
@@ -305,7 +308,7 @@ async def cache_bust(
     _user=Depends(require_permission("system.cache_bust")),
 ):
     """
-    با تغییر sw.js همه کاربران را وادار به دریافت نسخه تازه اپ می‌کند. مجوز system.cache_bust.
+    sw.js را تغییر داده، پس از نوشتن کامل رویداد نوسازی را منتشر می‌کند. مجوز system.cache_bust.
     خروجی: نسخه جدید cache-bust. خطا: 500 اگر sw.js پیدا نشود یا خطای دیگری رخ دهد.
     """
     try:
@@ -319,18 +322,36 @@ async def cache_bust(
             detail="سرویس پرتال اجازه‌ی نوشتن در frontend/dist را ندارد — روی سرور: sudo chown -R www-data:www-data /var/www/html/frontend/dist",
         )
     except Exception:
-        logger.exception("پاک‌کردن کش با خطای پیش‌بینی‌نشده مواجه شد")
+        logger.exception("نوسازی نسخه ذخیره‌شده با خطای پیش‌بینی‌نشده مواجه شد")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="پاک‌کردن کش با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
+            detail="نوسازی نسخه ذخیره‌شده با خطای پیش‌بینی‌نشده مواجه شد — جزئیات کامل در لاگ سرور ثبت شد.",
         )
 
-    return {
-        "success": True,
-        "version": new_version,
-        "message": "انجام شد. صفحه‌های باز حداکثر تا یک دقیقه، و بقیه در بازدید بعدی، پیام «نسخه جدید آماده است» را "
-        "می‌بینند؛ با زدن «بارگذاری» کش قبلی پاک و اپ از نو دریافت می‌شود.",
-    }
+    # The SW has already changed. If PostgreSQL is unavailable, do not claim
+    # that online users have received an instant notification: mobile resume
+    # and browser focus checks are still available as a fallback.
+    realtime_sent = False
+    try:
+        await publish_cache_refresh(new_version)
+        realtime_sent = True
+    except Exception:
+        logger.exception("رویداد نوسازی کش به WebSocket منتشر نشد؛ بررسی هنگام بازگشت همچنان فعال است")
+
+    if realtime_sent:
+        message = (
+            "درخواست نوسازی نسخه ذخیره‌شده پرتال ثبت و رویداد آنی ارسال شد. "
+            "کاربران متصل پس از نصب کامل Service Worker، اعلان نوسازی را می‌بینند؛ "
+            "کاربران آفلاین در بازدید یا اتصال بعدی بررسی می‌کنند. "
+            "هیچ نشست یا اطلاعات شخصی از سمت سرور حذف نشده است."
+        )
+    else:
+        message = (
+            "نوسازی نسخه ذخیره‌شده روی سرور ثبت شد، اما ارسال اعلان آنی موفق نبود. "
+            "کاربران با بازگشت به اپ یا اتصال مجدد، نسخه را بررسی می‌کنند. "
+            "هیچ نشست یا اطلاعات شخصی از سمت سرور حذف نشده است."
+        )
+    return {"success": True, "version": new_version, "realtime_sent": realtime_sent, "message": message}
 
 
 async def _build_ip_allowlist_state(db: AsyncSession) -> IpAllowlistStateOut:

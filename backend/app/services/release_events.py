@@ -17,9 +17,11 @@ import asyncpg
 from sqlalchemy.engine import make_url
 
 from app.core.config import get_settings
+from app.services.cache_service import deployed_cache_refresh
 
 log = logging.getLogger("faipco.releases")
 CHANNEL = "faipco_frontend_published"
+CACHE_CHANNEL = "faipco_frontend_cache_refresh"
 BUILD_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,96}$")
 LIVE_VERSION_FILE = Path(__file__).resolve().parents[3] / "frontend" / "dist" / "version.json"
 
@@ -42,34 +44,42 @@ def postgres_dsn() -> str:
 
 class ReleaseBus:
     def __init__(self):
-        self._subscribers: set[asyncio.Queue[str]] = set()
+        self._subscribers: set[asyncio.Queue[dict[str, str]]] = set()
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
-    def subscribe(self) -> asyncio.Queue[str]:
-        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+    def subscribe(self) -> asyncio.Queue[dict[str, str]]:
+        queue: asyncio.Queue[dict[str, str]] = asyncio.Queue(maxsize=2)
         self._subscribers.add(queue)
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue[str]) -> None:
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, str]]) -> None:
         self._subscribers.discard(queue)
 
-    def broadcast(self, build: str) -> None:
-        if not BUILD_PATTERN.fullmatch(build):
-            return
-        # Ensure no event from an uncommitted/aborted staging build escapes.
-        if deployed_build() != build:
-            return
+    def _enqueue(self, event: dict[str, str]) -> None:
         for queue in tuple(self._subscribers):
             if queue.full():
                 try:
                     queue.get_nowait()
                 except asyncio.QueueEmpty:
                     pass
-            queue.put_nowait(build)
+            queue.put_nowait(event)
 
-    def _on_notification(self, _connection, _pid, _channel, payload: str) -> None:
-        self.broadcast(payload)
+    def broadcast(self, build: str) -> None:
+        # Ensure no event from an uncommitted/aborted staging build escapes.
+        if isinstance(build, str) and BUILD_PATTERN.fullmatch(build) and deployed_build() == build:
+            self._enqueue({"type": "portal.release", "build": build})
+
+    def broadcast_cache_refresh(self, stamp: str) -> None:
+        # Ignore stale/delayed notifications after another build has replaced the SW.
+        if isinstance(stamp, str) and stamp == deployed_cache_refresh():
+            self._enqueue({"type": "portal.cache_refresh", "stamp": stamp})
+
+    def _on_notification(self, _connection, _pid, channel, payload: str) -> None:
+        if channel == CHANNEL:
+            self.broadcast(payload)
+        elif channel == CACHE_CHANNEL:
+            self.broadcast_cache_refresh(payload)
 
     async def _listen(self) -> None:
         retry = 2
@@ -80,11 +90,15 @@ class ReleaseBus:
                 connection = await asyncpg.connect(dsn=postgres_dsn(), timeout=10)
                 connection.add_termination_listener(lambda _conn: terminated.set())
                 await connection.add_listener(CHANNEL, self._on_notification)
+                await connection.add_listener(CACHE_CHANNEL, self._on_notification)
                 # Replay the live deployment to clients who connected while
                 # this worker's LISTEN connection was temporarily down.
                 latest = deployed_build()
                 if latest:
                     self.broadcast(latest)
+                stamp = deployed_cache_refresh()
+                if stamp:
+                    self.broadcast_cache_refresh(stamp)
                 retry = 2
                 stop_wait = asyncio.create_task(self._stop.wait())
                 term_wait = asyncio.create_task(terminated.wait())
@@ -125,6 +139,17 @@ class ReleaseBus:
             except asyncio.TimeoutError:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+
+async def publish_cache_refresh(stamp: str) -> None:
+    """Publish a completed SW rewrite to all workers; raises on notify failure."""
+    if deployed_cache_refresh() != stamp:
+        raise RuntimeError("A newer frontend deployment replaced the cache refresh")
+    connection = await asyncpg.connect(dsn=postgres_dsn(), timeout=10)
+    try:
+        await connection.execute("SELECT pg_notify($1, $2)", CACHE_CHANNEL, stamp)
+    finally:
+        await connection.close()
 
 
 release_bus = ReleaseBus()

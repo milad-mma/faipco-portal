@@ -1,9 +1,9 @@
-// کارت «پاک‌کردن کش اپلیکیشن برای همه کاربران» (مجوز system.cache_bust) — صفحه‌ی «بررسی و اعمال آپدیت».
-// سرور یک برچسب زمانی به انتهای sw.js اضافه می‌کند؛ مرورگر هر کاربر (حداکثر تا یک دقیقه برای صفحه‌ی باز، یا در بازدید بعدی)
-// Service Worker تازه را می‌گیرد و پیام «نسخه جدید آماده است» را نشان می‌دهد؛ با زدن «بارگذاری»، کش قبلی پاک و اپ تازه بارگذاری می‌شود.
+// کارت نوسازی نسخه ذخیره‌شده اپ (مجوز system.cache_bust) — صفحه بررسی و اعمال آپدیت.
+// سرور پس از تغییر کامل sw.js یک رویداد آنی می‌فرستد؛ اعلان کاربران فقط پس از
+// waiting شدن Worker نمایش داده می‌شود. حذف همه کش‌ها یا تغییر فوری آیکون تضمین نیست.
 import { useState } from "react";
 import { Alert, Button, CircularProgress, Typography } from "@mui/material";
-import DeleteSweepOutlinedIcon from "@mui/icons-material/DeleteSweepOutlined";
+import CachedOutlinedIcon from "@mui/icons-material/CachedOutlined";
 import { bustAppCache } from "../api/system";
 
 export default function AppCacheCard() {
@@ -15,9 +15,9 @@ export default function AppCacheCard() {
     setBusy(true);
     try {
       const data = await bustAppCache();
-      setResult({ success: true, message: data.message });
+      setResult({ success: true, realtimeSent: data.realtime_sent !== false, message: data.message });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "پاک‌کردن کش با خطا مواجه شد." });
+      setResult({ success: false, message: err.response?.data?.detail || "درخواست نوسازی نسخه ذخیره‌شده با خطا مواجه شد." });
     } finally {
       setBusy(false);
     }
@@ -26,24 +26,26 @@ export default function AppCacheCard() {
   return (
     <>
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-        پاک‌کردن کش اپلیکیشن برای همه کاربران
+        نوسازی نسخه ذخیره‌شده پرتال برای کاربران
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        برای وقتی که صفحه یا آیکون قدیمی روی گوشی یا مرورگر کسی مانده است. هیچ داده‌ای پاک نمی‌شود و کسی از حساب خارج
-        نمی‌شود؛ هر کاربر پیام «نسخه جدید آماده است» را می‌بیند و با زدن «بارگذاری»، اپ از نو دریافت می‌شود.
+        برای زمانی که نسخه ذخیره‌شده پرتال در مرورگر یا اپ اندروید به‌روز نشده است. پس از ثبت درخواست،
+        به کاربران آنلاین رویداد نوسازی ارسال می‌شود و فقط بعد از نصب کامل Service Worker اعلان نمایش می‌یابد.
+        کاربران آفلاین هنگام بازگشت به برنامه بررسی می‌شوند. اطلاعات شخصی و نشست کاربران از سمت سرور حذف نمی‌شود؛
+        به‌روزرسانی فوری آیکون نصب‌شده در اندروید تضمین‌شده نیست.
       </Typography>
       {result && (
-        <Alert severity={result.success ? "success" : "error"} sx={{ mb: 2 }}>
+        <Alert severity={result.success ? (result.realtimeSent ? "success" : "warning") : "error"} sx={{ mb: 2 }}>
           {result.message}
         </Alert>
       )}
       <Button
         variant="outlined"
-        startIcon={busy ? <CircularProgress size={18} /> : <DeleteSweepOutlinedIcon />}
+        startIcon={busy ? <CircularProgress size={18} /> : <CachedOutlinedIcon />}
         onClick={handleClick}
         disabled={busy}
       >
-        {busy ? "در حال اعمال..." : "پاک‌کردن کش برای همه کاربران"}
+        {busy ? "در حال ثبت درخواست..." : "اعلان نوسازی به کاربران"}
       </Button>
     </>
   );

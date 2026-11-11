@@ -8,9 +8,11 @@ export default function UpdatePrompt() {
   const [isOpen, setIsOpen] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState(false);
+  const [updateKind, setUpdateKind] = useState("release");
 
   useEffect(() => {
-    function handleUpdateReady() {
+    function handleUpdateReady(event) {
+      setUpdateKind(event.detail?.kind === "cache_refresh" ? "cache_refresh" : "release");
       setError(false);
       setIsOpen(true);
     }
@@ -39,8 +41,10 @@ export default function UpdatePrompt() {
       open={isOpen}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       message={error
-        ? "نسخه جدید هنوز آماده نشده است. اتصال را بررسی کنید و دوباره تلاش کنید."
-        : "نسخه جدید پرتال آماده است"}
+        ? "بارگذاری نسخه آماده ممکن نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
+        : updateKind === "cache_refresh"
+          ? "نوسازی نسخه ذخیره‌شده پرتال آماده است"
+          : "نسخه جدید پرتال آماده است"}
       action={
         <Button
           color="inherit"
@@ -52,7 +56,7 @@ export default function UpdatePrompt() {
           onClick={handleReloadClick}
           sx={{ "&.Mui-disabled": { color: "inherit", opacity: 0.8 } }}
         >
-          {isApplying ? "در حال آماده‌سازی..." : error ? "تلاش دوباره" : "بارگذاری"}
+          {isApplying ? "در حال بارگذاری..." : error ? "تلاش دوباره" : updateKind === "cache_refresh" ? "بارگذاری مجدد" : "بارگذاری"}
         </Button>
       }
     />

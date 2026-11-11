@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(fileURLToPath(new URL('../src/utils/releaseSocket.js', import.meta.url)), 'utf8')
-  .replace('import { onReleasePublished } from "./serviceWorker";', '')
+  .replace('import { onCacheRefreshPublished, onReleasePublished } from "./serviceWorker";', '')
   .replace('import.meta.env.VITE_API_BASE_URL', '"/api/v1"')
   .replace('export function connectReleaseNotifications', 'function connectReleaseNotifications')
   + '\n;globalThis.testAPI = { connectReleaseNotifications };';
 
 function setup() {
   const received = [];
+  const refreshes = [];
   const sockets = [];
   class WebSocketStub {
     static OPEN = 1;
@@ -34,10 +35,11 @@ function setup() {
     window, document, WebSocket: WebSocketStub, URL,
     localStorage: { getItem(key) { return key === 'access_token' ? 'a.jwt.token' : null; } },
     onReleasePublished: (build) => received.push(build),
+    onCacheRefreshPublished: (stamp) => refreshes.push(stamp),
     setTimeout(fn, ms) { return { fn, ms }; }, clearTimeout() {},
   };
   runInNewContext(source, ctx);
-  return { ...ctx.testAPI, received, sockets, window, document };
+  return { ...ctx.testAPI, received, refreshes, sockets, window, document };
 }
 
 test('release socket requires session token, authenticates via subprotocol, not URL', () => {
@@ -58,5 +60,16 @@ test('release socket only forwards correct portal release messages', () => {
   s.sockets[0].message({type: 'portal.release', build: '987654321'});
   s.sockets[0].message({type: 'attendance', build: 'bad'});
   assert.deepEqual(s.received, ['987654321']);
+  stop();
+});
+
+
+test('manual cache-refresh events are forwarded separately from ordinary releases', () => {
+  const s = setup();
+  const stop = s.connectReleaseNotifications();
+  s.sockets[0].message({ type: 'portal.cache_refresh', stamp: '20261111101234012345' });
+  s.sockets[0].message({ type: 'portal.release', build: 'build-123' });
+  assert.deepEqual(s.refreshes, ['20261111101234012345']);
+  assert.deepEqual(s.received, ['build-123']);
   stop();
 });

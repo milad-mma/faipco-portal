@@ -2,7 +2,7 @@
  * A session-authenticated WebSocket can deliver a new build event to this tab;
  * after Android sleep, reconnect replays the live published version.
  */
-import { onReleasePublished } from "./serviceWorker";
+import { onCacheRefreshPublished, onReleasePublished } from "./serviceWorker";
 
 const RECONNECT_MS = 5_000;
 const PROTOCOL = "faipco-release";
@@ -31,6 +31,7 @@ export function connectReleaseNotifications() {
         try {
           const data = JSON.parse(event.data);
           if (data.type === "portal.release") onReleasePublished(data.build);
+          else if (data.type === "portal.cache_refresh") onCacheRefreshPublished(data.stamp);
         } catch { /* malformed or irrelevant messages are ignored */ }
       };
       socket.onclose = (event) => {
