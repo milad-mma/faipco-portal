@@ -21,6 +21,7 @@ import AnnouncementSettings from "../components/AnnouncementSettings";
 import ProjectChecksCard from "../components/ProjectChecksCard";
 import AppCacheCard from "../components/AppCacheCard";
 import { useAuth } from "../context/AuthContext";
+import { setPortalUpdateActivity } from "../utils/serviceWorker";
 
 const CONFIRM_PHRASE = "UPDATE";  // عبارتی که کاربر باید برای تأیید آپدیت تایپ کند
 const POLL_INTERVAL_MS = 3000;  // فاصله‌ی پرسیدن وضعیت آپدیت از سرور
@@ -53,6 +54,13 @@ function UpdateAdminPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState(null); // { success, message } | null
   const [updateLog, setUpdateLog] = useState("");  // خروجی زنده‌ی اسکریپت نصب
+
+  // The admin's server deployment temporarily restarts FastAPI. This is not
+  // an internet outage and must not trigger the global offline warning.
+  useEffect(() => {
+    setPortalUpdateActivity("server-deployment", isUpdating);
+    return () => setPortalUpdateActivity("server-deployment", false);
+  }, [isUpdating]);
 
   // وجود نسخه‌ی جدید را از سرور می‌پرسد؛ در صورت خطا نتیجه را checked=false می‌گذارد
   function runCheck() {

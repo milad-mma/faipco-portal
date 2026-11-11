@@ -9,6 +9,45 @@
  * check; it cannot publish or activate an unfinished release.
  */
 const ACTIVATION_WAIT_MS = 12 * 1000;
+const RELOAD_FEEDBACK_MS = 350;
+const RELOAD_RECEIPT_KEY = "faipco-pwa-update-receipt-v1";
+const RECEIPT_MAX_AGE_MS = 2 * 60 * 1000;
+export const UPDATE_ACTIVITY_EVENT = "faipco-update-activity";
+const updateActivityReasons = new Set();
+
+/** Update activities include the admin's server deployment and a user's SW activation.
+ * A separate event lets the offline banner distinguish planned deployment from loss of connectivity.
+ */
+export function setPortalUpdateActivity(reason, active) {
+  if (active) updateActivityReasons.add(reason);
+  else updateActivityReasons.delete(reason);
+  window.dispatchEvent(new CustomEvent(UPDATE_ACTIVITY_EVENT, {
+    detail: { active: updateActivityReasons.size > 0 },
+  }));
+}
+
+export function isPortalUpdateActive() {
+  return updateActivityReasons.size > 0;
+}
+
+/** Show a confirmation on the NEW page, not just a spinner on the page being replaced.
+ * sessionStorage is tab-scoped, is removed immediately, and never stores credentials.
+ */
+export function consumeAppliedUpdateReceipt() {
+  try {
+    const raw = window.sessionStorage.getItem(RELOAD_RECEIPT_KEY);
+    window.sessionStorage.removeItem(RELOAD_RECEIPT_KEY);
+    if (!raw) return null;
+    const receipt = JSON.parse(raw);
+    if (receipt && Number.isFinite(receipt.at) && Date.now() - receipt.at >= 0 &&
+        Date.now() - receipt.at < RECEIPT_MAX_AGE_MS &&
+        (receipt.kind === "release" || receipt.kind === "cache_refresh")) {
+      return receipt.kind;
+    }
+  } catch { /* storage may be unavailable in Android private modes */ }
+  return null;
+}
+
 const CURRENT_BUILD = typeof __APP_BUILD__ !== "undefined" ? String(__APP_BUILD__) : null; // eslint-disable-line no-undef
 export const UPDATE_READY_EVENT = "faipco-update-ready";
 
@@ -85,14 +124,19 @@ export function onCacheRefreshPublished(stamp) {
 }
 
 /** Applies only a fully installed waiting worker, on explicit user approval. */
-export async function applyPendingUpdate() {
+export async function applyPendingUpdate({ onPhase } = {}) {
   if (!("serviceWorker" in navigator)) return { ok: false, reason: "unsupported" };
+  let reloading = false;
   try {
-    const registration = waitingRegistration || swRegistration ||
-      (await navigator.serviceWorker.getRegistration());
-    const worker = registration?.waiting;
+    // Check all known registrations: a previous waiting worker may already have
+    // changed while a new registration was installed in the background.
+    const fresh = await navigator.serviceWorker.getRegistration();
+    const candidates = [waitingRegistration, swRegistration, fresh];
+    const worker = candidates.find((registration) => registration?.waiting)?.waiting;
     if (!worker) return { ok: false, reason: "not-ready" };
 
+    setPortalUpdateActivity("sw-activation", true);
+    onPhase?.("activating");
     const activated = await new Promise((resolve) => {
       let done = false;
       const finish = (ok) => {
@@ -113,10 +157,23 @@ export async function applyPendingUpdate() {
       }
     });
     if (!activated) return { ok: false, reason: "activation-timeout" };
+
+    onPhase?.("reloading");
+    // A receipt is written only after a real controller change, immediately
+    // before the page reload. No broad cache deletion and no logout.
+    try {
+      window.sessionStorage.setItem(RELOAD_RECEIPT_KEY, JSON.stringify({
+        kind: pendingKind, at: Date.now(),
+      }));
+    } catch { /* storage blocked: update must still complete */ }
+    await new Promise((resolve) => setTimeout(resolve, RELOAD_FEEDBACK_MS));
     window.location.reload();
+    reloading = true;
     return { ok: true };
   } catch {
     return { ok: false, reason: "unexpected" };
+  } finally {
+    if (!reloading) setPortalUpdateActivity("sw-activation", false);
   }
 }
 

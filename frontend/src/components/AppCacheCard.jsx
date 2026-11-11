@@ -17,7 +17,7 @@ export default function AppCacheCard() {
       const data = await bustAppCache();
       setResult({ success: true, realtimeSent: data.realtime_sent !== false, message: data.message });
     } catch (err) {
-      setResult({ success: false, message: err.response?.data?.detail || "درخواست نوسازی نسخه ذخیره‌شده با خطا مواجه شد." });
+      setResult({ success: false, message: err.response?.data?.detail || "درخواست تازه‌سازی پرتال انجام نشد. دوباره تلاش کنید." });
     } finally {
       setBusy(false);
     }
@@ -26,13 +26,13 @@ export default function AppCacheCard() {
   return (
     <>
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-        نوسازی نسخه ذخیره‌شده پرتال برای کاربران
+        تازه‌سازی برنامه برای کاربران
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        برای زمانی که نسخه ذخیره‌شده پرتال در مرورگر یا اپ اندروید به‌روز نشده است. پس از ثبت درخواست،
-        به کاربران آنلاین رویداد نوسازی ارسال می‌شود و فقط بعد از نصب کامل Service Worker اعلان نمایش می‌یابد.
-        کاربران آفلاین هنگام بازگشت به برنامه بررسی می‌شوند. اطلاعات شخصی و نشست کاربران از سمت سرور حذف نمی‌شود؛
-        به‌روزرسانی فوری آیکون نصب‌شده در اندروید تضمین‌شده نیست.
+        اگر برخی کاربران هنوز صفحه‌های قدیمی پرتال را می‌بینند، از این گزینه استفاده کنید.
+        پس از آماده‌شدن فایل‌های برنامه، اعلان «سامانه آماده به روزرسانی است» برای کاربران نمایش داده می‌شود.
+        برنامه فقط با انتخاب «به روزرسانی» توسط خود کاربر دوباره باز می‌شود. حساب کاربری و اطلاعات ثبت‌شده حذف نمی‌شوند.
+        تغییر فوری آیکون نصب‌شده در اندروید تضمین‌شده نیست.
       </Typography>
       {result && (
         <Alert severity={result.success ? (result.realtimeSent ? "success" : "warning") : "error"} sx={{ mb: 2 }}>
@@ -45,7 +45,7 @@ export default function AppCacheCard() {
         onClick={handleClick}
         disabled={busy}
       >
-        {busy ? "در حال ثبت درخواست..." : "اعلان نوسازی به کاربران"}
+        {busy ? "در حال ثبت درخواست..." : "اعلان تازه‌سازی به کاربران"}
       </Button>
     </>
   );

@@ -1,19 +1,30 @@
 import { useEffect, useState } from "react";
-import { Button, CircularProgress, Snackbar } from "@mui/material";
+import { Box, Button, CircularProgress, Snackbar, Typography } from "@mui/material";
 import SystemUpdateAltOutlinedIcon from "@mui/icons-material/SystemUpdateAltOutlined";
-import { applyPendingUpdate, UPDATE_READY_EVENT } from "../utils/serviceWorker";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import {
+  applyPendingUpdate, consumeAppliedUpdateReceipt, UPDATE_READY_EVENT,
+} from "../utils/serviceWorker";
+import {
+  UPDATE_TITLE, UPDATE_ACTION, UPDATE_ACTIVATING_TEXT, UPDATE_ACTIVATING_ACTION,
+  UPDATE_RELOADING_TEXT, UPDATE_RELOADING_ACTION, UPDATE_RETRY_ACTION,
+  updateReadyDescription, updateSuccessMessage, updateErrorMessage,
+} from "../utils/updateFeedback";
 
-/** Manual PWA/TWA update. Never blocks permanently when a mobile download stalls. */
+/** Unified PWA/TWA prompt: visible feedback on tap, then one-time success
+ * confirmation on the reloaded page. Never remove authentication data. */
 export default function UpdatePrompt() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
-  const [error, setError] = useState(false);
+  const [phase, setPhase] = useState("idle");
+  const [error, setError] = useState(null);
   const [updateKind, setUpdateKind] = useState("release");
+  const [completedKind, setCompletedKind] = useState(() => consumeAppliedUpdateReceipt());
 
   useEffect(() => {
     function handleUpdateReady(event) {
       setUpdateKind(event.detail?.kind === "cache_refresh" ? "cache_refresh" : "release");
-      setError(false);
+      setError(null);
+      setPhase("idle");
       setIsOpen(true);
     }
     window.addEventListener(UPDATE_READY_EVENT, handleUpdateReady);
@@ -21,44 +32,66 @@ export default function UpdatePrompt() {
   }, []);
 
   async function handleReloadClick() {
-    if (isApplying) return;
-    setIsApplying(true);
-    setError(false);
+    if (phase !== "idle") return;
+    setPhase("activating");
+    setError(null);
     try {
-      const result = await applyPendingUpdate();
-      if (!result?.ok) setError(true);
-      // Successful activation triggers a page reload inside applyPendingUpdate.
+      const result = await applyPendingUpdate({ onPhase: setPhase });
+      if (!result?.ok) {
+        setError(updateErrorMessage(result?.reason));
+        setPhase("idle");
+      }
+      // On success, keep the visible "opening" state until navigation occurs.
     } catch {
-      setError(true);
-    } finally {
-      // On network/installation failures the button is usable again.
-      setIsApplying(false);
+      setError(updateErrorMessage("unexpected"));
+      setPhase("idle");
     }
   }
 
+  const isApplying = phase !== "idle";
+  const showingCompletion = !isOpen && completedKind != null;
+  const message = showingCompletion
+    ? <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <CheckCircleOutlineIcon color="success" fontSize="small" />
+        <Typography variant="body2">{updateSuccessMessage(completedKind)}</Typography>
+      </Box>
+    : <Box sx={{ maxWidth: 420, py: 0.25 }}>
+        <Typography variant="subtitle2" fontWeight={700}>
+          {error ? "به‌روزرسانی کامل نشد" : UPDATE_TITLE}
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.4 }}>
+          {error || (phase === "reloading"
+            ? UPDATE_RELOADING_TEXT
+            : phase === "activating"
+              ? UPDATE_ACTIVATING_TEXT
+              : updateReadyDescription(updateKind))}
+        </Typography>
+      </Box>;
+
   return (
     <Snackbar
-      open={isOpen}
+      open={isOpen || showingCompletion}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      message={error
-        ? "بارگذاری نسخه آماده ممکن نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
-        : updateKind === "cache_refresh"
-          ? "نوسازی نسخه ذخیره‌شده پرتال آماده است"
-          : "نسخه جدید پرتال آماده است"}
-      action={
+      autoHideDuration={showingCompletion ? 6500 : null}
+      onClose={(_event, reason) => { if (reason !== "clickaway" && showingCompletion) setCompletedKind(null); }}
+      message={message}
+      action={isOpen ? (
         <Button
           color="inherit"
           size="small"
           disabled={isApplying}
           startIcon={isApplying
-            ? <CircularProgress size={14} color="inherit" />
+            ? <CircularProgress size={16} color="inherit" />
             : <SystemUpdateAltOutlinedIcon fontSize="small" />}
           onClick={handleReloadClick}
-          sx={{ "&.Mui-disabled": { color: "inherit", opacity: 0.8 } }}
+          sx={{ minHeight: 40, whiteSpace: "nowrap", "&.Mui-disabled": { color: "inherit", opacity: 0.8 } }}
         >
-          {isApplying ? "در حال بارگذاری..." : error ? "تلاش دوباره" : updateKind === "cache_refresh" ? "بارگذاری مجدد" : "بارگذاری"}
+          {phase === "reloading" ? UPDATE_RELOADING_ACTION
+            : phase === "activating" ? UPDATE_ACTIVATING_ACTION
+              : error ? UPDATE_RETRY_ACTION : UPDATE_ACTION}
         </Button>
-      }
+      ) : null}
+      sx={{ "& .MuiSnackbarContent-root": { flexWrap: "wrap", gap: 1.5 } }}
     />
   );
 }

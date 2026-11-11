@@ -45,6 +45,7 @@ async function checkRealConnectivity() {
  */
 export function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isBrowserOffline, setIsBrowserOffline] = useState(!navigator.onLine);
   const [isChecking, setIsChecking] = useState(false);
   const isMounted = useRef(true); // برای جلوگیری از setState پس از unmount
   const failureCountRef = useRef(0); // تعداد شکست‌های پشت‌سرهم بررسی سلامت
@@ -81,11 +82,13 @@ export function useOnlineStatus() {
     function handleBrowserOffline() {
       // سیگنال «آفلاین» مرورگر قابل اعتماد است و بدون تأیید شبکه فوراً اعمال می‌شود
       failureCountRef.current = FAILURES_BEFORE_OFFLINE;
+      setIsBrowserOffline(true);
       setIsOnline(false);
     }
     function handleBrowserOnline() {
       // سیگنال «آنلاین» فقط یعنی رابط شبکه فعال شده و با یک درخواست واقعی تأیید می‌شود
       failureCountRef.current = 0;
+      setIsBrowserOffline(false);
       recheck();
     }
 
@@ -118,5 +121,5 @@ export function useOnlineStatus() {
     };
   }, [recheck]);
 
-  return { isOnline, isChecking, recheck };
+  return { isOnline, isBrowserOffline, isChecking, recheck };
 }

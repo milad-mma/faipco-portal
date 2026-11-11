@@ -47,6 +47,8 @@ cd frontend && npm install && npm run dev
 راهنمای کامل (متغیرهای `.env`، Migration ها، Seed اولیه، تست سریع API) در
 [`docs/development.md`](docs/development.md).
 
+**تغییرات نسخه v9 در اعلان‌های PWA:** [`docs/pwa-update-feedback-v9.md`](docs/pwa-update-feedback-v9.md)
+
 ## مستندات کامل
 
 | سند | موضوع |
