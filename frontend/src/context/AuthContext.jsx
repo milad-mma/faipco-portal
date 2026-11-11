@@ -1,119 +1,185 @@
 /**
- * کانتکست احراز هویت.
- * کاربر جاری، وضعیت بارگذاری و توابع ورود/خروج/بازخوانی کاربر را فراهم می‌کند؛
- * هنگام شروع برنامه و پس از وصل شدن دوباره‌ی اینترنت، Session را از توکن ذخیره‌شده بازیابی می‌کند.
+ * Shared session state for FAIPCO.
+ * During a PWA update the API can briefly be unavailable. This is not a
+ * sign-out: preserve both credentials and the current protected route while
+ * retrying /auth/me, and show a recoverable UI instead of navigating to /login.
  */
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { fetchCurrentUser, loginRequest } from "../api/auth";
 import { apiClient } from "../api/client";
 import { useOnlineStatus } from "./OnlineStatusContext";
 import { setCacheOwner } from "../api/swrCache";
+import { classifySessionRestoreError } from "../utils/authRestorePolicy";
 
-// کانتکست نگهدارنده‌ی { user, isLoading, login, logout, refetchUser }
 const AuthContext = createContext(null);
+const RETRY_DELAYS_MS = [2500, 5000, 10000, 20000];
 
-/**
- * Provider احراز هویت؛ ورودی: children. وضعیت کاربر و توابع احراز هویت را در اختیار زیرشاخه قرار می‌دهد.
- */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [restoreError, setRestoreError] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [retrySequence, setRetrySequence] = useState(0);
   const { isOnline } = useOnlineStatus();
-  // Cache داده‌های صفحات متعلق به همین کاربر است؛ با تغییر کاربر (خروج/ورود دیگری) پاک می‌شود.
-  // عمداً در بدنه‌ی رندر (نه useEffect) تا قبل از effect صفحات فرزند اعمال شود؛ فراخوانی تکراری بی‌اثر است.
+  const restorePromiseRef = useRef(null);
+  const retryCountRef = useRef(0);
+  // A logout or new login must invalidate an older, outstanding restore.
+  const sessionEpochRef = useRef(0);
+  const previouslyOnlineRef = useRef(isOnline);
+
   setCacheOwner(user?.id);
 
-  // اگر access_token ذخیره شده باشد، کاربر جاری را از سرور می‌گیرد؛ در پایان isLoading را false می‌کند
-  async function tryRestoreSession() {
+  const tryRestoreSession = useCallback(({ retry = false } = {}) => {
+    if (restorePromiseRef.current) return restorePromiseRef.current;
+
     const token = localStorage.getItem("access_token");
     if (!token) {
+      setUser(null);
+      setRestoreError(false);
+      setIsRecovering(false);
+      setRetrySequence(0);
       setIsLoading(false);
-      return;
+      return Promise.resolve(null);
     }
-    try {
-      const currentUser = await fetchCurrentUser();
-      setUser(currentUser);
-    } catch (error) {
-      // توکن‌ها فقط با پاسخ 401 (توکن نامعتبر) پاک می‌شوند؛ خطای شبکه، Timeout یا در دسترس نبودن
-      // سرور توکن را پاک نمی‌کند چون توکن هنوز معتبر است و فقط همین لحظه قابل تأیید نیست
-      if (error.response?.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-      }
-      // در خطای شبکه توکن می‌ماند و با وصل شدن اینترنت (افکت پایین) همین تابع دوباره اجرا می‌شود
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
-  // بازیابی Session یک‌بار هنگام mount
-  useEffect(() => {
-    tryRestoreSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const epoch = sessionEpochRef.current;
+    if (retry) {
+      setIsRecovering(true);
+    } else {
+      setIsLoading(true);
+      setRestoreError(false);
+    }
+
+    const currentPromise = (async () => {
+      try {
+        const currentUser = await fetchCurrentUser();
+        if (epoch !== sessionEpochRef.current) return null;
+        setUser(currentUser);
+        setRestoreError(false);
+        setRetrySequence(0);
+        retryCountRef.current = 0;
+        return currentUser;
+      } catch (error) {
+        if (epoch !== sessionEpochRef.current) return null;
+        if (classifySessionRestoreError(error) === "invalid") {
+          // Only a verified 401 warrants discarding the session. The axios
+          // interceptor has already attempted a refresh for /auth/me.
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          setUser(null);
+          setRestoreError(false);
+        } else if (localStorage.getItem("access_token")) {
+          // A network error, timeout, 502/503 or transient service worker
+          // transition is NOT an invalid session. Keep the current URL.
+          setRestoreError(true);
+          retryCountRef.current += 1;
+          setRetrySequence((count) => count + 1);
+        } else {
+          // An interceptor may have detected a verified invalid refresh token.
+          setRestoreError(false);
+        }
+        return null;
+      } finally {
+        if (epoch === sessionEpochRef.current) {
+          setIsLoading(false);
+          setIsRecovering(false);
+        }
+      }
+    })();
+
+    restorePromiseRef.current = currentPromise;
+    void currentPromise.finally(() => {
+      if (restorePromiseRef.current === currentPromise) {
+        restorePromiseRef.current = null;
+      }
+    });
+    return currentPromise;
   }, []);
 
-  // وقتی اتصال برقرار می‌شود و کاربر هنوز تأیید نشده ولی توکن موجود است، بازیابی Session دوباره انجام می‌شود
-  // تا کاربر پس از قطعی موقت اینترنت نیازی به ورود مجدد نداشته باشد
+  // Initial restoration always runs once on page load (including SW reloads).
   useEffect(() => {
-    if (isOnline && !user && localStorage.getItem("access_token")) {
-      tryRestoreSession();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline]);
+    void tryRestoreSession();
+  }, [tryRestoreSession]);
 
-  // ورود کاربر: توکن‌ها را می‌گیرد و ذخیره می‌کند، سپس کاربر جاری را می‌خواند؛ خروجی: کاربر جاری
+  // When the update is faster than the backend, revalidate automatically with
+  // bounded backoff. No redirect, token deletion or infinite spinner.
+  useEffect(() => {
+    if (!restoreError || !isOnline || !localStorage.getItem("access_token")) return undefined;
+    const attempt = Math.min(retryCountRef.current - 1, RETRY_DELAYS_MS.length - 1);
+    const retryTimer = setTimeout(() => { void tryRestoreSession({ retry: true }); }, RETRY_DELAYS_MS[Math.max(0, attempt)]);
+    const retryOnReturn = () => {
+      if (document.visibilityState === "visible") void tryRestoreSession({ retry: true });
+    };
+    window.addEventListener("focus", retryOnReturn);
+    document.addEventListener("visibilitychange", retryOnReturn);
+    return () => {
+      clearTimeout(retryTimer);
+      window.removeEventListener("focus", retryOnReturn);
+      document.removeEventListener("visibilitychange", retryOnReturn);
+    };
+  }, [restoreError, retrySequence, isOnline, tryRestoreSession]);
+
+  // Browser online status can turn true after a long disconnection, without
+  // triggering the focus event (Android TWA). Resume restoration then too.
+  useEffect(() => {
+    if (isOnline && !previouslyOnlineRef.current && restoreError) {
+      void tryRestoreSession({ retry: true });
+    }
+    previouslyOnlineRef.current = isOnline;
+  }, [isOnline, restoreError, tryRestoreSession]);
+
   async function login(username, password, captcha = null) {
-    // فرم ورود یکپارچه است: هم مدیر (نام کاربری/رمز) و هم پرسنل (کد پرسنلی/کد ملی)؛ تشخیص در Backend انجام می‌شود
     const tokens = await loginRequest(username, password, captcha);
+    sessionEpochRef.current += 1;
     localStorage.setItem("access_token", tokens.access_token);
     localStorage.setItem("refresh_token", tokens.refresh_token);
     const currentUser = await fetchCurrentUser();
     setUser(currentUser);
+    setRestoreError(false);
+    setIsRecovering(false);
+    setRetrySequence(0);
+    setIsLoading(false);
+    retryCountRef.current = 0;
     return currentUser;
   }
 
-  /** اطلاعات کاربر جاری را دوباره از سرور می‌خواند (مثلاً پس از تغییر رمز و پاک شدن must_change_password)
-   * بدون نیاز به خروج/ورود یا Reload صفحه؛ خروجی: کاربر جاری */
   async function refetchUser() {
     const currentUser = await fetchCurrentUser();
     setUser(currentUser);
+    setRestoreError(false);
     return currentUser;
   }
 
-  // خروج: اول توکن‌ها از localStorage پاک و کاربر جاری خالی می‌شود (خروج فوری)، بعد نشست همین دستگاه سمت سرور
-  // باطل می‌شود (دستگاه‌های دیگر وارد می‌مانند؛ خطا یا آفلاین بودن نادیده گرفته می‌شود)
   function logout() {
+    sessionEpochRef.current += 1;
     const token = localStorage.getItem("access_token");
     const refreshToken = localStorage.getItem("refresh_token");
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
+    setRestoreError(false);
+    setIsRecovering(false);
+    setRetrySequence(0);
+    setIsLoading(false);
     if (token || refreshToken) {
-      // فقط نشست همین دستگاه باطل می‌شود؛ رفرش‌توکن هم فرستاده می‌شود تا اگر توکن دسترسی منقضی باشد باز هم نشست
-      // پیدا شود. چون رفرش‌توکن محلی پاک شده، interceptor در پاسخ 401 تلاش مجدد نمی‌کند؛ نتیجه اهمیتی ندارد
-      apiClient
-        .post(
-          "/auth/logout",
-          { refresh_token: refreshToken || null },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-            timeout: 5_000,
-          },
-        )
-        .catch(() => {});
+      apiClient.post(
+        "/auth/logout",
+        { refresh_token: refreshToken || null },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 },
+      ).catch(() => {});
     }
   }
 
   return (
-    <AuthContext.Provider
-      value={{ user, isLoading, login, logout, refetchUser }}
-    >
+    <AuthContext.Provider value={{
+      user, isLoading, restoreError, isRecovering, tryRestoreSession,
+      login, logout, refetchUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-// هوک دسترسی به کانتکست احراز هویت؛ بیرون از AuthProvider خطا می‌دهد
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth باید درون AuthProvider استفاده شود");
