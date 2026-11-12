@@ -92,7 +92,7 @@ export default function DashboardLettersCard({ user }) {
               justifyContent="space-between"
               alignItems="center"
               spacing={1}
-              onClick={() => navigate(`/automation/letters/${it.letter_id}`)}
+              onClick={() => navigate(it.origin === "revision" ? `/automation/drafts/${it.letter_id}` : `/automation/letters/${it.letter_id}`)}
               sx={{ cursor: "pointer" }}
             >
               <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
@@ -111,7 +111,7 @@ export default function DashboardLettersCard({ user }) {
                     {it.subject || "(بدون موضوع)"}
                   </Typography>
                   <Typography variant="caption" color={it.overdue ? "error" : "text.secondary"} noWrap component="div" sx={{ fontSize: 10 }}>
-                    {it.reason === "pending" ? (it.kind === "info" ? "برای اطلاع" : "در انتظار اقدام") : "خوانده‌نشده"}
+                    {it.reason === "pending" ? (it.kind === "revision" ? "برگشت برای اصلاح" : it.kind === "info" ? "برای اطلاع" : "در انتظار اقدام") : "خوانده‌نشده"}
                     {it.from ? ` — ${it.from}` : ""}
                     {it.due_at ? ` — مهلت ${fmt(it.due_at)}` : ""}
                   </Typography>

@@ -385,7 +385,7 @@ export default function OaLetterPage() {
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) auto" }, gap: 1, alignItems: "start", mb: 2, minWidth: 0 }}>
         <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.75} sx={{ minWidth: 0, minHeight: 40 }}>
         {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi>} title="شماره‌ی نامه" />}
-        {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
+        {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} sx={{ fontFamily: (theme) => theme.typography.fontFamily }} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         {letter.status === "cancelled" && <Chip color="error" label="ابطال‌شده" />}
         </Stack>

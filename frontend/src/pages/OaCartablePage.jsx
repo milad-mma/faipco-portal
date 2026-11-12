@@ -50,7 +50,7 @@ const URGENCY = {
   immediate: { label: "آنی", bg: "error.main", color: "error.contrastText" },
 };
 const ROLE = { recipient: "گیرنده", cc: "رونوشت", referral: "ارجاع" };
-const KIND = { action: "اقدام", info: "اطلاع", paraph: "پاراف", approve: "تأیید", sign: "امضا" };
+const KIND = { action: "اقدام", info: "اطلاع", paraph: "پاراف", approve: "تأیید", sign: "امضا", revision: "اصلاح نامه" };
 
 const fmt = (d) => (d ? new Date(d).toLocaleString("fa-IR") : "");
 
@@ -70,6 +70,7 @@ function UrgencyBadge({ urgency }) {
         justifyContent: "center",
         fontSize: 12,
         fontWeight: 800,
+        fontFamily: (theme) => theme.typography.fontFamily,
         flexShrink: 0,
       }}
     >
@@ -81,8 +82,9 @@ function UrgencyBadge({ urgency }) {
 function LetterCard({ it, box, onOpen }) {
   // در «دریافتی» خوانده‌نشده‌ها پررنگ؛ در «در انتظار اقدام» همه برجسته؛ بقیه حالت خوانده‌شده
   const highlight = box === "pending" || (box === "inbox" && it.unread);
-  const from =
-    box === "sent"
+  const from = it.origin === "revision" && it.task_from
+    ? `برگشت توسط ${it.task_from}`
+    : box === "sent"
       ? null
       : it.task_from && it.task_from !== it.sender
         ? `ارجاع از ${it.task_from}`
@@ -91,7 +93,7 @@ function LetterCard({ it, box, onOpen }) {
     <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
       <CardActionArea
         onClick={onOpen}
-        aria-label={`نمایش نامه: ${it.subject || "بدون موضوع"}`}
+        aria-label={`${it.origin === "revision" ? "اصلاح نامه" : "نمایش نامه"}: ${it.subject || "بدون موضوع"}`}
         sx={{
           minHeight: 70,
           p: 1.5,
@@ -132,11 +134,16 @@ function LetterCard({ it, box, onOpen }) {
                 {it.subject || "(بدون موضوع)"}
               </Typography>
             </Stack>
+            {it.origin === "revision" && (
+              <Typography fontSize={12} fontWeight={700} color="warning.main" sx={{ mt: 0.25 }}>
+                برگشت برای اصلاح — برای ویرایش باز کنید
+              </Typography>
+            )}
             <Typography fontSize={12} color="text.secondary" noWrap sx={{ mt: 0.25, minWidth: 0 }}>
               {[
                 from,
                 it.official_number ? `شماره ${toPersianDigits(it.official_number)}` : null,
-                it.instruction ? `دستور: ${it.instruction}` : null,
+                it.instruction ? `${it.origin === "revision" ? "دلیل برگشت" : "دستور"}: ${it.instruction}` : null,
                 box === "done" && it.result_note ? `نتیجه: ${it.result_note}` : null,
               ]
                 .filter(Boolean)
@@ -299,7 +306,7 @@ export default function OaCartablePage() {
       {data && data.items.length > 0 && (
         <Stack spacing={1.5}>
           {data.items.map((it) => (
-            <LetterCard key={`${it.letter_id}-${it.task_id || ""}`} it={it} box={box} onOpen={() => navigate(`/automation/letters/${it.letter_id}`)} />
+            <LetterCard key={`${it.letter_id}-${it.task_id || it.origin || ""}`} it={it} box={box} onOpen={() => navigate(it.origin === "revision" ? `/automation/drafts/${it.letter_id}` : `/automation/letters/${it.letter_id}`)} />
           ))}
         </Stack>
       )}

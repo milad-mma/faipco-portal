@@ -69,7 +69,7 @@ export default function OaDraftsPage() {
                   </Typography>
                 </Stack>
                 <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 0.5, minHeight: 28 }}>
-                  {URGENCY[d.urgency] && <Chip size="small" color="warning" label={URGENCY[d.urgency]} />}
+                  {URGENCY[d.urgency] && <Chip size="small" color="warning" label={URGENCY[d.urgency]} sx={{ fontFamily: (theme) => theme.typography.fontFamily }} />}
                   {d.confidentiality === "confidential" && <Chip size="small" color="error" label="محرمانه" />}
                   {d.principal_name && <Chip size="small" variant="outlined" color="primary" label={`از طرف ${d.principal_name}`}
                     sx={{ maxWidth: { xs: 160, sm: 260 }, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />}

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_letter_rules as rules
 from app.core.oa_html import HtmlTooLarge, plain_text, sanitize_html
+from app.core.oa_returned_query import is_returned_for_revision
 from app.models.office_automation import (
     OaFile,
     OaLetter,
@@ -272,7 +273,7 @@ class OaLetterService:
             select(OaLetter, OaLetterVersion)
             .join(OaLetterVersion, OaLetterVersion.id == OaLetter.current_version_id)
             .where(OaLetter.created_by == user.id, OaLetter.status.in_(("draft", "in_approval")),
-                   OaLetter.discarded_at.is_(None))
+                   OaLetter.discarded_at.is_(None), ~is_returned_for_revision())
             .order_by(OaLetter.updated_at.desc())
             .limit(200)
         )).all()

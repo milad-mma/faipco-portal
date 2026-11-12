@@ -42,7 +42,9 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled,
     save(next);
   };
 
-  const lastReturned = (plan?.history || []).filter((h) => h.status === "returned").slice(-1)[0];
+  const history = plan?.history || [];
+  const latestRound = history.reduce((round, step) => Math.max(round, step.round || 0), 0);
+  const lastReturned = history.filter((h) => h.round === latestRound && h.status === "returned").slice(-1)[0];
 
   return (
     <Box sx={{ px: 2, py: 1.5, borderTop: 1, borderColor: "divider" }}>

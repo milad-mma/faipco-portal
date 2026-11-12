@@ -13,11 +13,12 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, or_, select, true, update
+from sqlalchemy import and_, func, literal, or_, select, true, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_letter_rules as rules
 from app.core.oa_html import plain_text
+from app.core.oa_returned_query import is_returned_for_revision
 from app.core.oa_version_snapshots import snapshot_recipients
 from app.core.oa_access_rules import (
     can,
@@ -28,6 +29,7 @@ from app.core.oa_access_rules import (
 from app.core.permission_grants import grants_subquery
 from app.models.employee import Department, Employee
 from app.models.office_automation import (
+    OaApprovalStep,
     OaAttachment,
     OaFile,
     OaLetter,
@@ -1083,12 +1085,34 @@ class OaCartableService:
                     .join(acc, acc.c.lid == OaLetter.id))
             order = acc.c.at.desc()
         elif box in ("pending", "done"):
-            stmt = select(*cols, OaTask.id.label("task_id"), OaTask.kind, OaTask.instruction, OaTask.due_at,
-                          OaTask.created_by_name_snapshot.label("task_from"), OaTask.created_at.label("at"),
-                          OaTask.done_at, OaTask.result_note).select_from(OaLetter).join(
+            task_stmt = select(*cols, OaTask.id.label("task_id"), OaTask.kind, OaTask.instruction, OaTask.due_at,
+                               OaTask.created_by_name_snapshot.label("task_from"), OaTask.created_at.label("at"),
+                               OaTask.done_at, OaTask.result_note, OaTask.origin).select_from(OaLetter).join(
                 OaTask, OaTask.letter_id == OaLetter.id).where(
-                OaTask.assignee_employee_id == me.id, OaTask.status == ("open" if box == "pending" else "done"))
-            order = OaTask.created_at.desc() if box == "pending" else OaTask.done_at.desc()
+                OaTask.assignee_employee_id == me.id, OaTask.status == ("open" if box == "pending" else "done"),
+                OaLetter.status.in_(TASK_LETTER_STATUSES), OaLetter.discarded_at.is_(None))
+            if box == "pending":
+                # Returned-for-revision drafts are actionable for the original
+                # author, including letters returned before this release.
+                # Withdrawn drafts do not match this condition.
+                returned_stmt = (
+                    select(*cols, literal(None).label("task_id"), literal("revision").label("kind"),
+                           OaApprovalStep.note.label("instruction"), literal(None).label("due_at"),
+                           OaApprovalStep.approver_name_snapshot.label("task_from"),
+                           OaApprovalStep.acted_at.label("at"), literal(None).label("done_at"),
+                           literal(None).label("result_note"), literal("revision").label("origin"))
+                    .join(OaApprovalStep, and_(OaApprovalStep.letter_id == OaLetter.id,
+                                               OaApprovalStep.round == OaLetter.approval_round,
+                                               OaApprovalStep.status == "returned"))
+                    .where(OaLetter.created_by == user.id, OaLetter.status == "draft",
+                           OaLetter.discarded_at.is_(None))
+                )
+                pending_rows = union_all(task_stmt, returned_stmt).subquery("pending_rows")
+                stmt = select(pending_rows)
+                order = pending_rows.c.at.desc()
+            else:
+                stmt = task_stmt
+                order = OaTask.done_at.desc()
         elif box == "sent":
             # نامه‌های خود شخص + نامه‌هایی که منشی به نام مدیر فرستاده (برای خود منشی)
             stmt = select(*cols).where(or_(
@@ -1098,14 +1122,23 @@ class OaCartableService:
             order = OaLetter.sent_at.desc()
         else:
             raise OaCartableError("کارتابل نامعتبر است")
-        statuses = TASK_LETTER_STATUSES if box in ("pending", "done") else ("dispatched", "closed", "cancelled")
-        stmt = stmt.where(OaLetter.status.in_(statuses), OaLetter.discarded_at.is_(None))
+        if box not in ("pending", "done"):
+            stmt = stmt.where(OaLetter.status.in_(("dispatched", "closed", "cancelled")),
+                              OaLetter.discarded_at.is_(None))
+        search_cols = (pending_rows.c if box == "pending" else None)
         for word in (q or "").split()[:5]:
             like = f"%{word}%"
-            stmt = stmt.where(or_(OaLetter.subject.ilike(like), OaLetter.sender_name_snapshot.ilike(like),
-                                  OaLetter.official_number.ilike(like)))
+            if search_cols is not None:
+                stmt = stmt.where(or_(search_cols.subject.ilike(like),
+                                      search_cols.sender_name_snapshot.ilike(like),
+                                      search_cols.official_number.ilike(like),
+                                      search_cols.task_from.ilike(like)))
+            else:
+                stmt = stmt.where(or_(OaLetter.subject.ilike(like), OaLetter.sender_name_snapshot.ilike(like),
+                                      OaLetter.official_number.ilike(like)))
         total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-        rows = (await self.db.execute(stmt.order_by(order, OaLetter.id.desc()).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE))).all()
+        order_id = pending_rows.c.id if box == "pending" else OaLetter.id
+        rows = (await self.db.execute(stmt.order_by(order, order_id.desc()).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE))).all()
         now = _now()
         items = []
         for r in rows:
@@ -1115,7 +1148,7 @@ class OaCartableService:
                 items.append(self._row(r, {
                     "task_id": r.task_id, "kind": r.kind, "instruction": r.instruction, "due_at": r.due_at,
                     "overdue": bool(box == "pending" and r.due_at and r.due_at < now), "task_from": r.task_from,
-                    "at": r.at, "done_at": r.done_at, "result_note": r.result_note,
+                    "at": r.at, "done_at": r.done_at, "result_note": r.result_note, "origin": r.origin,
                 }))
             else:
                 items.append(self._row(r, {"at": r.sent_at}))
@@ -1145,7 +1178,37 @@ class OaCartableService:
             "letter_id": r.id, "subject": r.subject, "urgency": r.urgency, "confidentiality": r.confidentiality,
             "from": r.created_by_name_snapshot or r.sender_name_snapshot, "at": r.created_at, "due_at": r.due_at,
             "overdue": bool(r.due_at and r.due_at < now), "reason": "pending", "kind": r.kind,
+            "origin": "task",
         } for r in rows]
+        # A return creates an obligation for its creator, without turning the
+        # editable letter into a sent letter or manufacturing a delivery task.
+        returned_rows = (await self.db.execute(
+            select(OaLetter.id, OaLetter.subject, OaLetter.urgency, OaLetter.confidentiality,
+                   OaApprovalStep.approver_name_snapshot, OaApprovalStep.acted_at)
+            .join(OaApprovalStep, and_(OaApprovalStep.letter_id == OaLetter.id,
+                                       OaApprovalStep.round == OaLetter.approval_round,
+                                       OaApprovalStep.status == "returned"))
+            .where(OaLetter.creator_employee_id == me.id, OaLetter.status == "draft",
+                   OaLetter.discarded_at.is_(None))
+            .order_by(OaApprovalStep.acted_at.desc(), OaLetter.id.desc())
+            .limit(limit)
+        )).all()
+        returned_items = [{
+            "letter_id": r.id, "subject": r.subject, "urgency": r.urgency,
+            "confidentiality": r.confidentiality, "from": r.approver_name_snapshot,
+            "at": r.acted_at, "due_at": None, "overdue": False,
+            "reason": "pending", "kind": "revision", "origin": "revision",
+        } for r in returned_rows]
+        # Keep urgent/overdue work ahead of ordinary returns; otherwise show
+        # returned-for-revision drafts before routine tasks with equal urgency.
+        def priority(item):
+            urgent = {"immediate": 0, "urgent": 1, "normal": 2}.get(item["urgency"], 2)
+            due_at = item.get("due_at")
+            return (0 if item["overdue"] else 1, urgent,
+                    0 if item["kind"] == "revision" else 1,
+                    due_at.timestamp() if due_at else float("inf"),
+                    -(item["at"].timestamp() if item["at"] else 0))
+        items = sorted(returned_items + items, key=priority)[:limit]
         if len(items) < limit:
             seen = {i["letter_id"] for i in items}
             acc = (
@@ -1187,7 +1250,12 @@ class OaCartableService:
             .where(OaTask.assignee_employee_id == employee_id, OaTask.status == "open",
                    OaLetter.status.in_(TASK_LETTER_STATUSES))
         )).one()
-        return {"unread": unread, "pending": pending, "overdue": overdue}
+        revision_count = (await self.db.execute(
+            select(func.count(OaLetter.id)).where(
+                OaLetter.creator_employee_id == employee_id, OaLetter.status == "draft",
+                OaLetter.discarded_at.is_(None), is_returned_for_revision())
+        )).scalar_one()
+        return {"unread": unread, "pending": pending + revision_count, "overdue": overdue}
 
     # ================= تنظیمات اعلان شخصی =================
 
