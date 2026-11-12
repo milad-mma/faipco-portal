@@ -113,6 +113,14 @@ class OaApprovalService(OaCartableService):
             return letter.id  # کلیک دوباره
         if letter.status != "draft":
             raise OaCartableError("این نامه قابل ارسال برای تأیید نیست", 409)
+        if letter.row_version != row_version:
+            raise OaCartableError("پیش‌نویس در جای دیگری تغییر کرده است؛ صفحه را تازه کنید.", 409)
+        planned = await self._planned(letter)
+        # If the principal changed after the route was planned, their signature is
+        # automatically the last step: remove any outdated explicit duplicate.
+        for s in [step for step in planned if letter.principal_employee_id and
+                  step.approver_employee_id == letter.principal_employee_id]:
+            await self.db.delete(s)
             planned.remove(s)
         for i, s in enumerate(planned, start=1):
             s.step_no = i
