@@ -8,14 +8,19 @@ scripts/generate_vapid_keys.py اجرا نشده)، ارسال Push بی‌صد�
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import notification_templates
 from app.core.config import get_settings
 from app.models.push_subscription import PushSubscription
+from app.models.user_session import UserSession
+from app.models.user import User
+from app.models.employee import Employee
 from app.schemas.push import PushSubscriptionIn
 
 logger = logging.getLogger("faipco.push")
@@ -28,28 +33,22 @@ class PushService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def save_subscription(self, user_id: int, payload: PushSubscriptionIn) -> None:
+    async def save_subscription(self, user_id: int, payload: PushSubscriptionIn, *, session_id: int) -> None:
+        """Bind exactly one browser endpoint to its verified authenticated session.
+
+        PostgreSQL UPSERT avoids duplicate unique-endpoint inserts when login and
+        layout both register in parallel. An endpoint moved to another account
+        must never remain associated with the previous user's session.
         """
-        اشتراک یک دستگاه را برای کاربر ذخیره می‌کند. اگر همان endpoint از قبل ثبت شده باشد،
-        مالک و کلیدهایش به‌روز می‌شود (مثلاً ورود کاربر دیگر روی همان مرورگر).
-        """
-        result = await self.db.execute(
-            select(PushSubscription).where(PushSubscription.endpoint == payload.endpoint)
+        stmt = pg_insert(PushSubscription).values(
+            user_id=user_id, session_id=session_id, endpoint=payload.endpoint,
+            p256dh=payload.keys.p256dh, auth=payload.keys.auth,
         )
-        existing = result.scalar_one_or_none()
-        if existing is not None:
-            existing.user_id = user_id
-            existing.p256dh = payload.keys.p256dh
-            existing.auth = payload.keys.auth
-        else:
-            self.db.add(
-                PushSubscription(
-                    user_id=user_id,
-                    endpoint=payload.endpoint,
-                    p256dh=payload.keys.p256dh,
-                    auth=payload.keys.auth,
-                )
-            )
+        await self.db.execute(stmt.on_conflict_do_update(
+            index_elements=[PushSubscription.endpoint],
+            set_={"user_id": user_id, "session_id": session_id,
+                  "p256dh": payload.keys.p256dh, "auth": payload.keys.auth},
+        ))
         await self.db.commit()
 
     async def remove_subscription(self, endpoint: str, user_id: int | None = None) -> None:
@@ -71,27 +70,49 @@ class PushService:
         notice_type: str = "normal",
         body: str | None = None,
         return_stats: bool = False,
+        subscription_ids: set[int] | None = None,
+        notification_key: str | None = None,
     ) -> dict | None:
         """
         به همه دستگاه‌های کاربران user_ids یک اعلان Push می‌فرستد (موازی، حداکثر ۲۰ هم‌زمان).
         ورودی: آدرس مقصد کلیک، اولویت، نوع اطلاعیه و متن اختیاری body؛ اگر body داده نشود،
         متن پیش‌فرض «اطلاعیه جدید» استفاده می‌شود. اشتراک‌های منقضی (404/410) حذف می‌شوند.
         """
-        if not settings.VAPID_PRIVATE_KEY or not user_ids:
-            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0} if return_stats else None  # no subscriptions/VAPID
+        if not user_ids:
+            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0, "results": []} if return_stats else None
+        if not settings.VAPID_PRIVATE_KEY:
+            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0,
+                    "configured": False, "results": []} if return_stats else None
 
-        # همه اشتراک‌های ثبت‌شده برای کاربران هدف
-        result = await self.db.execute(select(PushSubscription).where(PushSubscription.user_id.in_(user_ids)))
-        subscriptions = list(result.scalars().all())
+        # No legacy/unbound or revoked/expired sessions may receive any Push.
+        # The same rule applies to notices, payroll and OA, not just OA.
+        expires_before = datetime.now(timezone.utc) - timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        stmt = (
+            select(PushSubscription, UserSession.sid)
+            .join(UserSession, PushSubscription.session_id == UserSession.id)
+            .join(User, PushSubscription.user_id == User.id)
+            .outerjoin(Employee, User.employee_id == Employee.id)
+            .where(
+                PushSubscription.user_id.in_(user_ids),
+                UserSession.user_id == PushSubscription.user_id,
+                UserSession.revoked_at.is_(None),
+                UserSession.last_seen_at >= expires_before,
+                User.is_active.is_(True),
+                or_(User.employee_id.is_(None),
+                    (Employee.is_active.is_(True) & Employee.is_enabled.is_(True))),
+            )
+        )
+        if subscription_ids is not None:
+            stmt = stmt.where(PushSubscription.id.in_(subscription_ids))
+        subscription_rows = (await self.db.execute(stmt)).all()
+        subscriptions = [row[0] for row in subscription_rows]
+        marker_by_subscription = {row[0].id: row[1] for row in subscription_rows}
         if not subscriptions:
-            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0} if return_stats else None
+            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0, "results": []} if return_stats else None
 
         # نام و نام‌خانوادگی هرکدام از مخاطبان (برای شخصی‌سازی متن اعلان) —
         # کاربران مدیریتی محض (بدون employee_id، مثل admin) در این نگاشت
         # نیستند و همان متن عمومی اطلاعیه را بدون خطاب شخصی می‌گیرند.
-        from app.models.employee import Employee
-        from app.models.user import User
-
         name_result = await self.db.execute(
             select(User.id, Employee.first_name, Employee.last_name)
             .join(Employee, Employee.id == User.employee_id)
@@ -115,6 +136,7 @@ class PushService:
         sent_count = 0
         failed_count = 0
         stale_ids: list[int] = []  # شناسه اشتراک‌های منقضی برای حذف
+        delivery_results: list[dict] = []  # subscription IDs only, never endpoints/keys
         semaphore = asyncio.Semaphore(20)
 
         async def send_one(sub: PushSubscription) -> None:
@@ -132,6 +154,10 @@ class PushService:
                     "url": url,
                     "priority": priority,
                     "notice_type": notice_type,
+                    # Not a credential: device-session correlation so a delayed
+                    # Push from a previous login cannot appear after account switch.
+                    "session_marker": marker_by_subscription[sub.id],
+                    **({"notification_key": notification_key} if notification_key else {}),
                 }
             )
             async with semaphore:
@@ -157,25 +183,31 @@ class PushService:
                         timeout=15,  # سرور Push کند/در دسترس نیست → بقیه‌ی گیرندگان معطل نمانند
                     )
                     sent_count += 1
+                    delivery_results.append({"id": sub.id, "status": "sent"})
                 except WebPushException as e:
                     status_code = getattr(getattr(e, "response", None), "status_code", None)
                     if status_code in (404, 410):
                         # اشتراک منقضی/لغوشده در مرورگر — از دیتابیس پاک می‌شود
                         stale_ids.append(sub.id)
+                        delivery_results.append({"id": sub.id, "status": "stale"})
                     else:
                         failed_count += 1
+                        delivery_results.append({"id": sub.id, "status": "failed"})
                         logger.warning(
-                            "ارسال Push به کاربر %s ناموفق بود (status=%s): %s", sub.user_id, status_code, e
+                            "ارسال Push ناموفق (user_id=%s, subscription_id=%s, status=%s): %s",
+                            sub.user_id, sub.id, status_code, type(e).__name__,
                         )
                 except Exception as e:  # noqa: BLE001
                     # خطای شبکه (DNS، قطع اتصال، Timeout) برای یک دستگاه: فقط همان دستگاه ناموفق شمرده می‌شود.
                     # قبلاً این خطا کل ارسال را با «خطای سرور» متوقف می‌کرد و پاک‌سازی اشتراک‌های منقضی و لاگ خلاصه
                     # اجرا نمی‌شد. اشتراک حذف نمی‌شود چون مشکل از شبکه‌ی سرور است، نه از دستگاه.
                     failed_count += 1
+                    delivery_results.append({"id": sub.id, "status": "failed"})
                     host = sub.endpoint.split("/")[2] if sub.endpoint.count("/") >= 2 else "?"
                     logger.warning(
-                        "ارسال Push به کاربر %s (%s) به‌خاطر خطای شبکه ناموفق بود: %s: %s",
+                        "ارسال Push ناموفق (user_id=%s, subscription_id=%s, provider=%s): %s: %s",
                         sub.user_id,
+                        sub.id,
                         host,
                         type(e).__name__,
                         str(e)[:200],
@@ -199,4 +231,4 @@ class PushService:
         )
         if return_stats:
             return {"attempted": len(subscriptions), "sent": sent_count,
-                    "failed": failed_count, "stale": len(stale_ids)}
+                    "failed": failed_count, "stale": len(stale_ids), "results": delivery_results}

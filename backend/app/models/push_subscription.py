@@ -18,6 +18,11 @@ class PushSubscription(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Null for subscriptions registered before v9.3.3; they cannot receive Push until
+    # the authenticated browser re-registers with a valid device session.
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_sessions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)  # آدرس سرویس Push مرورگر برای این دستگاه
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)  # کلید عمومی رمزنگاری payload

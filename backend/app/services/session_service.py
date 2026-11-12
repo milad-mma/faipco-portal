@@ -16,13 +16,14 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.employee import Employee
 from app.models.user import User
 from app.models.user_session import UserSession
+from app.models.push_subscription import PushSubscription
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,8 @@ async def create_session(
         .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None), UserSession.last_seen_at < stale_before)
         .values(revoked_at=now, revoked_reason="expired")
     )
+    # Proactively clear subscriptions belonging to sessions expiring or displaced
+    # by the device limit. The delivery query also checks revoked_at independently.
     if enforce_limit:
         limit = await effective_limit(db, user)
         current = await active_sessions(db, user.id)  # مرتب از جدیدترین فعالیت
@@ -137,6 +140,14 @@ async def create_session(
     )
     db.add(session)
     await db.flush()
+    # A revoked/expired session is never eligible for Push, and old records
+    # are pruned during new logins to reduce obsolete browser endpoints.
+    await db.execute(delete(PushSubscription).where(
+        PushSubscription.user_id == user.id,
+        PushSubscription.session_id.in_(
+            select(UserSession.id).where(UserSession.user_id == user.id, UserSession.revoked_at.is_not(None))
+        ),
+    ))
     return session
 
 
@@ -175,6 +186,8 @@ async def revoke(db: AsyncSession, session_id: int, *, user_id: int | None, reas
     if user_id is not None:
         stmt = stmt.where(UserSession.user_id == user_id)
     result = await db.execute(stmt.values(revoked_at=_now(), revoked_reason=reason))
+    if result.rowcount:
+        await db.execute(delete(PushSubscription).where(PushSubscription.session_id == session_id))
     return (result.rowcount or 0) > 0
 
 
@@ -186,6 +199,9 @@ async def revoke_by_sid(db: AsyncSession, sid: str | None, *, reason: str) -> No
         .where(UserSession.sid == sid, UserSession.revoked_at.is_(None))
         .values(revoked_at=_now(), revoked_reason=reason)
     )
+    await db.execute(delete(PushSubscription).where(
+        PushSubscription.session_id.in_(select(UserSession.id).where(UserSession.sid == sid))
+    ))
 
 
 async def revoke_all(db: AsyncSession, user_id: int, *, reason: str, except_sid: str | None = None) -> int:
@@ -194,6 +210,13 @@ async def revoke_all(db: AsyncSession, user_id: int, *, reason: str, except_sid:
     if except_sid:
         stmt = stmt.where(UserSession.sid != except_sid)
     result = await db.execute(stmt.values(revoked_at=_now(), revoked_reason=reason))
+    # Covers remote/admin/password revocation without requiring a browser to be online.
+    await db.execute(delete(PushSubscription).where(
+        PushSubscription.session_id.in_(
+            select(UserSession.id).where(UserSession.user_id == user_id,
+                                         UserSession.revoked_at.is_not(None))
+        )
+    ))
     return result.rowcount or 0
 
 

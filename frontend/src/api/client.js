@@ -104,7 +104,9 @@ const SEARCH_PARAM_KEYS = ["search", "q"]; // نام پارامترهای جست
 // --- تزریق خودکار Access Token در هر درخواست ---
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
-  if (token) {
+  // Never replace an explicitly pinned Authorization header (logout can be
+  // in flight while a different user logs in on the same browser).
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   // پرتال داخل اپ اندروید (فقط اطلاعاتی؛ تصمیم امنیتی سمت سرور با وضعیت گوشی گرفته می‌شود)
@@ -218,6 +220,8 @@ apiClient.interceptors.response.use(
       // reason=signed_out: صفحه‌ی ورود توضیح می‌دهد که نشست این دستگاه باطل شده (ورود دستگاه جدید،
       // خروج از راه دور، تغییر رمز) نه این‌که کاربر خودش خارج شده باشد.
       if (refreshError.response?.status === 401) {
+        import("../utils/pushSession").then(({ setDevicePushEnabled }) =>
+          setDevicePushEnabled(false).catch(() => {})).catch(() => {});
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
         window.location.href = "/login?reason=signed_out";

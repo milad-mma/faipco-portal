@@ -139,7 +139,7 @@ export default function MyDevicesDialog({ open, onClose }) {
                 sx={{ pb: 1 }}
               >
                 با ورود دستگاه جدید بیش از این تعداد، قدیمی‌ترین دستگاه خارج
-                می‌شود.
+                می‌شود. اعلان‌ها فقط به دستگاه‌هایی ارسال می‌شوند که نشست معتبر و اشتراک فعال دارند.
               </Typography>
             </Stack>
           )}
@@ -176,6 +176,9 @@ export default function MyDevicesDialog({ open, onClose }) {
                       {s.current && (
                         <Chip size="small" color="success" label="این دستگاه" />
                       )}
+                      <Chip size="small" variant="outlined"
+                        color={s.push_subscriptions > 0 ? "success" : "default"}
+                        label={s.push_subscriptions > 0 ? "اعلان فعال" : "اعلان غیرفعال"} />
                       {s.client_app === "android" && (
                         <Chip
                           size="small"

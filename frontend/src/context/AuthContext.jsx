@@ -11,6 +11,7 @@ import { useOnlineStatus } from "./OnlineStatusContext";
 import { setCacheOwner } from "../api/swrCache";
 import { classifySessionRestoreError } from "../utils/authRestorePolicy";
 import { connectReleaseNotifications } from "../utils/releaseSocket";
+import { setDevicePushEnabled } from "../utils/pushSession";
 
 const AuthContext = createContext(null);
 const RETRY_DELAYS_MS = [2500, 5000, 10000, 20000];
@@ -42,6 +43,7 @@ export function AuthProvider({ children }) {
 
     const token = localStorage.getItem("access_token");
     if (!token) {
+      void setDevicePushEnabled(false).catch(() => {});
       setUser(null);
       setRestoreError(false);
       setIsRecovering(false);
@@ -74,6 +76,7 @@ export function AuthProvider({ children }) {
           // interceptor has already attempted a refresh for /auth/me.
           localStorage.removeItem("access_token");
           localStorage.removeItem("refresh_token");
+          void setDevicePushEnabled(false).catch(() => {});
           setUser(null);
           setRestoreError(false);
         } else if (localStorage.getItem("access_token")) {
@@ -159,6 +162,9 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    // Block queued browser notifications before removing the authenticated UI.
+    // Backend revokes the SID and drops its subscription independently of this.
+    void setDevicePushEnabled(false).catch(() => {});
     sessionEpochRef.current += 1;
     const token = localStorage.getItem("access_token");
     const refreshToken = localStorage.getItem("refresh_token");

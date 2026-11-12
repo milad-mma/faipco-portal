@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user, oauth2_scheme
@@ -318,8 +319,19 @@ async def my_sessions(
 ):
     """دستگاه‌های فعال من (برچسب دستگاه/مرورگر، IP، آخرین فعالیت) با علامت نشست جاری + سقف مؤثر."""
     sessions = await session_service.active_sessions(db, current_user.id)
+    from app.models.push_subscription import PushSubscription
+    active_counts = dict((await db.execute(
+        select(PushSubscription.session_id, func.count(PushSubscription.id))
+        .where(PushSubscription.user_id == current_user.id, PushSubscription.session_id.is_not(None))
+        .group_by(PushSubscription.session_id)
+    )).all())
+    items = []
+    for session in sessions:
+        row = session_service.to_dict(session, current_sid=_sid(request))
+        row["push_subscriptions"] = active_counts.get(session.id, 0)
+        items.append(row)
     return {
-        "items": [session_service.to_dict(s, current_sid=_sid(request)) for s in sessions],
+        "items": items,
         "max_sessions": await session_service.effective_limit(db, current_user),
     }
 

@@ -74,6 +74,75 @@ async function notificationImage(path) {
   }
 }
 
+// Device-local Push gate and per-event deduplication survive browser restarts.
+// The endpoint is also restricted server-side to an unrevoked user_session.
+function pushSecurityDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("faipco-push-security-v1", 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+      if (!db.objectStoreNames.contains("seen")) db.createObjectStore("seen");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function activePushSessionMarker() {
+  try {
+    const db = await pushSecurityDb();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("meta", "readonly");
+        const store = tx.objectStore("meta");
+        const enabled = store.get("enabled");
+        const marker = store.get("sessionMarker");
+        tx.oncomplete = () => resolve(enabled.result === true ? marker.result : null);
+        get.onerror = () => reject(get.error);
+      });
+    } finally { db.close(); }
+  } catch { return null; } // fail closed: never show an unverified Push
+}
+
+async function storePushEnabled(enabled, sessionMarker = null) {
+  const db = await pushSecurityDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("meta", "readwrite");
+      const store = tx.objectStore("meta");
+      store.put(Boolean(enabled), "enabled");
+      store.put(enabled ? sessionMarker : null, "sessionMarker");
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
+async function claimOaNotification(key) {
+  // Atomic read/write: two concurrent Push deliveries for the same event can
+  // only show one notification, even if the original was already dismissed.
+  const db = await pushSecurityDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("seen", "readwrite");
+      const seen = tx.objectStore("seen");
+      const request = seen.get(key);
+      let accepted = false;
+      request.onsuccess = () => {
+        if (!request.result) {
+          accepted = true;
+          seen.put(Date.now(), key);
+        }
+      };
+      tx.oncomplete = () => resolve(accepted);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
 // رویداد نصب نسخه‌ی جدید Service Worker
 self.addEventListener("install", (event) => {
   // دانلود آیکون‌های اختیاری نباید نصب SW و آپدیت TWA را روی اینترنت کند معطل کند.
@@ -91,6 +160,15 @@ self.addEventListener("install", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
+  }
+  if (event.data?.type === "FAIPCO_PUSH_SESSION") {
+    event.waitUntil((async () => {
+      await storePushEnabled(event.data.enabled, event.data.sessionMarker);
+      if (!event.data.enabled) {
+        const shown = await self.registration.getNotifications();
+        shown.forEach((notice) => notice.close());
+      }
+    })().catch(() => {}));
   }
 });
 
@@ -115,6 +193,13 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
+      const marker = await activePushSessionMarker();
+      if (!marker || !payload.session_marker || marker !== payload.session_marker) return;
+      const oaKey = typeof payload.notification_key === "string" ? payload.notification_key : null;
+      if (oaKey) {
+        // A storage failure must not display possibly duplicated OA notifications.
+        try { if (!(await claimOaNotification(oaKey))) return; } catch { return; }
+      }
       const [icon, badge] = await Promise.all([
         notificationImage(NOTIFICATION_ICON),
         notificationImage(NOTIFICATION_BADGE),
@@ -132,7 +217,8 @@ self.addEventListener("push", (event) => {
         requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
         silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
         vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
-        tag: `faipco-notice-${Date.now()}`, // هر Push جدا نمایش داده شود، نه جایگزین قبلی
+        tag: oaKey ? `faipco-oa-${oaKey}` : `faipco-notice-${Date.now()}`,
+        renotify: false,
       });
 
       // ارسال پیام faipco-notice-push به همه‌ی تب‌های باز برنامه تا لیست اطلاعیه‌ها را بدون Reload دوباره بخوانند

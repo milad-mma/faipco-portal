@@ -49,6 +49,8 @@ cd frontend && npm install && npm run dev
 
 **تغییرات نسخه v9 در اعلان‌های PWA:** [`docs/pwa-update-feedback-v9.md`](docs/pwa-update-feedback-v9.md)
 
+**اصلاح امنیت و ارسال اعلان نسخه 9.3.3:** [`docs/push-notifications-v9.3.3.md`](docs/push-notifications-v9.3.3.md)
+
 ## مستندات کامل
 
 | سند | موضوع |
