@@ -266,6 +266,19 @@ async def _oa_retry_scans_job() -> None:
             await _advisory_unlock(db, _OA_SCAN_RETRY_LOCK_KEY)
 
 
+async def _oa_notification_outbox_job() -> None:
+    """Recover OA push events after worker restarts / transient network errors.
+
+    The outbox processor uses PostgreSQL SKIP LOCKED, so concurrent scheduler
+    instances can safely work on different events without a global lock.
+    """
+    try:
+        from app.services.oa_notification_outbox import drain_oa_outbox
+        await drain_oa_outbox(limit=15)
+    except Exception:  # noqa: BLE001
+        logger.exception("بازیابی اعلان‌های صف‌شده‌ی اتوماسیون ناموفق بود")
+
+
 async def _oa_cleanup_temp_job() -> None:
     """
     Job هر ۶ ساعت: فایل‌های موقت بی‌پیوند اتوماسیون پس از مهلت پاک می‌شوند. همان قفل بکاپ را می‌گیرد تا هم‌زمان با بکاپ
@@ -537,6 +550,16 @@ async def start_scheduler() -> None:
         hours=6,
         id="oa_temp_cleanup",
         replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _oa_notification_outbox_job,
+        trigger="interval",
+        seconds=30,
+        id="oa_push_outbox_retry",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     # Job تیک بررسی موعد بکاپ

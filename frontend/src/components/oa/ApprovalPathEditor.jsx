@@ -46,11 +46,13 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled,
 
   return (
     <Box sx={{ px: 2, py: 1.5, borderTop: 1, borderColor: "divider" }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: steps.length || auto ? 1 : 0 }}>
-        <Typography variant="body2" fontWeight={700}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}
+        sx={{ mb: steps.length || auto ? 1 : 0, minWidth: 0 }}>
+        <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
           مسیر تأیید {steps.length || auto ? "" : <Typography component="span" variant="caption" color="text.secondary">(اختیاری — بدون مسیر، نامه مستقیم ارسال می‌شود)</Typography>}
         </Typography>
-        <Button size="small" startIcon={<AddIcon />} onClick={() => setPickerOpen(true)} disabled={disabled || busy}>
+        <Button size="small" startIcon={<AddIcon />} onClick={() => setPickerOpen(true)} disabled={disabled || busy}
+          sx={{ flexShrink: 0, whiteSpace: "nowrap", fontFamily: "inherit" }}>
           افزودن مرحله
         </Button>
       </Stack>
@@ -61,7 +63,8 @@ export default function ApprovalPathEditor({ letterId, plan, onChange, disabled,
       )}
       <Stack spacing={0.75}>
         {steps.map((s, i) => (
-          <Stack key={s.id || s.employee_id} direction="row" alignItems="center" gap={{ xs: 0.25, sm: 1 }} sx={{ p: 0.75, borderRadius: 1, bgcolor: "action.hover", minWidth: 0 }}>
+          <Stack key={s.id || s.employee_id} direction="row" alignItems="center" gap={{ xs: 0.25, sm: 1 }}
+            sx={{ p: 0.75, borderRadius: 1, bgcolor: "action.hover", minWidth: 0, overflow: "hidden", "& .MuiIconButton-root": { flexShrink: 0 } }}>
             <Chip size="small" label={toPersianDigits(i + 1)} />
             <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${s.name}${s.title ? ` — ${s.title}` : ""}`}>
               {s.name}

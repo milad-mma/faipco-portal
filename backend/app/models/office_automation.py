@@ -186,6 +186,9 @@ class OaLetterVersion(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="editing")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Permanent evidence captured at submission/dispatch; NULL on versions from before v9.3.
+    recipients_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    approval_plan_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
 
 # ---------- فاز ۳الف: گیرنده، دسترسی، مسئولیت، هامش، پیوست (Migration 137) ----------
@@ -293,6 +296,22 @@ class OaNotificationLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OaNotificationOutbox(Base):
+    """Transactional OA push queue. A sender may retry after a crash; key is idempotent."""
+
+    __tablename__ = "oa_notification_outbox"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------- فاز ۳الف بخش دوم: رابطه‌ی نامه‌ها و تنظیمات اعلان (Migration 139) ----------

@@ -1,3 +1,9 @@
 
 # کش ابزار ruff (بررسی کد پایتون)؛ فایل موقت
 .ruff_cache/
+
+# Runtime/build output must never be added to the source repository.
+frontend/dist/
+frontend/releases/
+frontend/node_modules/
+backend/.venv/

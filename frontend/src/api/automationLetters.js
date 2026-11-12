@@ -113,6 +113,11 @@ export async function fetchLetter(id) {
   return data;
 }
 
+export async function fetchHistoricalLetterVersion(letterId, versionId) {
+  const { data } = await apiClient.get(`/automation/letters/${letterId}/versions/${versionId}`);
+  return data;
+}
+
 export async function referLetter(id, payload) {
   const { data } = await apiClient.post(`/automation/letters/${id}/refer`, payload);
   return data;

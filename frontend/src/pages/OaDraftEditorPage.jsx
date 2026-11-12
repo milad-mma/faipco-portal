@@ -139,9 +139,14 @@ export default function OaDraftEditorPage() {
       });
       draftRef.current = updated;
       setDraft(updated); // متن محلی جایگزین نمی‌شود تا مکان‌نما نپرد؛ پاک‌سازی سرور در نمایش بعدی اعمال است
-      setDirty(formRef.current !== f);
-      setSaveState({ ok: true, message: `ذخیره شد — ${new Date().toLocaleTimeString("fa-IR")}` });
-      return true;
+      // A newer keystroke arrived while the request was in flight: do not
+      // report that unsaved content was successfully saved or allow submission.
+      const changedDuringSave = formRef.current !== f;
+      setDirty(changedDuringSave);
+      setSaveState(changedDuringSave
+        ? { ok: false, message: "تغییرات جدیدتری وجود دارد؛ ذخیره دوباره لازم است." }
+        : { ok: true, message: `ذخیره شد — ${new Date().toLocaleTimeString("fa-IR")}` });
+      return !changedDuringSave;
     } catch (err) {
       if (err.response?.status === 409) setConflict(true);
       setSaveState({ ok: false, message: err.response?.data?.detail || "ذخیره ناموفق بود؛ دوباره امتحان کنید." });
@@ -267,12 +272,12 @@ export default function OaDraftEditorPage() {
   return (
     <Box>
 
-      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2, minWidth: 0 }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2, minWidth: 0, overflow: "hidden" }}>
         <IconButton aria-label="بازگشت به پیش‌نویس‌ها" onClick={() => {
           if (dirty && !window.confirm("تغییرات ذخیره‌نشده دارید. بدون ذخیره خارج شوید؟")) return;
           navigate("/automation/drafts");
         }}><ArrowForwardIcon /></IconButton>
-        <Typography variant="h6" fontWeight={700} title={form.subject || "نامه‌ی جدید"} sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <Typography variant="h6" fontWeight={700} title={form.subject || "نامه‌ی جدید"} sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", overflowWrap: "anywhere" }}>
           {form.subject || "نامه‌ی جدید"}
         </Typography>
       </Stack>
@@ -284,7 +289,13 @@ export default function OaDraftEditorPage() {
           این پیش‌نویس در تب یا دستگاه دیگری تغییر کرده است. ذخیره متوقف شده است. قبل از دریافت نسخه‌ی جدید، متن فعلی خود را در پنجره‌ی کناری کپی کنید.
         </Alert>
       )}
-      {saveState?.ok === false && !conflict && <Alert severity="error" sx={{ mb: 2 }}>{saveState.message}</Alert>}
+      {saveState?.ok === false && !conflict && (
+        <Alert severity="error" sx={{ mb: 2 }} action={
+          <Button color="inherit" size="small" onClick={doSave} disabled={saving || sending}>
+            ذخیره دوباره
+          </Button>
+        }>{saveState.message}</Alert>
+      )}
       {numberingError && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           {numberingError}؛ تا تعیین آن، نامه ذخیره می‌شود ولی ارسال نمی‌شود. (مسئول تنظیمات اتوماسیون ← دبیرخانه و شماره)
@@ -488,7 +499,7 @@ export default function OaDraftEditorPage() {
       <Dialog open={confirmSend} onClose={() => !sending && setConfirmSend(false)} fullWidth maxWidth="xs">
         <DialogTitle>{needsApproval ? "ارسال برای تأیید" : "ارسال نامه"}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 1 }}>
+          <Typography sx={{ mb: 1, overflowWrap: "anywhere" }}>
             «{form.subject || "بدون موضوع"}» برای {toPersianDigits(extras.recipients.filter((r) => r.role === "to").length)} گیرنده
             {extras.recipients.some((r) => r.role === "cc")
               ? ` و ${toPersianDigits(extras.recipients.filter((r) => r.role === "cc").length)} رونوشت`

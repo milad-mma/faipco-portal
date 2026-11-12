@@ -304,3 +304,10 @@
 - در هر نامه یادداشت سامانه (فرد قبلی، جایگزین، انجام‌دهنده، دلیل)؛ سابقه در `oa_task_transfers`؛ اعلان `automation.transfer` به جایگزین.
 - API: `GET /automation/transfer/candidates?side=from|to`، `GET /automation/transfer/preview/{id}`، `POST /automation/transfer`،
   `GET /automation/transfer/history`.
+
+
+## یادداشت نسخه v9.3 (تست)
+
+برای نگهداری گیرندگان و مسیر تأیید هر نسخه نامه و صف پایدار اعلان‌های اتوماسیون،
+Migration 152 اضافه شده است. جزئیات فنی و محدودیت‌های تست در
+`docs/oa-reliability-v9.3.md` قرار دارد.

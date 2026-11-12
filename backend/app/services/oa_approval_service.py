@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_approval_rules as arules
 from app.core import oa_letter_rules as rules
+from app.core.oa_version_snapshots import snapshot_recipients, snapshot_approval_plan
 from app.models.employee import Employee
 from app.models.office_automation import (
     OaApprovalStep,
@@ -92,7 +93,7 @@ class OaApprovalService(OaCartableService):
             self.db.add(OaApprovalStep(letter_id=letter.id, round=letter.approval_round + 1, step_no=i, kind=s["kind"],
                                        approver_employee_id=s["employee_id"], approver_name_snapshot=snap["name"],
                                        approver_title_snapshot=snap["title"], status="planned"))
-        await self.db.commit()
+        await self._commit()
         return await self.plan_out(letter)
 
     async def _copy_plan_to_next_round(self, letter: OaLetter, steps: list[OaApprovalStep]) -> None:
@@ -112,12 +113,6 @@ class OaApprovalService(OaCartableService):
             return letter.id  # کلیک دوباره
         if letter.status != "draft":
             raise OaCartableError("این نامه قابل ارسال برای تأیید نیست", 409)
-        if letter.row_version != row_version:
-            raise OaCartableError("پیش‌نویس در جای دیگری تغییر کرده است؛ صفحه را تازه کنید.", 409)
-        planned = await self._planned(letter)
-        # اگر «از طرف» بعد از چیدن مسیر عوض شده، مرحله‌ی صریح خود مدیر حذف می‌شود (امضای او خودکار آخر است)
-        for s in [x for x in planned if letter.principal_employee_id and x.approver_employee_id == letter.principal_employee_id]:
-            await self.db.delete(s)
             planned.remove(s)
         for i, s in enumerate(planned, start=1):
             s.step_no = i
@@ -144,6 +139,17 @@ class OaApprovalService(OaCartableService):
             subject=v.subject, body_html=v.body_html, paper_size=v.paper_size, template_version_id=v.template_version_id,
             recipients=[f"{r.role}:{r.employee_id}" for r in recipients], attachments=[f.sha256 for f in att_files],
         )
+        # Capture exactly what the approvers will review, before freezing the submitted round.
+        v.recipients_snapshot = snapshot_recipients(recipients)
+        v.approval_plan_snapshot = snapshot_approval_plan(planned)
+        if letter.principal_employee_id:
+            principal = await self._snapshot(letter.principal_employee_id)
+            v.approval_plan_snapshot.append({
+                "step_no": len(planned) + 1,
+                "employee_id": principal["employee_id"],
+                "name": principal["name"], "title": principal["title"],
+                "kind": "sign", "required": True,
+            })
         letter.approval_round += 1
         letter.status, letter.submitted_at = "in_approval", now
         letter.row_version += 1
@@ -170,7 +176,7 @@ class OaApprovalService(OaCartableService):
         await self._activate(letter, steps[0], me)
         self.files.audit("letter.submit", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"round": letter.approval_round, "steps": len(steps)})
-        await self.db.commit()
+        await self._commit()
         return letter.id
 
     async def _round_steps(self, letter: OaLetter) -> list[OaApprovalStep]:
@@ -244,7 +250,7 @@ class OaApprovalService(OaCartableService):
         author = await self.db.get(Employee, letter.creator_employee_id)
         if idx is not None:
             await self._activate(letter, steps[idx], author)
-            await self.db.commit()
+            await self._commit()
             return {"letter_id": letter.id, "dispatched": False}
         # آخرین مرحله: ثبت و ارسال خودکار به نام نویسنده (یا مدیر، در نامه‌ی «از طرف»)
         letter.status = "approved"
@@ -270,7 +276,7 @@ class OaApprovalService(OaCartableService):
                    values={"by": step.approver_name_snapshot, "subject": subject}, extra=f"{letter.approval_round}")
         self.files.audit("approval.return", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"round": step.round, "step": step.step_no})
-        await self.db.commit()
+        await self._commit()
         return {"letter_id": letter.id}
 
     async def _back_to_draft(self, letter: OaLetter, steps: list[OaApprovalStep]) -> None:
@@ -316,7 +322,7 @@ class OaApprovalService(OaCartableService):
         await self._back_to_draft(letter, await self._round_steps(letter))
         self.files.audit("approval.withdraw", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"round": letter.approval_round})
-        await self.db.commit()
+        await self._commit()
         return {"letter_id": letter.id}
 
     # ---------- نمایش در صفحه‌ی نامه ----------

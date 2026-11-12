@@ -165,7 +165,7 @@ class OaTransferService(OaCartableService):
                            values={"from": record.from_name_snapshot, "subject": letter.subject}, extra=str(record.id))
         self.files.audit("task.transfer", user, entity="employee", entity_id=src.id, site_id=src.site_id,
                          details={"to": dst.id, "transfer_id": record.id, "visible_count": len(decision["visible"])})
-        await self.db.commit()
+        await self._commit()
         return {"transfer_id": record.id, "moved": decision["visible"], "note": decision["note"], "at": now}
 
     async def _move_approval_step(self, old: OaTask, new: OaTask, snap: dict) -> None:

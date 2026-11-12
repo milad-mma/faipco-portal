@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import oa_letter_rules as rules
 from app.core.oa_html import plain_text
+from app.core.oa_version_snapshots import snapshot_recipients
 from app.core.oa_access_rules import (
     can,
     delivery_grants,
@@ -35,6 +36,7 @@ from app.models.office_automation import (
     OaNote,
     OaLetterRelation,
     OaNotificationLog,
+    OaNotificationOutbox,
     OaNotificationPref,
     OaRecipient,
     OaTask,
@@ -87,58 +89,14 @@ def eligible_users_subquery():
 
 
 async def send_pushes(pushes: list[dict]) -> None:
-    """
-    پس‌زمینه بعد از commit: برای هر اعلان {key, employee_id, site_id, text_key, values, url} یک بار (oa_notification_log) Push
-    به دستگاه‌های کاربرِ آن پرسنل. خطا فقط لاگ می‌شود.
-    """
-    if not pushes:
-        return
-    from app.db.session import AsyncSessionLocal
-    from app.services import notification_templates
-    from app.services.push_service import PushService
+    """Immediate best-effort kick; durable retry is performed by the OA scheduler.
 
-    for p in pushes:
-        try:
-            async with AsyncSessionLocal() as db:
-                key = p["key"][:200]
-                # Transaction-scoped lock: prevent two workers sending the same key together.
-                # A failure rolls back WITHOUT leaving a false "sent" record.
-                from sqlalchemy import text as sql_text
-                await db.execute(sql_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
-                existing = (await db.execute(
-                    select(OaNotificationLog.id).where(OaNotificationLog.key == key).limit(1)
-                )).scalar_one_or_none()
-                if existing:
-                    await db.rollback()
-                    continue
-                pref = await db.get(OaNotificationPref, p["employee_id"])
-                if pref is not None and p.get("event") in (pref.disabled_events or []):
-                    # Record deliberate suppression as completed, not a delivery error.
-                    db.add(OaNotificationLog(key=key))
-                    await db.commit()
-                    continue
-                user_ids = set((await db.execute(
-                    select(User.id).where(User.employee_id == p["employee_id"], User.is_active.is_(True))
-                )).scalars().all())
-                if not user_ids:
-                    await db.rollback()
-                    continue
-                body = await notification_templates.render(db, p["site_id"], p["text_key"], **p.get("values", {}))
-                # PushService may commit while pruning expired subscriptions. Keep the
-                # advisory lock on THIS transaction, and use a separate session to send.
-                async with AsyncSessionLocal() as push_db:
-                    stats = await asyncio.wait_for(
-                        PushService(push_db).notify_users(
-                            user_ids, url=p["url"], priority=p.get("priority", "normal"),
-                            body=body, return_stats=True,
-                        ), timeout=60,
-                    )
-                if not stats or stats["failed"] > 0 or stats["sent"] == 0:
-                    raise RuntimeError(f"Push not fully delivered: {stats}")
-                db.add(OaNotificationLog(key=key))
-                await db.commit()
-        except Exception:
-            logger.exception("ارسال اعلان اتوماسیون ناموفق بود (recipient=%s)", p.get("employee_id"))
+    Events are saved to the transactional outbox BEFORE the letter's commit.
+    This task must not act on uncommitted or unsaved in-memory push events.
+    """
+    if pushes:
+        from app.services.oa_notification_outbox import drain_oa_outbox
+        await drain_oa_outbox(limit=min(len(pushes), 15), keys=[p["key"][:200] for p in pushes])
 
 
 class OaCartableService:
@@ -234,6 +192,20 @@ class OaCartableService:
         if letter.status != "draft":
             raise OaCartableError("این نامه دیگر پیش‌نویس نیست", 409)
         return letter
+
+    async def _commit(self) -> None:
+        """Atomically persist push intents with the business change, not after it."""
+        if self.pushes:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            # One statement for a 200-recipient letter, rather than one round trip
+            # per person. Deduplicate keys before building the INSERT.
+            unique = {item["key"][:200]: item for item in self.pushes}
+            rows = [{"key": key, "payload": item, "status": "pending"} for key, item in unique.items()]
+            await self.db.execute(
+                pg_insert(OaNotificationOutbox).values(rows)
+                .on_conflict_do_nothing(index_elements=["key"])
+            )
+        await self.db.commit()
 
     def _push(self, *, event: str, letter: OaLetter, employee_id: int, values: dict, extra: str = "") -> None:
         confidential = letter.confidentiality == "confidential"
@@ -370,7 +342,7 @@ class OaCartableService:
                 self.db.add(r)
             r.role, r.selected_via, r.sort_order = c["role"], c["via"], c["order"]
         # row_version فقط برای متن پیش‌نویس است (ذخیره‌ی خودکار ویرایشگر)؛ گیرنده و پیوست جدا ذخیره می‌شوند
-        await self.db.commit()
+        await self._commit()
         return await self.draft_extras(letter)
 
     async def _attachments(self, version_id: int | None) -> list[dict]:
@@ -407,12 +379,12 @@ class OaCartableService:
         except frules.FileRejected as e:
             self.files.storage.delete(row.storage_key)
             await self.db.delete(row)
-            await self.db.commit()
+            await self._commit()
             raise OaCartableError(str(e)) from None
         row.state = "permanent"  # به پیش‌نویس وصل است؛ پاک‌سازی فایل‌های موقت به آن دست نمی‌زند
         self.db.add(OaAttachment(letter_version_id=letter.current_version_id, file_id=row.id,
                                  sort_order=len(existing), added_by=user.id))
-        await self.db.commit()
+        await self._commit()
         return {"attachments": await self._attachments(letter.current_version_id)}
 
     async def remove_attachment(self, letter_id: int, attachment_id: int, user: User) -> dict:
@@ -433,7 +405,7 @@ class OaCartableService:
                 if f.storage_key:
                     self.files.storage.delete(f.storage_key)
                 await self.db.delete(f)
-        await self.db.commit()
+        await self._commit()
         return {"attachments": await self._attachments(letter.current_version_id)}
 
     async def delete_draft_files(self, letter: OaLetter) -> None:
@@ -540,6 +512,8 @@ class OaCartableService:
                 raise OaCartableError("امضای فعال ندارید؛ از پنل کاربری ← امضای من امضا ثبت کنید یا «امضا شود» را بردارید")
             letter.signature_version_id, letter.signer_employee_id, letter.signed_at = sig.id, me.id, now
             letter.signer_name_snapshot, letter.signer_title_snapshot = snap["name"], snap["title"]
+        if v.recipients_snapshot is None:
+            v.recipients_snapshot = snapshot_recipients(recipients)
         v.status, v.frozen_at = "frozen", now
         v.content_hash = rules.content_hash(
             subject=v.subject, body_html=v.body_html, paper_size=v.paper_size, template_version_id=v.template_version_id,
@@ -579,7 +553,7 @@ class OaCartableService:
                          details={"to": sum(r.role == "to" for r in recipients), "cc": sum(r.role == "cc" for r in recipients),
                                   "attachments": len(att_files), "number": number,
                                   **({"on_behalf_of": sender.id} if sender.id != me.id else {})})
-        await self.db.commit()
+        await self._commit()
         return letter.id
 
     # ================= مشاهده =================
@@ -598,7 +572,7 @@ class OaCartableService:
         )
         if changed:
             self.files.audit("letter.view", user, entity="letter", entity_id=letter.id, site_id=letter.site_id, ip=ip)
-        await self.db.commit()
+        await self._commit()
 
         v = await self.db.get(OaLetterVersion, letter.current_version_id)
         tv = await self.db.get(OaTemplateVersion, v.template_version_id) if v.template_version_id else None
@@ -634,7 +608,28 @@ class OaCartableService:
                 .group_by(OaLetterAccess.employee_id)
             )).all()
         }
+        # Past rounds are visible only to the author / principal, and only while
+        # they still have explicit access to this letter. Readers see the current
+        # dispatched version, not withdrawn confidential drafts.
+        can_view_versions = user.id == letter.created_by or me.id in (
+            letter.sender_employee_id, letter.principal_employee_id,
+        )
+        history_versions = []
+        if can_view_versions:
+            past = (await self.db.execute(
+                select(OaLetterVersion).where(
+                    OaLetterVersion.letter_id == letter.id,
+                    OaLetterVersion.status.in_(("submitted", "frozen")),
+                ).order_by(OaLetterVersion.version_no.desc())
+            )).scalars().all()
+            history_versions = [
+                {"id": item.id, "version_no": item.version_no, "subject": item.subject,
+                 "status": item.status, "frozen_at": item.frozen_at,
+                 "has_recipient_snapshot": item.recipients_snapshot is not None}
+                for item in past
+            ]
         return {
+            "version_history": history_versions,
             "id": letter.id, "status": letter.status, "subject": v.subject, "body_html": v.body_html,
             "paper_size": v.paper_size, "layout": layout, "site_name": site.name if site else None,
             "urgency": letter.urgency, "confidentiality": letter.confidentiality,
@@ -678,6 +673,35 @@ class OaCartableService:
             "approval": await approval_service.letter_approval(letter, me.id, user),
             "signatures": signatures,
             "action_attachment_limits": await self._action_limits(letter.site_id) if my_tasks else None,
+        }
+
+    async def historical_version(self, letter_id: int, version_id: int, user: User) -> dict:
+        """Read-only version evidence, never used to grant current letter access."""
+        letter, me, _, _ = await self._letter_for(letter_id, user, "view")
+        if user.id != letter.created_by and me.id not in (
+            letter.sender_employee_id, letter.principal_employee_id,
+        ):
+            raise OaCartableError("اجازه‌ی مشاهده نسخه‌های قبلی این نامه را ندارید", 403)
+        version = (await self.db.execute(select(OaLetterVersion).where(
+            OaLetterVersion.id == version_id,
+            OaLetterVersion.letter_id == letter.id,
+            OaLetterVersion.status.in_(("submitted", "frozen")),
+        ))).scalar_one_or_none()
+        if version is None:
+            raise OaCartableError("نسخه نامه یافت نشد", 404)
+        tv = await self.db.get(OaTemplateVersion, version.template_version_id) if version.template_version_id else None
+        layout = (tv.layouts if tv else rules.default_layouts())[version.paper_size]
+        site = await self.db.get(Site, letter.site_id)
+        return {
+            "id": version.id, "version_no": version.version_no,
+            "subject": version.subject, "body_html": version.body_html,
+            "paper_size": version.paper_size, "layout": layout,
+            "site_name": site.name if site else None,
+            "status": version.status, "frozen_at": version.frozen_at,
+            "content_hash": version.content_hash,
+            "recipients": version.recipients_snapshot,
+            "approval_steps": version.approval_plan_snapshot,
+            "attachments": await self._attachments(version.id),
         }
 
     async def _task_files(self, task_ids: list[int]) -> dict[int, list[dict]]:
@@ -788,7 +812,7 @@ class OaCartableService:
             raise OaCartableError("این فایل قابل دانلود نیست", 409)
         self.files.audit("file.download", user, entity="file", entity_id=f.id, site_id=letter.site_id,
                          details={"letter_id": letter.id}, ip=ip)
-        await self.db.commit()
+        await self._commit()
         fmt = frules.FORMAT_BY_CODE.get(f.detected_format or "")
         return f, frules.safe_download_name(f.original_name, fmt)
 
@@ -848,7 +872,7 @@ class OaCartableService:
                        values={"sender": snap_me["name"], "subject": subject}, extra=str(task.id))
         self.files.audit("letter.refer", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"count": len(ids), "kind": kind, "allow_refer": bool(allow_refer)})
-        await self.db.commit()
+        await self._commit()
 
     async def complete_task(self, task_id: int, user: User, note: str, files: list | None = None,
                             ip: str | None = None) -> None:
@@ -885,7 +909,7 @@ class OaCartableService:
                 if f.storage_key:
                     self.files.storage.delete(f.storage_key)
                 await self.db.delete(f)
-            await self.db.commit()
+            await self._commit()
 
         try:
             for name, chunks in files:
@@ -916,7 +940,7 @@ class OaCartableService:
             self.db.add(OaTaskAttachment(task_id=task.id, file_id=f.id, sort_order=i, added_by=user.id))
         self.files.audit("task.done", user, entity="task", entity_id=task.id,
                          details={"letter_id": task.letter_id, "attachments": len(uploaded)})
-        await self.db.commit()
+        await self._commit()
 
     async def signature_file(self, letter_id: int, user: User, step_id: int | None = None):
         """
@@ -955,7 +979,7 @@ class OaCartableService:
             raise OaCartableError("این فایل قابل دانلود نیست", 409)
         self.files.audit("file.download", user, entity="file", entity_id=f.id, site_id=letter.site_id,
                          details={"letter_id": letter.id, "task_attachment": attachment_id}, ip=ip)
-        await self.db.commit()
+        await self._commit()
         return f, frules.safe_download_name(f.original_name, frules.FORMAT_BY_CODE.get(f.detected_format or ""))
 
     async def add_note(self, letter_id: int, user: User, text: str) -> None:
@@ -968,7 +992,7 @@ class OaCartableService:
         snap = await self._snapshot(me.id)
         self.db.add(OaNote(letter_id=letter.id, task_id=my_tasks[-1].id if my_tasks else None,
                            author_employee_id=me.id, author_name_snapshot=snap["name"], text=text))
-        await self.db.commit()
+        await self._commit()
 
     async def _can_cancel(self, letter: OaLetter, user: User) -> bool:
         from app.core.site_access import get_sites_with_permission
@@ -1010,14 +1034,14 @@ class OaCartableService:
                        values={"number": letter.official_number or "", "subject": subject, "by": snap["name"]})
         self.files.audit("letter.cancel", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"number": letter.official_number, "reason": reason[:300]})
-        await self.db.commit()
+        await self._commit()
 
     async def make_confidential(self, letter_id: int, user: User, reason: str | None) -> None:
         letter, *_ = await self._letter_for(letter_id, user, "make_confidential", lock=True)
         letter.confidentiality = "confidential"  # تغییر غیرمؤثر: نسخه‌ی جدید نمی‌سازد
         self.files.audit("letter.make_confidential", user, entity="letter", entity_id=letter.id, site_id=letter.site_id,
                          details={"reason": (reason or "")[:300]})
-        await self.db.commit()
+        await self._commit()
 
     # ================= کارتابل =================
 
@@ -1183,7 +1207,7 @@ class OaCartableService:
         else:
             pref.disabled_events = disabled
             pref.updated_at = _now()
-        await self.db.commit()
+        await self._commit()
         return await self.get_prefs(user)
 
     # ================= پاسخ =================
@@ -1235,7 +1259,7 @@ class OaCartableService:
         new.row_version += 1
         self.files.audit("letter.relate", user, entity="letter", entity_id=new.id, site_id=new.site_id,
                          details={"to": letter.id, "type": rel_type})
-        await self.db.commit()
+        await self._commit()
         return new.id
 
     async def relations_for(self, letter_id: int, employee_id: int | None) -> list[dict]:

@@ -37,6 +37,7 @@ import ReplyIcon from "@mui/icons-material/Reply";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import BlockOutlinedIcon from "@mui/icons-material/BlockOutlined";
 import LinkIcon from "@mui/icons-material/Link";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import {
   addLetterNote,
@@ -47,6 +48,7 @@ import {
   createRelatedDraft,
   downloadLetterAttachment,
   fetchLetter,
+  fetchHistoricalLetterVersion,
   makeLetterConfidential,
   referLetter,
 } from "../api/automationLetters";
@@ -153,6 +155,9 @@ export default function OaLetterPage() {
   const navigate = useNavigate();
   const { user, refetchUser } = useAuth();
   const [letter, setLetter] = useState(null);
+  const [pastVersion, setPastVersion] = useState(null);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionError, setVersionError] = useState("");
   const [error, setError] = useState("");
   const [msg, setMsg] = useState(null); // { ok, text }
   const [pages, setPages] = useState(1);
@@ -202,6 +207,19 @@ export default function OaLetterPage() {
   }, [letter?.id, sigKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // پیش‌نویس پاسخ و رفتن به ویرایشگر آن
+  async function openPastVersion(versionId) {
+    setVersionLoading(true);
+    setVersionError("");
+    setPastVersion({ loading: true });
+    try {
+      setPastVersion(await fetchHistoricalLetterVersion(id, versionId));
+    } catch (err) {
+      setVersionError(err.response?.data?.detail || "نمایش نسخه قبلی ناموفق بود.");
+    } finally {
+      setVersionLoading(false);
+    }
+  }
+
   async function newRelated(type) {
     setBusy(true);
     setMsg(null);
@@ -364,11 +382,21 @@ export default function OaLetterPage() {
         {confidential && <LockOutlinedIcon color="error" />}
         <Typography variant="h6" fontWeight={700} title={letter.subject} sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{letter.subject}</Typography>
       </Stack>
-      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 2, minHeight: 40 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) auto" }, gap: 1, alignItems: "start", mb: 2, minWidth: 0 }}>
+        <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.75} sx={{ minWidth: 0, minHeight: 40 }}>
         {letter.official_number && <Chip variant="outlined" label={<bdi dir="ltr">{toPersianDigits(letter.official_number)}</bdi>} title="شماره‌ی نامه" />}
         {letter.urgency !== "normal" && <Chip color="warning" label={URGENCY[letter.urgency]} />}
         {confidential && <Chip color="error" label="محرمانه" />}
         {letter.status === "cancelled" && <Chip color="error" label="ابطال‌شده" />}
+        </Stack>
+        <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}
+          sx={{ minWidth: 0, justifyContent: { xs: "flex-start", lg: "flex-end" }, "& .MuiButton-root": { flexShrink: 0, whiteSpace: "nowrap", fontFamily: "inherit" } }}>
+        {(letter.version_history || []).length > 1 && (
+          <Button variant="outlined" startIcon={<HistoryOutlinedIcon />}
+            onClick={() => openPastVersion(letter.version_history[1].id)} sx={{ height: 40, flexShrink: 0 }}>
+            نسخه‌های قبلی
+          </Button>
+        )}
         <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => window.print()} sx={{ height: 40 }}>چاپ</Button>
         {user?.can_oa_access && sent && (
           <>
@@ -390,7 +418,8 @@ export default function OaLetterPage() {
         {letter.permissions.refer && (
           <Button variant="contained" startIcon={<ForwardToInboxOutlinedIcon />} onClick={() => setReferOpen(true)} sx={{ height: 40 }}>ارجاع</Button>
         )}
-      </Stack>
+        </Stack>
+      </Box>
 
       {letter.cancelled && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -446,7 +475,7 @@ export default function OaLetterPage() {
         }}
       >
           <ApprovalPanel letter={letter} onDone={load} onMessage={setMsg} />
-          <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "info" }}>
+          <Card variant="outlined" sx={{ p: 2, borderRadius: 2, gridArea: "info", minWidth: 0, overflowWrap: "anywhere" }}>
             <Stack spacing={1}>
               <Typography variant="body2">
                 {letter.official_number && (
@@ -622,6 +651,70 @@ export default function OaLetterPage() {
           setRefer((r) => ({ ...r, people: [...r.people, ...list] }));
         }}
       />
+
+      <Dialog open={Boolean(pastVersion)} onClose={() => { setPastVersion(null); setVersionError(""); }}
+        fullWidth maxWidth="lg" scroll="paper">
+        <DialogTitle sx={{ fontFamily: "inherit", minWidth: 0, overflowWrap: "anywhere" }}>
+          تاریخچه نسخه‌های نامه
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
+            {(letter.version_history || []).map((v) => (
+              <Button key={v.id} size="small" variant={pastVersion?.id === v.id ? "contained" : "outlined"}
+                disabled={versionLoading} onClick={() => openPastVersion(v.id)}
+                sx={{ fontFamily: "inherit", minWidth: 0 }}>
+                نسخه {toPersianDigits(v.version_no)}
+              </Button>
+            ))}
+          </Stack>
+          {versionLoading && <CircularProgress size={24} />}
+          {versionError && <Alert severity="error">{versionError}</Alert>}
+          {pastVersion && !pastVersion.loading && !versionLoading && (
+            <Stack gap={2} sx={{ minWidth: 0 }}>
+              <Typography fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{pastVersion.subject}</Typography>
+              {pastVersion.recipients === null && (
+                <Alert severity="info">اطلاعات گیرندگان این نسخه پیش از فعال‌شدن تاریخچه نسخه‌ها ثبت شده است.</Alert>
+              )}
+              {pastVersion.recipients?.length > 0 && (
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="subtitle2" fontWeight={700}>گیرندگان ثبت‌شده در این نسخه</Typography>
+                  {pastVersion.recipients.map((r, idx) => (
+                    <Typography key={idx} variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                      {r.role === "to" ? "گیرنده" : "رونوشت"}: {r.name} {r.title ? `— ${r.title}` : ""}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+              {pastVersion.approval_steps?.length > 0 && (
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="subtitle2" fontWeight={700}>مسیر تأیید ثبت‌شده</Typography>
+                  {pastVersion.approval_steps.map((st, idx) => (
+                    <Typography key={idx} variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                      {toPersianDigits(st.step_no)}. {st.name} — {st.kind === "sign" ? "امضا" : st.kind === "paraph" ? "پاراف" : "تأیید"}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+              <LetterPreview paper={pastVersion.paper_size} layout={pastVersion.layout}
+                subject={pastVersion.subject} bodyHtml={pastVersion.body_html} fit
+                siteName={pastVersion.site_name} />
+              {pastVersion.attachments?.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={700}>پیوست‌های همین نسخه</Typography>
+                  <Stack direction="row" flexWrap="wrap" gap={1}>
+                    {pastVersion.attachments.map((a) => (
+                      <Chip key={a.id} size="small" variant="outlined" icon={<AttachFileIcon />}
+                        label={a.file?.name || "پیوست"}
+                        onClick={() => download(a)} sx={{ maxWidth: "100%", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => { setPastVersion(null); setVersionError(""); }}>بستن</Button></DialogActions>
+      </Dialog>
 
       <Dialog open={cancelOpen} onClose={() => !busy && setCancelOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>ابطال نامه</DialogTitle>

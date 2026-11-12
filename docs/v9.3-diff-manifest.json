@@ -1,0 +1,25 @@
+{
+  "base_archive": "FAIPCO-Portal-v9.2.1-Cartable-Tab-Font-Fix-Test.zip",
+  "modified": [
+    "backend/app/api/v1/endpoints/automation_cartable.py",
+    "backend/app/core/scheduler.py",
+    "backend/app/models/office_automation.py",
+    "backend/app/services/oa_approval_service.py",
+    "backend/app/services/oa_cartable_service.py",
+    "backend/app/services/oa_transfer_service.py",
+    "docs/office-automation.md",
+    "frontend/src/api/automationLetters.js",
+    "frontend/src/components/oa/ApprovalPathEditor.jsx",
+    "frontend/src/pages/OaDraftEditorPage.jsx",
+    "frontend/src/pages/OaLetterPage.jsx"
+  ],
+  "added": [
+    "backend/app/core/oa_version_snapshots.py",
+    "backend/app/services/oa_notification_outbox.py",
+    "backend/tests/test_oa_v93_history.py",
+    "database/migrations/versions/152_oa_history_outbox.py",
+    "docs/oa-reliability-v9.3.md"
+  ],
+  "removed": [],
+  "file_count": 860
+}

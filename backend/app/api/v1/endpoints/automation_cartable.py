@@ -298,6 +298,16 @@ async def letter_detail(letter_id: int, request: Request, db: AsyncSession = Dep
         _raise(e)
 
 
+@router.get("/letters/{letter_id}/versions/{version_id}")
+async def historical_letter_version(letter_id: int, version_id: int, db: AsyncSession = Depends(get_db),
+                                    current_user: User = Depends(get_current_user)):
+    await _require(db, current_user, "automation.access", "استفاده از اتوماسیون اداری")
+    try:
+        return await OaCartableService(db).historical_version(letter_id, version_id, current_user)
+    except OaCartableError as e:
+        _raise(e)
+
+
 @router.get("/letters/{letter_id}/attachments/{attachment_id}/download")
 async def download_attachment(letter_id: int, attachment_id: int, request: Request, db: AsyncSession = Depends(get_db),
                               current_user: User = Depends(get_current_user)):
