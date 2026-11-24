@@ -108,12 +108,26 @@ class PushService:
             user_id=user_id, session_id=session_id, endpoint=payload.endpoint,
             p256dh=payload.keys.p256dh, auth=payload.keys.auth,
         )
-        await self.db.execute(stmt.on_conflict_do_update(
+        changed = (await self.db.execute(stmt.on_conflict_do_update(
             index_elements=[PushSubscription.endpoint],
             set_={"user_id": user_id, "session_id": session_id,
                   "p256dh": payload.keys.p256dh, "auth": payload.keys.auth},
-        ))
+            where=or_(PushSubscription.user_id.is_distinct_from(user_id),
+                      PushSubscription.session_id.is_distinct_from(session_id),
+                      PushSubscription.p256dh.is_distinct_from(payload.keys.p256dh),
+                      PushSubscription.auth.is_distinct_from(payload.keys.auth)),
+        ).returning(PushSubscription.id))).scalar_one_or_none()
         await self.db.commit()
+        if changed is not None:
+            # Registration is already committed. A wake hint failure cannot
+            # prevent login, and periodic dispatch will recover it later.
+            from app.services.push_dispatch import wake_waiting_jobs
+            try:
+                await wake_waiting_jobs(self.db, user_id)
+                await self.db.commit()
+            except Exception as exc:
+                await self.db.rollback()
+                logger.warning("Deferred push wake failed (user_id=%s): %s", user_id, type(exc).__name__)
 
     async def remove_subscription(self, endpoint: str, user_id: int | None = None) -> None:
         """اشتراک با endpoint داده‌شده را (در صورت وجود) حذف می‌کند؛ با user_id فقط اگر متعلق به همان کاربر باشد."""

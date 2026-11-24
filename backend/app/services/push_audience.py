@@ -103,3 +103,70 @@ async def restrict_business_audience(db, job):
             return await _employee_users(db, ids, employees)
         return await _employee_users(db, ids, [req.employee_id])
     return ids
+
+
+async def restrict_delivery_audience(db, job, ids, now):
+    """Check time-sensitive domain state just before contacting the provider.
+
+    The original account snapshot is never expanded. For KaraWeb, reuse the
+    read-only, site-scoped cartable/own-request queries and their delegate rules;
+    do not guess a current approver from old notification text. No KaraWeb write.
+    A connection failure propagates to the dispatcher's bounded retry; it is not
+    treated as authorization or as a terminal absence of the request.
+    """
+    if not ids:
+        return set()
+    _, module, object_id, event_id, kind = job.key.split(":", 4)
+    if module == "leave":
+        if not object_id.isdigit():
+            # Historical events without a request ID cannot be safely replayed.
+            return set()
+        site_id, separator, _ = event_id.partition(".")
+        if not separator or not site_id.isdigit():
+            return set()
+        from app.services.leave_request_service import LeaveRequestService
+        service = LeaveRequestService(db)
+        users = (await db.execute(select(User.id, Employee).join(Employee, Employee.id == User.employee_id)
+            .where(User.id.in_(ids), Employee.site_id == int(site_id)))).all()
+        allowed = set()
+        for user_id, employee in users:
+            if kind in ("approver_pending", "hr_pending"):
+                rows = await service.list_pending_for_approver(employee, request_id=int(object_id))
+                valid = any(str(r["request_id"]) == object_id and r["status"] == "pending"
+                            and (kind != "hr_pending" or r.get("awaiting_hr")) for r in rows)
+            else:
+                rows = await service.list_my_requests(employee, request_id=int(object_id))
+                expected = {"approved": "approved", "rejected": "rejected",
+                            "forgotten_approved": "approved", "forgotten_rejected": "rejected",
+                            "forgotten_supervisor": "pending"}.get(kind)
+                valid = any(str(r["request_id"]) == object_id and r["status"] == expected
+                            and (kind != "forgotten_supervisor" or r.get("awaiting_hr")) for r in rows)
+            if valid:
+                allowed.add(user_id)
+        return allowed
+    if module == "evaluation":
+        from datetime import timedelta
+        from app.models.evaluation_content import EvaluationPeriod, EvaluationPeriodStatus
+        from app.models.evaluation_process import (Evaluation, EvaluationAssignment,
+            EvaluationAssignmentStatus, EvaluationStatus)
+        if kind == "reminder":
+            employees = select(EvaluationAssignment.evaluator_employee_id).join(
+                EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id).where(
+                    EvaluationAssignment.status == EvaluationAssignmentStatus.pending,
+                    EvaluationPeriod.status == EvaluationPeriodStatus.active,
+                    EvaluationPeriod.is_disabled.is_(False), EvaluationPeriod.incomplete_closed.is_(False),
+                    EvaluationPeriod.end_date > now, EvaluationPeriod.end_date <= now + timedelta(days=3))
+            stmt = select(User.id).where(User.id.in_(ids), User.employee_id.in_(employees))
+        elif kind == "result" and object_id.isdigit():
+            employees = select(EvaluationAssignment.target_employee_id).join(
+                Evaluation, Evaluation.assignment_id == EvaluationAssignment.id).join(
+                EvaluationPeriod, EvaluationPeriod.id == EvaluationAssignment.period_id).where(
+                    Evaluation.id == int(object_id), Evaluation.status == EvaluationStatus.submitted,
+                    EvaluationPeriod.is_disabled.is_(False))
+            stmt = select(User.id).where(User.id.in_(ids), User.employee_id.in_(employees))
+        else:
+            return set()
+        return set((await db.execute(stmt)).scalars().all())
+    if module == "birthday" and object_id.isdigit():
+        return await _employee_users(db, ids, [int(object_id)])
+    return ids

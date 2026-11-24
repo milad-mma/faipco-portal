@@ -10,8 +10,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import func, select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import cast, func, select, update
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
@@ -28,6 +28,27 @@ logger = logging.getLogger("faipco.push.dispatch")
 BATCH_SIZE = 20
 RETRY_WINDOW = timedelta(days=7)
 MAX_ATTEMPTS = 32
+DEVICE_WAIT_INTERVAL = timedelta(minutes=5)
+# Give the client time to persist its new authenticated Service Worker marker
+# after /push/subscribe returns. Never restore the previous session binding.
+DEVICE_REGISTRATION_GRACE = timedelta(seconds=30)
+# Explicit producers only. Legacy generic jobs have no trusted object/recipient
+# context for historical replay; keep their original one-shot policy.
+DEFERRED_MODULES = frozenset({"advance", "loan", "leave", "photo", "family",
+                              "insurance", "evaluation", "feedback", "birthday",
+                              "login_security", "careers"})
+
+
+def can_defer(job):
+    if job.notice_id is not None:
+        return True
+    parts = getattr(job, "key", "").split(":", 4)
+    return (len(parts) == 5 and parts[0] == "dispatch"
+            and parts[1] in DEFERRED_MODULES and all(parts[2:])
+            and (parts[1] != "leave" or (parts[2].isdigit()
+                 and parts[3].partition(".")[0].isdigit() and "." in parts[3])))
+
+
 # Shared transaction lock with OA transport, all workers. Never acquired by HTTP producers.
 PUSH_TRANSPORT_LOCK = 875312021
 
@@ -38,6 +59,41 @@ def utcnow():
 
 def dispatch_origin() -> str:
     return get_settings().FRONTEND_URL.rstrip("/")
+
+
+async def wake_waiting_jobs(db, user_id: int):
+    """Best-effort fast path after an authenticated subscription is saved.
+
+    Only still-live waiting jobs for the exact account. The normal scheduler
+    remains the recovery mechanism if these rows are locked or this hint fails.
+    Never send from an HTTP handler, revive terminal rows, expand recipients,
+    or shorten a provider backoff for a different account.
+    """
+    from app.models.office_automation import OaNotificationOutbox
+
+    now = utcnow()
+    due = now + DEVICE_REGISTRATION_GRACE
+    jobs = (select(PushDispatchJob.id).where(
+        PushDispatchJob.origin == dispatch_origin(),
+        PushDispatchJob.status == "pending",
+        PushDispatchJob.last_error == "awaiting_eligible_devices",
+        PushDispatchJob.next_attempt_at > due,
+        PushDispatchJob.deadline_at > due,
+        cast(PushDispatchJob.user_ids, JSONB).contains([user_id]),
+    ).order_by(PushDispatchJob.next_attempt_at, PushDispatchJob.id).limit(100)
+      .with_for_update(skip_locked=True))
+    await db.execute(update(PushDispatchJob).where(PushDispatchJob.id.in_(jobs))
+                     .values(next_attempt_at=due).execution_options(synchronize_session=False))
+    oa = (select(OaNotificationOutbox.id).where(
+        OaNotificationOutbox.status == "pending",
+        OaNotificationOutbox.last_error == "awaiting_eligible_devices",
+        OaNotificationOutbox.next_attempt_at > due,
+        OaNotificationOutbox.created_at > due - RETRY_WINDOW,
+        cast(OaNotificationOutbox.payload, JSONB)["_delivery"]["recipient_user_ids"].contains([user_id]),
+    ).order_by(OaNotificationOutbox.next_attempt_at, OaNotificationOutbox.id).limit(100)
+      .with_for_update(skip_locked=True))
+    await db.execute(update(OaNotificationOutbox).where(OaNotificationOutbox.id.in_(oa))
+                     .values(next_attempt_at=due).execution_options(synchronize_session=False))
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -174,14 +230,15 @@ async def initialize_job(db, job, audience, now):
     found = await add_devices(db, job, audience, now)
     job.no_device_count = len(audience - found)
     job.initialized = True
-    if not audience or (not found and job.notice_id is None):
+    if not audience or (not found and not can_defer(job)):
         job.status = "no_devices" if audience else "no_targets"
         job.finished_at = now
         job.body = None
         logger.warning("Push job %s: %s (%s users)", job.id, job.status, job.target_count)
     elif not found:
-        # Unread notices remain recoverable when a device re-registers.
-        job.next_attempt_at = min(now + timedelta(minutes=5), job.deadline_at)
+        # Retain the original event and body until the recipient has an eligible
+        # session, the audience changes, or its original lifetime expires.
+        job.next_attempt_at = min(now + DEVICE_WAIT_INTERVAL, job.deadline_at)
         job.last_error = "awaiting_eligible_devices"
 
 
@@ -214,8 +271,8 @@ async def finish_if_ready(db, job, now, audience):
     states = dict((await db.execute(select(PushDispatchDelivery.status, func.count())
                   .where(PushDispatchDelivery.job_id == job.id)
                   .group_by(PushDispatchDelivery.status))).all())
-    waiting = audience - await covered_users(db, job) if job.notice_id is not None else set()
-    if job.notice_id is not None:
+    waiting = audience - await covered_users(db, job) if can_defer(job) else set()
+    if can_defer(job):
         job.no_device_count = len(waiting)
     if states.get("pending", 0) or waiting:
         next_times = []
@@ -224,7 +281,7 @@ async def finish_if_ready(db, job, now, audience):
                                .where(PushDispatchDelivery.job_id == job.id,
                                       PushDispatchDelivery.status == "pending"))).scalar_one())
         if waiting:
-            next_times.append(now + timedelta(minutes=5))
+            next_times.append(now + DEVICE_WAIT_INTERVAL)
         job.next_attempt_at = min([*next_times, job.deadline_at])
         job.last_error = "awaiting_eligible_devices" if waiting else None
         return
@@ -260,10 +317,13 @@ async def process_job(db, job, now):
     if not job.initialized:
         await initialize_job(db, job, audience, now)
         return  # persist snapshot before contacting provider, even if worker dies
-    # Only users of an unread notice with no accepted/pending device can
-    # recover on a newly registered session. No historical OA/generic replay.
-    if job.notice_id is not None:
-        await add_devices(db, job, audience - await covered_users(db, job), now)
+    # Recover only accounts with NO accepted or pending delivery. An account
+    # which already received provider acceptance must not get old events again
+    # just because it logs in on another device. The unique binding constraint
+    # also prevents a terminally failed binding from being retried as a new one.
+    if can_defer(job):
+        await add_devices(db, job, audience - await covered_users(db, job),
+                          now + DEVICE_REGISTRATION_GRACE)
     candidates = (await db.execute(select(PushDispatchDelivery).where(
         PushDispatchDelivery.job_id == job.id, PushDispatchDelivery.status == "pending",
         PushDispatchDelivery.next_attempt_at <= now,
@@ -271,6 +331,11 @@ async def process_job(db, job, now):
     # Two historical bindings may use the same endpoint ID. Never mix them in
     # a batch whose transport result is keyed by subscription ID.
     batch = list({d.subscription_id: d for d in reversed(candidates)}.values())
+    if batch and can_defer(job) and job.notice_id is None:
+        from app.services.push_audience import restrict_delivery_audience
+        candidates_users = {d.user_id for d in batch} & audience
+        permitted = await restrict_delivery_audience(db, job, candidates_users, now)
+        audience = (audience - candidates_users) | permitted
     eligible = [d for d in batch if d.user_id in audience]
     for delivery in batch:
         if delivery.user_id not in audience:

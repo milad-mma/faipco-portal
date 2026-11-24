@@ -21,7 +21,9 @@ from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.services import notification_templates
 from app.services.push_service import PushService, eligible_subscriptions
-from app.services.push_dispatch import PUSH_TRANSPORT_LOCK, RETRY_WINDOW
+from app.services.push_dispatch import (
+    PUSH_TRANSPORT_LOCK, RETRY_WINDOW, DEVICE_WAIT_INTERVAL, DEVICE_REGISTRATION_GRACE,
+)
 
 logger = logging.getLogger("faipco.automation.push")
 MAX_ATTEMPTS = 10
@@ -88,17 +90,45 @@ async def _deliver_one(db, event: OaNotificationOutbox) -> tuple[str, str | None
     if tracking is None:
         bindings = await _snapshot_bindings(db, user_ids)
         event.payload = {**p, "_delivery": {"remaining": sorted(map(int, bindings)),
-            "bindings": bindings, "sent": [], "stale": [], "failed": []}}
+            "bindings": bindings, "sent": [], "stale": [], "failed": [],
+            "recipient_user_ids": sorted(user_ids),
+            "seen_bindings": sorted(f"{sid}:{session_id}" for sid, session_id in bindings.items())}}
         if not bindings:
-            db.add(OaNotificationLog(key=event.key))
-            return "skipped", "no_eligible_devices"
+            # Waiting for a login is NOT a failed provider attempt. Keep the
+            # business event, original accounts and confidentiality rules.
+            return "waiting", "awaiting_eligible_devices"
         return "initialized", None
+    # Only a snapshot made by this version can be rebound. Historical tracking
+    # without recipient identity must keep its original session-only policy.
+    recoverable = "recipient_user_ids" in tracking and "seen_bindings" in tracking
+    if recoverable:
+        user_ids &= set(tracking["recipient_user_ids"])
+        if not user_ids:
+            db.add(OaNotificationLog(key=event.key))
+            return "skipped", "recipient_or_letter_changed"
     remaining, sent, stale = (set(tracking[k]) for k in ("remaining", "sent", "stale"))
     failed = set(tracking.get("failed", []))
     bindings = tracking.get("bindings", {})
     # Old retry rows did not record the session. Never attach them to a new login.
     stale.update(sid for sid in remaining if str(sid) not in bindings)
     remaining.difference_update(stale)
+    if recoverable and not remaining and not sent:
+        # Rebind only an event with no previous provider acceptance for this
+        # employee. Never retry an already attempted subscription/session pair.
+        current = await _snapshot_bindings(db, user_ids)
+        seen = set(tracking["seen_bindings"])
+        new = {sid: session_id for sid, session_id in current.items()
+               if f"{sid}:{session_id}" not in seen}
+        if not new:
+            return "waiting", "awaiting_eligible_devices"
+        new_ids = set(map(int, new))
+        event.payload = {**p, "_delivery": {**tracking,
+            "remaining": sorted(new_ids), "bindings": {**bindings, **new},
+            "stale": sorted(stale - new_ids), "failed": sorted(failed - new_ids),
+            "seen_bindings": sorted(seen | {f"{sid}:{session_id}" for sid, session_id in new.items()})}}
+        # Commit the new bindings before contacting the provider, and allow the
+        # new login to persist its Service Worker marker on the device.
+        return "rebound", None
     body = await notification_templates.render(db, p["site_id"], text_key, **values)
     batch = set(sorted(remaining)[:20])
     retry_after = 0
@@ -128,7 +158,7 @@ async def _deliver_one(db, event: OaNotificationOutbox) -> tuple[str, str | None
             else:
                 retry_after = max(retry_after, item.get("retry_after") or 0,
                                   900 if item.get("error") in ("http_401", "http_403") else 0)
-    event.payload = {**p, "_delivery": {"remaining": sorted(remaining), "sent": sorted(sent),
+    event.payload = {**p, "_delivery": {**tracking, "remaining": sorted(remaining), "sent": sorted(sent),
         "stale": sorted(stale), "failed": sorted(failed), "bindings": bindings,
         "retry_after": retry_after}}
     if remaining:
@@ -136,6 +166,8 @@ async def _deliver_one(db, event: OaNotificationOutbox) -> tuple[str, str | None
         if not (remaining & batch):
             return "initialized", None
         return "pending", f"Push pending for {len(remaining)} subscription(s); {len(sent)} accepted"
+    if recoverable and not sent:
+        return "waiting", "awaiting_eligible_devices"
     db.add(OaNotificationLog(key=event.key))
     if failed:
         return "failed", f"{len(failed)} permanent failure(s); {len(sent)} accepted"
@@ -171,8 +203,16 @@ async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int
             event_id = event.id  # rollback expires ORM attributes, including primary keys
             try:
                 status, error = await _deliver_one(db, event)
-                if status == "initialized":
-                    event.next_attempt_at = datetime.now(timezone.utc)
+                if status in ("initialized", "rebound"):
+                    delay = DEVICE_REGISTRATION_GRACE if status == "rebound" else timedelta(0)
+                    event.next_attempt_at = min(datetime.now(timezone.utc) + delay,
+                                                event.created_at + RETRY_WINDOW)
+                    event.last_error = None
+                elif status == "waiting":
+                    # Do not consume the provider retry budget while logged out.
+                    event.next_attempt_at = min(datetime.now(timezone.utc) + DEVICE_WAIT_INTERVAL,
+                                                event.created_at + RETRY_WINDOW)
+                    event.last_error = error
                 elif status == "pending":
                     event.attempts += 1
                     event.last_error = error

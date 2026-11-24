@@ -915,7 +915,7 @@ async def _schedule_push(site_id: int, emp_no: int, url: str, body: str, *, requ
             ids = set((await db.execute(select(User.id).join(Employee, Employee.id == User.employee_id)
                 .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no)))).scalars().all())
             await enqueue_event_push(db, ids, url, body,
-                event_key=business_event_key("leave", request_id or "unknown", uuid4().hex, kind))
+                event_key=business_event_key("leave", request_id or "unknown", f"{site_id}.{uuid4().hex}", kind))
             await db.commit()
     except Exception as exc:
         logger.error("Leave push enqueue failed site=%s request=%s kind=%s error=%s",
@@ -2071,14 +2071,19 @@ class LeaveRequestService:
         await asyncio.to_thread(_delete_dependent_rows_sync, site_connection, mapping, request_id)
         await asyncio.to_thread(_delete_request_sync, site_connection, mapping, request_id)
 
-    async def list_my_requests(self, employee: Employee) -> list[dict]:
+    async def list_my_requests(self, employee: Employee, *, request_id: int | None = None) -> list[dict]:
         """ورودی: پرسنل. همه درخواست‌های خودِ او را (جدیدترین اول) به‌صورت نرمال‌شده، با نظر واقعی تأییدکننده و پرچم awaiting_hr برمی‌گرداند."""
         # درخواست‌های این پرسنل از WF_Requests
         mapping, site_connection = await self._get_mapping_and_connection(employee.site_id, user_facing=True)
         emp_no = _to_personnel_code_int(employee)
         col = _quote(site_connection.db_type, mapping.emp_no_column)
+        where_sql = f"{col} = %(emp_no)s"
+        params = {"emp_no": emp_no}
+        if request_id is not None:
+            where_sql += f" AND {_quote(site_connection.db_type, mapping.request_id_column)} = %(request_id)s"
+            params["request_id"] = request_id
         rows = await asyncio.to_thread(
-            _select_requests_sync, site_connection, mapping, f"{col} = %(emp_no)s", {"emp_no": emp_no}
+            _select_requests_sync, site_connection, mapping, where_sql, params
         )
         # نرمال‌سازی و تکمیل با نوع، نظر واقعی و مرحله
         type_lookup = await self._get_type_lookup(employee.site_id)
@@ -2105,7 +2110,7 @@ class LeaveRequestService:
             if real_comment is not None:
                 item["manager_idea"] = real_comment
 
-    async def list_pending_for_approver(self, approver_employee: Employee) -> list[dict]:
+    async def list_pending_for_approver(self, approver_employee: Employee, *, request_id: int | None = None) -> list[dict]:
         """ورودی: پرسنل تأییدکننده. درخواست‌های در انتظار تصمیم او (CurEmpNo = او و بدون تصمیم) را نرمال‌شده، با نام/واحد درخواست‌دهنده و پرچم awaiting_hr برمی‌گرداند."""
         # درخواست‌هایی که تأییدکننده فعلی‌شان این فرد است و هنوز تصمیم ندارند
         mapping, site_connection = await self._get_mapping_and_connection(approver_employee.site_id, user_facing=True)
@@ -2118,8 +2123,12 @@ class LeaveRequestService:
         codes = [cur_emp_no] + acting_for
         placeholders = ", ".join(f"%(c{i})s" for i in range(len(codes)))
         where_sql = f"{cur_col} IN ({placeholders}) AND {approved_col} IS NULL"
+        params = {f"c{i}": c for i, c in enumerate(codes)}
+        if request_id is not None:
+            where_sql += f" AND {_quote(site_connection.db_type, mapping.request_id_column)} = %(request_id)s"
+            params["request_id"] = request_id
         rows = await asyncio.to_thread(
-            _select_requests_sync, site_connection, mapping, where_sql, {f"c{i}": c for i, c in enumerate(codes)}
+            _select_requests_sync, site_connection, mapping, where_sql, params
         )
         # درخواست خودِ جانشین پیش مدیرش در کارتابل خودش نمی‌آید
         rows = [r for r in rows if can_act_on(cur_emp_no, r.get("CurEmpNo"), r.get("EmpNo"), substitutes)]
