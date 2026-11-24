@@ -37,16 +37,14 @@ def test_approval_return_creates_editable_successor_without_overwriting_signed_v
     letter = OaLetter(id=11, created_by=19, current_version_id=7, status='in_approval', row_version=8)
     additions = []
 
-    async def flush():
-        for record in additions:
-            if isinstance(record, OaLetterVersion) and record.id is None:
-                record.id = 8
-
     class FakeDB:
         def add(self, obj):
             additions.append(obj)
 
-        flush = staticmethod(flush)
+        async def flush(self):
+            for record in additions:
+                if isinstance(record, OaLetterVersion) and record.id is None:
+                    record.id = 8
 
         async def get(self, model, pk):
             assert model is OaLetterVersion and pk == 7
