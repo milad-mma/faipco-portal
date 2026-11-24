@@ -58,7 +58,6 @@ from app.services.notice_service import (
     NoticeAttachmentError,
     NoticePermissionError,
     NoticeService,
-    send_publish_notifications,
 )
 from app.services.payroll_pdf import render_payroll_receipt_pdf
 from app.services.payroll_service import PayrollNoticeService
@@ -119,8 +118,7 @@ async def publish_notice(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     if notice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
-    # ارسال Push به Background منتقل می‌شود تا پاسخ فوراً برگردد (بدون مکث شبکه)
-    background_tasks.add_task(send_publish_notifications, notice.id)
+    # Push در تراکنش انتشار صف شده و Scheduler مسئول ارسال شبکه است.
     await record_message_sent(db, current_user.id)
     return notice
 
@@ -569,8 +567,7 @@ async def create_payroll_notice(
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # ارسال Push در پس‌زمینه و ثبت زمان ارسال برای محدودیت نرخ
-    background_tasks.add_task(send_publish_notifications, result.notice.id)
+    # Push در تراکنش ایجاد صف شده؛ ثبت زمان ارسال برای محدودیت نرخ.
     await record_message_sent(db, current_user.id)
 
     return PayrollNoticeResultOut(
@@ -711,8 +708,7 @@ async def create_attendance_card_notice(
     except PayrollParseError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # ارسال Push در پس‌زمینه و ثبت زمان ارسال برای محدودیت نرخ
-    background_tasks.add_task(send_publish_notifications, result.notice.id)
+    # Push در تراکنش ایجاد صف شده؛ ثبت زمان ارسال برای محدودیت نرخ.
     await record_message_sent(db, current_user.id)
 
     return AttendanceCardResultOut(

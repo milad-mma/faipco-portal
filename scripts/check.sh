@@ -42,7 +42,10 @@ else
   echo "backend/.venv پیدا نشد - رد شد"; STATUS=1
 fi
 
-step "4. زنجیره Migration ها روی دیتابیس خالی"
+step "4. تست‌های واحد Frontend (شامل Service Worker و Web Push)"
+(cd "$ROOT/frontend" && npm run test:unit) || STATUS=1
+
+step "5. زنجیره Migration ها روی دیتابیس خالی"
 bash "$SCRIPT_DIR/test_migrations.sh" || STATUS=1
 
 [ $STATUS -eq 0 ] && echo -e "\n\033[1;32mهمه بررسی‌ها موفق\033[0m" || echo -e "\n\033[1;31mبعضی بررسی‌ها شکست خورد\033[0m"

@@ -52,7 +52,6 @@ from app.schemas.insurance import (
     InsuranceSiteStatusOut,
 )
 from app.services.insurance_service import InsuranceDisabledError, InsuranceError, InsuranceService
-from app.services.notice_service import send_publish_notifications
 
 router = APIRouter()
 
@@ -324,7 +323,6 @@ async def reject_member_document(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ثبت‌نام یا عضو یافت نشد")
     member_name, notice_id = result
-    background_tasks.add_task(send_publish_notifications, notice_id)  # Push بعد از پاسخ
     return InsuranceRejectDocumentOut(member_name=member_name, notice_id=notice_id)
 
 

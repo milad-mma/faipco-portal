@@ -148,7 +148,7 @@ async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int
                 if event is None:
                     continue
                 event.attempts += 1
-                event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"[:600]
+                event.last_error = type(exc).__name__[:120]
                 if event.attempts >= MAX_ATTEMPTS:
                     event.status = "failed"
                     logger.error("OA push exhausted retries (outbox_id=%s)", event.id)

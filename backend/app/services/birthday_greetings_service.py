@@ -21,7 +21,7 @@ from app.models.birthday_message_template import BirthdayMessageTemplate
 from app.models.employee import Employee
 from app.models.notice import Notice, NoticePriority, NoticeStatus, NoticeTarget, NoticeTargetType, NoticeType
 from app.models.user import User
-from app.services.notice_service import send_publish_notifications
+from app.services.push_dispatch import enqueue_notice_push
 from app.services.system_settings_service import SystemSettingsService
 
 logger = logging.getLogger("faipco.birthday_greetings")
@@ -151,12 +151,9 @@ class BirthdayGreetingsService:
             self.db.add(
                 NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=employee.id)
             )
+            await enqueue_notice_push(self.db, notice)
             await self.db.commit()
             sent_count += 1
-            try:
-                await send_publish_notifications(notice.id)
-            except Exception:  # noqa: BLE001 - خطای Push یک نفر نباید بقیه را متوقف کند
-                logger.exception("ارسال Push تبریک تولد برای پرسنل %s ناموفق بود", employee.id)
 
         logger.info("پیام تبریک تولد برای %s پرسنل فرستاده شد.", sent_count)
         await SystemSettingsService(self.db).set_last_birthday_greetings_date(today_str)

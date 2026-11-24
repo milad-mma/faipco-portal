@@ -134,7 +134,7 @@ class BirthdayReactionService:
             if target_user is None:
                 return  # پرسنل حساب کاربری ندارد
             # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            schedule_push(
+            await schedule_push(
                 {target_user.id},
                 url="/my-dashboard",
                 priority="normal",

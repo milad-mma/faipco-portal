@@ -1,80 +1,188 @@
-/**
- * کمک‌تابع‌های اعلان Push مرورگر: بررسی پشتیبانی و وضعیت اجازه،
- * فعال‌سازی (درخواست اجازه، ساخت اشتراک با کلید VAPID و ثبت در سرور) و لغو اشتراک.
- */
+/** Web Push registration and repair. Permission alone is not a registration. */
 import { fetchVapidPublicKey, subscribePush, unsubscribePush } from "../api/push";
 import { setDevicePushEnabled } from "./pushSession";
 
-/** تبدیل کلید عمومی VAPID (Base64URL) به Uint8Array مورد نیاز pushManager.subscribe */
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+  return Uint8Array.from([...window.atob(base64)].map(char => char.charCodeAt(0)));
 }
 
 function currentSessionMarker() {
-  const token = localStorage.getItem("access_token");
-  if (!token) return null;
   try {
-    return JSON.parse(window.atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sid || null;
+    const token = localStorage.getItem("access_token");
+    if (!token) return null;
+    const data = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(window.atob(data + "=".repeat((4 - data.length % 4) % 4))).sid || null;
   } catch { return null; }
 }
 
-// خروجی: true اگر مرورگر Service Worker، PushManager و Notification را پشتیبانی کند
 export function isPushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
-// خروجی: وضعیت اجازه‌ی اعلان ("granted" / "denied" / "default") یا "unsupported"
 export function getNotificationPermission() {
   return isPushSupported() ? Notification.permission : "unsupported";
 }
 
-/** درخواست اجازه‌ی اعلان از کاربر، گرفتن یا ساخت اشتراک Push و ثبت آن در سرور؛ خروجی: شیء اشتراک. در خطا پیام فارسی throw می‌کند. */
-export async function enablePushNotifications() {
-  if (!isPushSupported()) {
-    throw new Error("این مرورگر از اعلان Push پشتیبانی نمی‌کند.");
-  }
+let registeredMarker = null;
+let lastSuccess = 0;
+let inFlight = null;
+const listeners = new Set();
 
-  const expectedMarker = currentSessionMarker();
-  if (!expectedMarker) throw new Error("نشست معتبر برای اعلان‌ها پیدا نشد؛ دوباره وارد شوید");
-  const permission = await Notification.requestPermission();
+export function getPushRegistrationStatus() {
+  const permission = getNotificationPermission();
+  const marker = currentSessionMarker();
+  if (permission !== "granted" || registeredMarker !== marker) {
+    registeredMarker = null;
+    lastSuccess = 0;
+  }
+  return {
+    permission,
+    registered: permission === "granted" && !!marker && registeredMarker === marker,
+    checking: !!marker && inFlight?.marker === marker,
+  };
+}
+function emit() {
+  const status = getPushRegistrationStatus();
+  for (const listener of listeners) listener(status);
+}
+export function observePushRegistration(listener) {
+  listeners.add(listener);
+  listener(getPushRegistrationStatus());
+  return () => listeners.delete(listener);
+}
+
+function assertSession(marker) {
+  if (!marker || marker !== currentSessionMarker()) throw new Error("نشست هنگام ثبت اعلان تغییر کرده است.");
+}
+function bounded(promise, ms) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("آماده‌سازی سرویس اعلان بیش از حد طول کشید.")), ms);
+  })]).finally(() => clearTimeout(timer));
+}
+function sameKey(existing, expected) {
+  if (!existing) return true; // older browser: cannot inspect; preserve the valid subscription
+  const bytes = new Uint8Array(existing);
+  return bytes.length === expected.length && bytes.every((value, i) => value === expected[i]);
+}
+
+async function register(marker, prompt) {
+  assertSession(marker);
+  const permission = getNotificationPermission();
   if (permission !== "granted") {
-    throw new Error("اجازه نمایش اعلان داده نشد.");
-  }
-
-  const registration = await navigator.serviceWorker.ready;
-
-  // استفاده از اشتراک موجود؛ در نبود آن ساخت اشتراک جدید با کلید عمومی VAPID سرور
-  let subscription = await registration.pushManager.getSubscription();
-  if (!subscription) {
-    const vapidPublicKey = await fetchVapidPublicKey();
-    if (!vapidPublicKey) {
-      throw new Error("سرور هنوز برای ارسال اعلان پیکربندی نشده است.");
+    if (!prompt || permission !== "default" || await Notification.requestPermission() !== "granted") {
+      throw new Error("اجازه نمایش اعلان داده نشده است.");
     }
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true, // الزام مرورگر: هر Push باید اعلان قابل مشاهده نمایش دهد
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-    });
   }
-
-  await subscribePush(subscription.toJSON());
-  // JWTs can rotate while registration is in flight; bind by stable SID,
-  // but never re-enable when logout or a different login occurred.
-  if (currentSessionMarker() !== expectedMarker) {
-    throw new Error("نشست تغییر کرد؛ ثبت اعلان لغو شد");
+  const registration = await bounded(navigator.serviceWorker.ready, 15000);
+  assertSession(marker);
+  const vapidPublicKey = await fetchVapidPublicKey();
+  if (!vapidPublicKey) throw new Error("سرور هنوز برای ارسال اعلان پیکربندی نشده است.");
+  const key = urlBase64ToUint8Array(vapidPublicKey);
+  let subscription = await registration.pushManager.getSubscription();
+  assertSession(marker);
+  if (subscription && !sameKey(subscription.options?.applicationServerKey, key)) {
+    // A copied database or rotated VAPID key cannot authorize an old subscription.
+    // The obsolete endpoint will be cleaned up server-side on 404/410.
+    await subscription.unsubscribe();
+    assertSession(marker);
+    subscription = await registration.pushManager.getSubscription();
+    if (subscription && !sameKey(subscription.options?.applicationServerKey, key)) {
+      throw new Error("اشتراک قدیمی اعلان هنوز حذف نشده است.");
+    }
   }
-  await setDevicePushEnabled(true, expectedMarker);
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: key});
+  }
+  assertSession(marker);
+  // Also bind the expected marker at the server, so an interceptor refreshing
+  // after an account switch cannot accidentally attach this request to a new SID.
+  await subscribePush({...subscription.toJSON(), session_marker: marker});
+  assertSession(marker);
+  await setDevicePushEnabled(true, marker);
+  assertSession(marker);
+  registeredMarker = marker;
+  lastSuccess = Date.now();
   return subscription;
 }
 
-/** لغو اشتراک Push (هم در مرورگر، هم در سرور). */
+/** Single flight per page, including simultaneous Login/Layout/Profile requests. */
+export async function enablePushNotifications({prompt = true} = {}) {
+  if (!isPushSupported()) throw new Error("این مرورگر از اعلان Push پشتیبانی نمی‌کند.");
+  const marker = currentSessionMarker();
+  if (!marker) throw new Error("نشست معتبر برای اعلان‌ها پیدا نشد.");
+  if (inFlight) {
+    if (inFlight.marker === marker) return inFlight.promise;
+    try { await inFlight.promise; } catch { /* new session can recover */ }
+    assertSession(marker);
+    return enablePushNotifications({prompt});
+  }
+  const flight = {marker, promise: null};
+  flight.promise = Promise.resolve().then(() => register(marker, prompt)).catch(error => {
+    if (registeredMarker === marker) registeredMarker = null;
+    throw error;
+  }).finally(() => {
+    if (inFlight === flight) inFlight = null;
+    emit();
+  });
+  inFlight = flight;
+  emit();
+  return flight.promise;
+}
+
+/** Recover on reconnect, resume, worker update, and bounded periodic checks.
+ * Never request a new permission from a background callback. No polling while hidden.
+ */
+export function startPushMaintenance() {
+  if (!isPushSupported()) return () => {};
+  let stopped = false, timer = null, busy = false, failures = 0;
+  const delays = [10000, 30000, 60000, 300000];
+  const clear = () => { clearTimeout(timer); timer = null; };
+  const schedule = ms => { clear(); if (!stopped) timer = setTimeout(() => void check(), ms); };
+  async function check(force = false) {
+    if (stopped || busy) return;
+    emit();
+    if (document.visibilityState === "hidden" || navigator.onLine === false ||
+        getNotificationPermission() !== "granted" || !currentSessionMarker()) {
+      schedule(60000);
+      return;
+    }
+    if (!force && registeredMarker === currentSessionMarker() && Date.now() - lastSuccess < 15 * 60000) {
+      schedule(15 * 60000 - (Date.now() - lastSuccess));
+      return;
+    }
+    busy = true;
+    try {
+      await enablePushNotifications({prompt: false});
+      failures = 0;
+      schedule(15 * 60000);
+    } catch {
+      schedule(delays[Math.min(failures++, delays.length - 1)]);
+    } finally { busy = false; }
+  }
+  const wake = () => { if (!stopped) void check(true); };
+  const visible = () => { if (document.visibilityState !== "hidden") void check(); };
+  window.addEventListener("online", wake);
+  window.addEventListener("focus", visible);
+  document.addEventListener("visibilitychange", visible);
+  navigator.serviceWorker.addEventListener("controllerchange", wake);
+  void check();
+  return () => {
+    stopped = true; clear();
+    window.removeEventListener("online", wake);
+    window.removeEventListener("focus", visible);
+    document.removeEventListener("visibilitychange", visible);
+    navigator.serviceWorker.removeEventListener("controllerchange", wake);
+  };
+}
+
 export async function disablePushNotifications() {
-  // Deny incoming Push first, including queued gateway deliveries after logout.
+  registeredMarker = null; lastSuccess = 0; emit();
   await setDevicePushEnabled(false);
   if (!isPushSupported()) return;
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await bounded(navigator.serviceWorker.ready, 15000);
   const subscription = await registration.pushManager.getSubscription();
   if (subscription) {
     await unsubscribePush(subscription.endpoint);

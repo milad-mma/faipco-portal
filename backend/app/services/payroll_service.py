@@ -159,6 +159,8 @@ class PayrollNoticeService:
                 )
             )
 
+        from app.services.push_dispatch import enqueue_notice_push
+        await enqueue_notice_push(self.db, notice)
         await self.db.commit()
 
         # وام: تیک خودکار اقساطی که در این فیش کسر شده‌اند (Migration 108). خطای این بخش ارسال فیش را خراب نمی‌کند.

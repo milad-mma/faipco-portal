@@ -55,8 +55,7 @@ from app.schemas.notice import (
     NoticeTargetDescription,
     NoticeTargetOut,
 )
-from app.services.push_background import schedule_push
-from app.services.push_service import PushService
+from app.services.push_dispatch import enqueue_notice_push
 
 logger = logging.getLogger("faipco.notices")
 
@@ -89,32 +88,12 @@ def notice_push_url(notice_type) -> str:
 
 
 async def send_publish_notifications(notice_id: int) -> None:
-    """
-    ارسال Push به همه مخاطبان اطلاعیه notice_id — طراحی‌شده برای اجرا در Background
-    (بعد از پاسخ HTTP، نه در همان درخواست). چون این تابع مستقل از هر
-    Request اجرا می‌شود، Session دیتابیس مخصوص خودش را می‌سازد (Session
-    درخواست اصلی تا این لحظه بسته شده است).
-    """
+    """Compatibility entry point; enqueue idempotently, never send in HTTP background."""
     async with AsyncSessionLocal() as db:
-        try:
-            result = await db.execute(
-                select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
-            )
-            notice = result.scalar_one_or_none()
-            if notice is None:
-                return
-            service = NoticeService(db)
-            audience = await service._resolve_audience_user_ids(notice)
-            await PushService(db).notify_users(
-                audience,
-                url=notice_push_url(notice.notice_type),
-                priority=notice.priority.value,
-                notice_type=notice.notice_type.value,
-            )
-        except Exception:
-            # خطای ارسال Push عملیات انتشار را متوقف نمی‌کند؛ فقط با
-            # Traceback کامل لاگ می‌شود تا علت آن قابل پیگیری باشد.
-            logger.exception("ارسال Push برای اطلاعیه #%s با خطا مواجه شد", notice_id)
+        notice = await db.get(Notice, notice_id)
+        if notice is not None and not notice.is_deleted and notice.status == NoticeStatus.published:
+            await enqueue_notice_push(db, notice)
+            await db.commit()
 
 
 class NoticeService:
@@ -228,12 +207,10 @@ class NoticeService:
         """
         وضعیت اطلاعیه‌ی پیش‌نویس را published می‌کند و آن را برمی‌گرداند (None اگر یافت نشود).
         فقط فرستنده یا superuser، و فقط برای پیش‌نویسِ حذف‌نشده؛ در غیر این صورت NoticePermissionError.
-        ارسال Push به کاربران هدف در پس‌زمینه و جداگانه انجام می‌شود
-        (به send_publish_notifications در endpoint مراجعه کنید) تا کندی
-        شبکه هنگام ارسال چندین Push، پاسخ HTTP را معطل نگه ندارد.
+        صف پایدار Push در همان تراکنش انتشار ثبت می‌شود؛ ارسال شبکه توسط Scheduler.
         """
         result = await self.db.execute(
-            select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id)
+            select(Notice).options(selectinload(Notice.targets)).where(Notice.id == notice_id).with_for_update()
         )
         notice = result.scalar_one_or_none()
         if notice is None:
@@ -246,6 +223,7 @@ class NoticeService:
         # اگر زمان انتشار از قبل تعیین نشده، همین لحظه ثبت می‌شود
         if notice.publish_at is None:
             notice.publish_at = datetime.now(timezone.utc)
+        await enqueue_notice_push(self.db, notice)
         await self.db.commit()
         return notice
 
@@ -1417,6 +1395,12 @@ class NoticeService:
         if notice.is_deleted:
             raise NoticePermissionError("این اطلاعیه حذف شده — امکان ارسال مجدد اعلان نیست")
 
+        now = datetime.now(timezone.utc)
+        if (notice.status != NoticeStatus.published or
+                (notice.publish_at and notice.publish_at > now) or
+                (notice.expire_at and notice.expire_at < now)):
+            raise NoticePermissionError("فقط اطلاعیه منتشرشده و معتبر قابل ارسال مجدد است")
+
         # مخاطبان فعلی منهای کسانی که اطلاعیه را دیده‌اند
         full_audience = await self._resolve_audience_user_ids(notice)
 
@@ -1429,11 +1413,7 @@ class NoticeService:
         if not unread_user_ids:
             return 0
 
-        # ارسال در پس‌زمینه با Session جدا؛ پاسخ HTTP منتظر Push نمی‌ماند و تعداد گیرندگان فوراً برمی‌گردد
-        schedule_push(
-            unread_user_ids,
-            url=notice_push_url(notice.notice_type),
-            priority=notice.priority.value,
-            notice_type=notice.notice_type.value,
-        )
+        # The resend is durable before the API returns; it is not a delivery receipt.
+        await enqueue_notice_push(self.db, notice, user_ids=unread_user_ids, resend=True)
+        await self.db.commit()
         return len(unread_user_ids)

@@ -131,6 +131,8 @@ class AttendanceCardNoticeService:
                 )
             )
 
+        from app.services.push_dispatch import enqueue_notice_push
+        await enqueue_notice_push(self.db, notice)
         await self.db.commit()
 
         return AttendanceCardNoticeResult(

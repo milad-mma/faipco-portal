@@ -641,6 +641,8 @@ class FamilyService:
         self.db.add(notice)
         await self.db.flush()
         self.db.add(NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=employee_id))
+        from app.services.push_dispatch import enqueue_notice_push
+        await enqueue_notice_push(self.db, notice)
         return notice.id
 
     async def list_profiles(

@@ -30,6 +30,8 @@ async def subscribe(
 ):
     """اشتراک Push دستگاه جاری را برای کاربر لاگین‌شده ذخیره می‌کند. خروجی: 204 بدون بدنه."""
     sid = getattr(request.state, "session_sid", None)
+    if payload.session_marker is not None and payload.session_marker != sid:
+        raise HTTPException(status_code=409, detail="نشست هنگام ثبت اعلان تغییر کرده است")
     session = (await db.execute(
         select(UserSession).where(UserSession.sid == sid, UserSession.user_id == current_user.id,
                                   UserSession.revoked_at.is_(None))

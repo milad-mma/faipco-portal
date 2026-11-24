@@ -683,6 +683,8 @@ class InsuranceService:
                 notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=registration.employee_id
             )
         )
+        from app.services.push_dispatch import enqueue_notice_push
+        await enqueue_notice_push(self.db, notice)
         await self.db.commit()
         return member_name, notice.id
 

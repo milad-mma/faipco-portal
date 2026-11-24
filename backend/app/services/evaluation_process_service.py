@@ -421,7 +421,7 @@ class EvaluationProcessService:
             if target_user is None:
                 return
             # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            schedule_push(
+            await schedule_push(
                 {target_user.id},
                 url="/my-performance",
                 priority="normal",

@@ -267,7 +267,7 @@ async def maybe_send_alert(db: AsyncSession, cfg: LoginSecuritySettings) -> None
         from app.services.push_background import schedule_push
 
         # گیرندگان با Session درخواست حساب می‌شوند؛ ارسال در پس‌زمینه تا پاسخ ورود منتظر Push نماند
-        schedule_push(
+        await schedule_push(
             await alert_recipient_ids(db),
             url="/login-security",
             priority="high",

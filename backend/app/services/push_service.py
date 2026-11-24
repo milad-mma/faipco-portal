@@ -1,9 +1,8 @@
 """
 سرویس Web Push: ذخیره اشتراک هر دستگاه و ارسال اعلان به کاربران هدف.
 
-اگر VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY در .env تنظیم نشده باشند (هنوز
-scripts/generate_vapid_keys.py اجرا نشده)، ارسال Push بی‌صدا نادیده گرفته
-می‌شود — یعنی نبود این تنظیمات هرگز باعث خطا در ثبت/انتشار اطلاعیه نمی‌شود.
+Ordinary sends are durably queued. The transport reports provider acceptance,
+not OS display; missing VAPID is a retryable configuration failure.
 """
 import asyncio
 import json
@@ -11,7 +10,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import delete, select, or_
+from sqlalchemy import and_, delete, select, or_, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +24,28 @@ from app.schemas.push import PushSubscriptionIn
 
 logger = logging.getLogger("faipco.push")
 settings = get_settings()
+
+
+def eligible_subscriptions(user_ids: set[int]):
+    # No legacy/unbound or revoked/expired sessions may receive any Push.
+    # The same rule applies to notices, payroll and OA, not just OA.
+    expires_before = datetime.now(timezone.utc) - timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    stmt = (
+        select(PushSubscription, UserSession.sid)
+        .join(UserSession, PushSubscription.session_id == UserSession.id)
+        .join(User, PushSubscription.user_id == User.id)
+        .outerjoin(Employee, User.employee_id == Employee.id)
+        .where(
+            PushSubscription.user_id.in_(user_ids),
+            UserSession.user_id == PushSubscription.user_id,
+            UserSession.revoked_at.is_(None),
+            UserSession.last_seen_at >= expires_before,
+            User.is_active.is_(True),
+            or_(User.employee_id.is_(None),
+                (Employee.is_active.is_(True) & Employee.is_enabled.is_(True))),
+        )
+    )
+    return stmt
 
 
 class PushService:
@@ -72,6 +93,7 @@ class PushService:
         return_stats: bool = False,
         subscription_ids: set[int] | None = None,
         notification_key: str | None = None,
+        session_bindings: dict[int, int] | None = None,
     ) -> dict | None:
         """
         به همه دستگاه‌های کاربران user_ids یک اعلان Push می‌فرستد (موازی، حداکثر ۲۰ هم‌زمان).
@@ -79,35 +101,29 @@ class PushService:
         متن پیش‌فرض «اطلاعیه جدید» استفاده می‌شود. اشتراک‌های منقضی (404/410) حذف می‌شوند.
         """
         if not user_ids:
+            logger.info("Push skipped: no target users")
             return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0, "results": []} if return_stats else None
+        # Existing non-statistical callers enqueue instead of waiting on provider I/O.
+        # OA and the durable dispatch worker explicitly request delivery stats.
+        if not return_stats:
+            from app.services.push_dispatch import enqueue_generic_push
+            await enqueue_generic_push(user_ids, url, body, priority, notice_type, key=notification_key)
+            return None
         if not settings.VAPID_PRIVATE_KEY:
+            logger.warning("Push skipped: VAPID private key is not configured")
             return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0,
                     "configured": False, "results": []} if return_stats else None
 
-        # No legacy/unbound or revoked/expired sessions may receive any Push.
-        # The same rule applies to notices, payroll and OA, not just OA.
-        expires_before = datetime.now(timezone.utc) - timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-        stmt = (
-            select(PushSubscription, UserSession.sid)
-            .join(UserSession, PushSubscription.session_id == UserSession.id)
-            .join(User, PushSubscription.user_id == User.id)
-            .outerjoin(Employee, User.employee_id == Employee.id)
-            .where(
-                PushSubscription.user_id.in_(user_ids),
-                UserSession.user_id == PushSubscription.user_id,
-                UserSession.revoked_at.is_(None),
-                UserSession.last_seen_at >= expires_before,
-                User.is_active.is_(True),
-                or_(User.employee_id.is_(None),
-                    (Employee.is_active.is_(True) & Employee.is_enabled.is_(True))),
-            )
-        )
+        stmt = eligible_subscriptions(user_ids)
         if subscription_ids is not None:
             stmt = stmt.where(PushSubscription.id.in_(subscription_ids))
+        if session_bindings is not None:
+            stmt = stmt.where(tuple_(PushSubscription.id, PushSubscription.session_id).in_(list(session_bindings.items())))
         subscription_rows = (await self.db.execute(stmt)).all()
         subscriptions = [row[0] for row in subscription_rows]
         marker_by_subscription = {row[0].id: row[1] for row in subscription_rows}
         if not subscriptions:
+            logger.info("Push skipped: no eligible session-bound subscriptions (target_users=%s)", len(user_ids))
             return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0, "results": []} if return_stats else None
 
         # نام و نام‌خانوادگی هرکدام از مخاطبان (برای شخصی‌سازی متن اعلان) —
@@ -135,7 +151,7 @@ class PushService:
             default_body = await notification_templates.render(self.db, None, key)
         sent_count = 0
         failed_count = 0
-        stale_ids: list[int] = []  # شناسه اشتراک‌های منقضی برای حذف
+        stale_rows: list[PushSubscription] = []  # شناسه اشتراک‌های منقضی برای حذف
         delivery_results: list[dict] = []  # subscription IDs only, never endpoints/keys
         semaphore = asyncio.Semaphore(20)
 
@@ -188,7 +204,7 @@ class PushService:
                     status_code = getattr(getattr(e, "response", None), "status_code", None)
                     if status_code in (404, 410):
                         # اشتراک منقضی/لغوشده در مرورگر — از دیتابیس پاک می‌شود
-                        stale_ids.append(sub.id)
+                        stale_rows.append(sub)
                         delivery_results.append({"id": sub.id, "status": "stale"})
                     else:
                         failed_count += 1
@@ -205,19 +221,27 @@ class PushService:
                     delivery_results.append({"id": sub.id, "status": "failed"})
                     host = sub.endpoint.split("/")[2] if sub.endpoint.count("/") >= 2 else "?"
                     logger.warning(
-                        "ارسال Push ناموفق (user_id=%s, subscription_id=%s, provider=%s): %s: %s",
+                        "ارسال Push ناموفق (user_id=%s, subscription_id=%s, provider=%s): %s",
                         sub.user_id,
                         sub.id,
                         host,
                         type(e).__name__,
-                        str(e)[:200],
                     )
 
         await asyncio.gather(*(send_one(sub) for sub in subscriptions))
 
         # حذف اشتراک‌های منقضی از دیتابیس
-        if stale_ids:
-            await self.db.execute(delete(PushSubscription).where(PushSubscription.id.in_(stale_ids)))
+        if stale_rows:
+            # A concurrent re-registration may already have rebound this endpoint.
+            # Delete only the exact registration that the provider rejected.
+            await self.db.execute(delete(PushSubscription).where(or_(*[
+                and_(PushSubscription.id == sub.id,
+                     PushSubscription.session_id == sub.session_id,
+                     PushSubscription.user_id == sub.user_id,
+                     PushSubscription.p256dh == sub.p256dh,
+                     PushSubscription.auth == sub.auth)
+                for sub in stale_rows
+            ])).execution_options(synchronize_session=False))
             await self.db.commit()
 
         # خلاصه نتیجه ارسال همیشه (حتی در موفقیت کامل) لاگ می‌شود تا هر
@@ -227,8 +251,8 @@ class PushService:
             len(user_ids),
             sent_count,
             failed_count,
-            len(stale_ids),
+            len(stale_rows),
         )
         if return_stats:
             return {"attempted": len(subscriptions), "sent": sent_count,
-                    "failed": failed_count, "stale": len(stale_ids), "results": delivery_results}
+                    "failed": failed_count, "stale": len(stale_rows), "results": delivery_results}

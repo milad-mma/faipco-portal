@@ -99,7 +99,8 @@ async function activePushSessionMarker() {
         const enabled = store.get("enabled");
         const marker = store.get("sessionMarker");
         tx.oncomplete = () => resolve(enabled.result === true ? marker.result : null);
-        get.onerror = () => reject(get.error);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
       });
     } finally { db.close(); }
   } catch { return null; } // fail closed: never show an unverified Push
@@ -137,6 +138,21 @@ async function claimOaNotification(key) {
         }
       };
       tx.oncomplete = () => resolve(accepted);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
+// Only the handler that acquired a claim calls this, and only if it did not
+// display a notification. A later delivery of the same OA event may try again.
+async function releaseOaNotification(key) {
+  const db = await pushSecurityDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("seen", "readwrite");
+      tx.objectStore("seen").delete(key);
+      tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
@@ -195,31 +211,60 @@ self.addEventListener("push", (event) => {
     (async () => {
       const marker = await activePushSessionMarker();
       if (!marker || !payload.session_marker || marker !== payload.session_marker) return;
-      const oaKey = typeof payload.notification_key === "string" ? payload.notification_key : null;
+      const eventKey = typeof payload.notification_key === "string" ? payload.notification_key : null;
+      const oaKey = eventKey?.startsWith("dispatch:") ? JSON.stringify([marker, eventKey]) : eventKey;
+      let iconTimer;
+      const [icon, badge] = await Promise.race([
+        Promise.all([notificationImage(NOTIFICATION_ICON), notificationImage(NOTIFICATION_BADGE)]),
+        new Promise(resolve => { iconTimer = setTimeout(() => resolve([NOTIFICATION_ICON, NOTIFICATION_BADGE]), 1500); }),
+      ]).finally(() => clearTimeout(iconTimer));
+      // Images can involve network I/O. Recheck the active session before
+      // claiming or showing anything after that asynchronous gap.
+      if (await activePushSessionMarker() !== marker) return;
       if (oaKey) {
         // A storage failure must not display possibly duplicated OA notifications.
         try { if (!(await claimOaNotification(oaKey))) return; } catch { return; }
       }
-      const [icon, badge] = await Promise.all([
-        notificationImage(NOTIFICATION_ICON),
-        notificationImage(NOTIFICATION_BADGE),
-      ]);
-      await self.registration.showNotification(payload.title, {
-        body: payload.body,
-        // icon: تصویر رنگی بزرگ لوگو — داخل بدنه اعلان (وقتی باز می‌شود) دیده می‌شود
-        icon,
-        // badge: نسخه‌ی تک‌رنگ (سفید روی شفاف) لوگو برای نوار وضعیت اندروید؛
-        // اندروید badge را همیشه تک‌رنگ (Silhouette) رندر می‌کند و آیکون رنگی به لکه‌ای نامفهوم تبدیل می‌شود
-        badge,
-        dir: "rtl", // جهت متن اعلان راست‌به‌چپ
-        lang: "fa", // زبان متن اعلان
-        data: { url: payload.url || "/notices" }, // مسیر مقصد برای استفاده در رویداد notificationclick
-        requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
-        silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
-        vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
-        tag: oaKey ? `faipco-oa-${oaKey}` : `faipco-notice-${Date.now()}`,
-        renotify: false,
-      });
+      const tag = oaKey ? `faipco-event-${oaKey}` : `faipco-notice-${Date.now()}`;
+      let displayed = false;
+      try {
+        // An IndexedDB claim is asynchronous too; the account may have changed.
+        if (oaKey && await activePushSessionMarker() !== marker) return;
+        await self.registration.showNotification(payload.title, {
+          body: payload.body,
+          // icon: تصویر رنگی بزرگ لوگو — داخل بدنه اعلان (وقتی باز می‌شود) دیده می‌شود
+          icon,
+          // badge: نسخه‌ی تک‌رنگ (سفید روی شفاف) لوگو برای نوار وضعیت اندروید؛
+          // اندروید badge را همیشه تک‌رنگ (Silhouette) رندر می‌کند و آیکون رنگی به لکه‌ای نامفهوم تبدیل می‌شود
+          badge,
+          dir: "rtl", // جهت متن اعلان راست‌به‌چپ
+          lang: "fa", // زبان متن اعلان
+          data: { url: payload.url || "/notices", sessionMarker: marker }, // مسیر مقصد برای استفاده در رویداد notificationclick
+          requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
+          silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
+          vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
+          tag,
+          renotify: false,
+        });
+        displayed = true;
+      } finally {
+        // Do not consume an OA event when no notification was displayed.
+        // Preserve successful claims even if refreshing open clients fails.
+        if (oaKey && !displayed) {
+          try { await releaseOaNotification(oaKey); } catch { /* fail closed */ }
+        }
+      }
+      // Logout can overlap the OS display call. Close this session's newly
+      // displayed notification (not a new account's) and do not refresh tabs.
+      // A notification already presented by the OS cannot be recalled atomically.
+      if (await activePushSessionMarker() !== marker) {
+        try {
+          const shown = await self.registration.getNotifications({ tag });
+          shown.filter(notice => notice.data?.sessionMarker === marker)
+            .forEach(notice => notice.close());
+        } catch { /* best effort */ }
+        return;
+      }
 
       // ارسال پیام faipco-notice-push به همه‌ی تب‌های باز برنامه تا لیست اطلاعیه‌ها را بدون Reload دوباره بخوانند
       const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

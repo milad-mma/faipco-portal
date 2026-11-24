@@ -50,7 +50,8 @@ import BrandLogo, { surfaceTitleSx } from "../components/BrandLogo";
 import { useThemeMode } from "../context/ThemeModeContext";
 import {
   enablePushNotifications,
-  getNotificationPermission,
+  getPushRegistrationStatus,
+  observePushRegistration,
   isPushSupported,
 } from "../utils/push";
 import { fetchAppVersion } from "../api/system";
@@ -92,9 +93,9 @@ export default function ProfilePage() {
   const [devicesDialogOpen, setDevicesDialogOpen] = useState(false);
   // دیالوگ «دستگاه‌های من» (نشست‌های فعال)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [pushPermission, setPushPermission] = useState(() =>
-    getNotificationPermission(),
-  ); // "default" | "granted" | "denied"
+  const [pushStatus, setPushStatus] = useState(getPushRegistrationStatus);
+  const pushPermission = pushStatus.permission;
+  useEffect(() => observePushRegistration(setPushStatus), [user?.id]);
   const [snackbar, setSnackbar] = useState(""); // متن Snackbar؛ رشته خالی = بسته
   const [appVersion, setAppVersion] = useState("");
   const [birthdayInfoAnchor, setBirthdayInfoAnchor] = useState(null); // عنصر لنگر Popover توضیح گزینه تولد؛ null = بسته
@@ -146,12 +147,12 @@ export default function ProfilePage() {
   async function handleEnableNotifications() {
     try {
       await enablePushNotifications();
-      setPushPermission(getNotificationPermission());
+      setPushStatus(getPushRegistrationStatus());
       setSnackbar(
-        "اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید",
+        "اشتراک اعلان این دستگاه با موفقیت ثبت شد.",
       );
     } catch (err) {
-      setPushPermission(getNotificationPermission());
+      setPushStatus(getPushRegistrationStatus());
       setSnackbar(err.message || "فعال‌سازی اعلان با خطا مواجه شد");
     }
   }
@@ -369,20 +370,20 @@ export default function ProfilePage() {
           {isPushSupported() && (
             <ListItemButton
               onClick={handleEnableNotifications}
-              disabled={pushPermission !== "default"}
+              disabled={pushPermission === "denied" || pushStatus.checking}
             >
               <ListItemIcon>
                 <NotificationsActiveOutlinedIcon
-                  color={pushPermission === "granted" ? "success" : "inherit"}
+                  color={pushStatus.registered ? "success" : "inherit"}
                 />
               </ListItemIcon>
               <ListItemText
                 primary={
-                  pushPermission === "granted"
-                    ? "اعلان‌ها فعال است ✓"
+                  pushStatus.registered
+                    ? "اشتراک اعلان ثبت شده ✓"
                     : pushPermission === "denied"
                       ? "اعلان‌ها مسدود شده (از تنظیمات مرورگر باز کنید)"
-                      : "فعال‌سازی اعلان‌ها"
+                      : pushStatus.checking ? "در حال بررسی اعلان‌ها" : pushPermission === "granted" ? "تلاش مجدد برای ثبت اعلان" : "فعال‌سازی اعلان‌ها"
                 }
               />
             </ListItemButton>

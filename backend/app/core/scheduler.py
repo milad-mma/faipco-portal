@@ -279,6 +279,15 @@ async def _oa_notification_outbox_job() -> None:
         logger.exception("بازیابی اعلان‌های صف‌شده‌ی اتوماسیون ناموفق بود")
 
 
+async def _push_dispatch_job() -> None:
+    """Durable Web Push recovery. SKIP LOCKED protects across processes."""
+    try:
+        from app.services.push_dispatch import drain_push_dispatch_jobs
+        await drain_push_dispatch_jobs()
+    except Exception as exc:
+        logger.error("Push dispatch scheduler error: %s", type(exc).__name__)
+
+
 async def _oa_cleanup_temp_job() -> None:
     """
     Job هر ۶ ساعت: فایل‌های موقت بی‌پیوند اتوماسیون پس از مهلت پاک می‌شوند. همان قفل بکاپ را می‌گیرد تا هم‌زمان با بکاپ
@@ -557,6 +566,16 @@ async def start_scheduler() -> None:
         trigger="interval",
         seconds=30,
         id="oa_push_outbox_retry",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        _push_dispatch_job,
+        trigger="interval",
+        seconds=5,
+        id="push_dispatch_outbox",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

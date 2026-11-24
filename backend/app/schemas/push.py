@@ -12,6 +12,7 @@ class PushSubscriptionIn(BaseModel):
     """ورودی POST /push/subscribe برای ثبت اشتراک یک دستگاه."""
     endpoint: str
     keys: PushSubscriptionKeys
+    session_marker: str | None = None
 
 
 class UnsubscribeIn(BaseModel):

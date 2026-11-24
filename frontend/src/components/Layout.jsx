@@ -51,7 +51,7 @@ import MobileAppPrompt from "./MobileAppPrompt";
 import MobileAppGate from "./MobileAppGate";
 import BrandLogo, { surfaceTitleSx } from "./BrandLogo";
 import ChangePasswordDialog from "./ChangePasswordDialog";
-import { enablePushNotifications, getNotificationPermission, isPushSupported } from "../utils/push";
+import { enablePushNotifications, getPushRegistrationStatus, observePushRegistration, startPushMaintenance, isPushSupported } from "../utils/push";
 import { NAV_ITEMS, isItemVisible, itemBadge } from "../config/navItems";
 
 // شمارنده‌ی هشدار کنار عنوان منو (مثلاً ترک کار پرسنل دارای بیمه تکمیلی)؛ صفر = چیزی نمایش داده نمی‌شود
@@ -168,17 +168,13 @@ export default function Layout() {
     return initial;
   });
 
-  const [pushPermission, setPushPermission] = useState(() => getNotificationPermission());  // وضعیت اجازه‌ی اعلان مرورگر: default / granted / denied
-
-  // اگر اجازه‌ی اعلان از قبل داده شده، در هر بار باز شدن پنل اشتراک Push را بی‌صدا دوباره به سرور می‌فرستد
-  // تا اشتراکی که توسط مرورگر/سیستم‌عامل نامعتبر یا عوض شده، تازه شود (پرامپت جدیدی نمایش داده نمی‌شود).
+  const [pushStatus, setPushStatus] = useState(getPushRegistrationStatus);
+  const pushPermission = pushStatus.permission;
   useEffect(() => {
-    if (getNotificationPermission() === "granted") {
-      enablePushNotifications().catch(() => {
-        // خطا نادیده گرفته می‌شود؛ تلاشی پس‌زمینه‌ای است و در بار بعدی تکرار می‌شود.
-      });
-    }
-  }, []);
+    const unsubscribe = observePushRegistration(setPushStatus);
+    const stop = startPushMaintenance();
+    return () => { stop(); unsubscribe(); };
+  }, [user?.id]);
 
   // باز/بسته کردن زیرمنوی یک آیتم والد (فقط نمایش زیرمنو؛ هیچ لینکی باز نمی‌شود)
   function toggleMenu(path) {
@@ -230,10 +226,10 @@ export default function Layout() {
     setMenuAnchor(null);
     try {
       await enablePushNotifications();
-      setPushPermission(getNotificationPermission());
-      setSnackbar("اعلان‌ها با موفقیت فعال شد ✅ — از همین دستگاه اعلان دریافت می‌کنید");
+      setPushStatus(getPushRegistrationStatus());
+      setSnackbar("اشتراک اعلان این دستگاه با موفقیت ثبت شد.");
     } catch (err) {
-      setPushPermission(getNotificationPermission());
+      setPushStatus(getPushRegistrationStatus());
       setSnackbar(err.message || "فعال‌سازی اعلان با خطا مواجه شد");
     }
   }
@@ -462,18 +458,18 @@ export default function Layout() {
             </Tooltip>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
               {isPushSupported() && (
-                <MenuItem onClick={handleEnableNotifications} disabled={pushPermission !== "default"}>
+                <MenuItem onClick={handleEnableNotifications} disabled={pushPermission === "denied" || pushStatus.checking}>
                   <ListItemIcon>
                     <NotificationsActiveOutlinedIcon
                       fontSize="small"
-                      color={pushPermission === "granted" ? "success" : "inherit"}
+                      color={pushStatus.registered ? "success" : "inherit"}
                     />
                   </ListItemIcon>
-                  {pushPermission === "granted"
-                    ? "اعلان‌ها فعال است ✓"
+                  {pushStatus.registered
+                    ? "اشتراک اعلان ثبت شده ✓"
                     : pushPermission === "denied"
                       ? "اعلان‌ها مسدود شده (از تنظیمات مرورگر باز کنید)"
-                      : "فعال‌سازی اعلان‌ها"}
+                      : pushStatus.checking ? "در حال بررسی اعلان‌ها" : pushPermission === "granted" ? "تلاش مجدد برای ثبت اعلان" : "فعال‌سازی اعلان‌ها"}
                 </MenuItem>
               )}
               <MenuItem

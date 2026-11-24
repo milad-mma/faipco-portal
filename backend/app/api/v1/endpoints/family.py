@@ -45,7 +45,6 @@ from app.schemas.family import (
     FamilySettingsIn,
 )
 from app.services.family_service import FamilyError, FamilyForbiddenError, FamilyService, send_hr_push, today_jalali
-from app.services.notice_service import send_publish_notifications
 
 router = APIRouter()
 
@@ -290,7 +289,6 @@ async def approve_profile(
         _raise(e)
     if notice_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرونده یافت نشد")
-    background_tasks.add_task(send_publish_notifications, notice_id)
     return {"ok": True}
 
 
@@ -302,7 +300,6 @@ async def _reject_or_return(profile_id, payload, background_tasks, db, user, act
         _raise(e)
     if notice_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرونده یافت نشد")
-    background_tasks.add_task(send_publish_notifications, notice_id)
     return {"ok": True}
 
 

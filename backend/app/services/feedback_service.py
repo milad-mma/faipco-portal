@@ -166,7 +166,7 @@ class FeedbackService:
                 return
             key = "feedback.follow_up" if follow_up else "feedback.new_message"
             # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            schedule_push(user_ids, "/feedback-report", await notification_templates.render(self.db, None, key))
+            await schedule_push(user_ids, "/feedback-report", await notification_templates.render(self.db, None, key))
         except Exception:
             logger.exception("ارسال Push برای پیام جدید انتقادات و پیشنهادات با خطا مواجه شد")
 
@@ -182,7 +182,7 @@ class FeedbackService:
         اعلان Push به فرستنده‌ی پیام وقتی بازبین پاسخ می‌دهد. متن عمومی است (بدون عنوان/متن) تا روی صفحه‌ی قفل
         چیزی از محتوا دیده نشود؛ لینک به تب «پیام‌های من». خطاها فقط لاگ می‌شوند.
         """
-        schedule_push(
+        await schedule_push(
             {feedback.sender_id},
             "/feedback?tab=mine",
             await notification_templates.render(self.db, None, "feedback.reply"),
