@@ -70,6 +70,9 @@ from app.models.leave_request import (
 from app.models.site import AttendanceMapping, DbType, SiteConnection
 from app.models.user import User
 from app.services import kara_attendance_writeback as kara_wb
+from app.services.kara_request_conflicts import (
+    RequestConflictError, assert_no_request_overlap, assert_no_attendance_conflict,
+)
 from app.services import site_branch
 from app.services.kara_substitute import active_substitute_codes
 from app.services.kara_schema import KaraNames
@@ -300,7 +303,10 @@ def _select_card_lookup_sync(conn: SiteConnection, mapping: LeaveRequestMapping)
         connection.close()
 
 
-def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, where_sql: str, params: dict) -> list[dict]:
+def _select_requests_sync(
+    conn: SiteConnection, mapping: LeaveRequestMapping, where_sql: str, params: dict,
+    *, cursor=None, conflict_lock: bool = False,
+) -> list[dict]:
     """
     ورودی: اتصال، نگاشت، شرط WHERE (با نام ستون‌های Quote‌شده) و پارامترهایش.
     ردیف‌های WF_Requests مطابق شرط (به‌علاوه فیلتر شعبه سایت) را می‌خواند و با
@@ -308,6 +314,13 @@ def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, wh
     """
     q = lambda name: _quote(conn.db_type, name)  # noqa: E731
     branch_sql, branch_params = _branch_filter_sql(q, mapping)
+    # Conflict checks span branches of the same Kara database (Emp_No is
+    # unique in that database). This option is internal, never used in lists.
+    if conflict_lock:
+        if conn.db_type != DbType.mssql or cursor is None:
+            raise ValueError("conflict_lock requires a SQL Server transaction cursor")
+        branch_sql, branch_params = "", {}
+    lock_sql = " WITH (UPDLOCK, HOLDLOCK)" if conflict_lock else ""
     # ستون AcceptCode (وضعیت اعمال در کاراوب؛ ۲۲ = ابطال‌شده) فقط اگر نگاشت شده باشد خوانده می‌شود
     names = KaraNames(mapping)
     accept_sql = (
@@ -315,33 +328,36 @@ def _select_requests_sync(conn: SiteConnection, mapping: LeaveRequestMapping, wh
         if names.has("wf_requests", "accept_code")
         else ""
     )
+    # همه ستون‌های درخواست با نام مستعار ثابت؛ ActionId فقط اگر نگاشت شده باشد
+    query = f"""
+        SELECT
+            {accept_sql}{q(mapping.request_id_column)} AS {q("RequestId")},
+            {q(mapping.emp_no_column)} AS {q("EmpNo")},
+            {q(mapping.submitting_date_column)} AS {q("SubmittingDate")},
+            {q(mapping.start_date_column)} AS {q("StartDate")},
+            {q(mapping.end_date_column)} AS {q("EndDate")},
+            {q(mapping.start_hour_column)} AS {q("StartHour")},
+            {q(mapping.end_hour_column)} AS {q("EndHour")},
+            {q(mapping.duration_column)} AS {q("Duration")},
+            {q(mapping.is_final_approved_column)} AS {q("IsFinalApproved")},
+            {q(mapping.approval_by_manager_column)} AS {q("ApprovalByManagerEmpNo")},
+            {q(mapping.approval_date_column)} AS {q("ApprovalDate")},
+            {q(mapping.operations_id_column)} AS {q("OperationsID")},
+            {q(mapping.description_column)} AS {q("Description")},
+            {q(mapping.cur_emp_no_column)} AS {q("CurEmpNo")},
+            {q(mapping.manager_idea_column)} AS {q("ManagerIdea")},
+            {q(mapping.source_column)} AS {q("Source")},
+            {q(mapping.destination_column)} AS {q("Distination")},
+            {q(mapping.card_no_column)} AS {q("CardNo")}{(", " + q(mapping.action_id_column) + " AS " + q("ActionId")) if mapping.action_id_column else ""}
+        FROM {q(mapping.table_name)}{lock_sql}
+        WHERE {where_sql} {branch_sql}
+        ORDER BY {q(mapping.request_id_column)} DESC
+    """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
+    if cursor is not None:
+        cursor.execute(query, {**params, **branch_params})
+        return list(cursor.fetchall())
     connection = _connect(conn)
     try:
-        # همه ستون‌های درخواست با نام مستعار ثابت؛ ActionId فقط اگر نگاشت شده باشد
-        query = f"""
-            SELECT
-                {accept_sql}{q(mapping.request_id_column)} AS {q("RequestId")},
-                {q(mapping.emp_no_column)} AS {q("EmpNo")},
-                {q(mapping.submitting_date_column)} AS {q("SubmittingDate")},
-                {q(mapping.start_date_column)} AS {q("StartDate")},
-                {q(mapping.end_date_column)} AS {q("EndDate")},
-                {q(mapping.start_hour_column)} AS {q("StartHour")},
-                {q(mapping.end_hour_column)} AS {q("EndHour")},
-                {q(mapping.duration_column)} AS {q("Duration")},
-                {q(mapping.is_final_approved_column)} AS {q("IsFinalApproved")},
-                {q(mapping.approval_by_manager_column)} AS {q("ApprovalByManagerEmpNo")},
-                {q(mapping.approval_date_column)} AS {q("ApprovalDate")},
-                {q(mapping.operations_id_column)} AS {q("OperationsID")},
-                {q(mapping.description_column)} AS {q("Description")},
-                {q(mapping.cur_emp_no_column)} AS {q("CurEmpNo")},
-                {q(mapping.manager_idea_column)} AS {q("ManagerIdea")},
-                {q(mapping.source_column)} AS {q("Source")},
-                {q(mapping.destination_column)} AS {q("Distination")},
-                {q(mapping.card_no_column)} AS {q("CardNo")}{(", " + q(mapping.action_id_column) + " AS " + q("ActionId")) if mapping.action_id_column else ""}
-            FROM {q(mapping.table_name)}
-            WHERE {where_sql} {branch_sql}
-            ORDER BY {q(mapping.request_id_column)} DESC
-        """  # noqa: S608 - نام جدول/ستون فقط از تنظیمات Admin می‌آید
         with _dict_cursor(connection, conn.db_type) as cur:
             cur.execute(query, {**params, **branch_params})
             return list(cur.fetchall())
@@ -507,7 +523,37 @@ def _select_latest_reviews_sync(
     return {rid: desc for rid, (desc, _) in latest.items() if desc is not None}  # نظرهای خالی حذف می‌شوند
 
 
-def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, values: dict) -> int:
+def _locked_request_rows(cur, conn, mapping, emp_no):
+    """قفل ردیف‌ها و بازه کلیدهای درخواست این پرسنل تا پایان تراکنش SQL Server."""
+    col = _quote(conn.db_type, mapping.emp_no_column)
+    return _select_requests_sync(
+        conn, mapping, f"{col} = %(emp_no)s", {"emp_no": emp_no},
+        cursor=cur, conflict_lock=True,
+    )
+
+
+def _check_attendance_conflicts(cur, names, candidate):
+    """کنترل ثبت موجود کاراوب با همان Cursor عملیات ثبت یا تأیید؛ فقط خواندن."""
+    assert_no_attendance_conflict(
+        cur, names, candidate, jalali_int=kara_wb._jalali_int,
+        shift_ref=kara_wb._shift_ref, match_punch=kara_wb._match_hourly_punch,
+        for_approval=candidate.get("RequestId") is not None,
+    )
+
+
+def _check_new_kara_request(cur, conn, mapping, names, values, forgotten_cards):
+    """بررسی درخواست‌های فعال و کارکرد واقعی، پیش از INSERT و در همان تراکنش."""
+    candidate = _row_from_values(values)
+    candidate["Duration"] = values["duration"]
+    rows = _locked_request_rows(cur, conn, mapping, candidate["EmpNo"])
+    assert_no_request_overlap(rows, candidate, forgotten_cards)
+    _check_attendance_conflicts(cur, names, candidate)
+
+
+def _insert_request_sync(
+    conn: SiteConnection, mapping: LeaveRequestMapping, values: dict,
+    *, conflict_names: KaraNames | None = None, forgotten_cards=(),
+) -> int:
     """
     ورودی: اتصال، نگاشت و دیکشنری مقادیر با کلیدهای منطقی (emp_no، start_date، duration، ...).
     یک ردیف جدید در WF_Requests درج می‌کند و شناسه (RequestId) ردیف جدید را برمی‌گرداند؛
@@ -553,6 +599,9 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
 
     connection = _connect(conn)
     try:
+        if conflict_names is not None:
+            with _dict_cursor(connection, conn.db_type) as check_cur:
+                _check_new_kara_request(check_cur, conn, mapping, conflict_names, values, forgotten_cards)
         with connection.cursor() as cur:
             # درج و گرفتن شناسه ردیف جدید، به روش مخصوص هر دیتابیس
             if conn.db_type == DbType.postgresql:
@@ -575,6 +624,9 @@ def _insert_request_sync(conn: SiteConnection, mapping: LeaveRequestMapping, val
                 new_id = cur.lastrowid  # شناسه AUTO_INCREMENT آخرین درج
             connection.commit()
             return int(new_id)
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 
@@ -681,6 +733,95 @@ def _run_kara_writeback_sync(conn: SiteConnection, names: KaraNames, fn, *args):
         return result
     except Exception:
         connection.rollback()  # هیچ تغییر نیمه‌کاره‌ای در کاراوب نماند
+        raise
+    finally:
+        connection.close()
+
+
+def _decide_kara_ordinary_sync(conn, mapping, names, expected, updates, approver, approved, forgotten_cards):
+    """تصمیم و اثر مرخصی/ماموریت عادی در یک تراکنش؛ در تعارض هیچ تغییر ثبت نمی‌شود."""
+    connection = _connect(conn)
+    try:
+        with _dict_cursor(connection, conn.db_type) as cur:
+            rows = _locked_request_rows(cur, conn, mapping, expected["EmpNo"])
+            request_id = expected["RequestId"]
+            current = next((r for r in rows if r["RequestId"] == request_id), None)
+            # The async caller already checked the manager/substitute and site.
+            # Do not act on an edited/reassigned/decided row after taking locks.
+            fields = ("EmpNo", "CurEmpNo", "IsFinalApproved", "AcceptCode", "StartDate", "EndDate",
+                      "StartHour", "EndHour", "Duration", "CardNo", "OperationsID", "ActionId", "Description")
+            if (current is None or current.get("IsFinalApproved") is not None
+                    or any(current.get(k) != expected.get(k) for k in fields)):
+                raise RequestConflictError("درخواست تغییر کرده یا قبلاً تصمیم‌گیری شده است. صفحه را به‌روز کنید.")
+            if approved:
+                assert_no_request_overlap(rows, current, forgotten_cards, exclude_id=request_id)
+                _check_attendance_conflicts(cur, names, current)
+
+            # Update still uses the original site's branch filter. Never commit
+            # an effect when the corresponding request no longer belongs to it.
+            q = lambda name: _quote(conn.db_type, name)
+            branch_sql, branch_params = _branch_filter_sql(q, mapping)
+            sets = ", ".join(f"{q(col)} = %({i})s" for i, col in enumerate(updates))
+            params = {str(i): value for i, value in enumerate(updates.values())}
+            cur.execute(
+                f"UPDATE {q(mapping.table_name)} SET {sets} "
+                f"WHERE {q(mapping.request_id_column)} = %(request_id)s "
+                f"AND {q(mapping.is_final_approved_column)} IS NULL {branch_sql}",
+                {**params, **branch_params, "request_id": request_id},
+            )
+            # Read the resulting row instead of relying on a driver's rowcount
+            # (SET NOCOUNT or triggers may affect it).
+            decided = _select_requests_sync(
+                conn, mapping, f"{q(mapping.request_id_column)} = %(request_id)s",
+                {"request_id": request_id}, cursor=cur,
+            )
+            if (len(decided) != 1 or decided[0].get("IsFinalApproved") is None
+                    or decided[0]["IsFinalApproved"] != approved
+                    or decided[0].get("ApprovalByManagerEmpNo") != approver):
+                raise RequestConflictError("وضعیت درخواست تغییر کرده است. صفحه را به‌روز کنید.")
+            if approved:
+                result = kara_wb.apply_on_approval(cur, names, current, approver,
+                                                   mapping.application_id_value, _effective_branch(mapping) or 1)
+                if result is None:
+                    raise RequestConflictError("نگاشت اعمال کارکرد کاراوب کامل نیست؛ با منابع انسانی هماهنگ کنید.")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def _apply_pending_kara_hourly_checked(conn, names, request, app_id, forgotten_cards):
+    """اعمال بعدی ساعتی تنها اگر درخواست و کارکرد واقعی هنوز بدون تعارض باشند."""
+    mapping = names.leave
+    connection = _connect(conn)
+    try:
+        with _dict_cursor(connection, conn.db_type) as cur:
+            rows = _locked_request_rows(cur, conn, mapping, request["EmpNo"])
+            current = next((r for r in rows if r["RequestId"] == request["RequestId"]), None)
+            fields = ("EmpNo", "StartDate", "EndDate", "StartHour", "EndHour", "Duration", "CardNo",
+                      "OperationsID", "ApprovalByManagerEmpNo", "CurEmpNo")
+            if (not current or current.get("IsFinalApproved") != 1
+                    or current.get("AcceptCode") != kara_wb.ACCEPT_APPROVED_NOT_APPLIED
+                    or any(current.get(k) != request.get(k) for k in fields)):
+                return False
+            # Preserve the site's authorization/scope for a row that may have moved.
+            q = lambda name: _quote(conn.db_type, name)
+            in_scope = _select_requests_sync(conn, mapping, f"{q(mapping.request_id_column)} = %(r)s",
+                                             {"r": current["RequestId"]}, cursor=cur)
+            if len(in_scope) != 1:
+                return False
+            assert_no_request_overlap(rows, current, forgotten_cards, exclude_id=current["RequestId"])
+            _check_attendance_conflicts(cur, names, current)
+            result = kara_wb.apply_pending_hourly(cur, names, current, app_id)
+        connection.commit()
+        return result
+    except RequestConflictError:
+        connection.rollback()
+        return False  # Keep the existing approved/not-applied state; no overwrite.
+    except Exception:
+        connection.rollback()
         raise
     finally:
         connection.close()
@@ -1399,7 +1540,7 @@ class LeaveRequestService:
             raise LeaveRequestError(str(e)) from e  # تبدیل به خطای قابل نمایش سرویس
 
         # نباید با درخواست در بررسی/تأییدشده‌ی قبلی هم‌پوشانی داشته باشد (مجوز خروج بازه ندارد)
-        if not leave_type.is_exit_permit:
+        if not leave_type.is_exit_permit and kara_names is None:
             await self._ensure_no_overlap(
                 site_connection, mapping, employee, start_date, effective_end_date, start_hour, end_hour
             )
@@ -1456,12 +1597,24 @@ class LeaveRequestService:
             except Exception as e:
                 raise LeaveRequestError(f"خواندن اطلاعات تکمیلی از کاراوب با خطا مواجه شد: {e}") from e
 
-        # درج ردیف در WF_Requests
+        # در کاراوب، کنترل تداخل باید در همان تراکنش درج انجام شود.
+        conflict_names = kara_names if not leave_type.is_exit_permit else None
+        forgotten_cards = set()
+        if conflict_names is not None:
+            forgotten_cards, _ = await self._get_forgotten_context(employee.site_id)
         try:
-            new_request_id = await asyncio.to_thread(_insert_request_sync, site_connection, mapping, values)
+            new_request_id = await asyncio.to_thread(
+                _insert_request_sync, site_connection, mapping, values,
+                conflict_names=conflict_names, forgotten_cards=forgotten_cards,
+            )
+        except RequestConflictError as e:
+            raise LeaveRequestError(str(e)) from e
         except LeaveRequestError:
             raise
         except Exception as e:
+            if conflict_names is not None:
+                logger.exception("کنترل تعارض یا ثبت درخواست کاراوب شکست خورد")
+                raise LeaveRequestError("بررسی سوابق یا ثبت درخواست در کاراوب انجام نشد؛ لطفاً دوباره تلاش کنید یا با منابع انسانی هماهنگ کنید.") from e
             # متن خطای خام درایور/Trigger (معمولاً شامل نام ستون یا محدودیت مشکل‌دار) نمایش داده می‌شود تا قابل عیب‌یابی باشد
             raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
 
@@ -1608,12 +1761,12 @@ class LeaveRequestService:
                     continue
                 try:
                     if await asyncio.to_thread(
-                        _run_kara_writeback_sync,
+                        _apply_pending_kara_hourly_checked,
                         site_connection,
                         kara_names,
-                        kara_wb.apply_pending_hourly,
                         row,
                         mapping.application_id_value,
+                        forgotten_cards,
                     ):
                         applied += 1
                 except Exception:
@@ -2457,33 +2610,45 @@ class LeaveRequestService:
             mapping.approval_date_column: kara_wb.kara_now(),
             mapping.manager_idea_column: "",
         }
-        await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
-
-        # اعمال اثر تأیید در کارکرد کاراوب: ساعتی روی تردد مطابق (یا AcceptCode=8 اگر ترددی
-        # نیست)، روزانه در Mor_Mam، تردد فراموش‌شده درج تردد. اگر شکست بخورد، خودِ تأیید هم
-        # برگردانده می‌شود تا درخواستی «تأییدشده ولی بی‌اثر» باقی نماند.
-        if approved and kara_names is not None:
+        if kara_names is not None and not is_forgotten and not kara_wb.is_exit_permit(request_row):
             try:
                 await asyncio.to_thread(
-                    _run_kara_writeback_sync,
-                    site_connection,
-                    kara_names,
-                    kara_wb.apply_forgotten_punch if is_forgotten else kara_wb.apply_on_approval,  # تابع اعمال بر اساس نوع
-                    request_row,
-                    approver_emp_no,
-                    mapping.application_id_value,
-                    _effective_branch(mapping) or 1,
+                    _decide_kara_ordinary_sync, site_connection, mapping, kara_names,
+                    request_row, updates, approver_emp_no, approved, forgotten_cards,
                 )
+            except RequestConflictError as e:
+                raise LeaveRequestError(str(e)) from e
             except Exception as e:
-                logger.exception("اعمال تأیید درخواست %s در کارکرد کاراوب شکست خورد", request_id)
-                # برگرداندن تصمیم به حالت «در حال بررسی»
-                rollback = {
-                    mapping.is_final_approved_column: None,
-                    mapping.approval_by_manager_column: None,
-                    mapping.approval_date_column: None,
-                }
-                await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, rollback)
-                raise LeaveRequestError(f"ثبت این تأیید در کارکرد کاراوب با خطا مواجه شد: {e}") from e
+                logger.exception("تصمیم یا اعمال کارکرد درخواست %s شکست خورد", request_id)
+                raise LeaveRequestError("ثبت تصمیم در کاراوب انجام نشد؛ لطفاً دوباره تلاش کنید یا با منابع انسانی هماهنگ کنید.") from e
+        else:
+            await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, updates)
+
+            # اعمال اثر تأیید در کارکرد کاراوب: ساعتی روی تردد مطابق (یا AcceptCode=8 اگر ترددی
+            # نیست)، روزانه در Mor_Mam، تردد فراموش‌شده درج تردد. اگر شکست بخورد، خودِ تأیید هم
+            # برگردانده می‌شود تا درخواستی «تأییدشده ولی بی‌اثر» باقی نماند.
+            if approved and kara_names is not None:
+                try:
+                    await asyncio.to_thread(
+                        _run_kara_writeback_sync,
+                        site_connection,
+                        kara_names,
+                        kara_wb.apply_forgotten_punch if is_forgotten else kara_wb.apply_on_approval,  # تابع اعمال بر اساس نوع
+                        request_row,
+                        approver_emp_no,
+                        mapping.application_id_value,
+                        _effective_branch(mapping) or 1,
+                    )
+                except Exception as e:
+                    logger.exception("اعمال تأیید درخواست %s در کارکرد کاراوب شکست خورد", request_id)
+                    # برگرداندن تصمیم به حالت «در حال بررسی»
+                    rollback = {
+                        mapping.is_final_approved_column: None,
+                        mapping.approval_by_manager_column: None,
+                        mapping.approval_date_column: None,
+                    }
+                    await asyncio.to_thread(_update_request_sync, site_connection, mapping, request_id, rollback)
+                    raise LeaveRequestError(f"ثبت این تأیید در کارکرد کاراوب با خطا مواجه شد: {e}") from e
 
         # ثبت نظر تأییدکننده در WF_Reviews (فقط اگر متنی نوشته باشد - مثل کاراوب).
         # ReviewType برای تأیید و رد یکسان است؛ تصمیم واقعی فقط در IsFinalApproved ذخیره می‌شود.
