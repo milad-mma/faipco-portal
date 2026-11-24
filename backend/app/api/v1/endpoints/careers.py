@@ -16,7 +16,6 @@ from app.core.ip_allowlist import get_client_ip
 from app.core.config import get_settings
 from app.models.user import Permission
 from app.db.session import AsyncSessionLocal
-from app.services.push_service import PushService
 import re
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -84,22 +83,19 @@ MAX_BODY_BYTES = 4 * 1024 * 1024
 RATE_WINDOW_MINUTES = 60
 
 
-async def notify_recruiters(application_id: int) -> None:
-    """Push only to global HR grant holders; no applicant-sensitive data in notification."""
-    try:
-        async with AsyncSessionLocal() as db:
-            g = grants_subquery()
-            ids = {int(x) for x in (await db.scalars(
-                select(g.c.user_id).join(User, User.id == g.c.user_id).where(
-                    g.c.code == "careers.manage", g.c.site_id.is_(None), User.is_active.is_(True))
-            )).all()}
-            ids.update(int(x) for x in (await db.scalars(
-                select(User.id).where(User.is_superuser.is_(True), User.is_active.is_(True))
-            )).all())
-            if ids:
-                await PushService(db).notify_users(ids, url="/careers/admin", body="درخواست استخدام جدیدی ثبت شده است.")
-    except Exception:
-        logger.exception("Recruitment notification failed for application %s", application_id)
+async def queue_recruiter_notification(db: AsyncSession, application_id: int) -> None:
+    """Queue only to global HR grant holders; never expose applicant data."""
+    from app.services.push_dispatch import business_event_key, enqueue_event_push
+    g = grants_subquery()
+    ids = {int(x) for x in (await db.scalars(
+        select(g.c.user_id).join(User, User.id == g.c.user_id).where(
+            g.c.code == "careers.manage", g.c.site_id.is_(None), User.is_active.is_(True))
+    )).all()}
+    ids.update(int(x) for x in (await db.scalars(
+        select(User.id).where(User.is_superuser.is_(True), User.is_active.is_(True))
+    )).all())
+    await enqueue_event_push(db, ids, "/careers/admin", "درخواست استخدام جدیدی ثبت شده است.",
+                             event_key=business_event_key("careers", application_id, "submitted", "new"))
 
 
 def validate_application(payload: CareerSubmitIn) -> None:
@@ -213,8 +209,9 @@ async def save_application(payload: CareerSubmitIn, request: Request, db: AsyncS
     record = CareerApplication(full_name=payload.full_name.strip(), mobile=payload.mobile,
         requested_position=payload.requested_position.strip(), details=d, ip_digest=digest)
     db.add(record)
+    await db.flush()
+    await queue_recruiter_notification(db, record.id)
     await db.commit()
-    await db.refresh(record)
     return record.id
 
 
@@ -245,7 +242,6 @@ async def save_page(payload: CareerPageIn, db: AsyncSession = Depends(get_db), u
 @router.post("/apply", status_code=201)
 async def apply(payload: CareerSubmitIn, request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     application_id = await save_application(payload, request, db)
-    background_tasks.add_task(notify_recruiters, application_id)
     return {"success": True, "message": "درخواست استخدام شما با موفقیت ثبت شد."}
 
 
@@ -281,7 +277,6 @@ async def apply_with_resume(request: Request, background_tasks: BackgroundTasks,
         if name:
             (RESUME_DIR / name).unlink(missing_ok=True)
         raise
-    background_tasks.add_task(notify_recruiters, application_id)
     return {"success": True, "message": "درخواست استخدام شما با موفقیت ثبت شد."}
 
 

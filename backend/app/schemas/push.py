@@ -1,20 +1,37 @@
-"""Schema های Pydantic برای اشتراک Web Push (همان ساختاری که PushSubscription.toJSON() مرورگر می‌دهد)؛ مورد استفاده در endpointهای /push."""
-from pydantic import BaseModel
+"""Browser Web Push subscription input; validate before storing network destinations."""
+from pydantic import BaseModel, Field, field_validator
+from app.core.push_endpoint_policy import (
+    MAX_ENDPOINT_LENGTH, valid_push_endpoint, validate_public_key, validate_auth_key,
+)
 
 
 class PushSubscriptionKeys(BaseModel):
-    """کلیدهای رمزنگاری اشتراک (بخشی از PushSubscriptionIn)."""
-    p256dh: str
-    auth: str
+    p256dh: str = Field(min_length=80, max_length=100)
+    auth: str = Field(min_length=20, max_length=32)
+
+    @field_validator("p256dh")
+    @classmethod
+    def public_key(cls, value):
+        return validate_public_key(value)
+
+    @field_validator("auth")
+    @classmethod
+    def auth_key(cls, value):
+        return validate_auth_key(value)
 
 
 class PushSubscriptionIn(BaseModel):
-    """ورودی POST /push/subscribe برای ثبت اشتراک یک دستگاه."""
-    endpoint: str
+    endpoint: str = Field(min_length=1, max_length=MAX_ENDPOINT_LENGTH)
     keys: PushSubscriptionKeys
-    session_marker: str | None = None
+    session_marker: str | None = Field(default=None, max_length=128)
+
+    @field_validator("endpoint")
+    @classmethod
+    def provider(cls, value):
+        if not valid_push_endpoint(value):
+            raise ValueError("Unapproved Web Push provider")
+        return value
 
 
 class UnsubscribeIn(BaseModel):
-    """ورودی POST /push/unsubscribe برای حذف اشتراک یک دستگاه."""
-    endpoint: str
+    endpoint: str = Field(min_length=1, max_length=MAX_ENDPOINT_LENGTH)

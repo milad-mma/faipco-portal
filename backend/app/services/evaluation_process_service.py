@@ -38,8 +38,7 @@ from app.models.evaluation_process import (
     EvaluationStatus,
 )
 from app.models.site import Site
-from app.services.push_background import schedule_push
-from app.services.push_service import PushService
+from app.services.push_dispatch import business_event_key, enqueue_event_push
 
 logger = logging.getLogger(__name__)
 
@@ -351,15 +350,13 @@ class EvaluationProcessService:
         evaluation.submitted_at = datetime.now(timezone.utc)
         evaluation.assignment.status = EvaluationAssignmentStatus.completed
 
+        await self._notify_target_of_submitted_evaluation(evaluation)
         await self.db.commit()
 
         # اگر این آخرین ارزیابی باقی‌مانده دوره بود، دوره خودکار بسته می‌شود؛ اجبار «تکمیل ارزیابی‌ها»
         # به وضعیت دوره وابسته است. نتیجه‌ی آن در پاسخ این درخواست لازم نیست، پس در پس‌زمینه با Session
         # جدا اجرا می‌شود تا پاسخ HTTP منتظر پیمایش همه‌ی دوره‌ها نماند. خطای آن فقط لاگ می‌شود.
         _schedule_period_status_sync()
-
-        # اطلاع‌رسانی Push به پرسنل ارزیابی‌شده (در پس‌زمینه)؛ خطای Push ثبت ارزیابی را متوقف نمی‌کند
-        await self._notify_target_of_submitted_evaluation(evaluation.assignment.target_employee_id)
 
         return await self._get_owned_evaluation(evaluation_id, evaluator_employee_id)
 
@@ -401,34 +398,27 @@ class EvaluationProcessService:
             if count <= 0:
                 continue
             try:
-                await PushService(self.db).notify_users(
-                    {user_id},
-                    url="/my-performance?tab=personnel",
-                    priority="normal",
-                    body=notification_templates.fill(reminder_text, count=count),
-                )
+                from zoneinfo import ZoneInfo
+                day = now.astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+                await enqueue_event_push(self.db, {user_id}, "/my-performance?tab=personnel",
+                    notification_templates.fill(reminder_text, count=count),
+                    event_key=business_event_key("evaluation", user_id, day, "reminder"),
+                    lifetime=timedelta(hours=12))
+                await self.db.commit()
                 notified += 1
             except Exception:
+                await self.db.rollback()
                 logger.exception("ارسال یادآوری ارزیابی عملکرد برای کاربر %s با خطا مواجه شد", user_id)
 
         return {"notified_evaluators": notified, "pending_total": sum(pending_by_evaluator.values())}
 
-    async def _notify_target_of_submitted_evaluation(self, target_employee_id: int) -> None:
-        """به کاربرِ پرسنل ارزیابی‌شده اعلان «نتیجه ثبت شد» می‌فرستد؛ نبودن حساب یا خطای Push فقط نادیده/لاگ می‌شود."""
-        try:
-            result = await self.db.execute(select(User).where(User.employee_id == target_employee_id))
-            target_user = result.scalar_one_or_none()
-            if target_user is None:
-                return
-            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            await schedule_push(
-                {target_user.id},
-                url="/my-performance",
-                priority="normal",
-                body=await notification_templates.render(self.db, None, "evaluation.result"),
-            )
-        except Exception:
-            logger.exception("ارسال Push برای نتیجه ارزیابی عملکرد با خطا مواجه شد")
+    async def _notify_target_of_submitted_evaluation(self, evaluation) -> None:
+        """Queue the result in the same transaction as this submission."""
+        result = await self.db.execute(select(User.id).where(User.employee_id == evaluation.assignment.target_employee_id))
+        ids = set(result.scalars().all())
+        await enqueue_event_push(self.db, ids, "/my-performance",
+            await notification_templates.render(self.db, None, "evaluation.result"),
+            event_key=business_event_key("evaluation", evaluation.id, int(evaluation.submitted_at.timestamp()*1000000), "result"))
 
     def _answer_has_content(self, question: EvaluationQuestion, answer: EvaluationAnswer | None) -> bool:
         """

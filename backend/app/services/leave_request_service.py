@@ -76,7 +76,6 @@ from app.services.kara_request_conflicts import (
 from app.services import site_branch
 from app.services.kara_substitute import active_substitute_codes
 from app.services.kara_schema import KaraNames
-from app.services.push_service import PushService
 
 logger = logging.getLogger(__name__)
 
@@ -852,7 +851,6 @@ def _to_personnel_code_int(employee: Employee) -> int:
 # اعلان Push در پس‌زمینه و با Session جداگانه ارسال می‌شود تا پاسخ HTTP منتظر
 # سرویس Push مرورگر (که ممکن است کند یا در دسترس نباشد) نماند.
 # نگه‌داشتن ارجاع Taskها تا قبل از اتمام توسط GC جمع نشوند.
-_background_push_tasks: set = set()
 
 
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
@@ -903,39 +901,25 @@ def _push_when(row: dict) -> str:
     return text.translate(_FA_DIGITS)
 
 
-def _schedule_push(site_id: int, emp_no: int, url: str, body: str) -> None:
-    """ورودی: سایت، کد پرسنلی گیرنده، آدرس مقصد و متن. ارسال Push را به‌صورت Task پس‌زمینه زمان‌بندی می‌کند و فوراً برمی‌گردد."""
-    task = asyncio.create_task(_send_push_to_emp_no(site_id, emp_no, url, body))
-    _background_push_tasks.add(task)
-    task.add_done_callback(_background_push_tasks.discard)  # پس از اتمام، از مجموعه حذف شود
+async def _schedule_push(site_id: int, emp_no: int, url: str, body: str, *, request_id=None, kind="event") -> None:
+    """KaraWeb commits independently. Persist before returning, never mutate KaraWeb here.
 
-
-async def _send_push_to_emp_no(site_id: int, emp_no: int, url: str, body: str) -> None:
+    An inter-database crash gap remains; recovery needs a verified external
+    event journal, not a guessed write to KaraWeb's business tables.
     """
-    ورودی: سایت، کد پرسنلی، آدرس و متن. کاربر پورتال متناظر با این کد پرسنلی را
-    پیدا می‌کند و اعلان Push را با حداکثر ۶۰ ثانیه انتظار می‌فرستد.
-    هر خطایی فقط لاگ می‌شود؛ اگر کاربری با این کد نباشد، کاری نمی‌کند.
-    """
-    from app.db.session import AsyncSessionLocal  # import محلی برای جلوگیری از import حلقه‌ای
-
+    from uuid import uuid4
+    from app.db.session import AsyncSessionLocal
+    from app.services.push_dispatch import business_event_key, enqueue_event_push
     try:
         async with AsyncSessionLocal() as db:
-            # کاربر متصل به پرسنلی با این کد در همین سایت
-            result = await db.execute(
-                select(User)
-                .join(Employee, Employee.id == User.employee_id)
-                .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no))
-            )
-            user = result.scalar_one_or_none()
-            if user is None:
-                return  # پرسنل حساب کاربری ندارد
-            # سقف زمانی، چون webpush خودش Timeout ندارد
-            await asyncio.wait_for(
-                PushService(db).notify_users({user.id}, url=url, priority="normal", body=body),
-                timeout=60,
-            )
-    except Exception:
-        logger.exception("ارسال Push درخواست مرخصی/ماموریت با خطا مواجه شد")
+            ids = set((await db.execute(select(User.id).join(Employee, Employee.id == User.employee_id)
+                .where(Employee.site_id == site_id, Employee.personnel_code == str(emp_no)))).scalars().all())
+            await enqueue_event_push(db, ids, url, body,
+                event_key=business_event_key("leave", request_id or "unknown", uuid4().hex, kind))
+            await db.commit()
+    except Exception as exc:
+        logger.error("Leave push enqueue failed site=%s request=%s kind=%s error=%s",
+                     site_id, request_id, kind, type(exc).__name__)
 
 
 MODULE_DISABLED_MESSAGE = "درخواست مرخصی/ماموریت در حال حاضر غیرفعال است"
@@ -1438,6 +1422,7 @@ class LeaveRequestService:
 
         # یک اعلان به سرپرست برای همه ترددهای این درخواست (زمان همه‌ی ترددها در متن)
         push_row = dict(push_rows[0]) if push_rows else {}
+        push_row["RequestId"] = request_ids[0]
         if len(push_rows) > 1:
             push_row["_when"] = "، ".join(_push_when(r) for r in push_rows)
         await self._notify_approver_of_new_request(employee.site_id, cur_emp_no, push_row)
@@ -1619,7 +1604,8 @@ class LeaveRequestService:
             raise LeaveRequestError(f"ثبت درخواست در دیتابیس منبع با خطا مواجه شد: {e}") from e
 
         # اطلاع‌رسانی به تأییدکننده در پس‌زمینه - خطای Push هرگز ثبت درخواست را متوقف نمی‌کند
-        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no, _row_from_values(values))
+        await self._notify_approver_of_new_request(employee.site_id, cur_emp_no,
+                                                   {**_row_from_values(values), "RequestId": new_request_id})
 
         return {
             "request_id": new_request_id,
@@ -1801,14 +1787,16 @@ class LeaveRequestService:
         values = await self._push_vars(site_id, row or {})
         body = await notification_templates.render(self.db, site_id, "leave.approver_new", **values)
         for emp_no in await self._with_substitute(site_id, cur_emp_no):
-            _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body)
+            await _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body,
+                                 request_id=(row or {}).get("RequestId"), kind="approver_pending")
 
     async def _notify_hr_forgotten(self, site_id: int, hr_emp_no: int, row: dict, type_site_id: int | None = None) -> None:
         """اعلان «تردد فراموش‌شده‌ی تأییدشده توسط سرپرست در انتظار شما» به مسئول نیروی انسانی (و جانشینش)."""
         values = await self._push_vars(type_site_id or site_id, row)
         body = await notification_templates.render(self.db, site_id, "leave.hr_forgotten_pending", **values)
         for emp_no in await self._with_substitute(site_id, hr_emp_no):
-            _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body)
+            await _schedule_push(site_id, emp_no, "/leave-requests?tab=pending", body,
+                                 request_id=row.get("RequestId"), kind="hr_pending")
 
     async def _with_substitute(self, site_id: int, emp_no: int | None) -> list[int]:
         """تأییدکننده و (اگر دارد) جانشین فعالش در کاراوب — برای اعلان."""
@@ -1823,11 +1811,12 @@ class LeaveRequestService:
     ) -> None:
         """ورودی: سایت، کد پرسنلی درخواست‌دهنده، مرحله (supervisor / approved / rejected) و ردیف. اعلان Push مرحله‌ی تردد فراموش‌شده."""
         values = await self._push_vars(type_site_id or site_id, row or {}, note if stage == "rejected" else None)
-        _schedule_push(
+        await _schedule_push(
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
             await notification_templates.render(self.db, site_id, f"leave.forgotten_{stage}", **values),
+            request_id=(row or {}).get("RequestId"), kind=f"forgotten_{stage}",
         )
 
     async def _notify_requester_of_decision(
@@ -1837,11 +1826,12 @@ class LeaveRequestService:
         """ورودی: سایت، کد پرسنلی درخواست‌دهنده، تصمیم و ردیف. اعلان Push «درخواست «نوع» شما برای … تأیید/رد شد»."""
         values = await self._push_vars(type_site_id or site_id, row or {}, None if approved else note)
         key = "leave.requester_approved" if approved else "leave.requester_rejected"
-        _schedule_push(
+        await _schedule_push(
             site_id,
             emp_no,
             "/leave-requests?tab=my-requests",
             await notification_templates.render(self.db, site_id, key, **values),
+            request_id=(row or {}).get("RequestId"), kind="approved" if approved else "rejected",
         )
 
     # ---------- خواندن/نمایش ----------

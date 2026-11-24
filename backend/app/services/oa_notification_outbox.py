@@ -8,15 +8,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app.db.session import AsyncSessionLocal
-from app.models.office_automation import OaNotificationLog, OaNotificationOutbox, OaNotificationPref
+from app.core.oa_access_rules import can
+from app.core.permission_grants import grants_subquery
+from app.models.office_automation import (OaApprovalStep, OaLetter, OaLetterAccess, OaNotificationLog, OaNotificationOutbox, OaNotificationPref)
+from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.services import notification_templates
-from app.services.push_service import PushService
+from app.services.push_service import PushService, eligible_subscriptions
+from app.services.push_dispatch import PUSH_TRANSPORT_LOCK, RETRY_WINDOW
 
 logger = logging.getLogger("faipco.automation.push")
 MAX_ATTEMPTS = 10
@@ -27,72 +32,114 @@ def next_retry(attempts: int) -> timedelta:
     return timedelta(seconds=min(3600, 30 * 2 ** min(max(attempts - 1, 0), 7)))
 
 
-async def _deliver_one(db, event: OaNotificationOutbox) -> tuple[str, str | None]:
-    """Send only outstanding subscriptions; persist partial successes in outbox payload.
+async def _current_recipient(db, payload):
+    """Re-use the domain view rule, including direct grants and confidentiality."""
+    match = re.fullmatch(r"/automation/letters/(\d+)", payload["url"])
+    if not match:
+        return set(), None, {}
+    letter = await db.get(OaLetter, int(match[1]))
+    if letter is None or letter.discarded_at is not None:
+        return set(), None, {}
+    employee_id = payload["employee_id"]
+    rows = (await db.execute(select(OaLetterAccess).where(
+        OaLetterAccess.letter_id == letter.id, OaLetterAccess.employee_id == employee_id
+    ))).scalars().all()
+    info = {"status": letter.status, "confidentiality": letter.confidentiality}
+    if not can("view", letter=info, rows=[dict(source=r.source, can_act=r.can_act,
+            can_refer=r.can_refer, revoked_at=r.revoked_at) for r in rows]):
+        return set(), None, {}
+    if payload.get("event") == "approval":
+        if not await db.scalar(select(OaApprovalStep.id).where(
+            OaApprovalStep.letter_id == letter.id, OaApprovalStep.round == letter.approval_round,
+            OaApprovalStep.approver_employee_id == employee_id, OaApprovalStep.status == "active").limit(1)):
+            return set(), None, {}
+    grants = grants_subquery()
+    ids = set((await db.execute(select(User.id).where(
+        User.employee_id == employee_id, User.is_active.is_(True),
+        or_(User.is_superuser.is_(True), User.id.in_(select(grants.c.user_id)
+             .where(grants.c.code == "automation.access")))))).scalars().all())
+    if letter.confidentiality == "confidential" or payload["text_key"] == "automation.confidential":
+        return ids, "automation.confidential", {}
+    return ids, payload["text_key"], payload.get("values", {})
 
-    The caller holds this event row locked, so two workers cannot choose the
-    same targets. A failure of one subscription does not re-send to others.
-    The resulting payload and next retry time commit atomically.
-    """
+
+async def _snapshot_bindings(db, user_ids):
+    stmt = eligible_subscriptions(user_ids).with_only_columns(
+        PushSubscription.id, PushSubscription.session_id, maintain_column_froms=True)
+    return {str(sid): session_id for sid, session_id in (await db.execute(stmt)).all()}
+
+
+async def _deliver_one(db, event: OaNotificationOutbox) -> tuple[str, str | None]:
+    """Persist device/session snapshot before network I/O; never guess a legacy binding."""
     p = event.payload
     if await db.scalar(select(OaNotificationLog.id).where(OaNotificationLog.key == event.key)):
         return "skipped", None
+    if getattr(event, "created_at", None) and datetime.now(timezone.utc) >= event.created_at + RETRY_WINDOW:
+        return "failed", "retry_window_elapsed"
     pref = await db.get(OaNotificationPref, p["employee_id"])
     if pref is not None and p.get("event") in (pref.disabled_events or []):
         db.add(OaNotificationLog(key=event.key))
         return "skipped", None
-    user_ids = set((await db.execute(
-        select(User.id).where(User.employee_id == p["employee_id"], User.is_active.is_(True))
-    )).scalars().all())
+    user_ids, text_key, values = await _current_recipient(db, p)
     if not user_ids:
-        raise RuntimeError("No active OA recipient account")
-    body = await notification_templates.render(db, p["site_id"], p["text_key"], **p.get("values", {}))
-    tracking = p.get("_delivery")
-    # Snapshot the FIRST round's subscriptions. New devices do not receive an
-    # old event just because they were registered while that event was retrying.
-    remaining = set(tracking["remaining"]) if tracking is not None else None
-    if remaining is not None and not remaining:
         db.add(OaNotificationLog(key=event.key))
-        return ("sent" if tracking["sent"] else "skipped"), None
-    async with AsyncSessionLocal() as push_db:
-        stats = await asyncio.wait_for(
-            PushService(push_db).notify_users(
-                user_ids, url=p["url"], priority=p.get("priority", "normal"),
-                body=body, return_stats=True,
-                subscription_ids=set(remaining) if remaining is not None else None,
-                notification_key=event.key,
-            ), timeout=120,
-        )
-    if not stats or stats.get("configured") is False:
-        raise RuntimeError("Push service is not configured or returned no status")
-
-    results = stats.get("results", [])
+        return "skipped", "recipient_or_letter_changed"
+    tracking = p.get("_delivery")
     if tracking is None:
-        initial = {int(item["id"]) for item in results}
-        tracking = {"remaining": sorted(initial), "sent": [], "stale": []}
-        remaining = initial
-    # An endpoint deleted/unbound/revoked during a retry is no longer eligible:
-    # mark it complete, never resurrect an old device subscription.
-    returned = {int(item["id"]) for item in results}
-    sent = set(tracking["sent"])
-    stale = set(tracking["stale"])
-    stale.update(remaining - returned)
-    remaining &= returned
-    for item in results:
-        sid = int(item["id"])
-        if item["status"] == "sent":
-            sent.add(sid)
-            remaining.discard(sid)
-        elif item["status"] == "stale":
-            stale.add(sid)
-            remaining.discard(sid)
-    event.payload = {**p, "_delivery": {
-        "remaining": sorted(remaining), "sent": sorted(sent), "stale": sorted(stale),
-    }}
+        bindings = await _snapshot_bindings(db, user_ids)
+        event.payload = {**p, "_delivery": {"remaining": sorted(map(int, bindings)),
+            "bindings": bindings, "sent": [], "stale": [], "failed": []}}
+        if not bindings:
+            db.add(OaNotificationLog(key=event.key))
+            return "skipped", "no_eligible_devices"
+        return "initialized", None
+    remaining, sent, stale = (set(tracking[k]) for k in ("remaining", "sent", "stale"))
+    failed = set(tracking.get("failed", []))
+    bindings = tracking.get("bindings", {})
+    # Old retry rows did not record the session. Never attach them to a new login.
+    stale.update(sid for sid in remaining if str(sid) not in bindings)
+    remaining.difference_update(stale)
+    body = await notification_templates.render(db, p["site_id"], text_key, **values)
+    batch = set(sorted(remaining)[:20])
+    retry_after = 0
+    if batch:
+        async with AsyncSessionLocal() as push_db:
+            stats = await asyncio.wait_for(PushService(push_db).notify_users(
+                user_ids, url=p["url"], priority=p.get("priority", "normal"), body=body,
+                return_stats=True, subscription_ids=batch, notification_key=event.key,
+                session_bindings={sid: bindings[str(sid)] for sid in batch},
+                ttl_seconds=max(0, int((event.created_at + RETRY_WINDOW - datetime.now(timezone.utc)).total_seconds()))
+                    if getattr(event, "created_at", None) else 24 * 3600,
+            ), timeout=120)
+        if not stats or stats.get("configured") is False:
+            raise RuntimeError("Push service is not configured or returned no status")
+        results = stats.get("results", [])
+        missing = batch - {int(item["id"]) for item in results}
+        stale.update(missing)
+        remaining.difference_update(missing)
+        for item in results:
+            sid = int(item["id"])
+            if sid not in batch:
+                continue
+            status = item["status"]
+            if status in ("sent", "stale", "permanent", "ineligible"):
+                (sent if status == "sent" else failed if status == "permanent" else stale).add(sid)
+                remaining.discard(sid)
+            else:
+                retry_after = max(retry_after, item.get("retry_after") or 0,
+                                  900 if item.get("error") in ("http_401", "http_403") else 0)
+    event.payload = {**p, "_delivery": {"remaining": sorted(remaining), "sent": sorted(sent),
+        "stale": sorted(stale), "failed": sorted(failed), "bindings": bindings,
+        "retry_after": retry_after}}
     if remaining:
+        # A new batch is not a retry when all attempted subscriptions were terminal.
+        if not (remaining & batch):
+            return "initialized", None
         return "pending", f"Push pending for {len(remaining)} subscription(s); {len(sent)} accepted"
     db.add(OaNotificationLog(key=event.key))
-    return ("sent" if sent else "skipped"), None
+    if failed:
+        return "failed", f"{len(failed)} permanent failure(s); {len(sent)} accepted"
+    return ("sent" if sent else "skipped"), (f"{len(stale)} stale/unbound device(s)" if stale else None)
 
 
 async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int:
@@ -105,6 +152,8 @@ async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int
     for _ in range(max(0, min(limit, 30))):
         async with AsyncSessionLocal() as db:
             now = datetime.now(timezone.utc)
+            if not await db.scalar(select(func.pg_try_advisory_xact_lock(PUSH_TRANSPORT_LOCK))):
+                break
             stmt = (
                 select(OaNotificationOutbox)
                 .where(OaNotificationOutbox.status == "pending", OaNotificationOutbox.next_attempt_at <= now)
@@ -122,19 +171,21 @@ async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int
             event_id = event.id  # rollback expires ORM attributes, including primary keys
             try:
                 status, error = await _deliver_one(db, event)
-                if status == "pending":
+                if status == "initialized":
+                    event.next_attempt_at = datetime.now(timezone.utc)
+                elif status == "pending":
                     event.attempts += 1
                     event.last_error = error
                     if event.attempts >= MAX_ATTEMPTS:
                         event.status = "failed"
                         logger.error("OA push exhausted retries (outbox_id=%s)", event.id)
                     else:
-                        event.next_attempt_at = datetime.now(timezone.utc) + next_retry(event.attempts)
+                        event.next_attempt_at = datetime.now(timezone.utc) + max(next_retry(event.attempts), timedelta(seconds=event.payload.get("_delivery", {}).get("retry_after", 0)))
                         logger.warning("OA push retry scheduled (outbox_id=%s, attempt=%s)", event.id, event.attempts)
                 else:
                     event.status = status
                     event.sent_at = datetime.now(timezone.utc)
-                    event.last_error = None
+                    event.last_error = error
                 await db.commit()
                 count += 1
             except Exception as exc:  # noqa: BLE001 - outbox must survive provider outages

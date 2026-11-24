@@ -1045,6 +1045,11 @@ class InsuranceService:
                 if count == 1
                 else f"ترک کار {count} نفر از پرسنل دارای بیمه تکمیلی ثبت شد؛ بررسی کنید."
             )
+            from app.services.push_dispatch import business_event_key, enqueue_event_push
+            from uuid import uuid4
+            event_id = notice.id if employee_ids else uuid4().hex
+            await enqueue_event_push(self.db, user_ids, self.LEFT_URL, push_body, "high",
+                                     event_key=business_event_key("insurance", site_id, event_id, "left"))
             pushes.append((user_ids, push_body))
         await self.db.flush()
         return pushes
@@ -1157,33 +1162,3 @@ class InsuranceService:
         if removed:
             await self.db.commit()
         return removed
-
-
-_left_push_tasks: set = set()
-
-
-def schedule_left_pushes(pushes: list[tuple[set[int], str]]) -> None:
-    """Push هشدار ترک کار بعد از commit تراکنش Sync؛ در پس‌زمینه با نشست جدا (خطا فقط لاگ می‌شود)."""
-    if not pushes:
-        return
-
-    async def _send() -> None:
-        from app.db.session import AsyncSessionLocal
-        from app.services.push_service import PushService
-
-        try:
-            async with AsyncSessionLocal() as db:
-                for user_ids, body in pushes:
-                    await asyncio.wait_for(
-                        PushService(db).notify_users(user_ids, url=InsuranceService.LEFT_URL, priority="high", body=body),
-                        timeout=60,
-                    )
-        except Exception:
-            logger.exception("ارسال Push هشدار ترک کار بیمه تکمیلی ناموفق بود")
-
-    try:
-        task = asyncio.get_running_loop().create_task(_send())
-    except RuntimeError:
-        return
-    _left_push_tasks.add(task)
-    task.add_done_callback(_left_push_tasks.discard)

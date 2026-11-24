@@ -59,7 +59,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
         success: true,
         message:
           sent_count > 0
-            ? `اعلان مجدداً برای ${sent_count} نفر ارسال شد.`
+            ? `ارسال مجدد اعلان برای ${sent_count} نفر در صف ثبت شد.`
             : "همه مخاطبان این اطلاعیه را قبلاً دیده‌اند — چیزی برای ارسال مجدد نبود.",
       });
     } catch (err) {

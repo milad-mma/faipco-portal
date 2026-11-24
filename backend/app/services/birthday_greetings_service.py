@@ -12,7 +12,7 @@ import logging
 import random
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import notification_templates
@@ -95,6 +95,7 @@ class BirthdayGreetingsService:
         today_year, today_month, today_day = get_current_jalali_date()
         today_str = f"{today_year:04d}-{today_month:02d}-{today_day:02d}"
 
+        await self.db.execute(select(func.pg_advisory_xact_lock(func.hashtext("faipco:birthday-greetings"))))
         # جلوگیری از ارسال تکراری: چون Job دارای misfire_grace_time است، ممکن است
         # در یک روز چند بار اجرا شود (مثلاً پس از Restart سرور)؛ تاریخ آخرین ارسال
         # ذخیره می‌شود تا هر پرسنل حداکثر یک‌بار در روز پیام تبریک بگیرد.
@@ -152,9 +153,8 @@ class BirthdayGreetingsService:
                 NoticeTarget(notice_id=notice.id, target_type=NoticeTargetType.employee, target_id=employee.id)
             )
             await enqueue_notice_push(self.db, notice)
-            await self.db.commit()
             sent_count += 1
 
-        logger.info("پیام تبریک تولد برای %s پرسنل فرستاده شد.", sent_count)
-        await SystemSettingsService(self.db).set_last_birthday_greetings_date(today_str)
+        await SystemSettingsService(self.db).set_last_birthday_greetings_date(today_str)  # commits notices and jobs together
+        logger.info("پیام تبریک تولد برای %s پرسنل در صف قرار گرفت.", sent_count)
         return sent_count

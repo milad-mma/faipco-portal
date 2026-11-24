@@ -411,9 +411,11 @@ async def _overrides(db: AsyncSession, module: str, site_id: int | None) -> dict
 
 
 def _fill(text: str, values: dict) -> str:
-    for name, value in values.items():
-        text = text.replace("{" + name + "}", str(value))
-    return text
+    import re
+    # Substitute only placeholders present in the original template; a value
+    # containing another placeholder must remain literal text.
+    return re.sub(r"\{([A-Za-z_][A-Za-z_0-9]*)\}",
+                  lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), text)
 
 
 class TemplateError(ValueError):
@@ -444,7 +446,7 @@ async def get_text(site_id: int | None, key: str) -> str:
 
 def fill(text: str, **values) -> str:
     """جایگزینی متغیرها در متن خام get_text (برای حلقه‌ها: یک بار get_text، برای هر نفر fill)."""
-    return _fill(text, values).strip()
+    return _fill(text, values).strip()[:MAX_TEXT]
 
 
 async def render(db: AsyncSession | None, site_id: int | None, key: str, **values) -> str:
@@ -452,7 +454,7 @@ async def render(db: AsyncSession | None, site_id: int | None, key: str, **value
     متن نهایی اعلان key برای سایت با جایگزینی متغیرها. هیچ‌وقت خطا نمی‌دهد. db فقط برای سازگاری امضا است؛
     خواندن با Session جدا انجام می‌شود (get_text).
     """
-    return fill(await get_text(site_id, key), **values)
+    return fill(await get_text(site_id, key), **values)[:max_len(key)]
 
 
 async def list_templates(db: AsyncSession, module: str, site_id: int | None) -> list[dict]:

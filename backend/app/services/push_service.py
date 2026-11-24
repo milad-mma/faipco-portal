@@ -21,9 +21,52 @@ from app.models.user_session import UserSession
 from app.models.user import User
 from app.models.employee import Employee
 from app.schemas.push import PushSubscriptionIn
+from app.core.push_endpoint_policy import PushHTTPSession, valid_push_endpoint
 
 logger = logging.getLogger("faipco.push")
 settings = get_settings()
+
+
+MAX_TTL_SECONDS = 7 * 24 * 3600
+MAX_PAYLOAD_BYTES = 3500  # leave room for Web Push encryption overhead
+
+
+def provider_retry_after(response):
+    """Retry-After may be seconds or an HTTP date. Do not store response text."""
+    from email.utils import parsedate_to_datetime
+    raw = (getattr(response, "headers", {}) or {}).get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        seconds = int(raw)
+    except (ValueError, TypeError):
+        try:
+            seconds = int((parsedate_to_datetime(raw) - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0, min(seconds, MAX_TTL_SECONDS))
+
+
+def bounded_payload(data: dict) -> str:
+    # json.dumps defaults to ASCII escapes (Persian/emoji expand substantially).
+    # Preserve text semantics and bound the final UTF-8 payload, not raw chars.
+    data = dict(data)
+    data["body"] = str(data.get("body") or "")[:500]
+    data["title"] = str(data.get("title") or "")[:200]
+    while True:
+        payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        if len(payload.encode("utf-8")) <= MAX_PAYLOAD_BYTES:
+            return payload
+        if not data["body"]:
+            raise ValueError("Push metadata exceeds payload limit")
+        data["body"] = data["body"][:max(0, len(data["body"]) - 50)]
+
+
+def send_webpush(**kwargs):
+    # Do not allow redirects even to another approved vendor: credentials are
+    # bound to the original origin. pywebpush 2.0 supports requests_session.
+    with PushHTTPSession() as session:
+        return webpush(requests_session=session, **kwargs)
 
 
 def eligible_subscriptions(user_ids: set[int]):
@@ -94,6 +137,7 @@ class PushService:
         subscription_ids: set[int] | None = None,
         notification_key: str | None = None,
         session_bindings: dict[int, int] | None = None,
+        ttl_seconds: int = 24 * 3600,
     ) -> dict | None:
         """
         به همه دستگاه‌های کاربران user_ids یک اعلان Push می‌فرستد (موازی، حداکثر ۲۰ هم‌زمان).
@@ -158,12 +202,17 @@ class PushService:
         async def send_one(sub: PushSubscription) -> None:
             """اعلان را برای یک اشتراک می‌سازد و ارسال می‌کند و شمارنده‌های نتیجه را به‌روز می‌کند."""
             nonlocal sent_count, failed_count
+            if not valid_push_endpoint(sub.endpoint):
+                failed_count += 1
+                delivery_results.append({"id": sub.id, "status": "permanent", "error": "endpoint_not_allowed"})
+                logger.warning("Push destination blocked (user_id=%s, subscription_id=%s)", sub.user_id, sub.id)
+                return
             recipient_name = name_by_user_id.get(sub.user_id)
             # عنوان/متن واقعی اطلاعیه در اعلان نمایش داده نمی‌شود؛ یک پیام
             # استاندارد و ثابت که فقط با نام مخاطب شخصی‌سازی می‌شود.
             notification_title = f"{recipient_name} عزیز،" if recipient_name else "پرتال سازمانی"
             notification_body = body or default_body
-            payload = json.dumps(
+            payload = bounded_payload(
                 {
                     "title": notification_title,
                     "body": notification_body,
@@ -183,7 +232,7 @@ class PushService:
                     # Event Loop اصلی را برای بقیه درخواست‌های هم‌زمان سرور
                     # مسدود نکند.
                     await asyncio.to_thread(
-                        webpush,
+                        send_webpush,
                         subscription_info={
                             "endpoint": sub.endpoint,
                             "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
@@ -191,10 +240,8 @@ class PushService:
                         data=payload,
                         vapid_private_key=settings.VAPID_PRIVATE_KEY,
                         vapid_claims={"sub": f"mailto:{settings.VAPID_CLAIMS_EMAIL}"},
-                        # اگر دستگاه گیرنده لحظه ارسال آفلاین باشد، تا ۲۴ ساعت
-                        # روی سرور Push نگه داشته می‌شود و به‌محض آنلاین‌شدن
-                        # تحویل داده می‌شود
-                        ttl=60 * 60 * 24,
+                        # TTL is bounded by the remaining lifetime of the event.
+                        ttl=max(0, min(int(ttl_seconds), MAX_TTL_SECONDS)),
                         headers={"Urgency": "high"},
                         timeout=15,  # سرور Push کند/در دسترس نیست → بقیه‌ی گیرندگان معطل نمانند
                     )
@@ -208,7 +255,12 @@ class PushService:
                         delivery_results.append({"id": sub.id, "status": "stale"})
                     else:
                         failed_count += 1
-                        delivery_results.append({"id": sub.id, "status": "failed"})
+                        permanent = status_code in (400, 405, 413, 422) or (status_code is not None and 300 <= status_code < 400)
+                        response = getattr(e, "response", None)
+                        retry_after = provider_retry_after(response)
+                        delivery_results.append({"id": sub.id, "status": "permanent" if permanent else "failed",
+                            "error": f"http_{status_code}" if status_code else "provider_error",
+                            **({"retry_after": retry_after} if retry_after is not None else {})})
                         logger.warning(
                             "ارسال Push ناموفق (user_id=%s, subscription_id=%s, status=%s): %s",
                             sub.user_id, sub.id, status_code, type(e).__name__,
@@ -218,7 +270,7 @@ class PushService:
                     # قبلاً این خطا کل ارسال را با «خطای سرور» متوقف می‌کرد و پاک‌سازی اشتراک‌های منقضی و لاگ خلاصه
                     # اجرا نمی‌شد. اشتراک حذف نمی‌شود چون مشکل از شبکه‌ی سرور است، نه از دستگاه.
                     failed_count += 1
-                    delivery_results.append({"id": sub.id, "status": "failed"})
+                    delivery_results.append({"id": sub.id, "status": "failed", "error": "network_or_transport_error"})
                     host = sub.endpoint.split("/")[2] if sub.endpoint.count("/") >= 2 else "?"
                     logger.warning(
                         "ارسال Push ناموفق (user_id=%s, subscription_id=%s, provider=%s): %s",
@@ -255,4 +307,5 @@ class PushService:
         )
         if return_stats:
             return {"attempted": len(subscriptions), "sent": sent_count,
-                    "failed": failed_count, "stale": len(stale_rows), "results": delivery_results}
+                    "failed": failed_count, "stale": len(stale_rows), "results": delivery_results,
+                    "session_bindings": {sub.id: getattr(sub, "session_id", None) for sub in subscriptions}}

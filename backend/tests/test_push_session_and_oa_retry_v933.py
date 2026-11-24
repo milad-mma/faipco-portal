@@ -74,6 +74,7 @@ async def test_partial_successes_are_not_resent(monkeypatch):
             pass
 
         async def notify_users(self, ids, *, subscription_ids, **kwargs):
+            assert kwargs["session_bindings"] == {sid: 100 + sid for sid in subscription_ids}
             called_ids.append(subscription_ids)
             if len(called_ids) == 1:
                 return {"attempted": 5, "results": [
@@ -88,6 +89,10 @@ async def test_partial_successes_are_not_resent(monkeypatch):
     async def fake_render(*args, **kwargs):
         return "new letter"
 
+    async def recipient(db, payload):
+        return {22}, payload["text_key"], {}
+
+    monkeypatch.setattr(oa, "_current_recipient", recipient)
     monkeypatch.setattr(oa, "PushService", FakePush)
     monkeypatch.setattr(oa, "AsyncSessionLocal", FakeDbContext)
     monkeypatch.setattr(oa.notification_templates, "render", fake_render)
@@ -96,12 +101,19 @@ async def test_partial_successes_are_not_resent(monkeypatch):
         "employee_id": 203, "site_id": 1, "text_key": "oa.test", "url": "/automation/letters/23"
     })
 
+    async def bindings(db, ids):
+        return {str(i): 100 + i for i in range(1, 6)}
+
+    monkeypatch.setattr(oa, "_snapshot_bindings", bindings)
+    state, info = await oa._deliver_one(db, event)
+    assert state == "initialized" and not called_ids
     state, info = await oa._deliver_one(db, event)
     assert state == "pending" and "2 subscription" in info
-    assert event.payload["_delivery"] == {"remaining": [4, 5], "sent": [1, 2, 3], "stale": []}
+    assert event.payload["_delivery"]["remaining"] == [4, 5]
+    assert event.payload["_delivery"]["sent"] == [1, 2, 3]
     state, info = await oa._deliver_one(db, event)
     assert state == "sent" and info is None
-    assert called_ids == [None, {4, 5}]
+    assert called_ids == [{1, 2, 3, 4, 5}, {4, 5}]
     assert event.payload["_delivery"]["remaining"] == []
     assert len(db.added) == 1
 
@@ -120,13 +132,17 @@ async def test_deleted_subscription_is_not_retried(monkeypatch):
             # Subscription was removed by logout during an earlier retry.
             return {"attempted": 0, "results": []}
 
+    async def recipient(db, payload):
+        return {22}, payload["text_key"], {}
+
+    monkeypatch.setattr(oa, "_current_recipient", recipient)
     monkeypatch.setattr(oa, "PushService", FakePush)
     monkeypatch.setattr(oa, "AsyncSessionLocal", FakeDbContext)
     monkeypatch.setattr(oa.notification_templates, "render", fake_render)
     db = FakeDb()
     event = SimpleNamespace(key="return:24:203", payload={
         "employee_id": 203, "site_id": 1, "text_key": "oa.test", "url": "/automation/letters/24",
-        "_delivery": {"remaining": [7], "sent": [6], "stale": []},
+        "_delivery": {"remaining": [7], "sent": [6], "stale": [], "bindings": {"7": 107}},
     })
     state, _ = await oa._deliver_one(db, event)
     assert state == "sent"

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import notification_templates
@@ -21,8 +21,8 @@ from app.core.site_access import get_birthday_site_ids
 from app.models.birthday_reaction import BirthdayReaction, BirthdayReactionEmoji
 from app.models.employee import Department, Employee
 from app.models.user import User
-from app.services.push_background import schedule_push
-from app.services.push_service import PushService
+from app.services.push_dispatch import business_event_key, enqueue_event_push
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,9 @@ class BirthdayReactionService:
             raise BirthdayReactionError("امکان ثبت واکنش برای این فرد وجود ندارد")
 
         jalali_year, _, _ = get_current_jalali_date()
+        # Serialize toggles for this birthday; no duplicate reaction or first notification.
+        await self.db.execute(select(func.pg_advisory_xact_lock(func.hashtext(
+            f"faipco:birthday-reaction:{birthday_employee_id}:{jalali_year}"))))
         # ری‌اکشن فعلی همین کاربر برای همین متولد در سال جاری
         result = await self.db.execute(
             select(BirthdayReaction).where(
@@ -108,6 +111,8 @@ class BirthdayReactionService:
                     emoji=emoji,
                 )
             )
+            if is_first_ever:
+                await self._notify_first_reaction(employee, jalali_year)
             await self.db.commit()
         # همان ایموجی دوباره انتخاب شده: ری‌اکشن برداشته می‌شود
         elif existing.emoji == emoji:
@@ -119,29 +124,14 @@ class BirthdayReactionService:
             existing.emoji = emoji
             await self.db.commit()
 
-        # فقط اولین تبریک روز اعلان فوری دارد تا متولد به‌ازای هر تبریک اعلان نگیرد؛
-        # خلاصه روزانه را Job زمان‌بندی‌شده ۴ ساعت مانده به پایان روز می‌فرستد.
-        if is_first_ever:
-            await self._notify_first_reaction(employee)
-
         return {"emoji": emoji.value}
 
-    async def _notify_first_reaction(self, employee: Employee) -> None:
-        """به کاربرِ متولد اعلان Push «همکاران تبریک گفتند» می‌فرستد؛ خطاها فقط لاگ می‌شوند."""
-        try:
-            result = await self.db.execute(select(User).where(User.employee_id == employee.id))
-            target_user = result.scalar_one_or_none()
-            if target_user is None:
-                return  # پرسنل حساب کاربری ندارد
-            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            await schedule_push(
-                {target_user.id},
-                url="/my-dashboard",
-                priority="normal",
-                body=await notification_templates.render(self.db, None, "birthday.reaction"),
-            )
-        except Exception:
-            logger.exception("ارسال Push اولین تبریک تولد با خطا مواجه شد")
+    async def _notify_first_reaction(self, employee: Employee, year: int) -> None:
+        ids = set((await self.db.execute(select(User.id).where(User.employee_id == employee.id))).scalars().all())
+        await enqueue_event_push(self.db, ids, "/my-dashboard",
+            await notification_templates.render(self.db, None, "birthday.reaction"),
+            event_key=business_event_key("birthday", employee.id, year, "first_reaction"),
+            lifetime=timedelta(hours=12))
 
     async def get_reactions_for_employees(self, employee_ids: list[int]) -> dict[int, dict]:
         """
@@ -248,13 +238,13 @@ class BirthdayReactionService:
             # مطابقت فعل با تعداد: «۱ نفر ... تبریک گفت» در برابر «۳ نفر ... تبریک گفتند»
             verb = "گفت" if total == 1 else "گفتند"
             try:
-                await PushService(self.db).notify_users(
-                    {user_id},
-                    url="/my-dashboard",
-                    priority="normal",
-                    body=notification_templates.fill(summary_text, count=total, verb=verb),
-                )
+                await enqueue_event_push(self.db, {user_id}, "/my-dashboard",
+                    notification_templates.fill(summary_text, count=total, verb=verb),
+                    event_key=business_event_key("birthday", emp_id, jalali_year, "summary"),
+                    lifetime=timedelta(hours=4))
+                await self.db.commit()
                 notified += 1
             except Exception:
+                await self.db.rollback()
                 logger.exception("ارسال Push خلاصه تبریک تولد برای کاربر %s با خطا مواجه شد", user_id)
         return {"notified": notified}

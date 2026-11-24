@@ -1,7 +1,7 @@
 """Durable, bounded Web Push dispatch, distinct from the OA business outbox.
 
-Publish operations call enqueue_notice_push in their own transaction. Other
-producers enqueue via an independent committed transaction. The scheduler owns
+PostgreSQL producers enqueue in the business transaction. External database
+producers use an independent committed transaction. The scheduler owns
 all provider I/O. A provider acceptance is NOT an OS display or a read receipt.
 """
 from __future__ import annotations
@@ -28,6 +28,8 @@ logger = logging.getLogger("faipco.push.dispatch")
 BATCH_SIZE = 20
 RETRY_WINDOW = timedelta(days=7)
 MAX_ATTEMPTS = 32
+# Shared transaction lock with OA transport, all workers. Never acquired by HTTP producers.
+PUSH_TRANSPORT_LOCK = 875312021
 
 
 def utcnow():
@@ -64,29 +66,48 @@ async def enqueue_notice_push(db, notice: Notice, *, user_ids: set[int] | None =
     await db.execute(stmt)
 
 
-async def enqueue_generic_push(user_ids, url, body=None, priority="normal", notice_type="normal", *, key=None):
-    """Return only after durable commit; no network I/O in producer transaction.
+def business_event_key(module: str, object_id, event_id, kind: str) -> str:
+    """A stable, searchable server-generated key; never include message content."""
+    import hashlib
+    key = f"dispatch:{module}:{object_id}:{event_id}:{kind}"
+    if len(key) > 100:
+        key = f"dispatch:{module}:{hashlib.sha256(key.encode()).hexdigest()}"
+    if len(key) > 100:
+        raise ValueError("Invalid push event module")
+    return key
 
-    Most legacy business producers already committed their domain record. Their
-    gap before this function is not atomic; see the deployment handoff.
+
+async def enqueue_event_push(db, user_ids, url, body=None, priority="normal", notice_type="normal", *,
+                             event_key, lifetime=RETRY_WINDOW):
+    """Add a job in the caller's PostgreSQL transaction; NEVER commit here.
+
+    No provider I/O. A rollback of the domain operation rolls back its job.
+    Even zero-recipient events have a traceable terminal record. Callers own commit.
     """
+    if not event_key.startswith("dispatch:") or len(event_key) > 100:
+        raise ValueError("Invalid internal push event key")
+    ids = sorted(set(user_ids))
+    now = utcnow()
+    await db.execute(insert(PushDispatchJob).values(
+        key=event_key, origin=dispatch_origin(), user_ids=ids,
+        url=url, body=body if ids else None, priority=priority, notice_type=notice_type,
+        status="pending" if ids else "no_targets", initialized=not ids,
+        target_count=len(ids), no_device_count=0,
+        next_attempt_at=now, deadline_at=now + lifetime,
+        finished_at=None if ids else now,
+        last_error=None if ids else "no_recipient_account",
+    ).on_conflict_do_nothing(index_elements=[PushDispatchJob.key]))
+
+
+async def enqueue_generic_push(user_ids, url, body=None, priority="normal", notice_type="normal", *, key=None):
+    """Compatibility entry point for callers without a shared business transaction."""
+    import hashlib
     ids = sorted(set(user_ids))
     if not ids:
         return
-    now = utcnow()
-    # Keep a bounded key even for callers supplying a long custom identifier.
-    if key:
-        import hashlib
-        job_key = "dispatch:generic:" + hashlib.sha256(key.encode()).hexdigest()
-    else:
-        job_key = f"dispatch:generic:{uuid4().hex}"
+    job_key = "dispatch:generic:" + (hashlib.sha256(key.encode()).hexdigest() if key else uuid4().hex)
     async with AsyncSessionLocal() as db:
-        await db.execute(insert(PushDispatchJob).values(
-            key=job_key, origin=dispatch_origin(), user_ids=ids,
-            url=url, body=body, priority=priority, notice_type=notice_type,
-            status="pending", initialized=False, target_count=0, no_device_count=0,
-            next_attempt_at=now, deadline_at=now + RETRY_WINDOW,
-        ).on_conflict_do_nothing(index_elements=[PushDispatchJob.key]))
+        await enqueue_event_push(db, ids, url, body, priority, notice_type, event_key=job_key)
         await db.commit()
     logger.info("Push durably queued: key=%s target_users=%s", job_key, len(ids))
 
@@ -94,7 +115,8 @@ async def enqueue_generic_push(user_ids, url, body=None, priority="normal", noti
 async def current_audience(db, job, now):
     """None means the notice is no longer eligible; empty set is valid."""
     if job.notice_id is None:
-        return set(job.user_ids or [])
+        from app.services.push_audience import restrict_business_audience
+        return await restrict_business_audience(db, job)
     # Local import avoids a cycle with notice publication.
     from app.services.notice_service import NoticeService
 
@@ -163,23 +185,28 @@ async def initialize_job(db, job, audience, now):
         job.last_error = "awaiting_eligible_devices"
 
 
-def apply_delivery_result(delivery, result, now, deadline):
+def apply_delivery_result(delivery, result, now, deadline, *, error=None, retry_after=None):
     """Only retry failed devices. Provider acceptance is explicitly named accepted."""
     delivery.attempts += 1
     if result == "sent":
         delivery.status = "accepted"
         delivery.accepted_at = now
         delivery.last_error = None
-    elif result in ("stale", "ineligible"):
-        delivery.status = result
-        delivery.last_error = result
+    elif result in ("stale", "ineligible", "permanent"):
+        delivery.status = "failed" if result == "permanent" else result
+        delivery.last_error = error or result
     elif delivery.attempts >= MAX_ATTEMPTS or now >= deadline:
         delivery.status = "failed"
-        delivery.last_error = "retry_exhausted"
+        delivery.last_error = ("retry_exhausted:" + (error or "provider_error"))[:120]
     else:
         delivery.status = "pending"
-        delivery.last_error = "provider_or_network_error"
-        delivery.next_attempt_at = min(now + retry_delay(delivery.attempts), deadline)
+        delivery.last_error = error or "provider_or_network_error"
+        delay = retry_delay(delivery.attempts)
+        if retry_after is not None:
+            delay = max(delay, timedelta(seconds=retry_after))
+        if error in ("http_401", "http_403"):
+            delay = max(delay, timedelta(minutes=15))
+        delivery.next_attempt_at = min(now + delay, deadline)
 
 
 async def finish_if_ready(db, job, now, audience):
@@ -256,20 +283,25 @@ async def process_job(db, job, now):
                     {d.user_id for d in eligible}, url=job.url, body=job.body,
                     priority=job.priority, notice_type=job.notice_type, return_stats=True,
                     notification_key=job.key,
+                    ttl_seconds=max(0, int((job.deadline_at - utcnow()).total_seconds())),
                     session_bindings={d.subscription_id: d.session_id for d in eligible},
                 )
             # An empty result from a configured service is ineligibility, not success.
             if stats is None or stats.get("configured") is False:
                 results = {d.subscription_id: "failed" for d in eligible}
             else:
-                results = {item["id"]: item["status"] for item in stats.get("results", [])}
+                results = {item["id"]: item for item in stats.get("results", [])}
         except Exception as exc:
             logger.warning("Push job %s provider batch failed: %s", job.id, type(exc).__name__)
             results = {d.subscription_id: "failed" for d in eligible}
         completed_at = utcnow()
         for delivery in eligible:
-            apply_delivery_result(delivery, results.get(delivery.subscription_id, "ineligible"),
-                                  completed_at, job.deadline_at)
+            result = results.get(delivery.subscription_id, "ineligible")
+            if isinstance(result, dict):
+                apply_delivery_result(delivery, result["status"], completed_at, job.deadline_at,
+                                      error=result.get("error"), retry_after=result.get("retry_after"))
+            else:
+                apply_delivery_result(delivery, result, completed_at, job.deadline_at)
     await finish_if_ready(db, job, utcnow(), audience)
 
 
@@ -283,6 +315,8 @@ async def drain_push_dispatch_jobs(limit=12):
     for _ in range(limit):
         async with AsyncSessionLocal() as db:
             now = utcnow()
+            if not await db.scalar(select(func.pg_try_advisory_xact_lock(PUSH_TRANSPORT_LOCK))):
+                break
             job = (await db.execute(select(PushDispatchJob).where(
                 PushDispatchJob.origin == dispatch_origin(), PushDispatchJob.status == "pending",
                 PushDispatchJob.next_attempt_at <= now,

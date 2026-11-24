@@ -113,8 +113,9 @@ async def reassign_requests(
                 setattr(req, STEP_FIELDS[key], new_id)
             if step_now in changes:
                 req.current_approver_employee_id = changes[step_now]
-                push([changes[step_now]], push_url, req.site_id, push_key)
             event(req, "approver_changed", "سامانه", None, f"{reason} — " + "؛ ".join(notes))
+            if step_now in changes:
+                push([changes[step_now]], push_url, req.site_id, push_key, request=req)
             changed += 1
         if step_now in STEP_FIELDS and not await checker.ok(req.current_approver_employee_id):
             unresolved += 1

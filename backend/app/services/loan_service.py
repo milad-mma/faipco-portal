@@ -81,58 +81,26 @@ def _strip_codes(text: str | None) -> str | None:
     return _CODE_IN_LABEL.sub("", text) if text else text
 
 
-# ---------- اعلان Push (پس‌زمینه، Session جدا؛ مثل درخواست مرخصی) ----------
-
-_background_tasks: set = set()
-
-
-def _schedule_push(employee_ids, url: str, body: str) -> None:
-    ids = {i for i in employee_ids if i}
-    if not ids:
-        return
-    try:
-        task = asyncio.get_running_loop().create_task(_send_push(ids, url, body))
-    except RuntimeError:
-        return
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
-async def _send_push(employee_ids: set[int], url: str, body: str) -> None:
-    from app.db.session import AsyncSessionLocal
-    from app.services.push_service import PushService
-
-    try:
-        async with AsyncSessionLocal() as db:
-            user_ids = set(
-                (await db.execute(select(User.id).where(User.employee_id.in_(employee_ids)))).scalars().all()
-            )
-            if user_ids:
-                await asyncio.wait_for(
-                    PushService(db).notify_users(user_ids, url=url, priority="normal", body=body), timeout=60
-                )
-    except Exception:
-        logger.exception("ارسال Push درخواست وام با خطا مواجه شد")
-
-
-
-
 class LoanService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self._pushes: list[tuple[set, str, int, str, dict]] = []
+        self._pushes: list[tuple] = []
 
     # ---------- کمکی ----------
 
-    def _push(self, employee_ids, url: str, site_id: int, key: str, **values) -> None:
-        """اعلان بعد از commit؛ متن از قالب key (متن قابل‌ویرایش سایت در «متن اعلان‌ها»؛ notification_templates)."""
-        self._pushes.append((set(employee_ids), url, site_id, key, values))
+    def _push(self, employee_ids, url: str, site_id: int, key: str, *, request, **values) -> None:
+        """Associate with the actual business event, including bulk operations."""
+        event = request.events[-1] if request.events else None
+        self._pushes.append((request, event, set(employee_ids), url, site_id, key, values))
+
+    async def _enqueue_pushes(self) -> None:
+        from app.services.business_push import queue_workflow_pushes
+        await queue_workflow_pushes(self.db, self._pushes)
+        self._pushes.clear()
 
     async def _commit(self) -> None:
+        await self._enqueue_pushes()
         await self.db.commit()
-        pushes, self._pushes = self._pushes, []
-        for ids, url, site_id, key, values in pushes:
-            _schedule_push(ids, url, await notification_templates.render(self.db, site_id, key, **values))
 
     async def _actor(self, user: User) -> str:
         """نام نمایشی کاربر برای تاریخچه: نام پرسنل متصل، وگرنه نام کاربری."""
@@ -274,13 +242,13 @@ class LoanService:
             req.current_approver_employee_id = None
             if req.queue_seq is None and not req.out_of_queue:
                 req.queue_seq = await self._next_queue_seq(req.site_id)
-            self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.to_finance_queue")
+            self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.to_finance_queue", request=req)
             return
         req.status = R.STATUS_IN_REVIEW
         if step == R.STEP_GUARANTORS:
             req.current_approver_employee_id = None
             pending = [g.employee_id for g in req.guarantors if g.status == "pending"]
-            self._push(pending, "/loans?tab=inbox", req.site_id, "loan.guarantor_requested")
+            self._push(pending, "/loans?tab=inbox", req.site_id, "loan.guarantor_requested", request=req)
             return
         approver = {
             R.STEP_UNIT_MANAGER: req.unit_manager_employee_id,
@@ -292,7 +260,7 @@ class LoanService:
         # جانشین فعال او در کاراوب هم (اگر برای سایت روشن است)
         substitute = await kara_substitute.substitute_of(self.db, LoanSiteSettings, req.site_id, approver)
         targets = [approver] + ([substitute] if substitute and substitute != req.employee_id else [])
-        self._push(targets, "/loans?tab=inbox", req.site_id, "loan.approver_pending")
+        self._push(targets, "/loans?tab=inbox", req.site_id, "loan.approver_pending", request=req)
 
     async def _approval_condition(self, employee: Employee):
         """
@@ -834,7 +802,7 @@ class LoanService:
         row.note = None
         row.decided_at = None
         self._event(req, "guarantor_replaced", employee_label(employee), user.id, f"{employee_label(old)} ← {employee_label(new)}")
-        self._push([new.id], "/loans?tab=inbox", req.site_id, "loan.guarantor_requested")
+        self._push([new.id], "/loans?tab=inbox", req.site_id, "loan.guarantor_requested", request=req)
         await self._commit()
         return await self.serialize(req, detail=True, public=True)
 
@@ -1054,6 +1022,7 @@ class LoanService:
                 "/loans?tab=mine",
                 req.site_id,
                 "loan.guarantor_declined",
+                request=req,
                 guarantor=f"{employee.first_name} {employee.last_name}",
             )
         await self._commit()
@@ -1088,7 +1057,7 @@ class LoanService:
             self._event(req, "rejected", label, user.id, note)
             req.status = R.STATUS_REJECTED
             req.current_approver_employee_id = None
-            self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.rejected")
+            self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.rejected", request=req)
         await self._commit()
         return await self.serialize(req, public=True)
 
@@ -1207,7 +1176,7 @@ class LoanService:
                 if g.employee_id in employee_ids and g.status == "pending":
                     name = employee_label(people.get(g.employee_id), code=False)
                     self._event(req, "guarantor_left", "سامانه", None, f"ضامن ترک کار کرد: {name}")
-                    self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.guarantor_left", guarantor=name)
+                    self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.guarantor_left", request=req, guarantor=name)
                     notices += 1
         await self.db.flush()
         return {"cancelled": len(own), "guarantor_notices": notices}
@@ -1473,7 +1442,7 @@ class LoanService:
             f"مبلغ {amount:,} ریال در {len(schedule)} قسط از {schedule[0]['due_month']}"
             + (f" — {req.finance_note}" if req.finance_note else ""),
         )
-        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.paid", amount=f"{amount:,}")
+        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.paid", request=req, amount=f"{amount:,}")
         await self._commit()
         return await self.serialize(req, detail=True)
 
@@ -1485,7 +1454,7 @@ class LoanService:
         req.status = R.STATUS_REJECTED
         req.current_approver_employee_id = None
         self._event(req, "rejected", f"{await self._actor(user)} — واحد مالی", user.id, note)
-        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.rejected")
+        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.rejected", request=req)
         await self._commit()
         return await self.serialize(req, detail=True)
 
@@ -1530,7 +1499,7 @@ class LoanService:
                 req.status = R.STATUS_SETTLED
                 req.settled_at = _now()
                 self._event(req, "settled", actor, user_id, "همه‌ی اقساط پرداخت شد")
-                self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.settled")
+                self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.settled", request=req)
         elif req.status == R.STATUS_SETTLED:
             req.status = R.STATUS_ACTIVE
             req.settled_at = None
@@ -1607,7 +1576,7 @@ class LoanService:
         req.status = R.STATUS_SETTLED
         req.settled_at = now
         self._event(req, "settled", await self._actor(user), user.id, note or "تسویه‌ی یکجا")
-        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.settled")
+        self._push([req.employee_id], "/loans?tab=mine", req.site_id, "loan.settled", request=req)
         await self._commit()
         return await self.serialize(req, detail=True)
 

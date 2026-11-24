@@ -244,39 +244,43 @@ async def maybe_send_alert(db: AsyncSession, cfg: LoginSecuritySettings) -> None
     """اگر تلاش‌های ناموفق در بازه‌ی هشدار به آستانه رسید و در همین بازه هشداری نرفته، Push می‌فرستد."""
     if not cfg.alert_enabled:
         return
-    now = datetime.now(timezone.utc)
-    since = now - timedelta(minutes=cfg.alert_window_minutes)
-    last_raw = await _get_raw(db, LAST_ALERT_KEY)
-    if last_raw:
-        try:
-            if datetime.fromisoformat(last_raw) > since:
-                return
-        except ValueError:
-            pass
-    result = await db.execute(
-        select(func.count(LoginSecurityEvent.id)).where(
-            LoginSecurityEvent.created_at >= since, LoginSecurityEvent.kind.in_(FAILURE_KINDS)
-        )
-    )
-    count = int(result.scalar_one() or 0)
-    if count < cfg.alert_threshold:
-        return
-    await _set_raw(db, LAST_ALERT_KEY, now.isoformat())
-    logger.warning("هشدار امنیت ورود: %s تلاش ناموفق در %s دقیقه‌ی اخیر", count, cfg.alert_window_minutes)
+    # All callers have committed the failure event; isolate notification errors
+    # from authentication. Transaction-scoped lock prevents duplicate alerts.
+    from app.db.session import AsyncSessionLocal
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.services.push_dispatch import business_event_key, enqueue_event_push
     try:
-        from app.services.push_background import schedule_push
-
-        # گیرندگان با Session درخواست حساب می‌شوند؛ ارسال در پس‌زمینه تا پاسخ ورود منتظر Push نماند
-        await schedule_push(
-            await alert_recipient_ids(db),
-            url="/login-security",
-            priority="high",
-            body=await notification_templates.render(
-                db, None, "login_security.alert", count=count, minutes=cfg.alert_window_minutes
-            ),
-        )
-    except Exception:  # noqa: BLE001 - خطای Push نباید پاسخ ورود را خراب کند
-        logger.exception("ارسال هشدار امنیت ورود ناموفق بود")
+        async with AsyncSessionLocal() as alert_db:
+            now = datetime.now(timezone.utc)
+            since = now - timedelta(minutes=cfg.alert_window_minutes)
+            count = int((await alert_db.execute(select(func.count(LoginSecurityEvent.id)).where(
+                LoginSecurityEvent.created_at >= since, LoginSecurityEvent.kind.in_(FAILURE_KINDS)
+            ))).scalar_one() or 0)
+            if count < cfg.alert_threshold:
+                return
+            await alert_db.execute(pg_insert(SystemSetting).values(key=LAST_ALERT_KEY, value="")
+                                   .on_conflict_do_nothing(index_elements=[SystemSetting.key]))
+            row = (await alert_db.execute(select(SystemSetting).where(SystemSetting.key == LAST_ALERT_KEY)
+                                          .with_for_update())).scalar_one()
+            try:
+                last = datetime.fromisoformat(row.value or "")
+                if last.tzinfo is not None and last > since:
+                    return
+            except (ValueError, TypeError):
+                pass
+            ids = await alert_recipient_ids(alert_db)
+            if not ids:
+                return
+            body = await notification_templates.render(alert_db, None, "login_security.alert",
+                                                       count=count, minutes=cfg.alert_window_minutes)
+            await enqueue_event_push(alert_db, ids, "/login-security", body, "high",
+                event_key=business_event_key("login_security", "alert", int(now.timestamp()*1000000), "threshold"),
+                lifetime=timedelta(hours=6))
+            row.value = now.isoformat()
+            await alert_db.commit()
+            logger.warning("هشدار امنیت ورود: %s تلاش ناموفق در %s دقیقه‌ی اخیر", count, cfg.alert_window_minutes)
+    except Exception as exc:
+        logger.error("Login security alert enqueue failed: %s", type(exc).__name__)
 
 
 # ---------- کپچا ----------

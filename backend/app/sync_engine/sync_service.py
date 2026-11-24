@@ -62,8 +62,6 @@ class SyncService:
     def __init__(self, db: AsyncSession):
         """ورودی: AsyncSession دیتابیس پرتال."""
         self.db = db
-        self._insurance_pushes: list[tuple[set[int], str]] = []  # Push هشدار ترک کار بیمه، بعد از commit
-        self._approver_services: list = []  # سرویس‌های وام/مساعده با اعلان تأییدکننده‌ی جدید، بعد از commit
 
     # ---------- عمومی ----------
 
@@ -194,19 +192,6 @@ class SyncService:
             log.finished_at = datetime.now(timezone.utc)
             conn.last_sync_at = datetime.now(timezone.utc)
             await self.db.commit()
-            # Push هشدار ترک کار بیمه تکمیلی فقط بعد از commit (اطلاعیه‌ها و نشانه‌ها ذخیره شده‌اند)
-            # اعلان تأییدکننده‌های جدید وام/مساعده (commit دوباره‌ی خود سرویس بی‌اثر است و فقط اعلان‌ها را می‌فرستد)
-            for service in self._approver_services:
-                try:
-                    await service._commit()
-                except Exception:
-                    logger.exception("ارسال اعلان تأییدکننده‌ی جدید ناموفق بود")
-            self._approver_services = []
-            if self._insurance_pushes:
-                from app.services.insurance_service import schedule_left_pushes
-
-                schedule_left_pushes(self._insurance_pushes)
-                self._insurance_pushes = []
 
         return log
 
@@ -1031,7 +1016,7 @@ class SyncService:
                 await service.mark_employees_returned(reactivated_ids)
                 items = await service.mark_employees_left(deactivated_ids)
                 if items:
-                    self._insurance_pushes.extend(await service.create_left_notices(items))
+                    await service.create_left_notices(items)
         except Exception:  # هشدار بیمه نباید Sync پرسنل را ناموفق کند
             logger.exception("ثبت هشدار ترک کار بیمه تکمیلی در Sync ناموفق بود")
 
@@ -1073,8 +1058,7 @@ class SyncService:
                             len(deactivated_ids),
                         )
                     await service.reassign_approvers(approver_ids=deactivated_ids, reason="ترک کار تأییدکننده")
-                    if service._pushes:
-                        self._approver_services.append(service)
+                    await service._enqueue_pushes()
             except Exception:  # انتقال تأییدکننده نباید Sync پرسنل را ناموفق کند
                 logger.exception("انتقال تأییدکننده‌های %s پس از ترک کار ناموفق بود", service_cls.__name__)
 

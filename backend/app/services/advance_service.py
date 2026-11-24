@@ -27,7 +27,6 @@ from app.services.loan_service import (
     LoanService,
     _clean,
     _now,
-    _schedule_push,
     _strip_codes,
     _today,
     employee_label,
@@ -48,19 +47,24 @@ class AdvanceError(Exception):
 class AdvanceService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self._pushes: list[tuple[set, str, int, str, dict]] = []
+        self._pushes: list[tuple] = []
         self._loans = LoanService(db)
 
     # ---------- کمکی ----------
 
-    def _push(self, employee_ids, url: str, site_id: int, key: str, **values) -> None:
-        self._pushes.append((set(employee_ids), url, site_id, key, values))
+    def _push(self, employee_ids, url: str, site_id: int, key: str, *, request, **values) -> None:
+        """Associate with the actual business event, including bulk operations."""
+        event = request.events[-1] if request.events else None
+        self._pushes.append((request, event, set(employee_ids), url, site_id, key, values))
+
+    async def _enqueue_pushes(self) -> None:
+        from app.services.business_push import queue_workflow_pushes
+        await queue_workflow_pushes(self.db, self._pushes)
+        self._pushes.clear()
 
     async def _commit(self) -> None:
+        await self._enqueue_pushes()
         await self.db.commit()
-        pushes, self._pushes = self._pushes, []
-        for ids, url, site_id, key, values in pushes:
-            _schedule_push(ids, url, await notification_templates.render(self.db, site_id, key, **values))
 
     def _event(self, req: AdvanceRequest, action: str, actor: str | None, user_id: int | None = None, note=None) -> None:
         req.events.append(
@@ -145,7 +149,7 @@ class AdvanceService:
         if step == R.STEP_FINANCE:
             req.status = R.STATUS_WAITING_FINANCE
             req.current_approver_employee_id = None
-            self._push([req.employee_id], MINE_URL, req.site_id, "advance.to_finance")
+            self._push([req.employee_id], MINE_URL, req.site_id, "advance.to_finance", request=req)
             return
         req.status = R.STATUS_IN_REVIEW
         approver = req.unit_manager_employee_id if step == R.STEP_UNIT_MANAGER else req.site_manager_employee_id
@@ -154,7 +158,7 @@ class AdvanceService:
         # جانشین فعال او در کاراوب هم (اگر برای سایت روشن است)
         substitute = await kara_substitute.substitute_of(self.db, AdvanceSettings, req.site_id, approver)
         targets = [approver] + ([substitute] if substitute and substitute != req.employee_id else [])
-        self._push(targets, INBOX_URL, req.site_id, "advance.approver_pending")
+        self._push(targets, INBOX_URL, req.site_id, "advance.approver_pending", request=req)
 
     async def _approval_condition(self, employee: Employee):
         """مثل LoanService._approval_condition: خودش یا مدیری که جانشین فعال اوست (سایت‌های روشن)، به‌جز درخواست خودش."""
@@ -462,7 +466,7 @@ class AdvanceService:
                     req.status = R.STATUS_REJECTED
                     req.current_approver_employee_id = None
                     req.decided_at = _now()
-                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.rejected")
+                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.rejected", request=req)
                 done.append(rid)
             except AdvanceError as e:
                 failed.append({"id": rid, "error": str(e)})
@@ -802,11 +806,11 @@ class AdvanceService:
                     self._event(req, "approved", actor, user.id, note)
                     req.status = R.STATUS_APPROVED
                     req.step_index = len(req.steps or [])
-                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.approved")
+                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.approved", request=req)
                 else:
                     self._event(req, "rejected", actor, user.id, note)
                     req.status = R.STATUS_REJECTED
-                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.rejected")
+                    self._push([req.employee_id], MINE_URL, req.site_id, "advance.rejected", request=req)
                 req.decided_at = _now()
                 done.append(rid)
             except AdvanceError as e:
@@ -834,7 +838,7 @@ class AdvanceService:
                 req.paid_date = date
                 req.paid_note = _clean(note, 500)
                 self._event(req, "paid", actor, user.id, f"تاریخ پرداخت: {date}" + (f" — {_clean(note, 500)}" if _clean(note) else ""))
-                self._push([req.employee_id], MINE_URL, req.site_id, "advance.paid", amount=f"{req.amount:,}")
+                self._push([req.employee_id], MINE_URL, req.site_id, "advance.paid", request=req, amount=f"{req.amount:,}")
                 done.append(rid)
             except AdvanceError as e:
                 failed.append({"id": rid, "error": str(e)})

@@ -97,27 +97,9 @@ def insurance_info(
     }
 
 
-async def send_hr_push(employee_id: int, body: str) -> None:
-    """اعلان Push به همه‌ی دستگاه‌های کاربرِ پرسنل employee_id (پس‌زمینه؛ خطا فقط لاگ می‌شود)."""
-    from app.db.session import AsyncSessionLocal
-    from app.services.push_service import PushService
-
-    try:
-        async with AsyncSessionLocal() as db:
-            user_ids = set((await db.execute(select(User.id).where(User.employee_id == employee_id))).scalars().all())
-            if user_ids:
-                await asyncio.wait_for(
-                    PushService(db).notify_users(user_ids, url="/family/admin", priority="normal", body=body),
-                    timeout=60,
-                )
-    except Exception:  # noqa: BLE001 - اعلان نباید خطای کاربر شود
-        logger.exception("ارسال اعلان ثبت مشخصات خانوادگی به منابع انسانی ناموفق بود")
-
-
 class FamilyService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.hr_push: tuple[int, str] | None = None  # اعلان «فرم ثبت شد» برای منابع انسانی سایت: (employee_id، متن)
 
     # ---------- تنظیمات ----------
 
@@ -534,8 +516,9 @@ class FamilyService:
         await self.db.flush()
 
         profile = await self.get_profile_by_employee(employee.id)
-        self._log(profile, "submitted", user, snapshot=self.snapshot(profile))
-        await self._notify_site_hr(employee, user)
+        event = self._log(profile, "submitted", user, snapshot=self.snapshot(profile))
+        await self.db.flush()
+        await self._notify_site_hr(employee, user, profile.id, event.id)
         await self.db.commit()
         profile = await self.get_profile_by_employee(employee.id)
         return self.profile_out(profile, settings)
@@ -543,8 +526,7 @@ class FamilyService:
     # ---------- منابع انسانی ----------
 
     def _log(self, profile: FamilyProfile, action: str, user: User | None, note=None, effective_date=None, snapshot=None):
-        self.db.add(
-            FamilyChangeLog(
+        event = FamilyChangeLog(
                 profile_id=profile.id,
                 action=action,
                 actor_user_id=user.id if user else None,
@@ -552,15 +534,16 @@ class FamilyService:
                 note=note,
                 effective_date=effective_date,
                 snapshot=snapshot,
-            )
         )
+        self.db.add(event)
+        return event
 
     # ---------- اعلان ثبت فرم به منابع انسانی هر سایت (Migration 130) ----------
 
-    async def _notify_site_hr(self, employee: Employee, user: User) -> None:
+    async def _notify_site_hr(self, employee: Employee, user: User, profile_id: int, event_id: int) -> None:
         """
         اگر برای سایت پرسنل نفر منابع انسانی تعیین شده (و خودِ او نیست)، فقط اعلان (Push) «فرم ثبت شد» برایش آماده
-        می‌شود — اطلاعیه ساخته نمی‌شود (دستور کاربر). ارسال در endpoint بعد از commit (send_hr_push).
+        می‌شود — اطلاعیه ساخته نمی‌شود (دستور کاربر). ثبت اعلان در همان تراکنش فرم.
         """
         setting = (
             await self.db.execute(select(FamilySiteSetting).where(FamilySiteSetting.site_id == employee.site_id))
@@ -570,7 +553,10 @@ class FamilyService:
             return
         name = f"{employee.first_name} {employee.last_name}".strip()
         body = await notification_templates.render(self.db, employee.site_id, "family.hr_submitted", name=name)
-        self.hr_push = (hr_id, body)
+        from app.services.push_dispatch import business_event_key, enqueue_event_push
+        ids = set((await self.db.execute(select(User.id).where(User.employee_id == hr_id))).scalars().all())
+        await enqueue_event_push(self.db, ids, "/family/admin", body,
+                                 event_key=business_event_key("family", profile_id, event_id, "hr_submitted"))
 
     async def hr_recipients(self, site_ids: set[int] | None) -> list[dict]:
         """نفر منابع انسانیِ اعلان، برای هر سایتِ در اختیار بیننده."""

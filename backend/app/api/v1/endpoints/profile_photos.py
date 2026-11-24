@@ -24,7 +24,7 @@ from app.core.site_access import get_sites_with_permission
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.user import User
-from app.services.profile_photo_service import ProfilePhotoError, ProfilePhotoService, send_photo_push
+from app.services.profile_photo_service import ProfilePhotoError, ProfilePhotoService
 
 router = APIRouter()
 
@@ -82,7 +82,6 @@ async def request_upload(
         req = await ProfilePhotoService(db).request_upload(employee, content)
     except ProfilePhotoError as e:
         _bad(e)
-    background_tasks.add_task(send_photo_push, req.id)
     return await ProfilePhotoService(db).my_status(employee)
 
 
@@ -95,7 +94,6 @@ async def request_delete(
         req = await ProfilePhotoService(db).request_delete(employee)
     except ProfilePhotoError as e:
         _bad(e)
-    background_tasks.add_task(send_photo_push, req.id)
     return await ProfilePhotoService(db).my_status(employee)
 
 
@@ -159,7 +157,6 @@ async def approve(
         result = await ProfilePhotoService(db).approve(request_id, sites, current_user)
     except ProfilePhotoError as e:
         _bad(e)
-    background_tasks.add_task(send_photo_push, request_id)
     return result
 
 
@@ -176,5 +173,4 @@ async def reject(
         await ProfilePhotoService(db).reject(request_id, sites, current_user, payload.reason)
     except ProfilePhotoError as e:
         _bad(e)
-    background_tasks.add_task(send_photo_push, request_id)
     return {"ok": True}

@@ -30,7 +30,7 @@ from app.models.system_setting import SystemSetting
 from app.models.site import Site
 from app.core.permission_grants import grants_subquery
 from app.models.user import User
-from app.services.push_background import schedule_push
+from app.services.push_dispatch import business_event_key, enqueue_event_push
 from app.schemas.feedback import FeedbackMessageOut, FeedbackReplyOut, FeedbackThreadOut, MyFeedbackItemOut
 
 FEEDBACK_RATE_LIMIT_SECONDS = 60  # حداقل فاصله بین دو پیام از یک فرستنده (ثانیه)
@@ -128,16 +128,14 @@ class FeedbackService:
             contains_profanity=contains_profanity,
         )
         self.db.add(feedback)
+        await self.db.flush()
+        await self._notify_reviewers_of_new_feedback(sender, feedback.id, feedback.id)
         await self.db.commit()
         await self.db.refresh(feedback)
 
-        # اطلاع‌رسانی به دارندگان مجوز مشاهده؛ خطای Push ثبت پیام را متوقف
-        # نمی‌کند، چون پیام پیش از این مرحله commit شده است.
-        await self._notify_reviewers_of_new_feedback(sender)
-
         return feedback
 
-    async def _notify_reviewers_of_new_feedback(self, sender: User, *, follow_up: bool = False) -> None:
+    async def _notify_reviewers_of_new_feedback(self, sender: User, feedback_id: int, event_id: int, *, follow_up: bool = False) -> None:
         """
         به دارندگان مجوز feedback.view / feedback.view_all / feedback.reply (به‌جز خودِ فرستنده) اعلان Push می‌فرستد؛
         فقط کسانی که این مجوز را سراسری یا برای سایت فرستنده دارند (feedback.view_all همیشه).
@@ -145,30 +143,26 @@ class FeedbackService:
         متن اعلان هیچ اشاره‌ای به فرستنده، عنوان یا محتوا ندارد (حفظ محرمانگی روی صفحه قفل گوشی).
         خطاها فقط لاگ می‌شوند.
         """
-        try:
-            # کاربرانی که (از نقش یا مجوز مستقیم) مجوز مشاهده/پاسخ بازخورد دارند
-            g = grants_subquery()
-            stmt = (
-                select(User.id)
-                .join(g, g.c.user_id == User.id)
-                .where(g.c.code.in_(["feedback.view", "feedback.view_all", "feedback.reply"]))
-                .distinct()
-            )
-            # سایت فرستنده: بازبین‌های سایتیِ سایت‌های دیگر اعلان نمی‌گیرند
-            sender_site_id = await self._sender_site_id(sender)
-            site_condition = g.c.site_id.is_(None) | (g.c.code == "feedback.view_all")
-            if sender_site_id is not None:
-                site_condition = site_condition | (g.c.site_id == sender_site_id)
-            stmt = stmt.where(site_condition)
-            result = await self.db.execute(stmt)
-            user_ids = {row[0] for row in result.all()} - {sender.id}  # حذف خودِ فرستنده
-            if not user_ids:
-                return
-            key = "feedback.follow_up" if follow_up else "feedback.new_message"
-            # ارسال در پس‌زمینه؛ پاسخ HTTP منتظر Push نمی‌ماند
-            await schedule_push(user_ids, "/feedback-report", await notification_templates.render(self.db, None, key))
-        except Exception:
-            logger.exception("ارسال Push برای پیام جدید انتقادات و پیشنهادات با خطا مواجه شد")
+        # کاربرانی که (از نقش یا مجوز مستقیم) مجوز مشاهده/پاسخ بازخورد دارند
+        g = grants_subquery()
+        stmt = (
+            select(User.id)
+            .join(g, g.c.user_id == User.id)
+            .where(g.c.code.in_(["feedback.view", "feedback.view_all", "feedback.reply"]))
+            .distinct()
+        )
+        # سایت فرستنده: بازبین‌های سایتیِ سایت‌های دیگر اعلان نمی‌گیرند
+        sender_site_id = await self._sender_site_id(sender)
+        site_condition = g.c.site_id.is_(None) | (g.c.code == "feedback.view_all")
+        if sender_site_id is not None:
+            site_condition = site_condition | (g.c.site_id == sender_site_id)
+        stmt = stmt.where(site_condition)
+        result = await self.db.execute(stmt)
+        user_ids = {row[0] for row in result.all()} - {sender.id}  # حذف خودِ فرستنده
+        key = "feedback.follow_up" if follow_up else "feedback.new_message"
+        await enqueue_event_push(self.db, user_ids, "/feedback-report",
+            await notification_templates.render(self.db, None, key),
+            event_key=business_event_key("feedback", feedback_id, event_id, key.split(".")[1]))
 
     async def _sender_site_id(self, sender: User) -> int | None:
         """سایت پرسنلِ متصل به کاربر فرستنده (None اگر پرسنل ندارد)."""
@@ -177,16 +171,14 @@ class FeedbackService:
         employee = await self.db.get(Employee, sender.employee_id)
         return employee.site_id if employee else None
 
-    async def _notify_sender_of_reply(self, feedback: FeedbackMessage) -> None:
+    async def _notify_sender_of_reply(self, feedback: FeedbackMessage, reply_id: int) -> None:
         """
         اعلان Push به فرستنده‌ی پیام وقتی بازبین پاسخ می‌دهد. متن عمومی است (بدون عنوان/متن) تا روی صفحه‌ی قفل
         چیزی از محتوا دیده نشود؛ لینک به تب «پیام‌های من». خطاها فقط لاگ می‌شوند.
         """
-        await schedule_push(
-            {feedback.sender_id},
-            "/feedback?tab=mine",
+        await enqueue_event_push(self.db, {feedback.sender_id}, "/feedback?tab=mine",
             await notification_templates.render(self.db, None, "feedback.reply"),
-        )
+            event_key=business_event_key("feedback", feedback.id, reply_id, "reply"))
 
     async def _get_accessible_scope(self, current_user: User) -> tuple[set[int] | None, bool]:
         """
@@ -471,10 +463,12 @@ class FeedbackService:
         reply_sites = await self._reply_scope(current_user)
         if not self._can_reply_to(reply_sites, employee.site_id if employee else None):
             raise FeedbackAccessDenied("اجازه پاسخ به این پیام را ندارید")
-        self.db.add(FeedbackReply(feedback_id=feedback.id, author_user_id=current_user.id, is_from_sender=False, body=body.strip()))
+        reply = FeedbackReply(feedback_id=feedback.id, author_user_id=current_user.id, is_from_sender=False, body=body.strip())
+        self.db.add(reply)
         feedback.status = FeedbackStatus.answered.value
+        await self.db.flush()
+        await self._notify_sender_of_reply(feedback, reply.id)
         await self.db.commit()
-        await self._notify_sender_of_reply(feedback)
         return await self.get_thread(current_user, feedback_id)
 
     async def set_status(self, current_user: User, feedback_id: int, status: FeedbackStatus) -> FeedbackThreadOut:
@@ -586,19 +580,19 @@ class FeedbackService:
             raise FeedbackClosed("این گفتگو بسته شده است و امکان ارسال پاسخ ندارد.")
         await self._check_reply_rate_limit(current_user.id)
         contains_profanity = contains_prohibited_phrase(body, await self._get_prohibited_phrases())
-        self.db.add(
-            FeedbackReply(
-                feedback_id=feedback.id,
-                author_user_id=current_user.id,
-                is_from_sender=True,
-                body=body.strip(),
-                contains_profanity=contains_profanity,
-            )
+        reply = FeedbackReply(
+            feedback_id=feedback.id,
+            author_user_id=current_user.id,
+            is_from_sender=True,
+            body=body.strip(),
+            contains_profanity=contains_profanity,
         )
+        self.db.add(reply)
         if contains_profanity:
             feedback.contains_profanity = True
+        await self.db.flush()
+        await self._notify_reviewers_of_new_feedback(current_user, feedback.id, reply.id, follow_up=True)
         await self.db.commit()
-        await self._notify_reviewers_of_new_feedback(current_user, follow_up=True)
         return await self.get_my_thread(current_user, feedback_id)
 
     async def _check_reply_rate_limit(self, user_id: int) -> None:
