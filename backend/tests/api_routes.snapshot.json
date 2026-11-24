@@ -1,5 +1,5 @@
 {
-  "count": 541,
+  "count": 542,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -90,6 +90,7 @@
     "GET /api/v1/automation/letters/{letter_id}/attachments/{attachment_id}/download",
     "GET /api/v1/automation/letters/{letter_id}/signature-image",
     "GET /api/v1/automation/letters/{letter_id}/task-attachments/{attachment_id}/download",
+    "GET /api/v1/automation/letters/{letter_id}/versions/{version_id}",
     "GET /api/v1/automation/notification-prefs",
     "GET /api/v1/automation/people",
     "GET /api/v1/automation/secretariats",
