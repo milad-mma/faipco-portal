@@ -6,11 +6,12 @@ all provider I/O. A provider acceptance is NOT an OS display or a read receipt.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import cast, func, select, update
+from sqlalchemy import String, and_, cast, func, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import selectinload
 
@@ -61,39 +62,110 @@ def dispatch_origin() -> str:
     return get_settings().FRONTEND_URL.rstrip("/")
 
 
-async def wake_waiting_jobs(db, user_id: int):
-    """Best-effort fast path after an authenticated subscription is saved.
+async def wake_waiting_jobs(db, user_id: int, *, ready=False):
+    """Wake only live, original-account device waits; never change provider retries.
 
-    Only still-live waiting jobs for the exact account. The normal scheduler
-    remains the recovery mechanism if these rows are locked or this hint fails.
-    Never send from an HTTP handler, revive terminal rows, expand recipients,
-    or shorten a provider backoff for a different account.
+    Legacy clients get the previous grace interval. Modern clients have already
+    persisted the local session marker, so the due time can be immediate.
+    Return bounded job IDs / OA keys for a best-effort targeted fast drain.
     """
     from app.models.office_automation import OaNotificationOutbox
 
     now = utcnow()
-    due = now + DEVICE_REGISTRATION_GRACE
-    jobs = (select(PushDispatchJob.id).where(
+    due = now if ready else now + DEVICE_REGISTRATION_GRACE
+    waiting = PushDispatchJob.last_error == "awaiting_eligible_devices"
+    if ready:
+        # A quick logout/login may precede the first dispatcher pass. Include
+        # already-due explicit events, but never early publication or retries.
+        waiting = or_(waiting, and_(PushDispatchJob.initialized.is_(False),
+            PushDispatchJob.last_error.is_(None), PushDispatchJob.next_attempt_at <= now))
+    jobs = select(PushDispatchJob.id).where(
         PushDispatchJob.origin == dispatch_origin(),
-        PushDispatchJob.status == "pending",
-        PushDispatchJob.last_error == "awaiting_eligible_devices",
-        PushDispatchJob.next_attempt_at > due,
+        PushDispatchJob.status == "pending", waiting,
         PushDispatchJob.deadline_at > due,
         cast(PushDispatchJob.user_ids, JSONB).contains([user_id]),
-    ).order_by(PushDispatchJob.next_attempt_at, PushDispatchJob.id).limit(100)
-      .with_for_update(skip_locked=True))
-    await db.execute(update(PushDispatchJob).where(PushDispatchJob.id.in_(jobs))
-                     .values(next_attempt_at=due).execution_options(synchronize_session=False))
-    oa = (select(OaNotificationOutbox.id).where(
-        OaNotificationOutbox.status == "pending",
-        OaNotificationOutbox.last_error == "awaiting_eligible_devices",
-        OaNotificationOutbox.next_attempt_at > due,
+    )
+    if ready:
+        # A public notice may remain open for hundreds of other accounts.
+        # Do not repeatedly wake it for an account already covered.
+        jobs = jobs.where(~select(PushDispatchDelivery.id).where(
+            PushDispatchDelivery.job_id == PushDispatchJob.id,
+            PushDispatchDelivery.user_id == user_id,
+            PushDispatchDelivery.status.in_(("pending", "accepted")),
+        ).exists())
+    else:
+        jobs = jobs.where(PushDispatchJob.next_attempt_at > due)
+    jobs = (jobs.order_by(PushDispatchJob.next_attempt_at, PushDispatchJob.id).limit(100)
+            .with_for_update(skip_locked=True))
+    stmt = update(PushDispatchJob).where(PushDispatchJob.id.in_(jobs)).values(
+        next_attempt_at=func.least(PushDispatchJob.next_attempt_at, due)
+    ).execution_options(synchronize_session=False)
+    result = await db.execute(stmt.returning(PushDispatchJob.id) if ready else stmt)
+    job_ids = list(result.scalars().all()) if ready else []
+    payload = cast(OaNotificationOutbox.payload, JSONB)
+    oa_wait = and_(OaNotificationOutbox.last_error == "awaiting_eligible_devices",
+                   payload["_delivery"]["recipient_user_ids"].contains([user_id]))
+    if ready:
+        # An uninitialized OA event has employee identity, not account IDs.
+        # The domain worker still validates the exact recipient and access.
+        employee_id = select(User.employee_id).where(User.id == user_id).scalar_subquery()
+        oa_wait = or_(oa_wait, and_(OaNotificationOutbox.last_error.is_(None),
+            OaNotificationOutbox.next_attempt_at <= now, payload["_delivery"].astext.is_(None),
+            payload["employee_id"].astext == cast(employee_id, String)))
+    oa = select(OaNotificationOutbox.id).where(
+        OaNotificationOutbox.status == "pending", oa_wait,
         OaNotificationOutbox.created_at > due - RETRY_WINDOW,
-        cast(OaNotificationOutbox.payload, JSONB)["_delivery"]["recipient_user_ids"].contains([user_id]),
-    ).order_by(OaNotificationOutbox.next_attempt_at, OaNotificationOutbox.id).limit(100)
-      .with_for_update(skip_locked=True))
-    await db.execute(update(OaNotificationOutbox).where(OaNotificationOutbox.id.in_(oa))
-                     .values(next_attempt_at=due).execution_options(synchronize_session=False))
+    )
+    if not ready:
+        oa = oa.where(OaNotificationOutbox.next_attempt_at > due)
+    oa = (oa.order_by(OaNotificationOutbox.next_attempt_at, OaNotificationOutbox.id).limit(100)
+          .with_for_update(skip_locked=True))
+    stmt = update(OaNotificationOutbox).where(OaNotificationOutbox.id.in_(oa)).values(
+        next_attempt_at=func.least(OaNotificationOutbox.next_attempt_at, due)
+    ).execution_options(synchronize_session=False)
+    result = await db.execute(stmt.returning(OaNotificationOutbox.key) if ready else stmt)
+    return job_ids, list(result.scalars().all()) if ready else []
+
+
+async def drain_ready_jobs(user_id: int, job_ids: list[int], oa_keys: list[str]):
+    """Bounded, optional fast path using the same locks and durable workers.
+
+    Never use a request session or send directly from registration. A second
+    bounded wake covers the common race with a dispatcher holding a row lock.
+    The regular scheduler remains responsible for recovery after failure/restart.
+    """
+    from app.services.oa_notification_outbox import drain_oa_outbox
+
+    async def try_drain(fn, **kwargs):
+        for attempt in range(3):
+            if await fn(**kwargs):
+                return
+            if attempt < 2:
+                await asyncio.sleep(0.2)
+
+    async def run_targets(ids, keys):
+        if ids:
+            try:
+                await try_drain(drain_push_dispatch_jobs, limit=12, job_ids=ids)
+            except Exception as exc:
+                logger.warning("Ready push fast drain failed: %s", type(exc).__name__)
+        if keys:
+            try:
+                await try_drain(drain_oa_outbox, limit=10, keys=keys)
+            except Exception as exc:
+                logger.warning("Ready OA fast drain failed: %s", type(exc).__name__)
+
+    await run_targets(job_ids, oa_keys)
+    # Only one additional bounded hint; no infinite in-memory retries or
+    # interval change. A job locked in the first wake may now be available.
+    await asyncio.sleep(0.25)
+    try:
+        async with AsyncSessionLocal() as db:
+            ids, keys = await wake_waiting_jobs(db, user_id, ready=True)
+            await db.commit()
+        await run_targets(ids, keys)
+    except Exception as exc:
+        logger.warning("Ready push second wake failed: %s", type(exc).__name__)
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -204,20 +276,21 @@ async def covered_users(db, job):
     ).distinct())).scalars().all())
 
 
-async def add_devices(db, job, audience, now):
+async def add_devices(db, job, audience, now, *, recovering=False):
     """Only snapshot IDs; never persist endpoint URLs or encryption keys."""
     if not audience:
         return set()
     stmt = eligible_subscriptions(audience).with_only_columns(
         PushSubscription.id, PushSubscription.session_id, PushSubscription.user_id,
-        maintain_column_froms=True,
+        PushSubscription.client_ready, maintain_column_froms=True,
     )
     rows = (await db.execute(stmt)).all()
     for start in range(0, len(rows), 500):
         await db.execute(insert(PushDispatchDelivery).values([
             dict(job_id=job.id, subscription_id=sid, session_id=session_id, user_id=uid,
-                 status="pending", attempts=0, next_attempt_at=now)
-            for sid, session_id, uid in rows[start:start + 500]
+                 status="pending", attempts=0,
+                 next_attempt_at=now + DEVICE_REGISTRATION_GRACE if recovering and ready is not True else now)
+            for sid, session_id, uid, ready in rows[start:start + 500]
         ]).on_conflict_do_nothing(index_elements=[PushDispatchDelivery.job_id,
             PushDispatchDelivery.subscription_id, PushDispatchDelivery.session_id]))
     return {row[2] for row in rows}
@@ -321,13 +394,15 @@ async def process_job(db, job, now):
     # which already received provider acceptance must not get old events again
     # just because it logs in on another device. The unique binding constraint
     # also prevents a terminally failed binding from being retried as a new one.
-    if can_defer(job):
-        await add_devices(db, job, audience - await covered_users(db, job),
-                          now + DEVICE_REGISTRATION_GRACE)
     candidates = (await db.execute(select(PushDispatchDelivery).where(
         PushDispatchDelivery.job_id == job.id, PushDispatchDelivery.status == "pending",
         PushDispatchDelivery.next_attempt_at <= now,
     ).order_by(PushDispatchDelivery.next_attempt_at, PushDispatchDelivery.id).limit(BATCH_SIZE))).scalars().all()
+    if can_defer(job):
+        # Snapshot AFTER selecting the send batch: even a confirmed-ready
+        # device's new row must be committed before contacting the provider.
+        # The fast drain can immediately claim the same job again.
+        await add_devices(db, job, audience - await covered_users(db, job), now, recovering=True)
     # Two historical bindings may use the same endpoint ID. Never mix them in
     # a batch whose transport result is keyed by subscription ID.
     batch = list({d.subscription_id: d for d in reversed(candidates)}.values())
@@ -370,7 +445,7 @@ async def process_job(db, job, now):
     await finish_if_ready(db, job, utcnow(), audience)
 
 
-async def drain_push_dispatch_jobs(limit=12):
+async def drain_push_dispatch_jobs(limit=12, *, job_ids=None):
     """One bounded batch per locked job/transaction, concurrent worker safe.
 
     A crash after provider acceptance but before commit can resend the same key;
@@ -382,10 +457,15 @@ async def drain_push_dispatch_jobs(limit=12):
             now = utcnow()
             if not await db.scalar(select(func.pg_try_advisory_xact_lock(PUSH_TRANSPORT_LOCK))):
                 break
-            job = (await db.execute(select(PushDispatchJob).where(
+            stmt = select(PushDispatchJob).where(
                 PushDispatchJob.origin == dispatch_origin(), PushDispatchJob.status == "pending",
                 PushDispatchJob.next_attempt_at <= now,
-            ).order_by(PushDispatchJob.next_attempt_at, PushDispatchJob.id).limit(1)
+            )
+            if job_ids is not None:
+                if not job_ids:
+                    break
+                stmt = stmt.where(PushDispatchJob.id.in_(job_ids))
+            job = (await db.execute(stmt.order_by(PushDispatchJob.next_attempt_at, PushDispatchJob.id).limit(1)
               .with_for_update(skip_locked=True))).scalar_one_or_none()
             if job is None:
                 break

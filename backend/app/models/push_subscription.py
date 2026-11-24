@@ -5,7 +5,7 @@ Web Push API مرورگر برمی‌گرداند و برای ارسال بعد�
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -23,6 +23,9 @@ class PushSubscription(Base):
     session_id: Mapped[int | None] = mapped_column(
         ForeignKey("user_sessions.id", ondelete="CASCADE"), nullable=True, index=True
     )
+
+    # NULL = legacy client; False = waiting for local gate; True = gate persisted.
+    client_ready: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)  # آدرس سرویس Push مرورگر برای این دستگاه
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)  # کلید عمومی رمزنگاری payload

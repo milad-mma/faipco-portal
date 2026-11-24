@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import and_, delete, select, or_, tuple_
+from sqlalchemy import and_, delete, select, or_, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,6 +80,8 @@ def eligible_subscriptions(user_ids: set[int]):
         .outerjoin(Employee, User.employee_id == Employee.id)
         .where(
             PushSubscription.user_id.in_(user_ids),
+            # A modern client is not eligible until its local session gate is durable.
+            PushSubscription.client_ready.is_not(False),
             UserSession.user_id == PushSubscription.user_id,
             UserSession.revoked_at.is_(None),
             UserSession.last_seen_at >= expires_before,
@@ -89,6 +91,18 @@ def eligible_subscriptions(user_ids: set[int]):
         )
     )
     return stmt
+
+
+async def bindings_are_ready(db, bindings: dict) -> bool:
+    """True only when every exact subscription/session binding is ready."""
+    pairs = {(int(sid), int(session_id)) for sid, session_id in bindings.items()}
+    if not pairs:
+        return False
+    rows = (await db.execute(select(PushSubscription.id, PushSubscription.session_id).where(
+        tuple_(PushSubscription.id, PushSubscription.session_id).in_(pairs),
+        PushSubscription.client_ready.is_(True),
+    ))).all()
+    return set(map(tuple, rows)) == pairs
 
 
 class PushService:
@@ -104,23 +118,28 @@ class PushService:
         layout both register in parallel. An endpoint moved to another account
         must never remain associated with the previous user's session.
         """
+        readiness = getattr(payload, "client_ready", None)
+        if readiness is True:
+            raise ValueError("Readiness must confirm an existing binding")
         stmt = pg_insert(PushSubscription).values(
             user_id=user_id, session_id=session_id, endpoint=payload.endpoint,
-            p256dh=payload.keys.p256dh, auth=payload.keys.auth,
+            p256dh=payload.keys.p256dh, auth=payload.keys.auth, client_ready=readiness,
         )
         changed = (await self.db.execute(stmt.on_conflict_do_update(
             index_elements=[PushSubscription.endpoint],
             set_={"user_id": user_id, "session_id": session_id,
-                  "p256dh": payload.keys.p256dh, "auth": payload.keys.auth},
+                  "p256dh": payload.keys.p256dh, "auth": payload.keys.auth,
+                  "client_ready": readiness},
             where=or_(PushSubscription.user_id.is_distinct_from(user_id),
                       PushSubscription.session_id.is_distinct_from(session_id),
                       PushSubscription.p256dh.is_distinct_from(payload.keys.p256dh),
                       PushSubscription.auth.is_distinct_from(payload.keys.auth)),
         ).returning(PushSubscription.id))).scalar_one_or_none()
         await self.db.commit()
-        if changed is not None:
-            # Registration is already committed. A wake hint failure cannot
-            # prevent login, and periodic dispatch will recover it later.
+        if changed is not None and readiness is None:
+            # Legacy registration is already committed. Modern clients wait
+            # for an explicit readiness confirmation before waking the queue.
+            # A wake failure cannot prevent login; periodic recovery remains.
             from app.services.push_dispatch import wake_waiting_jobs
             try:
                 await wake_waiting_jobs(self.db, user_id)
@@ -128,6 +147,38 @@ class PushService:
             except Exception as exc:
                 await self.db.rollback()
                 logger.warning("Deferred push wake failed (user_id=%s): %s", user_id, type(exc).__name__)
+
+    async def confirm_subscription_ready(self, user_id: int, payload: PushSubscriptionIn, *, session_id: int):
+        """Confirm only the exact current binding; never rebind on an ACK.
+
+        An obsolete ACK after logout/account switch cannot move the endpoint.
+        Returns None for a missing binding, otherwise (job IDs, OA keys, changed).
+        """
+        match = (PushSubscription.user_id == user_id,
+                 PushSubscription.session_id == session_id,
+                 PushSubscription.endpoint == payload.endpoint,
+                 PushSubscription.p256dh == payload.keys.p256dh,
+                 PushSubscription.auth == payload.keys.auth)
+        changed = (await self.db.execute(update(PushSubscription).where(
+            *match, PushSubscription.client_ready.is_not(True),
+        ).values(client_ready=True).returning(PushSubscription.id))).scalar_one_or_none()
+        if changed is None:
+            exists = await self.db.scalar(select(PushSubscription.id).where(
+                *match, PushSubscription.client_ready.is_(True)))
+            await self.db.commit()
+            return ([], [], False) if exists is not None else None
+        await self.db.commit()
+        # The readiness flag is durable even if the queue hint fails. The
+        # normal scheduler will still find eligible devices after a restart.
+        from app.services.push_dispatch import wake_waiting_jobs
+        try:
+            jobs, oa_keys = await wake_waiting_jobs(self.db, user_id, ready=True)
+            await self.db.commit()
+            return jobs, oa_keys, True
+        except Exception as exc:
+            await self.db.rollback()
+            logger.warning("Ready push wake failed (user_id=%s): %s", user_id, type(exc).__name__)
+            return [], [], True
 
     async def remove_subscription(self, endpoint: str, user_id: int | None = None) -> None:
         """اشتراک با endpoint داده‌شده را (در صورت وجود) حذف می‌کند؛ با user_id فقط اگر متعلق به همان کاربر باشد."""

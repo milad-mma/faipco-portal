@@ -24,6 +24,9 @@ class PushSubscriptionIn(BaseModel):
     endpoint: str = Field(min_length=1, max_length=MAX_ENDPOINT_LENGTH)
     keys: PushSubscriptionKeys
     session_marker: str | None = Field(default=None, max_length=128)
+    # False prepares a modern binding, True confirms the IndexedDB gate.
+    # Omitted/null is the backward-compatible, grace-period registration.
+    client_ready: bool | None = None
 
     @field_validator("endpoint")
     @classmethod

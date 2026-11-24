@@ -99,9 +99,15 @@ async function register(marker, prompt) {
   assertSession(marker);
   // Also bind the expected marker at the server, so an interceptor refreshing
   // after an account switch cannot accidentally attach this request to a new SID.
-  await subscribePush({...subscription.toJSON(), session_marker: marker});
+  const binding = {...subscription.toJSON(), session_marker: marker};
+  await subscribePush({...binding, client_ready: false});
   assertSession(marker);
-  await setDevicePushEnabled(true, marker);
+  const gateReady = await setDevicePushEnabled(true, marker);
+  assertSession(marker);
+  if (gateReady === false) throw new Error("ثبت اعلان با تغییر وضعیت دستگاه متوقف شد.");
+  // Only release deferred sends after the IndexedDB transaction completed.
+  // The ACK cannot bind a different account or revive a revoked session.
+  await subscribePush({...binding, client_ready: true});
   assertSession(marker);
   registeredMarker = marker;
   lastSuccess = Date.now();

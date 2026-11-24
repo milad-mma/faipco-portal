@@ -20,7 +20,7 @@ from app.models.office_automation import (OaApprovalStep, OaLetter, OaLetterAcce
 from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.services import notification_templates
-from app.services.push_service import PushService, eligible_subscriptions
+from app.services.push_service import PushService, eligible_subscriptions, bindings_are_ready
 from app.services.push_dispatch import (
     PUSH_TRANSPORT_LOCK, RETRY_WINDOW, DEVICE_WAIT_INTERVAL, DEVICE_REGISTRATION_GRACE,
 )
@@ -204,7 +204,12 @@ async def drain_oa_outbox(limit: int = 20, keys: list[str] | None = None) -> int
             try:
                 status, error = await _deliver_one(db, event)
                 if status in ("initialized", "rebound"):
-                    delay = DEVICE_REGISTRATION_GRACE if status == "rebound" else timedelta(0)
+                    delay = timedelta(0)
+                    if status == "rebound":
+                        tracking = event.payload["_delivery"]
+                        bindings = {str(sid): tracking["bindings"][str(sid)] for sid in tracking["remaining"]}
+                        if not await bindings_are_ready(db, bindings):
+                            delay = DEVICE_REGISTRATION_GRACE
                     event.next_attempt_at = min(datetime.now(timezone.utc) + delay,
                                                 event.created_at + RETRY_WINDOW)
                     event.last_error = None

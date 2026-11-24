@@ -31,6 +31,7 @@ class MemoryQueue:
     def __init__(self, monkeypatch, ids):
         self.audience = set(ids)
         self.devices = {}
+        self.ready_bindings = set()
         self.rows = []
         self.calls = []
         self.missing = set()
@@ -46,7 +47,7 @@ class MemoryQueue:
     async def current_audience(self, db, job, now):
         return self.audience & set(job.user_ids)
 
-    async def add_devices(self, db, job, ids, due):
+    async def add_devices(self, db, job, ids, due, *, recovering=False):
         found = set()
         for uid in ids:
             for sid, session in self.devices.get(uid, []):
@@ -55,7 +56,9 @@ class MemoryQueue:
                     continue
                 self.rows.append(SimpleNamespace(id=len(self.rows)+1, user_id=uid,
                     subscription_id=sid, session_id=session, status="pending", attempts=0,
-                    next_attempt_at=due, accepted_at=None, last_error=None))
+                    next_attempt_at=due + dispatch.DEVICE_REGISTRATION_GRACE
+                        if recovering and (sid, session) not in self.ready_bindings else due,
+                    accepted_at=None, last_error=None))
         return found
 
     async def flush(self):

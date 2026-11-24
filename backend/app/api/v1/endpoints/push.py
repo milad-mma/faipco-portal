@@ -1,5 +1,5 @@
 """Endpoint های Web Push: دریافت کلید عمومی VAPID، ثبت/لغو اشتراک دستگاه کاربر."""
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -25,12 +25,14 @@ async def get_vapid_public_key():
 async def subscribe(
     payload: PushSubscriptionIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """اشتراک Push دستگاه جاری را برای کاربر لاگین‌شده ذخیره می‌کند. خروجی: 204 بدون بدنه."""
     sid = getattr(request.state, "session_sid", None)
-    if payload.session_marker is not None and payload.session_marker != sid:
+    if ((payload.client_ready is not None or payload.session_marker is not None)
+            and (not sid or payload.session_marker != sid)):
         raise HTTPException(status_code=409, detail="نشست هنگام ثبت اعلان تغییر کرده است")
     session = (await db.execute(
         select(UserSession).where(UserSession.sid == sid, UserSession.user_id == current_user.id,
@@ -38,7 +40,19 @@ async def subscribe(
     )).scalar_one_or_none() if sid else None
     if session is None:
         raise HTTPException(status_code=401, detail="برای فعال‌سازی اعلان دوباره وارد حساب شوید")
-    await PushService(db).save_subscription(current_user.id, payload, session_id=session.id)
+    service = PushService(db)
+    if payload.client_ready is True:
+        waiting = await service.confirm_subscription_ready(current_user.id, payload, session_id=session.id)
+        if waiting is None:
+            raise HTTPException(status_code=409, detail="اشتراک اعلان تغییر کرده است؛ دوباره تلاش کنید")
+        job_ids, oa_keys, changed = waiting
+        if changed:
+            from app.services.push_dispatch import drain_ready_jobs
+            # Fast path only. Durable records and their due times were committed
+            # already; a worker exit here never loses an event.
+            background_tasks.add_task(drain_ready_jobs, current_user.id, job_ids, oa_keys)
+    else:
+        await service.save_subscription(current_user.id, payload, session_id=session.id)
 
 
 @router.post("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)

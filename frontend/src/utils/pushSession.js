@@ -29,7 +29,7 @@ export async function setDevicePushEnabled(enabled, sessionMarker = null) {
   }
   const db = await openStore();
   try {
-    if (updateVersion !== localUpdateVersion) return;
+    if (updateVersion !== localUpdateVersion) return false;
     await new Promise((resolve, reject) => {
       const tx = db.transaction("meta", "readwrite");
       const store = tx.objectStore("meta");
@@ -39,6 +39,7 @@ export async function setDevicePushEnabled(enabled, sessionMarker = null) {
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    return updateVersion === localUpdateVersion;
   } finally {
     db.close();
   }
