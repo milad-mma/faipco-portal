@@ -20,6 +20,8 @@ from pathlib import Path
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.android_assetlinks import assetlinks_json as _assetlinks_json, write_assetlinks_file
+from app.core.config import get_settings
 from app.core.geo import haversine_distance_meters
 from app.core.request_context import current_user_agent, is_android_user_agent
 from app.models.employee import Employee
@@ -162,43 +164,22 @@ async def save_mobile_settings(db: AsyncSession, data: MobileAppSettings) -> Mob
     return data
 
 
-ANDROID_PACKAGE = "ir.faipco.portal"
 ASSETLINKS_PATH = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist" / ".well-known" / "assetlinks.json"
 
 
 def assetlinks_json(fingerprint: str) -> str:
-    return json.dumps(
-        [
-            {
-                "relation": ["delegate_permission/common.handle_all_urls"],
-                "target": {
-                    "namespace": "android_app",
-                    "package_name": ANDROID_PACKAGE,
-                    "sha256_cert_fingerprints": [fingerprint] if fingerprint else [],
-                },
-            }
-        ],
-        indent=2,
-    )
+    return _assetlinks_json(fingerprint, get_settings().FRONTEND_URL)
 
 
 def write_assetlinks(fingerprint: str) -> bool:
-    """
-    فایل dist/.well-known/assetlinks.json را با اثر انگشت کلید امضا می‌نویسد (Nginx همین فایل را سرو می‌کند).
-    بدون اثر انگشت یا بدون Build فرانت کاری نمی‌کند. خطا فقط لاگ می‌شود.
-    """
-    if not fingerprint or not ASSETLINKS_PATH.parent.parent.exists():
-        return False
+    """Generate the association for this deployment using its existing SHA-256."""
     try:
-        ASSETLINKS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        content = assetlinks_json(fingerprint)
-        if ASSETLINKS_PATH.exists() and ASSETLINKS_PATH.read_text(encoding="utf-8") == content:
-            return False
-        ASSETLINKS_PATH.write_text(content, encoding="utf-8")
-        logger.info("assetlinks.json با اثر انگشت کلید امضای اپ نوشته شد")
-        return True
-    except OSError as e:
-        logger.warning("نوشتن assetlinks.json ناموفق بود: %s", e)
+        changed = write_assetlinks_file(ASSETLINKS_PATH, fingerprint, get_settings().FRONTEND_URL)
+        if changed:
+            logger.info("Android assetlinks.json updated for the configured portal environment")
+        return changed
+    except (OSError, ValueError) as e:
+        logger.warning("Could not write Android assetlinks.json: %s", e)
         return False
 
 

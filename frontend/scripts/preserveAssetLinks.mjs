@@ -2,24 +2,28 @@
  * Preserve the verified Android Digital Asset Links file across Vite rebuilds.
  *
  * The authoritative SHA-256 is configured in the admin panel and written by
- * FastAPI to dist/.well-known/assetlinks.json. Do not ship a public/ placeholder:
- * Vite would otherwise overwrite the real file on every build.
+ * FastAPI to dist/.well-known/assetlinks.json. The tracked public/ file is an
+ * empty array (no trust). Preserve a verified single-environment association.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, chownSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-const EXPECTED_PACKAGE = 'ir.faipco.portal';
+import { PRODUCTION_PACKAGE, STAGING_PACKAGE } from '../src/utils/androidEnvironment.js';
+
+const EXPECTED_PACKAGES = new Set([PRODUCTION_PACKAGE, STAGING_PACKAGE]);
 const FINGERPRINT = /^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$/;
 
 export function isValidAssetLinks(raw) {
   try {
     const data = JSON.parse(raw);
-    return Array.isArray(data) && data.some(entry =>
-      entry?.relation?.includes('delegate_permission/common.handle_all_urls') &&
+    return Array.isArray(data) && data.length === 1 && data.every(entry =>
+      Array.isArray(entry?.relation) &&
+      entry.relation.includes('delegate_permission/common.handle_all_urls') &&
       entry?.target?.namespace === 'android_app' &&
-      entry.target.package_name === EXPECTED_PACKAGE &&
+      EXPECTED_PACKAGES.has(entry.target.package_name) &&
       Array.isArray(entry.target.sha256_cert_fingerprints) &&
-      entry.target.sha256_cert_fingerprints.some(fp => typeof fp === 'string' && FINGERPRINT.test(fp))
+      entry.target.sha256_cert_fingerprints.length > 0 &&
+      entry.target.sha256_cert_fingerprints.every(fp => typeof fp === 'string' && FINGERPRINT.test(fp))
     );
   } catch {
     return false;

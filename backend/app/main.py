@@ -51,13 +51,19 @@ async def sync_index_html_branding() -> None:
         async with AsyncSessionLocal() as db:
             branding = await SystemSettingsService(db).get_branding()
         write_index_html_branding(branding["browser_title"], branding["manifest_short_name"])
-        # اثر انگشت کلید امضای اپ اندروید در assetlinks.json (بعد از هر Build فرانت دوباره نوشته می‌شود)
+    except Exception:  # noqa: BLE001 - نباید مانع بالا آمدن سرویس شود
+        logging.getLogger(__name__).exception("همگام‌سازی عنوان index.html در شروع ناموفق بود")
+
+    # Android trust is independent of HTML branding. Also run this when the
+    # installer calls this hook after activating a staged frontend release.
+    try:
+        from app.db.session import AsyncSessionLocal
         from app.services.mobile_app_service import get_mobile_settings, write_assetlinks
 
         async with AsyncSessionLocal() as db:
             write_assetlinks((await get_mobile_settings(db)).signing_sha256)
     except Exception:  # noqa: BLE001 - نباید مانع بالا آمدن سرویس شود
-        logging.getLogger(__name__).exception("همگام‌سازی عنوان index.html در شروع ناموفق بود")
+        logging.getLogger(__name__).exception("Android assetlinks sync failed")
 
 
 @asynccontextmanager

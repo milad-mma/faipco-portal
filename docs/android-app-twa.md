@@ -44,7 +44,7 @@ bubblewrap init --manifest https://portal.faipco.ir/manifest.json
 - **Package name**: پیشنهاد پیش‌فرض معمولاً چیزی شبیه `ir.faipco.portal`
   است — همین را قبول کنید، چون دقیقاً همین مقدار از قبل در
   `frontend/dist/.well-known/assetlinks.json` (توسط بک‌اند از «تنظیمات اپ اندروید») نوشته می‌شود. اگر اسم دیگری
-  انتخاب کردید، حتماً آن فایل را هم به همان مقدار به‌روز کنید.
+  انتخاب کردید، باید mapping محیط در سورس پرتال و APK هماهنگ شود. برای APK تست، نام `ir.faipco.portal.test` و دامنه `portal-test.faipco.ir` استفاده می‌شوند؛ پرتال از `FRONTEND_URL` آن‌ها را تشخیص می‌دهد.
 - مقادیری که از `frontend/public/manifest.json` خوانده می‌شوند: نام
   `FAIPCO Portal` / `FAIPCO`، `start_url: /`، `display: standalone`،
   `orientation: portrait-primary`، `theme_color: #16324F`،
@@ -83,7 +83,7 @@ keytool -list -v -keystore android.keystore -alias android
 
 این مقدار را در پنل مدیریت پرتال، بخش «تنظیمات اپ اندروید»، ذخیره کنید.
 Backend فایل `frontend/dist/.well-known/assetlinks.json` را از روی همین تنظیمات تولید می‌کند.
-فایل نمونه در `frontend/public` دیگر وجود ندارد و Build نیز فایل معتبر را حفظ می‌کند؛
+فایل `frontend/public/.well-known/assetlinks.json` فقط آرایه خالی `[]` دارد و Build فایل معتبر هر دو محیط را حفظ می‌کند؛
 **فایل `assetlinks.json` را دستی داخل `public` ایجاد نکنید.**
 
 برای تأیید اینکه درست تنظیم شده:

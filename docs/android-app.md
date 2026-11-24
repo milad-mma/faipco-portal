@@ -238,7 +238,7 @@
 
 - مرجع اثر انگشت در «تنظیمات اپ اندروید» ذخیره می‌شود. Backend آن را در
   `frontend/dist/.well-known/assetlinks.json` می‌نویسد.
-- فایل نمونه قبلی `frontend/public/.well-known/assetlinks.json` **حذف شده** است؛ نباید نسخه نمونه در Git قرار گیرد.
+- فایل `frontend/public/.well-known/assetlinks.json` فقط آرایه خالی `[]` دارد؛ فایل واقعی و اثر انگشت ثبت‌شده نباید در سورس ثابت شوند.
 - پلاگین `frontend/scripts/preserveAssetLinks.mjs` قبل از پاک شدن خروجی Build، فایل معتبر را می‌خواند و پس از Build
   بازمی‌گرداند. این محافظت هم برای اجرای مستقیم `npm run build` و هم برای `install.sh` فعال است.
   اگر Backend در زمان Build فایل معتبر جدیدی نوشته باشد، نسخه جدید جایگزین نمی‌شود.
@@ -255,5 +255,5 @@
 curl -fsSL https://portal-test.faipco.ir/.well-known/assetlinks.json
 ```
 
-باید `package_name` برابر `ir.faipco.portal` و یک اثر انگشت SHA-256 واقعی مشاهده شود.
+روی دامنه تست باید `package_name` برابر `ir.faipco.portal.test` و روی دامنه اصلی برابر `ir.faipco.portal` باشد؛ هر کدام با اثر انگشت SHA-256 ثبت‌شده همان محیط. تشخیص Backend از `FRONTEND_URL` در `.env` و تشخیص لینک‌های بومی Frontend از hostname صفحه است. توضیحات انتشار و آزمون‌ها در [سند رفع آدرس‌بار](android-environment-handoff-fa.md) آمده‌اند.
 برای تست جلوگیری از بازگشت خطا، قبل و بعد از `npm run build` محتوای این URL را مقایسه کنید.

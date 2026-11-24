@@ -2,17 +2,21 @@
  * تشخیص اجرای پرتال داخل اپ اندروید FAIPCO (TWA) و ارتباط با بخش بومی اپ (docs/android-app.md).
  *
  * - اپ پرتال را با آدرس /?source=android-app باز می‌کند و document.referrer در اولین باز شدن
- *   android-app://ir.faipco.portal است. این نشانه در sessionStorage همان تب نگه داشته می‌شود، نه localStorage:
+ *   android-app://<package-of-current-environment> است. این نشانه در sessionStorage همان تب نگه داشته می‌شود، نه localStorage:
  *   TWA حافظه‌ی سایت را با Chrome معمولی گوشی مشترک دارد و با localStorage، Chrome هم بعد از یک‌بار باز کردن اپ
  *   «داخل اپ» حساب می‌شد (قفل مرورگر دور زده می‌شد). sessionStorage مخصوص همان پنجره است و با reload می‌ماند.
  *   localStorage فقط «این گوشی اپ را دارد» را نگه می‌دارد (برای راهنماها، نه تشخیص داخل اپ).
  * - اتصال خودکار: اپ یک کد تصادفی در آدرس (#link=...) می‌فرستد؛ پرتال بعد از ورود کاربر آن را به حساب او وصل
  *   می‌کند (MobileAppPrompt) و بخش بومی اپ خودش توکن دستگاه را می‌گیرد. کد فقط وقتی پذیرفته می‌شود که صفحه واقعاً
- *   از اپ باز شده باشد (document.referrer = android-app://ir.faipco.portal)، تا لینکِ فرستاده‌شده توسط دیگری
+ *   از اپ باز شده باشد (document.referrer = android-app://<package-of-current-environment>)، تا لینکِ فرستاده‌شده توسط دیگری
  *   گوشی او را به حساب شما وصل نکند.
  * - پرتال با آدرس intent:// بخش بومی اپ را باز می‌کند (اتصال دستی با کد یک‌بارمصرف، یا بررسی دسترسی‌ها).
  */
-export const ANDROID_PACKAGE = "ir.faipco.portal";
+import { androidIdentityForHost, isExpectedAndroidReferrer } from "./androidEnvironment.js";
+
+const identity = androidIdentityForHost(globalThis.window?.location?.hostname);
+export const ANDROID_PACKAGE = identity.packageName;
+const ANDROID_SCHEME = identity.scheme;
 const APP_FLAG_KEY = "faipco_android_app"; // localStorage: این گوشی حداقل یک‌بار پرتال را از اپ باز کرده
 const APP_SESSION_KEY = "faipco_android_app_session"; // sessionStorage: همین پنجره داخل اپ است
 const LINK_KEY = "faipco_device_link"; // sessionStorage: کد اتصال خودکار تا بعد از ورود کاربر
@@ -37,12 +41,12 @@ function safeSet(key, value) {
 export function detectAndroidApp() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const fromApp =
-      params.get("source") === "android-app" || String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`);
+    const reallyFromApp = isExpectedAndroidReferrer(document.referrer, ANDROID_PACKAGE);
+    const fromApp = params.get("source") === "android-app" || reallyFromApp;
     if (fromApp) safeSet(APP_FLAG_KEY, "1");
     // «داخل اپ» فقط با referrer اپ (Chrome آن را هنگام باز کردن TWA می‌گذارد)؛ پارامتر source را هر کسی می‌تواند در
     // نوار آدرس Chrome بنویسد و با آن قفل مرورگر را دور بزند
-    if (String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`)) {
+    if (reallyFromApp) {
       try {
         sessionStorage.setItem(APP_SESSION_KEY, "1");
       } catch {
@@ -54,7 +58,6 @@ export function detectAndroidApp() {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const link = hash.get("link");
     if (link) {
-      const reallyFromApp = String(document.referrer || "").startsWith(`android-app://${ANDROID_PACKAGE}`);
       if (reallyFromApp && /^[A-Za-z0-9_-]{16,100}$/.test(link)) {
         try {
           sessionStorage.setItem(LINK_KEY, link);
@@ -117,7 +120,7 @@ function openIntent(path, params = {}) {
   const query = new URLSearchParams(params).toString();
   const fallback = encodeURIComponent(`${window.location.origin}/mobile-app?app_outdated=1`);
   window.location.href =
-    `intent://${path}${query ? `?${query}` : ""}#Intent;scheme=faipco;package=${ANDROID_PACKAGE};` +
+    `intent://${path}${query ? `?${query}` : ""}#Intent;scheme=${ANDROID_SCHEME};package=${ANDROID_PACKAGE};` +
     `S.browser_fallback_url=${fallback};end`;
 }
 

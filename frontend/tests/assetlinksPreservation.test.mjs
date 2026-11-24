@@ -65,3 +65,22 @@ test('fresh installs do not create fake association data', () => {
     assert.equal(existsSync(s.file), false);
   } finally { s.cleanup(); }
 });
+
+const staging = valid.replace('ir.faipco.portal', 'ir.faipco.portal.test');
+
+test('staging assetlinks survive direct builds just like production', () => {
+  assert.equal(isValidAssetLinks(staging), true);
+  const s = setup(staging);
+  try {
+    rmSync(join(s.root, 'dist'), { recursive: true });
+    mkdirSync(s.dir, { recursive: true });
+    writeFileSync(s.file, '[]'); // tracked public placeholder
+    s.plugin.writeBundle.call({ warn() {}, error(msg) { throw Error(msg); } });
+    assert.equal(readFileSync(s.file, 'utf8'), staging);
+  } finally { s.cleanup(); }
+});
+
+test('a mixed environment association is not preserved', () => {
+  assert.equal(isValidAssetLinks(JSON.stringify([...JSON.parse(valid), ...JSON.parse(staging)])), false);
+  assert.equal(isValidAssetLinks('[]'), false);
+});
