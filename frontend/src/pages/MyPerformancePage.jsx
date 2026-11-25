@@ -468,13 +468,15 @@ export default function MyPerformancePage() {
   // تب فعال در آدرس صفحه (?tab=personnel و...) ذخیره می‌شود تا با رفرش یا بازگشت از صفحه‌ی ارزیابی
   // همان تب باز شود
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabFromUrl = TAB_KEYS.indexOf(searchParams.get("tab"));
-  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0); // ایندکس تب فعال در TAB_KEYS
+  const requestedTab = searchParams.get("tab");
+  const tab = TAB_KEYS.includes(requestedTab) ? requestedTab : "results";
 
-  // تب را عوض می‌کند و کلید آن را در پارامتر tab آدرس می‌نویسد
-  function handleTabChange(newIndex) {
-    setTab(newIndex);
-    setSearchParams({ tab: TAB_KEYS[newIndex] });
+  function handleTabChange(key) {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set("tab", key);
+      return next;
+    });
   }
 
   const [results, setResults] = useState(null); // نتایج ارزیابی کاربر؛ null = در حال بارگذاری
@@ -489,7 +491,7 @@ export default function MyPerformancePage() {
     if (!gateStatus) return;
     // دوطرفه: با مسدود بودن evaluation_result باز و با رفع پیش‌نیاز خودکار بسته می‌شود
     setGateOpen(
-      tab === 0 && Boolean(gateStatus.blocked_features?.["evaluation_result"]),
+      tab === "results" && Boolean(gateStatus.blocked_features?.["evaluation_result"]),
     );
   }, [tab, gateStatus]);
 
@@ -586,6 +588,15 @@ export default function MyPerformancePage() {
     }
   }
 
+  const hasPersonnel = Boolean(pending?.length);
+  useEffect(() => {
+    if (tab === "personnel" && pending?.length === 0) {
+      const next = new URLSearchParams(searchParams);
+      next.set("tab", "results");
+      setSearchParams(next, { replace: true });
+    }
+  }, [tab, pending, searchParams, setSearchParams]);
+
   const pendingCount =
     (Array.isArray(pending) ? pending : []).filter((p) => p?.status !== "submitted").length; // تعداد ارزیابی‌های ثبت‌نشده (در برچسب تب)
   const hasShiftLeadEvaluations =
@@ -608,17 +619,17 @@ export default function MyPerformancePage() {
       {/* تب‌ها: کلیدها همان TAB_KEYS هستند تا با پارامتر ?tab= در URL هم‌راستا بمانند
           (لینک «انجام ارزیابی‌ها» در دیالوگ محدودیت دسترسی از آن استفاده می‌کند) */}
       <PillTabs
-        value={TAB_KEYS[tab]}
-        onChange={(k) => handleTabChange(TAB_KEYS.indexOf(k))}
+        value={tab}
+        onChange={handleTabChange}
         tabs={[
           { key: "results", label: "نتایج ارزیابی من" },
-          {
+          ...(hasPersonnel ? [{
             key: "personnel",
             label:
               pendingCount > 0
                 ? `ارزیابی پرسنل من (${pendingCount})`
                 : "ارزیابی پرسنل من",
-          },
+          }] : []),
           ...(hasShiftLeadEvaluations
             ? [{ key: "shift-leads", label: "ارزیابی‌های سرشیفت‌ها" }]
             : []),
@@ -626,7 +637,7 @@ export default function MyPerformancePage() {
       />
 
       {/* تب نتایج: میانگین سالانه و کارت هر نتیجه */}
-      {tab === 0 && (
+      {tab === "results" && (
         <Box>
           <YearlyAverageCard yearlyAverage={yearlyAverage} />
           {notEvaluated.map((n) => (
@@ -653,26 +664,19 @@ export default function MyPerformancePage() {
       )}
 
       {/* تب ارزیابی پرسنل من */}
-      {tab === 1 && (
-        <Box>
-          {pending === null ? null : pending.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              فعلاً هیچ پرسنلی برای ارزیابی به شما اختصاص داده نشده است.
-            </Typography>
-          ) : (
-            <MyPersonnelTable
-              items={pending}
-              periodFilter={periodFilter}
-              setPeriodFilter={setPeriodFilter}
-              onStart={handleStart}
-              onEdit={handleEdit}
-            />
-          )}
-        </Box>
+      {tab === "personnel" && pending === null && !error && <CircularProgress size={24} />}
+      {tab === "personnel" && hasPersonnel && (
+        <MyPersonnelTable
+          items={pending}
+          periodFilter={periodFilter}
+          setPeriodFilter={setPeriodFilter}
+          onStart={handleStart}
+          onEdit={handleEdit}
+        />
       )}
 
       {/* تب ارزیابی‌های سرشیفت‌ها */}
-      {tab === 2 && hasShiftLeadEvaluations && (
+      {tab === "shift-leads" && hasShiftLeadEvaluations && (
         <Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             ارزیابی‌هایی که سرشیفت‌های واحد شما انجام داده‌اند - در صورت نیاز
