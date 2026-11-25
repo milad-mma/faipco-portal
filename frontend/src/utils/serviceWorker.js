@@ -185,6 +185,9 @@ export function registerServiceWorker() {
     registering = true;
     try {
       const registration = await navigator.serviceWorker.register("/sw.js");
+      const flushReceipts = () => registration.active?.postMessage({ type: "FLUSH_PUSH_RECEIPTS" });
+      flushReceipts();
+      window.addEventListener("online", flushReceipts);
       swRegistration = registration;
       if (registration.waiting) notifyUpdateReady(registration);
       observeRegistration(registration);

@@ -14,6 +14,7 @@ from sqlalchemy import and_, delete, select, or_, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.push_receipts import issue_receipt
 from app.services import notification_templates
 from app.core.config import get_settings
 from app.models.push_subscription import PushSubscription
@@ -287,6 +288,7 @@ class PushService:
                     # Not a credential: device-session correlation so a delayed
                     # Push from a previous login cannot appear after account switch.
                     "session_marker": marker_by_subscription[sub.id],
+                    **({"receipt_token": issue_receipt(notification_key, sub)} if session_bindings and notification_key else {}),
                     **({"notification_key": notification_key} if notification_key else {}),
                 }
             )

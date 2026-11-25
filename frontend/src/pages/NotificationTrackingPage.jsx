@@ -61,8 +61,19 @@ function Status({ value }) {
   const accepted = ["sent", "accepted"].includes(value);
   return <Chip size="small" variant="outlined"
     sx={{ height: "auto", maxWidth: "100%", "& .MuiChip-label": { whiteSpace: "normal", py: 0.4 } }}
-    label={accepted ? "سرویس پذیرفت؛ تحویل به گوشی تأیید نشده" : states[value] || value}
+    label={accepted ? "پذیرفته‌شده توسط سرویس پوش" : states[value] || value}
     color={({ accepted: "info", sent: "info", failed: "error", partial: "warning" })[value] || "default"} />;
+}
+function ReceiptSummary({ row }) {
+  return <Typography variant="body2" color={row.received_count ? "text.primary" : "text.secondary"}>
+    {row.received_count ? `رسید دستگاه: ${row.received_count} · کلیک روی اعلان: ${row.opened_count}` : "رسید دستگاه ثبت نشده"}
+  </Typography>;
+}
+function DeviceReceipt({ device }) {
+  return <Stack spacing={0.5}>
+    <Typography variant="body2">{device.received_at ? `ثبت رسید دستگاه: ${date(device.received_at)}` : "رسید دستگاه ثبت نشده"}</Typography>
+    <Typography variant="body2">{device.opened_at ? `ثبت کلیک روی اعلان: ${date(device.opened_at)}` : "کلیک ثبت نشده"}</Typography>
+  </Stack>;
 }
 function Detail({ event, close, code, mobile }) {
   const params = useMemo(() => ({ personnel_code: code || undefined }), [code]);
@@ -92,7 +103,7 @@ function Detail({ event, close, code, mobile }) {
             <Card variant="outlined" sx={{ p: 1.5 }} key={d.id ?? d.subscription_id}>
               <Stack spacing={1} alignItems="flex-start">
                 <Typography fontWeight={700}>اشتراک شمارهٔ {d.subscription_id}</Typography>
-                <Recipient row={d} /><Status value={d.status} />
+                <Recipient row={d} /><Status value={d.status} /><DeviceReceipt device={d} />
                 {d.attempts != null && <Typography variant="body2">تعداد تلاش: {d.attempts}</Typography>}
                 {d.accepted_at && <Typography variant="body2">زمان پذیرش: {date(d.accepted_at)}</Typography>}
                 {d.status === "pending" && d.next_attempt_at && <Typography variant="body2">تلاش بعدی: {date(d.next_attempt_at)}</Typography>}
@@ -102,7 +113,7 @@ function Detail({ event, close, code, mobile }) {
             <TableHead><TableRow>{["اشتراک", "شناسه کاربر", "کد پرسنلی", "وضعیت دستگاه", "تلاش", "زمان پذیرش", "تلاش بعدی", "علت"].map(t => <TableCell key={t}>{t}</TableCell>)}</TableRow></TableHead>
             <TableBody>{data.items.map(d => <TableRow key={d.id ?? d.subscription_id}>
               <TableCell>{d.subscription_id}</TableCell><TableCell>{d.user_id ?? "—"}</TableCell><TableCell>{d.personnel_code ?? "—"}</TableCell>
-              <TableCell><Status value={d.status} /></TableCell><TableCell>{d.attempts ?? "—"}</TableCell>
+              <TableCell><Status value={d.status} /><DeviceReceipt device={d} /></TableCell><TableCell>{d.attempts ?? "—"}</TableCell>
               <TableCell>{date(d.accepted_at)}</TableCell><TableCell>{d.status === "pending" ? date(d.next_attempt_at) : "—"}</TableCell>
               <TableCell>{reasons[d.last_error] || d.last_error || "—"}</TableCell></TableRow>)}</TableBody>
           </Table></TableContainer> : <Typography>در این گزارش سابقهٔ ارسال به دستگاه پیدا نشد.</Typography>}
@@ -126,7 +137,7 @@ export default function NotificationTrackingPage() {
   const field = name => ({ value: filters[name], onChange: e => { move(0); setFilters({ ...filters, [name]: e.target.value }); } });
   return <Stack spacing={2}>
     <Typography variant="h5" component="h1">ردیابی اعلان ها</Typography>
-    <Typography color="text.secondary">زمان پذیرش نشان می‌دهد سرویس پوش پیام را پذیرفته است. نمایش روی گوشی یا خواندن پیام جداگانه تأیید نمی‌شود.</Typography>
+    <Typography color="text.secondary">رسید دستگاه پس از نمایش اعلان ثبت می‌شود. کلیک یعنی کاربر روی همان اعلان زده است. زمان‌ها، زمان ثبت رسید در پرتال هستند.</Typography>
     <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
       <Grid container spacing={1.5} alignItems="center">
         <Grid item xs={12} sm={6} md={3}>
@@ -157,7 +168,7 @@ export default function NotificationTrackingPage() {
           <Stack spacing={1} alignItems="flex-start" sx={{ overflowWrap: "anywhere" }}>
             <Typography variant="caption">{sources[row.source]} · ارسال شمارهٔ {row.id} · {date(row.created_at)}</Typography>
             <Typography fontWeight={700}>{messageReference(row)}</Typography>
-            <Recipient row={row} /><Typography variant="caption">وضعیت کل ارسال</Typography><Status value={row.status} />
+            <Recipient row={row} /><Typography variant="caption">وضعیت کل ارسال</Typography><Status value={row.status} /><ReceiptSummary row={row} />
             {row.status === "pending" && <Typography variant="body2">تلاش بعدی: {date(row.next_attempt_at)}</Typography>}
             <Button onClick={() => select(row)}>جزئیات</Button>
           </Stack>
@@ -166,7 +177,7 @@ export default function NotificationTrackingPage() {
       <TableHead><TableRow>{["شناسه", "پیام مرتبط", "گیرنده", "زمان ثبت", "وضعیت کل ارسال", "تلاش بعدی", ""].map(t => <TableCell key={t}>{t}</TableCell>)}</TableRow></TableHead>
       <TableBody>{data.items.map(row => <TableRow hover key={row.source + row.id}>
         <TableCell>{row.id}</TableCell><TableCell sx={{ overflowWrap: "anywhere" }}>{messageReference(row)}</TableCell><TableCell><Recipient row={row} /></TableCell>
-        <TableCell>{date(row.created_at)}</TableCell><TableCell><Status value={row.status} /></TableCell>
+        <TableCell>{date(row.created_at)}</TableCell><TableCell><Status value={row.status} /><ReceiptSummary row={row} /></TableCell>
         <TableCell>{row.status === "pending" ? date(row.next_attempt_at) : "—"}</TableCell>
         <TableCell><Button onClick={() => select(row)}>جزئیات</Button></TableCell>
       </TableRow>)}</TableBody></Table></TableContainer>}

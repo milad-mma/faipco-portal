@@ -1,4 +1,7 @@
 """Endpoint های Web Push: دریافت کلید عمومی VAPID، ثبت/لغو اشتراک دستگاه کاربر."""
+from typing import Literal
+from pydantic import BaseModel, Field
+from app.services.push_receipts import record_receipt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,3 +66,13 @@ async def unsubscribe(
 ):
     """اشتراک Push خودِ کاربر با endpoint داده‌شده را حذف می‌کند (اشتراک دیگران دست نمی‌خورد). خروجی: 204."""
     await PushService(db).remove_subscription(payload.endpoint, current_user.id)
+
+class ClientReceipt(BaseModel):
+    token: str = Field(min_length=70, max_length=512)
+    action: Literal["received", "opened"]
+
+
+@router.post("/receipt", status_code=204)
+async def confirm_receipt(payload: ClientReceipt, db: AsyncSession = Depends(get_db)):
+    if not await record_receipt(db, payload.token, payload.action == "opened"):
+        raise HTTPException(400, "رسید نامعتبر یا منقضی است")

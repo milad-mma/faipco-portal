@@ -9,8 +9,8 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../src/sw.js', import.meta.url), 'utf8')
   .replace(/^import .*;\s*$/gm, '');
 
-function fixture({ enabled = true, marker = 'session-A', fault = null, imageHook, showHook } = {}) {
-  const stores = { meta: new Map([['enabled', enabled], ['sessionMarker', marker]]), seen: new Map() };
+function fixture({ enabled = true, marker = 'session-A', fault = null, imageHook, showHook, receiptHook } = {}) {
+  const stores = { meta: new Map([['enabled', enabled], ['sessionMarker', marker]]), seen: new Map(), pending: new Map() };
   const shown = [], messages = [], handlers = new Map();
   let tail = Promise.resolve();
   let closes = 0;
@@ -21,8 +21,9 @@ function fixture({ enabled = true, marker = 'session-A', fault = null, imageHook
       const tx = { error: null, objectStore() {
         return {
           get(key) { const request = {}; ops.push(map => { request.result = map.get(key); request.onsuccess?.(); }); return request; },
-          put(value, key) { assert.equal(mode, 'readwrite'); ops.push(map => map.set(key, value)); },
-          delete(key) { assert.equal(mode, 'readwrite'); ops.push(map => map.delete(key)); },
+          getAll() { const req = {}; ops.push(map => { req.result = [...map.values()]; }); return req; },
+          put(value, key = value.id) { assert.equal(mode, 'readwrite'); ops.push(map => map.set(key, value)); return {}; },
+          delete(key) { assert.equal(mode, 'readwrite'); ops.push(map => map.delete(key)); return {}; },
         };
       } };
       tail = tail.then(() => {
@@ -47,8 +48,9 @@ function fixture({ enabled = true, marker = 'session-A', fault = null, imageHook
     async getNotifications({ tag } = {}) { return shown.filter(n => !n.closed && (!tag || n.options.tag === tag)); },
   };
   const context = {
-    self: { __WB_MANIFEST: [], addEventListener(type, fn) { handlers.set(type, fn); }, registration,
-      clients: { async matchAll() { return [{ postMessage: msg => messages.push(msg) }]; }, },
+    AbortController, fetch: async (_, opts) => ({ status: receiptHook?.(JSON.parse(opts.body)) ?? 204 }),
+    self: { location: { origin: "https://portal.test" }, __WB_MANIFEST: [], addEventListener(type, fn) { handlers.set(type, fn); }, registration,
+      clients: { async openWindow() {}, async matchAll() { return [{ url: "https://portal.test", postMessage: msg => messages.push(msg) }]; }, },
     },
     indexedDB: { open() { const req = {}; queueMicrotask(() => {
       if (fault === 'open') { req.error = new Error('mock open failure'); req.onerror?.(); }
@@ -65,6 +67,8 @@ function fixture({ enabled = true, marker = 'session-A', fault = null, imageHook
     return work;
   }
   return {
+    click() { return dispatch("notificationclick", { notification: shown[0] }); },
+    retry() { return dispatch("sync", { tag: "faipco-receipts" }); },
     shown, messages, stores, get closes() { return closes; },
     push(payload = {}) { return dispatch('push', { data: { json: () => ({ title: 'notice', session_marker: 'session-A', ...payload }) } }); },
     session(enabled, sessionMarker) { return dispatch('message', { data: { type: 'FAIPCO_PUSH_SESSION', enabled, sessionMarker } }); },
@@ -137,4 +141,25 @@ test('durable dispatch key does not suppress a newly registered session', async 
   await f.push(p); await f.session(true, 'session-B');
   await f.push({...p, session_marker: 'session-B'});
   assert.equal(f.shown.length, 2);
+});
+
+test('device confirms only a displayed push and the click on that exact notification', async () => {
+  const receipts = [];
+  const f = fixture({ receiptHook: receipt => { receipts.push(receipt); } });
+  await f.push({ receipt_token: 'token-A', notification_key: 'event-A' });
+  await f.push({ receipt_token: 'token-B', session_marker: 'previous-login' });
+  await f.click();
+  assert.deepEqual(receipts, [{ token: 'token-A', action: 'received' }, { token: 'token-A', action: 'opened' }]);
+  assert.equal(f.messages[0].receipt_token, undefined);
+});
+
+test('receipts survive a network failure and drain when connectivity returns', async () => {
+  let online = false;
+  const f = fixture({ receiptHook: () => { if (!online) throw new Error('offline'); } });
+  await f.push({ receipt_token: 'token-A' });
+  await f.click();
+  assert.equal(f.stores.pending.size, 2);
+  online = true;
+  await f.retry();
+  assert.equal(f.stores.pending.size, 0);
 });

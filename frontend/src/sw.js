@@ -159,6 +159,74 @@ async function releaseOaNotification(key) {
   } finally { db.close(); }
 }
 
+// Receipt failures must not delay opening the target or prevent notification display.
+async function receiptStore(mode, operation) {
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open("faipco-notification-receipts", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("pending", { keyPath: "id" });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("pending", mode);
+      const req = operation(tx.objectStore("pending"));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onabort = tx.onerror = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
+async function postReceipt({ token, action }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
+    const response = await fetch("/api/v1/push/receipt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      credentials: "omit", cache: "no-store", signal: controller.signal,
+      body: JSON.stringify({ token, action }),
+    });
+    return response.status === 204 || response.status === 400;
+  } finally { clearTimeout(timeout); }
+}
+
+let flushingReceipts;
+function flushReceipts() {
+  if (!flushingReceipts) flushingReceipts = (async () => {
+    const pending = await receiptStore("readonly", store => store.getAll());
+    for (let start = 0; start < pending.length; start += 8) {
+      await Promise.all(pending.slice(start, start + 8).map(async item => {
+        if (!(await postReceipt(item))) throw new Error("receipt pending");
+        await receiptStore("readwrite", store => store.delete(item.id));
+      }));
+    }
+  })().finally(() => { flushingReceipts = null; });
+  return flushingReceipts;
+}
+
+async function reportReceipt(token, action) {
+  if (!token) return;
+  const item = { id: token + ":" + action, token, action };
+  try {
+    await receiptStore("readwrite", store => store.put(item));
+  } catch {
+    await postReceipt(item).catch(() => {});
+    return;
+  }
+  try {
+    if (await postReceipt(item)) {
+      await receiptStore("readwrite", store => store.delete(item.id));
+    }
+    await flushReceipts();
+  } catch {
+    try { await self.registration.sync?.register("faipco-receipts"); } catch { /* retry on next visit */ }
+  }
+}
+
+self.addEventListener("sync", event => {
+  if (event.tag === "faipco-receipts") event.waitUntil(flushReceipts());
+});
+
 // رویداد نصب نسخه‌ی جدید Service Worker
 self.addEventListener("install", (event) => {
   // دانلود آیکون‌های اختیاری نباید نصب SW و آپدیت TWA را روی اینترنت کند معطل کند.
@@ -174,6 +242,7 @@ self.addEventListener("install", (event) => {
 // دریافت پیام SKIP_WAITING از utils/serviceWorker.js (وقتی کاربر دکمه‌ی «بارگذاری نسخه جدید» را می‌زند)
 // و فعال کردن فوری نسخه‌ی در انتظار
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "FLUSH_PUSH_RECEIPTS") event.waitUntil(flushReceipts().catch(() => {}));
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
@@ -239,7 +308,7 @@ self.addEventListener("push", (event) => {
           badge,
           dir: "rtl", // جهت متن اعلان راست‌به‌چپ
           lang: "fa", // زبان متن اعلان
-          data: { url: payload.url || "/notices", sessionMarker: marker }, // مسیر مقصد برای استفاده در رویداد notificationclick
+          data: { url: payload.url || "/notices", sessionMarker: marker, receiptToken: payload.receipt_token }, // مسیر مقصد برای استفاده در رویداد notificationclick
           requireInteraction: true, // اعلان خودش بسته نمی‌شود، تا کاربر حتماً ببیندش
           silent: false, // صدای پیش‌فرض اعلان سیستم پخش شود (هیچ‌وقت بی‌صدا نباشد)
           vibrate: [400, 150, 400, 150, 400], // الگوی ویبره قوی و واضح، برای هر اولویتی یکسان
@@ -267,8 +336,11 @@ self.addEventListener("push", (event) => {
       }
 
       // ارسال پیام faipco-notice-push به همه‌ی تب‌های باز برنامه تا لیست اطلاعیه‌ها را بدون Reload دوباره بخوانند
+      const { receipt_token, ...clientPayload } = payload;
+      const receipt = reportReceipt(receipt_token, "received");
       const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      clientsList.forEach((client) => client.postMessage({ type: "faipco-notice-push", ...payload }));
+      clientsList.forEach((client) => client.postMessage({ type: "faipco-notice-push", ...clientPayload }));
+      await receipt;
     })()
   );
 });
@@ -278,7 +350,13 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/notices";
 
-  event.waitUntil(
+  event.waitUntil(Promise.all([
+    (async () => {
+      const data = event.notification.data;
+      if (data?.receiptToken && await activePushSessionMarker() === data.sessionMarker) {
+        await reportReceipt(data.receiptToken, "opened");
+      }
+    })().catch(() => {}),
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsList) => {
       for (const client of clientsList) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
@@ -288,5 +366,5 @@ self.addEventListener("notificationclick", (event) => {
       }
       return self.clients.openWindow(targetUrl);
     })
-  );
+  ]));
 });

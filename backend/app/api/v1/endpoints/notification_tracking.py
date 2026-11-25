@@ -3,7 +3,7 @@ import re
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, cast, literal, or_, select, union_all
+from sqlalchemy import func, String, cast, literal, or_, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.employee import Employee
 from app.models.office_automation import OaNotificationOutbox as Office
-from app.models.push_dispatch import PushDispatchDelivery as Delivery, PushDispatchJob as Job
+from app.models.push_dispatch import OfficePushReceipt, PushDispatchDelivery as Delivery, PushDispatchJob as Job
 from app.services.push_dispatch import dispatch_origin
 
 router = APIRouter(dependencies=[Depends(require_permission("system.logs"))])
@@ -121,7 +121,20 @@ async def events(source: Source | None = None, state: str = Query("", max_length
                       .join(Employee, Employee.id == User.employee_id).where(User.id.in_(user_ids)))).all()) if user_ids else {}
     emp_codes = dict((await db.execute(select(Employee.id, Employee.personnel_code)
                      .where(Employee.id.in_(emp_ids)))).all()) if emp_ids else {}
+    counts = {}
+    for name, table, parent in (("dispatch", Delivery, Delivery.job_id),
+                                ("office", OfficePushReceipt, OfficePushReceipt.event_id)):
+        ids = [item["id"] for item in items if item["source"] == name]
+        if not ids:
+            continue
+        stmt = select(parent, func.count(table.received_at), func.count(table.opened_at)).where(
+            parent.in_(ids), table.received_at.is_not(None)).group_by(parent)
+        if code and name == "dispatch":
+            stmt = stmt.where(table.user_id.in_(users))
+        for event_id, received, opened in await db.execute(stmt):
+            counts[name, event_id] = (received, opened)
     for item in items:
+        item["received_count"], item["opened_count"] = counts.get((item["source"], item["id"]), (0, 0))
         uid, multiple = item.pop("first_user"), item.pop("second_user") is not None
         item["user_id"] = None if multiple else uid
         item["multiple_users"] = multiple
@@ -157,7 +170,7 @@ async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=
         code = await db.scalar(select(Employee.personnel_code).join(User, User.employee_id == Employee.id)
                                .where(User.id == single_user)) if single_user is not None else None
         device_query = (select(Delivery.id, Delivery.subscription_id, Delivery.user_id, Employee.personnel_code, Delivery.status,
-                                       Delivery.attempts, Delivery.next_attempt_at, Delivery.accepted_at,
+                                       Delivery.received_at, Delivery.opened_at, Delivery.attempts, Delivery.next_attempt_at, Delivery.accepted_at,
                                        Delivery.last_error).select_from(Delivery)
                                 .outerjoin(User, User.id == Delivery.user_id)
                                 .outerjoin(Employee, Employee.id == User.employee_id).where(Delivery.job_id == event_id)
@@ -189,5 +202,15 @@ async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=
                for group, status in (("remaining", "pending"), ("sent", "accepted"),
                                      ("stale", "stale"), ("failed", "failed"))
                for device in tracking.get(group, [])]
-    return {**page(devices[offset:offset + 31], 30), "employee_id": employee_id, "personnel_code": code, "single_user_id": single_user,
+    result = page(devices[offset:offset + 31], 30)
+    by_device = {item["subscription_id"]: item for item in result["items"]}
+    if by_device:
+        receipts = await db.scalars(select(OfficePushReceipt).where(OfficePushReceipt.event_id == event_id,
+                                    OfficePushReceipt.subscription_id.in_(by_device)))
+        bindings = tracking.get("bindings", {})
+        for receipt in receipts:
+            if bindings.get(str(receipt.subscription_id)) == receipt.session_id:
+                by_device[receipt.subscription_id].update(user_id=receipt.user_id, received_at=receipt.received_at,
+                                                         opened_at=receipt.opened_at)
+    return {**result, "employee_id": employee_id, "personnel_code": code, "single_user_id": single_user,
             "message": message_reference(source, event.key), "attempts": event.attempts, "last_error": safe_reason(event.last_error)}

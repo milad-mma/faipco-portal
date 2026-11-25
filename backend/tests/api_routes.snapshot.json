@@ -1,5 +1,5 @@
 {
-  "count": 544,
+  "count": 545,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -441,6 +441,7 @@
     "POST /api/v1/profile-photo/me/upload",
     "POST /api/v1/profile-photo/requests/{request_id}/approve",
     "POST /api/v1/profile-photo/requests/{request_id}/reject",
+    "POST /api/v1/push/receipt",
     "POST /api/v1/push/subscribe",
     "POST /api/v1/push/unsubscribe",
     "POST /api/v1/reports/turnover/categories",

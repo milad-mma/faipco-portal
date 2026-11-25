@@ -45,3 +45,15 @@ class PushDispatchDelivery(Base):
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OfficePushReceipt(Base):
+    __tablename__ = "oa_push_receipts"
+    event_id: Mapped[int] = mapped_column(ForeignKey("oa_notification_outbox.id", ondelete="CASCADE"), primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int]
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
