@@ -21,6 +21,12 @@ export default function UpdatePrompt() {
   const [completedKind, setCompletedKind] = useState(() => consumeAppliedUpdateReceipt());
 
   useEffect(() => {
+    if (completedKind == null) return;
+    const timer = window.setTimeout(() => setCompletedKind(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [completedKind]);
+
+  useEffect(() => {
     function handleUpdateReady(event) {
       setUpdateKind(event.detail?.kind === "cache_refresh" ? "cache_refresh" : "release");
       setError(null);
@@ -72,7 +78,6 @@ export default function UpdatePrompt() {
     <Snackbar
       open={isOpen || showingCompletion}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      autoHideDuration={showingCompletion ? 6500 : null}
       onClose={(_event, reason) => { if (reason !== "clickaway" && showingCompletion) setCompletedKind(null); }}
       message={message}
       action={isOpen ? (

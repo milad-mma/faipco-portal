@@ -303,16 +303,9 @@ export default function PersonalDashboardPage() {
         maxWidth: 1100,
         mx: "auto",
         gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
-        // دسکتاپ: کارت‌های ستون اصلی ارتفاع طبیعی خود را دارند و با بلند شدن «متولدین امروز»
-        // کشیده نمی‌شوند؛ کارت متولدین هم‌قد ردیف‌های میان‌برها + ابزارها است و فهرستش داخل کارت اسکرول می‌خورد.
-        gridTemplateRows: { md: "auto auto auto auto" },
-        // امروز تولدی نیست (کارت متولدین نمایش داده نمی‌شود): «اطلاعیه‌های اخیر» کل ستون کناری را پر می‌کند تا جای خالی نماند
         gridTemplateAreas: {
           xs: `"profile" "stats" "actions" "recent" "tools" "birthdays"`,
-          md:
-            birthdays !== null && birthdays.length === 0
-              ? `"profile recent" "stats recent" "actions recent" "tools recent"`
-              : `"profile recent" "stats recent" "actions birthdays" "tools birthdays"`,
+          md: `"profile sidebar" "stats sidebar" "actions sidebar" "tools sidebar"`,
         },
       }}
     >
@@ -600,96 +593,6 @@ export default function PersonalDashboardPage() {
         </Card>
       </Stack>
 
-      {/* کارت نامه‌ها + اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
-      <Stack spacing={1.5} sx={{ gridArea: "recent", minWidth: 0 }}>
-        {/* کارت نامه‌ها (اتوماسیون اداری): خوانده‌نشده و در انتظار اقدام؛ فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد */}
-        {user?.can_oa_access && <DashboardLettersCard user={user} />}
-      <Card
-        variant="outlined"
-        sx={{ borderRadius: 2, p: 1.75, flex: 1 }}
-      >
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          sx={{ mb: 1 }}
-        >
-          <Typography fontWeight={800} fontSize={14}>
-            اطلاعیه‌های اخیر
-          </Typography>
-          <Chip
-            label="همه"
-            size="small"
-            onClick={() => navigate("/notices")}
-            sx={{ fontSize: 10, height: 20, cursor: "pointer" }}
-          />
-        </Stack>
-        {/* فهرست اطلاعیه‌های اخیر: دسکتاپ ۱۰ و موبایل ۵ مورد؛ کلیک روی هر مورد به صفحه اطلاعیه‌ها می‌رود */}
-        {recentNotices === null ? (
-          <Typography variant="caption" color="text.secondary">
-            در حال بارگذاری...
-          </Typography>
-        ) : recentNotices.length === 0 ? (
-          <Typography variant="caption" color="text.secondary">
-            اطلاعیه‌ای برای نمایش نیست.
-          </Typography>
-        ) : (
-          <Stack spacing={1}>
-            {recentNotices
-              .slice(
-                0,
-                isDesktop
-                  ? birthdays !== null && birthdays.length === 0
-                    ? 20
-                    : 10
-                  : 5,
-              )
-              .map((n) => (
-                <Stack
-                  key={n.id}
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  spacing={1}
-                  onClick={() => navigate("/notices")}
-                  sx={{ cursor: "pointer" }}
-                >
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    alignItems="center"
-                    sx={{ minWidth: 0 }}
-                  >
-                    <Box
-                      sx={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        bgcolor: "primary.main",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Typography variant="caption" noWrap>
-                      {n.title}
-                    </Typography>
-                  </Stack>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ flexShrink: 0, fontSize: 10 }}
-                  >
-                    {new Date(n.publish_at || n.created_at).toLocaleString(
-                      "fa-IR",
-                      { dateStyle: "short", timeStyle: "short" },
-                    )}
-                  </Typography>
-                </Stack>
-              ))}
-          </Stack>
-        )}
-      </Card>
-      </Stack>
-
       {/* شبکه ابزارها */}
       <Box
         sx={{
@@ -742,99 +645,199 @@ export default function PersonalDashboardPage() {
         />
       </Box>
 
-      {/* متولدین امروز؛ اگر امروز تولدی نباشد کارت نمایش داده نمی‌شود */}
-      {(birthdays === null || birthdays.length > 0) && (
-        <Card
-          variant="outlined"
-          sx={{
-            gridArea: "birthdays",
-            borderRadius: 2,
-            p: 1.75,
-            // دسکتاپ: contain:size یعنی محتوای این کارت در تعیین ارتفاع ردیف‌های Grid نقشی ندارد؛
-            // کارت تا انتهای ناحیه‌اش (هم‌قد میان‌برها + ابزارها) کشیده می‌شود و فهرست داخلش اسکرول می‌خورد.
-            contain: { md: "size" },
-            display: { md: "flex" },
-            flexDirection: { md: "column" },
-          }}
-        >
-          <Stack
-            direction="row"
-            spacing={0.8}
-            alignItems="center"
-            sx={{ mb: 1, flexShrink: 0 }}
+      <Box sx={{
+        gridArea: { md: "sidebar" },
+        display: { xs: "contents", md: "grid" },
+        contain: { md: "size" },
+        minWidth: 0,
+        minHeight: 0,
+        gap: 1.5,
+        gridTemplateColumns: { md: "minmax(0, 1fr)" },
+        gridTemplateRows: { md: `${user?.can_oa_access ? "max-content " : ""}minmax(90px, 1fr)${birthdays?.length === 0 ? "" : " minmax(90px, 1fr)"}` },
+        overflowY: { md: "auto" },
+      }}>
+        {/* کارت نامه‌ها + اطلاعیه‌های اخیر — در موبایل بعد از دکمه‌های بالا، در دسکتاپ ستون کناری */}
+        <Stack sx={{ gridArea: "recent", minWidth: 0, gap: 1.5, display: { md: "contents" } }}>
+          {/* کارت نامه‌ها (اتوماسیون اداری): خوانده‌نشده و در انتظار اقدام؛ فقط از نامه‌هایی که خود شخص به آن‌ها دسترسی دارد */}
+          {user?.can_oa_access && <DashboardLettersCard user={user} />}
+          <Card
+            variant="outlined"
+            sx={{ borderRadius: 2, p: 1.75, display: "flex", flexDirection: "column", minHeight: 0 }}
           >
-            <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
-            <Typography fontWeight={800} fontSize={14} sx={{ flex: 1 }}>
-              متولدین امروز
-            </Typography>
-            {birthdays?.length > 0 && (
-              <Chip
-                label={`${birthdays.length} نفر`}
-                size="small"
-                sx={{ fontSize: 10, height: 20 }}
-              />
-            )}
-          </Stack>
-          {birthdays === null ? (
-            <Typography variant="caption" color="text.secondary">
-              در حال بارگذاری...
-            </Typography>
-          ) : (
             <Stack
-              spacing={1.5}
-              divider={
-                <Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />
-              }
-              sx={{
-                flex: { md: 1 },
-                minHeight: { md: 0 },
-                overflowY: { md: "auto" },
-                paddingInlineEnd: { md: 0.5 },
-              }}
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              sx={{ mb: 1, flexShrink: 0 }}
             >
-              {birthdays.map((e) => (
-                <Box key={e.id}>
-                  <Stack
-                    direction="row"
-                    alignItems="center"
-                    spacing={1}
-                    sx={{ minHeight: 34 }}
-                  >
-                    {/* آواتار پرسنل؛ اگر عکس او هنگام Sync از کاراوب ذخیره شده باشد همان نمایش داده می‌شود */}
-                    <EmployeeAvatar
-                      employeeId={e.id}
-                      hasPhoto={e.has_photo}
-                      size={30}
-                    />
-                    {/* نام و واحد سازمانی در یک خط؛ noWrap روی کل ردیف است تا در صورت جا نشدن
-                        به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
-                    <Typography
-                      variant="body2"
-                      fontWeight={700}
-                      sx={{ minWidth: 0, flex: 1 }}
-                      noWrap
-                    >
-                      {e.first_name} {e.last_name}
-                      {e.department_name && (
-                        <Typography
-                          component="span"
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ ml: 0.75, fontWeight: 400 }}
-                        >
-                          — {e.department_name}
-                        </Typography>
-                      )}
-                    </Typography>
-                  </Stack>
-                  {/* نوار تبریک مستقل برای هر متولد؛ پس از ثبت واکنش فهرست متولدین دوباره خوانده می‌شود */}
-                  <BirthdayReactionBar person={e} onChanged={loadBirthdays} />
-                </Box>
-              ))}
+              <Typography fontWeight={800} fontSize={14}>
+                اطلاعیه‌های اخیر
+              </Typography>
+              <Chip
+                label="همه"
+                size="small"
+                onClick={() => navigate("/notices")}
+                sx={{ fontSize: 10, height: 20, cursor: "pointer" }}
+              />
             </Stack>
-          )}
-        </Card>
-      )}
+            {/* فهرست اطلاعیه‌های اخیر: دسکتاپ ۱۰ و موبایل ۵ مورد؛ کلیک روی هر مورد به صفحه اطلاعیه‌ها می‌رود */}
+            {recentNotices === null ? (
+              <Typography variant="caption" color="text.secondary">
+                در حال بارگذاری...
+              </Typography>
+            ) : recentNotices.length === 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                اطلاعیه‌ای برای نمایش نیست.
+              </Typography>
+            ) : (
+              <Stack spacing={1} sx={{ overflowY: { md: "auto" }, minHeight: 0 }}>
+                {recentNotices
+                  .slice(
+                    0,
+                    isDesktop
+                      ? birthdays !== null && birthdays.length === 0
+                        ? 20
+                        : 10
+                      : 5,
+                  )
+                  .map((n) => (
+                    <Stack
+                      key={n.id}
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                      spacing={1}
+                      onClick={() => navigate("/notices")}
+                      sx={{ cursor: "pointer" }}
+                    >
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ minWidth: 0 }}
+                      >
+                        <Box
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            bgcolor: "primary.main",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Typography variant="caption" noWrap>
+                          {n.title}
+                        </Typography>
+                      </Stack>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ flexShrink: 0, fontSize: 10 }}
+                      >
+                        {new Date(n.publish_at || n.created_at).toLocaleString(
+                          "fa-IR",
+                          { dateStyle: "short", timeStyle: "short" },
+                        )}
+                      </Typography>
+                    </Stack>
+                  ))}
+              </Stack>
+            )}
+          </Card>
+        </Stack>
+
+        {/* متولدین امروز؛ اگر امروز تولدی نباشد کارت نمایش داده نمی‌شود */}
+        {(birthdays === null || birthdays.length > 0) && (
+          <Card
+            variant="outlined"
+            sx={{
+              gridArea: { xs: "birthdays", md: "auto" },
+              borderRadius: 2,
+              p: 1.75,
+              minHeight: 0,
+              display: { md: "flex" },
+              flexDirection: { md: "column" },
+            }}
+          >
+            <Stack
+              direction="row"
+              spacing={0.8}
+              alignItems="center"
+              sx={{ mb: 1, flexShrink: 0 }}
+            >
+              <CakeOutlinedIcon sx={{ fontSize: 17, color: "secondary.main" }} />
+              <Typography fontWeight={800} fontSize={14} sx={{ flex: 1 }}>
+                متولدین امروز
+              </Typography>
+              {birthdays?.length > 0 && (
+                <Chip
+                  label={`${birthdays.length} نفر`}
+                  size="small"
+                  sx={{ fontSize: 10, height: 20 }}
+                />
+              )}
+            </Stack>
+            {birthdays === null ? (
+              <Typography variant="caption" color="text.secondary">
+                در حال بارگذاری...
+              </Typography>
+            ) : (
+              <Stack
+                spacing={1.5}
+                divider={
+                  <Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />
+                }
+                sx={{
+                  flex: { md: 1 },
+                  minHeight: { md: 0 },
+                  overflowY: { md: "auto" },
+                  paddingInlineEnd: { md: 0.5 },
+                }}
+              >
+                {birthdays.map((e) => (
+                  <Box key={e.id}>
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      spacing={1}
+                      sx={{ minHeight: 34 }}
+                    >
+                      {/* آواتار پرسنل؛ اگر عکس او هنگام Sync از کاراوب ذخیره شده باشد همان نمایش داده می‌شود */}
+                      <EmployeeAvatar
+                        employeeId={e.id}
+                        hasPhoto={e.has_photo}
+                        size={30}
+                      />
+                      {/* نام و واحد سازمانی در یک خط؛ noWrap روی کل ردیف است تا در صورت جا نشدن
+                          به‌جای شکستن به خط دوم با «…» کوتاه شود. */}
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        sx={{ minWidth: 0, flex: 1 }}
+                        noWrap
+                      >
+                        {e.first_name} {e.last_name}
+                        {e.department_name && (
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ ml: 0.75, fontWeight: 400 }}
+                          >
+                            — {e.department_name}
+                          </Typography>
+                        )}
+                      </Typography>
+                    </Stack>
+                    {/* نوار تبریک مستقل برای هر متولد؛ پس از ثبت واکنش فهرست متولدین دوباره خوانده می‌شود */}
+                    <BirthdayReactionBar person={e} onChanged={loadBirthdays} />
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </Card>
+        )}
+      </Box>
     </Box>
   );
 }
