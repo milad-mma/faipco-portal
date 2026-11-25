@@ -20,8 +20,12 @@ export default function NotificationTemplatesEditor({ load, save }) {
   loadRef.current = load;
 
   const apply = (rows) => {
+    if (!Array.isArray(rows) || !rows.every((row) => typeof row?.key === "string" && typeof row.text === "string")) {
+      throw new Error("invalid notification templates");
+    }
+    const nextTexts = Object.fromEntries(rows.map((row) => [row.key, row.text]));
     setItems(rows);
-    setTexts(Object.fromEntries(rows.map((r) => [r.key, r.text])));
+    setTexts(nextTexts);
   };
 
   useEffect(() => {

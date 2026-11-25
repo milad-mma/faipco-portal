@@ -324,7 +324,6 @@ async def save_templates(
 ):
     await _require(db, current_user, site_id, "advances.policy")
     try:
-        await notification_templates.save_templates(db, "advance", site_id, payload.texts)
+        return await notification_templates.save_templates(db, "advance", site_id, payload.texts)
     except notification_templates.TemplateError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return {"ok": True}

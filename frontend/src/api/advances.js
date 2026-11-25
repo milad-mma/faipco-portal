@@ -130,5 +130,7 @@ export async function saveAdvanceNotificationTemplates(siteId, texts) {
     `/advances/admin/sites/${siteId}/notification-templates`,
     { texts },
   );
+  // Older portal backends acknowledge the write without returning the saved rows.
+  if (data?.ok === true) return fetchAdvanceNotificationTemplates(siteId);
   return data;
 }
