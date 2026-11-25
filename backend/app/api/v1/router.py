@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     careers,
     dashboard,
     error_logs,
+    notification_tracking,
     access_gate,
     announcement,
     attendance,
@@ -98,6 +99,7 @@ api_router.include_router(advances.router, prefix="/advances", tags=["advances"]
 # دروازه دسترسی (IP/سایت) و اعلان عمومی
 api_router.include_router(access_gate.router, prefix="/access-gate", tags=["access-gate"])
 api_router.include_router(announcement.router, prefix="/announcement", tags=["announcement"])
+api_router.include_router(notification_tracking.router, prefix="/notification-tracking", tags=["notification-tracking"])
 api_router.include_router(error_logs.router, prefix="/error-logs", tags=["error-logs"])
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(automation_letters.router, prefix="/automation", tags=["automation"])

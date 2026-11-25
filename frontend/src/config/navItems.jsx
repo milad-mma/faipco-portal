@@ -1,3 +1,4 @@
+import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
@@ -390,6 +391,12 @@ export const NAV_ITEMS = [
         label: "گزارش خطاها",
         path: "/error-logs",
         icon: <BugReportOutlinedIcon />,
+        check: (u) => u?.can_view_error_logs,
+      },
+      {
+        label: "ردیابی اعلان ها",
+        path: "/notification-tracking",
+        icon: <NotificationsActiveOutlinedIcon />,
         check: (u) => u?.can_view_error_logs,
       },
       {

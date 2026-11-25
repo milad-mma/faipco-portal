@@ -87,6 +87,7 @@ const BulkRoleAssignmentPage = lazyPage(
 );
 const BackupPage = lazyPage(() => import("./pages/BackupPage"));
 const UpdatePage = lazyPage(() => import("./pages/UpdatePage"));
+const NotificationTrackingPage = lazyPage(() => import("./pages/NotificationTrackingPage"));
 const ErrorLogsPage = lazyPage(() => import("./pages/ErrorLogsPage"));
 const IpAllowlistPage = lazyPage(() => import("./pages/IpAllowlistPage"));
 const LoginSecurityPage = lazyPage(() => import("./pages/LoginSecurityPage"));
@@ -192,6 +193,11 @@ export default function App() {
                 </PermissionRoute>
               }
             />
+            <Route path="/notification-tracking" element={
+              <PermissionRoute check={(u) => u?.can_view_error_logs}>
+                <NotificationTrackingPage />
+              </PermissionRoute>
+            } />
             <Route
               path="/presence-report"
               element={
