@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
+  LinearProgress,
   Table,
   TableBody,
   TableCell,
@@ -17,15 +18,60 @@ import {
 } from "@mui/material";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import { fetchNoticeReaders, resendNoticePush } from "../api/notices";
+import Status from "./NotificationStatus";
+import { apiClient } from "../api/client";
 import { monoFontSx } from "../theme";
+
+function personName(person) {
+  return [person.first_name, person.last_name].filter(Boolean).join(" ") || person.username || String(person.user_id);
+}
+
+function RecipientReport({ noticeId, person, onClose }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    apiClient.get(`/notices/${noticeId}/recipients/${person.user_id}/deliveries`, { signal: controller.signal })
+      .then(({ data }) => setRows(data))
+      .catch(() => { if (!controller.signal.aborted) setError(true); });
+    return () => controller.abort();
+  }, [noticeId, person.user_id]);
+
+  const date = value => value ? new Date(value).toLocaleString("fa-IR") : "—";
+  return <Dialog open onClose={onClose} fullWidth maxWidth="md">
+    <DialogTitle>گزارش اعلان این اطلاعیه برای {personName(person)}</DialogTitle>
+    <DialogContent dividers>
+      {error ? <Alert severity="error">دریافت گزارش اعلان ناموفق بود.</Alert>
+        : !rows ? <LinearProgress />
+        : !rows.length ? <Typography>برای این فرد در این اطلاعیه سابقهٔ ارسالی ثبت نشده است.</Typography>
+        : <TableContainer><Table size="small">
+          <TableHead><TableRow>{["ارسال", "زمان ثبت", "اشتراک دستگاه", "وضعیت", "تلاش‌ها", "زمان پذیرش", "رسید دستگاه", "کلیک روی اعلان", "تلاش بعدی"].map(label =>
+            <TableCell key={label}>{label}</TableCell>)}</TableRow></TableHead>
+          <TableBody>{rows.map(row => <TableRow key={row.delivery_id || `job-${row.job_id}`}>
+            <TableCell>{row.initial ? "انتشار اولیه" : "ارسال مجدد"} (#{row.job_id})</TableCell>
+            <TableCell>{date(row.created_at)}</TableCell>
+            <TableCell>{row.subscription_id ?? "—"}</TableCell>
+            <TableCell>{row.status ? <Status value={row.status} /> : "سابقهٔ دستگاه ثبت نشده"}</TableCell>
+            <TableCell>{row.attempts ?? "—"}</TableCell>
+            <TableCell>{date(row.accepted_at)}</TableCell>
+            <TableCell>{date(row.received_at)}</TableCell>
+            <TableCell>{date(row.opened_at)}</TableCell>
+            <TableCell>{row.status === "pending" ? date(row.next_attempt_at) : "—"}</TableCell>
+          </TableRow>)}</TableBody>
+        </Table></TableContainer>}
+    </DialogContent>
+    <DialogActions><Button onClick={onClose}>بازگشت به فهرست افراد</Button></DialogActions>
+  </Dialog>;
+}
 
 /**
  * دیالوگ فهرست کسانی که یک اطلاعیه را خوانده‌اند (نام، کد پرسنلی، زمان مشاهده).
  * ورودی: noticeId (شناسه‌ی اطلاعیه؛ مقدار خالی = دیالوگ بسته) و onClose.
  * دکمه‌ی «ارسال مجدد اعلان» هم دارد که Push را فقط برای کسانی که هنوز نخوانده‌اند دوباره می‌فرستد.
  */
-export default function NoticeReadersDialog({ noticeId, onClose }) {
-  const [readers, setReaders] = useState([]);
+export default function NoticeReadersDialog({ noticeId, unread, onClose }) {
+  const [readers, setReaders] = useState(null);
+  const [person, setPerson] = useState(null);
   const [isResending, setIsResending] = useState(false);  // در حال ارسال مجدد اعلان
   const [resendResult, setResendResult] = useState(null); // { success, message } | null
   const [loadError, setLoadError] = useState("");  // خطای دریافت فهرست (مثلاً 403)؛ جدا از «فهرست خالی» نمایش داده می‌شود
@@ -33,16 +79,18 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
   // با باز شدن دیالوگ برای یک اطلاعیه، وضعیت قبلی پاک و فهرست خوانندگان دریافت می‌شود
   useEffect(() => {
     if (noticeId) {
-      setReaders([]);
+      let active = true;
+      setReaders(null);
       setResendResult(null);
       setLoadError("");
       // خطای سرور (مثلاً 403 برای کاربر بدون مجوز مشاهده) در loadError ذخیره می‌شود تا با
       // «هنوز کسی نخوانده» اشتباه گرفته نشود.
-      fetchNoticeReaders(noticeId)
-        .then(setReaders)
-        .catch((err) => setLoadError(err.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
+      fetchNoticeReaders(noticeId, unread)
+        .then(data => { if (active) setReaders(data); })
+        .catch((err) => active && setLoadError(err.response?.data?.detail || "دریافت اطلاعات با خطا مواجه شد."));
+      return () => { active = false; };
     }
-  }, [noticeId]);
+  }, [noticeId, unread]);
 
   // پس از تأیید کاربر، اعلان را برای خوانندگان‌نشده دوباره می‌فرستد و نتیجه را نمایش می‌دهد
   async function handleResendClick() {
@@ -71,14 +119,14 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
 
   return (
     <Dialog open={Boolean(noticeId)} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>چه کسانی این اطلاعیه را دیده‌اند</DialogTitle>
+      <DialogTitle>{unread ? "چه کسانی این اطلاعیه را ندیده‌اند" : "چه کسانی این اطلاعیه را دیده‌اند"}</DialogTitle>
       <DialogContent>
         {/* محتوا: خطا، پیام خالی بودن، یا جدول خوانندگان */}
         {loadError ? (
           <Alert severity="error">{loadError}</Alert>
-        ) : readers.length === 0 ? (
+        ) : !readers ? <LinearProgress /> : readers.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-            هنوز کسی این اطلاعیه را باز نکرده است.
+            {unread ? "هیچ مخاطب ندیده‌ای در این فهرست نیست." : "هنوز کسی این اطلاعیه را باز نکرده است."}
           </Typography>
         ) : (
           <TableContainer>
@@ -87,17 +135,17 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
                 <TableRow>
                   <TableCell>نام</TableCell>
                   <TableCell>کد پرسنلی</TableCell>
-                  <TableCell>زمان مشاهده</TableCell>
+                  {!unread && <TableCell>زمان مشاهده</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {readers.map((r) => (
                   <TableRow key={r.user_id}>
                     <TableCell>
-                      {r.first_name ? `${r.first_name} ${r.last_name}` : "—"}
+                      <Button size="small" onClick={() => setPerson(r)}>{personName(r)}</Button>
                     </TableCell>
                     <TableCell sx={monoFontSx}>{r.personnel_code || "—"}</TableCell>
-                    <TableCell sx={monoFontSx}>{new Date(r.read_at).toLocaleString("fa-IR")}</TableCell>
+                    {!unread && <TableCell sx={monoFontSx}>{new Date(r.read_at).toLocaleString("fa-IR")}</TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
@@ -121,6 +169,7 @@ export default function NoticeReadersDialog({ noticeId, onClose }) {
           <Button onClick={onClose}>بستن</Button>
         </Stack>
       </DialogActions>
+      {person && <RecipientReport noticeId={noticeId} person={person} onClose={() => setPerson(null)} />}
     </Dialog>
   );
 }

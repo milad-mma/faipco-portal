@@ -1,5 +1,5 @@
 {
-  "count": 545,
+  "count": 546,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -232,6 +232,7 @@
     "GET /api/v1/notices/{notice_id}/payroll/mine",
     "GET /api/v1/notices/{notice_id}/payroll/mine/print-data",
     "GET /api/v1/notices/{notice_id}/readers",
+    "GET /api/v1/notices/{notice_id}/recipients/{user_id}/deliveries",
     "GET /api/v1/notification-templates/{module}",
     "GET /api/v1/notification-tracking",
     "GET /api/v1/notification-tracking/{source}/{event_id}",

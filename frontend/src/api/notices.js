@@ -77,8 +77,8 @@ export async function fetchNoticeStatsSummary() {
 }
 
 // GET /notices/{id}/readers؛ خروجی: فهرست مخاطبان و وضعیت خواندن اطلاعیه
-export async function fetchNoticeReaders(noticeId) {
-  const { data } = await apiClient.get(`/notices/${noticeId}/readers`);
+export async function fetchNoticeReaders(noticeId, unread = false) {
+  const { data } = await apiClient.get(`/notices/${noticeId}/readers`, { params: { unread } });
   return data;
 }
 

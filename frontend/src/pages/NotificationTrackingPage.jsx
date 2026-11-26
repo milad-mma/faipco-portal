@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  useMediaQuery, Alert, Card, Grid, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  useMediaQuery, Alert, Card, Grid, Button, Dialog, DialogActions, DialogContent, DialogTitle,
   LinearProgress, MenuItem, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
@@ -10,13 +10,8 @@ import { apiClient } from "../api/client";
 import SearchField from "../components/SearchField";
 import useDebounced from "../hooks/useDebounced";
 
-const states = {
-  pending: "در انتظار ارسال", accepted: "پذیرفته‌شده توسط سرویس پوش",
-  sent: "ارسال‌شده", partial: "ارسال ناقص", failed: "ناموفق", skipped: "ردشده از صف",
-  expired: "منقضی", cancelled: "لغوشده", no_devices: "بدون دستگاه",
-  no_targets: "بدون گیرنده", not_accepted: "پذیرفته نشد", stale: "اشتراک منقضی",
-  ineligible: "فاقد شرایط ارسال",
-};
+import Status, { states } from "../components/NotificationStatus";
+
 const sources = { dispatch: "صف عمومی پرتال", office: "اتوماسیون اداری" };
 const date = value => value ? new Date(value).toLocaleString("fa-IR") : "—";
 const reasons = {
@@ -59,13 +54,6 @@ function Pages({ offset, move, more }) {
     <Typography>صفحهٔ {(1 + offset / 30).toLocaleString("fa-IR")}</Typography>
     <Button disabled={!more} onClick={() => move(offset + 30)}>بعدی</Button>
   </Stack>;
-}
-function Status({ value }) {
-  const accepted = ["sent", "accepted"].includes(value);
-  return <Chip size="small" variant="outlined"
-    sx={{ height: "auto", maxWidth: "100%", "& .MuiChip-label": { whiteSpace: "normal", py: 0.4 } }}
-    label={accepted ? "پذیرفته‌شده توسط سرویس پوش" : states[value] || value}
-    color={({ accepted: "info", sent: "info", failed: "error", partial: "warning" })[value] || "default"} />;
 }
 function ReceiptSummary({ row }) {
   return <Typography variant="body2" color={row.received_count ? "text.primary" : "text.secondary"}>

@@ -1342,34 +1342,26 @@ class NoticeService:
                 return True
         return False
 
-    async def get_notice_readers(self, notice_id: int) -> list[NoticeReaderOut]:
-        """فهرست کسانی که یک اطلاعیه مشخص را دیده‌اند، با زمان دقیق — برای Drill-down (به ترتیب زمان مشاهده)."""
-        # outerjoin با Employee تا کاربران بدون پرسنل هم در فهرست بیایند
-        result = await self.db.execute(
-            select(
-                NoticeRead.user_id,
-                Employee.id,
-                Employee.first_name,
-                Employee.last_name,
-                Employee.personnel_code,
-                NoticeRead.read_at,
-            )
-            .join(User, User.id == NoticeRead.user_id)
-            .outerjoin(Employee, Employee.id == User.employee_id)
-            .where(NoticeRead.notice_id == notice_id)
-            .order_by(NoticeRead.read_at.asc())
-        )
-        return [
-            NoticeReaderOut(
-                user_id=row[0],
-                employee_id=row[1],
-                first_name=row[2],
-                last_name=row[3],
-                personnel_code=row[4],
-                read_at=row[5],
-            )
-            for row in result.all()
-        ]
+    async def get_notice_readers(self, notice_id: int, *, unread=False, sites=None) -> list[NoticeReaderOut]:
+        """مخاطبان ندیده یا خوانندگان ثبت‌شده، محدود به سایت‌های مجاز گزارش."""
+        query = (select(User.id.label("user_id"), User.username, Employee.id.label("employee_id"),
+                        Employee.first_name, Employee.last_name, Employee.personnel_code, NoticeRead.read_at)
+                 .select_from(User).outerjoin(Employee, Employee.id == User.employee_id))
+        read_match = and_(NoticeRead.user_id == User.id, NoticeRead.notice_id == notice_id)
+        if unread:
+            notice = await self.db.scalar(select(Notice).options(selectinload(Notice.targets))
+                                          .where(Notice.id == notice_id))
+            audience = await self._resolve_audience_user_ids(notice)
+            query = (query.outerjoin(NoticeRead, read_match)
+                     .where(User.id.in_(audience), NoticeRead.user_id.is_(None),
+                            or_(Employee.id.is_(None), Employee.created_at <= (notice.publish_at or notice.created_at)))
+                     .order_by(Employee.last_name, Employee.first_name, User.id))
+        else:
+            query = query.join(NoticeRead, read_match).order_by(NoticeRead.read_at, User.id)
+        if sites is not None:
+            query = query.where(Employee.site_id.in_(sites))
+        rows = await self.db.execute(query)
+        return [NoticeReaderOut(**row) for row in rows.mappings()]
 
     async def resend_push(self, notice_id: int, current_user: User) -> int:
         """

@@ -143,12 +143,13 @@ class NoticePageOut(BaseModel):
 
 class NoticeReaderOut(BaseModel):
     """یک نفر که اطلاعیه را دیده؛ خروجی GET /notices/{notice_id}/readers (Drill-down گزارش)."""
+    username: str | None = None
     user_id: int
     employee_id: int | None
     first_name: str | None
     last_name: str | None
     personnel_code: str | None
-    read_at: datetime
+    read_at: datetime | None
 
 
 class PayrollNoticeResultOut(BaseModel):

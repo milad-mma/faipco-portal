@@ -189,9 +189,12 @@ function SentNoticeCard({
               <Button
                 size="small"
                 startIcon={<VisibilityOutlinedIcon />}
-                onClick={() => onShowReaders(n.id)}
+                onClick={() => onShowReaders({ id: n.id })}
               >
                 چه کسانی دیدند
+              </Button>
+              <Button size="small" onClick={() => onShowReaders({ id: n.id, unread: true })}>
+                چه کسانی ندیده‌اند
               </Button>
               {allowDelete && !n.is_deleted && (
                 <Tooltip title="حذف اطلاعیه">
@@ -236,7 +239,7 @@ export default function NoticeReportTable({
   const [page, setPage] = useState(0); // ایندکس صفحه از صفر (سرور از ۱ می‌شمارد)
   const [isLoading, setIsLoading] = useState(true);
 
-  const [readersNoticeId, setReadersNoticeId] = useState(null); // اطلاعیه‌ای که دیالوگ خوانندگانش باز است
+  const [readerList, setReaderList] = useState(null); // اطلاعیه‌ای که دیالوگ خوانندگانش باز است
   const [bodyNotice, setBodyNotice] = useState(null); // اطلاعیه‌ای که دیالوگ متن کاملش باز است
   const [targetsNotice, setTargetsNotice] = useState(null); // اطلاعیه‌ای که دیالوگ فهرست کامل مقصدهایش باز است
   const [deletingId, setDeletingId] = useState(null); // شناسه‌ی اطلاعیه‌ی در حال حذف (برای غیرفعال کردن دکمه)
@@ -348,7 +351,7 @@ export default function NoticeReportTable({
               notice={n}
               showSender={showSender}
               allowDelete={allowDelete}
-              onShowReaders={setReadersNoticeId}
+              onShowReaders={setReaderList}
               onDelete={handleDelete}
               isDeleting={deletingId === n.id}
               renderTargets={renderTargets}
@@ -371,8 +374,9 @@ export default function NoticeReportTable({
         />
 
         <NoticeReadersDialog
-          noticeId={readersNoticeId}
-          onClose={() => setReadersNoticeId(null)}
+          key={readerList ? readerList.id + ":" + Boolean(readerList.unread) : "closed"}
+          noticeId={readerList?.id} unread={Boolean(readerList?.unread)}
+          onClose={() => setReaderList(null)}
         />
 
         {/* دیالوگ فهرست کامل مقصدهای یک اطلاعیه (قابل‌اسکرول) */}
@@ -498,10 +502,13 @@ export default function NoticeReportTable({
                   <Button
                     size="small"
                     startIcon={<VisibilityOutlinedIcon />}
-                    onClick={() => setReadersNoticeId(n.id)}
+                    onClick={() => setReaderList({ id: n.id })}
                     sx={{ whiteSpace: "nowrap" }}
                   >
                     چه کسانی دیدند
+                  </Button>
+                  <Button size="small" onClick={() => setReaderList({ id: n.id, unread: true })}>
+                    چه کسانی ندیده‌اند
                   </Button>
                 </TableCell>
                 {allowDelete && (
@@ -543,8 +550,9 @@ export default function NoticeReportTable({
       />
 
       <NoticeReadersDialog
-        noticeId={readersNoticeId}
-        onClose={() => setReadersNoticeId(null)}
+        key={readerList ? readerList.id + ":" + Boolean(readerList.unread) : "closed"}
+          noticeId={readerList?.id} unread={Boolean(readerList?.unread)}
+        onClose={() => setReaderList(null)}
       />
 
       {/* دیالوگ نمایش متن کامل اطلاعیه */}

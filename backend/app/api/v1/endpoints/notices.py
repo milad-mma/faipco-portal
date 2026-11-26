@@ -410,39 +410,51 @@ async def site_report(
     return NoticeDetailPageOut(items=items, total=total)
 
 
-@router.get("/{notice_id}/readers", response_model=list[NoticeReaderOut])
-async def notice_readers(
-    notice_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    چه کسانی این اطلاعیه را دیده‌اند — فرستنده، Admin واقعی، هرکسی با
-    notices.view سراسری، یا هرکسی با notices.site_report برای حداقل یکی
-    از سایت‌هایی که این اطلاعیه واقعاً به آن‌ها می‌رسد.
-    خطا: 404 اگر اطلاعیه وجود نداشته باشد، 403 اگر هیچ‌کدام از شرایط دسترسی برقرار نباشد.
-    """
+async def notice_report_sites(notice_id: int, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    """سایت‌های مجاز برای گزارش این اطلاعیه؛ None برای دسترسی کامل."""
     notice = await db.get(Notice, notice_id)
     if notice is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="اطلاعیه یافت نشد")
+        raise HTTPException(404, "اطلاعیه یافت نشد")
+    if current_user.is_superuser or notice.sender_id == current_user.id:
+        return None
+    sites = set()
+    for permission in ("notices.view", "notices.site_report"):
+        allowed = await get_sites_with_permission(db, current_user, permission)
+        if allowed is None:
+            return None
+        sites.update(allowed)
+    if sites and await NoticeService(db).notice_reaches_any_site(notice_id, sites):
+        return sites
+    raise HTTPException(403, "اجازه مشاهده این گزارش را ندارید")
 
-    # بررسی دسترسی برای غیر فرستنده و غیر superuser: ابتدا notices.view سراسری، سپس notices.site_report
-    if notice.sender_id != current_user.id and not current_user.is_superuser:
-        # notices.view: سراسری → مجاز؛ سایتی → اگر اطلاعیه به یکی از آن سایت‌ها برسد
-        view_sites = await get_sites_with_permission(db, current_user, "notices.view")
-        allowed = view_sites is None or (
-            bool(view_sites) and await NoticeService(db).notice_reaches_any_site(notice_id, view_sites)
-        )
-        if not allowed:
-            site_report_sites = await get_sites_with_permission(db, current_user, "notices.site_report")
-            if site_report_sites is None:
-                allowed = True  # مجوز سراسری notices.site_report
-            elif site_report_sites:
-                allowed = await NoticeService(db).notice_reaches_any_site(notice_id, site_report_sites)
-        if not allowed:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="اجازه مشاهده این گزارش را ندارید")
 
-    return await NoticeService(db).get_notice_readers(notice_id)
+@router.get("/{notice_id}/readers", response_model=list[NoticeReaderOut])
+async def notice_readers(notice_id: int, unread: bool = False,
+                         sites=Depends(notice_report_sites), db: AsyncSession = Depends(get_db)):
+    return await NoticeService(db).get_notice_readers(notice_id, unread=unread, sites=sites)
+
+
+@router.get("/{notice_id}/recipients/{user_id}/deliveries")
+async def recipient_deliveries(notice_id: int, user_id: int, sites=Depends(notice_report_sites),
+                               db: AsyncSession = Depends(get_db)):
+    """سوابق ارسال این اطلاعیه به همین حساب، در محدوده گزارش."""
+    from sqlalchemy import and_, cast, or_
+    from sqlalchemy.dialects.postgresql import JSONB
+    from app.models.push_dispatch import PushDispatchDelivery as Delivery, PushDispatchJob as Job
+    from app.services.push_dispatch import dispatch_origin
+
+    query = (select(Job.id.label("job_id"), Job.created_at, Job.key.endswith(":publish").label("initial"),
+                    Delivery.id.label("delivery_id"), Delivery.subscription_id, Delivery.status, Delivery.attempts, Delivery.accepted_at,
+                    Delivery.received_at, Delivery.opened_at, Delivery.next_attempt_at)
+             .outerjoin(Delivery, and_(Delivery.job_id == Job.id, Delivery.user_id == user_id))
+             .where(Job.notice_id == notice_id, Job.origin == dispatch_origin(),
+                    or_(Delivery.id.is_not(None), cast(Job.user_ids, JSONB).contains([user_id]))))
+    if sites is not None:
+        query = query.where(select(User.id).join(Employee, Employee.id == User.employee_id)
+                            .where(User.id == user_id, Employee.site_id.in_(sites)).exists())
+    rows = await db.execute(query.order_by(Job.created_at.desc(), Job.id.desc(), Delivery.id))
+    return [dict(row) for row in rows.mappings()]
 
 
 @router.post("/{notice_id}/resend-push")
