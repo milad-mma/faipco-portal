@@ -4,6 +4,7 @@ import {
   LinearProgress, MenuItem, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 import SearchField from "../components/SearchField";
@@ -24,11 +25,13 @@ const reasons = {
   network_or_transport_error: "خطای ارتباط با سرویس پوش",
   see_server_logs: "جزئیات بیشتر در گزارش فنی سرور",
 };
-function messageReference({ message }) {
+function messageReference({ message }, detailed = false) {
   const { module, event_type, record_id, event_id } = message;
   const record = record_id ? ` · شمارهٔ ${record_id}` : " · مرجع ثبت نشده";
   const event = event_id && /^\d{1,12}$/.test(event_id) ? ` · ${module === "بازخورد" && event_type === "پاسخ" ? "پاسخ" : "رویداد"} ${event_id}` : "";
-  return `${module} · ${event_type}${record}${event}`;
+  const title = message.title ? ` · ${message.title}` : "";
+  return `${module}${title} · ${event_type}${record}${detailed || !title ? event : ""}`;
+
 }
 function Recipient({ row }) {
   return <Typography variant="body2">
@@ -84,7 +87,11 @@ function Detail({ event, close, code, mobile }) {
     <DialogTitle>جزئیات ارسال شمارهٔ {event.id}</DialogTitle>
     <DialogContent dividers>
       <Stack spacing={2}>
-        <Typography fontWeight={700}>{messageReference(event)}</Typography>
+        <Typography fontWeight={700}>{messageReference(data?.message ? data : event, true)}</Typography>
+        {event.source === "office" && /^\d+$/.test(event.message.record_id) && (
+          <Button component={RouterLink} to={`/automation/letters/${event.message.record_id}`}
+            sx={{ alignSelf: "flex-start" }}>مشاهدهٔ نامه در کارتابل</Button>
+        )}
         <Typography variant="caption">وضعیت کل ارسال</Typography><Status value={event.status} />
         <Typography variant="caption">کلید فنی رویداد</Typography>
         <Typography dir="ltr" sx={{ overflowWrap: "anywhere" }}>{event.key}</Typography>

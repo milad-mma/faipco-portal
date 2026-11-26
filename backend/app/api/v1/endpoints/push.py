@@ -1,7 +1,7 @@
 """Endpoint های Web Push: دریافت کلید عمومی VAPID، ثبت/لغو اشتراک دستگاه کاربر."""
 from typing import Literal
 from pydantic import BaseModel, Field
-from app.services.push_receipts import record_receipt
+from app.services.push_receipts import DeliveryNotFound, record_receipt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,5 +74,9 @@ class ClientReceipt(BaseModel):
 
 @router.post("/receipt", status_code=204)
 async def confirm_receipt(payload: ClientReceipt, db: AsyncSession = Depends(get_db)):
-    if not await record_receipt(db, payload.token, payload.action == "opened"):
+    try:
+        recorded = await record_receipt(db, payload.token, payload.action == "opened")
+    except DeliveryNotFound as exc:
+        raise HTTPException(409, "ردیف ارسال برای این رسید پیدا نشد") from exc
+    if not recorded:
         raise HTTPException(400, "رسید نامعتبر یا منقضی است")

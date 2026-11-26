@@ -7,7 +7,12 @@ from sqlalchemy import func, String, cast, literal, or_, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import require_permission
+from app.core.deps import get_current_user, require_permission
+from app.core.site_access import get_sites_with_permission
+from app.models.notice import Notice
+from app.models.advance import AdvanceRequest
+from app.models.loan import LoanRequest
+from app.services.notice_service import NoticeService
 from app.db.session import get_db
 from app.models.user import User
 from app.models.employee import Employee
@@ -66,6 +71,56 @@ def message_reference(source, key):
     return {"module": module, "event_type": kind, "record_id": record, "event_id": event}
 
 
+async def report_sites(db, viewer, codes):
+    allowed = set()
+    for code in codes:
+        sites = await get_sites_with_permission(db, viewer, code)
+        if sites is None:
+            return None
+        allowed.update(sites)
+    return allowed
+
+
+async def describe_messages(db, viewer, items):
+    """Read current source labels in batches, respecting the module's report scope."""
+    groups = {}
+    for item in items:
+        msg = item["message"]
+        rid = msg["record_id"] or ""
+        if item["source"] == "dispatch" and re.fullmatch(r"[0-9]{1,10}", rid) and int(rid) <= 2147483647:
+            groups.setdefault(msg["module"], {}).setdefault(int(rid), []).append(msg)
+
+    notices = groups.get("اطلاعیه")
+    if notices:
+        stmt = select(Notice.id, Notice.title).where(Notice.id.in_(notices))
+        sites = await report_sites(db, viewer, ("notices.view", "notices.site_report"))
+        if sites is not None:
+            visible = Notice.sender_id == viewer.id
+            if sites:
+                targets = await NoticeService(db)._notice_ids_reaching_sites(list(sites))
+                visible = or_(visible, Notice.id.in_(targets))
+            stmt = stmt.where(visible)
+        for rid, title in await db.execute(stmt):
+            for msg in notices[rid]:
+                msg["title"] = title
+
+    for module, model, scope, specific in (
+        ("مساعده", AdvanceRequest, "advances", AdvanceRequest.request_month),
+        ("وام", LoanRequest, "loans", LoanRequest.type_title),
+    ):
+        records = groups.get(module)
+        if not records:
+            continue
+        stmt = (select(model.id, Employee.first_name, Employee.last_name, Employee.personnel_code, specific)
+                .join(Employee, Employee.id == model.employee_id).where(model.id.in_(records)))
+        sites = await report_sites(db, viewer, (scope + ".view", scope + ".finance"))
+        if sites is not None:
+            stmt = stmt.where(or_(model.employee_id == viewer.employee_id, model.site_id.in_(sites)))
+        for rid, first, last, code, detail in await db.execute(stmt):
+            for msg in records[rid]:
+                msg["title"] = f"{first} {last} ({code}) · {detail}"
+
+
 async def personnel_matches(db, code):
     western = code.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
     variants = {code, western, western.translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")),
@@ -80,7 +135,8 @@ async def personnel_matches(db, code):
 @router.get("")
 async def events(source: Source | None = None, state: str = Query("", max_length=24),
                  q: str = Query("", max_length=100), offset: int = Query(0, ge=0),
-                 db: AsyncSession = Depends(get_db), personnel_code: Annotated[str, Query(max_length=64)] = ""):
+                 db: AsyncSession = Depends(get_db), personnel_code: Annotated[str, Query(max_length=64)] = "",
+                 viewer: User = Depends(get_current_user)):
     code = personnel_code.strip()
     employees, users = await personnel_matches(db, code) if code else (set(), set())
     if code and not employees:
@@ -147,6 +203,7 @@ async def events(source: Source | None = None, state: str = Query("", max_length
         else:
             item["personnel_code"] = user_codes.get(item["user_id"])
         item["message"] = message_reference(item["source"], item["key"])
+    await describe_messages(db, viewer, items)
     return result
 
 
@@ -161,7 +218,8 @@ def safe_reason(value):
 
 @router.get("/{source}/{event_id}")
 async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=0),
-                       db: AsyncSession = Depends(get_db), personnel_code: Annotated[str, Query(max_length=64)] = ""):
+                       db: AsyncSession = Depends(get_db), personnel_code: Annotated[str, Query(max_length=64)] = "",
+                 viewer: User = Depends(get_current_user)):
     if source == "dispatch":
         job = await db.scalar(select(Job).where(Job.id == event_id, Job.origin == dispatch_origin()))
         if job is None:
@@ -184,8 +242,10 @@ async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=
         result = page(rows.mappings().all(), 30)
         for item in result["items"]:
             item["last_error"] = safe_reason(item["last_error"])
+        message = message_reference(source, job.key)
+        await describe_messages(db, viewer, [{"source": source, "message": message}])
         return {**result, "single_user_id": single_user, "personnel_code": code,
-                "matched_user_ids": matched_users, "message": message_reference(source, job.key),
+                "matched_user_ids": matched_users, "message": message,
                 "target_count": job.target_count if job.initialized else None,
                 "no_device_count": job.no_device_count if job.initialized else None,
                 "deadline_at": job.deadline_at, "last_error": safe_reason(job.last_error)}
