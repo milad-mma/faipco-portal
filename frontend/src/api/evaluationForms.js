@@ -22,6 +22,16 @@ export async function createEvaluationForm(payload) {
   return data;
 }
 
+export async function importEvaluationForm(payload, files) {
+  const body = new FormData();
+  body.append("title", payload.title);
+  if (payload.site_id != null) body.append("site_id", payload.site_id);
+  if (payload.description) body.append("description", payload.description);
+  for (const file of files) body.append("file", file);
+  const { data } = await apiClient.post("/performance/forms/import-excel", body);
+  return data;
+}
+
 // PUT /performance/forms/{id}؛ اطلاعات فرم را ویرایش می‌کند و فرم به‌روزشده را برمی‌گرداند
 export async function updateEvaluationForm(formId, payload) {
   const { data } = await apiClient.put(`/performance/forms/${formId}`, payload);

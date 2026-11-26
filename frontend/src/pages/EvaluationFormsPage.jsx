@@ -35,10 +35,17 @@ import { useNavigate } from "react-router-dom";
 import { fetchSites } from "../api/sites";
 import {
   createEvaluationForm,
+  importEvaluationForm,
   deleteEvaluationForm,
   duplicateEvaluationForm,
   fetchEvaluationForms,
 } from "../api/evaluationForms";
+
+const templates = [
+  ["single_choice", "انتخاب یک گزینه"], ["multiple_choice", "انتخاب چند گزینه"],
+  ["rating", "امتیازی"], ["yes_no", "بله یا خیر"], ["text", "پاسخ متنی"],
+  ["number", "پاسخ عددی"], ["date", "پاسخ تاریخی"],
+];
 
 const STATUS_LABELS = { draft: "پیش‌نویس", active: "فعال", inactive: "غیرفعال", archived: "بایگانی‌شده" };  // برچسب فارسی وضعیت فرم
 const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning", archived: "default" };  // رنگ Chip هر وضعیت فرم
@@ -47,8 +54,10 @@ const STATUS_COLORS = { draft: "default", active: "success", inactive: "warning"
  * دیالوگ ساخت فرم ارزیابی جدید (سایت اختیاری، عنوان، توضیحات).
  * ورودی: open، onClose، onCreated و فهرست سایت‌ها؛ پس از ساخت به فرم‌ساز فرم جدید می‌رود.
  */
-function NewFormDialog({ open, onClose, onCreated, sites }) {
+function NewFormDialog({ open, onClose, onCreated, sites, excel }) {
   const [siteId, setSiteId] = useState("");  // رشته‌ی خالی = فرم برای همه‌ی سایت‌ها
+  const [files, setFiles] = useState([]);
+  const [template, setTemplate] = useState(templates[0][0]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
@@ -60,11 +69,12 @@ function NewFormDialog({ open, onClose, onCreated, sites }) {
     setError("");
     setIsSaving(true);
     try {
-      const form = await createEvaluationForm({
+      const payload = {
         site_id: siteId === "" ? null : siteId,
         title,
         description: description || null,
-      });
+      };
+      const form = excel ? await importEvaluationForm(payload, files) : await createEvaluationForm(payload);
       onCreated();
       onClose();
       navigate(`/performance/forms/${form.id}`);
@@ -76,8 +86,8 @@ function NewFormDialog({ open, onClose, onCreated, sites }) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>فرم ارزیابی جدید</DialogTitle>
+    <Dialog open={open} onClose={isSaving ? undefined : onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{excel ? "ساخت فرم از اکسل" : "فرم ارزیابی جدید"}</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
         <TextField
           select
@@ -105,13 +115,37 @@ function NewFormDialog({ open, onClose, onCreated, sites }) {
           multiline
           minRows={2}
         />
+        {excel && (
+          <>
+            <TextField select label="۱. چه نوع سؤالی دارید؟" value={template} onChange={(e) => setTemplate(e.target.value)}>
+              {templates.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
+            </TextField>
+            <Button component="a" variant="outlined" href={import.meta.env.BASE_URL + "templates/evaluation-" + template + ".xlsx"}
+              download={"نمونه " + templates.find(([key]) => key === template)[1] + ".xlsx"}>
+              دانلود نمونه {templates.find(([key]) => key === template)[1]}
+            </Button>
+            <Typography variant="body2">۲. سؤال نمونه را با سؤال خود عوض کنید. برای سؤال بعدی، در ردیف بعد بنویسید. فایل را ذخیره کنید.</Typography>
+            <Button component="label" variant="outlined" disabled={isSaving}>
+              {files.length ? "افزودن فایل دیگر به همین فرم" : "۳. انتخاب فایل تکمیل‌شده"}
+              <input hidden multiple type="file" accept=".xlsx" onChange={(e) => {
+                const selected = Array.from(e.target.files || []);
+                e.target.value = "";
+                setFiles((current) => [...current.filter(f => !selected.some(s => s.name === f.name)), ...selected]);
+                setError("");
+              }} />
+            </Button>
+            {files.map(f => <Chip key={f.name} label={f.name} disabled={isSaving}
+              onDelete={() => setFiles(current => current.filter(item => item !== f))} />)}
+            {files.length > 7 && <Alert severity="error">برای هر فرم حداکثر هفت فایل انتخاب کنید.</Alert>}
+          </>
+        )}
         {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={isSaving}>
           انصراف
         </Button>
-        <Button variant="contained" onClick={handleCreate} disabled={isSaving || !title.trim()}>
+        <Button variant="contained" onClick={handleCreate} disabled={isSaving || !title.trim() || (excel && (!files.length || files.length > 7))}>
           {isSaving ? "در حال ساخت..." : "ساخت و ادامه به فرم‌ساز"}
         </Button>
       </DialogActions>
@@ -126,7 +160,7 @@ export default function EvaluationFormsPage() {
   const [sites, setSites] = useState([]);
   const [forms, setForms] = useState([]);
   const [error, setError] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);  // باز بودن دیالوگ فرم جدید
+  const [dialogMode, setDialogMode] = useState(null);  // باز بودن دیالوگ فرم جدید
   const navigate = useNavigate();
 
   // دریافت فهرست سایت‌ها برای نمایش نام سایت و انتخاب در دیالوگ
@@ -175,13 +209,16 @@ export default function EvaluationFormsPage() {
   return (
     <Box>
       {/* سربرگ: عنوان صفحه و دکمه‌ی فرم جدید */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h5" fontWeight={700}>
           فرم‌های ارزیابی
         </Typography>
-        <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setDialogOpen(true)}>
-          فرم جدید
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" onClick={() => setDialogMode("excel")}>ساخت از اکسل</Button>
+          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setDialogMode("manual")}>
+            فرم جدید
+          </Button>
+        </Stack>
       </Stack>
 
       {/* راهنمای کار با فرم‌های ارزیابی */}
@@ -195,8 +232,7 @@ export default function EvaluationFormsPage() {
         <AccordionDetails>
           <Typography variant="body2" sx={{ mb: 1.5 }}>
             <b>فرم ارزیابی</b> یعنی مجموعه سوال‌هایی که می‌خواید از هر ارزیاب بپرسید - مثلاً «فرم
-            ارزیابی سالانه پرسنل». سوال‌های خودِ فرم رو توی همین صفحه نمی‌سازید؛ اول یه فرم خالی
-            بسازید، بعد خودکار می‌رید به «فرم‌ساز» که اونجا دسته‌بندی و سوال اضافه می‌کنید.
+            ارزیابی سالانه پرسنل». با «فرم جدید» سؤال‌ها را در فرم‌ساز اضافه کنید یا با «ساخت از اکسل» دسته‌بندی‌ها، سؤال‌ها و گزینه‌ها را از فایل نمونه وارد کنید.
           </Typography>
           <Stack component="ol" sx={{ pl: 2.5, m: 0 }} spacing={0.75}>
             <Typography component="li" variant="body2">
@@ -274,7 +310,7 @@ export default function EvaluationFormsPage() {
       </TableContainer>
 
       {/* دیالوگ ساخت فرم جدید */}
-      <NewFormDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onCreated={loadForms} sites={sites} />
+      {dialogMode && <NewFormDialog open excel={dialogMode === "excel"} onClose={() => setDialogMode(null)} onCreated={loadForms} sites={sites} />}
     </Box>
   );
 }

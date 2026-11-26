@@ -75,6 +75,20 @@ class EvaluationFormService:
         await self.db.refresh(form)
         return form
 
+    async def create_from_excel(self, data, categories, user_id):
+        """همهٔ اجزای فرم واردشده را در یک تراکنش می‌سازد."""
+        form = EvaluationForm(**data, created_by_user_id=user_id)
+        for item in categories:
+            category = EvaluationCategory(title=item["title"], weight=item["weight"], sort_order=item["sort_order"])
+            for source in item["questions"]:
+                question = EvaluationQuestion(**source.model_dump(exclude={"options"}))
+                question.options = [EvaluationQuestionOption(**option.model_dump()) for option in source.options]
+                category.questions.append(question)
+            form.categories.append(category)
+        self.db.add(form)
+        await self.db.commit()
+        return form
+
     async def update_form(self, form_id: int, data: dict) -> EvaluationForm:
         """فیلدهای فرم را به‌روز می‌کند؛ فقط برای فرم draft، در غیر این صورت EvaluationFormError."""
         form = await self.db.get(EvaluationForm, form_id)

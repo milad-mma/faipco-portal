@@ -4,7 +4,9 @@ Endpoint های «فرم‌های ارزیابی عملکرد»: فرم، دست
 با category_id/question_id کار می‌کنند، ابتدا site_id واقعی از زنجیره سوال→دسته‌بندی→فرم
 به دست می‌آید و سپس require_site_permission برای همان سایت بررسی می‌شود.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from asyncio import to_thread
+
+from fastapi import File, Form, UploadFile, APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
@@ -24,6 +26,8 @@ from app.schemas.evaluation_content import (
     EvaluationQuestionOut,
     TitleUpdateIn,
 )
+from app.models.site import Site
+from app.services.evaluation_form_excel import FormExcelError, MAX_BYTES, combine_form_files, read_form_excel
 from app.services.evaluation_form_service import EvaluationFormError, EvaluationFormService
 
 router = APIRouter()
@@ -70,6 +74,35 @@ async def list_forms(
     """فهرست فرم‌ها (اختیاری فیلتر بر اساس سایت)؛ فقط فرم‌های سایت‌های در دسترس کاربر و فرم‌های سراسری."""
     allowed = await get_accessible_site_ids(db, current_user)
     return await EvaluationFormService(db).list_forms(site_id, allowed)
+
+
+@router.post("/import-excel", response_model=EvaluationFormOut)
+async def import_excel(
+    title: str = Form(..., max_length=255), description: str | None = Form(None),
+    site_id: int | None = Form(None), file: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """فایل نمونه تکمیل‌شده را به یک پیش‌نویس برای سایت انتخابی تبدیل می‌کند."""
+    await require_site_permission(db, current_user, site_id, PERMISSION_CODE)
+    if site_id is not None and await db.get(Site, site_id) is None:
+        raise HTTPException(404, "سایت انتخاب‌شده یافت نشد.")
+    if not title.strip():
+        raise HTTPException(400, "عنوان فرم را وارد کنید.")
+    try:
+        if len(file) > 7:
+            raise FormExcelError("حداکثر هفت فایل را برای یک فرم انتخاب کنید.")
+        parsed = []
+        for upload in file:
+            try:
+                parsed.append(await to_thread(read_form_excel, await upload.read(MAX_BYTES + 1)))
+            except FormExcelError as exc:
+                raise FormExcelError(f"{upload.filename} — {exc}") from exc
+        categories = combine_form_files(parsed)
+    except FormExcelError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await EvaluationFormService(db).create_from_excel(
+        dict(title=title.strip(), description=description, site_id=site_id), categories, current_user.id
+    )
 
 
 @router.get("/{form_id}", response_model=EvaluationFormFullOut)
