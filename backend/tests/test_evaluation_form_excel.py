@@ -60,14 +60,17 @@ def test_upload_sample_and_reject_invalid_row_or_scope(monkeypatch):
         response = client.post("/forms/import-excel", data={"title": "ارزیابی ترکیبی"}, files=parts)
         assert response.status_code == 200, response.text
         session.expire_all()
-        imported = session.get(EvaluationForm, response.json()["id"]).categories[0].questions
-        assert [q.question_type.value for q in imported] == list(TYPES.values())
-        assert sum(q.weight for q in imported) == 100
-        assert [(o.label, o.score) for o in imported[3].options] == [("بله", 5), ("خیر", 0)]
+        groups = session.get(EvaluationForm, response.json()["id"]).categories
+        assert [(g.title, g.weight, len(g.questions)) for g in groups] == [
+            ("کیفیت کار", 50, 14), ("همکاری", 30, 7), ("انضباط کاری", 20, 7)]
+        assert [q.question_type.value for q in groups[1].questions] == list(TYPES.values())
+        assert all(sum(q.weight for q in g.questions) == 100 for g in groups)
+        assert [(o.label, o.score) for o in groups[0].questions[7].options] == [("بله", 0), ("خیر", 5)]
         for kind in TYPES.values():
             contents = (SAMPLE.parent / f"evaluation-{kind}.xlsx").read_bytes()
-            question = combine_form_files([read_form_excel(contents)])[0]["questions"][0]
-            assert question.weight == 100 and question.question_type == kind
+            categories = combine_form_files([read_form_excel(contents)])
+            assert [len(c["questions"]) for c in categories] == [2, 1, 1]
+            assert all(q.question_type == kind for c in categories for q in c["questions"])
         book = load_workbook(BytesIO(parts[0][1][1]))
         book.active["E3"] = None
         out = BytesIO()
@@ -77,12 +80,11 @@ def test_upload_sample_and_reject_invalid_row_or_scope(monkeypatch):
         assert response.status_code == 400 and "broken.xlsx" in response.text and "ردیف 3" in response.text
         def with_groups(part, rows):
             workbook = load_workbook(BytesIO(part[1][1]))
-            for i, (title, weight) in enumerate(rows, 3):
-                if i > 3:
-                    for cell in workbook.active[3]:
-                        workbook.active.cell(i, cell.column).value = cell.value
-                workbook.active.cell(i, 2).value = title
-                workbook.active.cell(i, 3).value = weight
+            sheet = workbook.active
+            example = [cell.value for cell in sheet[2]]
+            sheet.delete_rows(2, sheet.max_row)
+            for title, weight in rows:
+                sheet.append([title, weight, *example[2:]])
             stream = BytesIO()
             workbook.save(stream)
             return ("file", (part[1][0], stream.getvalue()))
@@ -98,7 +100,7 @@ def test_upload_sample_and_reject_invalid_row_or_scope(monkeypatch):
         assert groups[1].questions[0].weight == 100
         conflict = with_groups(parts[-1], [("کیفیت", 50)])
         response = client.post("/forms/import-excel", data={"title": "تعارض"}, files=[first, conflict])
-        assert response.status_code == 400 and "date.xlsx" in response.text and "ردیف 3" in response.text
+        assert response.status_code == 400 and "date.xlsx" in response.text and "ردیف 2" in response.text
         monkeypatch.setattr("app.core.site_permission_deps.get_sites_with_permission", AsyncMock(return_value={1}))
         assert upload(specimen).status_code == 403
         assert session.scalar(select(func.count(EvaluationForm.id))) == 3

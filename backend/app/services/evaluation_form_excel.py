@@ -70,8 +70,8 @@ DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 CATEGORY_HEADERS = ("عنوان دسته‌بندی", "امتیاز دسته‌بندی")
 
 
-def simple_headers(option_count, categorized=True):
-    headers = ["سؤال", *CATEGORY_HEADERS] if categorized else ["سؤال"]
+def simple_headers(option_count, prefix=(*CATEGORY_HEADERS, "عنوان سؤال")):
+    headers = list(prefix)
     for index in range(1, option_count + 1):
         suffix = str(index).translate(DIGITS)
         headers.extend([f"گزینه {suffix}", f"امتیاز {suffix}"])
@@ -81,7 +81,7 @@ def simple_headers(option_count, categorized=True):
 def simple_question(values, kind):
     text, *pairs = values
     if not text:
-        raise FormExcelError("سؤال را در ستون اول بنویسید.")
+        raise FormExcelError("متن سؤال را وارد کنید.")
     options = []
     for index in range(0, len(pairs), 2):
         label, raw_score = pairs[index:index + 2]
@@ -106,21 +106,25 @@ def read_sheet(book, filename):
     sheet.reset_dimensions()
     rows = sheet.iter_rows()
     kind = None if legacy else SHEETS[sheet.title]
-    if not legacy:
-        next(rows, None)  # راهنمای کوتاه بالای جدول
     headers = tuple(cell.value for cell in next(rows, ()))
+    first = 2
     if legacy:
         expected = HEADERS
     else:
-        categorized = headers[1:3] == CATEGORY_HEADERS
-        count = (len(headers) - (3 if categorized else 1)) // 2
+        if headers[:2] == CATEGORY_HEADERS:
+            prefix = (*CATEGORY_HEADERS, "عنوان سؤال")
+        else:
+            # Previous per-type workbooks start with an instruction above their header.
+            headers = tuple(cell.value for cell in next(rows, ()))
+            first = 3
+            prefix = ("سؤال", *CATEGORY_HEADERS) if headers[1:3] == CATEGORY_HEADERS else ("سؤال",)
+        count = (len(headers) - len(prefix)) // 2
         if kind in OPTION_TYPES and count < 2:
             raise FormExcelError("ستون‌های گزینه و امتیاز را مطابق نمونه نگه دارید.")
-        expected = simple_headers(count if kind in OPTION_TYPES else 0, categorized)
+        expected = simple_headers(count if kind in OPTION_TYPES else 0, prefix)
     if headers != expected:
         raise FormExcelError("عنوان ستون‌های جدول باید مطابق فایل نمونه باشد.")
     categories, questions = {}, []
-    first = 2 if legacy else 3
     for index, row in enumerate(rows, first):
         if index >= first + 2000:
             raise FormExcelError("حداکثر ۲۰۰۰ ردیف سؤال مجاز است.")
@@ -137,12 +141,13 @@ def read_sheet(book, filename):
                 add_row(categories, values)
             else:
                 title, weight = "سؤال‌های ارزیابی", 100
-                if categorized:
-                    title, raw_weight = values[1:3]
+                if len(prefix) == 3:
+                    start = prefix.index(CATEGORY_HEADERS[0])
+                    title, raw_weight = values[start:start + 2]
                     if not 1 <= len(title) <= 255:
                         raise FormExcelError("عنوان دسته‌بندی را وارد کنید (حداکثر ۲۵۵ نویسه).")
                     weight = number(raw_weight, CATEGORY_HEADERS[1], 0, 100)
-                    del values[1:3]
+                    del values[start:start + 2]
                 questions.append((title, weight, simple_question(values, kind), filename, index))
         except FormExcelError as exc:
             raise FormExcelError(f"ردیف {index} — {exc}") from exc

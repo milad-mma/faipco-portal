@@ -120,11 +120,11 @@ function NewFormDialog({ open, onClose, onCreated, sites, excel }) {
             <TextField select label="۱. چه نوع سؤالی دارید؟" value={template} onChange={(e) => setTemplate(e.target.value)}>
               {templates.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
             </TextField>
-            <Button component="a" variant="outlined" href={import.meta.env.BASE_URL + "templates/evaluation-" + template + ".xlsx"}
+            <Button component="a" variant="outlined" href={import.meta.env.BASE_URL + "templates/evaluation-" + template + ".xlsx?v=category-first"}
               download={"نمونه " + templates.find(([key]) => key === template)[1] + ".xlsx"}>
               دانلود نمونه {templates.find(([key]) => key === template)[1]}
             </Button>
-            <Typography variant="body2">۲. روبه‌روی هر سؤال، نام دسته و امتیاز آن را بنویسید. مثلاً برای هر سؤالِ «کیفیت کار»، امتیاز دسته را ۶۰ وارد کنید. مجموع امتیاز دسته‌های فرم برای فعال‌سازی باید ۱۰۰ باشد.</Typography>
+            <Typography variant="body2">۲. ردیف‌های نمونه را با سؤال‌های خود جایگزین کنید و نمونه‌های اضافی را حذف کنید. در هر ردیف ابتدا نام دسته، سپس امتیاز دسته و بعد سؤال را بنویسید. مجموع امتیاز دسته‌های فرم برای فعال‌سازی باید ۱۰۰ باشد.</Typography>
             <Button component="label" variant="outlined" disabled={isSaving}>
               {files.length ? "افزودن فایل دیگر به همین فرم" : "۳. انتخاب فایل تکمیل‌شده"}
               <input hidden multiple type="file" accept=".xlsx" onChange={(e) => {
