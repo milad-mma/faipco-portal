@@ -83,7 +83,7 @@ const EXTRA_ACCESS_GROUPS = NAV_ITEMS.filter(
  * اطلاعات کاربر، برندینگ و حالت تم را از Contextها می‌گیرد و کارت‌های تنظیمات و میان‌برها را رندر می‌کند.
  */
 export default function ProfilePage() {
-  const { user, logout, refetchUser } = useAuth();
+  const { user, menuCounts, logout, refetchUser } = useAuth();
   const { profileTitle, profileSubtitle, surfaces } = useBranding();
   const profileCfg = surfaces.profile; // تنظیمات برندینگ سطح «profile» (پس‌زمینه، نمایش عنوان/زیرعنوان)
   const navigate = useNavigate();
@@ -239,8 +239,8 @@ export default function ProfilePage() {
                   <ListItemButton onClick={() => toggleGroup(group.label)}>
                     <ListItemIcon>{group.icon}</ListItemIcon>
                     <ListItemText primary={group.label} />
-                    {itemBadge(group, user) > 0 && (
-                      <Chip size="small" color="error" label={itemBadge(group, user).toLocaleString("fa-IR")} sx={{ mx: 1 }} />
+                    {itemBadge(group, user, menuCounts) > 0 && (
+                      <Chip size="small" color="error" label={itemBadge(group, user, menuCounts).toLocaleString("fa-IR")} sx={{ mx: 1 }} />
                     )}
                     {expandedGroups[group.label] ? (
                       <ExpandLessIcon />
@@ -262,8 +262,8 @@ export default function ProfilePage() {
                         >
                           <ListItemIcon>{child.icon}</ListItemIcon>
                           <ListItemText primary={child.label} />
-                          {itemBadge(child, user) > 0 && (
-                            <Chip size="small" color="error" label={itemBadge(child, user).toLocaleString("fa-IR")} />
+                          {itemBadge(child, user, menuCounts) > 0 && (
+                            <Chip size="small" color="error" label={itemBadge(child, user, menuCounts).toLocaleString("fa-IR")} />
                           )}
                         </ListItemButton>
                       ))}

@@ -1,5 +1,5 @@
 {
-  "count": 547,
+  "count": 548,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -74,6 +74,7 @@
     "GET /api/v1/auth/captcha",
     "GET /api/v1/auth/captcha-status",
     "GET /api/v1/auth/me",
+    "GET /api/v1/auth/me/menu-counts",
     "GET /api/v1/auth/me/password/otp-options",
     "GET /api/v1/auth/me/sessions",
     "GET /api/v1/automation/cartable",

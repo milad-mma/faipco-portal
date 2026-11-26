@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { fetchCurrentUser, loginRequest } from "../api/auth";
 import { apiClient } from "../api/client";
 import { useOnlineStatus } from "./OnlineStatusContext";
+import { useMenuCounts } from "./useMenuCounts";
 import { setCacheOwner } from "../api/swrCache";
 import { classifySessionRestoreError } from "../utils/authRestorePolicy";
 import { connectReleaseNotifications } from "../utils/releaseSocket";
@@ -23,6 +24,7 @@ export function AuthProvider({ children }) {
   const [isRecovering, setIsRecovering] = useState(false);
   const [retrySequence, setRetrySequence] = useState(0);
   const { isOnline } = useOnlineStatus();
+  const menuCounts = useMenuCounts(user, isOnline);
   const restorePromiseRef = useRef(null);
   const retryCountRef = useRef(0);
   // A logout or new login must invalidate an older, outstanding restore.
@@ -186,7 +188,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, isLoading, restoreError, isRecovering, tryRestoreSession,
+      user, menuCounts, isLoading, restoreError, isRecovering, tryRestoreSession,
       login, logout, refetchUser,
     }}>
       {children}

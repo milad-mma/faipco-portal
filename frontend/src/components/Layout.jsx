@@ -85,7 +85,7 @@ const DRAWER_WIDTH = 260;  // عرض منوی کناری (px)؛ عرض AppBar و
 
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, menuCounts, logout } = useAuth();
   const { sidebarTitle, surfaces } = useBranding();
   const sidebarCfg = surfaces.sidebar;
   const { mode, toggleMode } = useThemeMode();
@@ -291,7 +291,7 @@ export default function Layout() {
                     primary={item.label}
                     primaryTypographyProps={{ fontWeight: groupActive ? 700 : 600, fontSize: 14.5 }}
                   />
-                  <MenuCount value={itemBadge(item, user)} />
+                  <MenuCount value={itemBadge(item, user, menuCounts)} />
                   <ExpandMoreIcon
                     fontSize="small"
                     sx={{
@@ -311,7 +311,7 @@ export default function Layout() {
                 >
                   <ListItemIcon sx={{ color: isActive ? SB.accent : SB.muted, minWidth: 36 }}>{item.icon}</ListItemIcon>
                   <ListItemText primary={item.label} primaryTypographyProps={{ fontWeight: isActive ? 700 : 600, fontSize: 14.5 }} />
-                  <MenuCount value={itemBadge(item, user)} />
+                  <MenuCount value={itemBadge(item, user, menuCounts)} />
                 </ListItemButton>
               )}
 
@@ -356,7 +356,7 @@ export default function Layout() {
                             primary={child.label}
                             primaryTypographyProps={{ fontSize: 13.5, fontWeight: isChildActive ? 700 : 500, noWrap: true }}
                           />
-                          <MenuCount value={itemBadge(child, user)} />
+                          <MenuCount value={itemBadge(child, user, menuCounts)} />
                         </ListItemButton>
                       );
                     })}

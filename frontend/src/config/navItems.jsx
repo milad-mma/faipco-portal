@@ -93,7 +93,7 @@ export const NAV_ITEMS = [
     icon: <GroupOutlinedIcon />,
     groupOnly: true,
     children: [
-      { label: "درخواست‌های استخدام", path: "/careers/admin", icon: <GroupOutlinedIcon />, check: (u) => u?.can_manage_careers },
+      { label: "درخواست‌های استخدام", path: "/careers/admin", icon: <GroupOutlinedIcon />, check: (u) => u?.can_manage_careers, badge: (_, counts) => counts.careers },
       {
         label: "پرسنل",
         path: "/employees",
@@ -128,18 +128,21 @@ export const NAV_ITEMS = [
         path: "/loans/admin",
         icon: <AccountBalanceOutlinedIcon />,
         check: (u) => u?.can_admin_loans,
+        badge: (_, counts) => counts.loans,
       },
       {
         label: "مساعده پرسنل",
         path: "/advances/admin",
         icon: <PaymentsOutlinedIcon />,
         check: (u) => u?.can_admin_advances,
+        badge: (_, counts) => counts.advances,
       },
       {
         label: "مشخصات خانوادگی پرسنل",
         path: "/family/admin",
         icon: <FamilyRestroomOutlinedIcon />,
         check: (u) => u?.can_view_family,
+        badge: (_, counts) => counts.family,
       },
       {
         label: "عکس پرسنل",
@@ -229,6 +232,7 @@ export const NAV_ITEMS = [
         path: "/feedback-report",
         icon: <ForumOutlinedIcon />,
         check: (u) => u?.can_view_feedback,
+        badge: (_, counts) => counts.feedback,
       },
       {
         label: "پیام‌های تبریک تولد",
@@ -424,9 +428,10 @@ export function isItemVisible(item, user) {
 }
 
 /** شمارنده‌ی هشدار یک آیتم منو؛ گروه = جمع فرزندان قابل‌مشاهده. */
-export function itemBadge(item, user) {
+export function itemBadge(item, user, counts = {}) {
+  if (!isItemVisible(item, user)) return 0;
   if (item.children?.length) {
-    return item.children.reduce((sum, child) => sum + (child.badge ? Number(child.badge(user)) || 0 : 0), 0);
+    return item.children.reduce((sum, child) => sum + itemBadge(child, user, counts), 0);
   }
-  return item.badge ? Number(item.badge(user)) || 0 : 0;
+  return item.badge ? Number(item.badge(user, counts)) || 0 : 0;
 }

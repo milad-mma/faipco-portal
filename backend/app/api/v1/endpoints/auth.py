@@ -32,6 +32,7 @@ from app.schemas.auth import (
     VerifyResetCodeRequest,
 )
 from app.schemas.user import UserOut
+from app.services.menu_counts import pending_menu_counts
 from app.services import session_service
 from app.services.auth_service import AuthError, AuthIpBlockedError, AuthLockedError, AuthService
 from app.services.employee_contact_service import ContactInfoUpdateError, normalize_mobile, update_my_contact_info
@@ -46,6 +47,12 @@ from app.services.password_reset_service import (
 )
 
 router = APIRouter()
+
+
+@router.get("/me/menu-counts", response_model=dict[str, int])
+async def get_menu_counts(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """تعداد کارهای منتظر اقدام در منوی همین کاربر."""
+    return await pending_menu_counts(db, user)
 
 
 @router.post("/login", response_model=TokenResponse)
