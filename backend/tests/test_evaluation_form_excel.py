@@ -69,12 +69,36 @@ def test_upload_sample_and_reject_invalid_row_or_scope(monkeypatch):
             question = combine_form_files([read_form_excel(contents)])[0]["questions"][0]
             assert question.weight == 100 and question.question_type == kind
         book = load_workbook(BytesIO(parts[0][1][1]))
-        book.active["C3"] = None
+        book.active["E3"] = None
         out = BytesIO()
         book.save(out)
         broken = [parts[-1], ("file", ("broken.xlsx", out.getvalue()))]
         response = client.post("/forms/import-excel", data={"title": "نمونه"}, files=broken)
         assert response.status_code == 400 and "broken.xlsx" in response.text and "ردیف 3" in response.text
+        def with_groups(part, rows):
+            workbook = load_workbook(BytesIO(part[1][1]))
+            for i, (title, weight) in enumerate(rows, 3):
+                if i > 3:
+                    for cell in workbook.active[3]:
+                        workbook.active.cell(i, cell.column).value = cell.value
+                workbook.active.cell(i, 2).value = title
+                workbook.active.cell(i, 3).value = weight
+            stream = BytesIO()
+            workbook.save(stream)
+            return ("file", (part[1][0], stream.getvalue()))
+
+        first = with_groups(parts[0], [("کیفیت", 60), ("همکاری", 40)])
+        second = with_groups(parts[-1], [("کیفیت", 60)])
+        response = client.post("/forms/import-excel", data={"title": "دو دسته"}, files=[first, second])
+        assert response.status_code == 200, response.text
+        session.expire_all()
+        groups = session.get(EvaluationForm, response.json()["id"]).categories
+        assert [(c.title, c.weight, len(c.questions)) for c in groups] == [("کیفیت", 60, 2), ("همکاری", 40, 1)]
+        assert [q.weight for q in groups[0].questions] == [50, 50]
+        assert groups[1].questions[0].weight == 100
+        conflict = with_groups(parts[-1], [("کیفیت", 50)])
+        response = client.post("/forms/import-excel", data={"title": "تعارض"}, files=[first, conflict])
+        assert response.status_code == 400 and "date.xlsx" in response.text and "ردیف 3" in response.text
         monkeypatch.setattr("app.core.site_permission_deps.get_sites_with_permission", AsyncMock(return_value={1}))
         assert upload(specimen).status_code == 403
-        assert session.scalar(select(func.count(EvaluationForm.id))) == 2
+        assert session.scalar(select(func.count(EvaluationForm.id))) == 3

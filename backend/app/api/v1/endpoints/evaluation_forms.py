@@ -94,7 +94,7 @@ async def import_excel(
         parsed = []
         for upload in file:
             try:
-                parsed.append(await to_thread(read_form_excel, await upload.read(MAX_BYTES + 1)))
+                parsed.append(await to_thread(read_form_excel, await upload.read(MAX_BYTES + 1), upload.filename))
             except FormExcelError as exc:
                 raise FormExcelError(f"{upload.filename} — {exc}") from exc
         categories = combine_form_files(parsed)

@@ -124,7 +124,7 @@ function NewFormDialog({ open, onClose, onCreated, sites, excel }) {
               download={"نمونه " + templates.find(([key]) => key === template)[1] + ".xlsx"}>
               دانلود نمونه {templates.find(([key]) => key === template)[1]}
             </Button>
-            <Typography variant="body2">۲. سؤال نمونه را با سؤال خود عوض کنید. برای سؤال بعدی، در ردیف بعد بنویسید. فایل را ذخیره کنید.</Typography>
+            <Typography variant="body2">۲. روبه‌روی هر سؤال، نام دسته و امتیاز آن را بنویسید. مثلاً برای هر سؤالِ «کیفیت کار»، امتیاز دسته را ۶۰ وارد کنید. مجموع امتیاز دسته‌های فرم برای فعال‌سازی باید ۱۰۰ باشد.</Typography>
             <Button component="label" variant="outlined" disabled={isSaving}>
               {files.length ? "افزودن فایل دیگر به همین فرم" : "۳. انتخاب فایل تکمیل‌شده"}
               <input hidden multiple type="file" accept=".xlsx" onChange={(e) => {

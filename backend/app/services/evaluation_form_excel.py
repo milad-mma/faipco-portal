@@ -67,8 +67,11 @@ SHEETS = {**TYPES, "بله یا خیر": "yes_no"}
 DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
-def simple_headers(option_count):
-    headers = ["سؤال"]
+CATEGORY_HEADERS = ("عنوان دسته‌بندی", "امتیاز دسته‌بندی")
+
+
+def simple_headers(option_count, categorized=True):
+    headers = ["سؤال", *CATEGORY_HEADERS] if categorized else ["سؤال"]
     for index in range(1, option_count + 1):
         suffix = str(index).translate(DIGITS)
         headers.extend([f"گزینه {suffix}", f"امتیاز {suffix}"])
@@ -93,7 +96,7 @@ def simple_question(values, kind):
     return EvaluationQuestionIn(text=text, question_type=kind, options=options)
 
 
-def read_sheet(book):
+def read_sheet(book, filename):
     # Files downloaded before the per-type templates still have their own weights and categories.
     legacy = "سؤال‌ها" in book.sheetnames
     names = [name for name in book.sheetnames if name in SHEETS]
@@ -109,10 +112,11 @@ def read_sheet(book):
     if legacy:
         expected = HEADERS
     else:
-        count = (len(headers) - 1) // 2
+        categorized = headers[1:3] == CATEGORY_HEADERS
+        count = (len(headers) - (3 if categorized else 1)) // 2
         if kind in OPTION_TYPES and count < 2:
             raise FormExcelError("ستون‌های گزینه و امتیاز را مطابق نمونه نگه دارید.")
-        expected = simple_headers(count if kind in OPTION_TYPES else 0)
+        expected = simple_headers(count if kind in OPTION_TYPES else 0, categorized)
     if headers != expected:
         raise FormExcelError("عنوان ستون‌های جدول باید مطابق فایل نمونه باشد.")
     categories, questions = {}, []
@@ -132,7 +136,14 @@ def read_sheet(book):
             if legacy:
                 add_row(categories, values)
             else:
-                questions.append(simple_question(values, kind))
+                title, weight = "سؤال‌های ارزیابی", 100
+                if categorized:
+                    title, raw_weight = values[1:3]
+                    if not 1 <= len(title) <= 255:
+                        raise FormExcelError("عنوان دسته‌بندی را وارد کنید (حداکثر ۲۵۵ نویسه).")
+                    weight = number(raw_weight, CATEGORY_HEADERS[1], 0, 100)
+                    del values[1:3]
+                questions.append((title, weight, simple_question(values, kind), filename, index))
         except FormExcelError as exc:
             raise FormExcelError(f"ردیف {index} — {exc}") from exc
     if not categories and not questions:
@@ -140,7 +151,7 @@ def read_sheet(book):
     return list(categories.values()), questions
 
 
-def read_form_excel(content):
+def read_form_excel(content, filename=""):
     if len(content) > MAX_BYTES:
         raise FormExcelError("حجم فایل باید حداکثر ۲ مگابایت باشد.")
     try:
@@ -150,7 +161,7 @@ def read_form_excel(content):
     try:
         book = load_workbook(BytesIO(content), read_only=True, data_only=False, keep_links=False)
         try:
-            return read_sheet(book)
+            return read_sheet(book, filename)
         finally:
             book.close()
     except FormExcelError:
@@ -159,18 +170,31 @@ def read_form_excel(content):
         raise FormExcelError("فایل اکسل قابل خواندن نیست. آن را با فرمت XLSX ذخیره کنید.") from exc
 
 def combine_form_files(parsed):
-    """نمونه‌های ساده در یک دسته با وزن‌های برابر قرار می‌گیرند."""
-    questions = []
+    """سؤال‌های یک دسته از همه فایل‌ها کنار هم قرار می‌گیرند؛ امتیاز دسته فقط یک بار محاسبه می‌شود."""
+    grouped = {}
+    total = 0
     for categories, rows in parsed:
         if categories:
             if len(parsed) != 1:
                 raise FormExcelError("نمونه قدیمی را به‌تنهایی بارگذاری کنید.")
             return categories
-        questions.extend(rows)
-    if not 1 <= len(questions) <= 2000:
-        raise FormExcelError("هر فرم باید بین ۱ تا ۲۰۰۰ سؤال داشته باشد.")
-    share, remainder = divmod(10000, len(questions))
-    for index, question in enumerate(questions):
-        question.sort_order = index
-        question.weight = (share + int(index < remainder)) / 100
-    return [dict(title="سؤال‌های ارزیابی", weight=100, sort_order=0, questions=questions)]
+        total += len(rows)
+        if total > 2000:
+            raise FormExcelError("حداکثر ۲۰۰۰ سؤال برای هر فرم مجاز است.")
+        for title, weight, question, filename, index in rows:
+            if title not in grouped:
+                grouped[title] = dict(title=title, weight=weight, sort_order=len(grouped), questions=[])
+            category = grouped[title]
+            if category["weight"] != weight:
+                raise FormExcelError(
+                    f"{filename} — ردیف {index}: امتیاز دسته «{title}» قبلاً {category['weight']:g} وارد شده است."
+                    " برای همه سؤال‌های این دسته همان امتیاز را بنویسید."
+                )
+            category["questions"].append(question)
+    for category in grouped.values():
+        questions = category["questions"]
+        share, remainder = divmod(10000, len(questions))
+        for index, question in enumerate(questions):
+            question.sort_order = index
+            question.weight = (share + int(index < remainder)) / 100
+    return list(grouped.values())
