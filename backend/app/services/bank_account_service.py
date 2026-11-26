@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import io
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import bank_rules as rules
@@ -52,6 +52,7 @@ def _bank_out(bank: BankDefinition) -> dict:
         "sheba_mode": bank.sheba_mode,
         "card_number_mode": bank.card_number_mode,
         "is_active": bank.is_active,
+        **{f + "_digits": getattr(bank, f + "_digits") for f in rules.FIELDS},
         "sort_order": bank.sort_order,
     }
 
@@ -88,6 +89,10 @@ class BankAccountService:
                     setattr(bank, field, rules.validate_mode(data[field]))
                 except rules.BankRulesError as e:
                     raise BankAccountError(str(e)) from e
+        for field in rules.FIELDS:
+            key = field + "_digits"
+            if key in data:
+                setattr(bank, key, data[key])
         for field in ("is_required", "is_active"):
             if field in data and data[field] is not None:
                 setattr(bank, field, bool(data[field]))
@@ -210,7 +215,7 @@ class BankAccountService:
         if not bank.is_active and not by_admin:
             raise BankAccountError("این بانک غیرفعال است")
         try:
-            values = rules.clean_account_data(bank.modes, data)
+            values = rules.clean_account_data(bank.modes, data, {f: getattr(bank, f + "_digits") for f in rules.FIELDS})
         except rules.BankRulesError as e:
             raise BankAccountError(str(e)) from e
         accounts = await self._accounts_of(employee.id)
@@ -289,28 +294,56 @@ class BankAccountService:
         site_id: int | None = None,
         search: str | None = None,
         status: str | None = None,
+        page: int = 1,
+        page_size: int | None = None,
     ) -> dict:
-        """
-        پرسنل فعال سایت‌های مجاز با اطلاعات هر بانک. site_id: یک سایت (برای ستون‌های بانک لازم است؛ اگر نیاید اولین سایت).
-        status: complete / missing. خروجی: {banks, items, counts}.
-        """
-        q = (
-            select(Employee, Department.name, Site.name)
-            .outerjoin(Department, Department.id == Employee.department_id)
-            .join(Site, Site.id == Employee.site_id)
-            .where(Employee.is_active.is_(True))
-        )
+        """فیلتر و شمارش در پایگاه داده؛ جزئیات حساب فقط برای صفحه جاری خوانده می‌شود."""
+        B, A = BankDefinition, EmployeeBankAccount
+        account_join = and_(A.bank_id == B.id, A.employee_id == Employee.id)
+        missing = (select(B.id).outerjoin(A, account_join)
+                   .where(B.site_id == Employee.site_id, B.is_active, B.is_required,
+                          or_(A.id.is_(None), *(
+                              and_(getattr(B, f + "_mode") == "required", func.coalesce(getattr(A, f), "") == "")
+                              for f in rules.FIELDS)))
+                   .correlate(Employee).exists())
+        q = (select(Employee.id, Employee.site_id, Employee.personnel_code, Employee.first_name,
+                    Employee.last_name, Department.name.label("department_name"), Site.name.label("site_name"))
+             .select_from(Employee).outerjoin(Department, Department.id == Employee.department_id)
+             .join(Site, Site.id == Employee.site_id).where(Employee.is_active))
+        banks_query = select(B).where(B.is_active)
         if site_id is not None:
             q = q.where(Employee.site_id == site_id)
+            banks_query = banks_query.where(B.site_id == site_id)
         if site_ids is not None:
-            q = q.where(Employee.site_id.in_(site_ids or {-1}))
-        rows = (await self.db.execute(q.order_by(Employee.last_name, Employee.first_name))).all()
-
-        site_of = {emp.site_id for emp, _, _ in rows}
+            q = q.where(Employee.site_id.in_(site_ids))
+            banks_query = banks_query.where(B.site_id.in_(site_ids))
+        key = normalize_search_text(search)
+        if key:
+            person = func.translate(func.concat_ws(" ", Employee.personnel_code, Employee.first_name,
+                                                  Employee.last_name, Department.name),
+                                    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩يىك\u200b\u200d\u200e\u200f\ufeff",
+                                    "01234567890123456789ییک")
+            match_account = (select(A.id).join(B, B.id == A.bank_id)
+                             .where(A.employee_id == Employee.id, B.site_id == Employee.site_id, B.is_active,
+                                    or_(*(getattr(A, f).contains(key, autoescape=True) for f in rules.FIELDS)))
+                             .correlate(Employee).exists())
+            q = q.where(or_(person.contains(key, autoescape=True), match_account))
+        summary = q.with_only_columns(missing.label("missing"), maintain_column_froms=True).subquery()
+        total, incomplete = (await self.db.execute(select(func.count(), func.count().filter(summary.c.missing))
+                                                    .select_from(summary))).one()
+        counts = {"total": total, "missing": incomplete, "complete": total - incomplete}
+        filtered_total = counts[status or "total"]
+        if status:
+            q = q.where(missing if status == "missing" else ~missing)
+        q = q.order_by(Employee.last_name, Employee.first_name, Employee.id)
+        if page_size is not None:
+            page = min(page, max(1, (filtered_total + page_size - 1) // page_size))
+            q = q.offset((page - 1) * page_size).limit(page_size)
+        rows = (await self.db.execute(q)).all()
         banks_by_site: dict[int, list[BankDefinition]] = {}
-        for sid in site_of:
-            banks_by_site[sid] = await self.list_banks(sid, active_only=True)
-        emp_ids = [emp.id for emp, _, _ in rows]
+        for bank in (await self.db.scalars(banks_query.order_by(B.site_id, B.sort_order, B.id))).all():
+            banks_by_site.setdefault(bank.site_id, []).append(bank)
+        emp_ids = [emp.id for emp in rows]
         accounts: dict[int, dict[int, EmployeeBankAccount]] = {}
         terms_at: dict[int, object] = {}
         if emp_ids:
@@ -324,9 +357,8 @@ class BankAccountService:
             )
             terms_at = dict(res.all())
 
-        key = normalize_search_text(search or "").strip()
-        items, counts = [], {"total": 0, "complete": 0, "missing": 0}
-        for emp, dept_name, site_name in rows:
+        items = []
+        for emp in rows:
             banks = banks_by_site.get(emp.site_id, [])
             per_bank = []
             missing = False
@@ -341,38 +373,16 @@ class BankAccountService:
                 "personnel_code": emp.personnel_code,
                 "first_name": emp.first_name,
                 "last_name": emp.last_name,
-                "department_name": dept_name,
+                "department_name": emp.department_name,
                 "site_id": emp.site_id,
-                "site_name": site_name,
+                "site_name": emp.site_name,
                 "accounts": per_bank,
                 "missing_required": missing,
                 "terms_accepted_at": terms_at.get(emp.id),
             }
-            if key:
-                haystack = " ".join(
-                    str(x or "")
-                    for x in (emp.personnel_code, emp.first_name, emp.last_name, dept_name)
-                )
-                haystack += " " + " ".join(
-                    " ".join(v or "" for v in (b["account"] or {}).values()) for b in per_bank
-                )
-                if key not in normalize_search_text(haystack):
-                    continue
-            counts["total"] += 1
-            counts["missing" if missing else "complete"] += 1
-            if status == "missing" and not missing:
-                continue
-            if status == "complete" and missing:
-                continue
             items.append(item)
-        bank_columns = []
-        seen = set()
-        for sid in sorted(banks_by_site):
-            for b in banks_by_site[sid]:
-                if b.id not in seen:
-                    seen.add(b.id)
-                    bank_columns.append(_bank_out(b))
-        return {"banks": bank_columns, "items": items, "counts": counts}
+        bank_columns = [_bank_out(bank) for banks in banks_by_site.values() for bank in banks]
+        return {"banks": bank_columns, "items": items, "counts": counts, "total": filtered_total, "page": page}
 
     async def export_xlsx(self, site_ids: set[int] | None, site_id: int | None, status: str | None) -> bytes:
         """یک برگه: هر پرسنل یک سطر؛ برای هر بانک ستون‌های شماره حساب/شبا/کارت (فیلدهای مخفی حذف)."""

@@ -397,7 +397,7 @@ class AdvanceService:
 
     # ---------- کارتابل مدیر واحد / مدیر سایت ----------
 
-    async def inbox(self, employee: Employee) -> list[dict]:
+    async def inbox(self, employee: Employee, *, include_access: bool = False):
         condition, scope = await self._approval_condition(employee)
         rows = list(
             (
@@ -415,6 +415,15 @@ class AdvanceService:
             for req, item in zip(rows, items):
                 if req.current_approver_employee_id != employee.id:
                     item["as_substitute_for"] = employee_label(people.get(req.current_approver_employee_id), code=False)
+        if include_access:
+            from app.services.my_staff_service import is_supervisor
+            can_approve = bool(items or scope)
+            if not can_approve:
+                st = await self.settings(employee.site_id)
+                can_approve = bool(st and st.is_enabled and (
+                    st.site_manager_employee_id == employee.id or await is_supervisor(self.db, employee)
+                ))
+            return {"items": items, "can_approve": can_approve}
         return items
 
     async def inbox_count(self, employee: Employee) -> int:

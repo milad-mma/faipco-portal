@@ -40,8 +40,8 @@ export async function deleteBank(bankId) {
 }
 
 // گزارش پرسنل × بانک‌ها: {banks, items, counts}
-export async function fetchBankReport(params) {
-  const { data } = await apiClient.get("/bank-accounts/admin/report", { params });
+export async function fetchBankReport(params, signal) {
+  const { data } = await apiClient.get("/bank-accounts/admin/report", { params, signal });
   return data;
 }
 

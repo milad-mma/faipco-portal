@@ -147,11 +147,11 @@ async def cancel(request_id: int, db: AsyncSession = Depends(get_db), current_us
 
 
 @router.get("/inbox")
-async def inbox(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def inbox(include_access: bool = False, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     if current_user.employee_id is None:
-        return []
+        return {"items": [], "can_approve": False} if include_access else []
     employee = await _require_employee(db, current_user)
-    return await AdvanceService(db).inbox(employee)
+    return await AdvanceService(db).inbox(employee, include_access=include_access)
 
 
 @router.get("/inbox/count")

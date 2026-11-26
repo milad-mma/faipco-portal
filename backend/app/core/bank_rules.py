@@ -38,19 +38,19 @@ def _clean(value: str | None) -> str:
     return re.sub("[\\s\\-_./\u200c\u200e\u200f]", "", text).upper()
 
 
-def normalize_sheba(value: str | None) -> str:
+def normalize_sheba(value: str | None, digits: int = 24) -> str:
     """«IR» + ۲۴ رقم؛ اگر کاربر بدون IR وارد کرده باشد (۲۴ رقم) IR اضافه می‌شود. خالی → ""."""
     text = _clean(value)
     if not text:
         return ""
-    if text.isdigit() and len(text) == 24:
+    if text.isdigit() and len(text) == digits:
         text = "IR" + text
     return text
 
 
-def is_valid_sheba(sheba: str) -> bool:
+def is_valid_sheba(sheba: str, digits: int = 24) -> bool:
     """IR + ۲۴ رقم با رقم کنترل درست (IBAN: چهار نویسه‌ی اول به انتها، حروف به عدد، باقی‌مانده بر ۹۷ = ۱)."""
-    if not re.fullmatch(r"IR\d{24}", sheba or ""):
+    if not re.fullmatch(rf"IR[0-9]{{{digits}}}", sheba or ""):
         return False
     rearranged = sheba[4:] + sheba[:4]
     numeric = "".join(str(int(ch, 36)) for ch in rearranged)
@@ -61,9 +61,9 @@ def normalize_card(value: str | None) -> str:
     return _clean(value)
 
 
-def is_valid_card(card: str) -> bool:
+def is_valid_card(card: str, digits: int = 16) -> bool:
     """۱۶ رقم با الگوریتم Luhn (کارت‌های شتاب)."""
-    if not re.fullmatch(r"\d{16}", card or ""):
+    if not re.fullmatch(rf"[0-9]{{{digits}}}", card or ""):
         return False
     total = 0
     for i, ch in enumerate(reversed(card)):
@@ -90,33 +90,37 @@ def validate_mode(mode: str) -> str:
     return mode
 
 
-def clean_account_data(modes: dict[str, str], data: dict) -> dict:
+def clean_account_data(modes: dict[str, str], data: dict, lengths: dict | None = None) -> dict:
     """
     اطلاعات واردشده‌ی یک بانک را بر اساس حالت فیلدهای همان بانک نرمال و اعتبارسنجی می‌کند.
     modes: {"account_number": حالت, "sheba": حالت, "card_number": حالت}. فیلد مخفی ذخیره نمی‌شود (None).
     خروجی: {"account_number", "sheba", "card_number"} (رشته یا None). خطا: BankRulesError با پیام فارسی.
     """
-    normalizers = {"account_number": normalize_account, "sheba": normalize_sheba, "card_number": normalize_card}
-    validators = {
-        "account_number": (is_valid_account, "شماره حساب باید فقط رقم و بین ۵ تا ۲۰ رقم باشد"),
-        "sheba": (is_valid_sheba, "شماره شبا نامعتبر است (IR و ۲۴ رقم؛ رقم کنترل درست نیست)"),
-        "card_number": (is_valid_card, "شماره کارت نامعتبر است (۱۶ رقم؛ رقم کنترل درست نیست)"),
-    }
+    lengths = lengths or {}
+    sheba_digits = lengths.get("sheba") or 24
+    card_digits = lengths.get("card_number") or 16
     result: dict[str, str | None] = {}
     for field, label in FIELDS.items():
         mode = modes.get(field, "hidden")
         if mode == "hidden":
             result[field] = None
             continue
-        value = normalizers[field](data.get(field))
+        value = normalize_sheba(data.get(field), sheba_digits) if field == "sheba" else _clean(data.get(field))
         if not value:
             if mode == "required":
                 raise BankRulesError(f"{label} الزامی است")
             result[field] = None
             continue
-        check, message = validators[field]
-        if not check(value):
-            raise BankRulesError(message)
+        digits = lengths.get(field)
+        number = value.removeprefix("IR") if field == "sheba" else value
+        if digits and not re.fullmatch(rf"[0-9]{{{digits}}}", number):
+            raise BankRulesError(f"{label} باید {digits} رقم باشد")
+        if field == "sheba" and not is_valid_sheba(value, sheba_digits):
+            raise BankRulesError(f"شماره شبا نامعتبر است (IR و {sheba_digits} رقم با رقم کنترل معتبر)")
+        if field == "card_number" and not is_valid_card(value, card_digits):
+            raise BankRulesError(f"شماره کارت نامعتبر است ({card_digits} رقم با رقم کنترل معتبر)")
+        if field == "account_number" and not digits and not is_valid_account(value):
+            raise BankRulesError("شماره حساب باید بین ۵ تا ۲۰ رقم باشد")
         result[field] = value
     return result
 

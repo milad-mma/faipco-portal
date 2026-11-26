@@ -51,3 +51,20 @@ def test_complete_changes_mask():
     assert changed_fields({"account_number": "1"}, {"account_number": "2", "sheba": None}) == {"account_number": ["1", "2"]}
     assert mask("6037991234567893") == "************7893"
     assert mask(None) == "—"
+
+
+def test_bank_specific_lengths_preserve_leading_zeroes_and_check_digits():
+    modes = dict.fromkeys(("account_number", "sheba", "card_number"), "required")
+    lengths = {"account_number": 4, "sheba": 12, "card_number": 11}
+    account = "0012345678"
+    check = 98 - int(account + "182700") % 97
+    data = {"account_number": "۰۰۱۲", "sheba": f"{check:02}{account}", "card_number": "79927398713"}
+    cleaned = clean_account_data(modes, data, lengths)
+    assert cleaned["account_number"] == "0012"
+    assert cleaned["sheba"] == "IR" + data["sheba"]
+    for field in modes:
+        with pytest.raises(BankRulesError):
+            clean_account_data(modes, {**data, field: data[field] + "0"}, lengths)
+    for field in ("sheba", "card_number"):
+        with pytest.raises(BankRulesError):
+            clean_account_data(modes, {**data, field: data[field][:-1] + "1"}, lengths)

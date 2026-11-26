@@ -53,6 +53,9 @@ class BankIn(BaseModel):
     sheba_mode: str | None = None
     card_number_mode: str | None = None
     is_active: bool | None = None
+    account_number_digits: int | None = Field(default=None, ge=1, le=32)
+    sheba_digits: int | None = Field(default=None, ge=3, le=32)
+    card_number_digits: int | None = Field(default=None, ge=1, le=32)
     sort_order: int | None = None
 
 
@@ -156,7 +159,8 @@ async def update_bank(
     try:
         bank = await service.get_bank(bank_id)
         _check_site(await _sites(db, current_user, MANAGE), bank.site_id)
-        return await service.update_bank(bank_id, payload.model_dump(exclude_none=True))
+        return await service.update_bank(bank_id, {k: v for k, v in payload.model_dump(exclude_unset=True).items()
+                                                   if v is not None or k.endswith("_digits")})
     except BankAccountError as e:
         _bad(e)
 
@@ -175,6 +179,8 @@ async def delete_bank(bank_id: int, db: AsyncSession = Depends(get_db), current_
 @router.get("/admin/report")
 async def report(
     site_id: int | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=100),
     search: str | None = Query(default=None, max_length=100),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(complete|missing)$"),
     db: AsyncSession = Depends(get_db),
@@ -183,7 +189,7 @@ async def report(
     sites = await _sites(db, current_user, VIEW)
     if site_id is not None:
         _check_site(sites, site_id)
-    return await BankAccountService(db).report(sites, site_id, search, status_filter)
+    return await BankAccountService(db).report(sites, site_id, search, status_filter, page, page_size)
 
 
 @router.get("/admin/export")

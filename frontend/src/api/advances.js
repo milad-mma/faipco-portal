@@ -22,8 +22,8 @@ export async function cancelAdvance(id) {
   return data;
 }
 
-export async function fetchAdvanceInbox() {
-  const { data } = await apiClient.get("/advances/inbox");
+export async function fetchAdvanceInbox(includeAccess = false) {
+  const { data } = await apiClient.get("/advances/inbox", { params: { include_access: includeAccess } });
   return data;
 }
 

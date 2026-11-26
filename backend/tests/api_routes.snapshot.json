@@ -1,5 +1,5 @@
 {
-  "count": 546,
+  "count": 547,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -166,6 +166,7 @@
     "GET /api/v1/insurance/registrations/{registration_id}",
     "GET /api/v1/insurance/settings",
     "GET /api/v1/insurance/sites",
+    "GET /api/v1/leave-requests/approval-inbox",
     "GET /api/v1/leave-requests/decided-by-me",
     "GET /api/v1/leave-requests/kara-schema-defaults",
     "GET /api/v1/leave-requests/my-requests",

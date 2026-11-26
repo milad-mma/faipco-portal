@@ -32,6 +32,9 @@ class BankDefinition(Base, TimestampMixin):
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)  # مثلاً «بانک ملت»
     # اجباری: پرسنلی که اطلاعات این بانک را کامل نکرده یادآوری «اطلاعات بانکی تکمیل نشده» می‌بیند
+    account_number_digits: Mapped[int | None] = mapped_column(Integer)
+    sheba_digits: Mapped[int | None] = mapped_column(Integer)
+    card_number_digits: Mapped[int | None] = mapped_column(Integer)
     is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # حالت هر فیلد: required / optional / hidden
     account_number_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="required")
@@ -56,9 +59,9 @@ class EmployeeBankAccount(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
     bank_id: Mapped[int] = mapped_column(ForeignKey("bank_definitions.id", ondelete="CASCADE"), nullable=False)
-    account_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    sheba: Mapped[str | None] = mapped_column(String(26), nullable=True)  # IR + ۲۴ رقم
-    card_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sheba: Mapped[str | None] = mapped_column(String(34), nullable=True)  # IR + ۲۴ رقم
+    card_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 

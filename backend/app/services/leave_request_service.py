@@ -2110,6 +2110,17 @@ class LeaveRequestService:
             if real_comment is not None:
                 item["manager_idea"] = real_comment
 
+    async def is_configured_approver(self, employee: Employee) -> bool:
+        """تأییدکننده فعلی حتی وقتی هیچ درخواست معلقی ندارد."""
+        from app.services.my_staff_service import is_supervisor
+
+        hr = await self.db.scalar(select(LeaveRequestHrOfficer.id)
+                                  .where(LeaveRequestHrOfficer.employee_id == employee.id).limit(1))
+        if hr is not None:
+            return True
+        substitutes = await active_substitute_codes(self.db, employee.site_id)
+        return bool(managers_of_substitute(_to_personnel_code_int(employee), substitutes)) or await is_supervisor(self.db, employee)
+
     async def list_pending_for_approver(self, approver_employee: Employee, *, request_id: int | None = None) -> list[dict]:
         """ورودی: پرسنل تأییدکننده. درخواست‌های در انتظار تصمیم او (CurEmpNo = او و بدون تصمیم) را نرمال‌شده، با نام/واحد درخواست‌دهنده و پرچم awaiting_hr برمی‌گرداند."""
         # درخواست‌هایی که تأییدکننده فعلی‌شان این فرد است و هنوز تصمیم ندارند

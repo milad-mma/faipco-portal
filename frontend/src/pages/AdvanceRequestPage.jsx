@@ -204,7 +204,8 @@ function MyAdvanceCard({ item, onCancel }) {
 
 export default function AdvanceRequestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "inbox" ? "inbox" : "mine";
+  const [canApprove, setCanApprove] = useState(false);
+  const tab = canApprove && searchParams.get("tab") === "inbox" ? "inbox" : "mine";
   const [data, setData] = useState(null);
   const [inbox, setInbox] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -219,11 +220,12 @@ export default function AdvanceRequestPage() {
     try {
       const [mine, box] = await Promise.all([
         fetchMyAdvances(),
-        fetchAdvanceInbox(),
+        fetchAdvanceInbox(true),
       ]);
       setData(mine);
-      setInbox(box);
-      setSelected((prev) => prev.filter((id) => box.some((r) => r.id === id)));
+      setInbox(box.items);
+      setCanApprove(box.can_approve);
+      setSelected((prev) => prev.filter((id) => box.items.some((r) => r.id === id)));
     } catch (e) {
       setLoadError(errText(e, "دریافت اطلاعات ناموفق بود"));
     } finally {
@@ -269,10 +271,10 @@ export default function AdvanceRequestPage() {
       <PillTabs
         tabs={[
           { key: "mine", label: "درخواست‌های من" },
-          {
+          ...(canApprove ? [{
             key: "inbox",
             label: inbox.length ? `کارتابل (${fa(inbox.length)})` : "کارتابل",
-          },
+          }] : []),
         ]}
         value={tab}
         onChange={(key) =>

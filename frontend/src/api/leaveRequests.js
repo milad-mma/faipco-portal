@@ -63,3 +63,8 @@ export async function fetchPendingLeaveRequestCount() {
   const { data } = await apiClient.get("/leave-requests/pending-count");
   return data;
 }
+
+export async function fetchApprovalInbox() {
+  const { data } = await apiClient.get("/leave-requests/approval-inbox");
+  return data;
+}

@@ -8,6 +8,7 @@ Endpoint های سمت پرسنل و تأییدکننده برای «درخوا�
 """
 from datetime import date as date_type
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,6 +131,22 @@ async def get_my_requests(
         return await LeaveRequestService(db).list_my_requests(employee)
     except LeaveRequestError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+class ApprovalInbox(BaseModel):
+    can_approve: bool
+    items: list[LeaveRequestOut]
+
+
+@router.get("/approval-inbox", response_model=ApprovalInbox)
+async def approval_inbox(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    employee = await _require_employee(db, current_user)
+    service = LeaveRequestService(db)
+    try:
+        items = await service.list_pending_for_approver(employee)
+        return {"items": items, "can_approve": bool(items) or await service.is_configured_approver(employee)}
+    except LeaveRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/pending-for-me", response_model=list[LeaveRequestOut])

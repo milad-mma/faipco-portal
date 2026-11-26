@@ -22,7 +22,7 @@ export function cleanBankValue(value) {
 
 // ورودی شبا: کاربر فقط ۲۴ رقم وارد می‌کند و «IR» ثابت کنار فیلد است؛ اگر با IR چسبانده شود، IR حذف می‌شود
 export function shebaDigits(value) {
-  return cleanBankValue(value).replace(/^IR/, "").replace(/\D/g, "").slice(0, 24);
+  return cleanBankValue(value).replace(/^IR/, "").replace(/\D/g, "");
 }
 
 export function normalizeSheba(value) {
@@ -32,8 +32,8 @@ export function normalizeSheba(value) {
 }
 
 // رقم کنترل IBAN: چهار نویسه‌ی اول به انتها، حروف به عدد، باقی‌مانده بر ۹۷ = ۱
-export function isValidSheba(sheba) {
-  if (!/^IR\d{24}$/.test(sheba)) return false;
+export function isValidSheba(sheba, digits = 24) {
+  if (!/^IR\d+$/.test(sheba) || sheba.length !== digits + 2) return false;
   const rearranged = sheba.slice(4) + sheba.slice(0, 4);
   const numeric = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
   let remainder = 0;
@@ -41,8 +41,8 @@ export function isValidSheba(sheba) {
   return remainder === 1;
 }
 
-export function isValidCard(card) {
-  if (!/^\d{16}$/.test(card)) return false;
+export function isValidCard(card, digits = 16) {
+  if (!/^\d+$/.test(card) || card.length !== digits) return false;
   let total = 0;
   [...card].reverse().forEach((ch, i) => {
     let d = Number(ch);
@@ -56,13 +56,14 @@ export function isValidCard(card) {
 }
 
 // پیام خطای یک فیلد (یا "" اگر درست است)؛ mode: required / optional
-export function fieldError(key, rawValue, mode) {
+export function fieldError(key, rawValue, mode, digits) {
   const value = key === "sheba" ? shebaDigits(rawValue) : cleanBankValue(rawValue);
   if (!value) return mode === "required" ? "الزامی است" : "";
-  if (key === "sheba" && value.length !== 24) return `شبا باید ۲۴ رقم باشد (${value.length} رقم وارد شده)`;
-  if (key === "sheba" && !isValidSheba(`IR${value}`)) return "شماره شبا نامعتبر است";
-  if (key === "card_number" && !isValidCard(value)) return "شماره کارت نامعتبر است";
-  if (key === "account_number" && !/^\d{5,20}$/.test(value)) return "فقط رقم، بین ۵ تا ۲۰ رقم";
+  if (digits && (!/^\d+$/.test(value) || value.length !== digits)) return `باید ${digits.toLocaleString("fa-IR")} رقم باشد`;
+  if (key === "sheba" && !digits && value.length !== 24) return `شبا باید ۲۴ رقم باشد (${value.length} رقم وارد شده)`;
+  if (key === "sheba" && !isValidSheba(`IR${value}`, digits || 24)) return "شماره شبا نامعتبر است";
+  if (key === "card_number" && !isValidCard(value, digits || 16)) return "شماره کارت نامعتبر است";
+  if (key === "account_number" && !digits && !/^\d{5,20}$/.test(value)) return "فقط رقم، بین ۵ تا ۲۰ رقم";
   return "";
 }
 

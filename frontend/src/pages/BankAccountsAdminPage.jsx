@@ -25,6 +25,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
+  TablePagination,
   TableHead,
   TableRow,
   TextField,
@@ -100,19 +101,26 @@ function ReportTab({ canManage }) {
   const [historyFor, setHistoryFor] = useState(null); // {employee, items}
   const [editFor, setEditFor] = useState(null); // ردیف پرسنل
 
-  const load = useCallback(() => {
-    const params = { site_id: siteId || undefined, search: debouncedSearch || undefined, status: status || undefined };
-    return fetchBankReport(params)
-      .then((d) => {
-        setData(d);
-        setError("");
-      })
-      .catch((err) => setError(err.response?.data?.detail || "دریافت گزارش با خطا مواجه شد."));
-  }, [siteId, debouncedSearch, status]);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+    setData(null);
+    setError("");
+    fetchBankReport({ site_id: siteId || undefined, search: debouncedSearch || undefined,
+      status: status || undefined, page: page + 1, page_size: pageSize }, controller.signal)
+      .then(report => {
+        if (controller.signal.aborted) return;
+        setData(report);
+        setPage(report.page - 1);
+      })
+      .catch(err => {
+        if (!controller.signal.aborted) setError(err.response?.data?.detail || "دریافت گزارش با خطا مواجه شد.");
+      });
+    return () => controller.abort();
+  }, [siteId, debouncedSearch, status, page, pageSize, revision]);
 
   async function handleExport() {
     setExporting(true);
@@ -143,14 +151,14 @@ function ReportTab({ canManage }) {
         alignItems={{ xs: "stretch", sm: "flex-end" }}
         sx={{ mb: 2 }}
       >
-        <SearchField value={search} onChange={setSearch} sx={{ maxWidth: { sm: 300 } }} />
-        <SiteFilterSelect value={siteId} onChange={setSiteId} permission="bank_accounts.view" />
+        <SearchField value={search} onChange={value => { setPage(0); setSearch(value); }} sx={{ maxWidth: { sm: 300 } }} />
+        <SiteFilterSelect value={siteId} onChange={value => { setPage(0); setSiteId(value); }} permission="bank_accounts.view" />
         <TextField
           select
           size="small"
           label="وضعیت"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={e => { setPage(0); setStatus(e.target.value); }}
           sx={{ minWidth: 150 }}
         >
           <MenuItem value="">همه</MenuItem>
@@ -266,6 +274,12 @@ function ReportTab({ canManage }) {
                 </TableBody>
               </Table>
             </TableContainer>
+            <TablePagination component="div" count={data.total} page={data.page - 1}
+              rowsPerPage={pageSize} rowsPerPageOptions={[10, 25, 50, 100]}
+              onPageChange={(_, next) => setPage(next)}
+              onRowsPerPageChange={e => { setPageSize(Number(e.target.value)); setPage(0); }}
+              labelRowsPerPage="تعداد در صفحه"
+              labelDisplayedRows={({ from, to, count }) => `${from} تا ${to} از ${count}`} />
           </Card>
         </>
       )}
@@ -307,7 +321,7 @@ function ReportTab({ canManage }) {
                           accounts: prev.accounts.map((a) => ({ ...a, account: fresh[a.bank_id] ?? a.account })),
                         },
                       );
-                      load();
+                      setRevision(n => n + 1);
                     }}
                   />
                 </Box>
@@ -517,6 +531,7 @@ function BanksTab() {
                 label="پرسنل باید اطلاعات این بانک را وارد کنند (اجباری)"
               />
               {BANK_FIELDS.map((f) => (
+                <Stack key={f.key} spacing={1}>
                 <TextField
                   key={f.key}
                   select
@@ -531,6 +546,13 @@ function BanksTab() {
                     </MenuItem>
                   ))}
                 </TextField>
+                <TextField size="small" type="number" label={`تعداد ارقام ${f.label}`}
+                  value={dialog[`${f.key}_digits`] ?? ""}
+                  disabled={dialog[`${f.key}_mode`] === "hidden"}
+                  inputProps={{ min: f.key === "sheba" ? 3 : 1, max: 32, step: 1 }}
+                  helperText={f.key === "sheba" ? "بدون IR؛ پیش‌فرض ۲۴ رقم" : f.key === "card_number" ? "پیش‌فرض ۱۶ رقم" : "پیش‌فرض ۵ تا ۲۰ رقم"}
+                  onChange={e => setDialog(d => ({ ...d, [`${f.key}_digits`]: e.target.value === "" ? null : Number(e.target.value) }))} />
+                </Stack>
               ))}
               <FormControlLabel
                 control={
@@ -546,7 +568,10 @@ function BanksTab() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialog(null)}>انصراف</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog?.name?.trim()}>
+          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog?.name?.trim() || BANK_FIELDS.some(f => {
+            const n = dialog?.[`${f.key}_digits`];
+            return n != null && (!Number.isInteger(n) || n < (f.key === "sheba" ? 3 : 1) || n > 32);
+          })}>
             ذخیره
           </Button>
         </DialogActions>

@@ -25,7 +25,7 @@ export default function BankAccountForm({ bank, onSave, disabled, saveDisabled }
 
   const visible = BANK_FIELDS.filter((f) => bank[`${f.key}_mode`] !== "hidden");
   const errors = Object.fromEntries(
-    visible.map((f) => [f.key, fieldError(f.key, values[f.key], bank[`${f.key}_mode`])]),
+    visible.map((f) => [f.key, fieldError(f.key, values[f.key], bank[`${f.key}_mode`], bank[`${f.key}_digits`])]),
   );
   const hasErrors = visible.some((f) => errors[f.key]);
   const original = initialValues(bank);
@@ -63,7 +63,7 @@ export default function BankAccountForm({ bank, onSave, disabled, saveDisabled }
             key={f.key}
             size="small"
             label={`${f.label}${mode === "required" ? " *" : " (اختیاری)"}`}
-            placeholder={f.placeholder}
+            placeholder={bank[`${f.key}_digits`] ? `${bank[`${f.key}_digits`].toLocaleString("fa-IR")} رقم` : f.placeholder}
             value={values[f.key]}
             onChange={(e) => {
               const raw = e.target.value;
@@ -74,7 +74,7 @@ export default function BankAccountForm({ bank, onSave, disabled, saveDisabled }
             error={Boolean(showError)}
             helperText={showError || " "}
             disabled={disabled || saving}
-            inputProps={{ dir: "ltr", inputMode: "numeric", maxLength: f.key === "sheba" ? undefined : f.maxLength }}
+            inputProps={{ dir: "ltr", inputMode: "numeric", maxLength: bank[`${f.key}_digits`] || f.key === "sheba" ? undefined : f.maxLength }}
             InputProps={
               f.key === "sheba"
                 ? {

@@ -46,7 +46,7 @@ import {
   deleteLeaveRequest,
   fetchActiveLeaveRequestTypes,
   fetchMyLeaveRequests,
-  fetchPendingLeaveRequestsForMe,
+  fetchApprovalInbox,
   fetchShiftWindow,
   submitLeaveRequest,
 } from "../api/leaveRequests";
@@ -990,14 +990,13 @@ export default function LeaveRequestPage() {
 function LeaveRequestPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = ["submit", "my-requests", "pending"].indexOf(searchParams.get("tab")); // ایندکس تب از URL؛ -1 اگر نامعتبر
-  const [tab, setTab] = useState(tabFromUrl >= 0 ? tabFromUrl : 0); // ایندکس تب فعال
+  const [showInbox, setShowInbox] = useState(false);
+  const tab = tabFromUrl < 0 || (tabFromUrl === 2 && !showInbox) ? 0 : tabFromUrl;
   const [myRequests, setMyRequests] = useState(null); // درخواست‌های خود کاربر؛ null = هنوز بارگذاری نشده
   const [pending, setPending] = useState(null); // درخواست‌های در انتظار تصمیم کاربر
   const [decidingItem, setDecidingItem] = useState(null); // درخواستی که دیالوگ تصمیم برایش باز است
   const [error, setError] = useState("");
   const [toast, setToast] = useState(""); // پیام موفقیت پس از ثبت/تأیید/رد/حذف
-  // تعداد کل سوابق تصمیم این فرد؛ تب کارتابل برای کسی که درخواست در انتظار ندارد ولی قبلاً تصمیم گرفته هم نمایش داده می‌شود
-  const [decidedTotal, setDecidedTotal] = useState(0);
   const [historyReloadKey, setHistoryReloadKey] = useState(0); // با افزایش، جدول سوابق دوباره بارگذاری می‌شود
   // وضعیت پیش‌نیازهای دسترسی برای هشدار پیش از کلیک (سرور هم مستقل بررسی می‌کند)؛
   // از Hook مشترک تا با برگشت به صفحه یا بازگشت فوکوس خودکار تازه شود
@@ -1020,32 +1019,27 @@ function LeaveRequestPageContent() {
 
   // بارگذاری کارتابل (درخواست‌های در انتظار تصمیم کاربر)؛ در خطا لیست خالی
   function loadPending() {
-    swr("leave:pending", fetchPendingLeaveRequestsForMe, setPending).catch(() => setPending((prev) => prev ?? []));
+    fetchApprovalInbox().then(data => {
+      setPending(data.items);
+      setShowInbox(data.can_approve);
+    }).catch(() => {
+      setShowInbox(false);
+      setPending([]);
+    });
   }
 
-  // فقط تعداد کل سوابق تصمیم را می‌گیرد (یک آیتم درخواست می‌شود) تا نمایش تب کارتابل تعیین شود
-  function loadDecidedTotal() {
-    swr("leave:decidedTotal", () => fetchDecidedLeaveRequestsByMe(0, 1), (data) => setDecidedTotal(data.total)).catch(
-      () => setDecidedTotal((prev) => prev || 0)
-    );
-  }
-
-  // بارگذاری اولیه‌ی هر سه لیست
   useEffect(() => {
     loadMyRequests();
     loadPending();
-    loadDecidedTotal();
   }, []);
 
   // تغییر تب و همگام کردن آن با query string
   function handleTabChange(newIndex) {
-    setTab(newIndex);
     setSearchParams({ tab: ["submit", "my-requests", "pending"][newIndex] });
   }
 
   const pendingCount = pending?.length || 0;
   const hasPending = pendingCount > 0;
-  const showInbox = hasPending || decidedTotal > 0; // نمایش تب کارتابل
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto" }}>
@@ -1126,7 +1120,6 @@ function LeaveRequestPageContent() {
             setDecidingItem(null);
             loadPending();
             loadMyRequests();
-            loadDecidedTotal();
             setHistoryReloadKey((k) => k + 1);
           }}
         />
