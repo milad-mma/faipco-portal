@@ -192,13 +192,6 @@ export const NAV_ITEMS = [
         check: (u) => u?.can_manage_mobile_devices || u?.can_manage_mobile_app,
       },
       {
-        label: "اپ اندروید",
-        path: "/mobile-app",
-        icon: <PhoneAndroidOutlinedIcon />,
-        check: (u) => Boolean(u?.employee_id) && Boolean(u?.mobile_app_enabled),
-        hiddenForAdmin: true,
-      },
-      {
         label: "درخواست‌های مرخصی",
         path: "/leave-requests/all",
         icon: <EventNoteOutlinedIcon />,

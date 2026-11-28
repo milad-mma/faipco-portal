@@ -290,6 +290,13 @@ self.addEventListener("push", (event) => {
       // Images can involve network I/O. Recheck the active session before
       // claiming or showing anything after that asynchronous gap.
       if (await activePushSessionMarker() !== marker) return;
+      if (payload.android_fallback) {
+        const response = await fetch("/api/v1/push/fallback-display", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: payload.receipt_token, action: "received" }),
+        });
+        if (!response.ok || !(await response.json()).display) return;
+      }
       if (oaKey) {
         // A storage failure must not display possibly duplicated OA notifications.
         try { if (!(await claimOaNotification(oaKey))) return; } catch { return; }

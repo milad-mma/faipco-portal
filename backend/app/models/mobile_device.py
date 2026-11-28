@@ -36,6 +36,7 @@ class MobileDevice(Base):
         ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
     )
     device_uid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # شناسه‌ی تصادفی نصب اپ
+    session_sid: Mapped[str | None] = mapped_column(String(36), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256 توکن دستگاه
 
     manufacturer: Mapped[str | None] = mapped_column(String(60), nullable=True)
@@ -47,6 +48,8 @@ class MobileDevice(Base):
 
     has_gms: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # سرویس‌های گوگل دارد؟
     geofence_engine: Mapped[str | None] = mapped_column(String(20), nullable=True)  # gms | platform
+    perm_coarse_location: Mapped[bool | None] = mapped_column(Boolean)
+    keep_permissions: Mapped[bool | None] = mapped_column(Boolean)
     perm_fine_location: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     perm_background_location: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     perm_notifications: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -68,6 +71,7 @@ class DevicePairingCode(Base):
     __tablename__ = "device_pairing_codes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    session_sid: Mapped[str | None] = mapped_column(String(36))
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

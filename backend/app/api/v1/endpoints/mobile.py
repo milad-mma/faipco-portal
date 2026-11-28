@@ -98,6 +98,75 @@ async def device_status(
     return await svc.update_device_status(db, device, payload, get_client_ip(request))
 
 
+@router.get("/widget/summary")
+async def widget_summary(device: MobileDevice = Depends(current_device), db: AsyncSession = Depends(get_db)):
+    from app.core.persian_date import get_current_jalali_date
+    from app.services.notice_service import NoticeService
+    from app.api.v1.endpoints.monthly_attendance import monthly_attendance_report
+    if not device.session_sid:
+        raise HTTPException(401)
+    user = await db.get(User, device.user_id)
+    year, month, day = get_current_jalali_date()
+    notices, _, unread = await NoticeService(db).list_for_user(user, page_size=4, archived="all", unread_only=True)
+    try:
+        report = await monthly_attendance_report(year, month, db, user)
+        entry = next((d for d in report["days"] if d["day"] == day), {})
+        transits = entry.get("transits", [])
+    except HTTPException:
+        transits = None
+    return {"date": f"{year}/{month:02}/{day:02}", "transits": transits, "unread_total": unread,
+            "titles": [n.title for n in notices]}
+
+
+@router.get("/device/notifications")
+async def native_inbox(wait: bool = False, x_device_token: str | None = Header(default=None), device: MobileDevice = Depends(current_device), db: AsyncSession = Depends(get_db)):
+    from app.services.android_delivery import take
+    session_id = await svc.active_device_session(db, device)
+    if not session_id:
+        raise HTTPException(401)
+    import asyncio
+    from app.services.release_events import android_waiters
+    signal = asyncio.Event()
+    device_id = device.id
+    waiters = android_waiters.setdefault(device_id, set())
+    waiters.add(signal)
+    try:
+        items = await take(db, device, session_id)
+        if wait and not items:
+            try:
+                await asyncio.wait_for(signal.wait(), 45)
+            except asyncio.TimeoutError:
+                return {"items": []}
+            await require_feature(db)
+            device = await current_device(x_device_token, db)
+            items = await take(db, device, await svc.active_device_session(db, device))
+        return {"items": items}
+    finally:
+        waiters.discard(signal)
+        if not waiters:
+            android_waiters.pop(device_id, None)
+
+
+@router.post("/device/notifications/{item_id}/{action}")
+async def native_ack(item_id: int, action: str, device: MobileDevice = Depends(current_device),
+                     db: AsyncSession = Depends(get_db)):
+    from app.models.push_dispatch import AndroidNotification
+    from app.services.push_receipts import record_receipt, DeliveryNotFound
+    session_id = await svc.active_device_session(db, device)
+    row = await db.scalar(select(AndroidNotification).where(AndroidNotification.id == item_id,
+        AndroidNotification.device_id == device.id, AndroidNotification.session_id == session_id).with_for_update())
+    if not row or action not in ("received", "opened") or row.state not in ("native", "offered"):
+        raise HTTPException(404)
+    row.state, row.lease_until = "native", None
+    await db.commit()
+    try:
+        if not await record_receipt(db, row.payload["receipt_token"], action == "opened"):
+            raise HTTPException(409)
+    except DeliveryNotFound:
+        raise HTTPException(409)
+    return {"ok": True}
+
+
 @router.get("/device/geofences")
 async def device_geofences(device: MobileDevice = Depends(current_device), db: AsyncSession = Depends(get_db)):
     """محدوده‌های سایت‌ها و پارامترهای Geofencing (با version برای تشخیص تغییر)."""
@@ -152,16 +221,16 @@ async def device_connectivity(
 
 
 @router.post("/pairing-code")
-async def pairing_code(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def pairing_code(request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """کد یک‌بارمصرف ۱۰ دقیقه‌ای برای اتصال همین گوشی به حساب. فقط کاربر متصل به پرسنل."""
     if current_user.employee_id is None:
         raise HTTPException(status_code=400, detail="حساب شما به پرسنل متصل نیست.")
-    return await svc.create_pairing_code(db, current_user)
+    return await svc.create_pairing_code(db, current_user, request.state.session_sid)
 
 
 @router.post("/link")
 async def link_device(
-    payload: DeviceLinkIn, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    payload: DeviceLinkIn, request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """
     اتصال خودکار گوشی: کدی که اپ هنگام باز کردن پرتال فرستاده به حساب کاربر واردشده وصل می‌شود؛ بخش بومی اپ
@@ -169,26 +238,29 @@ async def link_device(
     """
     if current_user.employee_id is None:
         raise HTTPException(status_code=400, detail="حساب شما به پرسنل متصل نیست.")
-    return {"linked": await svc.claim_device_link(db, current_user, payload.link)}
+    return {"linked": await svc.claim_device_link(db, current_user, payload.link, request.state.session_sid)}
 
 
 @router.get("/me")
-async def my_mobile_status(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def my_mobile_status(installation: str | None = Query(None, max_length=64), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     وضعیت اپ برای کاربر جاری: {required, exempt, healthy, devices, latest_release, permission_issues}.
     required: پرسنل غیرمعاف روی گوشی اندروید ← پرتال در مرورگر قفل است و فقط از اپ باز می‌شود (فرانت).
     permission_issues: مشکلات دسترسی آخرین گوشی متصل ← پرتالِ داخل اپ قفل می‌شود تا کاربر دسترسی‌ها را کامل کند.
     """
-    return await svc.my_status(db, current_user)
+    return await svc.my_status(db, current_user, installation)
 
 
 # ---------------------------------------------------------------- عمومی: APK
 
 
 @router.get("/app/latest")
-async def app_latest(db: AsyncSession = Depends(get_db)):
+async def app_latest(policy: bool = False, db: AsyncSession = Depends(get_db)):
     """آخرین نسخه‌ی APK (بدون فایل)؛ null اگر هنوز بارگذاری نشده."""
-    return await svc.latest_release_info(db)
+    release = await svc.latest_release_info(db)
+    if not release and not policy:
+        return None
+    return {**(release or {}), "permission_policy": await svc.permission_policy(db)}
 
 
 @router.get("/app/download")

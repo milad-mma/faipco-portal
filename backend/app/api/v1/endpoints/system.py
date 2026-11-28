@@ -912,17 +912,21 @@ async def test_sms_settings(
 # ---------------------------------------------------------------- کلید اصلی قابلیت اپ اندروید
 
 
+from app.schemas.mobile import MobilePermissionRequirements
+
+
 class MobileAppFeatureIn(BaseModel):
     """بدنه‌ی PUT /system/mobile-app-feature."""
     enabled: bool
+    required: MobilePermissionRequirements | None = None
 
 
 @router.get("/mobile-app-feature")
 async def get_mobile_app_feature(db: AsyncSession = Depends(get_db), _user=Depends(require_permission("system.settings"))):
     """وضعیت کلید اصلی قابلیت اپ اندروید (docs/android-app.md). مجوز: system.settings."""
-    from app.services.mobile_app_service import is_feature_enabled
+    from app.services.mobile_app_service import is_feature_enabled, permission_policy
 
-    return {"enabled": await is_feature_enabled(db)}
+    return {"enabled": await is_feature_enabled(db), "permission_policy": await permission_policy(db)}
 
 
 @router.put("/mobile-app-feature")
@@ -934,7 +938,9 @@ async def put_mobile_app_feature(
     """روشن/خاموش کردن کل قابلیت اپ اندروید؛ خاموش = انگار وجود ندارد. داده‌ها حذف نمی‌شوند."""
     from app.services.mobile_app_service import set_feature_enabled
 
-    return {"enabled": await set_feature_enabled(db, payload.enabled)}
+    enabled = await set_feature_enabled(db, payload.enabled, payload.required)
+    logger.info("Android policy updated by user=%s enabled=%s required=%s", _user.id, enabled, payload.required)
+    return {"enabled": enabled}
 
 
 # ---------- سقف آپلود سرور (nginx) — فقط ادمین کل؛ docs/upload-limit.md ----------

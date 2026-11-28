@@ -105,6 +105,8 @@ async def get_current_user(
                 detail="از این دستگاه خارج شده‌اید؛ دوباره وارد شوید",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+    from app.core.request_context import current_session_sid
+    current_session_sid.set(sid)
     request.state.session_sid = sid
 
     # الزام تعویض رمز سمت سرور: فقط فلگ صریح must_change_password (نه ورود پیش‌فرض با کد ملی،

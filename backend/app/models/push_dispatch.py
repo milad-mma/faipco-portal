@@ -57,3 +57,17 @@ class OfficePushReceipt(Base):
     user_id: Mapped[int]
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AndroidNotification(Base):
+    __tablename__ = "android_notification_inbox"
+    __table_args__ = (UniqueConstraint("event_key", "subscription_id", "session_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("mobile_devices.id", ondelete="CASCADE"))
+    subscription_id: Mapped[int]
+    session_id: Mapped[int]
+    event_key: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[dict] = mapped_column(JSON)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    state: Mapped[str] = mapped_column(String(16))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

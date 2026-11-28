@@ -8,6 +8,18 @@ import re
 from pydantic import BaseModel, Field, field_validator
 
 
+from pydantic import ConfigDict, StrictBool
+
+
+class MobilePermissionRequirements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    notifications: StrictBool = True
+    coarse_location: StrictBool = False
+    fine_location: StrictBool = False
+    battery_unrestricted: StrictBool = False
+    keep_permissions: StrictBool = False
+
+
 class MobileAppSettings(BaseModel):
     """تنظیمات اپ اندروید (system_settings با کلید mobile_app)."""
 
@@ -59,6 +71,8 @@ class DeviceRegisterIn(BaseModel):
 class DeviceStatusIn(BaseModel):
     """بدنه‌ی POST /mobile/devices/status (از بخش بومی اپ)."""
 
+    coarse_location: bool | None = None
+    keep_permissions: bool | None = None
     fine_location: bool = False
     background_location: bool = False
     notifications: bool = False

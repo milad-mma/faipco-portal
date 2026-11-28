@@ -1,5 +1,5 @@
 {
-  "count": 549,
+  "count": 553,
   "routes": [
     "DELETE /api/v1/attendance/logs/{log_id}",
     "DELETE /api/v1/auth/me/sessions/{session_id}",
@@ -209,6 +209,7 @@
     "GET /api/v1/mobile/app/latest",
     "GET /api/v1/mobile/app/releases",
     "GET /api/v1/mobile/device/geofences",
+    "GET /api/v1/mobile/device/notifications",
     "GET /api/v1/mobile/devices",
     "GET /api/v1/mobile/exemptions",
     "GET /api/v1/mobile/geofence-events",
@@ -216,6 +217,7 @@
     "GET /api/v1/mobile/me",
     "GET /api/v1/mobile/settings",
     "GET /api/v1/mobile/summary",
+    "GET /api/v1/mobile/widget/summary",
     "GET /api/v1/monthly-attendance/my-staff",
     "GET /api/v1/monthly-attendance/my-staff/{employee_id}/report",
     "GET /api/v1/monthly-attendance/report",
@@ -408,6 +410,7 @@
     "POST /api/v1/mobile/device/connectivity",
     "POST /api/v1/mobile/device/errors",
     "POST /api/v1/mobile/device/events",
+    "POST /api/v1/mobile/device/notifications/{item_id}/{action}",
     "POST /api/v1/mobile/device/status",
     "POST /api/v1/mobile/devices/register",
     "POST /api/v1/mobile/devices/{device_id}/revoke",
@@ -445,6 +448,7 @@
     "POST /api/v1/profile-photo/me/upload",
     "POST /api/v1/profile-photo/requests/{request_id}/approve",
     "POST /api/v1/profile-photo/requests/{request_id}/reject",
+    "POST /api/v1/push/fallback-display",
     "POST /api/v1/push/receipt",
     "POST /api/v1/push/subscribe",
     "POST /api/v1/push/unsubscribe",

@@ -10,9 +10,7 @@ import {
   Box,
   Button,
   Card,
-  Chip,
   CircularProgress,
-  Divider,
   List,
   ListItem,
   ListItemIcon,
@@ -20,29 +18,28 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
-import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import { APK_DOWNLOAD_PATH, fetchMyMobileStatus } from "../api/mobile";
-import { isAndroidApp, isAndroidBrowser, openNativeSetup } from "../utils/androidApp";
-import { prefetchPairingCode, startPairing } from "../components/MobileAppPrompt";
+import { isAndroidApp, isAndroidBrowser, openPortalInApp, openNativeSetup } from "../utils/androidApp";
 
 const faDateTime = (iso) =>
   iso ? new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "—";
 
+const permissionLabels = {
+  notifications: "اعلان‌ها", coarse_location: "موقعیت", fine_location: "موقعیت دقیق",
+  battery_unrestricted: "فعالیت بدون محدودیت باتری", keep_permissions: "حفظ مجوزهای برنامه",
+};
 const INSTALL_STEPS = [
   "روی «دانلود اپ» بزنید و فایل را باز کنید.",
   "اگر گوشی اجازه‌ی نصب از منبع ناشناس خواست، برای مرورگر یا مدیر فایل اجازه دهید. این هشدار برای همه‌ی اپ‌هایی است که از فروشگاه نصب نمی‌شوند.",
-  "اپ FAIPCO را باز کنید و دسترسی‌هایی را که می‌خواهد بدهید (موقعیت «همیشه مجاز» و اعلان).",
+  "اپ FAIPCO را باز کنید و دسترسی‌هایی را که می‌خواهد بدهید.",
   "با همان کد پرسنلی و رمز وارد پرتال شوید؛ گوشی خودکار به حساب شما متصل می‌شود.",
-  "اگر نسخه‌ی قبلی پرتال را روی صفحه‌ی اصلی گوشی نصب کرده‌اید، آن را حذف کنید تا اعلان‌ها دو بار نیایند.",
 ];
 
 export default function MobileAppPage() {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
   const inApp = isAndroidApp();
   const inAndroidBrowser = isAndroidBrowser();
   // Chrome به اینجا برگشته چون اپ نصب‌شده بخش فعال‌سازی را نداشت (نسخه‌ی قدیمی)
@@ -54,8 +51,18 @@ export default function MobileAppPage() {
       .catch((err) => setError(err.response?.data?.detail || "دریافت وضعیت ناموفق بود."));
 
   useEffect(() => {
-    if (inApp && status && status.devices.length === 0) prefetchPairingCode();
+    if (!inApp || !status || status.current_device) return;
+    const timer = setTimeout(load, 5000);
+    return () => clearTimeout(timer);
   }, [inApp, status]);
+
+  const waiting = inApp && Boolean(status) && !status.current_device;
+  useEffect(() => {
+    setShowRecovery(false);
+    if (!waiting) return;
+    const timer = setTimeout(() => setShowRecovery(true), 90000);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   useEffect(() => {
     load();
@@ -64,28 +71,15 @@ export default function MobileAppPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  async function handlePair() {
-    setBusy(true);
-    setError("");
-    try {
-      await startPairing();
-    } catch (err) {
-      setError(err.response?.data?.detail || "ساخت کد اتصال ناموفق بود.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const latest = status?.latest_release;
 
   return (
     <Box sx={{ maxWidth: 640, mx: "auto" }}>
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
-        اپ اندروید FAIPCO
+        دسترسی‌های اپلیکیشن
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.9 }}>
-        با اپ اندروید، ورود و خروج شما هنگام رسیدن به محدوده‌ی کارخانه و ترک آن خودکار ثبت می‌شود و اعلان‌های پرتال به‌نام اپ
-        می‌رسند. اپ موقعیت شما را دائم دنبال نمی‌کند؛ فقط لحظه‌ی ورود و خروج از محدوده بیدار می‌شود و مصرف باتری آن ناچیز است.
+        وضعیت اتصال، مجوزهای همین گوشی و نسخهٔ برنامه را اینجا بررسی کنید.
       </Typography>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -109,73 +103,28 @@ export default function MobileAppPage() {
                 ) : null
               }
             >
-              اپ نصب‌شده روی این گوشی بخش فعال‌سازی را ندارد؛ احتمالاً نسخه‌ی قدیمی است. آن را حذف کنید و نسخه‌ی جدید را
+              اپ نصب‌شده روی این گوشی بخش فعال‌سازی را ندارد؛ احتمالاً نسخه‌ی قدیمی است. نسخه‌ی جدید را
               نصب کنید.{!latest && " (نسخه‌ی جدید هنوز در پرتال منتشر نشده است.)"}
             </Alert>
           )}
 
-          {inApp && (
-            <Card variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                وضعیت این اپ
-              </Typography>
-              {status.devices.length === 0 ? (
-                <>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    این گوشی هنوز به حساب شما متصل نشده است. اتصال معمولاً چند ثانیه بعد از ورود خودکار انجام می‌شود؛ اگر
-                    چند دقیقه گذشت، دکمه‌ی زیر را بزنید.
-                  </Typography>
-                  <Button variant="contained" onClick={handlePair} disabled={busy}>
-                    اتصال دستی
-                  </Button>
-                </>
-              ) : (
-                <Stack spacing={2}>
-                  {status.devices.map((d) => (
-                    <Box key={d.id}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                        <Typography variant="body2" fontWeight={600}>
-                          {d.model}
-                        </Typography>
-                        <Chip size="small" color={d.healthy ? "success" : "warning"} label={d.healthy ? "فعال" : "نیاز به بررسی"} />
-                      </Stack>
-                      <List dense disablePadding>
-                        {d.issues.length === 0 && (
-                          <ListItem disableGutters>
-                            <ListItemIcon sx={{ minWidth: 32 }}>
-                              <CheckCircleOutlineIcon color="success" fontSize="small" />
-                            </ListItemIcon>
-                            <ListItemText primary="همه‌ی دسترسی‌ها درست است." />
-                          </ListItem>
-                        )}
-                        {d.issues.map((i) => (
-                          <ListItem key={i.code} disableGutters>
-                            <ListItemIcon sx={{ minWidth: 32 }}>
-                              {i.blocking ? <ErrorOutlineIcon color="error" fontSize="small" /> : <WarningAmberOutlinedIcon color="warning" fontSize="small" />}
-                            </ListItemIcon>
-                            <ListItemText primary={i.label} />
-                          </ListItem>
-                        ))}
-                      </List>
-                      <Typography variant="caption" color="text.secondary">
-                        آخرین گزارش گوشی: {faDateTime(d.status_reported_at)}
-                        {d.app_version_name ? ` · نسخه‌ی ${d.app_version_name}` : ""}
-                      </Typography>
-                    </Box>
-                  ))}
-                  <Divider />
-                  <Stack direction="row" spacing={1}>
-                    <Button variant="contained" onClick={openNativeSetup}>
-                      بررسی دسترسی‌ها
-                    </Button>
-                    <Button onClick={handlePair} disabled={busy}>
-                      اتصال دوباره
-                    </Button>
-                  </Stack>
-                </Stack>
-              )}
-            </Card>
-          )}
+          {inApp && <Card variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={1.5}>
+              <Typography fontWeight={700}>{status.current_device ? "این گوشی به حساب شما متصل است" : "در انتظار اتصال خودکار این گوشی"}</Typography>
+              {showRecovery && waiting && <Button onClick={() => openPortalInApp("/app-permissions")}>تلاش دوباره برای اتصال</Button>}
+              {status.current_device && <Typography>آخرین گزارش گوشی: {faDateTime(status.current_device.status_reported_at)}</Typography>}
+              {Object.entries(permissionLabels).map(([key, label]) => {
+                const grant = status.current_device?.status_reported_at ? status.current_device.grants[key] : null;
+                return <Stack direction="row" justifyContent="space-between" key={key}><Typography>{label}</Typography>
+                  <Typography>{status.permission_policy?.required[key] ? "الزامی" : "اختیاری"} · {grant == null ? "بررسی در گوشی" : grant ? "تکمیل" : "غیرفعال"}</Typography></Stack>;
+              })}
+              <Button onClick={openNativeSetup} variant="contained">تنظیم دسترسی‌های همین گوشی</Button>
+              {latest && (!status.current_device || status.current_device.app_version_name !== latest.version_name) &&
+                <Button href={APK_DOWNLOAD_PATH}>دریافت نسخهٔ {latest.version_name}</Button>}
+              {status.devices.filter(d => d.id !== status.current_device?.id).map(d => <Typography variant="body2" key={d.id}>
+                {d.model} · آخرین گزارش {faDateTime(d.status_reported_at)}</Typography>)}
+            </Stack>
+          </Card>}
 
           {inAndroidBrowser && (
             <Card variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>

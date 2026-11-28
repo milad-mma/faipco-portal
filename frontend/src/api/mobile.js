@@ -1,11 +1,12 @@
 /**
  * API اپ اندروید: وضعیت کاربر جاری، کد اتصال، و پنل مدیریت گوشی‌ها، رویدادها، معافیت‌ها، تنظیمات و APK.
  */
+import { currentInstallation } from "../utils/androidApp";
 import { apiClient } from "./client";
 
 // GET /mobile/me؛ خروجی: { required, exempt, healthy, devices, latest_release, permission_issues }
 export async function fetchMyMobileStatus() {
-  const { data } = await apiClient.get("/mobile/me");
+  const { data } = await apiClient.get("/mobile/me", { params: { installation: currentInstallation() } });
   return data;
 }
 
@@ -24,7 +25,7 @@ export async function createPairingCode() {
 // GET /mobile/app/latest؛ خروجی: آخرین نسخه یا null
 export async function fetchLatestRelease() {
   const { data } = await apiClient.get("/mobile/app/latest");
-  return data;
+  return data?.version_code ? data : null;
 }
 
 export const APK_DOWNLOAD_PATH = "/api/v1/mobile/app/download";
@@ -115,7 +116,7 @@ export async function fetchMobileAppFeature() {
   return data;
 }
 
-export async function saveMobileAppFeature(enabled) {
-  const { data } = await apiClient.put("/system/mobile-app-feature", { enabled });
+export async function saveMobileAppFeature(enabled, required) {
+  const { data } = await apiClient.put("/system/mobile-app-feature", { enabled, required });
   return data;
 }

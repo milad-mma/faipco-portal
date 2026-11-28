@@ -27,6 +27,7 @@ class PushSubscription(Base):
     # NULL = legacy client; False = waiting for local gate; True = gate persisted.
     client_ready: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    native_device_id: Mapped[int | None] = mapped_column(ForeignKey("mobile_devices.id", ondelete="CASCADE"))
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)  # آدرس سرویس Push مرورگر برای این دستگاه
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)  # کلید عمومی رمزنگاری payload
     auth: Mapped[str] = mapped_column(String(255), nullable=False)  # رمز احراز هویت اشتراک

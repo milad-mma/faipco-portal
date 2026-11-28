@@ -8,26 +8,35 @@ import { Alert, CircularProgress, FormControlLabel, Stack, Switch, Typography } 
 import { fetchMobileAppFeature, saveMobileAppFeature } from "../api/mobile";
 import { useAuth } from "../context/AuthContext";
 
+const labels = {
+  notifications: "اجبار اعلان‌ها",
+  coarse_location: "اجبار دسترسی به موقعیت",
+  fine_location: "اجبار موقعیت دقیق",
+  battery_unrestricted: "اجبار فعالیت بدون محدودیت باتری",
+  keep_permissions: "اجبار حفظ مجوزها هنگام استفاده‌نکردن از اپ",
+};
+
 export default function MobileAppFeatureSettings() {
   const { refetchUser } = useAuth();
   const [enabled, setEnabled] = useState(null);
+  const [policy, setPolicy] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     fetchMobileAppFeature()
-      .then((d) => setEnabled(Boolean(d.enabled)))
+      .then((d) => { setEnabled(Boolean(d.enabled)); setPolicy(d.permission_policy.required); })
       .catch(() => setError("دریافت وضعیت ناموفق بود."));
   }, []);
 
-  async function handleToggle(e) {
-    const next = e.target.checked;
+  async function save(next, requirements) {
     setSaving(true);
     setError("");
     try {
-      const d = await saveMobileAppFeature(next);
+      const d = await saveMobileAppFeature(next, requirements);
       setEnabled(Boolean(d.enabled));
-      await refetchUser(); // منوها و صفحه‌ها بلافاصله به‌روز شوند
+      setPolicy(requirements);
+      if (next !== enabled) await refetchUser(); // منوها و صفحه‌ها بلافاصله به‌روز شوند
     } catch (err) {
       setError(err.response?.data?.detail || "ذخیره ناموفق بود.");
     } finally {
@@ -49,10 +58,14 @@ export default function MobileAppFeatureSettings() {
         !error && <CircularProgress size={20} />
       ) : (
         <FormControlLabel
-          control={<Switch checked={enabled} onChange={handleToggle} disabled={saving} />}
+          control={<Switch checked={enabled} onChange={(_, value) => save(value, policy)} disabled={saving} />}
           label={enabled ? "روشن" : "خاموش"}
         />
       )}
+      {policy && Object.entries(labels).map(([key, label]) => (
+        <FormControlLabel key={key} label={label} control={<Switch checked={policy[key]}
+          disabled={saving || !enabled} onChange={(_, value) => save(enabled, { ...policy, [key]: value })} />} />
+      ))}
       {error && <Alert severity="error">{error}</Alert>}
     </Stack>
   );

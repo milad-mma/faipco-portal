@@ -168,6 +168,7 @@ export default function ProfilePage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
+      {user?.mobile_app_enabled && <Button onClick={() => navigate("/app-permissions")} sx={{ mb: 1 }}>دسترسی‌های اپلیکیشن</Button>}
       {/* کارت برند: لوگو، عنوان/زیرعنوان (طبق تنظیمات برندینگ) و نسخه برنامه */}
       <Card
         variant="outlined"

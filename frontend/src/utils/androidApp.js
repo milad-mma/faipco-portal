@@ -61,11 +61,15 @@ export function detectAndroidApp() {
       if (reallyFromApp && /^[A-Za-z0-9_-]{16,100}$/.test(link)) {
         try {
           sessionStorage.setItem(LINK_KEY, link);
+          const uid = hash.get("installation");
+          if (uid && /^[A-Za-z0-9_-]{16,100}$/.test(uid)) sessionStorage.setItem("faipco_installation", uid);
+          else sessionStorage.removeItem("faipco_installation");
         } catch {
           /* بدون حافظه: اتصال دستی */
         }
       }
       hash.delete("link");
+      hash.delete("installation");
       const rest = hash.toString();
       window.history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? `#${rest}` : ""));
     }
@@ -118,7 +122,7 @@ export function isAndroidBrowser() {
 // به همین صفحه با app_outdated=1 برمی‌گردد و راهنمای نصب نسخه‌ی جدید نمایش داده می‌شود.
 function openIntent(path, params = {}) {
   const query = new URLSearchParams(params).toString();
-  const fallback = encodeURIComponent(`${window.location.origin}/mobile-app?app_outdated=1`);
+  const fallback = encodeURIComponent(`${window.location.origin}/app-permissions?app_outdated=1`);
   window.location.href =
     `intent://${path}${query ? `?${query}` : ""}#Intent;scheme=${ANDROID_SCHEME};package=${ANDROID_PACKAGE};` +
     `S.browser_fallback_url=${fallback};end`;
@@ -149,4 +153,9 @@ export function clearDeviceLink() {
   } catch {
     /* بدون حافظه */
   }
+}
+
+export function currentInstallation() {
+  try { return isAndroidApp() ? sessionStorage.getItem("faipco_installation") : null; }
+  catch { return null; }
 }

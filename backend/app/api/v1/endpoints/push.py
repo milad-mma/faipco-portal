@@ -72,6 +72,12 @@ class ClientReceipt(BaseModel):
     action: Literal["received", "opened"]
 
 
+@router.post("/fallback-display")
+async def claim_fallback_display(payload: ClientReceipt, db: AsyncSession = Depends(get_db)):
+    from app.services.android_delivery import claim_web_display
+    return {"display": await claim_web_display(db, payload.token)}
+
+
 @router.post("/receipt", status_code=204)
 async def confirm_receipt(payload: ClientReceipt, db: AsyncSession = Depends(get_db)):
     try:

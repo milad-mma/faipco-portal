@@ -81,10 +81,10 @@ export default function MobileAppGate({ user }) {
     try {
       const statusPromise = fetchMyMobileStatus().catch(() => null);
       const issues = [];
-      if (inApp) {
+      const s = await statusPromise;
+      if (inApp && s?.permission_policy?.required.notifications && !s.current_device?.status_reported_at) {
         if (notificationsDenied()) issues.push("اجازه‌ی اعلان به اپ داده نشده است");
       }
-      const s = await statusPromise;
       if (s) setStatus(s);
       setLocalIssues(issues);
     } finally {

@@ -216,6 +216,17 @@ def safe_reason(value):
     return "see_server_logs"
 
 
+async def add_transport(db, result, key):
+    from app.models.push_dispatch import AndroidNotification as Inbox
+    rows = await db.execute(select(Inbox.subscription_id, Inbox.state).where(Inbox.event_key == key,
+        Inbox.subscription_id.in_([item["subscription_id"] for item in result["items"]])))
+    states = dict(rows.all())
+    for item in result["items"]:
+        state = states.get(item["subscription_id"])
+        item["transport"] = ("اندروید" if state == "native" else "وب پشتیبان" if state in ("web", "web_showing", "web_seen")
+                             else "در انتظار تأیید مسیر" if state else "وب")
+
+
 @router.get("/{source}/{event_id}")
 async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=0),
                        db: AsyncSession = Depends(get_db), personnel_code: Annotated[str, Query(max_length=64)] = "",
@@ -242,6 +253,7 @@ async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=
         result = page(rows.mappings().all(), 30)
         for item in result["items"]:
             item["last_error"] = safe_reason(item["last_error"])
+        await add_transport(db, result, job.key)
         message = message_reference(source, job.key)
         await describe_messages(db, viewer, [{"source": source, "message": message}])
         return {**result, "single_user_id": single_user, "personnel_code": code,
@@ -263,6 +275,7 @@ async def event_detail(source: Source, event_id: int, offset: int = Query(0, ge=
                                      ("stale", "stale"), ("failed", "failed"))
                for device in tracking.get(group, [])]
     result = page(devices[offset:offset + 31], 30)
+    await add_transport(db, result, event.key)
     by_device = {item["subscription_id"]: item for item in result["items"]}
     if by_device:
         receipts = await db.scalars(select(OfficePushReceipt).where(OfficePushReceipt.event_id == event_id,

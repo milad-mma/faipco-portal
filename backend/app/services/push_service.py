@@ -70,7 +70,7 @@ def send_webpush(**kwargs):
         return webpush(requests_session=session, **kwargs)
 
 
-def eligible_subscriptions(user_ids: set[int]):
+def eligible_subscriptions(user_ids: set[int], *, all_transports=False):
     # No legacy/unbound or revoked/expired sessions may receive any Push.
     # The same rule applies to notices, payroll and OA, not just OA.
     expires_before = datetime.now(timezone.utc) - timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -91,7 +91,22 @@ def eligible_subscriptions(user_ids: set[int]):
                 (Employee.is_active.is_(True) & Employee.is_enabled.is_(True))),
         )
     )
-    return stmt
+    from sqlalchemy.orm import aliased
+    from app.models.mobile_device import MobileDevice
+    from app.models.system_setting import SystemSetting
+    native = aliased(PushSubscription)
+    ready = (select(native.id).join(MobileDevice, native.native_device_id == MobileDevice.id)
+             .where(native.session_id == UserSession.id, native.user_id == UserSession.user_id,
+                    MobileDevice.user_id == UserSession.user_id, MobileDevice.session_sid == UserSession.sid,
+                    MobileDevice.revoked_at.is_(None), MobileDevice.perm_notifications.is_(True),
+                    select(SystemSetting.key).where(SystemSetting.key == "mobile_app_feature_enabled",
+                                                    SystemSetting.value == "true").exists())
+             .correlate(UserSession))
+    if all_transports:
+        return stmt
+    return stmt.where(or_(
+        and_(PushSubscription.native_device_id.is_(None), ~ready.exists()),
+        PushSubscription.id == ready.order_by(native.id.desc()).limit(1).scalar_subquery()))
 
 
 async def bindings_are_ready(db, bindings: dict) -> bool:
@@ -219,11 +234,6 @@ class PushService:
             from app.services.push_dispatch import enqueue_generic_push
             await enqueue_generic_push(user_ids, url, body, priority, notice_type, key=notification_key)
             return None
-        if not settings.VAPID_PRIVATE_KEY:
-            logger.warning("Push skipped: VAPID private key is not configured")
-            return {"attempted": 0, "sent": 0, "failed": 0, "stale": 0,
-                    "configured": False, "results": []} if return_stats else None
-
         stmt = eligible_subscriptions(user_ids)
         if subscription_ids is not None:
             stmt = stmt.where(PushSubscription.id.in_(subscription_ids))
@@ -268,11 +278,6 @@ class PushService:
         async def send_one(sub: PushSubscription) -> None:
             """اعلان را برای یک اشتراک می‌سازد و ارسال می‌کند و شمارنده‌های نتیجه را به‌روز می‌کند."""
             nonlocal sent_count, failed_count
-            if not valid_push_endpoint(sub.endpoint):
-                failed_count += 1
-                delivery_results.append({"id": sub.id, "status": "permanent", "error": "endpoint_not_allowed"})
-                logger.warning("Push destination blocked (user_id=%s, subscription_id=%s)", sub.user_id, sub.id)
-                return
             recipient_name = name_by_user_id.get(sub.user_id)
             # عنوان/متن واقعی اطلاعیه در اعلان نمایش داده نمی‌شود؛ یک پیام
             # استاندارد و ثابت که فقط با نام مخاطب شخصی‌سازی می‌شود.
@@ -292,6 +297,28 @@ class PushService:
                     **({"notification_key": notification_key} if notification_key else {}),
                 }
             )
+            target = sub
+            inbox_id = None
+            if getattr(sub, "native_device_id", None) is not None:
+                from app.services.android_delivery import offer, finish_web
+                decision, fallback = await offer(sub, json.loads(payload), ttl_seconds)
+                if decision in ("accepted", "queued"):
+                    sent_count += 1
+                    delivery_results.append({"id": sub.id, "status": "sent"})
+                    return
+                if fallback is None:
+                    failed_count += 1
+                    delivery_results.append({"id": sub.id, "status": "failed", "error": "awaiting_native_receipt"})
+                    return
+                inbox_id, target = decision, fallback
+                payload = bounded_payload({**json.loads(payload), "android_fallback": True})
+            if not valid_push_endpoint(target.endpoint) or not settings.VAPID_PRIVATE_KEY:
+                if inbox_id:
+                    await finish_web(inbox_id, False)
+                failed_count += 1
+                delivery_results.append({"id": sub.id, "status": "failed", "error": "web_transport_unavailable"})
+                return
+            delivered_web = False
             async with semaphore:
                 try:
                     # خودِ webpush() یک تابع مسدودکننده (Blocking) است — با
@@ -301,8 +328,8 @@ class PushService:
                     await asyncio.to_thread(
                         send_webpush,
                         subscription_info={
-                            "endpoint": sub.endpoint,
-                            "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                            "endpoint": target.endpoint,
+                            "keys": {"p256dh": target.p256dh, "auth": target.auth},
                         },
                         data=payload,
                         vapid_private_key=settings.VAPID_PRIVATE_KEY,
@@ -312,14 +339,15 @@ class PushService:
                         headers={"Urgency": "high"},
                         timeout=15,  # سرور Push کند/در دسترس نیست → بقیه‌ی گیرندگان معطل نمانند
                     )
+                    delivered_web = True
                     sent_count += 1
                     delivery_results.append({"id": sub.id, "status": "sent"})
                 except WebPushException as e:
                     status_code = getattr(getattr(e, "response", None), "status_code", None)
                     if status_code in (404, 410):
                         # اشتراک منقضی/لغوشده در مرورگر — از دیتابیس پاک می‌شود
-                        stale_rows.append(sub)
-                        delivery_results.append({"id": sub.id, "status": "stale"})
+                        stale_rows.append(target)
+                        delivery_results.append({"id": sub.id, "status": "failed" if inbox_id else "stale"})
                     else:
                         failed_count += 1
                         permanent = status_code in (400, 405, 413, 422) or (status_code is not None and 300 <= status_code < 400)
@@ -346,6 +374,10 @@ class PushService:
                         host,
                         type(e).__name__,
                     )
+
+                finally:
+                    if inbox_id:
+                        await finish_web(inbox_id, delivered_web)
 
         await asyncio.gather(*(send_one(sub) for sub in subscriptions))
 

@@ -7,6 +7,7 @@ Middleware در main.py پر می‌شوند و برای هر درخواست ج�
 """
 from contextvars import ContextVar
 
+current_session_sid: ContextVar[str | None] = ContextVar("current_session_sid", default=None)
 current_user_agent: ContextVar[str] = ContextVar("current_user_agent", default="")
 current_client_app: ContextVar[str] = ContextVar("current_client_app", default="")
 # برای گزارش خطاها (error_log_service): کد پیگیری، درخواست، IP و کاربر درخواست جاری.

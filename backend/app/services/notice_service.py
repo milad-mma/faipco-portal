@@ -307,6 +307,7 @@ class NoticeService:
         page_size: int = 10,
         notice_type: NoticeType | None = None,
         archived: str = "exclude",
+        unread_only: bool = False,
     ) -> tuple[list[NoticeOut], int, int]:
         """خروجی: (اطلاعیه‌های این صفحه، تعداد کل، تعداد کل خوانده‌نشده‌ها).
 
@@ -428,6 +429,10 @@ class NoticeService:
             select(func.count()).select_from(Notice).where(*base_filters, Notice.id.not_in(read_subquery))
         )
         unread_total = (await self.db.execute(unread_stmt)).scalar_one()
+
+        if unread_only:
+            base_filters = (*base_filters, Notice.id.not_in(read_subquery))
+            total = unread_total
 
         # اطلاعیه‌های صفحه جاری
         stmt = (

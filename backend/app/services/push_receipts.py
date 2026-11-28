@@ -62,5 +62,9 @@ async def record_receipt(db, token, opened):
                 set_={"opened_at": func.coalesce(row.opened_at, func.now())}) if opened
                 else stmt.on_conflict_do_nothing())
         await db.execute(stmt)
+    from app.models.push_dispatch import AndroidNotification
+    await db.execute(update(AndroidNotification).where(AndroidNotification.event_key == key,
+        AndroidNotification.subscription_id == sid, AndroidNotification.session_id == session_id,
+        AndroidNotification.state == "web_showing").values(state="web_seen", lease_until=None))
     await db.commit()
     return True

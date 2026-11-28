@@ -21,6 +21,8 @@ from app.services.cache_service import deployed_cache_refresh
 
 log = logging.getLogger("faipco.releases")
 CHANNEL = "faipco_frontend_published"
+ANDROID_CHANNEL = "faipco_android_inbox"
+android_waiters: dict[int, set[asyncio.Event]] = {}
 CACHE_CHANNEL = "faipco_frontend_cache_refresh"
 BUILD_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,96}$")
 LIVE_VERSION_FILE = Path(__file__).resolve().parents[3] / "frontend" / "dist" / "version.json"
@@ -76,7 +78,10 @@ class ReleaseBus:
             self._enqueue({"type": "portal.cache_refresh", "stamp": stamp})
 
     def _on_notification(self, _connection, _pid, channel, payload: str) -> None:
-        if channel == CHANNEL:
+        if channel == ANDROID_CHANNEL and payload.isdecimal():
+            for waiter in android_waiters.get(int(payload), ()):
+                waiter.set()
+        elif channel == CHANNEL:
             self.broadcast(payload)
         elif channel == CACHE_CHANNEL:
             self.broadcast_cache_refresh(payload)
@@ -90,6 +95,7 @@ class ReleaseBus:
                 connection = await asyncpg.connect(dsn=postgres_dsn(), timeout=10)
                 connection.add_termination_listener(lambda _conn: terminated.set())
                 await connection.add_listener(CHANNEL, self._on_notification)
+                await connection.add_listener(ANDROID_CHANNEL, self._on_notification)
                 await connection.add_listener(CACHE_CHANNEL, self._on_notification)
                 # Replay the live deployment to clients who connected while
                 # this worker's LISTEN connection was temporarily down.

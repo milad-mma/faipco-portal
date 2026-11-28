@@ -23,6 +23,7 @@ from app.core.request_context import (
     current_request_id,
     current_request_label,
     current_user_agent,
+    current_session_sid,
     current_user_ref,
 )
 from app.services import error_log_service
@@ -128,6 +129,7 @@ async def request_context_middleware(request: Request, call_next):
     if request.url.path.startswith(settings.API_V1_PREFIX) and "authorization" in request.headers:
         record_usage()
 
+    sid_token = current_session_sid.set(None)
     ua_token = current_user_agent.set(request.headers.get("user-agent", ""))
     app_token = current_client_app.set(request.headers.get("x-client-app", ""))
     # گزارش خطاها: کد پیگیری کوتاه برای هر درخواست (در هدر X-Request-ID و در پیام خطاهای ۵xx)
@@ -170,6 +172,7 @@ async def request_context_middleware(request: Request, call_next):
                 getattr(request.state, "user_ref", None), ip,
             )
         current_user_agent.reset(ua_token)
+        current_session_sid.reset(sid_token)
         current_client_app.reset(app_token)
         current_request_id.reset(rid_token)
         current_request_label.reset(label_token)

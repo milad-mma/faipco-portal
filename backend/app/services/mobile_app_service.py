@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.android_assetlinks import assetlinks_json as _assetlinks_json, write_assetlinks_file
 from app.core.config import get_settings
 from app.core.geo import haversine_distance_meters
-from app.core.request_context import current_user_agent, is_android_user_agent
+from app.core.request_context import current_session_sid, current_user_agent, is_android_user_agent
 from app.models.employee import Employee
 from app.models.gps_activity_log import GpsActivityLog, GpsLogType
 from app.models.presence_session import PresenceSession
@@ -63,6 +63,8 @@ ISSUE_LABELS = {
     "stale": "چند روز است از این گوشی گزارشی نرسیده (شاید اپ حذف شده)",
     "outdated": "نسخه‌ی اپ قدیمی است؛ نسخه‌ی جدید را نصب کنید",
     "no_notifications": "اجازه‌ی اعلان داده نشده است",
+    "no_location": "اجازهٔ موقعیت داده نشده است",
+    "unused_restrictions": "حذف خودکار مجوزها روشن است",
     "battery_restricted": "محدودیت باتری برای اپ برداشته نشده است",
 }
 # اعلان هم الزامی است (اپ بدون آن باز نمی‌شود)؛ «محدودیت باتری» فقط هشدار
@@ -118,6 +120,16 @@ def _now() -> datetime:
 FEATURE_KEY = "mobile_app_feature_enabled"
 
 
+POLICY_KEY = "android_permission_requirements"
+
+
+async def permission_policy(db):
+    from app.schemas.mobile import MobilePermissionRequirements
+    row = await db.get(SystemSetting, POLICY_KEY)
+    values = MobilePermissionRequirements.model_validate_json(row.value) if row else MobilePermissionRequirements()
+    return {"schema_version": 1, "required": values.model_dump()}
+
+
 async def is_feature_enabled(db: AsyncSession) -> bool:
     """
     کلید اصلی قابلیت اپ اندروید (پیش‌فرض خاموش). خاموش = انگار قابلیت وجود ندارد: همه‌ی Endpointهای /mobile
@@ -128,7 +140,12 @@ async def is_feature_enabled(db: AsyncSession) -> bool:
     return row is not None and row.value == "true"
 
 
-async def set_feature_enabled(db: AsyncSession, enabled: bool) -> bool:
+async def set_feature_enabled(db: AsyncSession, enabled: bool, requirements=None) -> bool:
+    if requirements is not None:
+        from sqlalchemy.dialects.postgresql import insert
+        stmt = insert(SystemSetting).values(key=POLICY_KEY, value=requirements.model_dump_json())
+        await db.execute(stmt.on_conflict_do_update(index_elements=[SystemSetting.key],
+                                                    set_={"value": stmt.excluded.value}))
     row = await db.get(SystemSetting, FEATURE_KEY)
     value = "true" if enabled else "false"
     if row is None:
@@ -186,12 +203,12 @@ def write_assetlinks(fingerprint: str) -> bool:
 # ---------------------------------------------------------------- اتصال و احراز هویت دستگاه
 
 
-async def create_pairing_code(db: AsyncSession, user: User) -> dict:
+async def create_pairing_code(db: AsyncSession, user: User, sid=None) -> dict:
     """کد یک‌بارمصرف اتصال گوشی برای کاربر جاری؛ کدهای منقضی همان‌جا پاک می‌شوند."""
     now = _now()
     await db.execute(delete(DevicePairingCode).where(DevicePairingCode.expires_at < now - timedelta(days=1)))
     code = secrets.token_urlsafe(24)
-    db.add(DevicePairingCode(code_hash=_hash(code), user_id=user.id, expires_at=now + timedelta(minutes=PAIRING_TTL_MINUTES)))
+    db.add(DevicePairingCode(code_hash=_hash(code), user_id=user.id, session_sid=sid, expires_at=now + timedelta(minutes=PAIRING_TTL_MINUTES)))
     await db.commit()
     return {"code": code, "expires_in": PAIRING_TTL_MINUTES * 60}
 
@@ -209,7 +226,7 @@ def _link_hash(link: str) -> str:
     return _hash("link:" + link)
 
 
-async def claim_device_link(db: AsyncSession, user: User, link: str) -> bool:
+async def claim_device_link(db: AsyncSession, user: User, link: str, sid=None) -> bool:
     """
     اتصال خودکار: کد ساخته‌شده توسط اپ را به کاربر واردشده وصل می‌کند (بدون هیچ اقدام کاربر).
     کد قبلاً مصرف‌شده دوباره وصل نمی‌شود (False). کدی که قبلاً به حساب دیگری وصل شده هم هرگز به کاربر فعلی
@@ -218,17 +235,19 @@ async def claim_device_link(db: AsyncSession, user: User, link: str) -> bool:
     """
     now = _now()
     await db.execute(delete(DevicePairingCode).where(DevicePairingCode.expires_at < now - timedelta(days=1)))
+    from sqlalchemy import text
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:hash))"), {"hash": _link_hash(link)})
     row = (
-        await db.execute(select(DevicePairingCode).where(DevicePairingCode.code_hash == _link_hash(link)))
+        await db.execute(select(DevicePairingCode).where(DevicePairingCode.code_hash == _link_hash(link)).with_for_update())
     ).scalar_one_or_none()
     if row is not None and row.used_at is not None:
         await db.commit()
         return False
     if row is None:
         db.add(
-            DevicePairingCode(code_hash=_link_hash(link), user_id=user.id, expires_at=now + timedelta(minutes=LINK_TTL_MINUTES))
+            DevicePairingCode(code_hash=_link_hash(link), user_id=user.id, session_sid=sid, expires_at=now + timedelta(minutes=LINK_TTL_MINUTES))
         )
-    elif row.user_id != user.id:
+    elif row.user_id != user.id or (row.session_sid and row.session_sid != sid):
         # اولین ادعا برنده است؛ کد وصل‌شده به حساب دیگر دست‌نخورده می‌ماند
         logger.warning("تلاش برای انتقال کد اتصال اپ از کاربر %s به کاربر %s رد شد", row.user_id, user.id)
         await db.commit()
@@ -247,7 +266,7 @@ async def register_device(db: AsyncSession, payload: DeviceRegisterIn, ip: str |
         await db.execute(
             select(DevicePairingCode).where(
                 DevicePairingCode.code_hash.in_([_hash(payload.code), _link_hash(payload.code)])
-            )
+            ).with_for_update()
         )
     ).scalars().first()
     if pairing is None:
@@ -258,6 +277,8 @@ async def register_device(db: AsyncSession, payload: DeviceRegisterIn, ip: str |
     user = await db.get(User, pairing.user_id)
     if user is None or not user.is_active:
         raise DeviceAuthError("حساب کاربری فعال نیست.")
+    from sqlalchemy import text
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:uid))"), {"uid": payload.device_uid})
     pairing.used_at = now
 
     old = (
@@ -269,6 +290,7 @@ async def register_device(db: AsyncSession, payload: DeviceRegisterIn, ip: str |
     # همان گوشی، همان کاربر (مثلاً اتصال خودکار در هر باز شدن اپ): همان رکورد با توکن تازه، بدون ردیف جدید
     same = next((d for d in old if d.user_id == user.id), None)
     if same is not None:
+        same.session_sid = pairing.session_sid
         same.token_hash = _hash(token)
         same.employee_id = user.employee_id
         for field in ("manufacturer", "model", "os_version", "sdk_int", "app_version_code", "app_version_name"):
@@ -289,6 +311,7 @@ async def register_device(db: AsyncSession, payload: DeviceRegisterIn, ip: str |
     device = MobileDevice(
         user_id=user.id,
         employee_id=user.employee_id,
+        session_sid=pairing.session_sid,
         device_uid=payload.device_uid,
         token_hash=_hash(token),
         manufacturer=payload.manufacturer,
@@ -315,7 +338,22 @@ async def get_device_by_token(db: AsyncSession, token: str | None) -> MobileDevi
     user = await db.get(User, device.user_id)
     if user is None or not user.is_active:
         raise DeviceAuthError("حساب کاربری فعال نیست.")
+    if user.employee_id is not None:
+        employee = await db.get(Employee, user.employee_id)
+        if not employee or not employee.is_active or not employee.is_enabled:
+            raise DeviceAuthError("حساب پرسنلی غیرفعال است.")
+    if device.session_sid and not await active_device_session(db, device):
+        raise DeviceAuthError("نشست این گوشی به پایان رسیده است.")
     return device
+
+
+async def active_device_session(db, device):
+    from app.models.user_session import UserSession
+    from app.core.config import get_settings
+    cutoff = _now() - timedelta(days=get_settings().REFRESH_TOKEN_EXPIRE_DAYS)
+    return await db.scalar(select(UserSession.id).where(
+        UserSession.sid == device.session_sid, UserSession.user_id == device.user_id,
+        UserSession.revoked_at.is_(None), UserSession.last_seen_at >= cutoff))
 
 
 # ---------------------------------------------------------------- وضعیت
@@ -336,6 +374,10 @@ def device_issues(device: MobileDevice, cfg: MobileAppSettings, has_sites: bool,
     issues: list[str] = []
     if device.revoked_at is not None:
         return ["revoked"]
+    if getattr(device, "perm_coarse_location", None) is False and not device.perm_fine_location:
+        issues.append("no_location")
+    if getattr(device, "keep_permissions", None) is False:
+        issues.append("unused_restrictions")
     if not device.perm_fine_location:
         issues.append("no_fine_location")
     elif not device.perm_background_location:
@@ -361,6 +403,13 @@ def is_healthy(issues: list[str]) -> bool:
 
 async def update_device_status(db: AsyncSession, device: MobileDevice, payload: DeviceStatusIn, ip: str | None) -> dict:
     """گزارش وضعیت اپ را ذخیره می‌کند؛ خروجی: سالم بودن، مشکلات و اطلاعات نسخه‌ی جدید."""
+    device.perm_coarse_location = payload.coarse_location
+    device.keep_permissions = payload.keep_permissions
+    if device.session_sid and payload.notifications and (payload.app_version_code or 0) >= 10007:
+        from app.services.android_delivery import register_transport
+        session_id = await active_device_session(db, device)
+        if session_id:
+            await register_transport(db, device, session_id)
     device.perm_fine_location = payload.fine_location
     device.perm_background_location = payload.background_location
     device.perm_notifications = payload.notifications
@@ -923,6 +972,11 @@ async def user_devices_health(db: AsyncSession, user: User) -> tuple[bool, list[
         devices.append(
             {
                 "id": d.id,
+                "installation": d.device_uid,
+                "_session_sid": d.session_sid,
+                "grants": {"notifications": d.perm_notifications, "fine_location": d.perm_fine_location,
+                           "coarse_location": d.perm_coarse_location, "keep_permissions": d.keep_permissions,
+                           "battery_unrestricted": d.battery_unrestricted},
                 "model": " ".join(x for x in (d.manufacturer, d.model) if x) or "گوشی اندروید",
                 "app_version_name": d.app_version_name,
                 "healthy": ok,
@@ -951,11 +1005,17 @@ async def location_app_required(db: AsyncSession, user: User, user_agent: str | 
 async def location_app_blocked(db: AsyncSession, user: User, user_agent: str | None = None) -> bool:
     if not await location_app_required(db, user, user_agent):
         return False
-    healthy, _ = await user_devices_health(db, user)
-    return not healthy
+    flags = (await permission_policy(db))["required"]
+    if not (flags["coarse_location"] or flags["fine_location"]):
+        return False
+    devices = (await db.scalars(select(MobileDevice).where(
+        MobileDevice.user_id == user.id, MobileDevice.revoked_at.is_(None),
+        MobileDevice.session_sid == current_session_sid.get(), MobileDevice.session_sid.is_not(None)))).all()
+    return not any(d.perm_fine_location or (not flags["fine_location"] and d.perm_coarse_location)
+                   for d in devices)
 
 
-async def my_status(db: AsyncSession, user: User) -> dict:
+async def my_status(db: AsyncSession, user: User, installation: str | None = None) -> dict:
     required = await location_app_required(db, user)
     healthy, devices = await user_devices_health(db, user)
     latest = await latest_release_info(db)
@@ -963,12 +1023,24 @@ async def my_status(db: AsyncSession, user: User) -> dict:
     # (بدون گوشی متصل ← قفلی نیست؛ اپ تازه‌نصب هنوز در حال اتصال است و خودش هنگام ورود دسترسی‌ها را چک کرده)
     # گوشی تازه‌متصلی که هنوز اولین گزارش وضعیتش نرسیده (همه‌ی دسترسی‌ها پیش‌فرض false است) یا گزارش‌هایش قطع شده
     # (stale) قفل نمی‌شود؛ خود اپ هنگام ورود دسترسی‌ها را چک کرده است
+    sid = current_session_sid.get()
+    current = next((d for d in devices if d["installation"] == installation
+                    and (not sid or d["_session_sid"] == sid)), None)
+    for d in devices:
+        d.pop("_session_sid")
+        d.pop("installation")
+    policy = await permission_policy(db)
     permission_issues = []
-    if required and devices and devices[0]["status_reported_at"] is not None:
-        latest_issues = devices[0]["issues"]
-        if not any(i["code"] == "stale" for i in latest_issues):
-            permission_issues = [i for i in latest_issues if i["code"] in PERMISSION_ISSUES]
+    if current and required and current["status_reported_at"]:
+        flags = policy["required"]
+        mapping = {"no_fine_location": "fine_location", "no_location": "coarse_location",
+                   "no_notifications": "notifications", "battery_restricted": "battery_unrestricted",
+                   "unused_restrictions": "keep_permissions"}
+        if not any(issue["code"] == "stale" for issue in current["issues"]):
+            permission_issues = [i for i in current["issues"] if flags.get(mapping.get(i["code"]))]
     return {
+        "current_device": current,
+        "permission_policy": policy,
         "required": required,
         "exempt": user.employee_id is not None and await is_exempt(db, user.employee_id),
         "healthy": healthy,

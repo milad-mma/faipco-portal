@@ -293,6 +293,13 @@ async def _oa_cleanup_temp_job() -> None:
     Job هر ۶ ساعت: فایل‌های موقت بی‌پیوند اتوماسیون پس از مهلت پاک می‌شوند. همان قفل بکاپ را می‌گیرد تا هم‌زمان با بکاپ
     اجرا نشود (docs/office-automation-spec.md بخش ۱۰.۲) — اگر بکاپ در جریان است، این نوبت رد می‌شود.
     """
+    from app.db.session import AsyncSessionLocal
+    from app.models.push_dispatch import AndroidNotification
+    from sqlalchemy import delete, func, text
+    async with AsyncSessionLocal() as db:
+        await db.execute(delete(AndroidNotification).where(
+            AndroidNotification.expires_at < func.now() - text("interval '60 days'")))
+        await db.commit()
     from app.services.oa_file_service import OaFileService
 
     async with AsyncSessionLocal() as db:

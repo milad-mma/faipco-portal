@@ -97,7 +97,7 @@ function Detail({ event, close, code, mobile }) {
           {data.items.length ? mobile ? data.items.map(d =>
             <Card variant="outlined" sx={{ p: 1.5 }} key={d.id ?? d.subscription_id}>
               <Stack spacing={1} alignItems="flex-start">
-                <Typography fontWeight={700}>اشتراک شمارهٔ {d.subscription_id}</Typography>
+                <Typography fontWeight={700}>اشتراک شمارهٔ {d.subscription_id} · {d.transport}</Typography>
                 <Recipient row={d} /><Status value={d.status} /><DeviceReceipt device={d} />
                 {d.attempts != null && <Typography variant="body2">تعداد تلاش: {d.attempts}</Typography>}
                 {d.accepted_at && <Typography variant="body2">زمان پذیرش: {date(d.accepted_at)}</Typography>}
@@ -107,7 +107,7 @@ function Detail({ event, close, code, mobile }) {
             </Card>) : <TableContainer><Table size="small">
             <TableHead><TableRow>{["اشتراک", "شناسه کاربر", "کد پرسنلی", "وضعیت دستگاه", "تلاش", "زمان پذیرش", "تلاش بعدی", "علت"].map(t => <TableCell key={t}>{t}</TableCell>)}</TableRow></TableHead>
             <TableBody>{data.items.map(d => <TableRow key={d.id ?? d.subscription_id}>
-              <TableCell>{d.subscription_id}</TableCell><TableCell>{d.user_id ?? "—"}</TableCell><TableCell>{d.personnel_code ?? "—"}</TableCell>
+              <TableCell>{d.subscription_id} · {d.transport}</TableCell><TableCell>{d.user_id ?? "—"}</TableCell><TableCell>{d.personnel_code ?? "—"}</TableCell>
               <TableCell><Status value={d.status} /><DeviceReceipt device={d} /></TableCell><TableCell>{d.attempts ?? "—"}</TableCell>
               <TableCell>{date(d.accepted_at)}</TableCell><TableCell>{d.status === "pending" ? date(d.next_attempt_at) : "—"}</TableCell>
               <TableCell>{reasons[d.last_error] || d.last_error || "—"}</TableCell></TableRow>)}</TableBody>
