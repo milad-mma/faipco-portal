@@ -22,9 +22,9 @@ import PhoneAndroidOutlinedIcon from "@mui/icons-material/PhoneAndroidOutlined";
 import LocationOffOutlinedIcon from "@mui/icons-material/LocationOffOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
-import { fetchMyMobileStatus, APK_DOWNLOAD_PATH } from "../api/mobile";
+import { fetchMyMobileStatus } from "../api/mobile";
 import { useAuth } from "../context/AuthContext";
-import { isAndroidApp, isAndroidBrowser, openNativeSetup, openPortalInApp } from "../utils/androidApp";
+import { isAndroidApp, isAndroidBrowser, openNativeSetup, portalAppHref } from "../utils/androidApp";
 import { lastGpsFixAt } from "../utils/presenceSocket";
 
 const RECHECK_LOCKED_MS = 15_000;
@@ -69,6 +69,15 @@ export default function MobileAppGate({ user }) {
   const inAndroidBrowser = isAndroidBrowser();
   const active = featureOn && isEmployee && (inApp || inAndroidBrowser);
 
+  const [launchAttempted, setLaunchAttempted] = useState(() => {
+    try { return sessionStorage.getItem("faipco_open_attempt") === window.location.href; }
+    catch { return false; }
+  });
+  function recordLaunchAttempt() {
+    setLaunchAttempted(true);
+    try { sessionStorage.setItem("faipco_open_attempt", window.location.href); }
+    catch { /* In-memory feedback is sufficient when storage is unavailable. */ }
+  }
   const [status, setStatus] = useState(null);
   const [localIssues, setLocalIssues] = useState([]); // بررسی همین لحظه در خود صفحه (اعلان)
   const [checking, setChecking] = useState(false);
@@ -129,22 +138,22 @@ export default function MobileAppGate({ user }) {
       <FullScreen>
         <PhoneAndroidOutlinedIcon color="primary" sx={{ fontSize: 64 }} />
         <Typography variant="h6" fontWeight={800}>
-          لطفاً از اپ اندروید FAIPCO استفاده کنید
+          ورود به پرتال با اپلیکیشن فایپکو
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          روی گوشی اندروید، پرتال فقط داخل اپ FAIPCO باز می‌شود. اگر اپ نصب است «باز کردن در اپ» را بزنید؛ همین صفحه
-          داخل اپ باز می‌شود. اگر نصب نیست، اول اپ را دانلود و نصب کنید.
+          برای ادامه، پرتال را در اپلیکیشن فایپکو باز کنید. اگر هنوز آن را نصب نکرده‌اید، می‌توانید نسخهٔ اندروید را دریافت کنید.
         </Typography>
-        <Button fullWidth size="large" variant="contained" startIcon={<OpenInNewOutlinedIcon />} onClick={() => openPortalInApp()}>
-          باز کردن در اپ
+        <Button fullWidth size="large" variant="contained" startIcon={<OpenInNewOutlinedIcon />}
+          href={portalAppHref()} onClick={recordLaunchAttempt}>
+          باز کردن در اپلیکیشن
         </Button>
-        <Button fullWidth variant="outlined" startIcon={<FileDownloadOutlinedIcon />} href={APK_DOWNLOAD_PATH}>
-          دانلود اپ
+        {launchAttempted && <Typography role="status" variant="body2" color="text.secondary">
+          اگر اپلیکیشن باز نشد، آن را از فهرست برنامه‌های گوشی باز کنید. اگر هنوز آن را نصب نکرده‌اید، «دانلود اپلیکیشن» را بزنید.
+        </Typography>}
+        <Button fullWidth variant="outlined" startIcon={<FileDownloadOutlinedIcon />} href="/app">
+          دانلود اپلیکیشن
         </Button>
         <Stack direction="row" spacing={1}>
-          <Button size="small" href="/app">
-            راهنمای نصب
-          </Button>
           <Button size="small" color="inherit" onClick={logout}>
             خروج از حساب
           </Button>

@@ -34,14 +34,22 @@ for (const [host, identity] of [['portal.faipco.ir', production], ['portal-test.
   test(`native setup and portal links target the correct package for ${host}`, async () => {
     const savedWindow = globalThis.window;
     try {
-      globalThis.window = { location: { hostname: host, host, origin: `https://${host}`, pathname: '/profile', search: '', href: '' } };
+      globalThis.window = { location: { hostname: host, host, origin: `https://${host}`, pathname: '/profile', search: '', href: `https://${host}/profile?q=1#section` } };
       const module = await import(`../src/utils/androidApp.js?environment=${host}`);
       module.openNativeSetup();
       assert.ok(window.location.href.includes(`;scheme=${identity.scheme};package=${identity.packageName};`));
       module.openNativePairing('test-code');
       assert.ok(window.location.href.includes(`;scheme=${identity.scheme};package=${identity.packageName};`));
-      module.openPortalInApp('/notices');
-      assert.ok(window.location.href.startsWith(`intent://${host}/notices#Intent;scheme=https;package=${identity.packageName};`));
+      const current = window.location.href = `https://${host}/profile?q=1#section`;
+      const href = module.portalAppHref();
+      assert.ok(href.startsWith(`intent://setup#Intent;scheme=${identity.scheme};package=${identity.packageName};`));
+      const fields = Object.fromEntries(href.split(';').slice(1, -1).map(field => field.split('=')));
+      assert.equal(fields['B.onboarding'], 'true');
+      assert.equal(fields['B.auto_request_notifications'], 'true');
+      assert.equal(decodeURIComponent(fields['S.target_uri']), current);
+      assert.equal(decodeURIComponent(fields['S.browser_fallback_url']), current);
+      module.openPortalInApp('/notices?id=a%3Bb');
+      assert.ok(window.location.href.includes(`S.target_uri=${encodeURIComponent('https://' + host + '/notices?id=a%3Bb')};`));
     } finally {
       if (savedWindow === undefined) delete globalThis.window;
       else globalThis.window = savedWindow;

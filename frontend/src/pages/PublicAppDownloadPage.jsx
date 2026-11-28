@@ -10,10 +10,9 @@ import { APK_DOWNLOAD_PATH, fetchLatestRelease } from "../api/mobile";
  * پیام «فعلاً در دسترس نیست» نمایش داده می‌شود.
  */
 const INSTALL_STEPS = [
-  "روی «دانلود اپ» بزنید و بعد از دانلود، فایل را باز کنید.",
-  "اگر گوشی اجازه‌ی «نصب از منبع ناشناس» خواست، برای مرورگر یا مدیر فایل اجازه دهید و نصب را تأیید کنید. این هشدار برای همه‌ی اپ‌هایی است که از فروشگاه نصب نمی‌شوند.",
-  "اپ را باز کنید، دسترسی‌هایی را که می‌خواهد بدهید و با همان کد پرسنلی و رمز پرتال وارد شوید.",
-  "اگر قبلاً پرتال را به صفحه‌ی اصلی گوشی اضافه کرده‌اید، آن را حذف کنید تا اعلان‌ها دو بار نیایند.",
+  "فایل دانلودشده را باز کنید.",
+  "اگر گوشی اجازهٔ نصب خواست، آن را برای مرورگر یا برنامه‌ای که فایل را با آن باز کرده‌اید فعال کنید.",
+  "بعد از نصب، اپلیکیشن فایپکو را باز کنید. اگر صفحهٔ ورود را دیدید، با حساب پرسنلی خود وارد شوید.",
 ];
 
 const isAndroid = () => /android/i.test(navigator.userAgent || "");
@@ -31,7 +30,7 @@ export default function PublicAppDownloadPage() {
   const sizeMb = release?.file_size ? (release.file_size / (1024 * 1024)).toLocaleString("fa-IR", { maximumFractionDigits: 1 }) : null;
 
   return (
-    <AuthPageShell title="اپ اندروید" subtitle="نصب اپ پرتال روی گوشی اندروید">
+    <AuthPageShell title="دانلود اپلیکیشن اندروید فایپکو" subtitle="فایل نصب را دریافت کنید و پس از پایان دانلود، آن را باز کنید.">
       {release === undefined && (
         <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress />
@@ -51,7 +50,7 @@ export default function PublicAppDownloadPage() {
             href={APK_DOWNLOAD_PATH}
             fullWidth
           >
-            دانلود اپ
+            دانلود فایل نصب (APK)
           </Button>
           <Typography variant="caption" color="text.secondary" textAlign="center">
             نسخه‌ی {release.version_name}

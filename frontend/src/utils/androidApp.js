@@ -104,13 +104,19 @@ export function hasOpenedAndroidApp() {
   return safeGet(APP_FLAG_KEY) === "1";
 }
 
-// همین صفحه را داخل اپ باز می‌کند (EntryActivity لینک‌های https پرتال را می‌گیرد و دسترسی‌ها را چک می‌کند)؛
-// اپ نصب نباشد ← صفحه‌ی عمومی دانلود. باید در پاسخ به لمس کاربر صدا زده شود (Chrome بدون لمس اپ را باز نمی‌کند).
-export function openPortalInApp(path = window.location.pathname + window.location.search) {
-  const fallback = encodeURIComponent(`${window.location.origin}/app`);
-  window.location.href =
-    `intent://${window.location.host}${path}#Intent;scheme=https;package=${ANDROID_PACKAGE};` +
-    `S.browser_fallback_url=${fallback};end`;
+// The shipped APKs expose the setup scheme in both flavors. Onboarding mode
+// continues to the supplied portal page as soon as required permissions are met.
+export function portalAppHref(path = window.location.href) {
+  const current = new URL(window.location.href);
+  const target = new URL(path, current);
+  const destination = target.origin === current.origin ? target.href : current.origin + "/";
+  return `intent://setup#Intent;scheme=${ANDROID_SCHEME};package=${ANDROID_PACKAGE};` +
+    `B.onboarding=true;B.auto_request_notifications=true;S.target_uri=${encodeURIComponent(destination)};` +
+    `S.browser_fallback_url=${encodeURIComponent(current.href)};end`;
+}
+
+export function openPortalInApp(path) {
+  window.location.href = portalAppHref(path);
 }
 
 // مرورگر گوشی اندروید، بیرون از اپ
