@@ -370,9 +370,7 @@ export default function App() {
               path="/mobile-app" element={<Navigate to="/app-permissions" replace />} />
             <Route path="/app-permissions"
               element={
-                <PermissionRoute check={(u) => u?.mobile_app_enabled}>
-                  <MobileAppPage />
-                </PermissionRoute>
+                <MobileAppPage />
               }
             />
             <Route

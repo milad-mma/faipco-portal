@@ -123,11 +123,15 @@ FEATURE_KEY = "mobile_app_feature_enabled"
 POLICY_KEY = "android_permission_requirements"
 
 
-async def permission_policy(db):
+async def permission_policy(db, *, effective=True):
     from app.schemas.mobile import MobilePermissionRequirements
     row = await db.get(SystemSetting, POLICY_KEY)
     values = MobilePermissionRequirements.model_validate_json(row.value) if row else MobilePermissionRequirements()
-    return {"schema_version": 1, "required": values.model_dump()}
+    flags = values.model_dump()
+    if effective:
+        needs_location = values.coarse_location or values.fine_location
+        flags.update(background_location=needs_location, location_enabled=needs_location)
+    return {"schema_version": 1, "required": flags}
 
 
 async def is_feature_enabled(db: AsyncSession) -> bool:
@@ -380,7 +384,7 @@ def device_issues(device: MobileDevice, cfg: MobileAppSettings, has_sites: bool,
         issues.append("unused_restrictions")
     if not device.perm_fine_location:
         issues.append("no_fine_location")
-    elif not device.perm_background_location:
+    if not device.perm_background_location:
         issues.append("no_background_location")
     if not device.location_enabled:
         issues.append("location_off")
@@ -975,6 +979,7 @@ async def user_devices_health(db: AsyncSession, user: User) -> tuple[bool, list[
                 "installation": d.device_uid,
                 "_session_sid": d.session_sid,
                 "grants": {"notifications": d.perm_notifications, "fine_location": d.perm_fine_location,
+                           "background_location": d.perm_background_location, "location_enabled": d.location_enabled,
                            "coarse_location": d.perm_coarse_location, "keep_permissions": d.keep_permissions,
                            "battery_unrestricted": d.battery_unrestricted},
                 "model": " ".join(x for x in (d.manufacturer, d.model) if x) or "گوشی اندروید",
@@ -1011,8 +1016,11 @@ async def location_app_blocked(db: AsyncSession, user: User, user_agent: str | N
     devices = (await db.scalars(select(MobileDevice).where(
         MobileDevice.user_id == user.id, MobileDevice.revoked_at.is_(None),
         MobileDevice.session_sid == current_session_sid.get(), MobileDevice.session_sid.is_not(None)))).all()
-    return not any(d.perm_fine_location or (not flags["fine_location"] and d.perm_coarse_location)
-                   for d in devices)
+    return not any(
+        d.location_enabled and d.perm_background_location
+        and (d.perm_fine_location or (not flags["fine_location"] and d.perm_coarse_location))
+        for d in devices
+    )
 
 
 async def my_status(db: AsyncSession, user: User, installation: str | None = None) -> dict:
@@ -1033,7 +1041,8 @@ async def my_status(db: AsyncSession, user: User, installation: str | None = Non
     permission_issues = []
     if current and required and current["status_reported_at"]:
         flags = policy["required"]
-        mapping = {"no_fine_location": "fine_location", "no_location": "coarse_location",
+        mapping = {"location_off": "location_enabled", "no_background_location": "background_location",
+                   "no_fine_location": "fine_location", "no_location": "coarse_location",
                    "no_notifications": "notifications", "battery_restricted": "battery_unrestricted",
                    "unused_restrictions": "keep_permissions"}
         if not any(issue["code"] == "stale" for issue in current["issues"]):

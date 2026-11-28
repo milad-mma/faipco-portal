@@ -926,7 +926,7 @@ async def get_mobile_app_feature(db: AsyncSession = Depends(get_db), _user=Depen
     """وضعیت کلید اصلی قابلیت اپ اندروید (docs/android-app.md). مجوز: system.settings."""
     from app.services.mobile_app_service import is_feature_enabled, permission_policy
 
-    return {"enabled": await is_feature_enabled(db), "permission_policy": await permission_policy(db)}
+    return {"enabled": await is_feature_enabled(db), "permission_policy": await permission_policy(db, effective=False)}
 
 
 @router.put("/mobile-app-feature")

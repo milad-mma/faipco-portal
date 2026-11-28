@@ -1,3 +1,4 @@
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 /**
  * صفحه «پنل کاربری» (تب پنل کاربری در نوار پایین موبایل).
  * شامل کارت برند و نسخه برنامه، میان‌بر مقصدهایی که کاربر طبق مجوزهایش به آن‌ها دسترسی دارد،
@@ -168,7 +169,6 @@ export default function ProfilePage() {
 
   return (
     <Box sx={{ maxWidth: { xs: "100%", md: 1100 }, mx: "auto" }}>
-      {user?.mobile_app_enabled && <Button onClick={() => navigate("/app-permissions")} sx={{ mb: 1 }}>دسترسی‌های اپلیکیشن</Button>}
       {/* کارت برند: لوگو، عنوان/زیرعنوان (طبق تنظیمات برندینگ) و نسخه برنامه */}
       <Card
         variant="outlined"
@@ -389,6 +389,10 @@ export default function ProfilePage() {
               />
             </ListItemButton>
           )}
+          <ListItemButton onClick={() => navigate("/app-permissions")}>
+            <ListItemIcon><SettingsOutlinedIcon /></ListItemIcon>
+            <ListItemText primary="دسترسی‌های اپلیکیشن" />
+          </ListItemButton>
           <ListItemButton onClick={() => setContactInfoDialogOpen(true)}>
             <ListItemIcon>
               <BadgeOutlinedIcon />

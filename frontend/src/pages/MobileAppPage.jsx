@@ -22,11 +22,15 @@ import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import { APK_DOWNLOAD_PATH, fetchMyMobileStatus } from "../api/mobile";
 import { isAndroidApp, isAndroidBrowser, openPortalInApp, openNativeSetup } from "../utils/androidApp";
 
+import { useAuth } from "../context/AuthContext";
+import WebPermissions from "../components/WebPermissions";
+
 const faDateTime = (iso) =>
   iso ? new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" }) : "—";
 
 const permissionLabels = {
   notifications: "اعلان‌ها", coarse_location: "موقعیت", fine_location: "موقعیت دقیق",
+  background_location: "موقعیت در پس‌زمینه", location_enabled: "موقعیت‌یاب گوشی",
   battery_unrestricted: "فعالیت بدون محدودیت باتری", keep_permissions: "حفظ مجوزهای برنامه",
 };
 const INSTALL_STEPS = [
@@ -40,6 +44,7 @@ export default function MobileAppPage() {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
   const [showRecovery, setShowRecovery] = useState(false);
+  const { user } = useAuth();
   const inApp = isAndroidApp();
   const inAndroidBrowser = isAndroidBrowser();
   // Chrome به اینجا برگشته چون اپ نصب‌شده بخش فعال‌سازی را نداشت (نسخه‌ی قدیمی)
@@ -65,11 +70,12 @@ export default function MobileAppPage() {
   }, [waiting]);
 
   useEffect(() => {
+    if (!user?.mobile_app_enabled || (!inApp && !inAndroidBrowser)) return;
     load();
     const onVisible = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
+  }, [user?.mobile_app_enabled, inApp, inAndroidBrowser]);
 
   const latest = status?.latest_release;
 
@@ -79,15 +85,17 @@ export default function MobileAppPage() {
         دسترسی‌های اپلیکیشن
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.9 }}>
-        وضعیت اتصال، مجوزهای همین گوشی و نسخهٔ برنامه را اینجا بررسی کنید.
+        {inApp ? "مجوزهای این گوشی و وضعیت اتصال آن به پرتال" : "دسترسی‌های این مرورگر اختیاری‌اند."}
       </Typography>
+      {!inApp && <WebPermissions />}
+      {inApp && !user?.mobile_app_enabled && <Button onClick={openNativeSetup}>تنظیم دسترسی‌های گوشی</Button>}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
       {!status ? (
-        !error && <CircularProgress />
+        user?.mobile_app_enabled && (inApp || inAndroidBrowser) && !error && <CircularProgress />
       ) : (
         <Stack spacing={2}>
           {status.exempt && <Alert severity="info">شما از الزام نصب اپ معاف شده‌اید.</Alert>}

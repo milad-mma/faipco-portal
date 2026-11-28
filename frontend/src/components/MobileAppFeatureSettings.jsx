@@ -10,8 +10,8 @@ import { useAuth } from "../context/AuthContext";
 
 const labels = {
   notifications: "اجبار اعلان‌ها",
-  coarse_location: "اجبار دسترسی به موقعیت",
-  fine_location: "اجبار موقعیت دقیق",
+  coarse_location: "اجبار موقعیت (با دسترسی پس‌زمینه و موقعیت‌یاب روشن)",
+  fine_location: "اجبار موقعیت دقیق (با دسترسی پس‌زمینه و موقعیت‌یاب روشن)",
   battery_unrestricted: "اجبار فعالیت بدون محدودیت باتری",
   keep_permissions: "اجبار حفظ مجوزها هنگام استفاده‌نکردن از اپ",
 };

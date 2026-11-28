@@ -7,9 +7,7 @@
  *
  * ۲. قفل دسترسی‌ها داخل اپ: بخش بومی اپ هنگام ورود دسترسی‌ها را چک می‌کند؛ اگر کاربر وسط کار دسترسی موقعیت/اعلان را
  *    بگیرد یا GPS را خاموش کند، همان لحظه‌ی برگشت به اپ (visibilitychange) این بررسی‌ها انجام می‌شود:
- *    - GPS: فقط از گزارش اپ (پایین). خطای موقعیت گرفتن در مرورگر قابل‌اعتماد نیست: داخل سالن کارخانه با GPS روشن
- *      «در دسترس نیست» می‌دهد و با GPS خاموش «اجازه رد شد». برعکس، موقعیت گرفتن موفق در ۳ دقیقه‌ی اخیر (presenceSocket)
- *      یعنی GPS روشن است و گزارش کهنه‌ی «GPS خاموش» قفل نمی‌کند.
+ *    - GPS: وضعیت موقعیت‌یاب از گزارش بومی همین گوشی دریافت می‌شود.
  *    - اعلان: Notification.permission = denied (TWA اجازه‌ی اعلان را از اپ می‌گیرد).
  *    - سرور: permission_issues آخرین گزارش اپ (اپ هر ۱۵ دقیقه و با هر تغییر گزارش می‌دهد) — پشتیبان، چون همه‌ی
  *      گوشی‌ها تغییر دسترسی را همان لحظه به Chrome نمی‌دهند.
@@ -25,7 +23,7 @@ import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import { fetchMyMobileStatus } from "../api/mobile";
 import { useAuth } from "../context/AuthContext";
 import { isAndroidApp, isAndroidBrowser, openNativeSetup, portalAppHref } from "../utils/androidApp";
-import { lastGpsFixAt } from "../utils/presenceSocket";
+import { useLocation } from "react-router-dom";
 
 const RECHECK_LOCKED_MS = 15_000;
 
@@ -67,7 +65,8 @@ export default function MobileAppGate({ user }) {
   const isEmployee = Boolean(user?.employee_id) && !user?.is_superuser;
   const inApp = isAndroidApp();
   const inAndroidBrowser = isAndroidBrowser();
-  const active = featureOn && isEmployee && (inApp || inAndroidBrowser);
+  const { pathname } = useLocation();
+  const active = (inApp || pathname !== "/app-permissions") && featureOn && isEmployee && (inApp || inAndroidBrowser);
 
   const [launchAttempted, setLaunchAttempted] = useState(() => {
     try { return sessionStorage.getItem("faipco_open_attempt") === window.location.href; }
@@ -110,13 +109,9 @@ export default function MobileAppGate({ user }) {
   }, [check]);
 
   const required = Boolean(status?.required) && !status?.exempt;
-  // «GPS خاموش» گزارش اپ ممکن است کهنه باشد (اپ وضعیت را حداکثر هر ۱۵ دقیقه می‌فرستد)؛ اگر مرورگر در ۳ دقیقه‌ی اخیر
-  // موقعیت گرفته، موقعیت‌یاب روشن است و این مورد نادیده گرفته می‌شود
-  const gpsSeenRecently = Date.now() - lastGpsFixAt() < 3 * 60_000;
   const serverIssues =
     inApp && required
       ? (status?.permission_issues || [])
-          .filter((i) => !(i.code === "location_off" && gpsSeenRecently))
           .map((i) => i.label)
       : [];
   const appIssues = required || !status ? [...new Set([...localIssues, ...serverIssues])] : [];
@@ -153,6 +148,7 @@ export default function MobileAppGate({ user }) {
         <Button fullWidth variant="outlined" startIcon={<FileDownloadOutlinedIcon />} href="/app">
           دانلود اپلیکیشن
         </Button>
+        <Button href="/app-permissions">دسترسی‌های وب‌اپ</Button>
         <Stack direction="row" spacing={1}>
           <Button size="small" color="inherit" onClick={logout}>
             خروج از حساب
@@ -177,8 +173,7 @@ export default function MobileAppGate({ user }) {
           ))}
         </Box>
         <Typography variant="body2" color="text.secondary">
-          برای استفاده از پرتال، دسترسی موقعیت (همیشه مجاز) و اعلان را به اپ بدهید و GPS گوشی را روشن کنید. اگر انجام
-          داده‌اید، «تکمیل دسترسی‌ها» را بزنید تا اپ وضعیت را دوباره بررسی کند.
+          برای بررسی موارد بالا، «تکمیل دسترسی‌ها» را بزنید.
         </Typography>
         <Button fullWidth size="large" variant="contained" onClick={openNativeSetup}>
           تکمیل دسترسی‌ها
